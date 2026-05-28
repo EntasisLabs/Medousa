@@ -57,13 +57,10 @@ use stasis::ports::outbound::memory::identity_memory_models::{
 };
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::dashboard::{
-    DashboardState, InMemoryDashboardQueryService, router as dashboard_router,
+    DashboardState, RuntimeDashboardQueryService, router as dashboard_router,
 };
 use stasis::prelude::{RecurringDefinition, RuntimeComposition, RuntimeSdk};
-use stasis::prelude_ext::{
-    CompositeControlPlaneStore, ControlPlaneSdk, InMemoryClusterNodeStore,
-    InMemoryDeliveryEndpointStore,
-};
+use stasis::sdk::runtime_sdk::RuntimeStatsSnapshot;
 
 #[derive(Clone)]
 struct AppState {
@@ -100,6 +97,13 @@ struct TickReport {
 struct HeartbeatNotifyConfig {
     webhook_url: Option<String>,
     jsonl_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DashboardActionAuthConfig {
+    bearer_token: Option<String>,
+    required_role: Option<String>,
+    role_claim_header: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -182,6 +186,10 @@ const MAX_REPORT_CITATIONS: usize = 24;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print_usage();
+        return Ok(());
+    }
 
     let backend_name = find_arg_value(&args, "--backend")
         .unwrap_or("in-memory")
@@ -213,6 +221,7 @@ async fn main() -> Result<()> {
     };
     let heartbeat_policy = parse_heartbeat_policy(&args)?;
     let heartbeat_delivery_policy = parse_heartbeat_delivery_policy(&args)?;
+    let dashboard_action_auth = parse_dashboard_action_auth(&args)?;
 
     let webhook_client = heartbeat_notify
         .webhook_url
@@ -297,20 +306,13 @@ async fn main() -> Result<()> {
         .route("/v1/identity/rollback", post(identity_rollback_version))
         .with_state(state.clone());
 
-    let app = if let RuntimeComposition::InMemory(ref inner) = *runtime {
-        let inner_arc = Arc::new(inner.clone());
-        let endpoint_store = InMemoryDeliveryEndpointStore::default();
-        let cluster_store = InMemoryClusterNodeStore::default();
-        let control_store = CompositeControlPlaneStore::new(endpoint_store, cluster_store);
-        let control_plane = ControlPlaneSdk::new(control_store);
-        let dashboard_service =
-            Arc::new(InMemoryDashboardQueryService::new(inner_arc, control_plane));
-        let dashboard = dashboard_router(DashboardState::new(dashboard_service));
-        app.merge(dashboard)
-    } else {
-        println!("medousa-daemon dashboard skipped (only supported for in-memory backend)");
-        app
-    };
+    let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
+        runtime.as_ref().clone(),
+    ));
+    let dashboard_state =
+        apply_dashboard_action_auth(DashboardState::new(dashboard_service), &dashboard_action_auth);
+    let dashboard = dashboard_router(dashboard_state);
+    let app = app.merge(dashboard);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let scheduler_state = state.clone();
@@ -334,6 +336,27 @@ async fn main() -> Result<()> {
 
     println!("medousa-daemon listening on http://{addr}");
     println!("medousa-daemon dashboard at http://{addr}/dashboard");
+    if dashboard_action_auth.bearer_token.is_some() {
+        println!("medousa-daemon dashboard actions require bearer token auth");
+    }
+    if let Some(required_role) = dashboard_action_auth.required_role.as_deref() {
+        let role_claim_header = dashboard_action_auth
+            .role_claim_header
+            .as_deref()
+            .unwrap_or("x-stasis-role");
+        println!(
+            "medousa-daemon dashboard actions require role={} via header={}",
+            required_role, role_claim_header
+        );
+    }
+    println!(
+        "{}",
+        build_operator_first_run_guide(
+            &format!("http://{addr}"),
+            heartbeat_policy,
+            heartbeat_delivery_policy,
+        )
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -421,10 +444,10 @@ async fn tick_runtime(
     let lane_policy_profile = default_policy_profile_for_lane(lane);
     let lane_worker_id = format!("{worker_id}:{}", lane.as_str());
 
-    let materialized = sdk.materialize_recurring_now(&lane_worker_id).await?;
-    let processed_job = sdk.process_once("default", &lane_worker_id).await?;
-    let published = sdk.publish_pending_events(200).await?;
-    let snapshot = sdk.stats_snapshot(200).await?;
+    let materialized = safe_materialize_recurring_now(&sdk, &lane_worker_id).await?;
+    let processed_job = safe_process_once(&sdk, "default", &lane_worker_id).await?;
+    let published = safe_publish_pending_events(&sdk, 200).await?;
+    let snapshot = safe_stats_snapshot(&sdk, 200).await?;
 
     let heartbeat_decision = evaluate_heartbeat_significance(
         &HeartbeatSignals {
@@ -466,7 +489,9 @@ async fn stats(
     State(state): State<AppState>,
 ) -> Result<Json<DaemonStatsResponse>, (StatusCode, String)> {
     let sdk = RuntimeSdk::new(state.runtime.as_ref().clone());
-    let snapshot = sdk.stats_snapshot(5000).await.map_err(internal_error)?;
+    let snapshot = safe_stats_snapshot(&sdk, 5000)
+        .await
+        .map_err(internal_error)?;
 
     let last_tick_at_utc = *state.last_tick_at.read().await;
 
@@ -527,7 +552,9 @@ async fn compute_heartbeat_snapshot_report(
     state: &AppState,
 ) -> Result<TickReport, (StatusCode, String)> {
     let sdk = RuntimeSdk::new(state.runtime.as_ref().clone());
-    let snapshot = sdk.stats_snapshot(5000).await.map_err(internal_error)?;
+    let snapshot = safe_stats_snapshot(&sdk, 5000)
+        .await
+        .map_err(internal_error)?;
     let lane = EngineExecutionLane::Scheduled;
 
     let heartbeat_decision = evaluate_heartbeat_significance(
@@ -1432,6 +1459,100 @@ fn internal_error(err: impl std::fmt::Display) -> (StatusCode, String) {
     )
 }
 
+fn is_missing_runtime_table_error(message: &str) -> bool {
+    let lowered = message.to_ascii_lowercase();
+    lowered.contains("the table '") && lowered.contains("does not exist")
+}
+
+async fn safe_materialize_recurring_now(
+    sdk: &RuntimeSdk,
+    scheduler_id: &str,
+) -> Result<usize> {
+    match sdk.materialize_recurring_now(scheduler_id).await {
+        Ok(materialized) => Ok(materialized),
+        Err(err) => {
+            if is_missing_runtime_table_error(&err.to_string()) {
+                Ok(0)
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
+async fn safe_process_once(
+    sdk: &RuntimeSdk,
+    queue: &str,
+    worker_id: &str,
+) -> Result<Option<String>> {
+    match sdk.process_once(queue, worker_id).await {
+        Ok(processed_job) => Ok(processed_job),
+        Err(err) => {
+            if is_missing_runtime_table_error(&err.to_string()) {
+                Ok(None)
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
+async fn safe_publish_pending_events(sdk: &RuntimeSdk, limit: usize) -> Result<usize> {
+    match sdk.publish_pending_events(limit).await {
+        Ok(published) => Ok(published),
+        Err(err) => {
+            if is_missing_runtime_table_error(&err.to_string()) {
+                Ok(0)
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
+async fn safe_stats_snapshot(sdk: &RuntimeSdk, pending_limit: usize) -> Result<RuntimeStatsSnapshot> {
+    match sdk.stats_snapshot(pending_limit).await {
+        Ok(snapshot) => Ok(snapshot),
+        Err(err) => {
+            if is_missing_runtime_table_error(&err.to_string()) {
+                Ok(RuntimeStatsSnapshot::default())
+            } else {
+                Err(err.into())
+            }
+        }
+    }
+}
+
+fn build_operator_first_run_guide(
+    daemon_url: &str,
+    heartbeat_policy: HeartbeatLanePolicy,
+    heartbeat_delivery_policy: HeartbeatDeliveryPolicy,
+) -> String {
+    let quiet_hours = heartbeat_delivery_policy
+        .quiet_hours
+        .map(|window| {
+            format!(
+                "{:02}:00-{:02}:00 UTC",
+                window.start_hour_utc, window.end_hour_utc
+            )
+        })
+        .unwrap_or_else(|| "disabled".to_string());
+
+    format!(
+        "medousa-daemon first-run guide:\n  1) health: cargo run -p medousa --bin medousa_cli -- daemon-health --daemon-url {daemon_url}\n  2) heartbeat: cargo run -p medousa --bin medousa_cli -- daemon-heartbeat-status --daemon-url {daemon_url}\n  3) report flow: cargo run -p medousa --bin medousa_cli -- daemon-report \"Summarize runtime posture with citations\" --daemon-url {daemon_url} --poll-timeout-ms 30000\n  safety defaults: interactive_profile={} scheduled_profile={} heartbeat_min_significance={:.2} heartbeat_quiet_hours={}\n  lane safety: interactive ingress accepts interactive profiles; recurring registration accepts scheduled profiles",
+        default_policy_profile_for_lane(EngineExecutionLane::Interactive),
+        default_policy_profile_for_lane(EngineExecutionLane::Scheduled),
+        heartbeat_policy.min_significance,
+        quiet_hours,
+    )
+}
+
+fn print_usage() {
+    println!(
+        "medousa_daemon\n\nusage:\n  cargo run -p medousa --bin medousa_daemon -- [options]\n\ncore options:\n  --backend <backend>                       Runtime backend: in-memory|surreal-mem|surreal-kv:<path>\n  --provider <provider>                     Optional LLM provider override\n  --model <model>                           Optional LLM model override\n  --base-url <url>                          Optional provider base URL override\n  --bind <host:port>                        HTTP bind address (default: 127.0.0.1:7419)\n  --interval-ms <n>                         Scheduler tick interval ms (default: 1000)\n  --worker-id <id>                          Scheduler worker id (default: medousa-daemon)\n  --once                                    Run a single scheduler tick and exit\n\nheartbeat options:\n  --heartbeat-min-significance <0..1>       Notify threshold (default: 0.65)\n  --heartbeat-dead-letter-weight <f32>      Dead-letter contribution weight\n  --heartbeat-failed-weight <f32>           Failed-jobs contribution weight\n  --heartbeat-outbox-weight <f32>           Pending-outbox contribution weight\n  --heartbeat-activity-weight <f32>         Runtime activity contribution weight\n  --heartbeat-min-notify-interval-secs <n>  Min notify interval seconds (default: 0)\n  --heartbeat-quiet-start-hour-utc <0..23>  Quiet-hours start hour UTC\n  --heartbeat-quiet-end-hour-utc <0..23>    Quiet-hours end hour UTC\n  --heartbeat-webhook-url <url>             Optional outbound heartbeat webhook\n  --heartbeat-jsonl <path>                  Optional heartbeat JSONL sink path\n\ndashboard action auth options:\n  --dashboard-action-bearer-token <token>       Require bearer token on /action/* routes\n  --dashboard-action-required-role <role>       Require role claim on /action/* routes\n  --dashboard-action-role-claim-header <name>   Role header (default: x-stasis-role)\n\nfirst-run flow:\n  1) start daemon\n  2) run: cargo run -p medousa --bin medousa_cli -- daemon-first-run --daemon-url http://127.0.0.1:7419\n  3) run report flow from the printed guidance\n"
+    );
+}
+
 fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
     let idx = args.iter().position(|arg| arg == key)?;
     args.get(idx + 1).map(|s| s.as_str())
@@ -1448,6 +1569,60 @@ fn parse_arg_or_env(args: &[String], arg_key: &str, env_key: &str) -> Option<Str
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         })
+}
+
+fn parse_dashboard_action_auth(args: &[String]) -> Result<DashboardActionAuthConfig> {
+    let bearer_token = parse_arg_or_env(
+        args,
+        "--dashboard-action-bearer-token",
+        "MEDOUSA_DASHBOARD_ACTION_BEARER_TOKEN",
+    );
+    let required_role = parse_arg_or_env(
+        args,
+        "--dashboard-action-required-role",
+        "MEDOUSA_DASHBOARD_ACTION_REQUIRED_ROLE",
+    );
+    let role_claim_header = parse_arg_or_env(
+        args,
+        "--dashboard-action-role-claim-header",
+        "MEDOUSA_DASHBOARD_ACTION_ROLE_CLAIM_HEADER",
+    );
+
+    if role_claim_header.is_some() && required_role.is_none() {
+        return Err(anyhow!(
+            "dashboard action role claim header requires --dashboard-action-required-role"
+        ));
+    }
+
+    if let Some(header) = role_claim_header.as_ref()
+        && header.chars().any(char::is_whitespace)
+    {
+        return Err(anyhow!(
+            "dashboard action role claim header must not contain whitespace"
+        ));
+    }
+
+    Ok(DashboardActionAuthConfig {
+        bearer_token,
+        required_role,
+        role_claim_header,
+    })
+}
+
+fn apply_dashboard_action_auth(
+    mut state: DashboardState,
+    config: &DashboardActionAuthConfig,
+) -> DashboardState {
+    if let Some(token) = config.bearer_token.as_deref() {
+        state = state.with_action_auth_bearer_token(token);
+    }
+    if let Some(role) = config.required_role.as_deref() {
+        state = state.with_action_required_role(role);
+    }
+    if let Some(header_name) = config.role_claim_header.as_deref() {
+        state = state.with_action_role_claim_header(header_name);
+    }
+    state
 }
 
 fn parse_heartbeat_policy(args: &[String]) -> Result<HeartbeatLanePolicy> {
@@ -1746,20 +1921,27 @@ fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use chrono::{Duration, TimeZone, Utc};
 
     use super::{
         EngineExecutionLane, HeartbeatAction, HeartbeatDeliveryMetrics,
         HeartbeatDeliveryPolicy, HeartbeatDispatchDecision, LaneSafetyActionClass,
         QuietHoursWindow, StatusCode,
+        DashboardActionAuthConfig, DashboardState, RuntimeDashboardQueryService,
         TickReport, build_report_prompt, compile_lane_prompt,
+        apply_dashboard_action_auth, dashboard_router,
         default_heartbeat_lane_policy,
         decide_heartbeat_dispatch,
         derive_job_result_status, enforce_lane_safety, normalize_heartbeat_weights,
+        is_missing_runtime_table_error,
+        parse_dashboard_action_auth,
         extract_citations_from_payload,
         parse_heartbeat_delivery_policy,
         parse_heartbeat_policy,
         extract_output_text_from_diagnostics,
+        build_operator_first_run_guide,
         format_tick_report, parse_backend, tick_runtime,
     };
     use serde_json::json;
@@ -1778,6 +1960,58 @@ mod tests {
             dead_letter_jobs: 2,
             pending_outbox_events: 0,
         }
+    }
+
+    async fn spawn_dashboard_test_server(
+        auth_config: DashboardActionAuthConfig,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let backend = parse_backend(Some("in-memory"));
+        let runtime = medousa::build_runtime(backend, None, None, None)
+            .await
+            .expect("runtime should build");
+        let dashboard_service = Arc::new(
+            RuntimeDashboardQueryService::from_runtime_composition(runtime),
+        );
+        let dashboard_state = apply_dashboard_action_auth(
+            DashboardState::new(dashboard_service),
+            &auth_config,
+        );
+        let app = dashboard_router(dashboard_state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("dashboard test listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("dashboard test listener should expose local addr");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("dashboard test server should run");
+        });
+
+        (format!("http://{}", addr), server)
+    }
+
+    async fn post_scheduler_materialize(
+        base_url: &str,
+        bearer_token: Option<&str>,
+        role_header: Option<(&str, &str)>,
+    ) -> reqwest::Response {
+        let client = reqwest::Client::new();
+        let mut request = client.post(format!("{base_url}/action/scheduler/materialize"));
+
+        if let Some(token) = bearer_token {
+            request = request.bearer_auth(token);
+        }
+        if let Some((header_name, value)) = role_header {
+            request = request.header(header_name, value);
+        }
+
+        request
+            .send()
+            .await
+            .expect("dashboard action request should succeed")
     }
 
     #[test]
@@ -1818,6 +2052,20 @@ mod tests {
         assert!(formatted.contains("heartbeat_action=notify"));
         assert!(formatted.contains("heartbeat_significance=0.72"));
         assert!(formatted.contains("heartbeat_reason=dead_letter_pressure"));
+    }
+
+    #[test]
+    fn first_run_guide_includes_health_heartbeat_report_and_lane_safety() {
+        let guide = build_operator_first_run_guide(
+            "http://127.0.0.1:7419",
+            default_heartbeat_lane_policy(),
+            HeartbeatDeliveryPolicy::default(),
+        );
+
+        assert!(guide.contains("daemon-health"));
+        assert!(guide.contains("daemon-heartbeat-status"));
+        assert!(guide.contains("daemon-report"));
+        assert!(guide.contains("lane safety"));
     }
 
     #[tokio::test]
@@ -1888,6 +2136,110 @@ mod tests {
         assert!(err
             .to_string()
             .contains("heartbeat quiet-hours requires both start and end hour values"));
+    }
+
+    #[test]
+    fn dashboard_action_auth_parser_reads_cli_values() {
+        let args = vec![
+            "--dashboard-action-bearer-token".to_string(),
+            "token-1".to_string(),
+            "--dashboard-action-required-role".to_string(),
+            "scheduler.admin".to_string(),
+            "--dashboard-action-role-claim-header".to_string(),
+            "x-medousa-role".to_string(),
+        ];
+
+        let config = parse_dashboard_action_auth(&args)
+            .expect("dashboard action auth config should parse");
+        assert_eq!(config.bearer_token.as_deref(), Some("token-1"));
+        assert_eq!(config.required_role.as_deref(), Some("scheduler.admin"));
+        assert_eq!(config.role_claim_header.as_deref(), Some("x-medousa-role"));
+    }
+
+    #[test]
+    fn dashboard_action_auth_parser_rejects_role_header_without_role() {
+        let args = vec![
+            "--dashboard-action-role-claim-header".to_string(),
+            "x-medousa-role".to_string(),
+        ];
+
+        let err = parse_dashboard_action_auth(&args)
+            .expect_err("role claim header without required role should fail");
+        assert!(err
+            .to_string()
+            .contains("requires --dashboard-action-required-role"));
+    }
+
+    #[test]
+    fn dashboard_action_auth_parser_rejects_whitespace_header_name() {
+        let args = vec![
+            "--dashboard-action-required-role".to_string(),
+            "scheduler.admin".to_string(),
+            "--dashboard-action-role-claim-header".to_string(),
+            "x medousa role".to_string(),
+        ];
+
+        let err = parse_dashboard_action_auth(&args)
+            .expect_err("whitespace header names should fail");
+        assert!(err
+            .to_string()
+            .contains("must not contain whitespace"));
+    }
+
+    #[tokio::test]
+    async fn dashboard_action_auth_http_rejects_missing_bearer_token() {
+        let auth_config = DashboardActionAuthConfig {
+            bearer_token: Some("token-1".to_string()),
+            required_role: None,
+            role_claim_header: None,
+        };
+
+        let (base_url, server) = spawn_dashboard_test_server(auth_config).await;
+        let response = post_scheduler_materialize(&base_url, None, None).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn dashboard_action_auth_http_rejects_missing_required_role() {
+        let auth_config = DashboardActionAuthConfig {
+            bearer_token: Some("token-1".to_string()),
+            required_role: Some("scheduler.admin".to_string()),
+            role_claim_header: None,
+        };
+
+        let (base_url, server) = spawn_dashboard_test_server(auth_config).await;
+        let response = post_scheduler_materialize(&base_url, Some("token-1"), None).await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn dashboard_action_auth_http_accepts_valid_bearer_and_role_claim() {
+        let auth_config = DashboardActionAuthConfig {
+            bearer_token: Some("token-1".to_string()),
+            required_role: Some("scheduler.admin".to_string()),
+            role_claim_header: None,
+        };
+
+        let (base_url, server) = spawn_dashboard_test_server(auth_config).await;
+        let response = post_scheduler_materialize(
+            &base_url,
+            Some("token-1"),
+            Some(("x-stasis-role", "scheduler.viewer, scheduler.admin")),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        server.abort();
+    }
+
+    #[test]
+    fn runtime_table_missing_error_detection_matches_expected_shape() {
+        let message = "port failure: decode lease candidate: The table 'job' does not exist";
+        assert!(is_missing_runtime_table_error(message));
     }
 
     #[test]

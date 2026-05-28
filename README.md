@@ -63,6 +63,28 @@ Operations:
 
 ## Quick Start
 
+### Recommended First Run Path (Operator)
+
+1. Start daemon:
+
+```bash
+cargo run -p medousa --bin medousa_daemon -- --backend in-memory
+```
+
+2. Run guided first-run checks (health + heartbeat + report trigger guidance):
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-first-run --daemon-url http://127.0.0.1:7419
+```
+
+3. Trigger a citation-first report flow:
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-report "Summarize 3 practical runtime trends with citations" --daemon-url http://127.0.0.1:7419 --poll-timeout-ms 30000
+```
+
+This path is the fastest way for a new operator to verify runtime health, heartbeat visibility, and report behavior before enabling adapters.
+
 ## 1) Run the TUI
 
 ```bash
@@ -114,14 +136,50 @@ cargo run -p medousa --bin medousa_daemon -- --backend in-memory \
 
 `daemon-report` enqueues a citation-first ask-to-report job and polls `/v1/jobs/{job_id}/report` for structured output (status, citations, evidence summary).
 
+## 3.1) Identity Continuity Workflow (Inspect/Edit/Explain/Reverse)
+
+Use the continuity workflow commands to keep identity changes explainable, reviewable, and reversible:
+
+Inspect current continuity context:
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-identity-inspect --daemon-url http://127.0.0.1:7419
+```
+
+Propose an identity update with policy-aware guidance:
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-identity-update user demo-user '{"timezone":"UTC","language_variant":"en-US"}' --reason "seed continuity demo" --daemon-url http://127.0.0.1:7419
+```
+
+Review audit history and change posture:
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-identity-review user demo-user --daemon-url http://127.0.0.1:7419
+```
+
+Explain latest continuity changes in operator language:
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-identity-explain user demo-user --daemon-url http://127.0.0.1:7419
+```
+
+Rollback remains explicit and available when needed:
+
+```bash
+cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback user demo-user <target_version> --reason "manual continuity rollback" --approver medousa-cli --daemon-url http://127.0.0.1:7419
+```
+
 ## 4) Run Telegram adapter (ingress bridge)
 
 Set a bot token and start the adapter against daemon:
 
 ```bash
 export MEDOUSA_TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
-cargo run -p medousa --bin medousa_telegram -- --daemon-url http://127.0.0.1:7419 --allow-commands help,health,ask,text --max-prompt-chars 1400
+cargo run -p medousa --bin medousa_telegram -- --daemon-url http://127.0.0.1:7419 --allow-commands help,health,heartbeat,ask --max-prompt-chars 1400
 ```
+
+Safer default: plain-text ingress is disabled unless you explicitly add `text` to `--allow-commands`.
 
 Optional per-chat safety overrides:
 
@@ -151,8 +209,10 @@ Set a bot token and start the adapter against daemon:
 
 ```bash
 export MEDOUSA_DISCORD_BOT_TOKEN=<your-discord-bot-token>
-cargo run -p medousa --bin medousa_discord -- --daemon-url http://127.0.0.1:7419 --command-prefix ! --allow-commands help,health,ask,text --max-prompt-chars 1400
+cargo run -p medousa --bin medousa_discord -- --daemon-url http://127.0.0.1:7419 --command-prefix ! --allow-commands help,health,heartbeat,ask --max-prompt-chars 1400
 ```
+
+Safer default: plain-text ingress is disabled unless you explicitly add `text` to `--allow-commands`.
 
 Optional per-channel safety overrides:
 

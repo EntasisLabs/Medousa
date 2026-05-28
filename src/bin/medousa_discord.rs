@@ -247,6 +247,19 @@ async fn main() -> Result<()> {
         config.heartbeat_poll_interval_ms,
         config.heartbeat_min_significance,
     );
+    println!(
+        "medousa_discord first-run: send {0}help -> {0}health -> {0}ask <prompt>; plain-text ingress={1}",
+        config.command_prefix,
+        if command_enabled(&config, "text") {
+            "enabled"
+        } else {
+            "disabled (safer default; add text to --allow-commands to enable)"
+        }
+    );
+    println!(
+        "medousa_discord safety posture lane=interactive policy_profile={}",
+        config.policy_profile,
+    );
 
     let intents = GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGES
@@ -710,8 +723,14 @@ fn format_heartbeat_nudge(status: &HeartbeatStatusResponse) -> String {
 }
 
 fn help_text(config: &DiscordAdapterConfig) -> String {
+    let text_ingress = if config.allowed_commands.contains("text") {
+        "enabled"
+    } else {
+        "disabled (safer default; enable by adding text to allowlist)"
+    };
+
     format!(
-        "Medousa Discord ingress is online.\n\nCommands:\n{0}help - show this help\n{0}health - check daemon connectivity\n{0}heartbeat - show daemon heartbeat status\n{0}ask <prompt> - enqueue interactive ask job\n\nAlso accepts /help, /health, /heartbeat, /ask for compatibility.\nPlain text messages are treated like ask only when 'text' is enabled in allowlist.\nDaemon: {1}\nPolicy profile: {2}\nMax turns: {3}\nCommand prefix: {0}\nAllowed commands: {4}\nDefault max prompt chars: {5}\nPer-channel prompt overrides: {6}\nResult poll timeout ms: {7}\nHeartbeat nudges enabled: {8}\nHeartbeat nudge targets: {9}\nHeartbeat min significance: {10:.2}",
+        "Medousa Discord ingress is online.\n\nCommands:\n{0}help - show this help\n{0}health - check daemon connectivity\n{0}heartbeat - show daemon heartbeat status\n{0}ask <prompt> - enqueue interactive ask job\n\nAlso accepts /help, /health, /heartbeat, /ask for compatibility.\nPlain text messages are treated like ask only when 'text' is enabled in allowlist.\nText ingress: {11}\nDaemon: {1}\nPolicy profile: {2}\nMax turns: {3}\nCommand prefix: {0}\nAllowed commands: {4}\nDefault max prompt chars: {5}\nPer-channel prompt overrides: {6}\nResult poll timeout ms: {7}\nHeartbeat nudges enabled: {8}\nHeartbeat nudge targets: {9}\nHeartbeat min significance: {10:.2}",
         config.command_prefix,
         config.daemon_url,
         config.policy_profile,
@@ -723,6 +742,7 @@ fn help_text(config: &DiscordAdapterConfig) -> String {
         config.heartbeat_nudges_enabled,
         config.heartbeat_notify_channel_ids.len(),
         config.heartbeat_min_significance,
+        text_ingress,
     )
 }
 
@@ -889,7 +909,7 @@ fn parse_u64_list(value: Option<&str>, label: &str) -> Result<Vec<u64>> {
 }
 
 fn parse_allowed_commands(value: Option<&str>) -> Result<HashSet<String>> {
-    let raw = value.unwrap_or("help,health,heartbeat,ask,text");
+    let raw = value.unwrap_or("help,health,heartbeat,ask");
     let mut allow = HashSet::new();
 
     for token in raw.split(',') {
@@ -1059,6 +1079,6 @@ fn find_arg_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
 fn print_usage() {
     println!(
         "medousa_discord\n\n
-description:\n  Discord ingress adapter that enqueues interactive asks through medousa daemon.\n\nusage:\n  cargo run -p medousa --bin medousa_discord -- [options]\n\noptions:\n  --daemon-url <url>                Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)\n  --token <token>                   Discord bot token (or MEDOUSA_DISCORD_BOT_TOKEN / DISCORD_TOKEN)\n  --policy-profile <profile>        Ask policy profile (default: interactive)\n  --model-hint <model>              Optional model hint forwarded to daemon ask payload\n  --max-turns <n>                   Max turns per ask payload (default: 1)\n  --allow-commands <csv>            Allowed intents: help,health,heartbeat,ask,text (default: help,health,heartbeat,ask,text)\n  --command-prefix <prefix>         Prefix for command messages (default: !)\n  --max-prompt-chars <n>            Default max prompt chars per channel (default: 1400)\n  --max-prompt-chars-by-channel <m> Per-channel overrides: <channel_id>:<max_chars>,...\n  --result-poll-timeout-ms <n>      Polling budget for /v1/jobs/<id>/result (0 disables, default: 15000)\n  --result-poll-interval-ms <n>     Poll interval for result checks (default: 700)\n  --heartbeat-nudges                Enable proactive heartbeat nudges (requires --heartbeat-channel-ids)\n  --heartbeat-nudges-enabled <b>    Explicit heartbeat nudge toggle true/false\n  --heartbeat-channel-ids <csv>     Target channel ids for proactive heartbeat nudges\n  --heartbeat-poll-interval-ms <n>  Poll interval for heartbeat status checks (default: 5000)\n  --heartbeat-min-significance <f>  Minimum significance to emit nudges (default: 0.70)\n  --heartbeat-cooldown-ms <n>       Minimum adapter cooldown between nudges (default: 180000)\n  --identity-persona-id <id>        Optional persona override for Discord asks\n  -h, --help                        Show this message\n"
+description:\n  Discord ingress adapter that enqueues interactive asks through medousa daemon.\n\nusage:\n  cargo run -p medousa --bin medousa_discord -- [options]\n\noptions:\n  --daemon-url <url>                Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)\n  --token <token>                   Discord bot token (or MEDOUSA_DISCORD_BOT_TOKEN / DISCORD_TOKEN)\n  --policy-profile <profile>        Ask policy profile (default: interactive)\n  --model-hint <model>              Optional model hint forwarded to daemon ask payload\n  --max-turns <n>                   Max turns per ask payload (default: 1)\n  --allow-commands <csv>            Allowed intents: help,health,heartbeat,ask,text (default: help,health,heartbeat,ask)\n  --command-prefix <prefix>         Prefix for command messages (default: !)\n  --max-prompt-chars <n>            Default max prompt chars per channel (default: 1400)\n  --max-prompt-chars-by-channel <m> Per-channel overrides: <channel_id>:<max_chars>,...\n  --result-poll-timeout-ms <n>      Polling budget for /v1/jobs/<id>/result (0 disables, default: 15000)\n  --result-poll-interval-ms <n>     Poll interval for result checks (default: 700)\n  --heartbeat-nudges                Enable proactive heartbeat nudges (requires --heartbeat-channel-ids)\n  --heartbeat-nudges-enabled <b>    Explicit heartbeat nudge toggle true/false\n  --heartbeat-channel-ids <csv>     Target channel ids for proactive heartbeat nudges\n  --heartbeat-poll-interval-ms <n>  Poll interval for heartbeat status checks (default: 5000)\n  --heartbeat-min-significance <f>  Minimum significance to emit nudges (default: 0.70)\n  --heartbeat-cooldown-ms <n>       Minimum adapter cooldown between nudges (default: 180000)\n  --identity-persona-id <id>        Optional persona override for Discord asks\n  -h, --help                        Show this message\n"
     );
 }

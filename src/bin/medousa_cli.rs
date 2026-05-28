@@ -1,3 +1,6 @@
+use std::cmp::Reverse;
+use std::collections::BTreeMap;
+
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use medousa::identity_memory::resolve_identity_user_id;
@@ -23,7 +26,8 @@ use stasis::application::orchestration::runtime_job_payloads::{
 };
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, GetIdentityContextResponse, IdentityEntityType,
+    CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
+    IdentityEntityType,
     ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
     ProposeEntityUpdateResponse, RollbackEntityVersionRequest, RollbackEntityVersionResponse,
     UpdateSource,
@@ -74,6 +78,10 @@ async fn main() -> Result<()> {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_heartbeat_status(&daemon_url).await
         }
+        "daemon-first-run" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_first_run(&daemon_url, &args).await
+        }
         "daemon-ask" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_ask(&daemon_url, &args).await
@@ -113,9 +121,17 @@ async fn main() -> Result<()> {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_identity_context(&daemon_url, &args).await
         }
+        "daemon-identity-inspect" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_inspect(&daemon_url, &args).await
+        }
         "daemon-identity-propose" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_identity_propose(&daemon_url, &args).await
+        }
+        "daemon-identity-update" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_update(&daemon_url, &args).await
         }
         "daemon-identity-commit" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
@@ -124,6 +140,14 @@ async fn main() -> Result<()> {
         "daemon-identity-history" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_identity_history(&daemon_url, &args).await
+        }
+        "daemon-identity-review" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_review(&daemon_url, &args).await
+        }
+        "daemon-identity-explain" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_explain(&daemon_url, &args).await
         }
         "daemon-identity-rollback" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
@@ -225,6 +249,27 @@ async fn run_daemon_heartbeat_status(daemon_url: &str) -> Result<()> {
         payload.pending_outbox_events,
         payload.last_tick_at_utc,
         payload.now_utc,
+    );
+    Ok(())
+}
+
+async fn run_daemon_first_run(daemon_url: &str, args: &[String]) -> Result<()> {
+    println!("medousa first-run check daemon_url={daemon_url}");
+    run_daemon_health(daemon_url).await?;
+    run_daemon_heartbeat_status(daemon_url).await?;
+
+    let report_query = find_arg_value(args, "--report-query")
+        .unwrap_or("Summarize runtime posture with citations");
+    println!("next step: trigger report flow");
+    println!(
+        "  cargo run -p medousa --bin medousa_cli -- daemon-report \"{}\" --daemon-url {} --poll-timeout-ms 30000",
+        report_query,
+        daemon_url
+    );
+    println!(
+        "safety posture interactive_profile={} scheduled_profile={}",
+        default_policy_profile_for_lane(EngineExecutionLane::Interactive),
+        default_policy_profile_for_lane(EngineExecutionLane::Scheduled),
     );
     Ok(())
 }
@@ -493,7 +538,10 @@ async fn run_daemon_watch_add(
     Ok(())
 }
 
-async fn run_daemon_identity_context(daemon_url: &str, args: &[String]) -> Result<()> {
+async fn fetch_identity_context(
+    daemon_url: &str,
+    args: &[String],
+) -> Result<GetIdentityContextResponse> {
     let client = Client::new();
     let request = IdentityContextRequest {
         user_id: find_arg_value(args, "--user-id").map(ToString::to_string),
@@ -510,8 +558,25 @@ async fn run_daemon_identity_context(daemon_url: &str, args: &[String]) -> Resul
         .send()
         .await?
         .error_for_status()?;
-    let payload: GetIdentityContextResponse = response.json().await?;
+    response
+        .json::<GetIdentityContextResponse>()
+        .await
+        .map_err(Into::into)
+}
+
+async fn run_daemon_identity_context(daemon_url: &str, args: &[String]) -> Result<()> {
+    let payload = fetch_identity_context(daemon_url, args).await?;
     println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+async fn run_daemon_identity_inspect(daemon_url: &str, args: &[String]) -> Result<()> {
+    let payload = fetch_identity_context(daemon_url, args).await?;
+    if has_flag(args, "--raw") {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_identity_context_summary(&payload);
+    }
     Ok(())
 }
 
@@ -573,6 +638,124 @@ async fn run_daemon_identity_propose(daemon_url: &str, args: &[String]) -> Resul
     Ok(())
 }
 
+async fn run_daemon_identity_update(daemon_url: &str, args: &[String]) -> Result<()> {
+    let entity_type_raw = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing entity type: medousa-cli daemon-identity-update <entity_type> <entity_id> <patch_json>"
+        )
+    })?;
+    let entity_id = args.get(2).ok_or_else(|| {
+        anyhow!(
+            "missing entity id: medousa-cli daemon-identity-update <entity_type> <entity_id> <patch_json>"
+        )
+    })?;
+    let patch_raw = args.get(3).ok_or_else(|| {
+        anyhow!(
+            "missing patch_json: medousa-cli daemon-identity-update <entity_type> <entity_id> <patch_json>"
+        )
+    })?;
+
+    let patch: Value = serde_json::from_str(patch_raw)
+        .map_err(|err| anyhow!("invalid patch_json, expected JSON object: {err}"))?;
+    let entity_type = parse_identity_entity_type(entity_type_raw)?;
+    let source = parse_update_source(find_arg_value(args, "--source"))?;
+    let confidence = find_arg_value(args, "--confidence")
+        .and_then(|raw| raw.parse::<f32>().ok())
+        .unwrap_or(0.75)
+        .clamp(0.0, 1.0);
+    let reason = find_arg_value(args, "--reason")
+        .unwrap_or("manual update proposal")
+        .to_string();
+    let actor = find_arg_value(args, "--actor")
+        .unwrap_or("medousa-cli")
+        .to_string();
+    let receipt_id = find_arg_value(args, "--receipt-id").map(ToString::to_string);
+    let expires_at = parse_optional_utc(find_arg_value(args, "--expires-at"))?;
+
+    let request = ProposeEntityUpdateRequest {
+        entity_type: entity_type.clone(),
+        entity_id: entity_id.to_string(),
+        patch,
+        source,
+        confidence,
+        reason,
+        actor,
+        receipt_id,
+        expires_at,
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/update/propose"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: ProposeEntityUpdateResponse = response.json().await?;
+
+    if has_flag(args, "--raw") {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_identity_proposal_summary(
+            identity_entity_type_token(&entity_type),
+            entity_id,
+            &payload,
+            daemon_url,
+        );
+    }
+
+    if has_flag(args, "--auto-commit") {
+        if payload.requires_approval {
+            return Err(anyhow!(
+                "--auto-commit blocked: proposal requires approval by policy"
+            ));
+        }
+        if payload.proposal_ids.len() != 1 {
+            return Err(anyhow!(
+                "--auto-commit requires exactly one proposal id, got {}",
+                payload.proposal_ids.len()
+            ));
+        }
+
+        let expected_version = find_arg_value(args, "--expected-version")
+            .ok_or_else(|| anyhow!("--auto-commit requires --expected-version <n>"))?
+            .parse::<i32>()
+            .map_err(|err| anyhow!("invalid --expected-version value: {err}"))?;
+
+        let commit_request = CommitEntityUpdateRequest {
+            proposal_id: payload
+                .proposal_ids
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow!("missing proposal id for --auto-commit"))?,
+            expected_version,
+            approver: find_arg_value(args, "--approver").map(ToString::to_string),
+        };
+
+        let commit_response = client
+            .post(format!("{daemon_url}/v1/identity/update/commit"))
+            .json(&commit_request)
+            .send()
+            .await?
+            .error_for_status()?;
+        let commit_payload: CommitEntityUpdateResponse = commit_response.json().await?;
+
+        if has_flag(args, "--raw") {
+            println!("{}", serde_json::to_string_pretty(&commit_payload)?);
+        } else {
+            print_identity_commit_summary(&commit_payload);
+            println!(
+                "post-commit review: cargo run -p medousa --bin medousa_cli -- daemon-identity-review {} {} --daemon-url {}",
+                identity_entity_type_token(&entity_type),
+                entity_id,
+                daemon_url,
+            );
+        }
+    }
+
+    Ok(())
+}
+
 async fn run_daemon_identity_commit(daemon_url: &str, args: &[String]) -> Result<()> {
     let proposal_id = args.get(1).ok_or_else(|| {
         anyhow!(
@@ -602,9 +785,38 @@ async fn run_daemon_identity_commit(daemon_url: &str, args: &[String]) -> Result
         .send()
         .await?
         .error_for_status()?;
-    let payload: serde_json::Value = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&payload)?);
+    let payload: CommitEntityUpdateResponse = response.json().await?;
+    if has_flag(args, "--raw") {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_identity_commit_summary(&payload);
+    }
     Ok(())
+}
+
+async fn fetch_identity_history(
+    daemon_url: &str,
+    entity_type: IdentityEntityType,
+    entity_id: &str,
+    limit: usize,
+) -> Result<ListEntityHistoryResponse> {
+    let request = ListEntityHistoryRequest {
+        entity_type,
+        entity_id: entity_id.to_string(),
+        limit,
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/history"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    response
+        .json::<ListEntityHistoryResponse>()
+        .await
+        .map_err(Into::into)
 }
 
 async fn run_daemon_identity_history(daemon_url: &str, args: &[String]) -> Result<()> {
@@ -619,23 +831,84 @@ async fn run_daemon_identity_history(daemon_url: &str, args: &[String]) -> Resul
         )
     })?;
 
-    let request = ListEntityHistoryRequest {
-        entity_type: parse_identity_entity_type(entity_type_raw)?,
-        entity_id: entity_id.to_string(),
-        limit: find_arg_value(args, "--limit")
-            .and_then(|raw| raw.parse::<usize>().ok())
-            .unwrap_or(20),
-    };
+    let entity_type = parse_identity_entity_type(entity_type_raw)?;
+    let limit = find_arg_value(args, "--limit")
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(20);
 
-    let client = Client::new();
-    let response = client
-        .post(format!("{daemon_url}/v1/identity/history"))
-        .json(&request)
-        .send()
-        .await?
-        .error_for_status()?;
-    let payload: ListEntityHistoryResponse = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&payload)?);
+    let payload = fetch_identity_history(daemon_url, entity_type.clone(), entity_id, limit).await?;
+    if has_flag(args, "--raw") {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_identity_history_review(
+            identity_entity_type_token(&entity_type),
+            entity_id,
+            &payload,
+            limit,
+            daemon_url,
+            false,
+        );
+    }
+    Ok(())
+}
+
+async fn run_daemon_identity_review(daemon_url: &str, args: &[String]) -> Result<()> {
+    let entity_type_raw = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing entity type: medousa-cli daemon-identity-review <entity_type> <entity_id> [--limit <n>]"
+        )
+    })?;
+    let entity_id = args.get(2).ok_or_else(|| {
+        anyhow!(
+            "missing entity id: medousa-cli daemon-identity-review <entity_type> <entity_id> [--limit <n>]"
+        )
+    })?;
+
+    let entity_type = parse_identity_entity_type(entity_type_raw)?;
+    let limit = find_arg_value(args, "--limit")
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(20);
+
+    let payload = fetch_identity_history(daemon_url, entity_type.clone(), entity_id, limit).await?;
+    if has_flag(args, "--raw") {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_identity_history_review(
+            identity_entity_type_token(&entity_type),
+            entity_id,
+            &payload,
+            limit,
+            daemon_url,
+            true,
+        );
+    }
+    Ok(())
+}
+
+async fn run_daemon_identity_explain(daemon_url: &str, args: &[String]) -> Result<()> {
+    let entity_type_raw = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing entity type: medousa-cli daemon-identity-explain <entity_type> <entity_id> [--limit <n>]"
+        )
+    })?;
+    let entity_id = args.get(2).ok_or_else(|| {
+        anyhow!(
+            "missing entity id: medousa-cli daemon-identity-explain <entity_type> <entity_id> [--limit <n>]"
+        )
+    })?;
+
+    let entity_type = parse_identity_entity_type(entity_type_raw)?;
+    let limit = find_arg_value(args, "--limit")
+        .and_then(|raw| raw.parse::<usize>().ok())
+        .unwrap_or(20);
+
+    let payload = fetch_identity_history(daemon_url, entity_type.clone(), entity_id, limit).await?;
+    print_identity_history_explain(
+        identity_entity_type_token(&entity_type),
+        entity_id,
+        &payload,
+        daemon_url,
+    );
     Ok(())
 }
 
@@ -680,7 +953,11 @@ async fn run_daemon_identity_rollback(daemon_url: &str, args: &[String]) -> Resu
         .await?
         .error_for_status()?;
     let payload: RollbackEntityVersionResponse = response.json().await?;
-    println!("{}", serde_json::to_string_pretty(&payload)?);
+    if has_flag(args, "--raw") {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        print_identity_rollback_summary(&payload);
+    }
     Ok(())
 }
 
@@ -720,6 +997,486 @@ fn parse_optional_utc(raw: Option<&str>) -> Result<Option<DateTime<Utc>>> {
     let parsed = DateTime::parse_from_rfc3339(value)
         .map_err(|err| anyhow!("invalid --expires-at timestamp, expected RFC3339: {err}"))?;
     Ok(Some(parsed.with_timezone(&Utc)))
+}
+
+fn identity_entity_type_token(entity_type: &IdentityEntityType) -> &'static str {
+    match entity_type {
+        IdentityEntityType::PersonaEntity => "persona",
+        IdentityEntityType::UserEntity => "user",
+        IdentityEntityType::ChannelProfileEntity => "channel",
+        IdentityEntityType::PolicyProfileEntity => "policy",
+        IdentityEntityType::RelationshipEntity => "relationship",
+    }
+}
+
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|arg| arg == flag)
+}
+
+fn single_line_summary(text: &str, max_chars: usize) -> String {
+    let collapsed = text
+        .split_whitespace()
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if collapsed.chars().count() <= max_chars {
+        return collapsed;
+    }
+
+    let truncated = collapsed.chars().take(max_chars).collect::<String>();
+    format!("{truncated}...")
+}
+
+fn increment_count(counts: &mut BTreeMap<String, usize>, key: String) {
+    *counts.entry(key).or_insert(0) += 1;
+}
+
+fn format_count_map(counts: &BTreeMap<String, usize>) -> String {
+    if counts.is_empty() {
+        return "none".to_string();
+    }
+
+    counts
+        .iter()
+        .map(|(key, count)| format!("{key}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn proposal_patch_keys(patch: &Value) -> String {
+    match patch {
+        Value::Object(map) => {
+            if map.is_empty() {
+                return "none".to_string();
+            }
+
+            let mut keys = map.keys().cloned().collect::<Vec<_>>();
+            keys.sort_unstable();
+            keys.join(",")
+        }
+        _ => "non_object_patch".to_string(),
+    }
+}
+
+fn print_identity_context_summary(payload: &GetIdentityContextResponse) {
+    println!(
+        "identity inspect graph_depth={} relationships={} policy_profiles={} flattened_claims={}",
+        payload.graph_depth_used,
+        payload.relationships.len(),
+        payload.policy_profiles.len(),
+        payload.flattened_claims.len(),
+    );
+
+    if let Some(persona) = payload.persona.as_ref() {
+        println!(
+            "persona id={} status={} version={} updated_at={}",
+            persona.persona_id,
+            persona.status,
+            persona.version,
+            persona.updated_at,
+        );
+    } else {
+        println!("persona missing");
+    }
+
+    if let Some(user) = payload.user.as_ref() {
+        println!(
+            "user id={} timezone={} status={} version={} updated_at={}",
+            user.user_id,
+            user.timezone,
+            user.status,
+            user.version,
+            user.updated_at,
+        );
+    } else {
+        println!("user missing");
+    }
+
+    if let Some(channel) = payload.channel.as_ref() {
+        println!(
+            "channel id={} type={} proactive_allowed={} status={} version={} updated_at={}",
+            channel.channel_id,
+            channel.channel_type,
+            channel.proactive_allowed,
+            channel.status,
+            channel.version,
+            channel.updated_at,
+        );
+    } else {
+        println!("channel missing");
+    }
+
+    if payload.policy_profiles.is_empty() {
+        println!("policy profiles: none");
+    } else {
+        println!("policy profiles:");
+        for profile in &payload.policy_profiles {
+            println!(
+                "  - id={} depth={} trust_delta_max_per_window={:.2} status={} version={} updated_at={}",
+                profile.policy_profile_id,
+                profile.graph_max_depth,
+                profile.trust_delta_max_per_window,
+                profile.status,
+                profile.version,
+                profile.updated_at,
+            );
+        }
+    }
+
+    if payload.relationships.is_empty() {
+        println!("relationships: none");
+    } else {
+        let mut relationship_status_counts = BTreeMap::new();
+        let mut continuity_links = 0usize;
+        let mut continuity_receipts = 0usize;
+        for relationship in &payload.relationships {
+            increment_count(
+                &mut relationship_status_counts,
+                format!("{:?}", &relationship.status).to_ascii_lowercase(),
+            );
+            if relationship.derived_from_relationship_id.is_some() {
+                continuity_links += 1;
+            }
+            if relationship.transition_receipt_id.is_some() {
+                continuity_receipts += 1;
+            }
+        }
+
+        println!(
+            "relationships summary statuses={} continuity_links={} continuity_receipts={}",
+            format_count_map(&relationship_status_counts),
+            continuity_links,
+            continuity_receipts,
+        );
+
+        for relationship in payload.relationships.iter().take(8) {
+            println!(
+                "  - id={} kind={} status={:?} trust={:.2} confidence={:.2} source={}:{} target={}:{}",
+                relationship.relationship_id,
+                relationship.relationship_kind,
+                &relationship.status,
+                relationship.trust_level,
+                relationship.confidence,
+                relationship.source_entity_ref.entity_type,
+                relationship.source_entity_ref.entity_id,
+                relationship.target_entity_ref.entity_type,
+                relationship.target_entity_ref.entity_id,
+            );
+        }
+    }
+
+    if payload.flattened_claims.is_empty() {
+        println!("flattened claims: none");
+    } else {
+        println!("flattened claims:");
+        for claim in payload.flattened_claims.iter().take(8) {
+            println!(
+                "  - claim_id={} confidence={:.2} sources={} summary={}",
+                claim.claim_id,
+                claim.confidence,
+                claim.source_relationship_ids.len(),
+                single_line_summary(&claim.summary, 120),
+            );
+        }
+    }
+}
+
+fn print_identity_proposal_summary(
+    entity_type_token: &str,
+    entity_id: &str,
+    payload: &ProposeEntityUpdateResponse,
+    daemon_url: &str,
+) {
+    println!(
+        "identity update proposed entity_type={} entity_id={} proposal_count={} requires_approval={} split_patch={}",
+        entity_type_token,
+        entity_id,
+        payload.proposal_ids.len(),
+        payload.requires_approval,
+        payload.split_patch,
+    );
+
+    let mut tier_counts = BTreeMap::new();
+    for tier in &payload.tiers {
+        increment_count(&mut tier_counts, format!("{:?}", tier).to_ascii_lowercase());
+    }
+    println!("proposal tiers={}", format_count_map(&tier_counts));
+
+    if payload.proposal_ids.is_empty() {
+        println!("proposals: none");
+    } else {
+        println!("proposals:");
+        for (index, proposal_id) in payload.proposal_ids.iter().enumerate() {
+            let tier = payload
+                .tiers
+                .get(index)
+                .map(|value| format!("{:?}", value).to_ascii_lowercase())
+                .unwrap_or_else(|| "unknown".to_string());
+            println!("  - proposal_id={} tier={}", proposal_id, tier);
+        }
+    }
+
+    if payload.policy_notes.is_empty() {
+        println!("policy notes: none");
+    } else {
+        println!("policy notes:");
+        for note in &payload.policy_notes {
+            println!("  - {}", note);
+        }
+    }
+
+    println!(
+        "review: cargo run -p medousa --bin medousa_cli -- daemon-identity-review {} {} --daemon-url {}",
+        entity_type_token,
+        entity_id,
+        daemon_url,
+    );
+    if let Some(first_proposal_id) = payload.proposal_ids.first() {
+        println!(
+            "commit: cargo run -p medousa --bin medousa_cli -- daemon-identity-commit {} <expected_version> --daemon-url {}",
+            first_proposal_id,
+            daemon_url,
+        );
+    }
+    println!(
+        "rollback template: cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback {} {} <target_version> --reason \"manual continuity rollback\" --approver medousa-cli --daemon-url {}",
+        entity_type_token,
+        entity_id,
+        daemon_url,
+    );
+}
+
+fn print_identity_commit_summary(payload: &CommitEntityUpdateResponse) {
+    println!(
+        "identity commit committed={} code={:?} entity_type={:?} entity_id={} new_version={:?}",
+        payload.committed,
+        payload.code.as_ref(),
+        payload.entity_type.as_ref(),
+        payload.entity_id.as_deref().unwrap_or("unknown"),
+        payload.new_version,
+    );
+    println!(
+        "identity commit receipt_id={:?} transition_event_id={:?}",
+        payload.receipt_id,
+        payload.transition_event_id,
+    );
+    if let Some(rationale) = payload.rationale.as_deref() {
+        println!("identity commit rationale={}", single_line_summary(rationale, 180));
+    }
+    if let Some(sttp_node) = payload.sttp_bridge_node.as_deref() {
+        println!("identity commit sttp_bridge_node={}", sttp_node);
+    }
+    if let Some(sttp_reason) = payload.sttp_bridge_reason.as_deref() {
+        println!(
+            "identity commit sttp_bridge_reason={}",
+            single_line_summary(sttp_reason, 180)
+        );
+    }
+}
+
+fn print_identity_history_review(
+    entity_type_token: &str,
+    entity_id: &str,
+    payload: &ListEntityHistoryResponse,
+    limit: usize,
+    daemon_url: &str,
+    include_guidance: bool,
+) {
+    println!(
+        "identity history entity_type={} entity_id={} proposals={} transitions={} limit={}",
+        entity_type_token,
+        entity_id,
+        payload.proposals.len(),
+        payload.transitions.len(),
+        limit,
+    );
+
+    let mut state_counts = BTreeMap::new();
+    let mut tier_counts = BTreeMap::new();
+    let mut source_counts = BTreeMap::new();
+    for proposal in &payload.proposals {
+        increment_count(
+            &mut state_counts,
+            format!("{:?}", proposal.state).to_ascii_lowercase(),
+        );
+        increment_count(
+            &mut tier_counts,
+            format!("{:?}", proposal.tier).to_ascii_lowercase(),
+        );
+        increment_count(
+            &mut source_counts,
+            format!("{:?}", proposal.source).to_ascii_lowercase(),
+        );
+    }
+
+    println!("proposal states={}", format_count_map(&state_counts));
+    println!("proposal tiers={}", format_count_map(&tier_counts));
+    println!("proposal sources={}", format_count_map(&source_counts));
+
+    let mut proposals = payload.proposals.clone();
+    proposals.sort_by_key(|proposal| Reverse(proposal.updated_at));
+    if proposals.is_empty() {
+        println!("recent proposals: none");
+    } else {
+        println!("recent proposals:");
+        for proposal in proposals.iter().take(6) {
+            println!(
+                "  - id={} state={:?} tier={:?} source={:?} confidence={:.2} actor={} updated_at={} patch_keys={} reason={}",
+                proposal.proposal_id,
+                proposal.state,
+                proposal.tier,
+                proposal.source,
+                proposal.confidence,
+                proposal.actor,
+                proposal.updated_at,
+                proposal_patch_keys(&proposal.patch),
+                single_line_summary(&proposal.reason, 120),
+            );
+        }
+    }
+
+    let mut transitions = payload.transitions.clone();
+    transitions.sort_by_key(|transition| Reverse(transition.occurred_at));
+    if transitions.is_empty() {
+        println!("recent transitions: none");
+    } else {
+        println!("recent transitions:");
+        for transition in transitions.iter().take(6) {
+            let from_status = transition
+                .from_status
+                .as_ref()
+                .map(|value| format!("{:?}", value).to_ascii_lowercase())
+                .unwrap_or_else(|| "none".to_string());
+            println!(
+                "  - event_id={} relationship_id={} from={} to={:?} actor={} occurred_at={} reason={}",
+                transition.event_id,
+                transition.relationship_id,
+                from_status,
+                &transition.to_status,
+                transition.actor,
+                transition.occurred_at,
+                single_line_summary(&transition.reason, 120),
+            );
+        }
+    }
+
+    if include_guidance {
+        println!(
+            "explain: cargo run -p medousa --bin medousa_cli -- daemon-identity-explain {} {} --daemon-url {}",
+            entity_type_token,
+            entity_id,
+            daemon_url,
+        );
+        println!(
+            "rollback template: cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback {} {} <target_version> --reason \"manual continuity rollback\" --approver medousa-cli --daemon-url {}",
+            entity_type_token,
+            entity_id,
+            daemon_url,
+        );
+    }
+}
+
+fn print_identity_history_explain(
+    entity_type_token: &str,
+    entity_id: &str,
+    payload: &ListEntityHistoryResponse,
+    daemon_url: &str,
+) {
+    println!(
+        "identity explain entity_type={} entity_id={}",
+        entity_type_token,
+        entity_id,
+    );
+
+    if payload.proposals.is_empty() && payload.transitions.is_empty() {
+        println!("no identity change records found for this entity");
+        println!(
+            "propose first change: cargo run -p medousa --bin medousa_cli -- daemon-identity-update {} {} '{{\"status\":\"active\"}}' --reason \"initial continuity baseline\" --daemon-url {}",
+            entity_type_token,
+            entity_id,
+            daemon_url,
+        );
+        return;
+    }
+
+    let mut state_counts = BTreeMap::new();
+    for proposal in &payload.proposals {
+        increment_count(
+            &mut state_counts,
+            format!("{:?}", proposal.state).to_ascii_lowercase(),
+        );
+    }
+    println!(
+        "proposal activity total={} states={}",
+        payload.proposals.len(),
+        format_count_map(&state_counts),
+    );
+
+    let mut proposals = payload.proposals.clone();
+    proposals.sort_by_key(|proposal| Reverse(proposal.updated_at));
+    if let Some(latest) = proposals.first() {
+        println!(
+            "latest proposal id={} state={:?} tier={:?} source={:?} actor={} confidence={:.2} updated_at={}",
+            latest.proposal_id,
+            latest.state,
+            latest.tier,
+            latest.source,
+            latest.actor,
+            latest.confidence,
+            latest.updated_at,
+        );
+        println!(
+            "latest proposal patch_keys={} reason={}",
+            proposal_patch_keys(&latest.patch),
+            single_line_summary(&latest.reason, 180),
+        );
+    }
+
+    let mut transitions = payload.transitions.clone();
+    transitions.sort_by_key(|transition| Reverse(transition.occurred_at));
+    if let Some(latest) = transitions.first() {
+        let from_status = latest
+            .from_status
+            .as_ref()
+            .map(|value| format!("{:?}", value).to_ascii_lowercase())
+            .unwrap_or_else(|| "none".to_string());
+        println!(
+            "latest transition event_id={} relationship_id={} from={} to={:?} actor={} occurred_at={} reason={}",
+            latest.event_id,
+            latest.relationship_id,
+            from_status,
+            &latest.to_status,
+            latest.actor,
+            latest.occurred_at,
+            single_line_summary(&latest.reason, 180),
+        );
+    }
+
+    println!(
+        "audit trail: cargo run -p medousa --bin medousa_cli -- daemon-identity-review {} {} --daemon-url {}",
+        entity_type_token,
+        entity_id,
+        daemon_url,
+    );
+    println!(
+        "reversible path: cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback {} {} <target_version> --reason \"manual continuity rollback\" --approver medousa-cli --daemon-url {}",
+        entity_type_token,
+        entity_id,
+        daemon_url,
+    );
+}
+
+fn print_identity_rollback_summary(payload: &RollbackEntityVersionResponse) {
+    println!(
+        "identity rollback rolled_back={} new_version={:?} rollback_receipt_id={:?}",
+        payload.rolled_back,
+        payload.new_version,
+        payload.rollback_receipt_id,
+    );
+    if let Some(rationale) = payload.rationale.as_deref() {
+        println!("identity rollback rationale={}", single_line_summary(rationale, 180));
+    }
 }
 
 async fn run_llm(
@@ -854,6 +1611,9 @@ fn print_usage() {
     println!("  medousa-cli daemon-stats [--daemon-url <url>]");
     println!("  medousa-cli daemon-heartbeat-status [--daemon-url <url>]");
     println!(
+        "  medousa-cli daemon-first-run [--daemon-url <url>] [--report-query <query>]"
+    );
+    println!(
         "  medousa-cli daemon-ask <prompt> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
     println!(
@@ -867,16 +1627,32 @@ fn print_usage() {
         "  medousa-cli daemon-identity-context [--user-id <id>] [--persona-id <id>] [--channel-id <id>] [--policy-profile <profile>] [--relationship-limit <n>] [--daemon-url <url>]"
     );
     println!(
+        "  medousa-cli daemon-identity-inspect [--user-id <id>] [--persona-id <id>] [--channel-id <id>] [--policy-profile <profile>] [--relationship-limit <n>] [--raw] [--daemon-url <url>]"
+    );
+    println!(
         "  medousa-cli daemon-identity-propose <entity_type> <entity_id> <patch_json> [--source user_direct|model_inferred|system_event] [--confidence <0..1>] [--reason <text>] [--actor <id>] [--expires-at <RFC3339>] [--daemon-url <url>]"
     );
     println!(
-        "  medousa-cli daemon-identity-commit <proposal_id> <expected_version> [--approver <id>] [--daemon-url <url>]"
+        "  medousa-cli daemon-identity-update <entity_type> <entity_id> <patch_json> [--source user_direct|model_inferred|system_event] [--confidence <0..1>] [--reason <text>] [--actor <id>] [--receipt-id <id>] [--expires-at <RFC3339>] [--auto-commit] [--expected-version <n>] [--approver <id>] [--raw] [--daemon-url <url>]"
     );
     println!(
-        "  medousa-cli daemon-identity-history <entity_type> <entity_id> [--limit <n>] [--daemon-url <url>]"
+        "  medousa-cli daemon-identity-commit <proposal_id> <expected_version> [--approver <id>] [--raw] [--daemon-url <url>]"
     );
     println!(
-        "  medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <id>] [--daemon-url <url>]"
+        "  medousa-cli daemon-identity-history <entity_type> <entity_id> [--limit <n>] [--raw] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-review <entity_type> <entity_id> [--limit <n>] [--raw] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-explain <entity_type> <entity_id> [--limit <n>] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <id>] [--raw] [--daemon-url <url>]"
+    );
+    println!("  identity workflow: daemon-identity-inspect -> daemon-identity-update -> daemon-identity-review -> daemon-identity-rollback (if needed)");
+    println!(
+        "  recommended first run: daemon-first-run -> daemon-report (citation-first)"
     );
     println!("  note: ask uses workflow.stasis.agent_session through Stasis runtime orchestration");
 }

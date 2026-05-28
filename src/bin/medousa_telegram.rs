@@ -205,6 +205,18 @@ async fn main() -> Result<()> {
         config.heartbeat_poll_interval_ms,
         config.heartbeat_min_significance,
     );
+    println!(
+        "medousa_telegram first-run: send /help -> /health -> /ask <prompt>; plain-text ingress={}",
+        if command_enabled(&config, "text") {
+            "enabled"
+        } else {
+            "disabled (safer default; add text to --allow-commands to enable)"
+        }
+    );
+    println!(
+        "medousa_telegram safety posture lane=interactive policy_profile={}",
+        config.policy_profile,
+    );
 
     let state = Arc::new(TelegramAdapterState {
         client: Client::new(),
@@ -590,8 +602,15 @@ fn format_heartbeat_nudge(status: &HeartbeatStatusResponse) -> String {
 }
 
 fn help_text(config: &TelegramAdapterConfig) -> String {
+    let text_ingress = if config.allowed_commands.contains("text") {
+        "enabled"
+    } else {
+        "disabled (safer default; enable by adding text to allowlist)"
+    };
+
     format!(
-        "Medousa Telegram ingress is online.\n\nCommands:\n/help - show this help\n/health - check daemon connectivity\n/heartbeat - show daemon heartbeat status\n/ask <prompt> - enqueue interactive ask job\n\nPlain text messages are treated like /ask only when 'text' is enabled in allowlist.\nDaemon: {}\nPolicy profile: {}\nMax turns: {}\nAllowed commands: {}\nDefault max prompt chars: {}\nPer-chat prompt overrides: {}\nResult poll timeout ms: {}\nHeartbeat nudges enabled: {}\nHeartbeat nudge targets: {}\nHeartbeat min significance: {:.2}",
+        "Medousa Telegram ingress is online.\n\nCommands:\n/help - show this help\n/health - check daemon connectivity\n/heartbeat - show daemon heartbeat status\n/ask <prompt> - enqueue interactive ask job\n\nPlain text messages are treated like /ask only when 'text' is enabled in allowlist.\nText ingress: {}\nDaemon: {}\nPolicy profile: {}\nMax turns: {}\nAllowed commands: {}\nDefault max prompt chars: {}\nPer-chat prompt overrides: {}\nResult poll timeout ms: {}\nHeartbeat nudges enabled: {}\nHeartbeat nudge targets: {}\nHeartbeat min significance: {:.2}",
+        text_ingress,
         config.daemon_url,
         config.policy_profile,
         config.max_turns,
@@ -768,7 +787,7 @@ fn parse_i64_list(value: Option<&str>, label: &str) -> Result<Vec<i64>> {
 }
 
 fn parse_allowed_commands(value: Option<&str>) -> Result<HashSet<String>> {
-    let raw = value.unwrap_or("help,health,heartbeat,ask,text");
+    let raw = value.unwrap_or("help,health,heartbeat,ask");
     let mut allow = HashSet::new();
 
     for token in raw.split(',') {
@@ -930,6 +949,6 @@ fn find_arg_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
 fn print_usage() {
     println!(
         "medousa_telegram\n\n
-description:\n  Telegram ingress adapter that enqueues interactive asks through medousa daemon.\n\nusage:\n  cargo run -p medousa --bin medousa_telegram -- [options]\n\noptions:\n  --daemon-url <url>              Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)\n  --token <token>                 Telegram bot token (or MEDOUSA_TELEGRAM_BOT_TOKEN / TELOXIDE_TOKEN)\n  --policy-profile <profile>      Ask policy profile (default: interactive)\n  --model-hint <model>            Optional model hint forwarded to daemon ask payload\n  --max-turns <n>                 Max turns per ask payload (default: 1)\n  --allow-commands <csv>          Allowed intents: help,health,heartbeat,ask,text (default: help,health,heartbeat,ask,text)\n  --max-prompt-chars <n>          Default max prompt chars per chat (default: 1400)\n  --max-prompt-chars-by-chat <m>  Per-chat overrides: <chat_id>:<max_chars>,...\n  --result-poll-timeout-ms <n>    Polling budget for /v1/jobs/<id>/result (0 disables, default: 15000)\n  --result-poll-interval-ms <n>   Poll interval for result checks (default: 700)\n  --heartbeat-nudges              Enable proactive heartbeat nudges (requires --heartbeat-chat-ids)\n  --heartbeat-nudges-enabled <b>  Explicit heartbeat nudge toggle true/false\n  --heartbeat-chat-ids <csv>      Target chat ids for proactive heartbeat nudges\n  --heartbeat-poll-interval-ms <n> Poll interval for heartbeat status checks (default: 5000)\n  --heartbeat-min-significance <f> Minimum significance to emit nudges (default: 0.70)\n  --heartbeat-cooldown-ms <n>     Minimum adapter cooldown between nudges (default: 180000)\n  --identity-persona-id <id>      Optional persona override for Telegram asks\n  -h, --help                      Show this message\n"
+description:\n  Telegram ingress adapter that enqueues interactive asks through medousa daemon.\n\nusage:\n  cargo run -p medousa --bin medousa_telegram -- [options]\n\noptions:\n  --daemon-url <url>              Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)\n  --token <token>                 Telegram bot token (or MEDOUSA_TELEGRAM_BOT_TOKEN / TELOXIDE_TOKEN)\n  --policy-profile <profile>      Ask policy profile (default: interactive)\n  --model-hint <model>            Optional model hint forwarded to daemon ask payload\n  --max-turns <n>                 Max turns per ask payload (default: 1)\n  --allow-commands <csv>          Allowed intents: help,health,heartbeat,ask,text (default: help,health,heartbeat,ask)\n  --max-prompt-chars <n>          Default max prompt chars per chat (default: 1400)\n  --max-prompt-chars-by-chat <m>  Per-chat overrides: <chat_id>:<max_chars>,...\n  --result-poll-timeout-ms <n>    Polling budget for /v1/jobs/<id>/result (0 disables, default: 15000)\n  --result-poll-interval-ms <n>   Poll interval for result checks (default: 700)\n  --heartbeat-nudges              Enable proactive heartbeat nudges (requires --heartbeat-chat-ids)\n  --heartbeat-nudges-enabled <b>  Explicit heartbeat nudge toggle true/false\n  --heartbeat-chat-ids <csv>      Target chat ids for proactive heartbeat nudges\n  --heartbeat-poll-interval-ms <n> Poll interval for heartbeat status checks (default: 5000)\n  --heartbeat-min-significance <f> Minimum significance to emit nudges (default: 0.70)\n  --heartbeat-cooldown-ms <n>     Minimum adapter cooldown between nudges (default: 180000)\n  --identity-persona-id <id>      Optional persona override for Telegram asks\n  -h, --help                      Show this message\n"
     );
 }
