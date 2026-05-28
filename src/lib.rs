@@ -29,8 +29,12 @@ use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisRuntimeBuilder};
 
 pub use daemon_api::{
-    DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueResponse,
-    HealthResponse, IdentityContextRequest, RegisterRecurringPromptRequest,
+    DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
+    EnqueueResponse,
+    HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
+    HeartbeatPolicyResponse, HeartbeatStatusResponse,
+    IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
+    JobReportResponse, RegisterRecurringPromptRequest, JobResultResponse,
     RegisterRecurringResponse, resolve_daemon_url,
 };
 pub use tools::{TuiRuntime, build_tui_runtime};

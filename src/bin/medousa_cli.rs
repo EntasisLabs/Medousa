@@ -6,14 +6,18 @@ use medousa::engine_context::{
     default_policy_profile_for_lane,
 };
 use medousa::{
-    DaemonStatsResponse, EnqueueAskRequest, EnqueueResponse, HealthResponse,
+    DaemonStatsResponse, EnqueueAskRequest, EnqueueReportRequest, EnqueueResponse,
+    HealthResponse,
+    HeartbeatStatusResponse,
     IdentityContextRequest,
+    JobReportResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, build_runtime, parse_backend,
     process_once, publish_pending, resolve_daemon_url, resolve_llm_base_url, resolve_llm_provider,
     resolve_llm_target,
 };
 use reqwest::Client;
 use serde_json::{Value, json};
+use tokio::time::{Instant, sleep};
 use stasis::application::orchestration::runtime_job_payloads::{
     AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
 };
@@ -66,9 +70,24 @@ async fn main() -> Result<()> {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_stats(&daemon_url).await
         }
+        "daemon-heartbeat-status" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_heartbeat_status(&daemon_url).await
+        }
         "daemon-ask" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
             run_daemon_ask(&daemon_url, &args).await
+        }
+        "daemon-report" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_report(&daemon_url, &args).await
+        }
+        "daemon-job-report" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            let job_id = args
+                .get(1)
+                .ok_or_else(|| anyhow!("missing job id: medousa-cli daemon-job-report <job_id>"))?;
+            run_daemon_job_report(&daemon_url, job_id).await
         }
         "daemon-watch-add" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
@@ -155,6 +174,61 @@ async fn run_daemon_stats(daemon_url: &str) -> Result<()> {
     Ok(())
 }
 
+async fn run_daemon_heartbeat_status(daemon_url: &str) -> Result<()> {
+    let client = Client::new();
+    let response = client
+        .get(format!("{daemon_url}/v1/heartbeat/status"))
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: HeartbeatStatusResponse = response.json().await?;
+    println!(
+        "heartbeat action={} significance={:.2} lane={} policy={} reason={}",
+        payload.action,
+        payload.significance,
+        payload.lane,
+        payload.lane_policy_profile,
+        payload.reason,
+    );
+    println!(
+        "heartbeat policy min_significance={:.2} weights(dead_letter={:.2}, failed={:.2}, outbox={:.2}, activity={:.2})",
+        payload.policy.min_significance,
+        payload.policy.dead_letter_weight,
+        payload.policy.failed_weight,
+        payload.policy.outbox_weight,
+        payload.policy.activity_weight,
+    );
+    println!(
+        "heartbeat delivery min_interval_secs={} quiet_hours_start_utc={:?} quiet_hours_end_utc={:?} in_quiet_hours={}",
+        payload.delivery_policy.min_notify_interval_secs,
+        payload.delivery_policy.quiet_hours_start_utc,
+        payload.delivery_policy.quiet_hours_end_utc,
+        payload.delivery_policy.in_quiet_hours,
+    );
+    println!(
+        "heartbeat delivery metrics ticks={} notify_decisions={} dispatched={} suppressed_quiet={} suppressed_interval={} last_notify_decision={:?} last_dispatched={:?}",
+        payload.delivery_metrics.tick_evaluations,
+        payload.delivery_metrics.notify_decisions,
+        payload.delivery_metrics.dispatched_notifications,
+        payload.delivery_metrics.suppressed_quiet_hours,
+        payload.delivery_metrics.suppressed_min_interval,
+        payload.delivery_metrics.last_notify_decision_at_utc,
+        payload.delivery_metrics.last_dispatched_at_utc,
+    );
+    println!(
+        "heartbeat signals materialized={} processed_job={} published={} failed={} dead_letter={} outbox_pending={} last_tick={:?} now={}",
+        payload.materialized_jobs,
+        payload.processed_job,
+        payload.published_events,
+        payload.failed_jobs,
+        payload.dead_letter_jobs,
+        payload.pending_outbox_events,
+        payload.last_tick_at_utc,
+        payload.now_utc,
+    );
+    Ok(())
+}
+
 async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
     let prompt = args
         .get(1)
@@ -190,6 +264,189 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
         payload.job_id, payload.queue, payload.accepted_at_utc
     );
     Ok(())
+}
+
+async fn run_daemon_report(daemon_url: &str, args: &[String]) -> Result<()> {
+    let query = args
+        .get(1)
+        .ok_or_else(|| anyhow!("missing query: medousa-cli daemon-report <query>"))?;
+    let client = Client::new();
+
+    let poll_timeout_ms = find_arg_value(args, "--poll-timeout-ms")
+        .map(|raw| {
+            raw.parse::<u64>()
+                .map_err(|err| anyhow!("invalid --poll-timeout-ms value '{raw}': {err}"))
+        })
+        .transpose()?
+        .unwrap_or(25_000);
+    let poll_interval_ms = find_arg_value(args, "--poll-interval-ms")
+        .map(|raw| {
+            raw.parse::<u64>()
+                .map_err(|err| anyhow!("invalid --poll-interval-ms value '{raw}': {err}"))
+        })
+        .transpose()?
+        .unwrap_or(700)
+        .max(100);
+
+    let request = EnqueueReportRequest {
+        query: query.to_string(),
+        policy_profile: Some(
+            find_arg_value(args, "--policy-profile")
+                .unwrap_or(default_policy_profile_for_lane(EngineExecutionLane::Interactive))
+                .to_string(),
+        ),
+        model_hint: find_arg_value(args, "--model-hint").map(ToString::to_string),
+        max_turns: find_arg_value(args, "--max-turns")
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .or(Some(2)),
+        identity_user_id: find_arg_value(args, "--identity-user-id").map(ToString::to_string),
+        identity_persona_id: find_arg_value(args, "--identity-persona-id")
+            .map(ToString::to_string),
+        identity_channel_id: find_arg_value(args, "--identity-channel-id")
+            .map(ToString::to_string),
+    };
+
+    let response = client
+        .post(format!("{daemon_url}/v1/jobs/report"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: EnqueueResponse = response.json().await?;
+
+    println!(
+        "daemon accepted report job_id={} queue={} at={}",
+        payload.job_id, payload.queue, payload.accepted_at_utc
+    );
+
+    if poll_timeout_ms == 0 {
+        return Ok(());
+    }
+
+    match wait_for_terminal_daemon_report(
+        &client,
+        daemon_url,
+        &payload.job_id,
+        poll_timeout_ms,
+        poll_interval_ms,
+    )
+    .await?
+    {
+        Some(report) => print_daemon_report(&report),
+        None => {
+            println!(
+                "report still running after timeout={}ms. fetch later: medousa-cli daemon-job-report {}",
+                poll_timeout_ms, payload.job_id
+            );
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_daemon_job_report(daemon_url: &str, job_id: &str) -> Result<()> {
+    let client = Client::new();
+    let report = query_daemon_job_report(&client, daemon_url, job_id).await?;
+    print_daemon_report(&report);
+    Ok(())
+}
+
+async fn wait_for_terminal_daemon_report(
+    client: &Client,
+    daemon_url: &str,
+    job_id: &str,
+    poll_timeout_ms: u64,
+    poll_interval_ms: u64,
+) -> Result<Option<JobReportResponse>> {
+    if poll_timeout_ms == 0 {
+        return Ok(None);
+    }
+
+    let interval = std::time::Duration::from_millis(poll_interval_ms.max(100));
+    let deadline = Instant::now() + std::time::Duration::from_millis(poll_timeout_ms);
+
+    loop {
+        let report = query_daemon_job_report(client, daemon_url, job_id).await?;
+        if report.is_terminal {
+            return Ok(Some(report));
+        }
+
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+
+        sleep(interval).await;
+    }
+}
+
+async fn query_daemon_job_report(
+    client: &Client,
+    daemon_url: &str,
+    job_id: &str,
+) -> Result<JobReportResponse> {
+    let response = client
+        .get(format!("{daemon_url}/v1/jobs/{job_id}/report"))
+        .send()
+        .await?
+        .error_for_status()?;
+    response.json::<JobReportResponse>().await.map_err(Into::into)
+}
+
+fn print_daemon_report(report: &JobReportResponse) {
+    println!(
+        "report status job_id={} status={} terminal={} attempts={} outcome={}",
+        report.job_id,
+        report.status,
+        report.is_terminal,
+        report.attempt_count,
+        report.latest_outcome.as_deref().unwrap_or("unknown"),
+    );
+
+    if let Some(text) = report.output_text.as_deref() {
+        println!("report output:\n{}", text);
+    } else {
+        println!("report output: none");
+    }
+
+    if report.citations.is_empty() {
+        println!("report citations: none");
+    } else {
+        println!("report citations ({}):", report.citations.len());
+        for (index, citation) in report.citations.iter().enumerate() {
+            println!(
+                "  [C{}] {}{}",
+                index + 1,
+                citation.source,
+                citation
+                    .title
+                    .as_deref()
+                    .map(|title| format!(" ({title})"))
+                    .unwrap_or_default(),
+            );
+        }
+    }
+
+    if let Some(evidence) = report.evidence_report.as_ref() {
+        println!(
+            "report evidence verification_state={} confidence={:.2} citation_coverage={:.2} supported_claim_ratio={:.2} supported_claims={}/{}",
+            evidence.verification_state,
+            evidence.confidence_score,
+            evidence.citation_coverage,
+            evidence.supported_claim_ratio,
+            evidence.supported_claims,
+            evidence.total_claims,
+        );
+        println!(
+            "report evidence ids session={} artifact={} extraction_id={:?} pack_id={} verification_id={:?}",
+            evidence.session_id,
+            evidence.artifact_id,
+            evidence.extraction_id,
+            evidence.pack_id,
+            evidence.verification_id,
+        );
+    } else {
+        println!("report evidence: unavailable");
+    }
 }
 
 async fn run_daemon_watch_add(
@@ -595,9 +852,14 @@ fn print_usage() {
     );
     println!("  medousa-cli daemon-health [--daemon-url <url>]");
     println!("  medousa-cli daemon-stats [--daemon-url <url>]");
+    println!("  medousa-cli daemon-heartbeat-status [--daemon-url <url>]");
     println!(
         "  medousa-cli daemon-ask <prompt> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
+    println!(
+        "  medousa-cli daemon-report <query> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--poll-timeout-ms <n>] [--poll-interval-ms <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
+    );
+    println!("  medousa-cli daemon-job-report <job_id> [--daemon-url <url>]");
     println!(
         "  medousa-cli daemon-watch-add <cron_expr> <prompt> [--tz <timezone>] [--daemon-url <url>]"
     );

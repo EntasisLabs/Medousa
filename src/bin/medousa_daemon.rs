@@ -1,30 +1,43 @@
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
-use axum::extract::State;
+use anyhow::{Context, Result, anyhow};
+use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::Utc;
+use chrono::{DateTime, Timelike, Utc};
+use medousa::artifact_chunking::chunk_json_payload;
+use medousa::artifact_extraction::{extract_claims_from_chunks, persist_extraction_run};
+use medousa::context_pack::{
+    BuildContextPackInput, ContextPackBudgetProfile, build_context_pack, persist_context_pack,
+};
 use medousa::engine_context::{
-    EngineExecutionLane, HeartbeatAction, HeartbeatSignals, LaneSafetyActionClass,
+    EngineExecutionLane, HeartbeatAction, HeartbeatLanePolicy, HeartbeatSignals,
+    LaneSafetyActionClass,
     compile_default_lane_prompt, default_heartbeat_lane_policy,
     default_policy_profile_for_lane, evaluate_heartbeat_significance,
     validate_lane_action, validate_lane_policy_profile,
 };
+use medousa::verifier::{VerificationPolicy, verify_context_pack};
+use medousa::verification_store::persist_verification;
 use medousa::identity_memory::{
     resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
 };
 use medousa::daemon_api::{
     DEFAULT_DAEMON_BIND, DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest,
-    EnqueueResponse, HealthResponse, IdentityContextRequest, RegisterRecurringPromptRequest,
-    RegisterRecurringResponse,
+    EnqueueReportRequest, EnqueueResponse, HealthResponse, HeartbeatDeliveryMetricsResponse,
+    HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse, HeartbeatStatusResponse,
+    IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
+    JobResultResponse,
+    RegisterRecurringPromptRequest, RegisterRecurringResponse,
 };
 use medousa::{build_runtime_with_identity_store, parse_backend};
 use serde::Serialize;
+use serde_json::Value;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{RwLock, watch};
@@ -42,6 +55,7 @@ use stasis::ports::outbound::memory::identity_memory_models::{
     ProposeEntityUpdateRequest, ProposeEntityUpdateResponse, RollbackEntityVersionRequest,
     RollbackEntityVersionResponse,
 };
+use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::dashboard::{
     DashboardState, InMemoryDashboardQueryService, router as dashboard_router,
 };
@@ -59,11 +73,15 @@ struct AppState {
     identity_service: Arc<IdentityMemoryService>,
     identity_default_user_id: String,
     last_tick_at: Arc<RwLock<Option<chrono::DateTime<Utc>>>>,
+    last_heartbeat_report: Arc<RwLock<Option<TickReport>>>,
+    heartbeat_policy: HeartbeatLanePolicy,
+    heartbeat_delivery_policy: HeartbeatDeliveryPolicy,
+    heartbeat_metrics: Arc<RwLock<HeartbeatDeliveryMetrics>>,
     heartbeat_notify: HeartbeatNotifyConfig,
     webhook_client: Option<reqwest::Client>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TickReport {
     materialized: usize,
     processed_job: Option<String>,
@@ -82,6 +100,56 @@ struct TickReport {
 struct HeartbeatNotifyConfig {
     webhook_url: Option<String>,
     jsonl_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct HeartbeatDeliveryPolicy {
+    min_notify_interval_secs: u64,
+    quiet_hours: Option<QuietHoursWindow>,
+}
+
+impl Default for HeartbeatDeliveryPolicy {
+    fn default() -> Self {
+        Self {
+            min_notify_interval_secs: 0,
+            quiet_hours: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct QuietHoursWindow {
+    start_hour_utc: u8,
+    end_hour_utc: u8,
+}
+
+impl QuietHoursWindow {
+    fn contains_utc_hour(self, hour: u8) -> bool {
+        if self.start_hour_utc < self.end_hour_utc {
+            hour >= self.start_hour_utc && hour < self.end_hour_utc
+        } else {
+            hour >= self.start_hour_utc || hour < self.end_hour_utc
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct HeartbeatDeliveryMetrics {
+    tick_evaluations: u64,
+    notify_decisions: u64,
+    dispatched_notifications: u64,
+    suppressed_quiet_hours: u64,
+    suppressed_min_interval: u64,
+    last_notify_decision_at_utc: Option<DateTime<Utc>>,
+    last_dispatched_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeartbeatDispatchDecision {
+    NotRequired,
+    Dispatch,
+    SuppressedQuietHours,
+    SuppressedMinInterval,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,6 +175,9 @@ struct ResolvedIdentityContext {
     user_id: String,
     summary: String,
 }
+
+const DAEMON_REPORT_SESSION_ID: &str = "medousa-daemon-reports";
+const MAX_REPORT_CITATIONS: usize = 24;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -140,6 +211,8 @@ async fn main() -> Result<()> {
         )
         .map(PathBuf::from),
     };
+    let heartbeat_policy = parse_heartbeat_policy(&args)?;
+    let heartbeat_delivery_policy = parse_heartbeat_delivery_policy(&args)?;
 
     let webhook_client = heartbeat_notify
         .webhook_url
@@ -163,10 +236,17 @@ async fn main() -> Result<()> {
     );
 
     if once {
-        let report = tick_runtime(runtime.as_ref(), &worker_id).await?;
+        let report = tick_runtime(runtime.as_ref(), &worker_id, heartbeat_policy).await?;
         println!("{}", format_tick_report("medousa-daemon once", &report));
+        let mut heartbeat_metrics = HeartbeatDeliveryMetrics::default();
+        let dispatch_decision = decide_heartbeat_dispatch(
+            &report,
+            Utc::now(),
+            heartbeat_delivery_policy,
+            &mut heartbeat_metrics,
+        );
 
-        if report.heartbeat_action == HeartbeatAction::Notify {
+        if dispatch_decision == HeartbeatDispatchDecision::Dispatch {
             dispatch_heartbeat_notifications(
                 &heartbeat_notify,
                 webhook_client.as_ref(),
@@ -175,6 +255,11 @@ async fn main() -> Result<()> {
                 &report,
             )
             .await;
+        } else if report.heartbeat_action == HeartbeatAction::Notify {
+            eprintln!(
+                "medousa-daemon heartbeat notify suppressed decision={}",
+                heartbeat_dispatch_decision_label(dispatch_decision)
+            );
         }
 
         return Ok(());
@@ -187,6 +272,10 @@ async fn main() -> Result<()> {
         identity_service,
         identity_default_user_id,
         last_tick_at: Arc::new(RwLock::new(None)),
+        last_heartbeat_report: Arc::new(RwLock::new(None)),
+        heartbeat_policy,
+        heartbeat_delivery_policy,
+        heartbeat_metrics: Arc::new(RwLock::new(HeartbeatDeliveryMetrics::default())),
         heartbeat_notify,
         webhook_client,
     };
@@ -194,7 +283,11 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
+        .route("/v1/heartbeat/status", get(heartbeat_status))
+        .route("/v1/jobs/{job_id}/result", get(get_job_result))
+        .route("/v1/jobs/{job_id}/report", get(get_job_report))
         .route("/v1/jobs/ask", post(enqueue_ask))
+        .route("/v1/jobs/report", post(enqueue_report))
         .route("/v1/jobs/prompt", post(enqueue_prompt))
         .route("/v1/recurring/prompt", post(register_recurring_prompt))
         .route("/v1/identity/context", post(identity_get_context))
@@ -261,9 +354,11 @@ async fn run_scheduler_loop(
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
     loop {
-        match tick_runtime(state.runtime.as_ref(), &worker_id).await {
+        match tick_runtime(state.runtime.as_ref(), &worker_id, state.heartbeat_policy).await {
             Ok(report) => {
-                *state.last_tick_at.write().await = Some(Utc::now());
+                let now_utc = Utc::now();
+                *state.last_tick_at.write().await = Some(now_utc);
+                *state.last_heartbeat_report.write().await = Some(report.clone());
                 if report.materialized > 0
                     || report.processed_job.is_some()
                     || report.published > 0
@@ -272,7 +367,17 @@ async fn run_scheduler_loop(
                     eprintln!("{}", format_tick_report("medousa-daemon tick", &report));
                 }
 
-                if report.heartbeat_action == HeartbeatAction::Notify {
+                let dispatch_decision = {
+                    let mut metrics = state.heartbeat_metrics.write().await;
+                    decide_heartbeat_dispatch(
+                        &report,
+                        now_utc,
+                        state.heartbeat_delivery_policy,
+                        &mut metrics,
+                    )
+                };
+
+                if dispatch_decision == HeartbeatDispatchDecision::Dispatch {
                     dispatch_heartbeat_notifications(
                         &state.heartbeat_notify,
                         state.webhook_client.as_ref(),
@@ -281,6 +386,13 @@ async fn run_scheduler_loop(
                         &report,
                     )
                     .await;
+                } else if report.heartbeat_action == HeartbeatAction::Notify {
+                    eprintln!(
+                        "medousa-daemon heartbeat notify suppressed decision={} significance={:.2} reason={}",
+                        heartbeat_dispatch_decision_label(dispatch_decision),
+                        report.heartbeat_significance,
+                        report.heartbeat_reason,
+                    );
                 }
             }
             Err(err) => {
@@ -299,7 +411,11 @@ async fn run_scheduler_loop(
     }
 }
 
-async fn tick_runtime(runtime: &RuntimeComposition, worker_id: &str) -> Result<TickReport> {
+async fn tick_runtime(
+    runtime: &RuntimeComposition,
+    worker_id: &str,
+    heartbeat_policy: HeartbeatLanePolicy,
+) -> Result<TickReport> {
     let sdk = RuntimeSdk::new(runtime.clone());
     let lane = EngineExecutionLane::Scheduled;
     let lane_policy_profile = default_policy_profile_for_lane(lane);
@@ -319,7 +435,7 @@ async fn tick_runtime(runtime: &RuntimeComposition, worker_id: &str) -> Result<T
             dead_letter_jobs: snapshot.dead_letter_jobs,
             pending_outbox_events: snapshot.pending_outbox_events,
         },
-        default_heartbeat_lane_policy(),
+        heartbeat_policy,
     );
 
     Ok(TickReport {
@@ -363,6 +479,263 @@ async fn stats(
         pending_outbox_events: snapshot.pending_outbox_events,
         recurring_definitions: snapshot.recurring_definitions,
         last_tick_at_utc,
+    }))
+}
+
+async fn heartbeat_status(
+    State(state): State<AppState>,
+) -> Result<Json<HeartbeatStatusResponse>, (StatusCode, String)> {
+    let now_utc = Utc::now();
+    let last_tick_at_utc = *state.last_tick_at.read().await;
+    let maybe_report = state.last_heartbeat_report.read().await.clone();
+    let metrics = state.heartbeat_metrics.read().await.clone();
+    let report = match maybe_report {
+        Some(report) => report,
+        None => compute_heartbeat_snapshot_report(&state).await?,
+    };
+
+    let in_quiet_hours = state
+        .heartbeat_delivery_policy
+        .quiet_hours
+        .map(|window| window.contains_utc_hour(now_utc.hour() as u8))
+        .unwrap_or(false);
+
+    Ok(Json(HeartbeatStatusResponse {
+        lane: report.lane.as_str().to_string(),
+        lane_policy_profile: report.lane_policy_profile.to_string(),
+        action: report.heartbeat_action.as_str().to_string(),
+        significance: report.heartbeat_significance,
+        reason: report.heartbeat_reason,
+        policy: to_heartbeat_policy_response(state.heartbeat_policy),
+        delivery_policy: to_heartbeat_delivery_policy_response(
+            state.heartbeat_delivery_policy,
+            in_quiet_hours,
+        ),
+        delivery_metrics: to_heartbeat_delivery_metrics_response(&metrics),
+        materialized_jobs: report.materialized,
+        processed_job: report.processed_job.is_some(),
+        published_events: report.published,
+        failed_jobs: report.failed_jobs,
+        dead_letter_jobs: report.dead_letter_jobs,
+        pending_outbox_events: report.pending_outbox_events,
+        last_tick_at_utc,
+        now_utc,
+    }))
+}
+
+async fn compute_heartbeat_snapshot_report(
+    state: &AppState,
+) -> Result<TickReport, (StatusCode, String)> {
+    let sdk = RuntimeSdk::new(state.runtime.as_ref().clone());
+    let snapshot = sdk.stats_snapshot(5000).await.map_err(internal_error)?;
+    let lane = EngineExecutionLane::Scheduled;
+
+    let heartbeat_decision = evaluate_heartbeat_significance(
+        &HeartbeatSignals {
+            materialized_jobs: 0,
+            processed_job: false,
+            published_events: 0,
+            failed_jobs: snapshot.failed_jobs,
+            dead_letter_jobs: snapshot.dead_letter_jobs,
+            pending_outbox_events: snapshot.pending_outbox_events,
+        },
+        state.heartbeat_policy,
+    );
+
+    Ok(TickReport {
+        materialized: 0,
+        processed_job: None,
+        published: 0,
+        lane,
+        lane_policy_profile: default_policy_profile_for_lane(lane),
+        heartbeat_action: heartbeat_decision.action,
+        heartbeat_significance: heartbeat_decision.significance,
+        heartbeat_reason: heartbeat_decision.reason,
+        failed_jobs: snapshot.failed_jobs,
+        dead_letter_jobs: snapshot.dead_letter_jobs,
+        pending_outbox_events: snapshot.pending_outbox_events,
+    })
+}
+
+fn to_heartbeat_policy_response(policy: HeartbeatLanePolicy) -> HeartbeatPolicyResponse {
+    HeartbeatPolicyResponse {
+        min_significance: policy.min_significance,
+        dead_letter_weight: policy.dead_letter_weight,
+        failed_weight: policy.failed_weight,
+        outbox_weight: policy.outbox_weight,
+        activity_weight: policy.activity_weight,
+    }
+}
+
+fn to_heartbeat_delivery_policy_response(
+    policy: HeartbeatDeliveryPolicy,
+    in_quiet_hours: bool,
+) -> HeartbeatDeliveryPolicyResponse {
+    HeartbeatDeliveryPolicyResponse {
+        min_notify_interval_secs: policy.min_notify_interval_secs,
+        quiet_hours_start_utc: policy.quiet_hours.map(|window| window.start_hour_utc),
+        quiet_hours_end_utc: policy.quiet_hours.map(|window| window.end_hour_utc),
+        in_quiet_hours,
+    }
+}
+
+fn to_heartbeat_delivery_metrics_response(
+    metrics: &HeartbeatDeliveryMetrics,
+) -> HeartbeatDeliveryMetricsResponse {
+    HeartbeatDeliveryMetricsResponse {
+        tick_evaluations: metrics.tick_evaluations,
+        notify_decisions: metrics.notify_decisions,
+        dispatched_notifications: metrics.dispatched_notifications,
+        suppressed_quiet_hours: metrics.suppressed_quiet_hours,
+        suppressed_min_interval: metrics.suppressed_min_interval,
+        last_notify_decision_at_utc: metrics.last_notify_decision_at_utc,
+        last_dispatched_at_utc: metrics.last_dispatched_at_utc,
+    }
+}
+
+fn decide_heartbeat_dispatch(
+    report: &TickReport,
+    now_utc: DateTime<Utc>,
+    delivery_policy: HeartbeatDeliveryPolicy,
+    metrics: &mut HeartbeatDeliveryMetrics,
+) -> HeartbeatDispatchDecision {
+    metrics.tick_evaluations = metrics.tick_evaluations.saturating_add(1);
+
+    if report.heartbeat_action != HeartbeatAction::Notify {
+        return HeartbeatDispatchDecision::NotRequired;
+    }
+
+    metrics.notify_decisions = metrics.notify_decisions.saturating_add(1);
+    metrics.last_notify_decision_at_utc = Some(now_utc);
+
+    if let Some(window) = delivery_policy.quiet_hours {
+        if window.contains_utc_hour(now_utc.hour() as u8) {
+            metrics.suppressed_quiet_hours = metrics.suppressed_quiet_hours.saturating_add(1);
+            return HeartbeatDispatchDecision::SuppressedQuietHours;
+        }
+    }
+
+    if delivery_policy.min_notify_interval_secs > 0 {
+        if let Some(last_dispatched) = metrics.last_dispatched_at_utc {
+            let elapsed_seconds = now_utc.signed_duration_since(last_dispatched).num_seconds();
+            if elapsed_seconds >= 0
+                && (elapsed_seconds as u64) < delivery_policy.min_notify_interval_secs
+            {
+                metrics.suppressed_min_interval = metrics.suppressed_min_interval.saturating_add(1);
+                return HeartbeatDispatchDecision::SuppressedMinInterval;
+            }
+        }
+    }
+
+    metrics.dispatched_notifications = metrics.dispatched_notifications.saturating_add(1);
+    metrics.last_dispatched_at_utc = Some(now_utc);
+    HeartbeatDispatchDecision::Dispatch
+}
+
+fn heartbeat_dispatch_decision_label(decision: HeartbeatDispatchDecision) -> &'static str {
+    match decision {
+        HeartbeatDispatchDecision::NotRequired => "not_required",
+        HeartbeatDispatchDecision::Dispatch => "dispatch",
+        HeartbeatDispatchDecision::SuppressedQuietHours => "suppressed_quiet_hours",
+        HeartbeatDispatchDecision::SuppressedMinInterval => "suppressed_min_interval",
+    }
+}
+
+async fn get_job_result(
+    State(state): State<AppState>,
+    AxumPath(job_id): AxumPath<String>,
+) -> Result<Json<JobResultResponse>, (StatusCode, String)> {
+    let job_id = job_id.trim().to_string();
+    if job_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
+    }
+
+    let attempts = match state.runtime.as_ref() {
+        RuntimeComposition::InMemory(rt) => rt
+            .job_attempt_store
+            .list_by_job_id(&job_id)
+            .await
+            .map_err(internal_error)?,
+        RuntimeComposition::Surreal(rt) => rt
+            .job_attempt_store
+            .list_by_job_id(&job_id)
+            .await
+            .map_err(internal_error)?,
+    };
+
+    let latest = attempts.last();
+    let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
+    let latest_execution_id = latest.and_then(|attempt| attempt.execution_id.clone());
+    let output_text = latest
+        .and_then(|attempt| extract_output_text_from_diagnostics(attempt.diagnostics.as_deref()));
+
+    let (status, is_terminal) = derive_job_result_status(latest_outcome.as_deref(), attempts.len());
+
+    Ok(Json(JobResultResponse {
+        job_id,
+        status,
+        is_terminal,
+        attempt_count: attempts.len(),
+        latest_outcome,
+        latest_execution_id,
+        output_text,
+    }))
+}
+
+async fn get_job_report(
+    State(state): State<AppState>,
+    AxumPath(job_id): AxumPath<String>,
+) -> Result<Json<JobReportResponse>, (StatusCode, String)> {
+    let job_id = job_id.trim().to_string();
+    if job_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
+    }
+
+    let attempts = match state.runtime.as_ref() {
+        RuntimeComposition::InMemory(rt) => rt
+            .job_attempt_store
+            .list_by_job_id(&job_id)
+            .await
+            .map_err(internal_error)?,
+        RuntimeComposition::Surreal(rt) => rt
+            .job_attempt_store
+            .list_by_job_id(&job_id)
+            .await
+            .map_err(internal_error)?,
+    };
+
+    let latest = attempts.last();
+    let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
+    let latest_execution_id = latest.and_then(|attempt| attempt.execution_id.clone());
+    let output_text = latest
+        .and_then(|attempt| extract_output_text_from_diagnostics(attempt.diagnostics.as_deref()));
+    let diagnostics = latest
+        .and_then(|attempt| attempt.diagnostics.as_deref())
+        .and_then(parse_diagnostics_json);
+
+    let (status, is_terminal) = derive_job_result_status(latest_outcome.as_deref(), attempts.len());
+    let citations = diagnostics
+        .as_ref()
+        .map(extract_citations_from_payload)
+        .unwrap_or_default();
+    let evidence_report = if is_terminal && status == "succeeded" {
+        diagnostics
+            .as_ref()
+            .and_then(|payload| build_job_evidence_report(&job_id, payload))
+    } else {
+        None
+    };
+
+    Ok(Json(JobReportResponse {
+        job_id,
+        status,
+        is_terminal,
+        attempt_count: attempts.len(),
+        latest_outcome,
+        latest_execution_id,
+        output_text,
+        citations,
+        evidence_report,
     }))
 }
 
@@ -424,6 +797,82 @@ async fn enqueue_ask(
         .with_correlation_id(identity_context.user_id)
         .with_causation_id("medousa-daemon-api:interactive")
         .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:ask")
+        .with_scheduled_at(now)
+        .build();
+
+    enqueue_runtime_job(state.runtime.as_ref(), new_job)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(EnqueueResponse {
+        job_id,
+        queue: "default".to_string(),
+        accepted_at_utc: now,
+    }))
+}
+
+async fn enqueue_report(
+    State(state): State<AppState>,
+    Json(request): Json<EnqueueReportRequest>,
+) -> Result<Json<EnqueueResponse>, (StatusCode, String)> {
+    if request.query.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "query is required".to_string()));
+    }
+
+    enforce_lane_safety(
+        EngineExecutionLane::Interactive,
+        LaneSafetyActionClass::InteractiveIngress,
+        request.policy_profile.as_deref(),
+    )?;
+
+    let effective_policy_profile = request.policy_profile.unwrap_or_else(|| {
+        default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string()
+    });
+    let identity_context = resolve_identity_context_for_request(
+        &state,
+        request.identity_user_id.as_deref(),
+        request.identity_persona_id.as_deref(),
+        request.identity_channel_id.as_deref(),
+        Some(effective_policy_profile.as_str()),
+        8,
+    )
+    .await?;
+
+    let now = Utc::now();
+    let job_id = format!("medousa-daemon-report-{}", now.timestamp_millis());
+    let raw_query = request.query;
+    let report_prompt = build_report_prompt(&raw_query);
+    let prompt_with_identity =
+        prepend_identity_snapshot(&report_prompt, Some(&identity_context.summary));
+    let compiled_prompt =
+        compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
+
+    let payload = AgentSessionJobPayload {
+        thread_id: Some(job_id.clone()),
+        initial_user_prompt: compiled_prompt,
+        participants: vec![AgentSessionParticipantPayload {
+            agent_id: "medousa.researcher".to_string(),
+            system_prompt: Some(
+                "You are Medousa report mode. Produce a structured report with explicit citations and evidence-first reasoning."
+                    .to_string(),
+            ),
+            tool_name: "stasis.web.search.mock".to_string(),
+            tool_input: Some(serde_json::json!({
+                "query": raw_query
+            })),
+        }],
+        policy_profile: Some(effective_policy_profile),
+        model_hint: request.model_hint,
+        memory_policy: None,
+        max_turns: request.max_turns.map(|value| value as usize).or(Some(2)),
+        tool_call_mode: Some(AgentToolCallMode::Auto),
+    };
+
+    let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)
+        .map_err(internal_error)?
+        .with_correlation_id(identity_context.user_id)
+        .with_causation_id("medousa-daemon-api:interactive:report")
+        .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:report")
         .with_scheduled_at(now)
         .build();
 
@@ -717,6 +1166,243 @@ async fn enqueue_runtime_job(
     Ok(())
 }
 
+fn extract_output_text_from_diagnostics(diagnostics_raw: Option<&str>) -> Option<String> {
+    let diagnostics_raw = diagnostics_raw?.trim();
+    if diagnostics_raw.is_empty() {
+        return None;
+    }
+
+    let parsed: Value = serde_json::from_str(diagnostics_raw).ok()?;
+    find_output_text(&parsed)
+}
+
+fn parse_diagnostics_json(raw: &str) -> Option<Value> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    serde_json::from_str::<Value>(trimmed).ok()
+}
+
+fn build_report_prompt(query: &str) -> String {
+    format!(
+        "research question:\n{query}\n\nproduce a concise evidence-first report using this structure:\n1) executive summary\n2) key findings\n3) evidence table with explicit citations [C1], [C2], ...\n4) risks and unknowns\n5) next actions\n\nrequirements:\n- every non-trivial claim must include at least one citation marker\n- include a final citations section mapping markers to sources\n- if evidence is weak, say so explicitly"
+    )
+}
+
+fn extract_citations_from_payload(payload: &Value) -> Vec<JobCitationResponse> {
+    let mut seen = HashSet::new();
+    let mut citations = Vec::new();
+    collect_citations(payload, &mut seen, &mut citations);
+    citations.truncate(MAX_REPORT_CITATIONS);
+    citations
+}
+
+fn collect_citations(
+    value: &Value,
+    seen: &mut HashSet<String>,
+    citations: &mut Vec<JobCitationResponse>,
+) {
+    match value {
+        Value::Object(map) => {
+            let source = map
+                .get("source")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .or_else(|| {
+                    map.get("url")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToString::to_string)
+                });
+
+            if let Some(source) = source {
+                let title = map
+                    .get("title")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToString::to_string);
+                let key = format!("{}|{}", source, title.clone().unwrap_or_default());
+                if seen.insert(key) {
+                    citations.push(JobCitationResponse { source, title });
+                }
+            }
+
+            for nested in map.values() {
+                collect_citations(nested, seen, citations);
+            }
+        }
+        Value::Array(values) => {
+            for nested in values {
+                collect_citations(nested, seen, citations);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn build_job_evidence_report(job_id: &str, payload: &Value) -> Option<JobEvidenceReportResponse> {
+    let artifact_id = format!("artifact:{job_id}:diagnostics");
+    let chunk_refs = chunk_json_payload(&artifact_id, payload, 360, 40);
+    if chunk_refs.is_empty() {
+        return None;
+    }
+
+    let claims = extract_claims_from_chunks(&artifact_id, payload, &chunk_refs);
+    let extraction_record = persist_extraction_run(DAEMON_REPORT_SESSION_ID, &artifact_id, &claims)
+        .map_err(|err| {
+            eprintln!(
+                "medousa-daemon report extraction persist error job_id={} err={err}",
+                job_id
+            );
+            err
+        })
+        .ok();
+
+    let pack = build_context_pack(BuildContextPackInput {
+        session_id: DAEMON_REPORT_SESSION_ID.to_string(),
+        artifact_id: artifact_id.clone(),
+        claims,
+        chunk_refs,
+        budget_profile: ContextPackBudgetProfile {
+            max_tokens: 6000,
+            max_claims: 12,
+            max_chunks: 24,
+        },
+    });
+
+    if let Err(err) = persist_context_pack(&pack) {
+        eprintln!(
+            "medousa-daemon report context-pack persist error job_id={} err={err}",
+            job_id
+        );
+    }
+
+    let policy = VerificationPolicy::default();
+    let verification = verify_context_pack(&pack, &policy);
+    let verification_record = persist_verification(
+        DAEMON_REPORT_SESSION_ID,
+        job_id,
+        "daemon_job_report",
+        &policy,
+        &verification,
+    )
+    .map_err(|err| {
+        eprintln!(
+            "medousa-daemon report verification persist error job_id={} err={err}",
+            job_id
+        );
+        err
+    })
+    .ok();
+
+    Some(JobEvidenceReportResponse {
+        session_id: DAEMON_REPORT_SESSION_ID.to_string(),
+        artifact_id,
+        extraction_id: extraction_record.map(|record| record.extraction_id),
+        pack_id: pack.pack_id,
+        verification_id: verification_record.map(|record| record.verification_id),
+        verification_state: if verification.is_verified {
+            "verified".to_string()
+        } else {
+            "provisional".to_string()
+        },
+        confidence_score: verification.confidence_score,
+        citation_coverage: verification.citation_coverage,
+        supported_claim_ratio: verification.supported_claim_ratio,
+        total_claims: verification.total_claims,
+        supported_claims: verification.supported_claims,
+    })
+}
+
+fn derive_job_result_status(latest_outcome: Option<&str>, attempt_count: usize) -> (String, bool) {
+    if attempt_count == 0 {
+        return ("queued".to_string(), false);
+    }
+
+    match latest_outcome {
+        Some("Succeeded") => ("succeeded".to_string(), true),
+        Some("FatalFailure") => ("failed".to_string(), true),
+        Some("RetryableFailure") => ("running".to_string(), false),
+        _ => ("running".to_string(), false),
+    }
+}
+
+fn find_output_text(payload: &Value) -> Option<String> {
+    const ROOT_KEYS: [&str; 8] = [
+        "output_text",
+        "final_output_text",
+        "response_text",
+        "assistant_message",
+        "final_text",
+        "answer",
+        "content",
+        "text",
+    ];
+
+    for key in ROOT_KEYS {
+        if let Some(text) = read_non_empty_text(payload.get(key)) {
+            return Some(text);
+        }
+    }
+
+    for key in ["result", "response", "output", "final", "completion"] {
+        let Some(section) = payload.get(key) else {
+            continue;
+        };
+
+        for nested_key in ROOT_KEYS {
+            if let Some(text) = read_non_empty_text(section.get(nested_key)) {
+                return Some(text);
+            }
+        }
+    }
+
+    if let Some(choices) = payload.get("choices").and_then(|value| value.as_array()) {
+        for choice in choices.iter().rev() {
+            if let Some(text) = read_non_empty_text(choice.get("text")) {
+                return Some(text);
+            }
+            if let Some(text) = read_non_empty_text(
+                choice
+                    .get("message")
+                    .and_then(|message| message.get("content")),
+            ) {
+                return Some(text);
+            }
+        }
+    }
+
+    if let Some(messages) = payload.get("messages").and_then(|value| value.as_array()) {
+        for message in messages.iter().rev() {
+            let role = message
+                .get("role")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_ascii_lowercase());
+            if role.as_deref() == Some("assistant") || role.is_none() {
+                if let Some(text) = read_non_empty_text(message.get("content")) {
+                    return Some(text);
+                }
+            }
+        }
+    }
+
+    read_non_empty_text(Some(payload))
+}
+
+fn read_non_empty_text(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
 fn enforce_lane_safety(
     lane: EngineExecutionLane,
     action: LaneSafetyActionClass,
@@ -762,6 +1448,172 @@ fn parse_arg_or_env(args: &[String], arg_key: &str, env_key: &str) -> Option<Str
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
         })
+}
+
+fn parse_heartbeat_policy(args: &[String]) -> Result<HeartbeatLanePolicy> {
+    let mut policy = default_heartbeat_lane_policy();
+
+    if let Some(raw) = parse_arg_or_env(
+        args,
+        "--heartbeat-min-significance",
+        "MEDOUSA_HEARTBEAT_MIN_SIGNIFICANCE",
+    ) {
+        policy.min_significance = parse_ratio_value(&raw, "heartbeat min significance")?;
+    }
+
+    if let Some(raw) = parse_arg_or_env(
+        args,
+        "--heartbeat-dead-letter-weight",
+        "MEDOUSA_HEARTBEAT_DEAD_LETTER_WEIGHT",
+    ) {
+        policy.dead_letter_weight =
+            parse_non_negative_f32_value(&raw, "heartbeat dead-letter weight")?;
+    }
+
+    if let Some(raw) = parse_arg_or_env(
+        args,
+        "--heartbeat-failed-weight",
+        "MEDOUSA_HEARTBEAT_FAILED_WEIGHT",
+    ) {
+        policy.failed_weight = parse_non_negative_f32_value(&raw, "heartbeat failed weight")?;
+    }
+
+    if let Some(raw) = parse_arg_or_env(
+        args,
+        "--heartbeat-outbox-weight",
+        "MEDOUSA_HEARTBEAT_OUTBOX_WEIGHT",
+    ) {
+        policy.outbox_weight = parse_non_negative_f32_value(&raw, "heartbeat outbox weight")?;
+    }
+
+    if let Some(raw) = parse_arg_or_env(
+        args,
+        "--heartbeat-activity-weight",
+        "MEDOUSA_HEARTBEAT_ACTIVITY_WEIGHT",
+    ) {
+        policy.activity_weight =
+            parse_non_negative_f32_value(&raw, "heartbeat activity weight")?;
+    }
+
+    normalize_heartbeat_weights(&mut policy)?;
+    Ok(policy)
+}
+
+fn parse_heartbeat_delivery_policy(args: &[String]) -> Result<HeartbeatDeliveryPolicy> {
+    let min_notify_interval_secs = parse_arg_or_env(
+        args,
+        "--heartbeat-min-notify-interval-secs",
+        "MEDOUSA_HEARTBEAT_MIN_NOTIFY_INTERVAL_SECS",
+    )
+    .map(|raw| {
+        parse_non_negative_u64_value(&raw, "heartbeat min notify interval seconds")
+    })
+    .transpose()?
+    .unwrap_or(0);
+
+    let quiet_start_hour_utc = parse_arg_or_env(
+        args,
+        "--heartbeat-quiet-start-hour-utc",
+        "MEDOUSA_HEARTBEAT_QUIET_START_HOUR_UTC",
+    )
+    .map(|raw| parse_hour_value(&raw, "heartbeat quiet start hour (UTC)"))
+    .transpose()?;
+
+    let quiet_end_hour_utc = parse_arg_or_env(
+        args,
+        "--heartbeat-quiet-end-hour-utc",
+        "MEDOUSA_HEARTBEAT_QUIET_END_HOUR_UTC",
+    )
+    .map(|raw| parse_hour_value(&raw, "heartbeat quiet end hour (UTC)"))
+    .transpose()?;
+
+    Ok(HeartbeatDeliveryPolicy {
+        min_notify_interval_secs,
+        quiet_hours: parse_quiet_hours_window(quiet_start_hour_utc, quiet_end_hour_utc)?,
+    })
+}
+
+fn parse_quiet_hours_window(
+    start_hour_utc: Option<u8>,
+    end_hour_utc: Option<u8>,
+) -> Result<Option<QuietHoursWindow>> {
+    match (start_hour_utc, end_hour_utc) {
+        (None, None) => Ok(None),
+        (Some(start_hour_utc), Some(end_hour_utc)) => {
+            if start_hour_utc == end_hour_utc {
+                return Err(anyhow!(
+                    "heartbeat quiet-hours start and end must differ"
+                ));
+            }
+            Ok(Some(QuietHoursWindow {
+                start_hour_utc,
+                end_hour_utc,
+            }))
+        }
+        _ => Err(anyhow!(
+            "heartbeat quiet-hours requires both start and end hour values"
+        )),
+    }
+}
+
+fn parse_ratio_value(raw: &str, label: &str) -> Result<f32> {
+    let parsed = raw
+        .trim()
+        .parse::<f32>()
+        .with_context(|| format!("invalid {label}: {raw}"))?;
+    if !(0.0..=1.0).contains(&parsed) {
+        return Err(anyhow!("{label} must be between 0.0 and 1.0"));
+    }
+    Ok(parsed)
+}
+
+fn parse_non_negative_f32_value(raw: &str, label: &str) -> Result<f32> {
+    let parsed = raw
+        .trim()
+        .parse::<f32>()
+        .with_context(|| format!("invalid {label}: {raw}"))?;
+    if parsed < 0.0 {
+        return Err(anyhow!("{label} must be non-negative"));
+    }
+    Ok(parsed)
+}
+
+fn parse_non_negative_u64_value(raw: &str, label: &str) -> Result<u64> {
+    let parsed = raw
+        .trim()
+        .parse::<u64>()
+        .with_context(|| format!("invalid {label}: {raw}"))?;
+    Ok(parsed)
+}
+
+fn parse_hour_value(raw: &str, label: &str) -> Result<u8> {
+    let parsed = raw
+        .trim()
+        .parse::<u8>()
+        .with_context(|| format!("invalid {label}: {raw}"))?;
+    if parsed > 23 {
+        return Err(anyhow!("{label} must be between 0 and 23"));
+    }
+    Ok(parsed)
+}
+
+fn normalize_heartbeat_weights(policy: &mut HeartbeatLanePolicy) -> Result<()> {
+    let weight_sum = policy.dead_letter_weight
+        + policy.failed_weight
+        + policy.outbox_weight
+        + policy.activity_weight;
+    if weight_sum <= f32::EPSILON {
+        return Err(anyhow!(
+            "heartbeat weights must sum to greater than zero (dead_letter/failed/outbox/activity)"
+        ));
+    }
+
+    policy.dead_letter_weight /= weight_sum;
+    policy.failed_weight /= weight_sum;
+    policy.outbox_weight /= weight_sum;
+    policy.activity_weight /= weight_sum;
+
+    Ok(())
 }
 
 async fn dispatch_heartbeat_notifications(
@@ -894,11 +1746,39 @@ fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{Duration, TimeZone, Utc};
+
     use super::{
-        EngineExecutionLane, HeartbeatAction, LaneSafetyActionClass, StatusCode,
-        TickReport, compile_lane_prompt, enforce_lane_safety,
+        EngineExecutionLane, HeartbeatAction, HeartbeatDeliveryMetrics,
+        HeartbeatDeliveryPolicy, HeartbeatDispatchDecision, LaneSafetyActionClass,
+        QuietHoursWindow, StatusCode,
+        TickReport, build_report_prompt, compile_lane_prompt,
+        default_heartbeat_lane_policy,
+        decide_heartbeat_dispatch,
+        derive_job_result_status, enforce_lane_safety, normalize_heartbeat_weights,
+        extract_citations_from_payload,
+        parse_heartbeat_delivery_policy,
+        parse_heartbeat_policy,
+        extract_output_text_from_diagnostics,
         format_tick_report, parse_backend, tick_runtime,
     };
+    use serde_json::json;
+
+    fn sample_notify_report() -> TickReport {
+        TickReport {
+            materialized: 1,
+            processed_job: Some("job-123".to_string()),
+            published: 1,
+            lane: EngineExecutionLane::Scheduled,
+            lane_policy_profile: "scheduled",
+            heartbeat_action: HeartbeatAction::Notify,
+            heartbeat_significance: 0.81,
+            heartbeat_reason: "dead_letter_pressure count=2 score=0.81".to_string(),
+            failed_jobs: 0,
+            dead_letter_jobs: 2,
+            pending_outbox_events: 0,
+        }
+    }
 
     #[test]
     fn interactive_prompt_contains_context_compiler_metadata() {
@@ -947,7 +1827,7 @@ mod tests {
             .await
             .expect("runtime should build");
 
-        let report = tick_runtime(&runtime, "test-worker")
+        let report = tick_runtime(&runtime, "test-worker", default_heartbeat_lane_policy())
             .await
             .expect("tick should succeed");
 
@@ -958,6 +1838,117 @@ mod tests {
         assert_eq!(report.published, 0);
         assert_eq!(report.heartbeat_action, HeartbeatAction::Noop);
         assert!(report.heartbeat_reason.contains("below_threshold"));
+    }
+
+    #[test]
+    fn heartbeat_weight_normalization_preserves_non_zero_sum() {
+        let mut policy = default_heartbeat_lane_policy();
+        policy.dead_letter_weight = 2.0;
+        policy.failed_weight = 1.0;
+        policy.outbox_weight = 1.0;
+        policy.activity_weight = 0.0;
+
+        normalize_heartbeat_weights(&mut policy).expect("normalization should succeed");
+
+        let sum = policy.dead_letter_weight
+            + policy.failed_weight
+            + policy.outbox_weight
+            + policy.activity_weight;
+        assert!((sum - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn heartbeat_policy_parser_rejects_zero_weight_configuration() {
+        let args = vec![
+            "--heartbeat-dead-letter-weight".to_string(),
+            "0".to_string(),
+            "--heartbeat-failed-weight".to_string(),
+            "0".to_string(),
+            "--heartbeat-outbox-weight".to_string(),
+            "0".to_string(),
+            "--heartbeat-activity-weight".to_string(),
+            "0".to_string(),
+        ];
+
+        let err = parse_heartbeat_policy(&args).expect_err("zero weights should fail");
+        assert!(err
+            .to_string()
+            .contains("heartbeat weights must sum to greater than zero"));
+    }
+
+    #[test]
+    fn heartbeat_delivery_policy_parser_requires_complete_quiet_window() {
+        let args = vec![
+            "--heartbeat-quiet-start-hour-utc".to_string(),
+            "22".to_string(),
+        ];
+
+        let err = parse_heartbeat_delivery_policy(&args)
+            .expect_err("partial quiet-window settings should fail");
+        assert!(err
+            .to_string()
+            .contains("heartbeat quiet-hours requires both start and end hour values"));
+    }
+
+    #[test]
+    fn quiet_hours_window_supports_wraparound_ranges() {
+        let window = QuietHoursWindow {
+            start_hour_utc: 22,
+            end_hour_utc: 6,
+        };
+
+        assert!(window.contains_utc_hour(23));
+        assert!(window.contains_utc_hour(1));
+        assert!(!window.contains_utc_hour(12));
+    }
+
+    #[test]
+    fn heartbeat_dispatch_suppresses_notifications_during_quiet_hours() {
+        let report = sample_notify_report();
+        let mut metrics = HeartbeatDeliveryMetrics::default();
+        let policy = HeartbeatDeliveryPolicy {
+            min_notify_interval_secs: 0,
+            quiet_hours: Some(QuietHoursWindow {
+                start_hour_utc: 22,
+                end_hour_utc: 6,
+            }),
+        };
+        let now_utc = Utc
+            .with_ymd_and_hms(2026, 5, 28, 23, 0, 0)
+            .single()
+            .expect("datetime should be valid");
+
+        let decision = decide_heartbeat_dispatch(&report, now_utc, policy, &mut metrics);
+
+        assert_eq!(decision, HeartbeatDispatchDecision::SuppressedQuietHours);
+        assert_eq!(metrics.notify_decisions, 1);
+        assert_eq!(metrics.dispatched_notifications, 0);
+        assert_eq!(metrics.suppressed_quiet_hours, 1);
+    }
+
+    #[test]
+    fn heartbeat_dispatch_suppresses_notifications_when_interval_not_elapsed() {
+        let report = sample_notify_report();
+        let mut metrics = HeartbeatDeliveryMetrics::default();
+        let policy = HeartbeatDeliveryPolicy {
+            min_notify_interval_secs: 120,
+            quiet_hours: None,
+        };
+
+        let first = Utc
+            .with_ymd_and_hms(2026, 5, 28, 10, 0, 0)
+            .single()
+            .expect("datetime should be valid");
+        let second = first + Duration::seconds(30);
+
+        let first_decision = decide_heartbeat_dispatch(&report, first, policy, &mut metrics);
+        let second_decision = decide_heartbeat_dispatch(&report, second, policy, &mut metrics);
+
+        assert_eq!(first_decision, HeartbeatDispatchDecision::Dispatch);
+        assert_eq!(second_decision, HeartbeatDispatchDecision::SuppressedMinInterval);
+        assert_eq!(metrics.notify_decisions, 2);
+        assert_eq!(metrics.dispatched_notifications, 1);
+        assert_eq!(metrics.suppressed_min_interval, 1);
     }
 
     #[test]
@@ -984,5 +1975,85 @@ mod tests {
 
         assert_eq!(err.0, StatusCode::FORBIDDEN);
         assert!(err.1.contains("action=recurring_registration"));
+    }
+
+    #[test]
+    fn output_text_extraction_supports_prompt_diagnostics_shape() {
+        let diagnostics = r#"{"output_text":"final response text"}"#;
+        let output = extract_output_text_from_diagnostics(Some(diagnostics));
+        assert_eq!(output.as_deref(), Some("final response text"));
+    }
+
+    #[test]
+    fn output_text_extraction_supports_chat_choice_shape() {
+        let diagnostics = r#"{"choices":[{"message":{"content":"assistant completion"}}]}"#;
+        let output = extract_output_text_from_diagnostics(Some(diagnostics));
+        assert_eq!(output.as_deref(), Some("assistant completion"));
+    }
+
+    #[test]
+    fn report_prompt_builder_includes_query_and_citation_requirements() {
+        let query = "Assess three practical async Rust operations trends";
+        let prompt = build_report_prompt(query);
+
+        assert!(prompt.contains(query));
+        assert!(prompt.contains("evidence-first report"));
+        assert!(prompt.contains("citations section"));
+    }
+
+    #[test]
+    fn citation_extraction_collects_and_deduplicates_sources() {
+        let payload = json!({
+            "results": [
+                {"title": "A", "source": "mock://one"},
+                {"title": "A", "source": "mock://one"},
+                {"title": "B", "url": "https://example.test/two"}
+            ],
+            "meta": {
+                "source": "mock://meta"
+            }
+        });
+
+        let citations = extract_citations_from_payload(&payload);
+        let sources = citations
+            .iter()
+            .map(|citation| citation.source.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(sources.contains(&"mock://one"));
+        assert!(sources.contains(&"https://example.test/two"));
+        assert!(sources.contains(&"mock://meta"));
+        assert_eq!(
+            sources.iter().filter(|source| **source == "mock://one").count(),
+            1
+        );
+    }
+
+    #[test]
+    fn job_result_status_is_queued_when_no_attempts_exist() {
+        let (status, terminal) = derive_job_result_status(None, 0);
+        assert_eq!(status, "queued");
+        assert!(!terminal);
+    }
+
+    #[test]
+    fn job_result_status_is_succeeded_for_successful_attempt() {
+        let (status, terminal) = derive_job_result_status(Some("Succeeded"), 1);
+        assert_eq!(status, "succeeded");
+        assert!(terminal);
+    }
+
+    #[test]
+    fn job_result_status_keeps_retryable_failure_non_terminal() {
+        let (status, terminal) = derive_job_result_status(Some("RetryableFailure"), 1);
+        assert_eq!(status, "running");
+        assert!(!terminal);
+    }
+
+    #[test]
+    fn job_result_status_marks_fatal_failure_terminal() {
+        let (status, terminal) = derive_job_result_status(Some("FatalFailure"), 2);
+        assert_eq!(status, "failed");
+        assert!(terminal);
     }
 }

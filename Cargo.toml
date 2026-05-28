@@ -17,6 +17,14 @@ path = "src/bin/medousa_daemon.rs"
 name = "medousa_tui"
 path = "src/bin/medousa_tui.rs"
 
+[[bin]]
+name = "medousa_telegram"
+path = "src/bin/medousa_telegram.rs"
+
+[[bin]]
+name = "medousa_discord"
+path = "src/bin/medousa_discord.rs"
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -37,3 +45,5 @@ ratatui-markdown = "0.2.2"
 genai = "0.5.3"
 keyring = "2.3"
 locus-core-rs = "0.2.1"
+teloxide = "0.17.0"
+serenity = "0.12.5"
