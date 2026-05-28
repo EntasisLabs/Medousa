@@ -6,6 +6,7 @@ pub mod daemon_api;
 pub mod engine_context;
 pub mod events;
 pub mod grapheme_sttp_compaction;
+pub mod identity_memory;
 pub mod payload_receipt;
 pub mod session;
 pub mod settings_guard;
@@ -15,24 +16,30 @@ pub mod tui;
 pub mod verification_store;
 pub mod verifier;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
+use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisRuntimeBuilder};
 
 pub use daemon_api::{
-    DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueResponse, HealthResponse,
-    RegisterRecurringPromptRequest, RegisterRecurringResponse, resolve_daemon_url,
+    DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueResponse,
+    HealthResponse, IdentityContextRequest, RegisterRecurringPromptRequest,
+    RegisterRecurringResponse, resolve_daemon_url,
 };
 pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_LLM_PROVIDER: &str = "openai";
+const DEFAULT_SURREAL_NAMESPACE: &str = "medousa";
+const DEFAULT_SURREAL_DATABASE: &str = "runtime";
+const DEFAULT_SURREALKV_FILENAME: &str = "runtime.surrealkv";
 
 fn provider_base_url_env_keys(provider: &str) -> (String, String) {
     let normalized = provider.trim().to_ascii_uppercase().replace('-', "_");
@@ -137,6 +144,28 @@ pub async fn build_runtime(
     explicit_model: Option<&str>,
     explicit_base_url: Option<&str>,
 ) -> Result<RuntimeComposition> {
+    ensure_runtime_backend_prerequisites(&backend)?;
+    let identity_memory_store =
+        identity_memory::build_identity_memory_store_for_backend(&backend).await?;
+    build_runtime_with_identity_store(
+        backend,
+        explicit_provider,
+        explicit_model,
+        explicit_base_url,
+        Some(identity_memory_store),
+    )
+    .await
+}
+
+pub async fn build_runtime_with_identity_store(
+    backend: RuntimeBackend,
+    explicit_provider: Option<&str>,
+    explicit_model: Option<&str>,
+    explicit_base_url: Option<&str>,
+    identity_memory_store: Option<Arc<dyn IdentityMemoryStore>>,
+) -> Result<RuntimeComposition> {
+    ensure_runtime_backend_prerequisites(&backend)?;
+
     let provider = resolve_llm_provider(explicit_provider);
     let model = resolve_llm_model(explicit_model);
     let base_url = resolve_llm_base_url(Some(&provider), explicit_base_url);
@@ -146,23 +175,117 @@ pub async fn build_runtime(
         base_url.as_deref(),
     ));
 
-    let runtime = StasisRuntimeBuilder::new(backend)
+    let mut builder = StasisRuntimeBuilder::new(backend)
         .with_chat_client(chat_client)
-        .with_tool(MockWebSearchTool)?
-        .build()
-        .await?;
+        .with_locus_memory();
+
+    if let Some(store) = identity_memory_store {
+        builder = builder.with_identity_memory_store(store);
+    }
+
+    let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
 
     Ok(runtime)
 }
 
 pub fn parse_backend(value: Option<&str>) -> RuntimeBackend {
-    match value.unwrap_or("in-memory") {
-        "surreal-mem" => RuntimeBackend::SurrealMem {
-            namespace: "medousa".to_string(),
-            database: "runtime".to_string(),
-        },
-        _ => RuntimeBackend::InMemory,
+    let raw = value.unwrap_or("in-memory").trim();
+    if raw.eq_ignore_ascii_case("surreal-mem") {
+        return RuntimeBackend::SurrealMem {
+            namespace: resolve_surreal_namespace(),
+            database: resolve_surreal_database(),
+        };
     }
+
+    if raw.eq_ignore_ascii_case("surreal-kv") || raw.starts_with("surreal-kv:") {
+        return parse_surreal_kv_backend(raw);
+    }
+
+    if raw.starts_with("surreal-ws:") {
+        return parse_surreal_ws_backend(raw);
+    }
+
+    RuntimeBackend::InMemory
+}
+
+fn resolve_surreal_namespace() -> String {
+    std::env::var("MEDOUSA_SURREAL_NAMESPACE")
+        .ok()
+        .or_else(|| std::env::var("STASIS_SURREAL_NAMESPACE").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_SURREAL_NAMESPACE.to_string())
+}
+
+fn resolve_surreal_database() -> String {
+    std::env::var("MEDOUSA_SURREAL_DATABASE")
+        .ok()
+        .or_else(|| std::env::var("STASIS_SURREAL_DATABASE").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_SURREAL_DATABASE.to_string())
+}
+
+fn parse_surreal_kv_backend(raw: &str) -> RuntimeBackend {
+    let explicit_path = raw
+        .strip_prefix("surreal-kv:")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+
+    let path = explicit_path
+        .or_else(|| std::env::var("MEDOUSA_SURREALKV_PATH").ok())
+        .or_else(|| std::env::var("STASIS_SURREALKV_PATH").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(default_surrealkv_path);
+
+    RuntimeBackend::SurrealKv {
+        path,
+        namespace: resolve_surreal_namespace(),
+        database: resolve_surreal_database(),
+    }
+}
+
+fn parse_surreal_ws_backend(raw: &str) -> RuntimeBackend {
+    let endpoint = raw
+        .strip_prefix("surreal-ws:")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("ws://127.0.0.1:8000/rpc")
+        .to_string();
+
+    RuntimeBackend::SurrealWs {
+        endpoint,
+        namespace: resolve_surreal_namespace(),
+        database: resolve_surreal_database(),
+    }
+}
+
+fn default_surrealkv_path() -> String {
+    let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.join("medousa")
+        .join(DEFAULT_SURREALKV_FILENAME)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> {
+    if let RuntimeBackend::SurrealKv { path, .. } = backend {
+        let path_buf = PathBuf::from(path);
+        if let Some(parent) = path_buf.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create SurrealKV runtime directory {}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn process_once(runtime: &RuntimeComposition, worker_id: &str) -> Result<Option<String>> {

@@ -13,7 +13,9 @@ pub(crate) fn print_help() {
     println!("  --provider <name>     LLM provider (env: MEDOUSA_LLM_PROVIDER)");
     println!("  --model <name>        Model name (env: MEDOUSA_LLM_MODEL)");
     println!("  --base-url <url>      Custom API base URL (env: MEDOUSA_LLM_BASE_URL)");
-    println!("  --backend <name>      Runtime backend: surreal-mem | in-memory");
+    println!(
+        "  --backend <name>      Runtime backend: surreal-mem | in-memory | surreal-kv[:path]"
+    );
     println!("  --tool-call-mode <m>  Tool call mode: auto | strict");
     println!("  --max-tool-rounds <n> Max model tool-call rounds (1-50, default 10)");
     println!("  --thinking-capture <b> Capture thinking chunks: true | false");

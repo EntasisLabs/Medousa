@@ -28,6 +28,9 @@ pub struct EnqueueAskRequest {
     pub policy_profile: Option<String>,
     pub model_hint: Option<String>,
     pub max_turns: Option<u32>,
+    pub identity_user_id: Option<String>,
+    pub identity_persona_id: Option<String>,
+    pub identity_channel_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +39,18 @@ pub struct EnqueuePromptRequest {
     pub system_prompt: Option<String>,
     pub policy_profile: Option<String>,
     pub model_hint: Option<String>,
+    pub identity_user_id: Option<String>,
+    pub identity_persona_id: Option<String>,
+    pub identity_channel_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityContextRequest {
+    pub user_id: Option<String>,
+    pub persona_id: Option<String>,
+    pub channel_id: Option<String>,
+    pub policy_profile: Option<String>,
+    pub relationship_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

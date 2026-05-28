@@ -160,9 +160,12 @@ pub(crate) async fn daemon_enqueue_ask(daemon_url: &str, prompt: &str) -> Result
     let client = Client::new();
     let request = EnqueueAskRequest {
         prompt: prompt.to_string(),
-        policy_profile: Some("default".to_string()),
+        policy_profile: Some("interactive".to_string()),
         model_hint: None,
         max_turns: Some(1),
+        identity_user_id: None,
+        identity_persona_id: None,
+        identity_channel_id: None,
     };
 
     let response = client
@@ -193,7 +196,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         jitter_seconds: Some(0),
         enabled: Some(true),
         max_attempts: Some(1),
-        policy_profile: Some("default".to_string()),
+        policy_profile: Some("scheduled".to_string()),
         model_hint: None,
     };
 

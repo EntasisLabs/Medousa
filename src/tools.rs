@@ -4,6 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
+use locus_core_rs::NodeStore;
 use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
@@ -16,6 +17,7 @@ use stasis::application::orchestration::tool_registry::{
 use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
+use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::{
     BackoffPolicy, MemoryRecallRequest, MemoryStoreRequest, NewJob, RecurringDefinition,
@@ -27,6 +29,10 @@ use stasis::prelude_ext::{
 };
 
 use crate::events::TuiEvent;
+use crate::engine_context::{
+    EngineExecutionLane, LaneSafetyActionClass, validate_lane_action,
+    validate_lane_policy_profile,
+};
 use crate::grapheme_sttp_compaction::{
     GraphemeCompactionModelTarget, maybe_compact_output_to_sttp,
 };
@@ -1889,10 +1895,15 @@ impl StasisTool for CognitionRuntimeJobStatusTool {
 struct PolicyAwareToolRegistry {
     inner: Arc<dyn ToolRegistry>,
     allowed_module_ops: HashSet<String>,
+    lane: EngineExecutionLane,
 }
 
 impl PolicyAwareToolRegistry {
-    fn new(inner: Arc<dyn ToolRegistry>, allowed_module_ops: Vec<String>) -> Self {
+    fn new(
+        inner: Arc<dyn ToolRegistry>,
+        allowed_module_ops: Vec<String>,
+        lane: EngineExecutionLane,
+    ) -> Self {
         let allowed_module_ops = allowed_module_ops
             .into_iter()
             .map(|value| value.trim().to_ascii_lowercase())
@@ -1902,7 +1913,31 @@ impl PolicyAwareToolRegistry {
         Self {
             inner,
             allowed_module_ops,
+            lane,
         }
+    }
+
+    fn enforce_lane_safety(
+        &self,
+        tool_name: &str,
+        input: &Value,
+    ) -> stasis::prelude::Result<()> {
+        if let Some(action) = lane_safety_action_for_tool_call(tool_name, input) {
+            if let Err(reason) = validate_lane_action(self.lane, action) {
+                return Err(StasisError::PortFailure(format!(
+                    "lane safety violation: {reason}"
+                )));
+            }
+        }
+
+        let policy_profile = tool_policy_profile_for_tool_call(input);
+        if let Err(reason) = validate_lane_policy_profile(self.lane, policy_profile) {
+            return Err(StasisError::PortFailure(format!(
+                "lane safety violation: {reason}"
+            )));
+        }
+
+        Ok(())
     }
 
     fn enforce_allowed_modules(
@@ -1951,9 +1986,30 @@ impl ToolRegistry for PolicyAwareToolRegistry {
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> stasis::prelude::Result<Value> {
+        self.enforce_lane_safety(tool_name, &input)?;
         self.enforce_allowed_modules(tool_name, &input)?;
         self.inner.invoke_tool(tool_name, input).await
     }
+}
+
+fn lane_safety_action_for_tool_call(
+    tool_name: &str,
+    _input: &Value,
+) -> Option<LaneSafetyActionClass> {
+    match tool_name {
+        "cognition.job.enqueue" | "cognition_grapheme_promote_to_job" => {
+            Some(LaneSafetyActionClass::InteractiveIngress)
+        }
+        "cognition_grapheme_promote_to_recurring"
+        | "cognition_grapheme_promote_last_run_to_recurring" => {
+            Some(LaneSafetyActionClass::RecurringRegistration)
+        }
+        _ => None,
+    }
+}
+
+fn tool_policy_profile_for_tool_call(input: &Value) -> Option<&str> {
+    input.get("policy_profile").and_then(|value| value.as_str())
 }
 
 fn referenced_module_ops_for_tool_call(
@@ -2073,6 +2129,8 @@ pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
     pub tool_loop_pipeline: ToolLoopPipeline,
     pub tool_registry: Arc<dyn ToolRegistry>,
+    pub locus_store: Arc<dyn NodeStore>,
+    pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
 }
@@ -2110,6 +2168,8 @@ pub async fn build_tui_runtime(
 ) -> anyhow::Result<TuiRuntime> {
     use std::sync::Arc;
 
+    let backend_for_identity = backend.clone();
+
     let resolved_provider = crate::resolve_llm_provider(provider);
     let resolved_model = crate::resolve_llm_model(model);
     let resolved_base_url = crate::resolve_llm_base_url(Some(&resolved_provider), base_url);
@@ -2126,12 +2186,16 @@ pub async fn build_tui_runtime(
     let memory_reader: Arc<dyn MemoryContextReader> =
         Arc::new(LocusContextReader::new(locus_store.clone()));
     let memory_writer: Arc<dyn MemoryContextWriter> =
-        Arc::new(LocusContextWriter::new(locus_store));
+        Arc::new(LocusContextWriter::new(locus_store.clone()));
+    let identity_memory_store =
+        crate::identity_memory::build_identity_memory_store_for_backend(&backend_for_identity)
+            .await?;
 
     let runtime_composition = StasisRuntimeBuilder::new(backend)
         .with_chat_client(chat_client.clone())
         .with_memory_context_reader(memory_reader.clone())
         .with_memory_context_writer(memory_writer.clone())
+        .with_identity_memory_store(identity_memory_store.clone())
         .build()
         .await?;
 
@@ -2195,6 +2259,7 @@ pub async fn build_tui_runtime(
     let guarded_registry: Arc<dyn ToolRegistry> = Arc::new(PolicyAwareToolRegistry::new(
         base_registry,
         allowed_grapheme_modules,
+        EngineExecutionLane::Interactive,
     ));
     let tool_loop_pipeline = ToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone());
 
@@ -2202,6 +2267,8 @@ pub async fn build_tui_runtime(
         runtime,
         tool_loop_pipeline,
         tool_registry: guarded_registry,
+        locus_store,
+        identity_memory_store,
         memory_reader,
         memory_writer,
     })
@@ -2209,9 +2276,36 @@ pub async fn build_tui_runtime(
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use std::sync::Arc;
 
-    use super::{extract_module_ops_from_source, referenced_module_ops_for_tool_call};
+    use async_trait::async_trait;
+    use genai::chat::Tool;
+    use serde_json::json;
+    use stasis::prelude::StasisError;
+    use stasis::application::orchestration::tool_registry::ToolRegistry;
+
+    use super::{
+        EngineExecutionLane, PolicyAwareToolRegistry, extract_module_ops_from_source,
+        referenced_module_ops_for_tool_call,
+    };
+
+    #[derive(Default)]
+    struct PassthroughToolRegistry;
+
+    #[async_trait]
+    impl ToolRegistry for PassthroughToolRegistry {
+        async fn list_tools(&self) -> stasis::prelude::Result<Vec<Tool>> {
+            Ok(Vec::new())
+        }
+
+        async fn invoke_tool(
+            &self,
+            tool_name: &str,
+            _input: serde_json::Value,
+        ) -> stasis::prelude::Result<serde_json::Value> {
+            Ok(json!({ "status": "ok", "tool_name": tool_name }))
+        }
+    }
 
     #[test]
     fn extracts_dotted_module_ops_from_source_calls() {
@@ -2251,5 +2345,49 @@ mod tests {
             &input,
         );
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn interactive_registry_blocks_recurring_registration_tools() {
+        let inner: Arc<dyn ToolRegistry> = Arc::new(PassthroughToolRegistry);
+        let registry = PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Interactive);
+
+        let result = registry
+            .invoke_tool(
+                "cognition_grapheme_promote_to_recurring",
+                json!({
+                    "source": "query Run { websearch.search(query: \"rust\") { ok } }",
+                    "cron_expr": "*/5 * * * *"
+                }),
+            )
+            .await;
+
+        let message = match result {
+            Err(StasisError::PortFailure(message)) => message,
+            Err(other) => panic!("unexpected error variant: {other}"),
+            Ok(value) => panic!("expected lane safety violation, got success: {value}"),
+        };
+
+        assert!(message.contains("lane safety violation"));
+        assert!(message.contains("action=recurring_registration"));
+    }
+
+    #[tokio::test]
+    async fn scheduled_registry_allows_recurring_registration_tools() {
+        let inner: Arc<dyn ToolRegistry> = Arc::new(PassthroughToolRegistry);
+        let registry = PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Scheduled);
+
+        let result = registry
+            .invoke_tool(
+                "cognition_grapheme_promote_to_recurring",
+                json!({
+                    "source": "query Run { websearch.search(query: \"rust\") { ok } }",
+                    "cron_expr": "*/5 * * * *"
+                }),
+            )
+            .await
+            .expect("scheduled lane should allow recurring registration action");
+
+        assert_eq!(result["status"], "ok");
     }
 }

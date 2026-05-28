@@ -26,6 +26,73 @@ pub fn default_policy_profile_for_lane(lane: EngineExecutionLane) -> &'static st
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaneSafetyActionClass {
+    InteractiveIngress,
+    RecurringRegistration,
+    HeartbeatNotificationDispatch,
+}
+
+impl LaneSafetyActionClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InteractiveIngress => "interactive_ingress",
+            Self::RecurringRegistration => "recurring_registration",
+            Self::HeartbeatNotificationDispatch => "heartbeat_notification_dispatch",
+        }
+    }
+}
+
+pub fn lane_allows_action(lane: EngineExecutionLane, action: LaneSafetyActionClass) -> bool {
+    match action {
+        LaneSafetyActionClass::InteractiveIngress => lane == EngineExecutionLane::Interactive,
+        LaneSafetyActionClass::RecurringRegistration => lane == EngineExecutionLane::Scheduled,
+        LaneSafetyActionClass::HeartbeatNotificationDispatch => {
+            lane == EngineExecutionLane::Scheduled || lane == EngineExecutionLane::Heartbeat
+        }
+    }
+}
+
+pub fn lane_accepts_policy_profile(lane: EngineExecutionLane, profile: &str) -> bool {
+    let normalized = profile.trim().to_ascii_lowercase();
+    !normalized.is_empty() && normalized == default_policy_profile_for_lane(lane)
+}
+
+pub fn validate_lane_action(
+    lane: EngineExecutionLane,
+    action: LaneSafetyActionClass,
+) -> Result<(), String> {
+    if lane_allows_action(lane, action) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "lane={} is not allowed to perform action={} under current lane safety matrix",
+        lane.as_str(),
+        action.as_str(),
+    ))
+}
+
+pub fn validate_lane_policy_profile(
+    lane: EngineExecutionLane,
+    policy_profile: Option<&str>,
+) -> Result<(), String> {
+    let Some(profile) = policy_profile else {
+        return Ok(());
+    };
+
+    if lane_accepts_policy_profile(lane, profile) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "policy_profile={} is not permitted for lane={} (expected={})",
+        profile.trim(),
+        lane.as_str(),
+        default_policy_profile_for_lane(lane),
+    ))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecallReadiness {
     Verified,
     Unverified,
@@ -257,12 +324,26 @@ pub fn compile_context_prompt(input: ContextCompilerInput<'_>) -> ContextCompile
     }
 }
 
+pub fn compile_default_lane_prompt(lane: EngineExecutionLane, user_prompt: &str) -> String {
+    compile_context_prompt(ContextCompilerInput {
+        lane,
+        user_prompt,
+        response_depth_mode: "standard",
+        stage_route: None,
+        recall_readiness: RecallReadiness::Missing,
+    })
+    .compiled_prompt
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ContextCompilerInput, EngineExecutionLane, HeartbeatAction, HeartbeatSignals,
-        RecallReadiness, compile_context_prompt, default_heartbeat_lane_policy,
-        default_policy_profile_for_lane, evaluate_heartbeat_significance, lane_execution_budget,
+        LaneSafetyActionClass, RecallReadiness, compile_context_prompt,
+        compile_default_lane_prompt, default_heartbeat_lane_policy,
+        default_policy_profile_for_lane, evaluate_heartbeat_significance,
+        lane_accepts_policy_profile, lane_execution_budget, validate_lane_action,
+        validate_lane_policy_profile,
     };
 
     #[test]
@@ -337,5 +418,54 @@ mod tests {
 
         assert_eq!(decision.action, HeartbeatAction::Notify);
         assert!(decision.reason.contains("dead_letter_detected"));
+    }
+
+    #[test]
+    fn default_lane_prompt_compiler_emits_scheduled_lane_metadata() {
+        let compiled = compile_default_lane_prompt(EngineExecutionLane::Scheduled, "Run report");
+        assert!(compiled.contains("[MEDOUSA_CONTEXT_COMPILER]"));
+        assert!(compiled.contains("lane=scheduled"));
+        assert!(compiled.contains("lane_policy_profile=scheduled"));
+        assert!(compiled.contains("recall_readiness=missing"));
+    }
+
+    #[test]
+    fn lane_safety_matrix_rejects_recurring_registration_on_interactive_lane() {
+        let result = validate_lane_action(
+            EngineExecutionLane::Interactive,
+            LaneSafetyActionClass::RecurringRegistration,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lane_safety_matrix_allows_heartbeat_dispatch_for_scheduled_lane() {
+        let result = validate_lane_action(
+            EngineExecutionLane::Scheduled,
+            LaneSafetyActionClass::HeartbeatNotificationDispatch,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn lane_policy_profile_validation_rejects_mismatch() {
+        assert!(!lane_accepts_policy_profile(
+            EngineExecutionLane::Interactive,
+            "scheduled"
+        ));
+        assert!(validate_lane_policy_profile(
+            EngineExecutionLane::Interactive,
+            Some("scheduled")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn lane_policy_profile_validation_accepts_matching_profile() {
+        assert!(validate_lane_policy_profile(
+            EngineExecutionLane::Scheduled,
+            Some("scheduled")
+        )
+        .is_ok());
     }
 }

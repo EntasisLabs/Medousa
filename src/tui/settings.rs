@@ -200,11 +200,18 @@ pub fn env_overrides_validation_errors(raw: &str) -> Vec<String> {
 }
 
 pub fn resolve_backend_name(value: Option<&str>) -> String {
-    match value.unwrap_or("surreal-mem").trim() {
-        "in-memory" => "in-memory".to_string(),
-        "surreal-mem" => "surreal-mem".to_string(),
-        _ => "surreal-mem".to_string(),
+    let raw = value.unwrap_or("surreal-mem").trim();
+    if raw.eq_ignore_ascii_case("in-memory") {
+        return "in-memory".to_string();
     }
+    if raw.eq_ignore_ascii_case("surreal-mem") {
+        return "surreal-mem".to_string();
+    }
+    if raw.eq_ignore_ascii_case("surreal-kv") || raw.starts_with("surreal-kv:") {
+        return raw.to_string();
+    }
+
+    "surreal-mem".to_string()
 }
 
 pub fn resolve_theme_id_name(value: Option<&str>) -> String {
@@ -217,8 +224,13 @@ pub fn resolve_theme_id_name(value: Option<&str>) -> String {
 }
 
 pub fn cycle_backend(current: &str, forward: bool) -> String {
-    let choices = ["surreal-mem", "in-memory"];
-    cycle_choice(current, &choices, forward)
+    let canonical = if current.trim().starts_with("surreal-kv") {
+        "surreal-kv"
+    } else {
+        current
+    };
+    let choices = ["surreal-mem", "in-memory", "surreal-kv"];
+    cycle_choice(canonical, &choices, forward)
 }
 
 pub fn resolve_tool_call_mode_name(value: Option<&str>) -> String {
@@ -317,13 +329,19 @@ mod tests {
     #[test]
     fn resolves_backend_with_safe_default() {
         assert_eq!(resolve_backend_name(Some("surreal-mem")), "surreal-mem");
+        assert_eq!(resolve_backend_name(Some("surreal-kv")), "surreal-kv");
+        assert_eq!(
+            resolve_backend_name(Some("surreal-kv:/tmp/medousa/runtime.surrealkv")),
+            "surreal-kv:/tmp/medousa/runtime.surrealkv"
+        );
         assert_eq!(resolve_backend_name(Some("unknown")), "surreal-mem");
     }
 
     #[test]
     fn cycles_backend_choices() {
         assert_eq!(cycle_backend("surreal-mem", true), "in-memory");
-        assert_eq!(cycle_backend("in-memory", true), "surreal-mem");
+        assert_eq!(cycle_backend("in-memory", true), "surreal-kv");
+        assert_eq!(cycle_backend("surreal-kv", true), "surreal-mem");
     }
 
     #[test]

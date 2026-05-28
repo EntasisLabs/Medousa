@@ -36,3 +36,4 @@ stasis-rs-macros = { version = "0.1.0"}
 ratatui-markdown = "0.2.2"
 genai = "0.5.3"
 keyring = "2.3"
+locus-core-rs = "0.2.1"

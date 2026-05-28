@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use genai::chat::{ChatMessage, ChatRequest};
+use locus_core_rs::NodeQuery;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -8,10 +10,12 @@ use medousa::{
     TuiRuntime,
     engine_context::{
         ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
-        lane_execution_budget,
+        default_policy_profile_for_lane, lane_execution_budget,
     },
     events::TuiEvent,
+    identity_memory::resolve_identity_user_id,
 };
+use stasis::application::runtime::identity_context_compiler::load_identity_context_summary;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
 };
@@ -57,6 +61,9 @@ const INTENT_CLASSIFIER_CONFIDENCE_TOOL_REQUIRED: f32 = 0.60;
 const CHEAP_RECALL_LIMIT: usize = 4;
 const CHEAP_RECALL_QUERY_MAX_CHARS: usize = 280;
 const CHEAP_RECALL_MAX_KEYS: usize = 6;
+const CHEAP_RECALL_SNIPPET_MAX_COUNT: usize = 3;
+const CHEAP_RECALL_SNIPPET_MAX_CHARS: usize = 220;
+const CHEAP_RECALL_NODE_SCAN_LIMIT: usize = 240;
 
 #[derive(Debug, Clone)]
 struct ContextPackQuality {
@@ -91,7 +98,22 @@ struct CheapRecallProbe {
     fallback_triggered: bool,
     fallback_reason: Option<String>,
     node_sync_keys: Vec<String>,
+    snippets: Vec<RecallSnippet>,
     error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct IdentityContextProbe {
+    attempted: bool,
+    summary: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RecallSnippet {
+    sync_key: String,
+    context_summary: String,
+    excerpt: String,
 }
 
 #[derive(Debug, Clone)]
@@ -201,32 +223,51 @@ pub(crate) async fn start_prompt_run(
         super::push_obs(
             state,
             format!(
-                "◈ cheap_recall retrieved={} path={} fallback={} fallback_reason={} keys={}",
+                "◈ cheap_recall retrieved={} path={} fallback={} fallback_reason={} keys={} snippets={}",
                 recall_probe.retrieved,
                 recall_probe.retrieval_path.as_deref().unwrap_or("n/a"),
                 recall_probe.fallback_triggered,
                 recall_probe.fallback_reason.as_deref().unwrap_or("none"),
                 recall_probe.node_sync_keys.len(),
+                recall_probe.snippets.len(),
+            ),
+        );
+    }
+
+    let identity_probe = identity_context_probe(
+        tui_rt,
+        final_route
+            .as_ref()
+            .map(|route| route.policy_profile.as_str()),
+    )
+    .await;
+    if let Some(err) = &identity_probe.error {
+        super::push_obs(state, format!("◈ identity_context error={err}"));
+    } else if let Some(summary) = &identity_probe.summary {
+        super::push_obs(
+            state,
+            format!(
+                "◈ identity_context loaded summary={}",
+                truncate_text_for_budget(summary, 180)
             ),
         );
     }
 
     resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
+    resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
     state.pending_response_verified = Some(verification_state.unwrap_or(false));
-    let recall_readiness = if verification_state.unwrap_or(false) || recall_probe.retrieved > 0 {
-        RecallReadiness::Verified
-    } else if verification_state == Some(false) || recall_probe.attempted {
-        RecallReadiness::Unverified
-    } else {
-        RecallReadiness::Missing
-    };
-    let compiler_output = compile_context_prompt(ContextCompilerInput {
-        lane: EngineExecutionLane::Interactive,
-        user_prompt: &resolved_prompt,
-        response_depth_mode: &state.response_depth_mode,
-        stage_route: final_route.as_ref(),
+    let recall_readiness = derive_recall_readiness(
+        verification_state,
+        recall_probe.attempted,
+        recall_probe.retrieved,
+        identity_probe.summary.is_some(),
+    );
+    let compiler_output = compile_interactive_context_prompt(
+        &resolved_prompt,
+        &state.response_depth_mode,
+        final_route.as_ref(),
         recall_readiness,
-    });
+    );
     resolved_prompt = compiler_output.compiled_prompt;
     let allow_no_tools_fallback = compiler_output.allow_no_tools_fallback;
     super::push_obs(state, format!("◈ {}", compiler_output.compiler_summary));
@@ -373,6 +414,9 @@ pub(crate) async fn start_prompt_run(
         INTENT_CLASSIFIER_MAX_CONTEXT_CHARS,
     );
     let original_prompt_for_continuation = prompt.clone();
+    let continuation_response_depth_mode = state.response_depth_mode.clone();
+    let continuation_stage_route = final_route.clone();
+    let continuation_recall_readiness = recall_readiness;
     let turn_budget = turn_budget_for_lane(EngineExecutionLane::Interactive);
     let handle = tokio::spawn(async move {
         let mut orchestration_state = TurnOrchestrationState {
@@ -561,10 +605,26 @@ pub(crate) async fn start_prompt_run(
                         &final_text,
                         &combined_invocations,
                     ) {
+                        let continuation_compiler_output = compile_interactive_context_prompt(
+                            &continuation_prompt,
+                            &continuation_response_depth_mode,
+                            continuation_stage_route.as_ref(),
+                            continuation_recall_readiness,
+                        );
+                        let continuation_compiled_prompt = truncate_text_for_budget(
+                            &continuation_compiler_output.compiled_prompt,
+                            MAX_REQUEST_PROMPT_CHARS,
+                        );
                         let _ = tx
                             .send(TuiEvent::UiNotice(
                                 "◈ continuation synthesis: refining draft with chunked tool context".to_string(),
                             ))
+                            .await;
+                        let _ = tx
+                            .send(TuiEvent::UiNotice(format!(
+                                "◈ {}",
+                                continuation_compiler_output.compiler_summary
+                            )))
                             .await;
 
                         let _ = tx
@@ -575,7 +635,7 @@ pub(crate) async fn start_prompt_run(
                             .await;
 
                         let continuation_request = ToolLoopExecutionRequest {
-                            user_prompt: continuation_prompt,
+                            user_prompt: continuation_compiled_prompt,
                             system_prompt: Some(super::SYSTEM_PROMPT.to_string()),
                             context: PromptExecutionContext::default(),
                             tool_name: String::new(),
@@ -910,6 +970,36 @@ fn decide_turn_activation(
 
 fn should_invoke_intent_classifier(activation: &TurnActivationDecision) -> bool {
     activation.reason == "configured_default"
+}
+
+fn derive_recall_readiness(
+    verification_state: Option<bool>,
+    recall_attempted: bool,
+    recall_retrieved: usize,
+    identity_context_ready: bool,
+) -> RecallReadiness {
+    if verification_state == Some(true) || recall_retrieved > 0 || identity_context_ready {
+        RecallReadiness::Verified
+    } else if verification_state == Some(false) || recall_attempted {
+        RecallReadiness::Unverified
+    } else {
+        RecallReadiness::Missing
+    }
+}
+
+fn compile_interactive_context_prompt(
+    user_prompt: &str,
+    response_depth_mode: &str,
+    stage_route: Option<&medousa::stage_routing::StageRoute>,
+    recall_readiness: RecallReadiness,
+) -> medousa::engine_context::ContextCompilerOutput {
+    compile_context_prompt(ContextCompilerInput {
+        lane: EngineExecutionLane::Interactive,
+        user_prompt,
+        response_depth_mode,
+        stage_route,
+        recall_readiness,
+    })
 }
 
 fn apply_context_compiler_activation_gate(
@@ -1603,25 +1693,110 @@ async fn cheap_memory_recall_probe(
     request.scope.session_ids = Some(vec![session_id.to_string()]);
 
     match tui_rt.memory_reader.recall(&request).await {
-        Ok(response) => CheapRecallProbe {
-            attempted: true,
-            retrieved: response.retrieved,
-            retrieval_path: response.retrieval_path,
-            fallback_triggered: response.fallback_triggered,
-            fallback_reason: response.fallback_reason,
-            node_sync_keys: response
+        Ok(response) => {
+            let node_sync_keys = response
                 .node_sync_keys
                 .into_iter()
                 .take(CHEAP_RECALL_MAX_KEYS)
-                .collect(),
-            error: None,
-        },
+                .collect::<Vec<_>>();
+            let snippets = hydrate_recall_snippets(tui_rt, session_id, &node_sync_keys).await;
+
+            CheapRecallProbe {
+                attempted: true,
+                retrieved: response.retrieved,
+                retrieval_path: response.retrieval_path,
+                fallback_triggered: response.fallback_triggered,
+                fallback_reason: response.fallback_reason,
+                node_sync_keys,
+                snippets,
+                error: None,
+            }
+        }
         Err(err) => CheapRecallProbe {
             attempted: true,
             error: Some(err.to_string()),
             ..Default::default()
         },
     }
+}
+
+async fn identity_context_probe(
+    tui_rt: &TuiRuntime,
+    policy_profile: Option<&str>,
+) -> IdentityContextProbe {
+    let effective_policy_profile = policy_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
+    let identity_user_id = resolve_identity_user_id(None);
+
+    let (summary, error) = load_identity_context_summary(
+        Some(&tui_rt.identity_memory_store),
+        &identity_user_id,
+        effective_policy_profile,
+    )
+    .await;
+
+    IdentityContextProbe {
+        attempted: true,
+        summary,
+        error,
+    }
+}
+
+async fn hydrate_recall_snippets(
+    tui_rt: &TuiRuntime,
+    session_id: &str,
+    node_sync_keys: &[String],
+) -> Vec<RecallSnippet> {
+    if node_sync_keys.is_empty() {
+        return Vec::new();
+    }
+
+    let nodes = match tui_rt
+        .locus_store
+        .query_nodes_async(NodeQuery {
+            limit: CHEAP_RECALL_NODE_SCAN_LIMIT,
+            session_id: Some(session_id.to_string()),
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(nodes) => nodes,
+        Err(_) => return Vec::new(),
+    };
+
+    let by_key = nodes
+        .into_iter()
+        .map(|node| (node.sync_key.clone(), node))
+        .collect::<HashMap<_, _>>();
+
+    node_sync_keys
+        .iter()
+        .filter_map(|sync_key| by_key.get(sync_key).map(|node| (sync_key, node)))
+        .take(CHEAP_RECALL_SNIPPET_MAX_COUNT)
+        .map(|(sync_key, node)| {
+            let summary = sanitize_prompt_line(
+                node.context_summary
+                    .as_deref()
+                    .unwrap_or("context_summary_unavailable"),
+            );
+            let excerpt_source = if let Some(summary) = node.context_summary.as_deref() {
+                summary
+            } else {
+                &node.raw
+            };
+
+            RecallSnippet {
+                sync_key: sync_key.clone(),
+                context_summary: truncate_text_for_budget(&summary, 120),
+                excerpt: truncate_text_for_budget(
+                    &sanitize_prompt_line(excerpt_source),
+                    CHEAP_RECALL_SNIPPET_MAX_CHARS,
+                ),
+            }
+        })
+        .collect()
 }
 
 fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> String {
@@ -1635,20 +1810,60 @@ fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> String 
         recall.node_sync_keys.join(",")
     };
     let status = if recall.retrieved > 0 { "hit" } else { "miss" };
-    let fallback_reason = recall
-        .fallback_reason
-        .as_deref()
-        .unwrap_or("none")
-        .replace('\n', " ");
+    let fallback_reason = sanitize_prompt_line(recall.fallback_reason.as_deref().unwrap_or("none"));
+    let snippets_block = if recall.snippets.is_empty() {
+        "none".to_string()
+    } else {
+        recall
+            .snippets
+            .iter()
+            .map(|snippet| {
+                format!(
+                    "- key={} summary={} excerpt={}",
+                    snippet.sync_key, snippet.context_summary, snippet.excerpt
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
 
     format!(
-        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}",
+        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}\nrecall_snippets:\n{}",
         recall.retrieved,
         recall.retrieval_path.as_deref().unwrap_or("none"),
         recall.fallback_triggered,
         truncate_text_for_budget(&fallback_reason, 200),
         keys,
+        snippets_block,
     )
+}
+
+fn append_identity_context_hint(prompt: &str, identity: &IdentityContextProbe) -> String {
+    if !identity.attempted {
+        return prompt.to_string();
+    }
+
+    let status = if identity.summary.is_some() {
+        "ready"
+    } else {
+        "missing"
+    };
+    let summary = sanitize_prompt_line(identity.summary.as_deref().unwrap_or("none"));
+    let error = sanitize_prompt_line(identity.error.as_deref().unwrap_or("none"));
+
+    format!(
+        "{prompt}\n\n[MEDOUSA_IDENTITY_CONTEXT]\nstatus={status}\nsummary={}\nerror={}",
+        truncate_text_for_budget(&summary, 260),
+        truncate_text_for_budget(&error, 220),
+    )
+}
+
+fn sanitize_prompt_line(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn build_prompt_with_context_pack(
@@ -1844,7 +2059,11 @@ fn route_base_url(
 #[cfg(test)]
 mod tests {
     use super::{
+        CheapRecallProbe, IdentityContextProbe, RecallSnippet,
         ToolCallMode, ToolInvocation, apply_context_compiler_activation_gate,
+        append_identity_context_hint, append_memory_recall_hint,
+        compile_interactive_context_prompt,
+        derive_recall_readiness,
         build_intent_classifier_recent_context, build_prior_messages,
         build_prompt_with_context_pack, decide_turn_activation, should_run_continuation,
         verifier_policy_from_settings_and_route,
@@ -1853,6 +2072,7 @@ mod tests {
     use medousa::artifact_chunking::SttpChunkNodeRef;
     use medousa::artifact_extraction::EvidenceClaim;
     use medousa::context_pack::{ContextPack, ContextPackBudgetProfile};
+    use medousa::engine_context::RecallReadiness;
 
     fn sample_pack() -> ContextPack {
         ContextPack {
@@ -2046,6 +2266,100 @@ mod tests {
         assert!(!gated.enforce_no_tools);
         assert_eq!(gated.tool_call_mode, ToolCallMode::Auto);
         assert_eq!(gated.reason, "cheap_recall_first_no_verified_context");
+    }
+
+    #[test]
+    fn derive_recall_readiness_marks_verified_for_verified_pack() {
+        let readiness = derive_recall_readiness(Some(true), false, 0, false);
+        assert_eq!(readiness, RecallReadiness::Verified);
+    }
+
+    #[test]
+    fn derive_recall_readiness_marks_verified_for_recall_hit() {
+        let readiness = derive_recall_readiness(None, true, 1, false);
+        assert_eq!(readiness, RecallReadiness::Verified);
+    }
+
+    #[test]
+    fn derive_recall_readiness_marks_verified_for_identity_context() {
+        let readiness = derive_recall_readiness(None, false, 0, true);
+        assert_eq!(readiness, RecallReadiness::Verified);
+    }
+
+    #[test]
+    fn derive_recall_readiness_marks_unverified_for_attempt_without_hit() {
+        let readiness = derive_recall_readiness(None, true, 0, false);
+        assert_eq!(readiness, RecallReadiness::Unverified);
+    }
+
+    #[test]
+    fn derive_recall_readiness_marks_missing_when_no_signals_exist() {
+        let readiness = derive_recall_readiness(None, false, 0, false);
+        assert_eq!(readiness, RecallReadiness::Missing);
+    }
+
+    #[test]
+    fn interactive_compiler_helper_emits_interactive_metadata() {
+        let route = medousa::stage_routing::StageRoute {
+            role: "final_response".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            policy_profile: "interactive".to_string(),
+            fallback_chain: vec!["openai:gpt-4o-mini".to_string()],
+        };
+
+        let output = compile_interactive_context_prompt(
+            "Summarize the latest run",
+            "standard",
+            Some(&route),
+            RecallReadiness::Verified,
+        );
+
+        assert!(output.compiled_prompt.contains("[MEDOUSA_CONTEXT_COMPILER]"));
+        assert!(output.compiled_prompt.contains("lane=interactive"));
+        assert!(output.compiled_prompt.contains("lane_policy_profile=interactive"));
+        assert!(output.allow_no_tools_fallback);
+    }
+
+    #[test]
+    fn recall_hint_includes_snippet_block_when_available() {
+        let hint = append_memory_recall_hint(
+            "Explain this",
+            &CheapRecallProbe {
+                attempted: true,
+                retrieved: 1,
+                retrieval_path: Some("semantic".to_string()),
+                fallback_triggered: false,
+                fallback_reason: None,
+                node_sync_keys: vec!["sync-1".to_string()],
+                snippets: vec![RecallSnippet {
+                    sync_key: "sync-1".to_string(),
+                    context_summary: "previous architecture decision".to_string(),
+                    excerpt: "we chose heartbeat notify threshold 0.65".to_string(),
+                }],
+                error: None,
+            },
+        );
+
+        assert!(hint.contains("[MEDOUSA_MEMORY_RECALL]"));
+        assert!(hint.contains("recall_snippets:"));
+        assert!(hint.contains("previous architecture decision"));
+    }
+
+    #[test]
+    fn identity_hint_includes_summary_when_available() {
+        let hint = append_identity_context_hint(
+            "Explain this",
+            &IdentityContextProbe {
+                attempted: true,
+                summary: Some("persona_present=true relationships=3 policies=2".to_string()),
+                error: None,
+            },
+        );
+
+        assert!(hint.contains("[MEDOUSA_IDENTITY_CONTEXT]"));
+        assert!(hint.contains("status=ready"));
+        assert!(hint.contains("persona_present=true"));
     }
 
     #[test]

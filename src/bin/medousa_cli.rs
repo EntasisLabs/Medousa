@@ -1,21 +1,29 @@
 use anyhow::{Result, anyhow};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use medousa::identity_memory::resolve_identity_user_id;
 use medousa::engine_context::{
-    ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
+    EngineExecutionLane, compile_default_lane_prompt,
     default_policy_profile_for_lane,
 };
 use medousa::{
     DaemonStatsResponse, EnqueueAskRequest, EnqueueResponse, HealthResponse,
+    IdentityContextRequest,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, build_runtime, parse_backend,
     process_once, publish_pending, resolve_daemon_url, resolve_llm_base_url, resolve_llm_provider,
     resolve_llm_target,
 };
 use reqwest::Client;
-use serde_json::json;
+use serde_json::{Value, json};
 use stasis::application::orchestration::runtime_job_payloads::{
     AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
 };
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
+use stasis::ports::outbound::memory::identity_memory_models::{
+    CommitEntityUpdateRequest, GetIdentityContextResponse, IdentityEntityType,
+    ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
+    ProposeEntityUpdateResponse, RollbackEntityVersionRequest, RollbackEntityVersionResponse,
+    UpdateSource,
+};
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::RuntimeComposition;
 
@@ -60,10 +68,7 @@ async fn main() -> Result<()> {
         }
         "daemon-ask" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
-            let prompt = args
-                .get(1)
-                .ok_or_else(|| anyhow!("missing prompt: medousa-cli daemon-ask <prompt>"))?;
-            run_daemon_ask(&daemon_url, prompt).await
+            run_daemon_ask(&daemon_url, &args).await
         }
         "daemon-watch-add" => {
             let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
@@ -84,6 +89,26 @@ async fn main() -> Result<()> {
             }
             let prompt = prompt_parts.join(" ");
             run_daemon_watch_add(&daemon_url, cron_expr, timezone, &prompt).await
+        }
+        "daemon-identity-context" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_context(&daemon_url, &args).await
+        }
+        "daemon-identity-propose" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_propose(&daemon_url, &args).await
+        }
+        "daemon-identity-commit" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_commit(&daemon_url, &args).await
+        }
+        "daemon-identity-history" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_history(&daemon_url, &args).await
+        }
+        "daemon-identity-rollback" => {
+            let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
+            run_daemon_identity_rollback(&daemon_url, &args).await
         }
         _ => {
             print_usage();
@@ -130,15 +155,27 @@ async fn run_daemon_stats(daemon_url: &str) -> Result<()> {
     Ok(())
 }
 
-async fn run_daemon_ask(daemon_url: &str, prompt: &str) -> Result<()> {
+async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
+    let prompt = args
+        .get(1)
+        .ok_or_else(|| anyhow!("missing prompt: medousa-cli daemon-ask <prompt>"))?;
     let client = Client::new();
     let request = EnqueueAskRequest {
         prompt: prompt.to_string(),
         policy_profile: Some(
-            default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
+            find_arg_value(args, "--policy-profile")
+                .unwrap_or(default_policy_profile_for_lane(EngineExecutionLane::Interactive))
+                .to_string(),
         ),
-        model_hint: None,
-        max_turns: Some(1),
+        model_hint: find_arg_value(args, "--model-hint").map(ToString::to_string),
+        max_turns: find_arg_value(args, "--max-turns")
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .or(Some(1)),
+        identity_user_id: find_arg_value(args, "--identity-user-id").map(ToString::to_string),
+        identity_persona_id: find_arg_value(args, "--identity-persona-id")
+            .map(ToString::to_string),
+        identity_channel_id: find_arg_value(args, "--identity-channel-id")
+            .map(ToString::to_string),
     };
 
     let response = client
@@ -199,6 +236,235 @@ async fn run_daemon_watch_add(
     Ok(())
 }
 
+async fn run_daemon_identity_context(daemon_url: &str, args: &[String]) -> Result<()> {
+    let client = Client::new();
+    let request = IdentityContextRequest {
+        user_id: find_arg_value(args, "--user-id").map(ToString::to_string),
+        persona_id: find_arg_value(args, "--persona-id").map(ToString::to_string),
+        channel_id: find_arg_value(args, "--channel-id").map(ToString::to_string),
+        policy_profile: find_arg_value(args, "--policy-profile").map(ToString::to_string),
+        relationship_limit: find_arg_value(args, "--relationship-limit")
+            .and_then(|raw| raw.parse::<usize>().ok()),
+    };
+
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/context"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: GetIdentityContextResponse = response.json().await?;
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+async fn run_daemon_identity_propose(daemon_url: &str, args: &[String]) -> Result<()> {
+    let entity_type_raw = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing entity type: medousa-cli daemon-identity-propose <entity_type> <entity_id> <patch_json>"
+        )
+    })?;
+    let entity_id = args.get(2).ok_or_else(|| {
+        anyhow!(
+            "missing entity id: medousa-cli daemon-identity-propose <entity_type> <entity_id> <patch_json>"
+        )
+    })?;
+    let patch_raw = args.get(3).ok_or_else(|| {
+        anyhow!(
+            "missing patch_json: medousa-cli daemon-identity-propose <entity_type> <entity_id> <patch_json>"
+        )
+    })?;
+
+    let patch: Value = serde_json::from_str(patch_raw)
+        .map_err(|err| anyhow!("invalid patch_json, expected JSON object: {err}"))?;
+    let entity_type = parse_identity_entity_type(entity_type_raw)?;
+    let source = parse_update_source(find_arg_value(args, "--source"))?;
+    let confidence = find_arg_value(args, "--confidence")
+        .and_then(|raw| raw.parse::<f32>().ok())
+        .unwrap_or(0.75)
+        .clamp(0.0, 1.0);
+    let reason = find_arg_value(args, "--reason")
+        .unwrap_or("manual update proposal")
+        .to_string();
+    let actor = find_arg_value(args, "--actor")
+        .unwrap_or("medousa-cli")
+        .to_string();
+    let receipt_id = find_arg_value(args, "--receipt-id").map(ToString::to_string);
+    let expires_at = parse_optional_utc(find_arg_value(args, "--expires-at"))?;
+
+    let request = ProposeEntityUpdateRequest {
+        entity_type,
+        entity_id: entity_id.to_string(),
+        patch,
+        source,
+        confidence,
+        reason,
+        actor,
+        receipt_id,
+        expires_at,
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/update/propose"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: ProposeEntityUpdateResponse = response.json().await?;
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+async fn run_daemon_identity_commit(daemon_url: &str, args: &[String]) -> Result<()> {
+    let proposal_id = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing proposal_id: medousa-cli daemon-identity-commit <proposal_id> <expected_version>"
+        )
+    })?;
+    let expected_version = args
+        .get(2)
+        .ok_or_else(|| {
+            anyhow!(
+                "missing expected_version: medousa-cli daemon-identity-commit <proposal_id> <expected_version>"
+            )
+        })?
+        .parse::<i32>()
+        .map_err(|err| anyhow!("expected_version must be integer: {err}"))?;
+
+    let request = CommitEntityUpdateRequest {
+        proposal_id: proposal_id.to_string(),
+        expected_version,
+        approver: find_arg_value(args, "--approver").map(ToString::to_string),
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/update/commit"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: serde_json::Value = response.json().await?;
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+async fn run_daemon_identity_history(daemon_url: &str, args: &[String]) -> Result<()> {
+    let entity_type_raw = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing entity type: medousa-cli daemon-identity-history <entity_type> <entity_id> [--limit <n>]"
+        )
+    })?;
+    let entity_id = args.get(2).ok_or_else(|| {
+        anyhow!(
+            "missing entity id: medousa-cli daemon-identity-history <entity_type> <entity_id> [--limit <n>]"
+        )
+    })?;
+
+    let request = ListEntityHistoryRequest {
+        entity_type: parse_identity_entity_type(entity_type_raw)?,
+        entity_id: entity_id.to_string(),
+        limit: find_arg_value(args, "--limit")
+            .and_then(|raw| raw.parse::<usize>().ok())
+            .unwrap_or(20),
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/history"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: ListEntityHistoryResponse = response.json().await?;
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+async fn run_daemon_identity_rollback(daemon_url: &str, args: &[String]) -> Result<()> {
+    let entity_type_raw = args.get(1).ok_or_else(|| {
+        anyhow!(
+            "missing entity type: medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <actor>]"
+        )
+    })?;
+    let entity_id = args.get(2).ok_or_else(|| {
+        anyhow!(
+            "missing entity id: medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <actor>]"
+        )
+    })?;
+    let target_version = args
+        .get(3)
+        .ok_or_else(|| {
+            anyhow!(
+                "missing target_version: medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <actor>]"
+            )
+        })?
+        .parse::<i32>()
+        .map_err(|err| anyhow!("target_version must be integer: {err}"))?;
+
+    let request = RollbackEntityVersionRequest {
+        entity_type: parse_identity_entity_type(entity_type_raw)?,
+        entity_id: entity_id.to_string(),
+        target_version,
+        reason: find_arg_value(args, "--reason")
+            .unwrap_or("manual rollback via medousa-cli")
+            .to_string(),
+        approver: find_arg_value(args, "--approver")
+            .unwrap_or("medousa-cli")
+            .to_string(),
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/identity/rollback"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload: RollbackEntityVersionResponse = response.json().await?;
+    println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+fn parse_identity_entity_type(raw: &str) -> Result<IdentityEntityType> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "persona" | "persona_entity" | "personaentity" => Ok(IdentityEntityType::PersonaEntity),
+        "user" | "user_entity" | "userentity" => Ok(IdentityEntityType::UserEntity),
+        "channel" | "channel_profile" | "channel_profile_entity" | "channelprofileentity" => {
+            Ok(IdentityEntityType::ChannelProfileEntity)
+        }
+        "policy" | "policy_profile" | "policy_profile_entity" | "policyprofileentity" => {
+            Ok(IdentityEntityType::PolicyProfileEntity)
+        }
+        "relationship" | "relationship_entity" | "relationshipentity" => {
+            Ok(IdentityEntityType::RelationshipEntity)
+        }
+        other => Err(anyhow!("unsupported identity entity type: {other}")),
+    }
+}
+
+fn parse_update_source(raw: Option<&str>) -> Result<UpdateSource> {
+    match raw.unwrap_or("model_inferred").trim().to_ascii_lowercase().as_str() {
+        "user_direct" | "user" => Ok(UpdateSource::UserDirect),
+        "model_inferred" | "model" => Ok(UpdateSource::ModelInferred),
+        "system_event" | "system" => Ok(UpdateSource::SystemEvent),
+        other => Err(anyhow!(
+            "unsupported update source '{other}', expected user_direct|model_inferred|system_event"
+        )),
+    }
+}
+
+fn parse_optional_utc(raw: Option<&str>) -> Result<Option<DateTime<Utc>>> {
+    let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let parsed = DateTime::parse_from_rfc3339(value)
+        .map_err(|err| anyhow!("invalid --expires-at timestamp, expected RFC3339: {err}"))?;
+    Ok(Some(parsed.with_timezone(&Utc)))
+}
+
 async fn run_llm(
     runtime: &RuntimeComposition,
     prompt: &str,
@@ -208,6 +474,7 @@ async fn run_llm(
 ) -> Result<()> {
     let now = Utc::now();
     let job_id = format!("medousa-llm-{}", now.timestamp_millis());
+    let identity_user_id = resolve_identity_user_id(None);
     let payload = PromptJobPayload {
         user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
         system_prompt: Some(
@@ -222,6 +489,7 @@ async fn run_llm(
     };
 
     let new_job = RuntimeWorkflowJobBuilder::for_prompt(job_id.clone(), &payload)?
+        .with_correlation_id(identity_user_id)
         .with_causation_id("medousa-cli:interactive")
         .with_sttp_input_node_id("sttp:in:medousa:cli:interactive:llm")
         .with_scheduled_at(now)
@@ -263,6 +531,7 @@ async fn run_llm(
 async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
     let now = Utc::now();
     let job_id = format!("medousa-ask-{}", now.timestamp_millis());
+    let identity_user_id = resolve_identity_user_id(None);
     let payload = AgentSessionJobPayload {
         thread_id: Some(job_id.clone()),
         initial_user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
@@ -284,6 +553,7 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
     };
 
     let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)?
+        .with_correlation_id(identity_user_id)
         .with_causation_id("medousa-cli:interactive")
         .with_sttp_input_node_id("sttp:in:medousa:cli:interactive:ask")
         .with_scheduled_at(now)
@@ -312,29 +582,39 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 }
 
 fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
-    compile_context_prompt(ContextCompilerInput {
-        lane,
-        user_prompt: prompt,
-        response_depth_mode: "standard",
-        stage_route: None,
-        recall_readiness: RecallReadiness::Missing,
-    })
-    .compiled_prompt
+    compile_default_lane_prompt(lane, prompt)
 }
 
 fn print_usage() {
     println!("medousa-cli usage:");
     println!(
-        "  medousa-cli ask <prompt> [--backend in-memory|surreal-mem] [--provider <provider>] [--model <model_name>] [--base-url <url>]"
+        "  medousa-cli ask <prompt> [--backend in-memory|surreal-mem|surreal-kv[:path]] [--provider <provider>] [--model <model_name>] [--base-url <url>]"
     );
     println!(
-        "  medousa-cli llm <prompt> [--provider <provider>] [--model <model_name>] [--base-url <url>] [--backend in-memory|surreal-mem]"
+        "  medousa-cli llm <prompt> [--provider <provider>] [--model <model_name>] [--base-url <url>] [--backend in-memory|surreal-mem|surreal-kv[:path]]"
     );
     println!("  medousa-cli daemon-health [--daemon-url <url>]");
     println!("  medousa-cli daemon-stats [--daemon-url <url>]");
-    println!("  medousa-cli daemon-ask <prompt> [--daemon-url <url>]");
+    println!(
+        "  medousa-cli daemon-ask <prompt> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
+    );
     println!(
         "  medousa-cli daemon-watch-add <cron_expr> <prompt> [--tz <timezone>] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-context [--user-id <id>] [--persona-id <id>] [--channel-id <id>] [--policy-profile <profile>] [--relationship-limit <n>] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-propose <entity_type> <entity_id> <patch_json> [--source user_direct|model_inferred|system_event] [--confidence <0..1>] [--reason <text>] [--actor <id>] [--expires-at <RFC3339>] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-commit <proposal_id> <expected_version> [--approver <id>] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-history <entity_type> <entity_id> [--limit <n>] [--daemon-url <url>]"
+    );
+    println!(
+        "  medousa-cli daemon-identity-rollback <entity_type> <entity_id> <target_version> [--reason <text>] [--approver <id>] [--daemon-url <url>]"
     );
     println!("  note: ask uses workflow.stasis.agent_session through Stasis runtime orchestration");
 }
