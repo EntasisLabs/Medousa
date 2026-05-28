@@ -1,0 +1,7 @@
+/target
+/node_modules
+package-lock.json
+.grapheme-examples/
+/data%
+/docs/internal/
+/docs/design/

@@ -1,0 +1,44 @@
+sequenceDiagram
+    autonumber
+    participant U as Operator
+    participant UI as Medousa TUI
+    participant AR as Agent Runtime
+    participant TP as Tool Loop Pipeline
+    participant LLM as Routed LLM Target
+    participant TO as Tool Registry
+    participant EV as Verifier/Context Pack
+    participant ST as Stores (History/Artifacts/Verification)
+
+    U->>UI: Submit prompt
+    UI->>AR: start_prompt_run(prompt)
+    AR->>EV: Resolve context pack + verifier policy
+    EV-->>AR: Prompt augmentation + verification_state
+    AR->>TP: execute_with_stream_prior_messages_max_rounds
+    TP->>LLM: Stream completion request
+
+    loop During generation
+        LLM-->>TP: Content chunk / Reasoning chunk
+        TP-->>AR: StreamDelta
+        AR-->>UI: AgentChunk / AgentReasoningChunk
+        UI->>UI: Coalesce thinking buffer
+    end
+
+    opt Model requests tools
+        TP->>TO: invoke_tool(name,input)
+        TO-->>TP: tool_output
+        TP-->>AR: tool_invocations
+        AR-->>UI: ToolPayload + receipts
+        UI->>ST: Persist artifacts + chunk refs
+    end
+
+    opt Continuation synthesis trigger
+        AR->>TP: second synthesis pass
+        TP->>LLM: continuation request
+        LLM-->>TP: refined final response
+    end
+
+    TP-->>AR: final response
+    AR-->>UI: AgentResponse
+    UI->>UI: merge streamed + final body
+    UI->>ST: Append turn + verification metadata
+    UI-->>U: Render answer_state badge + response

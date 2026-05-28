@@ -1,0 +1,7 @@
+query HttpGetHermesAgentCompleteGuide {
+    set { url: "https://ofox.ai/blog/hermes-agent-self-improving-ai-complete" }
+      |> http.get(url: $current.url)                                                                                                                             
+  |> core.pick(fields: ["body"], input: $current)                                                                                                            
+  |> html.to_md(html: $current.body)                                                                                                                         
+  |> core.echo(message: $current.text) 
+  }

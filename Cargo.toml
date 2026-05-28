@@ -1,0 +1,38 @@
+[package]
+name = "medousa"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[[bin]]
+name = "medousa_cli"
+path = "src/bin/medousa_cli.rs"
+
+[[bin]]
+name = "medousa_daemon"
+path = "src/bin/medousa_daemon.rs"
+
+[[bin]]
+name = "medousa_tui"
+path = "src/bin/medousa_tui.rs"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+futures-util = "0.3"
+stasis-rs = { version = "0.1.0"}
+stasis-rs-macros = { version = "0.1.0"}
+ratatui-markdown = "0.2.2"
+genai = "0.5.3"
+keyring = "2.3"

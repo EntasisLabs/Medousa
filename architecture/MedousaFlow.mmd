@@ -1,0 +1,45 @@
+flowchart LR
+    subgraph Channels["Operator Channels"]
+        TUI["medousa_tui"]
+        CLI["medousa_cli"]
+        API["medousa_daemon API"]
+    end
+
+    subgraph Product["Medousa Product Runtime"]
+        Router["Stage Routing Matrix\n(role -> provider/model/policy)"]
+        ToolLoop["Tool Loop Pipeline\n(stream + tool invocations)"]
+        Verifier["Verification + Context Pack"]
+    end
+
+    subgraph Stasis["Stasis Orchestration Backbone"]
+        Jobs["Job Lifecycle\n(enqueue/attempt/outcome)"]
+        Scheduler["Recurring Materialization"]
+        Outbox["Outbox + Delivery"]
+    end
+
+    subgraph Data["Persistence + Evidence"]
+        Hist["Session History"]
+        Art["Artifact Store + Chunk Refs"]
+        Verify["Verification Store"]
+    end
+
+    TUI --> Router
+    CLI --> Router
+    API --> Router
+
+    Router --> ToolLoop
+    ToolLoop --> Verifier
+    ToolLoop --> Jobs
+    Verifier --> Verify
+
+    Jobs --> Scheduler
+    Jobs --> Outbox
+
+    ToolLoop --> Hist
+    ToolLoop --> Art
+    Verifier --> Hist
+    Verifier --> Art
+
+    Hist --> TUI
+    Art --> TUI
+    Verify --> TUI

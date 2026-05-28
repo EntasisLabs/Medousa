@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> Drafting: Prompt submitted
+    Drafting --> Tooling: Tool call requested
+    Tooling --> Drafting: Tool output received
+    Drafting --> Continuation: Large evidence detected
+    Continuation --> Drafting: Refined synthesis
+
+    Drafting --> Finalizing: AgentResponse received
+    Finalizing --> Verified: answer_state=verified
+    Finalizing --> Provisional: answer_state=provisional
+
+    Verified --> [*]
+    Provisional --> [*]
+
+    Drafting --> Failed: runtime/model error
+    Tooling --> Failed: tool failure
+    Continuation --> Failed: continuation failure
+    Failed --> [*]
