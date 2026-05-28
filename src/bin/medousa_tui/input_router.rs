@@ -399,7 +399,7 @@ pub(crate) async fn handle_key_event(
             }
 
             state.input_buffer.clear();
-            super::start_prompt_run(state, tui_rt, event_tx, prompt, true);
+            super::start_prompt_run(state, tui_rt, event_tx, prompt, true).await;
         }
 
         _ => {}

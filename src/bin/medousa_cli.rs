@@ -1,5 +1,9 @@
 use anyhow::{Result, anyhow};
 use chrono::Utc;
+use medousa::engine_context::{
+    ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
+    default_policy_profile_for_lane,
+};
 use medousa::{
     DaemonStatsResponse, EnqueueAskRequest, EnqueueResponse, HealthResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, build_runtime, parse_backend,
@@ -130,7 +134,9 @@ async fn run_daemon_ask(daemon_url: &str, prompt: &str) -> Result<()> {
     let client = Client::new();
     let request = EnqueueAskRequest {
         prompt: prompt.to_string(),
-        policy_profile: Some("default".to_string()),
+        policy_profile: Some(
+            default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
+        ),
         model_hint: None,
         max_turns: Some(1),
     };
@@ -169,7 +175,9 @@ async fn run_daemon_watch_add(
         jitter_seconds: Some(0),
         enabled: Some(true),
         max_attempts: Some(1),
-        policy_profile: Some("default".to_string()),
+        policy_profile: Some(
+            default_policy_profile_for_lane(EngineExecutionLane::Scheduled).to_string(),
+        ),
         model_hint: None,
     };
 
@@ -201,19 +209,21 @@ async fn run_llm(
     let now = Utc::now();
     let job_id = format!("medousa-llm-{}", now.timestamp_millis());
     let payload = PromptJobPayload {
-        user_prompt: prompt.to_string(),
+        user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
         system_prompt: Some(
             "You are Medousa, a practical research assistant. Be concise and structured."
                 .to_string(),
         ),
-        policy_profile: Some("default".to_string()),
+        policy_profile: Some(
+            default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
+        ),
         model_hint: model.map(|v| v.to_string()),
         memory_policy: None,
     };
 
     let new_job = RuntimeWorkflowJobBuilder::for_prompt(job_id.clone(), &payload)?
-        .with_causation_id("medousa-cli")
-        .with_sttp_input_node_id("sttp:in:medousa:llm")
+        .with_causation_id("medousa-cli:interactive")
+        .with_sttp_input_node_id("sttp:in:medousa:cli:interactive:llm")
         .with_scheduled_at(now)
         .build();
 
@@ -255,7 +265,7 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
     let job_id = format!("medousa-ask-{}", now.timestamp_millis());
     let payload = AgentSessionJobPayload {
         thread_id: Some(job_id.clone()),
-        initial_user_prompt: prompt.to_string(),
+        initial_user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
         participants: vec![AgentSessionParticipantPayload {
             agent_id: "medousa.researcher".to_string(),
             system_prompt: Some(
@@ -264,7 +274,9 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
             tool_name: "stasis.web.search.mock".to_string(),
             tool_input: Some(json!({ "query": prompt })),
         }],
-        policy_profile: Some("default".to_string()),
+        policy_profile: Some(
+            default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
+        ),
         model_hint: None,
         memory_policy: None,
         max_turns: Some(1),
@@ -272,8 +284,8 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
     };
 
     let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)?
-        .with_causation_id("medousa-cli")
-        .with_sttp_input_node_id("sttp:in:medousa:ask")
+        .with_causation_id("medousa-cli:interactive")
+        .with_sttp_input_node_id("sttp:in:medousa:cli:interactive:ask")
         .with_scheduled_at(now)
         .build();
 
@@ -297,6 +309,17 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
 fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
     let idx = args.iter().position(|arg| arg == key)?;
     args.get(idx + 1).map(|s| s.as_str())
+}
+
+fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
+    compile_context_prompt(ContextCompilerInput {
+        lane,
+        user_prompt: prompt,
+        response_depth_mode: "standard",
+        stage_route: None,
+        recall_readiness: RecallReadiness::Missing,
+    })
+    .compiled_prompt
 }
 
 fn print_usage() {

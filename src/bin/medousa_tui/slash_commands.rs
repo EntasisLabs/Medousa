@@ -938,7 +938,7 @@ pub(crate) async fn handle_slash_command(
                     state.conversation.pop();
                 }
                 push_obs(state, "↻ regenerate last response".to_string());
-                start_prompt_run(state, tui_rt, event_tx, prompt, false);
+                start_prompt_run(state, tui_rt, event_tx, prompt, false).await;
             } else {
                 push_obs(
                     state,

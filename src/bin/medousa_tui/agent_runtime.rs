@@ -4,7 +4,14 @@ use genai::chat::{ChatMessage, ChatRequest};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use medousa::{TuiRuntime, events::TuiEvent};
+use medousa::{
+    TuiRuntime,
+    engine_context::{
+        ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
+        lane_execution_budget,
+    },
+    events::TuiEvent,
+};
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
 };
@@ -13,6 +20,7 @@ use stasis::application::orchestration::tool_loop_pipeline::{
 };
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+use stasis::prelude::MemoryRecallRequest;
 
 use super::{ConversationTurn, TuiState};
 
@@ -46,12 +54,9 @@ const INTENT_CLASSIFIER_CONTEXT_LINE_CHARS: usize = 260;
 const INTENT_CLASSIFIER_CONFIDENCE_LOW: f32 = 0.45;
 const INTENT_CLASSIFIER_CONFIDENCE_CONVERSATIONAL: f32 = 0.55;
 const INTENT_CLASSIFIER_CONFIDENCE_TOOL_REQUIRED: f32 = 0.60;
-const BUDGET_DEFAULT_MAX_LLM_CALLS_TOTAL: usize = 2;
-const BUDGET_DEFAULT_MAX_TOOL_LOOP_CALLS: usize = 1;
-const BUDGET_DEFAULT_MAX_PROMPT_ONLY_CALLS: usize = 1;
-const BUDGET_DEFAULT_MAX_CLASSIFIER_CALLS: usize = 1;
-const BUDGET_DEFAULT_MAX_RETRIES: usize = 1;
-const BUDGET_DEFAULT_MAX_CONTINUATIONS: usize = 1;
+const CHEAP_RECALL_LIMIT: usize = 4;
+const CHEAP_RECALL_QUERY_MAX_CHARS: usize = 280;
+const CHEAP_RECALL_MAX_KEYS: usize = 6;
 
 #[derive(Debug, Clone)]
 struct ContextPackQuality {
@@ -76,6 +81,17 @@ struct IntentClassification {
     intent: String,
     confidence: f32,
     reason: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CheapRecallProbe {
+    attempted: bool,
+    retrieved: usize,
+    retrieval_path: Option<String>,
+    fallback_triggered: bool,
+    fallback_reason: Option<String>,
+    node_sync_keys: Vec<String>,
+    error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,7 +125,7 @@ struct TurnBudget {
     max_continuations: usize,
 }
 
-pub(crate) fn start_prompt_run(
+pub(crate) async fn start_prompt_run(
     state: &mut TuiState,
     tui_rt: &TuiRuntime,
     event_tx: &mpsc::Sender<TuiEvent>,
@@ -177,22 +193,43 @@ pub(crate) fn start_prompt_run(
         state.selected_context_pack_query.as_deref(),
         &verifier_policy,
     );
-    state.pending_response_verified = Some(verification_state.unwrap_or(false));
 
-    resolved_prompt = format!(
-        "{resolved_prompt}\n\n[MEDOUSA_RESPONSE_DEPTH]\nmode={}\npolicy=Use concise mode for short output, standard for balanced output, deep for detailed evidence-forward explanation.",
-        state.response_depth_mode
-    );
-    if let Some(route) = &final_route {
-        resolved_prompt = format!(
-            "{resolved_prompt}\n\n[MEDOUSA_STAGE_ROUTE]\nrole={}\nprovider={}\nmodel={}\npolicy_profile={}\nfallback_chain={}",
-            route.role,
-            route.provider,
-            route.model,
-            route.policy_profile,
-            route.fallback_chain.join(","),
+    let recall_probe = cheap_memory_recall_probe(tui_rt, &state.session_id, &prompt).await;
+    if let Some(err) = &recall_probe.error {
+        super::push_obs(state, format!("◈ cheap_recall error={err}"));
+    } else if recall_probe.attempted {
+        super::push_obs(
+            state,
+            format!(
+                "◈ cheap_recall retrieved={} path={} fallback={} fallback_reason={} keys={}",
+                recall_probe.retrieved,
+                recall_probe.retrieval_path.as_deref().unwrap_or("n/a"),
+                recall_probe.fallback_triggered,
+                recall_probe.fallback_reason.as_deref().unwrap_or("none"),
+                recall_probe.node_sync_keys.len(),
+            ),
         );
     }
+
+    resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
+    state.pending_response_verified = Some(verification_state.unwrap_or(false));
+    let recall_readiness = if verification_state.unwrap_or(false) || recall_probe.retrieved > 0 {
+        RecallReadiness::Verified
+    } else if verification_state == Some(false) || recall_probe.attempted {
+        RecallReadiness::Unverified
+    } else {
+        RecallReadiness::Missing
+    };
+    let compiler_output = compile_context_prompt(ContextCompilerInput {
+        lane: EngineExecutionLane::Interactive,
+        user_prompt: &resolved_prompt,
+        response_depth_mode: &state.response_depth_mode,
+        stage_route: final_route.as_ref(),
+        recall_readiness,
+    });
+    resolved_prompt = compiler_output.compiled_prompt;
+    let allow_no_tools_fallback = compiler_output.allow_no_tools_fallback;
+    super::push_obs(state, format!("◈ {}", compiler_output.compiler_summary));
 
     if let Some(note) = pack_note {
         super::push_obs(state, note);
@@ -262,6 +299,7 @@ pub(crate) fn start_prompt_run(
             4000,
         ),
     );
+    let activation = apply_context_compiler_activation_gate(activation, allow_no_tools_fallback);
     let hot_window_turns = super::parse_usize_with_bounds(
         &state.settings.slice_hot_window_turns,
         DEFAULT_HOT_WINDOW_TURNS,
@@ -335,7 +373,7 @@ pub(crate) fn start_prompt_run(
         INTENT_CLASSIFIER_MAX_CONTEXT_CHARS,
     );
     let original_prompt_for_continuation = prompt.clone();
-    let turn_budget = default_turn_budget();
+    let turn_budget = turn_budget_for_lane(EngineExecutionLane::Interactive);
     let handle = tokio::spawn(async move {
         let mut orchestration_state = TurnOrchestrationState {
             final_mode: "unknown".to_string(),
@@ -874,6 +912,23 @@ fn should_invoke_intent_classifier(activation: &TurnActivationDecision) -> bool 
     activation.reason == "configured_default"
 }
 
+fn apply_context_compiler_activation_gate(
+    base: TurnActivationDecision,
+    allow_no_tools_fallback: bool,
+) -> TurnActivationDecision {
+    if base.enforce_no_tools && !allow_no_tools_fallback {
+        return TurnActivationDecision {
+            turn_class: "b",
+            tool_call_mode: ToolCallMode::Auto,
+            max_tool_rounds: base.max_tool_rounds.max(2),
+            enforce_no_tools: false,
+            reason: "cheap_recall_first_no_verified_context",
+        };
+    }
+
+    base
+}
+
 async fn classify_turn_intent_with_model(
     pipeline: &PromptExecutionPipeline,
     prompt: &str,
@@ -1220,14 +1275,15 @@ fn collect_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
     names
 }
 
-fn default_turn_budget() -> TurnBudget {
+fn turn_budget_for_lane(lane: EngineExecutionLane) -> TurnBudget {
+    let lane_budget = lane_execution_budget(lane);
     TurnBudget {
-        max_llm_calls_total: BUDGET_DEFAULT_MAX_LLM_CALLS_TOTAL,
-        max_tool_loop_calls: BUDGET_DEFAULT_MAX_TOOL_LOOP_CALLS,
-        max_prompt_only_calls: BUDGET_DEFAULT_MAX_PROMPT_ONLY_CALLS,
-        max_classifier_calls: BUDGET_DEFAULT_MAX_CLASSIFIER_CALLS,
-        max_retries: BUDGET_DEFAULT_MAX_RETRIES,
-        max_continuations: BUDGET_DEFAULT_MAX_CONTINUATIONS,
+        max_llm_calls_total: lane_budget.max_llm_calls_total,
+        max_tool_loop_calls: lane_budget.max_tool_loop_calls,
+        max_prompt_only_calls: lane_budget.max_prompt_only_calls,
+        max_classifier_calls: lane_budget.max_classifier_calls,
+        max_retries: lane_budget.max_retries,
+        max_continuations: lane_budget.max_continuations,
     }
 }
 
@@ -1527,6 +1583,74 @@ fn resolve_prompt_with_context_pack(
     (prompt_with_pack, Some(note), Some(quality.is_usable))
 }
 
+async fn cheap_memory_recall_probe(
+    tui_rt: &TuiRuntime,
+    session_id: &str,
+    prompt: &str,
+) -> CheapRecallProbe {
+    let query_text = truncate_text_for_budget(prompt, CHEAP_RECALL_QUERY_MAX_CHARS)
+        .trim()
+        .to_string();
+    if query_text.is_empty() {
+        return CheapRecallProbe::default();
+    }
+
+    let mut request = MemoryRecallRequest {
+        query_text: Some(query_text),
+        limit: CHEAP_RECALL_LIMIT,
+        ..Default::default()
+    };
+    request.scope.session_ids = Some(vec![session_id.to_string()]);
+
+    match tui_rt.memory_reader.recall(&request).await {
+        Ok(response) => CheapRecallProbe {
+            attempted: true,
+            retrieved: response.retrieved,
+            retrieval_path: response.retrieval_path,
+            fallback_triggered: response.fallback_triggered,
+            fallback_reason: response.fallback_reason,
+            node_sync_keys: response
+                .node_sync_keys
+                .into_iter()
+                .take(CHEAP_RECALL_MAX_KEYS)
+                .collect(),
+            error: None,
+        },
+        Err(err) => CheapRecallProbe {
+            attempted: true,
+            error: Some(err.to_string()),
+            ..Default::default()
+        },
+    }
+}
+
+fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> String {
+    if !recall.attempted {
+        return prompt.to_string();
+    }
+
+    let keys = if recall.node_sync_keys.is_empty() {
+        "none".to_string()
+    } else {
+        recall.node_sync_keys.join(",")
+    };
+    let status = if recall.retrieved > 0 { "hit" } else { "miss" };
+    let fallback_reason = recall
+        .fallback_reason
+        .as_deref()
+        .unwrap_or("none")
+        .replace('\n', " ");
+
+    format!(
+        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}",
+        recall.retrieved,
+        recall.retrieval_path.as_deref().unwrap_or("none"),
+        recall.fallback_triggered,
+        truncate_text_for_budget(&fallback_reason, 200),
+        keys,
+    )
+}
+
 fn build_prompt_with_context_pack(
     prompt: &str,
     pack: &medousa::context_pack::ContextPack,
@@ -1720,7 +1844,8 @@ fn route_base_url(
 #[cfg(test)]
 mod tests {
     use super::{
-        ToolCallMode, ToolInvocation, build_intent_classifier_recent_context, build_prior_messages,
+        ToolCallMode, ToolInvocation, apply_context_compiler_activation_gate,
+        build_intent_classifier_recent_context, build_prior_messages,
         build_prompt_with_context_pack, decide_turn_activation, should_run_continuation,
         verifier_policy_from_settings_and_route,
     };
@@ -1902,6 +2027,25 @@ mod tests {
         );
         assert!(!policy.enforce_no_tools);
         assert_eq!(policy.tool_call_mode, ToolCallMode::Auto);
+    }
+
+    #[test]
+    fn activation_gate_blocks_no_tools_when_recall_not_verified() {
+        let base = decide_turn_activation(
+            "Explain what this config means",
+            ToolCallMode::Auto,
+            10,
+            4,
+            320,
+            28,
+            420,
+        );
+        assert!(base.enforce_no_tools);
+
+        let gated = apply_context_compiler_activation_gate(base, false);
+        assert!(!gated.enforce_no_tools);
+        assert_eq!(gated.tool_call_mode, ToolCallMode::Auto);
+        assert_eq!(gated.reason, "cheap_recall_first_no_verified_context");
     }
 
     #[test]

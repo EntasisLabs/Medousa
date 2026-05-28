@@ -3,6 +3,7 @@ pub mod artifact_extraction;
 pub mod artifact_store;
 pub mod context_pack;
 pub mod daemon_api;
+pub mod engine_context;
 pub mod events;
 pub mod grapheme_sttp_compaction;
 pub mod payload_receipt;

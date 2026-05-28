@@ -8,6 +8,11 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
+use medousa::engine_context::{
+    ContextCompilerInput, EngineExecutionLane, HeartbeatAction, HeartbeatSignals,
+    RecallReadiness, compile_context_prompt, default_heartbeat_lane_policy,
+    default_policy_profile_for_lane, evaluate_heartbeat_significance,
+};
 use medousa::daemon_api::{
     DEFAULT_DAEMON_BIND, DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest,
     EnqueueResponse, HealthResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
@@ -42,6 +47,11 @@ struct TickReport {
     materialized: usize,
     processed_job: Option<String>,
     published: usize,
+    lane: EngineExecutionLane,
+    lane_policy_profile: &'static str,
+    heartbeat_action: HeartbeatAction,
+    heartbeat_significance: f32,
+    heartbeat_reason: String,
 }
 
 #[tokio::main]
@@ -69,8 +79,15 @@ async fn main() -> Result<()> {
     if once {
         let report = tick_runtime(runtime.as_ref(), &worker_id).await?;
         println!(
-            "medousa-daemon once: materialized={} processed={:?} published={}",
-            report.materialized, report.processed_job, report.published
+            "medousa-daemon once: lane={} policy={} materialized={} processed={:?} published={} heartbeat_action={} heartbeat_significance={:.2} heartbeat_reason={}",
+            report.lane.as_str(),
+            report.lane_policy_profile,
+            report.materialized,
+            report.processed_job,
+            report.published,
+            report.heartbeat_action.as_str(),
+            report.heartbeat_significance,
+            report.heartbeat_reason,
         );
         return Ok(());
     }
@@ -148,8 +165,25 @@ async fn run_scheduler_loop(
 ) {
     loop {
         match tick_runtime(state.runtime.as_ref(), &worker_id).await {
-            Ok(_) => {
+            Ok(report) => {
                 *state.last_tick_at.write().await = Some(Utc::now());
+                if report.materialized > 0
+                    || report.processed_job.is_some()
+                    || report.published > 0
+                    || report.heartbeat_action == HeartbeatAction::Notify
+                {
+                    eprintln!(
+                        "medousa-daemon tick lane={} policy={} materialized={} processed={:?} published={} heartbeat_action={} heartbeat_significance={:.2} heartbeat_reason={}",
+                        report.lane.as_str(),
+                        report.lane_policy_profile,
+                        report.materialized,
+                        report.processed_job,
+                        report.published,
+                        report.heartbeat_action.as_str(),
+                        report.heartbeat_significance,
+                        report.heartbeat_reason,
+                    );
+                }
             }
             Err(err) => {
                 eprintln!("medousa-daemon scheduler tick error: {err}");
@@ -169,14 +203,36 @@ async fn run_scheduler_loop(
 
 async fn tick_runtime(runtime: &RuntimeComposition, worker_id: &str) -> Result<TickReport> {
     let sdk = RuntimeSdk::new(runtime.clone());
-    let materialized = sdk.materialize_recurring_now(worker_id).await?;
-    let processed_job = sdk.process_once("default", worker_id).await?;
+    let lane = EngineExecutionLane::Scheduled;
+    let lane_policy_profile = default_policy_profile_for_lane(lane);
+    let lane_worker_id = format!("{worker_id}:{}", lane.as_str());
+
+    let materialized = sdk.materialize_recurring_now(&lane_worker_id).await?;
+    let processed_job = sdk.process_once("default", &lane_worker_id).await?;
     let published = sdk.publish_pending_events(200).await?;
+    let snapshot = sdk.stats_snapshot(200).await?;
+
+    let heartbeat_decision = evaluate_heartbeat_significance(
+        &HeartbeatSignals {
+            materialized_jobs: materialized,
+            processed_job: processed_job.is_some(),
+            published_events: published,
+            failed_jobs: snapshot.failed_jobs,
+            dead_letter_jobs: snapshot.dead_letter_jobs,
+            pending_outbox_events: snapshot.pending_outbox_events,
+        },
+        default_heartbeat_lane_policy(),
+    );
 
     Ok(TickReport {
         materialized,
         processed_job,
         published,
+        lane,
+        lane_policy_profile,
+        heartbeat_action: heartbeat_decision.action,
+        heartbeat_significance: heartbeat_decision.significance,
+        heartbeat_reason: heartbeat_decision.reason,
     })
 }
 
@@ -219,10 +275,12 @@ async fn enqueue_ask(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+    let raw_prompt = request.prompt;
+    let compiled_prompt = compile_lane_prompt(EngineExecutionLane::Interactive, &raw_prompt);
 
     let payload = AgentSessionJobPayload {
         thread_id: Some(job_id.clone()),
-        initial_user_prompt: request.prompt,
+        initial_user_prompt: compiled_prompt,
         participants: vec![AgentSessionParticipantPayload {
             agent_id: "medousa.researcher".to_string(),
             system_prompt: Some(
@@ -230,10 +288,12 @@ async fn enqueue_ask(
             ),
             tool_name: "stasis.web.search.mock".to_string(),
             tool_input: Some(serde_json::json!({
-                "query": "medousa research"
+                "query": raw_prompt
             })),
         }],
-        policy_profile: request.policy_profile.or(Some("default".to_string())),
+        policy_profile: request.policy_profile.or_else(|| {
+            Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string())
+        }),
         model_hint: request.model_hint,
         memory_policy: None,
         max_turns: request.max_turns.map(|value| value as usize),
@@ -242,8 +302,8 @@ async fn enqueue_ask(
 
     let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)
         .map_err(internal_error)?
-        .with_causation_id("medousa-daemon-api")
-        .with_sttp_input_node_id("sttp:in:medousa:daemon:ask")
+        .with_causation_id("medousa-daemon-api:interactive")
+        .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:ask")
         .with_scheduled_at(now)
         .build();
 
@@ -268,21 +328,24 @@ async fn enqueue_prompt(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-prompt-{}", now.timestamp_millis());
+    let compiled_prompt = compile_lane_prompt(EngineExecutionLane::Interactive, &request.prompt);
 
     let payload = PromptJobPayload {
-        user_prompt: request.prompt,
+        user_prompt: compiled_prompt,
         system_prompt: request.system_prompt.or(Some(
             "You are Medousa, a practical assistant. Be concise and structured.".to_string(),
         )),
-        policy_profile: request.policy_profile.or(Some("default".to_string())),
+        policy_profile: request.policy_profile.or_else(|| {
+            Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string())
+        }),
         model_hint: request.model_hint,
         memory_policy: None,
     };
 
     let new_job = RuntimeWorkflowJobBuilder::for_prompt(job_id.clone(), &payload)
         .map_err(internal_error)?
-        .with_causation_id("medousa-daemon-api")
-        .with_sttp_input_node_id("sttp:in:medousa:daemon:prompt")
+        .with_causation_id("medousa-daemon-api:interactive")
+        .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:prompt")
         .with_scheduled_at(now)
         .build();
 
@@ -314,11 +377,14 @@ async fn register_recurring_prompt(
     let recurring_id = request
         .id
         .unwrap_or_else(|| format!("medousa-recurring-{}", Uuid::new_v4().simple()));
+    let compiled_prompt = compile_lane_prompt(EngineExecutionLane::Scheduled, &request.prompt);
 
     let prompt_payload = PromptJobPayload {
-        user_prompt: request.prompt,
+        user_prompt: compiled_prompt,
         system_prompt: request.system_prompt,
-        policy_profile: request.policy_profile.or(Some("default".to_string())),
+        policy_profile: request.policy_profile.or_else(|| {
+            Some(default_policy_profile_for_lane(EngineExecutionLane::Scheduled).to_string())
+        }),
         model_hint: request.model_hint,
         memory_policy: None,
     };
@@ -378,4 +444,15 @@ fn internal_error(err: impl std::fmt::Display) -> (StatusCode, String) {
 fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
     let idx = args.iter().position(|arg| arg == key)?;
     args.get(idx + 1).map(|s| s.as_str())
+}
+
+fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
+    compile_context_prompt(ContextCompilerInput {
+        lane,
+        user_prompt: prompt,
+        response_depth_mode: "standard",
+        stage_route: None,
+        recall_readiness: RecallReadiness::Missing,
+    })
+    .compiled_prompt
 }
