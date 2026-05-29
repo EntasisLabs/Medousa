@@ -4,8 +4,8 @@ use anyhow::Result;
 use reqwest::Client;
 
 use medousa::{
-    EnqueueAskRequest, EnqueueResponse, HealthResponse, RegisterRecurringPromptRequest,
-    RegisterRecurringResponse,
+    ArtifactCommandRequest, ArtifactCommandResponse, EnqueueAskRequest, EnqueueResponse,
+    HealthResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
 };
 
 use super::{
@@ -207,4 +207,18 @@ pub(crate) async fn daemon_register_recurring_prompt(
         .await?
         .error_for_status()?;
     Ok(response.json::<RegisterRecurringResponse>().await?)
+}
+
+pub(crate) async fn daemon_artifact_command(
+    daemon_url: &str,
+    request: &ArtifactCommandRequest,
+) -> Result<ArtifactCommandResponse> {
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/runtime/artifact/command"))
+        .json(request)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<ArtifactCommandResponse>().await?)
 }

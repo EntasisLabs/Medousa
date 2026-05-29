@@ -199,3 +199,52 @@ pub struct HeartbeatStatusResponse {
     pub last_tick_at_utc: Option<DateTime<Utc>>,
     pub now_utc: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactVerificationPolicyInput {
+    pub min_citation_coverage: f32,
+    pub min_avg_support_strength: f32,
+    pub min_supported_claim_ratio: f32,
+    pub min_claim_support_strength: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum ArtifactCommandSpec {
+    Lookup { query: Option<String> },
+    Chunks { query: Option<String> },
+    List { limit: usize },
+    Maintain {
+        max_per_session: usize,
+        max_age_days: i64,
+    },
+    Extract { query: Option<String> },
+    Extractions { limit: usize },
+    Pack {
+        artifact_query: String,
+        max_tokens: usize,
+        max_claims: usize,
+        max_chunks: usize,
+    },
+    Packs { limit: usize },
+    PackUse { query: Option<String> },
+    PackAuto,
+    Verify { query: Option<String> },
+    Verifications { limit: usize },
+    Verification { query: Option<String> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactCommandRequest {
+    pub session_id: String,
+    pub selected_context_pack_query: Option<String>,
+    pub command: ArtifactCommandSpec,
+    pub verification_policy: Option<ArtifactVerificationPolicyInput>,
+    pub verifier_route_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactCommandResponse {
+    pub selected_context_pack_query: Option<String>,
+    pub rendered_output: String,
+}

@@ -28,8 +28,9 @@ use medousa::identity_memory::{
     resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
 };
 use medousa::daemon_api::{
-    DEFAULT_DAEMON_BIND, DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest,
-    EnqueueReportRequest, EnqueueResponse, HealthResponse, HeartbeatDeliveryMetricsResponse,
+    ArtifactCommandRequest, ArtifactCommandResponse, DEFAULT_DAEMON_BIND,
+    DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
+    EnqueueResponse, HealthResponse, HeartbeatDeliveryMetricsResponse,
     HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse, HeartbeatStatusResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse,
@@ -299,6 +300,7 @@ async fn main() -> Result<()> {
         .route("/v1/jobs/report", post(enqueue_report))
         .route("/v1/jobs/prompt", post(enqueue_prompt))
         .route("/v1/recurring/prompt", post(register_recurring_prompt))
+        .route("/v1/runtime/artifact/command", post(artifact_command))
         .route("/v1/identity/context", post(identity_get_context))
         .route("/v1/identity/update/propose", post(identity_propose_update))
         .route("/v1/identity/update/commit", post(identity_commit_update))
@@ -1044,6 +1046,18 @@ async fn register_recurring_prompt(
         cron_expr: definition.cron_expr,
         timezone,
     }))
+}
+
+async fn artifact_command(
+    Json(request): Json<ArtifactCommandRequest>,
+) -> Result<Json<ArtifactCommandResponse>, (StatusCode, String)> {
+    if request.session_id.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+
+    let response = medousa::artifact_command_runtime::execute_artifact_command(request)
+        .map_err(internal_error)?;
+    Ok(Json(response))
 }
 
 async fn resolve_identity_context_for_request(

@@ -68,6 +68,10 @@ mod settings_runtime;
 mod settings_ui;
 #[path = "medousa_tui/slash_command_services.rs"]
 mod slash_command_services;
+#[path = "medousa_tui/slash_command_artifact_services.rs"]
+mod slash_command_artifact_services;
+#[path = "medousa_tui/slash_command_stage_services.rs"]
+mod slash_command_stage_services;
 #[path = "medousa_tui/slash_commands.rs"]
 mod slash_commands;
 #[path = "medousa_tui/turn_services.rs"]

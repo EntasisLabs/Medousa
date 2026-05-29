@@ -1,4 +1,5 @@
 pub mod artifact_chunking;
+pub mod artifact_command_runtime;
 pub mod artifact_extraction;
 pub mod artifact_store;
 pub mod context_pack;
@@ -29,8 +30,9 @@ use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisRuntimeBuilder};
 
 pub use daemon_api::{
-    DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
-    EnqueueResponse,
+    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
+    ArtifactVerificationPolicyInput, DaemonStatsResponse, EnqueueAskRequest,
+    EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
     HeartbeatPolicyResponse, HeartbeatStatusResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
