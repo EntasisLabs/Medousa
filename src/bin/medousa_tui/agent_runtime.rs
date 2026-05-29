@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use genai::chat::{ChatMessage, ChatRequest};
 use locus_core_rs::NodeQuery;
@@ -22,11 +21,13 @@ use stasis::application::orchestration::prompt_pipeline::{
 use stasis::application::orchestration::tool_loop_pipeline::{
     ToolCallMode, ToolInvocation, ToolLoopExecutionRequest,
 };
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
-use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
+use stasis::ports::outbound::ai_chat_client::StreamDelta;
 use stasis::prelude::MemoryRecallRequest;
 
 use super::{ConversationTurn, TuiState};
+use super::turn_services::{
+    self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, TurnActivationDecision,
+};
 
 const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
 const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
@@ -75,15 +76,6 @@ struct ContextPackQuality {
 }
 
 #[derive(Debug, Clone)]
-struct TurnActivationDecision {
-    turn_class: &'static str,
-    tool_call_mode: ToolCallMode,
-    max_tool_rounds: usize,
-    enforce_no_tools: bool,
-    reason: &'static str,
-}
-
-#[derive(Debug, Clone)]
 struct IntentClassification {
     intent: String,
     confidence: f32,
@@ -114,15 +106,6 @@ struct RecallSnippet {
     sync_key: String,
     context_summary: String,
     excerpt: String,
-}
-
-#[derive(Debug, Clone)]
-struct PriorMessageBuild {
-    messages: Vec<ChatMessage>,
-    hot_turns_included: usize,
-    cold_turns_summarized: usize,
-    cold_summary_chars: usize,
-    total_chars: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -289,28 +272,12 @@ pub(crate) async fn start_prompt_run(
         );
     }
 
-    let pipeline = if let Some(route) = &final_route {
-        let route_base_url = route_base_url(route, &state.settings);
-        super::push_obs(
-            state,
-            format!(
-                "◈ stage route dispatch final_response target={}:{} base_url={}",
-                route.provider,
-                route.model,
-                route_base_url
-                    .as_deref()
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or("(auto)"),
-            ),
-        );
-        tui_rt.tool_loop_pipeline_for_target(
-            &route.provider,
-            &route.model,
-            route_base_url.as_deref(),
-        )
-    } else {
-        tui_rt.tool_loop_pipeline.clone()
-    };
+    let pipeline_selection =
+        turn_services::select_pipeline_for_turn(tui_rt, final_route.as_ref(), &state.settings);
+    if let Some(route_notice) = pipeline_selection.route_dispatch_notice {
+        super::push_obs(state, route_notice);
+    }
+    let pipeline = pipeline_selection.pipeline;
     let tx = event_tx.clone();
     let prompt_preview: String = resolved_prompt.chars().take(48).collect();
     let configured_tool_call_mode = parse_tool_call_mode(&state.settings.tool_call_mode);
@@ -814,103 +781,20 @@ fn build_prior_messages(
     hot_window_turns: usize,
     cold_window_turns: usize,
 ) -> PriorMessageBuild {
-    let mut selected: Vec<&ConversationTurn> = turns.iter().collect();
-
-    if current_user_persisted {
-        if let Some(last) = selected.last() {
-            if last.role == "user" && last.content.trim() == current_prompt.trim() {
-                selected.pop();
-            }
-        }
-    }
-
-    let mut accepted: Vec<ChatMessage> = Vec::new();
-    let mut total_chars = 0usize;
-
-    let hot_turns: Vec<&ConversationTurn> = selected
-        .iter()
-        .rev()
-        .take(hot_window_turns)
-        .copied()
-        .collect();
-    let cold_turns: Vec<&ConversationTurn> = selected
-        .iter()
-        .rev()
-        .skip(hot_window_turns)
-        .take(cold_window_turns)
-        .copied()
-        .collect();
-
-    let mut hot_remaining = HOT_WINDOW_CHAR_BUDGET.min(MAX_PRIOR_TOTAL_CHARS);
-    for turn in hot_turns {
-        if hot_remaining == 0 {
-            break;
-        }
-
-        let bounded = truncate_text_for_budget(&turn.content, MAX_SINGLE_PRIOR_MESSAGE_CHARS);
-        let bounded = truncate_text_for_budget(&bounded, hot_remaining);
-        if bounded.trim().is_empty() {
-            continue;
-        }
-
-        let bounded_chars = bounded.chars().count();
-        hot_remaining = hot_remaining.saturating_sub(bounded_chars);
-        total_chars = total_chars.saturating_add(bounded_chars);
-        match turn.role.as_str() {
-            "user" => accepted.push(ChatMessage::user(bounded)),
-            "assistant" | "agent" => accepted.push(ChatMessage::assistant(bounded)),
-            _ => {}
-        }
-    }
-
-    let cold_lines = cold_turns
-        .iter()
-        .rev()
-        .filter_map(|turn| match turn.role.as_str() {
-            "user" | "assistant" | "agent" => {
-                let line = truncate_text_for_budget(&turn.content, COLD_SUMMARY_LINE_CHARS);
-                if line.trim().is_empty() {
-                    None
-                } else {
-                    let role = if turn.role == "agent" {
-                        "assistant"
-                    } else {
-                        turn.role.as_str()
-                    };
-                    Some(format!("{}: {}", role, line.replace('\n', " ")))
-                }
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-
-    let cold_summary = if cold_lines.is_empty() {
-        String::new()
-    } else {
-        let cold_budget =
-            COLD_WINDOW_CHAR_BUDGET.min(MAX_PRIOR_TOTAL_CHARS.saturating_sub(total_chars));
-        truncate_text_for_budget(
-            &format!("[MEDOUSA_COLD_HISTORY_SUMMARY]\n{}", cold_lines.join("\n")),
-            cold_budget,
-        )
-    };
-    let cold_summary_chars = cold_summary.chars().count();
-    if !cold_summary.trim().is_empty() {
-        total_chars = total_chars.saturating_add(cold_summary_chars);
-        accepted.push(ChatMessage::assistant(cold_summary));
-    }
-
-    accepted.reverse();
-    PriorMessageBuild {
-        messages: accepted,
-        hot_turns_included: selected.len().min(hot_window_turns),
-        cold_turns_summarized: selected
-            .len()
-            .saturating_sub(hot_window_turns)
-            .min(cold_window_turns),
-        cold_summary_chars,
-        total_chars,
-    }
+    turn_services::build_prior_messages(
+        turns,
+        current_prompt,
+        current_user_persisted,
+        hot_window_turns,
+        cold_window_turns,
+        PriorMessageLimits {
+            max_prior_total_chars: MAX_PRIOR_TOTAL_CHARS,
+            max_single_prior_message_chars: MAX_SINGLE_PRIOR_MESSAGE_CHARS,
+            hot_window_char_budget: HOT_WINDOW_CHAR_BUDGET,
+            cold_window_char_budget: COLD_WINDOW_CHAR_BUDGET,
+            cold_summary_line_chars: COLD_SUMMARY_LINE_CHARS,
+        },
+    )
 }
 
 fn decide_turn_activation(
@@ -922,50 +806,15 @@ fn decide_turn_activation(
     long_session_turn_threshold: usize,
     long_session_max_prompt_chars: usize,
 ) -> TurnActivationDecision {
-    let prompt_trimmed = prompt.trim();
-    let prompt_lower = prompt_trimmed.to_ascii_lowercase();
-    let prompt_chars = prompt_trimmed.chars().count();
-
-    let tool_intent = contains_tool_intent(&prompt_lower);
-    let direct_answer_intent = contains_direct_answer_intent(&prompt_lower);
-
-    if tool_intent {
-        return TurnActivationDecision {
-            turn_class: "c",
-            tool_call_mode: ToolCallMode::Auto,
-            max_tool_rounds: configured_rounds.min(12).max(2),
-            enforce_no_tools: false,
-            reason: "tool_intent_detected",
-        };
-    }
-
-    if direct_answer_intent && prompt_chars < direct_answer_max_prompt_chars {
-        return TurnActivationDecision {
-            turn_class: "a",
-            tool_call_mode: ToolCallMode::Strict,
-            max_tool_rounds: 1,
-            enforce_no_tools: true,
-            reason: "direct_answer_short_prompt",
-        };
-    }
-
-    if turn_count > long_session_turn_threshold && prompt_chars < long_session_max_prompt_chars {
-        return TurnActivationDecision {
-            turn_class: "b",
-            tool_call_mode: ToolCallMode::Strict,
-            max_tool_rounds: 1,
-            enforce_no_tools: true,
-            reason: "long_session_short_turn",
-        };
-    }
-
-    TurnActivationDecision {
-        turn_class: "b",
-        tool_call_mode: configured_mode,
-        max_tool_rounds: configured_rounds,
-        enforce_no_tools: false,
-        reason: "configured_default",
-    }
+    turn_services::decide_turn_activation(
+        prompt,
+        configured_mode,
+        configured_rounds,
+        turn_count,
+        direct_answer_max_prompt_chars,
+        long_session_turn_threshold,
+        long_session_max_prompt_chars,
+    )
 }
 
 fn should_invoke_intent_classifier(activation: &TurnActivationDecision) -> bool {
@@ -1006,17 +855,7 @@ fn apply_context_compiler_activation_gate(
     base: TurnActivationDecision,
     allow_no_tools_fallback: bool,
 ) -> TurnActivationDecision {
-    if base.enforce_no_tools && !allow_no_tools_fallback {
-        return TurnActivationDecision {
-            turn_class: "b",
-            tool_call_mode: ToolCallMode::Auto,
-            max_tool_rounds: base.max_tool_rounds.max(2),
-            enforce_no_tools: false,
-            reason: "cheap_recall_first_no_verified_context",
-        };
-    }
-
-    base
+    turn_services::apply_context_compiler_activation_gate(base, allow_no_tools_fallback)
 }
 
 async fn classify_turn_intent_with_model(
@@ -1155,34 +994,7 @@ fn build_prompt_pipeline_for_turn(
     final_route: Option<&medousa::stage_routing::StageRoute>,
     settings: &super::RuntimeSettings,
 ) -> PromptExecutionPipeline {
-    let (provider, model, base_url) = match final_route {
-        Some(route) => (
-            route.provider.clone(),
-            route.model.clone(),
-            route_base_url(route, settings),
-        ),
-        None => {
-            let base = settings.base_url.trim();
-            (
-                settings.provider.clone(),
-                settings.model.clone(),
-                if base.is_empty() {
-                    None
-                } else {
-                    Some(base.to_string())
-                },
-            )
-        }
-    };
-
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&provider),
-            &model,
-            base_url.as_deref(),
-        ),
-    );
-    PromptExecutionPipeline::new(chat_client)
+    turn_services::build_prompt_pipeline_for_turn(final_route, settings)
 }
 
 fn build_intent_classifier_recent_context(
@@ -1192,67 +1004,16 @@ fn build_intent_classifier_recent_context(
     max_turns: usize,
     max_chars: usize,
 ) -> String {
-    let mut selected: Vec<&ConversationTurn> = turns.iter().collect();
-
-    if current_user_persisted {
-        if let Some(last) = selected.last() {
-            if last.role == "user" && last.content.trim() == current_prompt.trim() {
-                selected.pop();
-            }
-        }
-    }
-
-    let mut lines = Vec::new();
-    let mut total_chars = 0usize;
-    for turn in selected.iter().rev().take(max_turns).rev() {
-        let role = match turn.role.as_str() {
-            "user" => "user",
-            "assistant" | "agent" => "assistant",
-            _ => continue,
-        };
-
-        let text = truncate_text_for_budget(&turn.content, INTENT_CLASSIFIER_CONTEXT_LINE_CHARS)
-            .replace('\n', " ");
-        if text.trim().is_empty() {
-            continue;
-        }
-
-        let line = format!("{}: {}", role, text);
-        let line_chars = line.chars().count();
-        if total_chars.saturating_add(line_chars) > max_chars {
-            break;
-        }
-        total_chars = total_chars.saturating_add(line_chars);
-        lines.push(line);
-    }
-
-    lines.join("\n")
-}
-
-fn contains_tool_intent(prompt_lower: &str) -> bool {
-    [
-        "search", "look up", "lookup", "run ", "execute", "query", "fetch", "verify", "evidence",
-        "grapheme", "tool", "call", "api", "latest",
-    ]
-    .iter()
-    .any(|needle| prompt_lower.contains(needle))
-}
-
-fn contains_direct_answer_intent(prompt_lower: &str) -> bool {
-    [
-        "explain",
-        "summarize",
-        "rephrase",
-        "clarify",
-        "what does",
-        "how does",
-        "why",
-        "help me understand",
-        "give me",
-        "draft",
-    ]
-    .iter()
-    .any(|needle| prompt_lower.contains(needle))
+    turn_services::build_intent_classifier_recent_context(
+        turns,
+        current_prompt,
+        current_user_persisted,
+        max_turns,
+        max_chars,
+        IntentContextLimits {
+            context_line_chars: INTENT_CLASSIFIER_CONTEXT_LINE_CHARS,
+        },
+    )
 }
 
 async fn emit_tool_payload_events(tx: &mpsc::Sender<TuiEvent>, invocations: &[ToolInvocation]) {
@@ -1610,11 +1371,7 @@ pub(crate) fn stop_active_generation(state: &mut TuiState) {
 }
 
 fn parse_tool_call_mode(value: &str) -> ToolCallMode {
-    if value.trim().eq_ignore_ascii_case("strict") {
-        ToolCallMode::Strict
-    } else {
-        ToolCallMode::Auto
-    }
+    turn_services::parse_tool_call_mode(value)
 }
 
 fn resolve_prompt_with_context_pack(
@@ -2038,22 +1795,6 @@ fn apply_verifier_policy_profile(
         }
         _ => {}
     }
-}
-
-fn route_base_url(
-    route: &medousa::stage_routing::StageRoute,
-    settings: &super::RuntimeSettings,
-) -> Option<String> {
-    if route
-        .provider
-        .eq_ignore_ascii_case(settings.provider.trim())
-    {
-        let candidate = settings.base_url.trim();
-        if !candidate.is_empty() {
-            return Some(candidate.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]

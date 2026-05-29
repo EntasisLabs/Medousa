@@ -66,8 +66,12 @@ mod perf;
 mod settings_runtime;
 #[path = "medousa_tui/settings_ui.rs"]
 mod settings_ui;
+#[path = "medousa_tui/slash_command_services.rs"]
+mod slash_command_services;
 #[path = "medousa_tui/slash_commands.rs"]
 mod slash_commands;
+#[path = "medousa_tui/turn_services.rs"]
+mod turn_services;
 #[path = "medousa_tui/theme_ui.rs"]
 mod theme_ui;
 #[path = "medousa_tui/ui_helpers.rs"]
