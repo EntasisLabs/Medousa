@@ -10,6 +10,10 @@ name = "medousa_cli"
 path = "src/bin/medousa_cli.rs"
 
 [[bin]]
+name = "medousa"
+path = "src/bin/medousa.rs"
+
+[[bin]]
 name = "medousa_daemon"
 path = "src/bin/medousa_daemon.rs"
 
@@ -36,12 +40,13 @@ axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "5"
-ratatui = "0.29"
+ratatui = "0.30.0"
+ratatui-image = { version = "11.0.2", default-features = false, features = ["crossterm"] }
+image = { version = "0.25.6", default-features = false, features = ["png"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 futures-util = "0.3"
 stasis-rs = { version = "0.1.0"}
 stasis-rs-macros = { version = "0.1.0"}
-ratatui-markdown = "0.2.2"
 genai = "0.5.3"
 keyring = "2.3"
 locus-core-rs = "0.2.1"

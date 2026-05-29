@@ -6,6 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const API_KEY_SERVICE: &str = "medousa.tui";
 const API_KEY_ACCOUNT: &str = "api_key";
+const DISCORD_BOT_TOKEN_SERVICE: &str = "medousa.discord";
+const DISCORD_BOT_TOKEN_ACCOUNT: &str = "bot_token";
+const TELEGRAM_BOT_TOKEN_SERVICE: &str = "medousa.telegram";
+const TELEGRAM_BOT_TOKEN_ACCOUNT: &str = "bot_token";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationTurn {
@@ -91,12 +95,42 @@ fn api_key_secret_path() -> PathBuf {
     medousa_data_dir().join("secrets").join("api_key")
 }
 
+fn discord_bot_token_secret_path() -> PathBuf {
+    medousa_data_dir().join("secrets").join("discord_bot_token")
+}
+
+fn telegram_bot_token_secret_path() -> PathBuf {
+    medousa_data_dir().join("secrets").join("telegram_bot_token")
+}
+
 fn api_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
     keyring::Entry::new(API_KEY_SERVICE, API_KEY_ACCOUNT)
 }
 
+fn discord_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new(DISCORD_BOT_TOKEN_SERVICE, DISCORD_BOT_TOKEN_ACCOUNT)
+}
+
+fn telegram_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new(TELEGRAM_BOT_TOKEN_SERVICE, TELEGRAM_BOT_TOKEN_ACCOUNT)
+}
+
 fn file_api_key() -> Option<String> {
     std::fs::read_to_string(api_key_secret_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn file_discord_bot_token() -> Option<String> {
+    std::fs::read_to_string(discord_bot_token_secret_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn file_telegram_bot_token() -> Option<String> {
+    std::fs::read_to_string(telegram_bot_token_secret_path())
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -140,7 +174,10 @@ fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if path.ends_with("api_key") {
+        if path.ends_with("api_key")
+            || path.ends_with("discord_bot_token")
+            || path.ends_with("telegram_bot_token")
+        {
             let _ = std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o600));
         }
     }
@@ -210,6 +247,82 @@ pub fn save_tui_api_key(api_key: Option<&str>) {
         }
         None => {
             if let Ok(entry) = api_key_keyring_entry() {
+                let _ = entry.delete_password();
+            }
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+pub fn load_discord_bot_token() -> Option<String> {
+    if let Ok(entry) = discord_bot_token_keyring_entry() {
+        if let Ok(value) = entry.get_password() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    file_discord_bot_token()
+}
+
+pub fn save_discord_bot_token(token: Option<&str>) {
+    let path = discord_bot_token_secret_path();
+
+    match token.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(value) => {
+            let mut persisted = false;
+            if let Ok(entry) = discord_bot_token_keyring_entry() {
+                persisted = entry.set_password(value).is_ok();
+            }
+
+            if persisted {
+                let _ = std::fs::remove_file(path);
+            } else {
+                let _ = atomic_write(&path, value.as_bytes());
+            }
+        }
+        None => {
+            if let Ok(entry) = discord_bot_token_keyring_entry() {
+                let _ = entry.delete_password();
+            }
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+pub fn load_telegram_bot_token() -> Option<String> {
+    if let Ok(entry) = telegram_bot_token_keyring_entry() {
+        if let Ok(value) = entry.get_password() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    file_telegram_bot_token()
+}
+
+pub fn save_telegram_bot_token(token: Option<&str>) {
+    let path = telegram_bot_token_secret_path();
+
+    match token.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(value) => {
+            let mut persisted = false;
+            if let Ok(entry) = telegram_bot_token_keyring_entry() {
+                persisted = entry.set_password(value).is_ok();
+            }
+
+            if persisted {
+                let _ = std::fs::remove_file(path);
+            } else {
+                let _ = atomic_write(&path, value.as_bytes());
+            }
+        }
+        None => {
+            if let Ok(entry) = telegram_bot_token_keyring_entry() {
                 let _ = entry.delete_password();
             }
             let _ = std::fs::remove_file(path);

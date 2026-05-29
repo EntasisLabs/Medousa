@@ -1,193 +1,177 @@
 # Medousa
 
-Medousa is a cognitive runtime surface built on top of Stasis orchestration primitives.
+Medousa is a guided AI workspace for people who want to ask questions, get useful answers, and keep a clear trail of what happened.
 
-It is designed for practical, evidence-aware assistant operation across three surfaces:
+Core surfaces:
 
-- `medousa_tui`: interactive operator workspace
-- `medousa_cli`: one-shot command runner and daemon client
-- `medousa_daemon`: long-running API and scheduler process
-- `medousa_telegram`: Telegram ingress adapter over daemon ask lane
-- `medousa_discord`: Discord ingress adapter over daemon ask lane
+- `medousa`: launcher (`onboard`, `tui`, `daemon`, `discord`, `telegram`, `doctor`)
+- `medousa_tui`: interactive workspace
+- `medousa_cli`: one-shot client and daemon controls
+- `medousa_daemon`: long-running API and scheduler
+- `medousa_telegram`: Telegram ingress adapter
+- `medousa_discord`: Discord ingress adapter
 
-The product model is straightforward:
+## Get Started in 60 Seconds
 
-1. keep interaction ergonomic for day-to-day use
-2. keep execution durable and inspectable
-3. keep evidence and confidence visible when needed
+### Prerequisites
 
-## What Medousa Does
+- Rust toolchain (`cargo`)
+- One model provider:
+  - OpenAI-compatible API key, or
+  - Local Ollama instance
 
-Medousa combines:
+### One Command Setup
 
-- conversational prompting with tool-loop orchestration
-- artifact capture and chunk references for large payloads
-- extraction, verification, and context-pack composition flows
-- role-based stage routing controls
-- progressive disclosure of answer state and verification signals
-
-In practice, this means you can run normal assistant turns, inspect what happened, and tune behavior without leaving the product surface.
-
-## Capability Snapshot
-
-Core interaction:
-
-- interactive chat with streaming responses
-- slash commands for runtime, artifacts, verification, export, and control
-- command palette and keyboard-first overlays
-
-Evidence and trust:
-
-- payload receipts and artifact persistence
-- chunk references and extraction support
-- verification scoring and verification lineage records
-- answer-state labeling (`verified` or `provisional`) in chat output
-
-Routing and behavior control:
-
-- role-based routing matrix for stage roles
-- per-role provider/model/policy/fallback controls
-- response depth controls (`concise`, `standard`, `deep`)
-
-Operations:
-
-- daemon endpoints for ask/prompt/recurring workflows
-- daemon job result endpoint for adapter polling (`/v1/jobs/{job_id}/result`)
-- daemon report enqueue endpoint for citation-first research runs (`/v1/jobs/report`)
-- daemon structured report endpoint with citations + evidence summary (`/v1/jobs/{job_id}/report`)
-- daemon heartbeat status endpoint for proactive lane visibility (`/v1/heartbeat/status`)
-- scheduler loop for recurring materialization and processing
-- backend parity for `in-memory` and `surreal-mem`
-- Telegram adapter ingress that maps chat/user identity and enqueues interactive ask jobs
-- Discord adapter ingress that maps channel/user identity and enqueues interactive ask jobs
-
-## Quick Start
-
-### Recommended First Run Path (Operator)
-
-1. Start daemon:
+Install the binaries and run onboarding:
 
 ```bash
-cargo run -p medousa --bin medousa_daemon -- --backend in-memory
+cargo install --path .
+medousa setup
 ```
 
-2. Run guided first-run checks (health + heartbeat + report trigger guidance):
+The setup wizard is guided and fast:
+
+1. Checks your machine and suggests the best provider default
+2. Captures model and API key only when needed
+3. Lets you configure Discord and Telegram bot tokens in the same flow
+4. Lets you set Telegram sender allowlist IDs in the same flow
+5. Saves defaults so you do not repeat setup next time
+6. Starts local runtime automatically (unless you opt out)
+7. Can start Discord and Telegram adapters right away
+8. Opens the chat workspace immediately
+
+The interactive setup uses a ratatui wizard experience:
+
+- `Enter`: next/confirm
+- `Left`: previous step
+- `Up/Down`: change selection
+- `Space`: toggle yes/no options
+- `Esc`: cancel without saving
+
+Alias commands are identical:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-first-run --daemon-url http://127.0.0.1:7419
+medousa onboard
+medousa init
 ```
 
-3. Trigger a citation-first report flow:
+If you are running from source without installing:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-report "Summarize 3 practical runtime trends with citations" --daemon-url http://127.0.0.1:7419 --poll-timeout-ms 30000
+cargo run -p medousa --bin medousa -- setup
 ```
 
-This path is the fastest way for a new operator to verify runtime health, heartbeat visibility, and report behavior before enabling adapters.
+## Daily Commands
 
-## 1) Run the TUI
+Open workspace (auto-start daemon if needed):
 
 ```bash
-cargo run -p medousa --bin medousa_tui
+medousa tui
 ```
 
-Common in-TUI commands:
-
-- `/settings` for runtime + routing controls
-- `/history` for session history
-- `/artifact-*` and `/verify-*` for evidence/verification workflows
-- `/depth concise|standard|deep` for response depth behavior
-
-## 2) Run a one-shot CLI prompt
+Check current setup, daemon reachability, and key presence:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- llm "Summarize this runtime state in 5 bullets"
+medousa doctor
 ```
 
-## 3) Run daemon mode
+Run daemon in foreground:
 
 ```bash
-cargo run -p medousa --bin medousa_daemon -- --backend in-memory
+medousa daemon
 ```
 
-Then call daemon endpoints from CLI:
+Run adapters through the launcher (uses stored token from setup when available):
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-health
-cargo run -p medousa --bin medousa_cli -- daemon-heartbeat-status
-cargo run -p medousa --bin medousa_cli -- daemon-report "Summarize 3 practical runtime trends with citations" --poll-timeout-ms 30000
+medousa discord
+medousa telegram
 ```
 
-Optional heartbeat tuning when starting daemon:
+Non-interactive onboarding example:
 
 ```bash
-cargo run -p medousa --bin medousa_daemon -- --backend in-memory \
-	--heartbeat-min-significance 0.70 \
-	--heartbeat-dead-letter-weight 0.6 \
-	--heartbeat-failed-weight 0.2 \
-	--heartbeat-outbox-weight 0.15 \
-	--heartbeat-activity-weight 0.05 \
-	--heartbeat-min-notify-interval-secs 300 \
-	--heartbeat-quiet-start-hour-utc 23 \
-	--heartbeat-quiet-end-hour-utc 7
+medousa setup --yes --provider ollama --model llama3.2 --no-daemon --no-tui
 ```
 
-`daemon-heartbeat-status` now includes delivery suppression metrics (quiet-hours + min-interval) so you can tune false-positive behavior.
+Advanced setup options (backend + daemon URL prompts):
 
-`daemon-report` enqueues a citation-first ask-to-report job and polls `/v1/jobs/{job_id}/report` for structured output (status, citations, evidence summary).
+```bash
+medousa setup --advanced
+```
 
-## 3.1) Identity Continuity Workflow (Inspect/Edit/Explain/Reverse)
+## Operator First-Run Checks (Recommended)
 
-Use the continuity workflow commands to keep identity changes explainable, reviewable, and reversible:
+Once daemon is up, validate runtime health and report behavior:
+
+```bash
+medousa_cli daemon-first-run --daemon-url http://127.0.0.1:7419
+medousa_cli daemon-report "Summarize 3 practical runtime trends with citations" --daemon-url http://127.0.0.1:7419 --poll-timeout-ms 30000
+```
+
+## Identity Continuity Workflow
 
 Inspect current continuity context:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-identity-inspect --daemon-url http://127.0.0.1:7419
+medousa_cli daemon-identity-inspect --daemon-url http://127.0.0.1:7419
 ```
 
-Propose an identity update with policy-aware guidance:
+Propose an update:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-identity-update user demo-user '{"timezone":"UTC","language_variant":"en-US"}' --reason "seed continuity demo" --daemon-url http://127.0.0.1:7419
+medousa_cli daemon-identity-update user demo-user '{"timezone":"UTC","language_variant":"en-US"}' --reason "seed continuity demo" --daemon-url http://127.0.0.1:7419
 ```
 
-Review audit history and change posture:
+Review and explain recent changes:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-identity-review user demo-user --daemon-url http://127.0.0.1:7419
+medousa_cli daemon-identity-review user demo-user --daemon-url http://127.0.0.1:7419
+medousa_cli daemon-identity-explain user demo-user --daemon-url http://127.0.0.1:7419
 ```
 
-Explain latest continuity changes in operator language:
+Rollback remains explicit:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-identity-explain user demo-user --daemon-url http://127.0.0.1:7419
+medousa_cli daemon-identity-rollback user demo-user <target_version> --reason "manual continuity rollback" --approver medousa-cli --daemon-url http://127.0.0.1:7419
 ```
 
-Rollback remains explicit and available when needed:
+## Adapter Ingress
+
+### Telegram
+
+Quick path via launcher:
 
 ```bash
-cargo run -p medousa --bin medousa_cli -- daemon-identity-rollback user demo-user <target_version> --reason "manual continuity rollback" --approver medousa-cli --daemon-url http://127.0.0.1:7419
+medousa telegram
 ```
 
-## 4) Run Telegram adapter (ingress bridge)
-
-Set a bot token and start the adapter against daemon:
+Direct binary:
 
 ```bash
 export MEDOUSA_TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
-cargo run -p medousa --bin medousa_telegram -- --daemon-url http://127.0.0.1:7419 --allow-commands help,health,heartbeat,ask --max-prompt-chars 1400
+medousa_telegram --daemon-url http://127.0.0.1:7419 --allow-commands help,health,heartbeat,ask --max-prompt-chars 1400
 ```
 
-Safer default: plain-text ingress is disabled unless you explicitly add `text` to `--allow-commands`.
+Plain-text ingress is disabled by default unless `text` is added to `--allow-commands`.
 
-Optional per-chat safety overrides:
+Sender allowlist (recommended for production):
+
+```bash
+export MEDOUSA_TELEGRAM_ALLOW_USER_IDS="123456789,987654321"
+medousa telegram --allow-user-ids 123456789,987654321
+```
+
+The adapter will ignore messages from users not in this allowlist.
+When configured in `medousa setup`, the launcher applies it automatically for `medousa telegram`.
+
+Optional safety overrides:
 
 ```bash
 export MEDOUSA_TELEGRAM_MAX_PROMPT_CHARS_BY_CHAT="-1001234567890:1000,123456789:700"
 ```
 
-Optional proactive heartbeat nudges to specific chats:
+Optional proactive heartbeat nudges:
 
 ```bash
 export MEDOUSA_TELEGRAM_HEARTBEAT_NUDGES_ENABLED=true
@@ -195,32 +179,30 @@ export MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS="-1001234567890,123456789"
 export MEDOUSA_TELEGRAM_HEARTBEAT_MIN_SIGNIFICANCE=0.75
 ```
 
-Inside Telegram:
+### Discord
 
-- `/help` for command help
-- `/health` to check daemon connectivity
-- `/heartbeat` to inspect daemon heartbeat status
-- `/ask <prompt>` or plain text to enqueue interactive ask jobs (plain text requires `text` in allowlist)
-- adapter posts a queue receipt immediately and follows up with final result text when daemon job reaches terminal state within poll timeout
+Quick path via launcher:
 
-## 5) Run Discord adapter (ingress bridge)
+```bash
+medousa discord
+```
 
-Set a bot token and start the adapter against daemon:
+Direct binary:
 
 ```bash
 export MEDOUSA_DISCORD_BOT_TOKEN=<your-discord-bot-token>
-cargo run -p medousa --bin medousa_discord -- --daemon-url http://127.0.0.1:7419 --command-prefix ! --allow-commands help,health,heartbeat,ask --max-prompt-chars 1400
+medousa_discord --daemon-url http://127.0.0.1:7419 --command-prefix ! --allow-commands help,health,heartbeat,ask --max-prompt-chars 1400
 ```
 
-Safer default: plain-text ingress is disabled unless you explicitly add `text` to `--allow-commands`.
+Plain-text ingress is disabled by default unless `text` is added to `--allow-commands`.
 
-Optional per-channel safety overrides:
+Optional safety overrides:
 
 ```bash
 export MEDOUSA_DISCORD_MAX_PROMPT_CHARS_BY_CHANNEL="123456789012345678:1000,234567890123456789:700"
 ```
 
-Optional proactive heartbeat nudges to specific channels:
+Optional proactive heartbeat nudges:
 
 ```bash
 export MEDOUSA_DISCORD_HEARTBEAT_NUDGES_ENABLED=true
@@ -228,19 +210,9 @@ export MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS="123456789012345678,234567890123456
 export MEDOUSA_DISCORD_HEARTBEAT_MIN_SIGNIFICANCE=0.75
 ```
 
-Inside Discord (message commands):
-
-- `!help` for command help (also supports `/help` syntax)
-- `!health` to check daemon connectivity
-- `!heartbeat` to inspect daemon heartbeat status
-- `!ask <prompt>` or plain text to enqueue interactive ask jobs (plain text requires `text` in allowlist)
-- adapter posts a queue receipt immediately and follows up with final result text when daemon job reaches terminal state within poll timeout
-
 ## Runtime Configuration
 
-Provider/model can be set by flags or environment.
-
-Common examples:
+Environment examples:
 
 ```bash
 export STASIS_LLM_PROVIDER=openai
@@ -255,56 +227,46 @@ export STASIS_LLM_MODEL=llama3.2
 export MEDOUSA_OLLAMA_BASE_URL=http://localhost:11434/v1/
 ```
 
-## Typical Usage Flows
+## Typical Flows
 
-## Flow A: Interactive investigation loop (TUI)
+Flow A: interactive investigation loop
 
 1. Start in chat and ask a question.
-2. Use observability output to inspect tool/runtime behavior.
+2. Inspect tool/runtime behavior in observability output.
 3. Use artifact and verification commands to inspect trust signals.
 4. Adjust routing/settings/depth as needed.
 
-## Flow B: Script execution + validation
+Flow B: script execution and validation
 
 1. Open editor (`/edit` or `/open`).
 2. Run script (`/run` or `/run-current`).
 3. Review runtime diagnostics and job outcomes.
-4. Persist/export relevant output.
+4. Persist or export relevant output.
 
-## Flow C: Service operation (daemon)
+Flow C: service operation
 
-1. Start daemon for continuous scheduling.
-2. Enqueue ask/prompt/recurring work via API or CLI client commands.
-3. Track health/stats and outcomes through API + runtime logs.
-
-## What to Expect
-
-Behavioral expectations:
-
-- durable execution semantics come from Stasis job lifecycle
-- tool and runtime diagnostics are first-class and visible
-- answer confidence can vary by evidence availability and policy settings
-
-Operational expectations:
-
-- `in-memory` backend is fast for local work and iteration
-- `surreal-mem` is useful for more durable runtime workflows
-- settings changes in TUI rebuild runtime composition where applicable
+1. Run daemon for continuous scheduling.
+2. Enqueue ask/prompt/recurring work via API or CLI.
+3. Track health and outcomes through API and logs.
 
 ## Persistence and Data Locations
 
-TUI-managed local data is stored under:
+Local data is stored under:
 
 - `~/.local/share/medousa/history/`
 - `~/.local/share/medousa/tui_defaults.json`
 - `~/.local/share/medousa/last_session`
+- `~/.local/share/medousa/onboard_profile.json`
+- `~/.local/share/medousa/logs/daemon.log`
+- `~/.local/share/medousa/logs/discord.log`
+- `~/.local/share/medousa/logs/telegram.log`
 - `~/.local/share/medousa/secrets/api_key` (file fallback when keyring is unavailable)
+- `~/.local/share/medousa/secrets/discord_bot_token` (file fallback when keyring is unavailable)
+- `~/.local/share/medousa/secrets/telegram_bot_token` (file fallback when keyring is unavailable)
 
-API keys use OS keyring when available.
+Secrets (API key and bot tokens) use OS keyring when available.
 
 ## Architecture References
-
-For technical internals:
 
 - [architecture/README.md](architecture/README.md)
 - [architecture/enterprise-architecture-and-flow-guide.md](architecture/enterprise-architecture-and-flow-guide.md)
