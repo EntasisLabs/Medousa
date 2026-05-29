@@ -1,23 +1,30 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Timelike, Utc};
+use futures_util::stream::{self, Stream};
+use genai::chat::{ChatMessage, ChatRequest};
 use medousa::artifact_chunking::chunk_json_payload;
 use medousa::artifact_extraction::{extract_claims_from_chunks, persist_extraction_run};
 use medousa::context_pack::{
     BuildContextPackInput, ContextPackBudgetProfile, build_context_pack, persist_context_pack,
 };
 use medousa::engine_context::{
+    ContextCompilerInput,
     EngineExecutionLane, HeartbeatAction, HeartbeatLanePolicy, HeartbeatSignals,
     LaneSafetyActionClass,
+    RecallReadiness,
+    compile_context_prompt,
     compile_default_lane_prompt, default_heartbeat_lane_policy,
     default_policy_profile_for_lane, evaluate_heartbeat_significance,
     validate_lane_action, validate_lane_policy_profile,
@@ -32,24 +39,33 @@ use medousa::daemon_api::{
     DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
     EnqueueResponse, HealthResponse, HeartbeatDeliveryMetricsResponse,
     HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse, HeartbeatStatusResponse,
+    InteractiveTurnRequest, InteractiveTurnResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
-    JobResultResponse,
-    RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    JobResultResponse, InteractiveTurnStreamEvent,
+    RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
+    RuntimeConfigCommandResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
+    StageRouteCommandRequest, StageRouteCommandResponse,
 };
 use medousa::{build_runtime_with_identity_store, parse_backend};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{RwLock, watch};
+use tokio::sync::{RwLock, broadcast, watch};
 use uuid::Uuid;
 
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::application::runtime::identity_context_compiler::prepend_identity_snapshot;
+use stasis::application::orchestration::prompt_pipeline::{
+    PromptExecutionContext, PromptExecutionPipeline,
+};
 use stasis::application::orchestration::runtime_job_payloads::{
     AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
 };
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
+use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
+use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextRequest,
     GetIdentityContextResponse, ListEntityHistoryRequest, ListEntityHistoryResponse,
@@ -66,6 +82,8 @@ use stasis::sdk::runtime_sdk::RuntimeStatsSnapshot;
 #[derive(Clone)]
 struct AppState {
     runtime: Arc<RuntimeComposition>,
+    daemon_base_url: String,
+    interactive_turn_streams: Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
     backend: String,
     worker_id: String,
     identity_service: Arc<IdentityMemoryService>,
@@ -277,6 +295,8 @@ async fn main() -> Result<()> {
 
     let state = AppState {
         runtime: runtime.clone(),
+        daemon_base_url: format!("http://{bind}"),
+        interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
         worker_id: worker_id.clone(),
         identity_service,
@@ -293,6 +313,9 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
+        .route("/v1/sessions", get(list_session_history))
+        .route("/v1/sessions/{session_id}/history", get(get_session_history))
+        .route("/v1/sessions/{session_id}/turns", post(append_session_turn))
         .route("/v1/heartbeat/status", get(heartbeat_status))
         .route("/v1/jobs/{job_id}/result", get(get_job_result))
         .route("/v1/jobs/{job_id}/report", get(get_job_report))
@@ -300,7 +323,14 @@ async fn main() -> Result<()> {
         .route("/v1/jobs/report", post(enqueue_report))
         .route("/v1/jobs/prompt", post(enqueue_prompt))
         .route("/v1/recurring/prompt", post(register_recurring_prompt))
+        .route("/v1/interactive/turn", post(start_interactive_turn))
+        .route(
+            "/v1/interactive/turn/{turn_id}/stream",
+            get(interactive_turn_stream),
+        )
         .route("/v1/runtime/artifact/command", post(artifact_command))
+        .route("/v1/runtime/config/command", post(runtime_config_command))
+        .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))
         .route("/v1/identity/update/propose", post(identity_propose_update))
         .route("/v1/identity/update/commit", post(identity_commit_update))
@@ -506,6 +536,42 @@ async fn stats(
         pending_outbox_events: snapshot.pending_outbox_events,
         recurring_definitions: snapshot.recurring_definitions,
         last_tick_at_utc,
+    }))
+}
+
+async fn list_session_history(
+    Query(request): Query<SessionHistoryListRequest>,
+) -> Result<Json<SessionHistoryListResponse>, (StatusCode, String)> {
+    let limit = request.limit.unwrap_or(200).clamp(1, 1000);
+    let sessions = medousa::session::list_history_sessions(limit);
+    Ok(Json(SessionHistoryListResponse { sessions }))
+}
+
+async fn get_session_history(
+    AxumPath(session_id): AxumPath<String>,
+) -> Result<Json<SessionHistoryResponse>, (StatusCode, String)> {
+    let session_id = session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+
+    let turns = medousa::session::load_history(&session_id);
+    Ok(Json(SessionHistoryResponse { session_id, turns }))
+}
+
+async fn append_session_turn(
+    AxumPath(session_id): AxumPath<String>,
+    Json(request): Json<SessionAppendTurnRequest>,
+) -> Result<Json<SessionAppendTurnResponse>, (StatusCode, String)> {
+    let session_id = session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+
+    medousa::session::append_turn(&session_id, &request.turn);
+    Ok(Json(SessionAppendTurnResponse {
+        session_id,
+        stored: true,
     }))
 }
 
@@ -1048,6 +1114,289 @@ async fn register_recurring_prompt(
     }))
 }
 
+async fn start_interactive_turn(
+    State(state): State<AppState>,
+    Json(request): Json<InteractiveTurnRequest>,
+) -> Result<Json<InteractiveTurnResponse>, (StatusCode, String)> {
+    let turn_id = format!("daemon-turn-{}", Uuid::new_v4().simple());
+    let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
+
+    {
+        let mut guard = state.interactive_turn_streams.write().await;
+        guard.insert(turn_id.clone(), stream_tx.clone());
+    }
+
+    let response = medousa::interactive_turn_runtime::build_interactive_turn_response(
+        &request,
+        &state.daemon_base_url,
+        &turn_id,
+        true,
+        false,
+        None,
+        Some("interactive turn accepted; daemon streaming active".to_string()),
+    )
+    .map_err(internal_error)?;
+
+    let stream_registry = state.interactive_turn_streams.clone();
+    tokio::spawn(async move {
+        // Give the client a brief window to subscribe before first deltas.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        run_interactive_turn_stream_task(turn_id.clone(), request, stream_tx).await;
+
+        // Keep stream available briefly for reconnect/debug then clean up.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let mut guard = stream_registry.write().await;
+        guard.remove(&turn_id);
+    });
+
+    Ok(Json(response))
+}
+
+async fn interactive_turn_stream(
+    State(state): State<AppState>,
+    AxumPath(turn_id): AxumPath<String>,
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
+{
+    let sender = {
+        let guard = state.interactive_turn_streams.read().await;
+        guard.get(&turn_id).cloned()
+    }
+    .ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            format!("unknown interactive turn_id '{}'", turn_id),
+        )
+    })?;
+
+    let stream = stream::unfold(sender.subscribe(), |mut receiver| async move {
+        match receiver.recv().await {
+            Ok(payload) => {
+                let event = match Event::default()
+                    .event(payload.event_type.clone())
+                    .json_data(payload)
+                {
+                    Ok(value) => value,
+                    Err(err) => Event::default()
+                        .event("error")
+                        .data(format!("stream serialization error: {err}")),
+                };
+                Some((Ok::<Event, Infallible>(event), receiver))
+            }
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                let event = Event::default()
+                    .event("status")
+                    .data(format!("stream lag detected; skipped {} event(s)", skipped));
+                Some((Ok::<Event, Infallible>(event), receiver))
+            }
+            Err(broadcast::error::RecvError::Closed) => None,
+        }
+    });
+
+    Ok(
+        Sse::new(stream)
+            .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keep-alive")),
+    )
+}
+
+async fn run_interactive_turn_stream_task(
+    turn_id: String,
+    request: InteractiveTurnRequest,
+    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+) {
+    publish_interactive_turn_event(
+        &stream_tx,
+        medousa::interactive_turn_runtime::status_stream_event(
+            &turn_id,
+            "accepted",
+            "interactive turn accepted; daemon streaming started",
+        ),
+    );
+
+    let final_route = request.stage_routing.get("final_response").cloned();
+    if let Some(route) = final_route.as_ref() {
+        publish_interactive_turn_event(
+            &stream_tx,
+            medousa::interactive_turn_runtime::status_stream_event(
+                &turn_id,
+                "routing",
+                format!(
+                    "final_response route target={}:{} policy={} fallback={}",
+                    route.provider,
+                    route.model,
+                    route.policy_profile,
+                    route.fallback_chain.join(",")
+                )
+                .as_str(),
+            ),
+        );
+    }
+
+    let compiler_output = compile_context_prompt(ContextCompilerInput {
+        lane: EngineExecutionLane::Interactive,
+        user_prompt: &request.prompt,
+        response_depth_mode: &request.response_depth_mode,
+        stage_route: final_route.as_ref(),
+        recall_readiness: RecallReadiness::Missing,
+    });
+
+    let resolved_provider = medousa::resolve_llm_provider(Some(request.provider.trim()));
+    let resolved_model = medousa::resolve_llm_model(Some(request.model.trim()));
+    let resolved_base_url = medousa::resolve_llm_base_url(Some(&resolved_provider), None);
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(
+        GenaiChatClient::from_provider_model_with_base_url(
+            Some(&resolved_provider),
+            &resolved_model,
+            resolved_base_url.as_deref(),
+        ),
+    );
+    let pipeline = PromptExecutionPipeline::new(chat_client);
+
+    let messages = vec![
+        ChatMessage::system(
+            "You are Medousa, a practical assistant. Be concise and structured.".to_string(),
+        ),
+        ChatMessage::user(compiler_output.compiled_prompt),
+    ];
+
+    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+    let chunk_stream_tx = stream_tx.clone();
+    let chunk_turn_id = turn_id.clone();
+    let chunk_forwarder = tokio::spawn(async move {
+        while let Some(delta) = chunk_rx.recv().await {
+            match delta {
+                StreamDelta::Content(value) => publish_interactive_turn_event(
+                    &chunk_stream_tx,
+                    medousa::interactive_turn_runtime::content_delta_stream_event(
+                        &chunk_turn_id,
+                        &value,
+                    ),
+                ),
+                StreamDelta::Reasoning(value) | StreamDelta::ThoughtSignature(value) => {
+                    publish_interactive_turn_event(
+                        &chunk_stream_tx,
+                        medousa::interactive_turn_runtime::reasoning_delta_stream_event(
+                            &chunk_turn_id,
+                            &value,
+                        ),
+                    )
+                }
+            }
+        }
+    });
+
+    let completion = pipeline
+        .complete_chat_stream(
+            ChatRequest::new(messages),
+            PromptExecutionContext::default(),
+            Some(&chunk_tx),
+        )
+        .await;
+    drop(chunk_tx);
+    let _ = chunk_forwarder.await;
+
+    match completion {
+        Ok(completion) => {
+            let final_text = completion
+                .response
+                .into_first_text()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| {
+                    "I do not have enough information to answer confidently for this turn."
+                        .to_string()
+                });
+
+            publish_interactive_turn_event(
+                &stream_tx,
+                medousa::interactive_turn_runtime::final_stream_event(&turn_id, &final_text),
+            );
+        }
+        Err(err) => {
+            publish_interactive_turn_event(
+                &stream_tx,
+                medousa::interactive_turn_runtime::status_stream_event(
+                    &turn_id,
+                    "degraded",
+                    format!(
+                        "daemon model stream unavailable; using deterministic fallback ({})",
+                        truncate_for_notice(&err.to_string(), 160)
+                    )
+                    .as_str(),
+                ),
+            );
+
+            let fallback_text = deterministic_fallback_turn_text(&request.prompt);
+            for chunk in chunk_text_for_stream(&fallback_text, 56) {
+                publish_interactive_turn_event(
+                    &stream_tx,
+                    medousa::interactive_turn_runtime::content_delta_stream_event(
+                        &turn_id,
+                        chunk.as_str(),
+                    ),
+                );
+            }
+            publish_interactive_turn_event(
+                &stream_tx,
+                medousa::interactive_turn_runtime::final_stream_event(&turn_id, &fallback_text),
+            );
+        }
+    }
+}
+
+fn deterministic_fallback_turn_text(prompt: &str) -> String {
+    let topic = truncate_for_notice(prompt.trim(), 140);
+    format!(
+        "Daemon fallback response: live model streaming is unavailable right now, but phase-2 transport is active.\n\nPrompt summary: {}",
+        if topic.is_empty() {
+            "(no prompt)".to_string()
+        } else {
+            topic
+        }
+    )
+}
+
+fn chunk_text_for_stream(text: &str, chunk_chars: usize) -> Vec<String> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let max_chars = chunk_chars.max(16);
+
+    for ch in text.chars() {
+        current.push(ch);
+        if current.chars().count() >= max_chars {
+            chunks.push(current.clone());
+            current.clear();
+        }
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    chunks
+}
+
+fn truncate_for_notice(value: &str, max_chars: usize) -> String {
+    let out = value.chars().take(max_chars).collect::<String>();
+    if value.chars().count() > max_chars {
+        format!("{out}...")
+    } else {
+        out
+    }
+}
+
+fn publish_interactive_turn_event(
+    stream_tx: &broadcast::Sender<InteractiveTurnStreamEvent>,
+    event: Result<InteractiveTurnStreamEvent>,
+) {
+    if let Ok(payload) = event {
+        let _ = stream_tx.send(payload);
+    }
+}
+
 async fn artifact_command(
     Json(request): Json<ArtifactCommandRequest>,
 ) -> Result<Json<ArtifactCommandResponse>, (StatusCode, String)> {
@@ -1056,6 +1405,22 @@ async fn artifact_command(
     }
 
     let response = medousa::artifact_command_runtime::execute_artifact_command(request)
+        .map_err(internal_error)?;
+    Ok(Json(response))
+}
+
+async fn runtime_config_command(
+    Json(request): Json<RuntimeConfigCommandRequest>,
+) -> Result<Json<RuntimeConfigCommandResponse>, (StatusCode, String)> {
+    let response = medousa::runtime_config_command_runtime::execute_runtime_config_command(request)
+        .map_err(internal_error)?;
+    Ok(Json(response))
+}
+
+async fn stage_route_command(
+    Json(request): Json<StageRouteCommandRequest>,
+) -> Result<Json<StageRouteCommandResponse>, (StatusCode, String)> {
+    let response = medousa::stage_route_command_runtime::execute_stage_route_command(request)
         .map_err(internal_error)?;
     Ok(Json(response))
 }

@@ -18,7 +18,7 @@ pub(crate) async fn handle_slash_command(
             slash_command_services::handle_new_session_command(state, tui_rt, event_tx).await;
         }
         "/history" => {
-            state.history_items = list_history_sessions(200);
+            state.history_items = history_services::list_history_sessions_daemon_first(state, 200).await;
             state.history_selected = 0;
             state.history_scroll = 0;
             state.history_max_scroll = 0;
@@ -152,16 +152,10 @@ pub(crate) async fn handle_slash_command(
             )
             .await;
         }
-        "/stage-routes" => {
+        "/stage-routes" | "/stage-route-set" | "/stage-route-reset" => {
             let args = parts.collect::<Vec<_>>();
-            return slash_command_stage_services::handle_stage_routes_command(args, state);
-        }
-        "/stage-route-set" => {
-            let args = parts.collect::<Vec<_>>();
-            return slash_command_stage_services::handle_stage_route_set_command(args, state);
-        }
-        "/stage-route-reset" => {
-            return slash_command_stage_services::handle_stage_route_reset_command(state);
+            return slash_command_stage_services::handle_stage_route_family_command(cmd, args, state)
+                .await;
         }
         "/save" => {
             let path_raw = parts.collect::<Vec<_>>().join(" ");
@@ -221,7 +215,8 @@ pub(crate) async fn handle_slash_command(
         }
         "/depth" => {
             let mode = parts.next();
-            return slash_command_services::handle_depth_command(mode, state);
+            return slash_command_services::handle_depth_command(mode, state, tui_rt, event_tx)
+                .await;
         }
         "/stop" => {
             stop_active_generation(state);

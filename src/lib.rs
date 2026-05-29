@@ -8,9 +8,12 @@ pub mod engine_context;
 pub mod events;
 pub mod grapheme_sttp_compaction;
 pub mod identity_memory;
+pub mod interactive_turn_runtime;
 pub mod payload_receipt;
+pub mod runtime_config_command_runtime;
 pub mod session;
 pub mod settings_guard;
+pub mod stage_route_command_runtime;
 pub mod stage_routing;
 pub mod tools;
 pub mod tui;
@@ -35,9 +38,15 @@ pub use daemon_api::{
     EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
     HeartbeatPolicyResponse, HeartbeatStatusResponse,
+    InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
     JobReportResponse, RegisterRecurringPromptRequest, JobResultResponse,
-    RegisterRecurringResponse, resolve_daemon_url,
+    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
+    RuntimeVerifyPolicyState,
+    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListRequest,
+    SessionHistoryListResponse, SessionHistoryResponse,
+    RegisterRecurringResponse, StageRouteCommandRequest, StageRouteCommandResponse,
+    StageRouteCommandSpec, resolve_daemon_url,
 };
 pub use tools::{TuiRuntime, build_tui_runtime};
 

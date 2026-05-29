@@ -154,7 +154,7 @@ pub(crate) async fn handle_key_event(
         if state.mode == UiMode::History {
             state.mode = UiMode::Chat;
         } else {
-            state.history_items = super::list_history_sessions(200);
+            state.history_items = super::history_services::list_history_sessions_daemon_first(state, 200).await;
             state.history_selected = 0;
             state.history_scroll = 0;
             state.history_max_scroll = 0;
@@ -197,7 +197,7 @@ pub(crate) async fn handle_key_event(
     }
 
     if state.mode == UiMode::History {
-        return super::handle_history_key_event(key.code, state);
+        return super::handle_history_key_event(key.code, state).await;
     }
 
     if state.mode == UiMode::CommandPalette {

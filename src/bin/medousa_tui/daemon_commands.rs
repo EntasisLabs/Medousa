@@ -6,6 +6,11 @@ use reqwest::Client;
 use medousa::{
     ArtifactCommandRequest, ArtifactCommandResponse, EnqueueAskRequest, EnqueueResponse,
     HealthResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    InteractiveTurnRequest, InteractiveTurnResponse,
+    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
+    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListResponse,
+    SessionHistoryResponse,
+    StageRouteCommandRequest, StageRouteCommandResponse,
 };
 
 use super::{
@@ -221,4 +226,88 @@ pub(crate) async fn daemon_artifact_command(
         .await?
         .error_for_status()?;
     Ok(response.json::<ArtifactCommandResponse>().await?)
+}
+
+pub(crate) async fn daemon_stage_route_command(
+    daemon_url: &str,
+    request: &StageRouteCommandRequest,
+) -> Result<StageRouteCommandResponse> {
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/runtime/stage-route/command"))
+        .json(request)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<StageRouteCommandResponse>().await?)
+}
+
+pub(crate) async fn daemon_runtime_config_command(
+    daemon_url: &str,
+    request: &RuntimeConfigCommandRequest,
+) -> Result<RuntimeConfigCommandResponse> {
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/runtime/config/command"))
+        .json(request)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<RuntimeConfigCommandResponse>().await?)
+}
+
+pub(crate) async fn daemon_start_interactive_turn(
+    daemon_url: &str,
+    request: &InteractiveTurnRequest,
+) -> Result<InteractiveTurnResponse> {
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/interactive/turn"))
+        .json(request)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<InteractiveTurnResponse>().await?)
+}
+
+pub(crate) async fn daemon_list_history_sessions(
+    daemon_url: &str,
+    limit: usize,
+) -> Result<SessionHistoryListResponse> {
+    let client = Client::new();
+    let response = client
+        .get(format!("{daemon_url}/v1/sessions"))
+        .query(&[("limit", limit)])
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<SessionHistoryListResponse>().await?)
+}
+
+pub(crate) async fn daemon_load_session_history(
+    daemon_url: &str,
+    session_id: &str,
+) -> Result<SessionHistoryResponse> {
+    let client = Client::new();
+    let response = client
+        .get(format!("{daemon_url}/v1/sessions/{session_id}/history"))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<SessionHistoryResponse>().await?)
+}
+
+pub(crate) async fn daemon_append_session_turn(
+    daemon_url: &str,
+    session_id: &str,
+    request: &SessionAppendTurnRequest,
+) -> Result<SessionAppendTurnResponse> {
+    let client = Client::new();
+    let response = client
+        .post(format!("{daemon_url}/v1/sessions/{session_id}/turns"))
+        .json(request)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<SessionAppendTurnResponse>().await?)
 }

@@ -1,6 +1,6 @@
 use medousa::{
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
-    ArtifactVerificationPolicyInput,
+    ArtifactVerificationPolicyInput, RuntimeConfigCommandSpec, RuntimeVerifyPolicyState,
 };
 
 use super::daemon_commands::daemon_artifact_command;
@@ -48,40 +48,39 @@ pub(crate) async fn handle_verify_policy_command(
     tui_rt: &mut TuiRuntime,
     event_tx: &mpsc::Sender<TuiEvent>,
 ) -> EventOutcome {
-    if args.is_empty() {
-        push_obs(
-            state,
-            format!(
-                "◈ verify policy citation={} avg_support={} supported_ratio={} claim_support={}",
-                state.settings.verifier_min_citation_coverage,
-                state.settings.verifier_min_avg_support_strength,
-                state.settings.verifier_min_supported_claim_ratio,
-                state.settings.verifier_min_claim_support_strength,
-            ),
-        );
-        return EventOutcome::Continue;
+    let request = super::slash_command_services::build_runtime_config_request(
+        state,
+        RuntimeConfigCommandSpec::VerifyPolicy {
+            args: args.into_iter().map(ToString::to_string).collect::<Vec<_>>(),
+            current: RuntimeVerifyPolicyState {
+                min_citation_coverage: state.settings.verifier_min_citation_coverage.clone(),
+                min_avg_support_strength: state.settings.verifier_min_avg_support_strength.clone(),
+                min_supported_claim_ratio: state.settings.verifier_min_supported_claim_ratio.clone(),
+                min_claim_support_strength: state.settings.verifier_min_claim_support_strength.clone(),
+            },
+        },
+    );
+
+    match super::slash_command_services::execute_runtime_config_command_with_daemon_fallback(
+        &state.daemon_url,
+        request,
+    )
+    .await
+    {
+        Ok((response, backend_notice)) => {
+            if let Some(notice) = backend_notice {
+                push_obs(state, notice);
+            }
+            super::slash_command_services::apply_runtime_config_response(
+                response, state, tui_rt, event_tx,
+            )
+            .await;
+        }
+        Err(err) => {
+            push_obs(state, format!("⚠ verify policy command failed: {err}"));
+        }
     }
 
-    if args.len() != 4 {
-        push_obs(
-            state,
-            "⚠ usage: /verify-policy <min_citation_coverage> <min_avg_support_strength> <min_supported_claim_ratio> <min_claim_support_strength>"
-                .to_string(),
-        );
-        return EventOutcome::Continue;
-    }
-
-    let normalize = |raw: &str, default: f32| -> String {
-        let parsed = super::parse_f32_with_bounds(raw, default, 0.0, 1.0);
-        format!("{parsed:.2}")
-    };
-
-    state.settings_draft.verifier_min_citation_coverage = normalize(args[0], 0.60);
-    state.settings_draft.verifier_min_avg_support_strength = normalize(args[1], 0.70);
-    state.settings_draft.verifier_min_supported_claim_ratio = normalize(args[2], 0.60);
-    state.settings_draft.verifier_min_claim_support_strength = normalize(args[3], 0.65);
-
-    apply_settings(state, tui_rt, event_tx).await;
     EventOutcome::Continue
 }
 

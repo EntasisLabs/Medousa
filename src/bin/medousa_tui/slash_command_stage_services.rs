@@ -1,114 +1,122 @@
+use medousa::{StageRouteCommandRequest, StageRouteCommandResponse, StageRouteCommandSpec};
+
+use super::daemon_commands::daemon_stage_route_command;
 use super::*;
 
-pub(crate) fn handle_stage_routes_command(args: Vec<&str>, state: &mut TuiState) -> EventOutcome {
-    let role = args
-        .first()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty());
-    if let Some(role) = role {
-        match state.stage_routing.get(role) {
-            Some(route) => {
-                let rendered =
-                    serde_json::to_string_pretty(route).unwrap_or_else(|_| "{}".to_string());
-                push_obs(state, format!("◈ stage route {}\n{}", route.role, rendered));
-            }
-            None => push_obs(
-                state,
-                format!(
-                    "⚠ unknown stage role '{}'. roles={}",
-                    role,
-                    medousa::stage_routing::StageRoutingMatrix::roles().join(",")
-                ),
-            ),
-        }
-    } else {
-        let rendered =
-            serde_json::to_string_pretty(&state.stage_routing).unwrap_or_else(|_| "{}".to_string());
-        push_obs(state, format!("◈ stage routing matrix\n{}", rendered));
-    }
-
-    EventOutcome::Continue
-}
-
-pub(crate) fn handle_stage_route_set_command(args: Vec<&str>, state: &mut TuiState) -> EventOutcome {
-    if args.len() < 2 {
-        push_obs(
-            state,
-            "⚠ usage: /stage-route-set <role> <provider:model|model> [policy_profile] [fallback_csv]"
-                .to_string(),
-        );
-        return EventOutcome::Continue;
-    }
-
-    let role = args[0].trim();
-    let (route_role, route_provider, route_model, route_policy, route_fallback) = {
-        let Some(route) = state.stage_routing.get_mut(role) else {
-            push_obs(
-                state,
-                format!(
-                    "⚠ unknown stage role '{}'. roles={}",
-                    role,
-                    medousa::stage_routing::StageRoutingMatrix::roles().join(",")
-                ),
-            );
+pub(crate) async fn handle_stage_route_family_command(
+    cmd: &str,
+    args: Vec<&str>,
+    state: &mut TuiState,
+) -> EventOutcome {
+    let command = match build_stage_route_command_spec(cmd, &args) {
+        Ok(command) => command,
+        Err(err) => {
+            push_obs(state, err);
             return EventOutcome::Continue;
-        };
-
-        let target = args[1].trim();
-        if let Some((provider, model)) = target.split_once(':') {
-            route.provider = provider.trim().to_string();
-            route.model = model.trim().to_string();
-        } else {
-            route.model = target.to_string();
         }
-        if let Some(policy) = args.get(2) {
-            route.policy_profile = policy.trim().to_string();
-        }
-        if let Some(fallback_csv) = args.get(3) {
-            route.fallback_chain = fallback_csv
-                .split(',')
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToString::to_string)
-                .collect::<Vec<_>>();
-        }
-
-        (
-            route.role.clone(),
-            route.provider.clone(),
-            route.model.clone(),
-            route.policy_profile.clone(),
-            route.fallback_chain.join(","),
-        )
     };
 
-    persist_stage_routing_defaults(state);
-    push_obs(
-        state,
-        format!(
-            "◈ stage route updated role={} target={}:{} policy={} fallback={}",
-            route_role, route_provider, route_model, route_policy, route_fallback,
-        ),
-    );
+    let request = StageRouteCommandRequest {
+        stage_routing: state.stage_routing.clone(),
+        provider: state.settings.provider.clone(),
+        model: state.settings.model.clone(),
+        command,
+    };
+
+    match execute_stage_route_command_with_daemon_fallback(&state.daemon_url, request).await {
+        Ok((response, backend_notice)) => {
+            let did_change_routing = response.stage_routing != state.stage_routing;
+            state.stage_routing = response.stage_routing;
+            if let Some(notice) = backend_notice {
+                push_obs(state, notice);
+            }
+            push_obs(state, response.rendered_output);
+            if did_change_routing {
+                persist_stage_routing_defaults(state);
+            }
+        }
+        Err(err) => {
+            push_obs(state, format!("⚠ stage route command failed: {err}"));
+        }
+    }
 
     EventOutcome::Continue
 }
 
-pub(crate) fn handle_stage_route_reset_command(state: &mut TuiState) -> EventOutcome {
-    state.stage_routing = medousa::stage_routing::StageRoutingMatrix::default_for(
-        &state.settings.provider,
-        &state.settings.model,
-    );
-    persist_stage_routing_defaults(state);
-    push_obs(
-        state,
-        format!(
-            "◈ stage routing reset to provider={} model={} defaults",
-            state.settings.provider, state.settings.model
-        ),
-    );
+fn build_stage_route_command_spec(
+    cmd: &str,
+    args: &[&str],
+) -> Result<StageRouteCommandSpec, String> {
+    match cmd {
+        "/stage-routes" => Ok(StageRouteCommandSpec::Routes {
+            role: args
+                .first()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+        }),
+        "/stage-route-set" => {
+            if args.len() < 2 {
+                return Err(
+                    "⚠ usage: /stage-route-set <role> <provider:model|model> [policy_profile] [fallback_csv]"
+                        .to_string(),
+                );
+            }
 
-    EventOutcome::Continue
+            Ok(StageRouteCommandSpec::Set {
+                role: args[0].trim().to_string(),
+                target: args[1].trim().to_string(),
+                policy_profile: args
+                    .get(2)
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty()),
+                fallback_chain: args.get(3).map(|fallback_csv| {
+                    fallback_csv
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                }),
+            })
+        }
+        "/stage-route-reset" => Ok(StageRouteCommandSpec::Reset),
+        _ => Err("⚠ unknown stage route command".to_string()),
+    }
+}
+
+async fn execute_stage_route_command_with_daemon_fallback(
+    daemon_url: &str,
+    request: StageRouteCommandRequest,
+) -> Result<(StageRouteCommandResponse, Option<String>), String> {
+    match daemon_stage_route_command(daemon_url, &request).await {
+        Ok(response) => Ok((response, None)),
+        Err(daemon_err) => {
+            let daemon_err_text = truncate_error(&daemon_err.to_string(), 140);
+            let local = medousa::stage_route_command_runtime::execute_stage_route_command(request)
+                .map_err(|local_err| {
+                    format!(
+                        "daemon_error={} | local_error={}",
+                        daemon_err_text,
+                        truncate_error(&local_err.to_string(), 180)
+                    )
+                })?;
+            Ok((
+                local,
+                Some(format!(
+                    "◈ stage route runtime backend=local fallback daemon_error={daemon_err_text}"
+                )),
+            ))
+        }
+    }
+}
+
+fn truncate_error(value: &str, max_chars: usize) -> String {
+    let out = value.chars().take(max_chars).collect::<String>();
+    if value.chars().count() > max_chars {
+        format!("{out}...")
+    } else {
+        out
+    }
 }
 
 fn persist_stage_routing_defaults(state: &TuiState) {

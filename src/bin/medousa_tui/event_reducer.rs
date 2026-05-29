@@ -5,7 +5,7 @@ use medousa::events::TuiEvent;
 
 use super::{ConversationTurn, JobHistoryEntry, TuiState};
 
-pub(crate) fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
+pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
     if !matches!(
         event,
         TuiEvent::AgentChunk { .. } | TuiEvent::AgentReasoningChunk { .. }
@@ -80,12 +80,18 @@ pub(crate) fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             let final_text = visible_text;
 
             if let Some(idx) = state.active_agent_stream_turn.take() {
+                let mut persisted_turn: Option<ConversationTurn> = None;
                 if let Some(turn) = state.conversation.get_mut(idx) {
                     turn.content = merge_streamed_and_final_body(&turn.content, &final_text);
                     turn.tool_names = tool_names.clone();
                     turn.answer_state = answer_state.clone();
                     turn.timestamp = Utc::now();
-                    super::append_turn(&state.session_id, turn);
+                    persisted_turn = Some(turn.clone());
+                }
+                if let Some(turn) = persisted_turn {
+                    let session_id = state.session_id.clone();
+                    super::history_services::append_turn_daemon_first(state, &session_id, &turn)
+                        .await;
                 }
             } else {
                 let turn = ConversationTurn {
@@ -95,7 +101,9 @@ pub(crate) fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     tool_names,
                     answer_state,
                 };
-                super::append_turn(&state.session_id, &turn);
+                let session_id = state.session_id.clone();
+                super::history_services::append_turn_daemon_first(state, &session_id, &turn)
+                    .await;
                 state.conversation.push(turn);
             }
             if state.auto_scroll {

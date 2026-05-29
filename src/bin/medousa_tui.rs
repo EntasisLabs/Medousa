@@ -28,9 +28,9 @@ use medousa::{
     parse_backend, resolve_daemon_url, resolve_llm_base_url, resolve_llm_model,
     resolve_llm_provider,
     session::{
-        ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary, TuiDefaults, append_turn,
-        detect_tui_api_key_storage_backend, list_history_sessions, load_history, load_tui_api_key,
-        load_tui_defaults, save_last_session_id, save_tui_api_key, save_tui_defaults,
+        ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary, TuiDefaults,
+        detect_tui_api_key_storage_backend, load_history, load_tui_api_key, load_tui_defaults,
+        save_last_session_id, save_tui_api_key, save_tui_defaults,
     },
     settings_guard::{invalid_module_ids, parse_allowed_modules},
     stage_routing::StageRoutingMatrix,
@@ -52,6 +52,8 @@ mod cli_helpers;
 mod command_preview_ui;
 #[path = "medousa_tui/daemon_commands.rs"]
 mod daemon_commands;
+#[path = "medousa_tui/history_services.rs"]
+mod history_services;
 #[path = "medousa_tui/editor_runtime.rs"]
 mod editor_runtime;
 #[path = "medousa_tui/event_reducer.rs"]
@@ -460,7 +462,10 @@ async fn main() -> Result<()> {
     };
     save_last_session_id(&session_id);
 
-    let history = load_history(&session_id);
+    let history = match daemon_commands::daemon_load_session_history(&resolved_daemon_url, &session_id).await {
+        Ok(response) => response.turns,
+        Err(_) => load_history(&session_id),
+    };
 
     let (event_tx, mut event_rx) = mpsc::channel::<TuiEvent>(256);
     let (worker_cmd_tx, worker_cmd_rx) = mpsc::channel::<WorkerCommand>(32);
@@ -654,7 +659,7 @@ async fn main() -> Result<()> {
             }
             Some(tui_event) = event_rx.recv() => {
                 mark_ui_activity(&mut state);
-                handle_tui_event(tui_event, &mut state);
+                handle_tui_event(tui_event, &mut state).await;
                 state.ui_dirty = true;
             }
             Some(worker_result) = worker_result_rx.recv() => {
@@ -759,7 +764,7 @@ fn handle_theme_menu_key_event(code: KeyCode, state: &mut TuiState) -> EventOutc
     theme_ui::handle_theme_menu_key_event(code, state)
 }
 
-fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventOutcome {
+async fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventOutcome {
     match code {
         KeyCode::Char('v') | KeyCode::Char('V') => {
             state.history_show_verification_detail = !state.history_show_verification_detail;
@@ -801,7 +806,8 @@ fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventOutcome
             if let Some(selected) = state.history_items.get(state.history_selected).cloned() {
                 stop_active_generation(state);
                 state.session_id = selected.session_id.clone();
-                state.conversation = load_history(&state.session_id);
+                let session_id = state.session_id.clone();
+                state.conversation = history_services::load_history_daemon_first(state, &session_id).await;
                 invalidate_markdown_cache(state);
                 state.thinking_trace.clear();
                 state.pending_thinking_buffer.clear();

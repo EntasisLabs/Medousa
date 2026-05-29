@@ -50,7 +50,7 @@ pub struct TuiDefaults {
     pub command_usage_counts: Option<std::collections::HashMap<String, u64>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistorySummary {
     pub session_id: String,
     pub turns: usize,

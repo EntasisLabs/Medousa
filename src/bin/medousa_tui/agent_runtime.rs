@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
+use futures_util::StreamExt;
 use genai::chat::{ChatMessage, ChatRequest};
 use locus_core_rs::NodeQuery;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
 use medousa::{
+    InteractiveTurnRequest,
+    InteractiveTurnStreamEvent,
     TuiRuntime,
     engine_context::{
         ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
@@ -24,6 +27,7 @@ use stasis::application::orchestration::tool_loop_pipeline::{
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 use stasis::prelude::MemoryRecallRequest;
 
+use super::daemon_commands::daemon_start_interactive_turn;
 use super::{ConversationTurn, TuiState};
 use super::turn_services::{
     self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, TurnActivationDecision,
@@ -137,6 +141,55 @@ pub(crate) async fn start_prompt_run(
     prompt: String,
     persist_user_turn: bool,
 ) {
+    match attempt_daemon_interactive_turn(state, &prompt, persist_user_turn).await {
+        Ok(response) => {
+            if let Some(notice) = response.daemon_notice {
+                super::push_obs(state, format!("◈ {notice}"));
+            }
+
+            if response.fallback_to_local || !response.stream_ready {
+                super::push_obs(
+                    state,
+                    format!(
+                        "◈ interactive turn fallback local turn_id={} reason={} stream_ready={}",
+                        response.turn_id,
+                        response
+                            .fallback_reason
+                            .unwrap_or_else(|| "daemon_stream_not_ready".to_string()),
+                        response.stream_ready,
+                    ),
+                );
+            } else {
+                super::push_obs(
+                    state,
+                    format!(
+                        "◈ interactive turn accepted daemon turn_id={} stream={}",
+                        response.turn_id, response.stream_url
+                    ),
+                );
+                    start_daemon_stream_prompt_run(
+                        state,
+                        event_tx,
+                        &prompt,
+                        persist_user_turn,
+                        &response.turn_id,
+                        &response.stream_url,
+                    )
+                    .await;
+                return;
+            }
+        }
+        Err(err) => {
+            super::push_obs(
+                state,
+                format!(
+                    "◈ interactive turn daemon unavailable; using local runtime ({})",
+                    truncate_text_for_budget(&err, 180)
+                ),
+            );
+        }
+    }
+
     state.active_agent_turn_id = state.active_agent_turn_id.saturating_add(1);
     let turn_id = state.active_agent_turn_id;
     state.open_stream_turn_id = Some(turn_id);
@@ -158,7 +211,8 @@ pub(crate) async fn start_prompt_run(
             tool_names: vec![],
             answer_state: None,
         };
-        super::append_turn(&state.session_id, &user_turn);
+        let session_id = state.session_id.clone();
+        super::history_services::append_turn_daemon_first(state, &session_id, &user_turn).await;
         state.conversation.push(user_turn);
     }
 
@@ -772,6 +826,218 @@ pub(crate) async fn start_prompt_run(
     });
 
     state.active_request_task = Some(handle);
+}
+
+async fn attempt_daemon_interactive_turn(
+    state: &TuiState,
+    prompt: &str,
+    persist_user_turn: bool,
+) -> std::result::Result<medousa::InteractiveTurnResponse, String> {
+    let request = InteractiveTurnRequest {
+        session_id: state.session_id.clone(),
+        prompt: prompt.to_string(),
+        persist_user_turn,
+        response_depth_mode: state.response_depth_mode.clone(),
+        provider: state.settings.provider.clone(),
+        model: state.settings.model.clone(),
+        stage_routing: state.stage_routing.clone(),
+    };
+
+    daemon_start_interactive_turn(&state.daemon_url, &request)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+async fn start_daemon_stream_prompt_run(
+    state: &mut TuiState,
+    event_tx: &mpsc::Sender<TuiEvent>,
+    prompt: &str,
+    persist_user_turn: bool,
+    daemon_turn_id: &str,
+    stream_url: &str,
+) {
+    state.active_agent_turn_id = state.active_agent_turn_id.saturating_add(1);
+    let turn_id = state.active_agent_turn_id;
+    state.open_stream_turn_id = Some(turn_id);
+    state.is_processing = true;
+    state.auto_scroll = true;
+    state.conv_scroll = state.conv_max_scroll;
+    state.active_agent_stream_turn = None;
+    state.pending_agent_chunk_delta.clear();
+    state.pending_agent_chunk_count = 0;
+    state.in_thinking_tag = false;
+    state.stream_tag_tail.clear();
+    state.received_native_reasoning = false;
+    state.pending_response_verified = None;
+
+    if persist_user_turn {
+        let user_turn = ConversationTurn {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+            timestamp: chrono::Utc::now(),
+            tool_names: vec![],
+            answer_state: None,
+        };
+        let session_id = state.session_id.clone();
+        super::history_services::append_turn_daemon_first(state, &session_id, &user_turn).await;
+        state.conversation.push(user_turn);
+    }
+
+    let tx = event_tx.clone();
+    let stream_url = stream_url.to_string();
+    let daemon_turn_id = daemon_turn_id.to_string();
+    let handle = tokio::spawn(async move {
+        if let Err(err) = consume_daemon_interactive_stream(&stream_url, turn_id, &tx).await {
+            let _ = tx
+                .send(TuiEvent::AgentError {
+                    turn_id,
+                    message: format!(
+                        "daemon interactive stream {} failed: {}",
+                        daemon_turn_id,
+                        truncate_text_for_budget(&err, 220)
+                    ),
+                })
+                .await;
+        }
+    });
+
+    state.active_request_task = Some(handle);
+}
+
+async fn consume_daemon_interactive_stream(
+    stream_url: &str,
+    turn_id: u64,
+    event_tx: &mpsc::Sender<TuiEvent>,
+) -> std::result::Result<(), String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(stream_url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?
+        .error_for_status()
+        .map_err(|err| err.to_string())?;
+
+    let mut bytes = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut saw_terminal = false;
+
+    while let Some(chunk) = bytes.next().await {
+        let chunk = chunk.map_err(|err| err.to_string())?;
+        let text = String::from_utf8_lossy(&chunk).to_string();
+        buffer.push_str(&text);
+
+        while let Some(idx) = buffer.find("\n\n") {
+            let frame = buffer[..idx].to_string();
+            buffer = buffer[idx + 2..].to_string();
+
+            let Some(payload) = parse_daemon_stream_payload(&frame) else {
+                continue;
+            };
+
+            if dispatch_daemon_stream_event(payload, turn_id, event_tx).await? {
+                saw_terminal = true;
+            }
+        }
+    }
+
+    if !saw_terminal {
+        return Err("stream closed without terminal event".to_string());
+    }
+
+    Ok(())
+}
+
+fn parse_daemon_stream_payload(frame: &str) -> Option<InteractiveTurnStreamEvent> {
+    let data = frame
+        .lines()
+        .filter_map(|line| {
+            if let Some(value) = line.strip_prefix("data: ") {
+                Some(value)
+            } else if let Some(value) = line.strip_prefix("data:") {
+                Some(value.trim_start())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if data.trim().is_empty() {
+        return None;
+    }
+
+    serde_json::from_str::<InteractiveTurnStreamEvent>(&data).ok()
+}
+
+async fn dispatch_daemon_stream_event(
+    payload: InteractiveTurnStreamEvent,
+    turn_id: u64,
+    event_tx: &mpsc::Sender<TuiEvent>,
+) -> std::result::Result<bool, String> {
+    match payload.event_type.as_str() {
+        "content_delta" => {
+            if let Some(delta) = payload.content_delta {
+                event_tx
+                    .send(TuiEvent::AgentChunk { turn_id, delta })
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+        "reasoning_delta" => {
+            if let Some(delta) = payload.reasoning_delta {
+                event_tx
+                    .send(TuiEvent::AgentReasoningChunk { turn_id, delta })
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+        "final" => {
+            let text = payload
+                .final_text
+                .or_else(|| {
+                    if payload.message.trim().is_empty() {
+                        None
+                    } else {
+                        Some(payload.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| "(empty daemon final response)".to_string());
+            let tool_names = payload.tool_names.unwrap_or_default();
+            event_tx
+                .send(TuiEvent::AgentResponse {
+                    turn_id,
+                    text,
+                    tool_names,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        "error" => {
+            let message = if payload.message.trim().is_empty() {
+                "daemon interactive stream failed".to_string()
+            } else {
+                payload.message
+            };
+            event_tx
+                .send(TuiEvent::AgentError { turn_id, message })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        _ => {
+            if !payload.message.trim().is_empty() {
+                event_tx
+                    .send(TuiEvent::UiNotice(format!(
+                        "◈ daemon interactive {} {}",
+                        payload.phase, payload.message
+                    )))
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+    }
+
+    Ok(payload.terminal)
 }
 
 fn build_prior_messages(

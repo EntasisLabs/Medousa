@@ -1,3 +1,8 @@
+use medousa::{
+    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
+};
+
+use super::daemon_commands::daemon_runtime_config_command;
 use super::*;
 
 pub(crate) async fn handle_new_session_command(
@@ -52,54 +57,126 @@ pub(crate) async fn handle_model_command(
     tui_rt: &mut TuiRuntime,
     event_tx: &mpsc::Sender<TuiEvent>,
 ) -> EventOutcome {
-    if args.is_empty() {
-        push_obs(
-            state,
-            format!("model {}:{}", state.settings.provider, state.settings.model),
-        );
-        return EventOutcome::Continue;
-    }
+    let request = build_runtime_config_request(
+        state,
+        RuntimeConfigCommandSpec::Model {
+            args: args.into_iter().map(ToString::to_string).collect::<Vec<_>>(),
+        },
+    );
 
-    let mut draft = state.settings_draft.clone();
-    if args.len() == 1 {
-        if let Some((provider, model)) = args[0].split_once(':') {
-            draft.provider = provider.trim().to_string();
-            draft.model = model.trim().to_string();
-        } else {
-            draft.model = args[0].trim().to_string();
+    match execute_runtime_config_command_with_daemon_fallback(&state.daemon_url, request).await {
+        Ok((response, backend_notice)) => {
+            if let Some(notice) = backend_notice {
+                push_obs(state, notice);
+            }
+            apply_runtime_config_response(response, state, tui_rt, event_tx).await;
         }
-    } else {
-        draft.provider = args[0].trim().to_string();
-        draft.model = args[1].trim().to_string();
+        Err(err) => {
+            push_obs(state, format!("⚠ model command failed: {err}"));
+        }
     }
 
-    state.settings_draft = draft;
-    apply_settings(state, tui_rt, event_tx).await;
     EventOutcome::Continue
 }
 
-pub(crate) fn handle_depth_command(mode: Option<&str>, state: &mut TuiState) -> EventOutcome {
-    if mode.is_none() {
-        let hint = depth_mode_hint(&state.response_depth_mode);
-        push_obs(
-            state,
-            format!(
-                "◈ response depth mode={} ({hint}) options: concise | standard | deep",
-                state.response_depth_mode,
-            ),
-        );
-        return EventOutcome::Continue;
+pub(crate) async fn handle_depth_command(
+    mode: Option<&str>,
+    state: &mut TuiState,
+    tui_rt: &mut TuiRuntime,
+    event_tx: &mpsc::Sender<TuiEvent>,
+) -> EventOutcome {
+    let request = build_runtime_config_request(
+        state,
+        RuntimeConfigCommandSpec::Depth {
+            mode: mode.map(ToString::to_string),
+        },
+    );
+
+    match execute_runtime_config_command_with_daemon_fallback(&state.daemon_url, request).await {
+        Ok((response, backend_notice)) => {
+            if let Some(notice) = backend_notice {
+                push_obs(state, notice);
+            }
+            apply_runtime_config_response(response, state, tui_rt, event_tx).await;
+        }
+        Err(err) => {
+            push_obs(state, format!("⚠ depth command failed: {err}"));
+        }
     }
 
-    let normalized = super::normalize_response_depth_mode(mode.unwrap_or("standard"));
-    state.response_depth_mode = normalized.clone();
-    persist_response_depth_defaults(state);
-    let hint = depth_mode_hint(&normalized);
-    push_obs(
-        state,
-        format!("✓ response depth mode set to {} ({hint})", normalized),
-    );
     EventOutcome::Continue
+}
+
+pub(crate) fn build_runtime_config_request(
+    state: &TuiState,
+    command: RuntimeConfigCommandSpec,
+) -> RuntimeConfigCommandRequest {
+    RuntimeConfigCommandRequest {
+        current_provider: state.settings.provider.clone(),
+        current_model: state.settings.model.clone(),
+        draft_provider: state.settings_draft.provider.clone(),
+        draft_model: state.settings_draft.model.clone(),
+        current_response_depth_mode: state.response_depth_mode.clone(),
+        command,
+    }
+}
+
+pub(crate) async fn apply_runtime_config_response(
+    response: RuntimeConfigCommandResponse,
+    state: &mut TuiState,
+    tui_rt: &mut TuiRuntime,
+    event_tx: &mpsc::Sender<TuiEvent>,
+) {
+    state.settings_draft.provider = response.next_draft_provider;
+    state.settings_draft.model = response.next_draft_model;
+    state.response_depth_mode = response.next_response_depth_mode;
+
+    if let Some(policy) = response.next_verify_policy_draft {
+        state.settings_draft.verifier_min_citation_coverage = policy.min_citation_coverage;
+        state.settings_draft.verifier_min_avg_support_strength = policy.min_avg_support_strength;
+        state.settings_draft.verifier_min_supported_claim_ratio = policy.min_supported_claim_ratio;
+        state.settings_draft.verifier_min_claim_support_strength = policy.min_claim_support_strength;
+    }
+
+    if response.should_persist_depth_defaults {
+        persist_response_depth_defaults(state);
+    }
+
+    if let Some(rendered) = response.rendered_output {
+        push_obs(state, rendered);
+    }
+
+    if response.should_apply_settings {
+        apply_settings(state, tui_rt, event_tx).await;
+    }
+}
+
+pub(crate) async fn execute_runtime_config_command_with_daemon_fallback(
+    daemon_url: &str,
+    request: RuntimeConfigCommandRequest,
+) -> Result<(RuntimeConfigCommandResponse, Option<String>), String> {
+    match daemon_runtime_config_command(daemon_url, &request).await {
+        Ok(response) => Ok((response, None)),
+        Err(daemon_err) => {
+            let daemon_err_text = truncate_error(&daemon_err.to_string(), 140);
+            let local = medousa::runtime_config_command_runtime::execute_runtime_config_command(
+                request,
+            )
+            .map_err(|local_err| {
+                format!(
+                    "daemon_error={} | local_error={}",
+                    daemon_err_text,
+                    truncate_error(&local_err.to_string(), 180)
+                )
+            })?;
+            Ok((
+                local,
+                Some(format!(
+                    "◈ runtime config backend=local fallback daemon_error={daemon_err_text}"
+                )),
+            ))
+        }
+    }
 }
 
 pub(crate) fn handle_perf_command(
@@ -152,10 +229,11 @@ fn persist_response_depth_defaults(state: &TuiState) {
     save_tui_defaults(&defaults);
 }
 
-fn depth_mode_hint(mode: &str) -> &'static str {
-    match mode {
-        "concise" => "short direct answers",
-        "deep" => "detailed evidence-forward answers",
-        _ => "balanced answer depth",
+fn truncate_error(value: &str, max_chars: usize) -> String {
+    let out = value.chars().take(max_chars).collect::<String>();
+    if value.chars().count() > max_chars {
+        format!("{out}...")
+    } else {
+        out
     }
 }
