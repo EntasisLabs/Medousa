@@ -357,7 +357,7 @@ async fn main() -> Result<()> {
 
     let resolved_provider = resolve_llm_provider(provider.or(defaults.provider.as_deref()));
     let resolved_model = resolve_llm_model(model.or(defaults.model.as_deref()));
-    let resolved_backend = resolve_backend_name(backend.or(defaults.backend.as_deref()));
+    let mut resolved_backend = resolve_backend_name(backend.or(defaults.backend.as_deref()));
     let resolved_theme_id = resolve_theme_id_name(defaults.theme_id.as_deref());
     let resolved_tool_call_mode =
         resolve_tool_call_mode_name(tool_call_mode.or(defaults.tool_call_mode.as_deref()));
@@ -454,6 +454,14 @@ async fn main() -> Result<()> {
             .unwrap_or("standard"),
     );
     let resolved_daemon_url = resolve_daemon_url(daemon_url);
+
+    // If the daemon is already running, it owns the database lock.
+    // The TUI only needs an in-memory runtime for local tool execution;
+    // all persistence goes through the daemon'''s HTTP API.
+    if !resolved_backend.eq_ignore_ascii_case("in-memory") && is_bind_reachable_backend(&resolved_daemon_url) {
+        eprintln!("daemon already running at {resolved_daemon_url} — using in-memory backend");
+        let _ = std::mem::replace(&mut resolved_backend, "in-memory".to_string());
+    }
 
     let session_id = if let Some(sid) = explicit_session {
         sid.to_string()
@@ -696,6 +704,28 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+fn is_bind_reachable_backend(daemon_url: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    let host_port = daemon_url
+        .strip_prefix("http://")
+        .or_else(|| daemon_url.strip_prefix("https://"))
+        .unwrap_or(daemon_url)
+        .split('/')
+        .next()
+        .unwrap_or(daemon_url);
+    if host_port.is_empty() || !host_port.contains(':') {
+        return false;
+    }
+    let addrs = match host_port.to_socket_addrs() {
+        Ok(mut a) => a.next(),
+        Err(_) => None,
+    };
+    match addrs {
+        Some(addr) => std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(250)).is_ok(),
+        None => false,
+    }
 }
 
 fn normalize_response_depth_mode(value: &str) -> String {

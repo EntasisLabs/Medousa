@@ -377,7 +377,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
 
     if selected.launch_tui {
         println!("{}", "Launching Medousa chat...".magenta().bold());
-        launch_tui_process(&selected.daemon_url, &[])?;
+        launch_tui_process(&selected.daemon_url, &[], None)?;
     } else {
         println!("{}", "Next command: medousa tui".blue());
     }
@@ -401,12 +401,21 @@ fn run_tui(args: &[String]) -> Result<()> {
         .or(defaults.backend)
         .unwrap_or_else(|| "in-memory".to_string());
 
-    if !has_flag(args, "--no-daemon") && !is_bind_reachable(&daemon_bind) {
+    let daemon_already_running = is_bind_reachable(&daemon_bind);
+
+    if !has_flag(args, "--no-daemon") && !daemon_already_running {
         start_daemon_background(&backend, &daemon_bind)?;
         thread::sleep(Duration::from_millis(300));
     }
 
-    launch_tui_process(&daemon_url, args)
+    // When the daemon is already running, it owns the database lock.
+    // The TUI only needs an in-memory runtime for local tool execution;
+    // all persistence goes through the daemon's HTTP API.
+    if daemon_already_running {
+        launch_tui_process(&daemon_url, args, Some("in-memory"))
+    } else {
+        launch_tui_process(&daemon_url, args, None)
+    }
 }
 
 fn run_daemon(args: &[String]) -> Result<()> {
@@ -838,15 +847,21 @@ fn start_adapter_background(
     Ok(())
 }
 
-fn launch_tui_process(daemon_url: &str, args: &[String]) -> Result<()> {
+fn launch_tui_process(daemon_url: &str, args: &[String], force_backend: Option<&str>) -> Result<()> {
     let tui = resolve_component_command("medousa_tui")?;
     let mut command = Command::new(&tui.program);
     command.args(&tui.pre_args);
 
     let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
+    passthrough = drop_flag_value_pair(&passthrough, "--backend");
     passthrough.retain(|arg| arg != "--no-daemon");
 
     command.arg("--daemon-url").arg(daemon_url);
+
+    if let Some(backend) = force_backend {
+        command.arg("--backend").arg(backend);
+    }
+
     command.args(&passthrough);
 
     let status = command

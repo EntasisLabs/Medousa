@@ -13,17 +13,11 @@ Medousa is a permanent AI workspace that lives on your computer. It remembers ev
 
 You talk to it through a terminal interface, through Discord, or through Telegram. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
 
- **No cloud, no subscription, no hallucinated answers that you cannot trace.**
- 
+ **No cloud, no subscription, no hallucinated answers that you cannot trace.** 
+  
+## How it works
 
-
-
-
-## What it does
-
-Medousa runs on your computer, not in a cloud. It remembers what you tell it, verifies what it tells you, and keeps working when you close the lid. You talk to it through a terminal, through Discord, or through Telegram. It runs scripts inside a sealed environment. It picks up where you left off, even days later. Every answer carries its own proof.
-
-That is it. Everything else is infrastructure.
+Medousa runs two processes. A background engine that never stops, and an interface that you talk to. The engine holds your history, your memory, and your recurring tasks. The interface connects to it over your local network and gives you a workspace for conversations, commands, and automations. You can also connect Discord or Telegram and message Medousa from across the room.
 
 ## What you can do with it
 
@@ -39,9 +33,7 @@ These are the things Medousa does out of the box:
 | Check if everything is healthy | Run `medousa doctor`. It tests the model, the daemon, and your bridges in one pass. |
 | Start over on a fresh machine | Run `medousa setup`. The wizard walks through provider, model, backend, adapters, and daemon start in one flow. |
 
-## How it works
 
-Medousa runs two processes. A background engine that never stops, and an interface that you talk to. The engine owns your history, your memory, and your recurring tasks. The interface connects to it over your local network and gives you a workspace for conversations, commands, and automations. You can also connect Discord or Telegram and message Medousa from across the room.
 
 ## Quick start
 
@@ -114,11 +106,11 @@ You can override the database path with the `--backend` flag or the `MEDOUSA_SUR
 
 ## Providers
 
-Medousa supports any OpenAI-compatible chat provider. You can switch at setup time or later in the TUI settings:
+Medousa supports 25+ LLM providers via [genai](https://github.com/jeremychone/rust-genai). You can switch at setup time or later in the TUI settings:
 
 - **OpenAI** (default) — `gpt-4o-mini`
 - **Ollama** (local) — `llama3.2`, auto-detected on `127.0.0.1:11434`
-- **Custom** — any provider with an OpenAI-compatible endpoint
+- **Custom** — any provider supported by genai
 
 Set the `MEDOUSA_LLM_PROVIDER`, `MEDOUSA_LLM_MODEL`, and `MEDOUSA_LLM_BASE_URL` environment variables to configure without the wizard.
 
