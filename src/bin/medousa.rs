@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 fn run_onboard(args: &[String]) -> Result<()> {
     let started_at = Instant::now();
     let non_interactive = has_flag(args, "--yes");
-    let advanced_mode = has_flag(args, "--advanced");
+    let advanced_mode = true;
 
     let explicit_no_daemon = has_flag(args, "--no-daemon");
     let explicit_daemon = has_flag(args, "--daemon");
@@ -160,6 +160,10 @@ fn run_onboard(args: &[String]) -> Result<()> {
             ));
         }
 
+        let surreal_kv_default_path = medousa_data_dir()
+            .join("runtime.surrealkv")
+            .to_string_lossy()
+            .to_string();
         let bootstrap = onboard_wizard::WizardBootstrap {
             ollama_detected,
             advanced_mode,
@@ -177,6 +181,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             default_ollama_model: DEFAULT_OLLAMA_MODEL.to_string(),
             default_ollama_base_url: default_base_url_for_provider("ollama")
                 .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_string()),
+            surreal_kv_default_path,
             force_daemon: explicit_daemon,
             force_no_daemon: explicit_no_daemon,
             force_tui: explicit_tui,

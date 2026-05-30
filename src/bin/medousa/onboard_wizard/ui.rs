@@ -7,6 +7,7 @@ use ratatui::{
 };
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 
+
 use super::model::{BackendChoice, ProviderChoice, WizardState, WizardStep};
 
 pub(crate) fn render(
@@ -22,7 +23,7 @@ pub(crate) fn render(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(Line::from(vec![Span::styled(
-            " MEDOUSA PREMIUM SETUP ",
+            " Medousa ",
             Style::default()
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
@@ -54,7 +55,6 @@ pub(crate) fn render(
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(format!("  Step {}/{}", step_index, step_total)),
     ]));
     frame.render_widget(title, sections[0]);
 
@@ -132,41 +132,41 @@ fn body_text(state: &WizardState) -> Text<'static> {
 
     match state.step {
         WizardStep::Welcome => {
-            lines.push(Line::from("This wizard gets you from zero to first chat in under 60 seconds."));
+            lines.push(Line::from("From zero to first chat in seconds."));
             lines.push(Line::from(""));
             lines.push(Line::from(if state.bootstrap.ollama_detected {
-                "Environment check: local Ollama detected."
+                "Local Ollama detected."
             } else {
-                "Environment check: local Ollama not detected, OpenAI-compatible path is ready."
+                "Ready for any OpenAI-compatible provider."
             }));
             lines.push(Line::from(""));
-            lines.push(Line::from("Press Enter to begin."));
+            lines.push(Line::from("Press Enter to start."));
         }
         WizardStep::Provider => {
             lines.push(Line::from("Choose a provider:"));
             lines.push(Line::from(""));
             lines.push(option_line(
                 state.provider_choice == ProviderChoice::Ollama,
-                "Ollama (local, no API key)",
+                "Ollama",
                 if state.bootstrap.ollama_detected {
-                    "recommended"
+                    "local, no API key"
                 } else {
-                    "install Ollama locally if preferred"
+                    "install locally if preferred"
                 },
             ));
             lines.push(option_line(
                 state.provider_choice == ProviderChoice::OpenAi,
                 "OpenAI-compatible API",
-                "works with hosted API keys",
+                "hosted API keys",
             ));
             lines.push(option_line(
                 state.provider_choice == ProviderChoice::Custom,
                 "Custom provider id",
-                "advanced provider id string",
+                "advanced",
             ));
         }
         WizardStep::CustomProvider => {
-            lines.push(Line::from("Enter your provider id (saved to STASIS_LLM_PROVIDER):"));
+            lines.push(Line::from("Your provider identifier:"));
             lines.push(Line::from(""));
             lines.push(input_line("Provider id", &state.custom_provider));
         }
@@ -176,34 +176,63 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(input_line("Model", &state.model));
         }
         WizardStep::BaseUrl => {
-            lines.push(Line::from("Optional endpoint override:"));
+            lines.push(Line::from("Endpoint override:"));
             lines.push(Line::from(""));
             lines.push(input_line("Base URL", &state.base_url));
             if state.provider_choice == ProviderChoice::Ollama {
-                lines.push(Line::from("Leave blank to use local Ollama default."));
+                lines.push(Line::from("Leave blank for Ollama default."));
             } else {
-                lines.push(Line::from("Leave blank to use provider default endpoint."));
+
+                lines.push(Line::from("Leave blank for provider default."));
             }
         }
         WizardStep::ApiKey => {
-            lines.push(Line::from("Add API key now for immediate chat readiness:"));
+            lines.push(Line::from("Add API key:"));
             lines.push(Line::from(""));
             lines.push(input_line("API key", &mask_secret(&state.api_key)));
-            lines.push(Line::from("Leave empty to configure later in settings."));
+            lines.push(Line::from("Leave empty to configure later."));
         }
         WizardStep::Backend => {
             lines.push(Line::from("Select storage backend:"));
             lines.push(Line::from(""));
             lines.push(option_line(
-                state.backend_choice == BackendChoice::InMemory,
+                matches!(state.backend_choice, BackendChoice::InMemory),
                 "in-memory",
-                "fastest local iteration",
+                "fastest local iteration, no persistence",
             ));
             lines.push(option_line(
-                state.backend_choice == BackendChoice::SurrealMem,
+                matches!(state.backend_choice, BackendChoice::SurrealMem),
                 "surreal-mem",
-                "durable local memory",
+                "durable in-memory session store",
             ));
+            lines.push(option_line(
+                matches!(state.backend_choice, BackendChoice::SurrealKv { .. }),
+                "surreal-kv",
+                "persistent local file-based store",
+            ));
+            lines.push(option_line(
+                matches!(state.backend_choice, BackendChoice::SurrealWs { .. }),
+                "surreal-ws",
+                "remote SurrealDB server over WebSocket",
+            ));
+        }
+        WizardStep::BackendSurrealKvPath => {
+            lines.push(Line::from("SurrealKV database path:"));
+            lines.push(Line::from(""));
+            let default_path = &state.bootstrap.surreal_kv_default_path;
+            let display = if state.backend_config_input.trim().is_empty() {
+                format!("(default: {})", default_path)
+            } else {
+                state.backend_config_input.clone()
+            };
+            lines.push(input_line("Path", &display));
+            lines.push(Line::from("Leave empty for default."));
+        }
+        WizardStep::BackendSurrealWsEndpoint => {
+            lines.push(Line::from("SurrealDB WebSocket endpoint:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Endpoint", &state.backend_config_input));
+            lines.push(Line::from("Example: ws://127.0.0.1:8000/rpc"));
         }
         WizardStep::DaemonUrl => {
             lines.push(Line::from("Set runtime URL:"));
@@ -211,79 +240,79 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(input_line("Daemon URL", &state.daemon_url));
         }
         WizardStep::LaunchDaemon => {
-            lines.push(Line::from("Start runtime in background after setup?"));
+            lines.push(Line::from("Start runtime in background?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Start daemon", state.start_daemon));
-            lines.push(Line::from("Press Space to toggle."));
+            lines.push(Line::from(""));
         }
         WizardStep::LaunchChat => {
-            lines.push(Line::from("Open Medousa chat right after setup?"));
+            lines.push(Line::from("Open chat after setup?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Launch chat", state.launch_tui));
-            lines.push(Line::from("Press Space to toggle."));
+            lines.push(Line::from(""));
         }
         WizardStep::Discord => {
-            lines.push(Line::from("Configure Discord adapter now?"));
+            lines.push(Line::from("Configure Discord?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Configure Discord", state.configure_discord));
             lines.push(Line::from(if state.bootstrap.existing_discord_token {
-                "Stored Discord token detected."
+                "Stored token detected."
             } else {
-                "No stored Discord token detected."
+                "No token stored."
             }));
-            lines.push(Line::from("Press Space to toggle."));
+            lines.push(Line::from(""));
         }
         WizardStep::DiscordToken => {
             lines.push(Line::from("Add Discord bot token:"));
             lines.push(Line::from(""));
             lines.push(input_line("Discord token", &mask_secret(&state.discord_token)));
             lines.push(Line::from(if state.bootstrap.existing_discord_token {
-                "Leave empty to keep existing Discord token."
+                "Keep existing Discord token."
             } else {
-                "Required when Discord setup is enabled."
+                "Required when enabled."
             }));
         }
         WizardStep::LaunchDiscord => {
-            lines.push(Line::from("Start Discord adapter in background after setup?"));
+            lines.push(Line::from("Start Discord in background?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Start Discord", state.start_discord));
-            lines.push(Line::from("Press Space to toggle."));
+            lines.push(Line::from(""));
         }
         WizardStep::Telegram => {
-            lines.push(Line::from("Configure Telegram adapter now?"));
+            lines.push(Line::from("Configure Telegram?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Configure Telegram", state.configure_telegram));
             lines.push(Line::from(if state.bootstrap.existing_telegram_token {
-                "Stored Telegram token detected."
+                "Stored token detected."
             } else {
-                "No stored Telegram token detected."
+                "No token stored."
             }));
-            lines.push(Line::from("Press Space to toggle."));
+            lines.push(Line::from(""));
         }
         WizardStep::TelegramToken => {
             lines.push(Line::from("Add Telegram bot token:"));
             lines.push(Line::from(""));
             lines.push(input_line("Telegram token", &mask_secret(&state.telegram_token)));
             lines.push(Line::from(if state.bootstrap.existing_telegram_token {
-                "Leave empty to keep existing Telegram token."
+                "Keep existing Telegram token."
             } else {
-                "Required when Telegram setup is enabled."
+                "Required when enabled."
             }));
         }
         WizardStep::TelegramAllowUserIds => {
             lines.push(Line::from(
-                "Optional sender lock: only accept messages from these Telegram user ids.",
+                "Sender lock — only accept from these user ids:",
             ));
             lines.push(Line::from(""));
             lines.push(input_line("Allowed user ids", &state.telegram_allow_user_ids));
-            lines.push(Line::from("Use comma-separated numeric ids (example: 123456789,987654321)."));
+            lines.push(Line::from("Comma-separated numeric ids, e.g. 123456789,987654321."));
             lines.push(Line::from("Leave blank to allow all Telegram users."));
         }
         WizardStep::LaunchTelegram => {
-            lines.push(Line::from("Start Telegram adapter in background after setup?"));
+            lines.push(Line::from("Start Telegram in background?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Start Telegram", state.start_telegram));
-            lines.push(Line::from("Press Space to toggle."));
+            lines.push(Line::from(""));
         }
         WizardStep::Confirm => {
             lines.push(Line::from("Review setup choices:"));
@@ -306,7 +335,7 @@ fn body_text(state: &WizardState) -> Text<'static> {
                     "(configured)"
                 },
             ));
-            lines.push(summary_line("Backend", state.backend_choice.as_backend_id()));
+            lines.push(summary_line("Backend", &state.backend_choice.as_backend_id()));
             lines.push(summary_line("Daemon URL", &state.daemon_url));
             lines.push(summary_line(
                 "Start daemon",
@@ -367,16 +396,16 @@ fn body_text(state: &WizardState) -> Text<'static> {
 fn footer_text(state: &WizardState) -> Text<'static> {
     let mut lines = vec![Line::from(vec![
         Span::styled("Enter", Style::default().fg(Color::Green)),
-        Span::raw(" next/confirm   "),
-        Span::styled("Left", Style::default().fg(Color::Yellow)),
-        Span::raw(" back   "),
+        Span::raw(" →   "),
+        Span::styled("←", Style::default().fg(Color::Yellow)),
+        Span::raw(" Back   "),
         Span::styled("Esc", Style::default().fg(Color::LightRed)),
-        Span::raw(" cancel"),
+        Span::raw(" Cancel"),
     ])];
 
     match state.step {
         WizardStep::Provider | WizardStep::Backend => {
-            lines.push(Line::from("Use Up/Down to change selection."));
+            lines.push(Line::from("↑↓ to change selection."));
         }
         WizardStep::LaunchDaemon
         | WizardStep::LaunchChat
@@ -384,10 +413,15 @@ fn footer_text(state: &WizardState) -> Text<'static> {
         | WizardStep::LaunchDiscord
         | WizardStep::Telegram
         | WizardStep::LaunchTelegram => {
-            lines.push(Line::from("Use Space to toggle yes/no."));
+            lines.push(Line::from("Space to toggle."));
         }
-        WizardStep::ApiKey | WizardStep::DiscordToken | WizardStep::TelegramToken => {
-            lines.push(Line::from("Input is hidden while typing."));
+        WizardStep::ApiKey
+        | WizardStep::DiscordToken
+        | WizardStep::TelegramToken => {
+            lines.push(Line::from("Hidden input."));
+        }
+        WizardStep::BackendSurrealKvPath | WizardStep::BackendSurrealWsEndpoint => {
+            lines.push(Line::from("Type a value, then Enter to confirm."));
         }
         _ => {}
     }
@@ -396,7 +430,7 @@ fn footer_text(state: &WizardState) -> Text<'static> {
 }
 
 fn option_line(selected: bool, label: &str, detail: &str) -> Line<'static> {
-    let marker = if selected { ">" } else { " " };
+    let marker = if selected { "▸" } else { " " };
     let marker_style = if selected {
         Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
     } else {
@@ -432,7 +466,7 @@ fn input_line(label: &str, value: &str) -> Line<'static> {
 }
 
 fn toggle_line(label: &str, enabled: bool) -> Line<'static> {
-    let check = if enabled { "[x]" } else { "[ ]" };
+    let check = if enabled { "✓" } else { "○" };
     Line::from(vec![
         Span::styled(
             check.to_string(),

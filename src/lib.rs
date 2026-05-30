@@ -300,9 +300,38 @@ fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> 
                 )
             })?;
         }
+
+        // Remove stale SurrealKV lock file. If another daemon is actually
+        // running, it will fail on port bind — not on a leftover LOCK file.
+        let lock_path = path_buf.join("LOCK");
+        if lock_path.exists() {
+            if let Err(err) = std::fs::remove_file(&lock_path) {
+                eprintln!(
+                    "warning: failed to remove stale SurrealKV lock file {}: {}",
+                    lock_path.display(),
+                    err
+                );
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Remove the SurrealKV lock file for a given backend (used during graceful shutdown).
+pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
+    if let RuntimeBackend::SurrealKv { path, .. } = backend {
+        let lock_path = PathBuf::from(path).join("LOCK");
+        if lock_path.exists() {
+            if let Err(err) = std::fs::remove_file(&lock_path) {
+                eprintln!(
+                    "warning: failed to remove SurrealKV lock file during shutdown {}: {}",
+                    lock_path.display(),
+                    err
+                );
+            }
+        }
+    }
 }
 
 pub async fn process_once(runtime: &RuntimeComposition, worker_id: &str) -> Result<Option<String>> {

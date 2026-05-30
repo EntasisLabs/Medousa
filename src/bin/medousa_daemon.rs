@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{Path as AxumPath,  State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
@@ -47,7 +47,7 @@ use medousa::daemon_api::{
     SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
-use medousa::{build_runtime_with_identity_store, parse_backend};
+use medousa::{build_runtime_with_identity_store, parse_backend, remove_surrealkv_lock};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::fs::OpenOptions;
@@ -404,6 +404,7 @@ async fn main() -> Result<()> {
             let _ = tokio::signal::ctrl_c().await;
             let _ = shutdown_tx.send(true);
             println!("medousa-daemon stopping");
+            remove_surrealkv_lock(&parse_backend(Some(&state.backend)));
         })
         .await
         .context("medousa-daemon server failed")?;

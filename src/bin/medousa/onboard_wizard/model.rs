@@ -33,27 +33,45 @@ impl ProviderChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BackendChoice {
     InMemory,
     SurrealMem,
+    SurrealKv { path: String },
+    SurrealWs { endpoint: String },
 }
 
 impl BackendChoice {
     pub(crate) fn from_backend_id(value: &str) -> Self {
-        if value.trim().eq_ignore_ascii_case("surreal-mem") {
-            Self::SurrealMem
-        } else {
-            Self::InMemory
+        let trimmed = value.trim();
+        if trimmed.eq_ignore_ascii_case("surreal-mem") {
+            return Self::SurrealMem;
+        }
+        if let Some(path) = trimmed.strip_prefix("surreal-kv:") {
+            let p = path.trim().to_string();
+            if !p.is_empty() {
+                return Self::SurrealKv { path: p };
+            }
+        }
+        if let Some(endpoint) = trimmed.strip_prefix("surreal-ws:") {
+            let e = endpoint.trim().to_string();
+            if !e.is_empty() {
+                return Self::SurrealWs { endpoint: e };
+            }
+        }
+        Self::InMemory
+    }
+
+    pub(crate) fn as_backend_id(&self) -> String {
+        match self {
+            Self::InMemory => "in-memory".to_string(),
+            Self::SurrealMem => "surreal-mem".to_string(),
+            Self::SurrealKv { path } => format!("surreal-kv:{}", path),
+            Self::SurrealWs { endpoint } => format!("surreal-ws:{}", endpoint),
         }
     }
 
-    pub(crate) fn as_backend_id(self) -> &'static str {
-        match self {
-            Self::InMemory => "in-memory",
-            Self::SurrealMem => "surreal-mem",
-        }
-    }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +83,8 @@ pub(crate) enum WizardStep {
     BaseUrl,
     ApiKey,
     Backend,
+    BackendSurrealKvPath,
+    BackendSurrealWsEndpoint,
     DaemonUrl,
     LaunchDaemon,
     LaunchChat,
@@ -95,6 +115,7 @@ pub(crate) struct WizardBootstrap {
     pub(crate) default_openai_model: String,
     pub(crate) default_ollama_model: String,
     pub(crate) default_ollama_base_url: String,
+    pub(crate) surreal_kv_default_path: String,
     pub(crate) force_daemon: bool,
     pub(crate) force_no_daemon: bool,
     pub(crate) force_tui: bool,
@@ -135,6 +156,7 @@ pub(crate) struct WizardState {
     pub(crate) base_url: String,
     pub(crate) api_key: String,
     pub(crate) backend_choice: BackendChoice,
+    pub(crate) backend_config_input: String,
     pub(crate) daemon_url: String,
     pub(crate) start_daemon: bool,
     pub(crate) launch_tui: bool,
@@ -181,6 +203,13 @@ impl WizardState {
             launch_tui = true;
         }
 
+        let backend_choice = BackendChoice::from_backend_id(&bootstrap.initial_backend);
+        let backend_config_input = match &backend_choice {
+            BackendChoice::SurrealKv { path } => path.clone(),
+            BackendChoice::SurrealWs { endpoint } => endpoint.clone(),
+            _ => String::new(),
+        };
+
         let mut state = Self {
             model: if bootstrap.initial_model.trim().is_empty() {
                 default_model_for_choice(&bootstrap, provider_choice)
@@ -199,7 +228,8 @@ impl WizardState {
                 .unwrap_or("")
                 .trim()
                 .to_string(),
-            backend_choice: BackendChoice::from_backend_id(&bootstrap.initial_backend),
+            backend_choice,
+            backend_config_input,
             daemon_url: bootstrap.initial_daemon_url.trim().to_string(),
             step: WizardStep::Welcome,
             provider_choice,
@@ -230,6 +260,8 @@ impl WizardState {
             WizardStep::BaseUrl => "Base URL",
             WizardStep::ApiKey => "API Key",
             WizardStep::Backend => "Storage Backend",
+            WizardStep::BackendSurrealKvPath => "SurrealKV Path",
+            WizardStep::BackendSurrealWsEndpoint => "SurrealWS Endpoint",
             WizardStep::DaemonUrl => "Runtime URL",
             WizardStep::LaunchDaemon => "Background Runtime",
             WizardStep::LaunchChat => "Launch Chat",
@@ -267,6 +299,15 @@ impl WizardState {
 
         if self.bootstrap.advanced_mode {
             flow.push(WizardStep::Backend);
+            match &self.backend_choice {
+                BackendChoice::SurrealKv { .. } => {
+                    flow.push(WizardStep::BackendSurrealKvPath);
+                }
+                BackendChoice::SurrealWs { .. } => {
+                    flow.push(WizardStep::BackendSurrealWsEndpoint);
+                }
+                _ => {}
+            }
             flow.push(WizardStep::DaemonUrl);
         }
 
@@ -383,10 +424,37 @@ impl WizardState {
                 }
             }
             WizardStep::Backend => match key.code {
-                KeyCode::Up | KeyCode::Down => self.cycle_backend(),
+                KeyCode::Up => self.cycle_backend(-1),
+                KeyCode::Down => self.cycle_backend(1),
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 _ => {}
             },
+            WizardStep::BackendSurrealKvPath => {
+                if key.code == KeyCode::Enter {
+                    let path = self.backend_config_input.trim().to_string();
+                    let default = self.bootstrap.surreal_kv_default_path.clone();
+                    let final_path = if path.is_empty() { default } else { path };
+                    self.backend_choice = BackendChoice::SurrealKv { path: final_path };
+                    self.backend_config_input.clear();
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.backend_config_input, key);
+                }
+            }
+            WizardStep::BackendSurrealWsEndpoint => {
+                if key.code == KeyCode::Enter {
+                    let endpoint = self.backend_config_input.trim().to_string();
+                    if endpoint.is_empty() {
+                        self.status_message = Some("Endpoint cannot be empty.".to_string());
+                    } else {
+                        self.backend_choice = BackendChoice::SurrealWs { endpoint };
+                        self.backend_config_input.clear();
+                        self.move_next();
+                    }
+                } else {
+                    edit_text_field(&mut self.backend_config_input, key);
+                }
+            }
             WizardStep::DaemonUrl => {
                 if key.code == KeyCode::Enter {
                     if self.daemon_url.trim().is_empty() {
@@ -526,10 +594,37 @@ impl WizardState {
         self.apply_provider_defaults();
     }
 
-    fn cycle_backend(&mut self) {
-        self.backend_choice = match self.backend_choice {
-            BackendChoice::InMemory => BackendChoice::SurrealMem,
-            BackendChoice::SurrealMem => BackendChoice::InMemory,
+    fn cycle_backend(&mut self, delta: i32) {
+        // Cycle: InMemory → SurrealMem → SurrealKv → SurrealWs → InMemory
+        let variants: Vec<BackendChoice> = vec![
+            BackendChoice::InMemory,
+            BackendChoice::SurrealMem,
+            BackendChoice::SurrealKv {
+                path: self.bootstrap.surreal_kv_default_path.clone(),
+            },
+            BackendChoice::SurrealWs {
+                endpoint: String::new(),
+            },
+        ];
+        let current_idx = variants
+            .iter()
+            .position(|v| {
+                std::mem::discriminant(v) == std::mem::discriminant(&self.backend_choice)
+            })
+            .unwrap_or(0) as i32;
+        let next_idx = (current_idx + delta).rem_euclid(variants.len() as i32) as usize;
+        // Transfer existing config if same variant
+        let next_variant = &variants[next_idx];
+        self.backend_choice = match (&self.backend_choice, next_variant) {
+            (BackendChoice::SurrealKv { path }, BackendChoice::SurrealKv { .. }) => {
+                BackendChoice::SurrealKv { path: path.clone() }
+            }
+            (BackendChoice::SurrealWs { endpoint }, BackendChoice::SurrealWs { .. }) => {
+                BackendChoice::SurrealWs {
+                    endpoint: endpoint.clone(),
+                }
+            }
+            _ => next_variant.clone(),
         };
     }
 
@@ -669,7 +764,7 @@ impl WizardState {
             model,
             base_url,
             api_key,
-            backend: self.backend_choice.as_backend_id().to_string(),
+            backend: self.backend_choice.as_backend_id(),
             daemon_url,
             start_daemon,
             launch_tui,
