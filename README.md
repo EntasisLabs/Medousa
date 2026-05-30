@@ -1,7 +1,7 @@
 
 <div align="center" >
   
-<img src="assets/medousa-transparent.png" alt="Medousa Logo" width="300">
+<img src="assets/medousa-blk.png" alt="Medousa Logo" width="300">
 
 </div>
 
