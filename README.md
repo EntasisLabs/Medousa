@@ -1,3 +1,5 @@
+![Medousa](assets/medousa-cream.png)
+
 # Medousa
 
 **Turn chaotic life into stone.**
