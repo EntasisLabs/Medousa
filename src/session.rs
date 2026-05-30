@@ -330,7 +330,7 @@ pub fn save_telegram_bot_token(token: Option<&str>) {
     }
 }
 
-pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
+pub(crate) fn file_load_history(session_id: &str) -> Vec<ConversationTurn> {
     let path = history_path(session_id);
     let Ok(file) = std::fs::File::open(&path) else {
         return Vec::new();
@@ -343,7 +343,7 @@ pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
         .collect()
 }
 
-pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
+pub(crate) fn file_append_turn(session_id: &str, turn: &ConversationTurn) {
     let path = history_path(session_id);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -360,7 +360,7 @@ pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
     }
 }
 
-pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
+pub(crate) fn file_list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
     let history_dir = medousa_data_dir().join("history");
     let Ok(entries) = std::fs::read_dir(history_dir) else {
         return Vec::new();
@@ -388,7 +388,7 @@ pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
         .into_iter()
         .take(limit)
         .map(|(session_id, _)| {
-            let turns = load_history(&session_id);
+            let turns = file_load_history(&session_id);
             let verifications =
                 crate::verification_store::list_verifications(&session_id, usize::MAX);
             let last_timestamp = turns.last().map(|t| t.timestamp);
@@ -427,4 +427,17 @@ pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
             }
         })
         .collect()
+}
+
+// Public API delegating to the configured session store.
+pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
+    crate::session_store::get_session_store().load_history(session_id)
+}
+
+pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
+    crate::session_store::get_session_store().append_turn(session_id, turn)
+}
+
+pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
+    crate::session_store::get_session_store().list_history_sessions(limit)
 }

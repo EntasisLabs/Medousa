@@ -263,6 +263,9 @@ async fn main() -> Result<()> {
             .await?,
     );
 
+    // Initialize session store according to runtime (Surreal placeholder for now)
+    medousa::session_store::init_session_store_with_runtime(&runtime).await;
+
     if once {
         let report = tick_runtime(runtime.as_ref(), &worker_id, heartbeat_policy).await?;
         println!("{}", format_tick_report("medousa-daemon once", &report));
@@ -313,9 +316,15 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
-        .route("/v1/sessions", get(list_session_history))
-        .route("/v1/sessions/{session_id}/history", get(get_session_history))
-        .route("/v1/sessions/{session_id}/turns", post(append_session_turn))
+        .route("/v1/sessions", get(medousa::daemon_handlers::list_session_history))
+        .route(
+            "/v1/sessions/{session_id}/history",
+            get(medousa::daemon_handlers::get_session_history),
+        )
+        .route(
+            "/v1/sessions/{session_id}/turns",
+            post(medousa::daemon_handlers::append_session_turn),
+        )
         .route("/v1/heartbeat/status", get(heartbeat_status))
         .route("/v1/jobs/{job_id}/result", get(get_job_result))
         .route("/v1/jobs/{job_id}/report", get(get_job_report))
@@ -539,41 +548,7 @@ async fn stats(
     }))
 }
 
-async fn list_session_history(
-    Query(request): Query<SessionHistoryListRequest>,
-) -> Result<Json<SessionHistoryListResponse>, (StatusCode, String)> {
-    let limit = request.limit.unwrap_or(200).clamp(1, 1000);
-    let sessions = medousa::session::list_history_sessions(limit);
-    Ok(Json(SessionHistoryListResponse { sessions }))
-}
 
-async fn get_session_history(
-    AxumPath(session_id): AxumPath<String>,
-) -> Result<Json<SessionHistoryResponse>, (StatusCode, String)> {
-    let session_id = session_id.trim().to_string();
-    if session_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
-    }
-
-    let turns = medousa::session::load_history(&session_id);
-    Ok(Json(SessionHistoryResponse { session_id, turns }))
-}
-
-async fn append_session_turn(
-    AxumPath(session_id): AxumPath<String>,
-    Json(request): Json<SessionAppendTurnRequest>,
-) -> Result<Json<SessionAppendTurnResponse>, (StatusCode, String)> {
-    let session_id = session_id.trim().to_string();
-    if session_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
-    }
-
-    medousa::session::append_turn(&session_id, &request.turn);
-    Ok(Json(SessionAppendTurnResponse {
-        session_id,
-        stored: true,
-    }))
-}
 
 async fn heartbeat_status(
     State(state): State<AppState>,
