@@ -7,8 +7,14 @@
 
 <h1 style="text-align: center;">Medousa</h1>
 
-<p style="text-align: center;"><b>Turn chaotic life into stone.</b><br>Medousa is a permanent AI workspace that lives on your computer. It remembers everything you tell it, verifies what it tells you, and keeps working even when you close the window.
-<br>You talk to it through a terminal interface, through Discord, or through Telegram. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.<br> <b>No cloud, no subscription, no hallucinated answers that you cannot trace.</b></p>
+**Turn chaotic life into stone.**
+
+Medousa is a permanent AI workspace that lives on your computer. It remembers everything you tell it, verifies what it tells you, and keeps working even when you close the window.
+
+You talk to it through a terminal interface, through Discord, or through Telegram. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
+
+ **No cloud, no subscription, no hallucinated answers that you cannot trace.**
+ 
 
 
 
