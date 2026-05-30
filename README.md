@@ -1,16 +1,17 @@
+
 <div align="center" >
   
-<img src="assets/medousa-cream.png" alt="Medousa Logo" width="400">
+<img src="assets/medousa-transparent.png" alt="Medousa Logo" width="300">
 
 </div>
 
-# Medousa
+<h1 style="text-align: center;">Medousa</h1>
 
-**Turn chaotic life into stone.**
+<p style="text-align: center;"><b>Turn chaotic life into stone.</b><br>Medousa is a permanent AI workspace that lives on your computer. It remembers everything you tell it, verifies what it tells you, and keeps working even when you close the window.
+<br>You talk to it through a terminal interface, through Discord, or through Telegram. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.<br> <b>No cloud, no subscription, no hallucinated answers that you cannot trace.</b></p>
 
-Medousa is a permanent AI workspace that lives on your computer. It remembers everything you tell it, verifies what it tells you, and keeps working even when you close the window. No cloud, no subscription, no hallucinated answers that you cannot trace.
 
-You talk to it through a terminal interface, through Discord, or through Telegram. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
+
 
 ## What it does
 
