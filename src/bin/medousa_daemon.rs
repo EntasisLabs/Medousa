@@ -721,17 +721,9 @@ async fn get_job_result(
         return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
     }
 
-    let attempts = match state.runtime.as_ref() {
-        RuntimeComposition::InMemory(rt) => rt
-            .job_attempt_store
-            .list_by_job_id(&job_id)
-            .await
-            .map_err(internal_error)?,
-        RuntimeComposition::Surreal(rt) => rt
-            .job_attempt_store
-            .list_by_job_id(&job_id)
-            .await
-            .map_err(internal_error)?,
+    let attempts = match get_job_attempts_graceful(&state.runtime, &job_id).await {
+        Ok(attempts) => attempts,
+        Err(err) => return Err(err),
     };
 
     let latest = attempts.last();
@@ -762,17 +754,9 @@ async fn get_job_report(
         return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
     }
 
-    let attempts = match state.runtime.as_ref() {
-        RuntimeComposition::InMemory(rt) => rt
-            .job_attempt_store
-            .list_by_job_id(&job_id)
-            .await
-            .map_err(internal_error)?,
-        RuntimeComposition::Surreal(rt) => rt
-            .job_attempt_store
-            .list_by_job_id(&job_id)
-            .await
-            .map_err(internal_error)?,
+    let attempts = match get_job_attempts_graceful(&state.runtime, &job_id).await {
+        Ok(attempts) => attempts,
+        Err(err) => return Err(err),
     };
 
     let latest = attempts.last();
@@ -1700,6 +1684,33 @@ fn build_job_evidence_report(job_id: &str, payload: &Value) -> Option<JobEvidenc
         total_claims: verification.total_claims,
         supported_claims: verification.supported_claims,
     })
+}
+
+/// Fetches job attempts, gracefully handling the case where the backend table
+/// does not exist yet (fresh database without auto-migration).
+async fn get_job_attempts_graceful(
+    runtime: &RuntimeComposition,
+    job_id: &str,
+) -> std::result::Result<Vec<stasis::domain::runtime::job_attempt::JobAttempt>, (StatusCode, String)> {
+    match runtime {
+        RuntimeComposition::InMemory(rt) => rt
+            .job_attempt_store
+            .list_by_job_id(job_id)
+            .await
+            .map_err(internal_error),
+        RuntimeComposition::Surreal(rt) => {
+            match rt.job_attempt_store.list_by_job_id(job_id).await {
+                Ok(attempts) => Ok(attempts),
+                Err(err) => {
+                    if is_missing_runtime_table_error(&err.to_string()) {
+                        Ok(Vec::new())
+                    } else {
+                        Err(internal_error(err))
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn derive_job_result_status(latest_outcome: Option<&str>, attempt_count: usize) -> (String, bool) {

@@ -64,11 +64,8 @@ pub(crate) async fn handle_model_command(
         },
     );
 
-    match execute_runtime_config_command_with_daemon_fallback(&state.daemon_url, request).await {
-        Ok((response, backend_notice)) => {
-            if let Some(notice) = backend_notice {
-                push_obs(state, notice);
-            }
+    match execute_runtime_config_command_via_daemon(&state.daemon_url, request).await {
+        Ok(response) => {
             apply_runtime_config_response(response, state, tui_rt, event_tx).await;
         }
         Err(err) => {
@@ -92,11 +89,8 @@ pub(crate) async fn handle_depth_command(
         },
     );
 
-    match execute_runtime_config_command_with_daemon_fallback(&state.daemon_url, request).await {
-        Ok((response, backend_notice)) => {
-            if let Some(notice) = backend_notice {
-                push_obs(state, notice);
-            }
+    match execute_runtime_config_command_via_daemon(&state.daemon_url, request).await {
+        Ok(response) => {
             apply_runtime_config_response(response, state, tui_rt, event_tx).await;
         }
         Err(err) => {
@@ -151,32 +145,15 @@ pub(crate) async fn apply_runtime_config_response(
     }
 }
 
-pub(crate) async fn execute_runtime_config_command_with_daemon_fallback(
+pub(crate) async fn execute_runtime_config_command_via_daemon(
     daemon_url: &str,
     request: RuntimeConfigCommandRequest,
-) -> Result<(RuntimeConfigCommandResponse, Option<String>), String> {
-    match daemon_runtime_config_command(daemon_url, &request).await {
-        Ok(response) => Ok((response, None)),
-        Err(daemon_err) => {
-            let daemon_err_text = truncate_error(&daemon_err.to_string(), 140);
-            let local = medousa::runtime_config_command_runtime::execute_runtime_config_command(
-                request,
-            )
-            .map_err(|local_err| {
-                format!(
-                    "daemon_error={} | local_error={}",
-                    daemon_err_text,
-                    truncate_error(&local_err.to_string(), 180)
-                )
-            })?;
-            Ok((
-                local,
-                Some(format!(
-                    "◈ runtime config backend=local fallback daemon_error={daemon_err_text}"
-                )),
-            ))
-        }
-    }
+) -> Result<RuntimeConfigCommandResponse, String> {
+    daemon_runtime_config_command(daemon_url, &request)
+        .await
+        .map_err(|err| {
+            format!("daemon error: {}", truncate_error(&err.to_string(), 200))
+        })
 }
 
 pub(crate) fn handle_perf_command(

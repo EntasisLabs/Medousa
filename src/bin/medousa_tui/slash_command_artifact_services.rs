@@ -1,4 +1,5 @@
 use medousa::{
+    
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
     ArtifactVerificationPolicyInput, RuntimeConfigCommandSpec, RuntimeVerifyPolicyState,
 };
@@ -26,7 +27,7 @@ pub(crate) async fn handle_artifact_family_command(
         verifier_route_label,
     };
 
-    match execute_artifact_command_with_daemon_fallback(&state.daemon_url, request).await {
+    match execute_artifact_command_via_daemon(&state.daemon_url, request).await {
         Ok((response, backend_notice)) => {
             state.selected_context_pack_query = response.selected_context_pack_query;
             if let Some(notice) = backend_notice {
@@ -61,16 +62,13 @@ pub(crate) async fn handle_verify_policy_command(
         },
     );
 
-    match super::slash_command_services::execute_runtime_config_command_with_daemon_fallback(
+    match super::slash_command_services::execute_runtime_config_command_via_daemon(
         &state.daemon_url,
         request,
     )
     .await
     {
-        Ok((response, backend_notice)) => {
-            if let Some(notice) = backend_notice {
-                push_obs(state, notice);
-            }
+        Ok(response) => {
             super::slash_command_services::apply_runtime_config_response(
                 response, state, tui_rt, event_tx,
             )
@@ -186,30 +184,16 @@ fn build_verifier_route_label_if_needed(
         .or_else(|| Some("default".to_string()))
 }
 
-async fn execute_artifact_command_with_daemon_fallback(
+async fn execute_artifact_command_via_daemon(
     daemon_url: &str,
     request: ArtifactCommandRequest,
 ) -> Result<(ArtifactCommandResponse, Option<String>), String> {
-    match daemon_artifact_command(daemon_url, &request).await {
-        Ok(response) => Ok((response, None)),
-        Err(daemon_err) => {
-            let daemon_err_text = truncate_error(&daemon_err.to_string(), 140);
-            let local = medousa::artifact_command_runtime::execute_artifact_command(request)
-                .map_err(|local_err| {
-                    format!(
-                        "daemon_error={} | local_error={}",
-                        daemon_err_text,
-                        truncate_error(&local_err.to_string(), 180)
-                    )
-                })?;
-            Ok((
-                local,
-                Some(format!(
-                    "◈ artifact runtime backend=local fallback daemon_error={daemon_err_text}"
-                )),
-            ))
-        }
-    }
+    daemon_artifact_command(daemon_url, &request)
+        .await
+        .map(|response| (response, None))
+        .map_err(|err| {
+            format!("daemon error: {}", truncate_error(&err.to_string(), 200))
+        })
 }
 
 fn joined_query(args: &[&str]) -> Option<String> {

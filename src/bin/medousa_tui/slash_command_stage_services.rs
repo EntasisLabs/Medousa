@@ -23,13 +23,10 @@ pub(crate) async fn handle_stage_route_family_command(
         command,
     };
 
-    match execute_stage_route_command_with_daemon_fallback(&state.daemon_url, request).await {
-        Ok((response, backend_notice)) => {
+    match execute_stage_route_command_via_daemon(&state.daemon_url, request).await {
+        Ok(response) => {
             let did_change_routing = response.stage_routing != state.stage_routing;
             state.stage_routing = response.stage_routing;
-            if let Some(notice) = backend_notice {
-                push_obs(state, notice);
-            }
             push_obs(state, response.rendered_output);
             if did_change_routing {
                 persist_stage_routing_defaults(state);
@@ -84,30 +81,15 @@ fn build_stage_route_command_spec(
     }
 }
 
-async fn execute_stage_route_command_with_daemon_fallback(
+async fn execute_stage_route_command_via_daemon(
     daemon_url: &str,
     request: StageRouteCommandRequest,
-) -> Result<(StageRouteCommandResponse, Option<String>), String> {
-    match daemon_stage_route_command(daemon_url, &request).await {
-        Ok(response) => Ok((response, None)),
-        Err(daemon_err) => {
-            let daemon_err_text = truncate_error(&daemon_err.to_string(), 140);
-            let local = medousa::stage_route_command_runtime::execute_stage_route_command(request)
-                .map_err(|local_err| {
-                    format!(
-                        "daemon_error={} | local_error={}",
-                        daemon_err_text,
-                        truncate_error(&local_err.to_string(), 180)
-                    )
-                })?;
-            Ok((
-                local,
-                Some(format!(
-                    "◈ stage route runtime backend=local fallback daemon_error={daemon_err_text}"
-                )),
-            ))
-        }
-    }
+) -> Result<StageRouteCommandResponse, String> {
+    daemon_stage_route_command(daemon_url, &request)
+        .await
+        .map_err(|err| {
+            format!("daemon error: {}", truncate_error(&err.to_string(), 200))
+        })
 }
 
 fn truncate_error(value: &str, max_chars: usize) -> String {
