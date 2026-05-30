@@ -1,4 +1,8 @@
-![Medousa](assets/medousa-cream.png)
+<div align="center" >
+  
+<img src="assets/medousa-cream.png" alt="Medousa Logo" width="400">
+
+</div>
 
 # Medousa
 
