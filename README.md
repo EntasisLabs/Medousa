@@ -8,11 +8,9 @@ You talk to it through a terminal interface, through Discord, or through Telegra
 
 ## What it does
 
-Everything in Medousa starts with a conversation. You ask something. It thinks. It writes back. But the difference is what happens underneath.
+Medousa runs on your computer, not in a cloud. It remembers what you tell it, verifies what it tells you, and keeps working when you close the lid. You talk to it through a terminal, through Discord, or through Telegram. It runs scripts inside a sealed environment. It picks up where you left off, even days later. Every answer carries its own proof.
 
-When you ask a question, Medousa does not just generate a reply. It runs tool loops. It looks up stored context from previous sessions. It captures each step as an immutable record. The result is a turn that carries its own lineage — every chunk of text is tagged as verified or provisional alongside the source it came from. You never guess whether the answer is real.
-
-It works when the terminal is closed. The background daemon processes recurring prompts, keeps session history, and listens for incoming messages from your messaging bridges. You can message it from across the room and get the same answers you would at the keyboard.
+That is it. Everything else is infrastructure.
 
 ## What you can do with it
 
@@ -30,19 +28,7 @@ These are the things Medousa does out of the box:
 
 ## How it works
 
-Medousa is two layers running together.
-
-The **daemon** is the background engine. It owns the runtime state, session history, identity memory, and verification store. It processes turns, runs recurring prompts, and serves the chat interface. It binds to `127.0.0.1:7419` by default and keeps working whether you are looking at the terminal or not.
-
-The **TUI** is the interface you interact with. It connects to the daemon and gives you a rich terminal workspace with commands, slash commands, artifact previews, turn history, and a markdown renderer. It is fast — built on a rendering loop that targets 60 fps on a 1-second refresh budget.
-
-The **bridges** (Discord and Telegram) connect Medousa to your messaging apps. Each adapter is a separate binary that authenticates with your bot token and relays messages through the daemon. You can run them in the background alongside the daemon.
-
-The **backend** stores your data. Choose between three options:
-
-- **In-memory** — data lives while the daemon runs. Fastest, ephemeral.
-- **SurrealKV** — data persisted to a local file. Survives restarts. No external database needed.
-- **SurrealWS** — data persisted to a remote SurrealDB instance. For multi-machine setups or shared state.
+Medousa runs two processes. A background engine that never stops, and an interface that you talk to. The engine owns your history, your memory, and your recurring tasks. The interface connects to it over your local network and gives you a workspace for conversations, commands, and automations. You can also connect Discord or Telegram and message Medousa from across the room.
 
 ## Quick start
 
@@ -75,16 +61,29 @@ Each command has its own flags. Run `medousa <command> --help` for details.
 
 ## The workspace
 
-When you open the TUI, you enter a terminal workspace with:
+The workspace is a terminal interface with everything you need in one place. Turn history, slash commands, artifact previews, and a settings panel. It is fast. It connects to the background engine automatically. If the engine is not running, the workspace starts it.
 
-- **Turn history** — every past exchange is stored and searchable by session
-- **Slash commands** — quick actions for settings, artifacts, and stage routing
-- **Artifact preview** — chunked outputs from tool calls rendered inline
-- **Agent runtime** — multi-step reasoning loops that collect evidence before replying
-- **Settings UI** — configure provider, model, backend, theme, and key bindings on the fly
-- **Markdown rendering** — formatted output with syntax highlighting
+## What makes it reliable
 
-The workspace connects to the daemon through an HTTP API. If the daemon is not running, the TUI starts it automatically.
+You are not watching Medousa when it works. That is the point.
+
+When you send a message or schedule a check-in, Medousa converts it into a unit of work that cannot be lost. If your laptop goes to sleep, if the network drops, if the daemon restarts — that work waits. It retries. It picks up at the exact step that was interrupted, not from the beginning.
+
+You never have to wonder whether something finished. If Medousa accepted it, it ran.
+
+## What makes it safe
+
+When Medousa runs a script — processing a spreadsheet, fetching a page, transforming a file — it runs inside a sealed environment. That script cannot touch your documents, your passwords, or your other applications unless you explicitly say it can.
+
+You do not have to trust the script. You only have to trust the seal.
+
+## What makes it remember
+
+Medousa does not treat every conversation as a blank page. It builds a picture of how you work — not just what you say, but how you approach things. The questions you ask. The patterns you repeat. The context you keep coming back to.
+
+When you return after a week away, Medousa does not ask "who are you?" It picks up where you left off. Not by scrolling through chat logs. By understanding what was relevant, what was resolved, and what was still in motion.
+
+This is not a gimmick. It is the entire point.
 
 ## Storage
 
@@ -122,3 +121,18 @@ Set the `MEDOUSA_LLM_PROVIDER`, `MEDOUSA_LLM_MODEL`, and `MEDOUSA_LLM_BASE_URL` 
 | `MEDOUSA_SURREAL_DATABASE` | SurrealDB database (default: runtime) |
 
 Provider-specific base URLs can also be set with `MEDOUSA_<PROVIDER>_BASE_URL` or `STASIS_<PROVIDER>_BASE_URL`. For Ollama, `OLLAMA_HOST` is honoured automatically.
+
+
+---
+
+### Chaos is not a personality trait. It is a failure of tools.
+
+Every piece of software that forgets who you are, loses your work, or answers without proof is not your fault. It is a broken tool.
+
+Medousa is built to be the opposite.
+
+It remembers. It verifies. It finishes what it starts. It runs where you live — on your machine, in your chat, across your rooms. It does not guess. It does not forget. It does not leave you wondering whether something worked.
+
+Chaotic life turns to stone when the tools around you stop adding to the noise.
+
+That is what Medousa is for.
