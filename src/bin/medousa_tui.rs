@@ -76,8 +76,6 @@ mod slash_command_artifact_services;
 mod slash_command_stage_services;
 #[path = "medousa_tui/slash_commands.rs"]
 mod slash_commands;
-#[path = "medousa_tui/turn_services.rs"]
-mod turn_services;
 #[path = "medousa_tui/theme_ui.rs"]
 mod theme_ui;
 #[path = "medousa_tui/ui_helpers.rs"]

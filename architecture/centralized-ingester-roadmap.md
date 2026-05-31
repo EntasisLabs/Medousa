@@ -140,7 +140,13 @@ struct IngestResponse {
 
 See [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md).
 
-Wire Stasis outbox publish → internal webhook → channel dispatch so completed jobs actually deliver replies to Telegram/Discord. Pending outbox is treated as a product bug, not dashboard noise.
+Wire Stasis outbox publish → internal webhook → channel dispatch so completed jobs actually deliver replies to Telegram/Discord.
+
+### Phase 6 — Centralized Agent Runtime 🎯 (next major track)
+
+See [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md).
+
+Extract the TUI tool-loop agent runtime into shared daemon-owned code. All surfaces (TUI, Telegram, Discord, CLI) converge on one turn engine; retire ingest `agent_session` jobs and the simplified interactive-turn LLM shortcut.
 - [x] `/history` → list & resume past sessions
 - [x] Attachment/media support (`IngestAttachment` merged into ask prompts)
 - [x] `/health` + `/heartbeat` ingester routes (daemon queries)

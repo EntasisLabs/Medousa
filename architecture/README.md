@@ -24,6 +24,7 @@ Start here for product-level usage:
 7. [tui-performance-target-plan.md](tui-performance-target-plan.md)
 8. [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md)
 9. [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md)
+10. [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md)
 
 ## Primary Code Anchors
 

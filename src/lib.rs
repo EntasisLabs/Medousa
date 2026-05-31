@@ -1,4 +1,5 @@
 pub mod adapter_ingest;
+pub mod agent_runtime;
 pub mod channel_delivery;
 pub mod artifact_chunking;
 pub mod artifact_command_runtime;
@@ -71,6 +72,7 @@ pub use adapter_ingest::{
     AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,
     wait_for_ask_delivery, ADAPTER_COMMAND_HINT,
 };
+pub use agent_runtime::{AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime};
 pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";

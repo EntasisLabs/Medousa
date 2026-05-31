@@ -6,50 +6,51 @@ use stasis::application::orchestration::tool_loop_pipeline::{ToolCallMode, ToolL
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
-use medousa::TuiRuntime;
-
-use super::{ConversationTurn, RuntimeSettings};
+use crate::session::ConversationTurn;
+use crate::stage_routing::StageRoute;
+use crate::tools::TuiRuntime;
+use crate::tui::settings::RuntimeSettings;
 
 #[derive(Debug, Clone)]
-pub(crate) struct TurnActivationDecision {
-    pub(crate) turn_class: &'static str,
-    pub(crate) tool_call_mode: ToolCallMode,
-    pub(crate) max_tool_rounds: usize,
-    pub(crate) enforce_no_tools: bool,
-    pub(crate) reason: &'static str,
+pub struct TurnActivationDecision {
+    pub turn_class: &'static str,
+    pub tool_call_mode: ToolCallMode,
+    pub max_tool_rounds: usize,
+    pub enforce_no_tools: bool,
+    pub reason: &'static str,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PriorMessageBuild {
-    pub(crate) messages: Vec<ChatMessage>,
-    pub(crate) hot_turns_included: usize,
-    pub(crate) cold_turns_summarized: usize,
-    pub(crate) cold_summary_chars: usize,
-    pub(crate) total_chars: usize,
+pub struct PriorMessageBuild {
+    pub messages: Vec<ChatMessage>,
+    pub hot_turns_included: usize,
+    pub cold_turns_summarized: usize,
+    pub cold_summary_chars: usize,
+    pub total_chars: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PriorMessageLimits {
-    pub(crate) max_prior_total_chars: usize,
-    pub(crate) max_single_prior_message_chars: usize,
-    pub(crate) hot_window_char_budget: usize,
-    pub(crate) cold_window_char_budget: usize,
-    pub(crate) cold_summary_line_chars: usize,
+pub struct PriorMessageLimits {
+    pub max_prior_total_chars: usize,
+    pub max_single_prior_message_chars: usize,
+    pub hot_window_char_budget: usize,
+    pub cold_window_char_budget: usize,
+    pub cold_summary_line_chars: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct IntentContextLimits {
-    pub(crate) context_line_chars: usize,
+pub struct IntentContextLimits {
+    pub context_line_chars: usize,
 }
 
-pub(crate) struct SelectedTurnPipeline {
-    pub(crate) pipeline: ToolLoopPipeline,
-    pub(crate) route_dispatch_notice: Option<String>,
+pub struct SelectedTurnPipeline {
+    pub pipeline: ToolLoopPipeline,
+    pub route_dispatch_notice: Option<String>,
 }
 
-pub(crate) fn select_pipeline_for_turn(
+pub fn select_pipeline_for_turn(
     tui_rt: &TuiRuntime,
-    final_route: Option<&medousa::stage_routing::StageRoute>,
+    final_route: Option<&StageRoute>,
     settings: &RuntimeSettings,
 ) -> SelectedTurnPipeline {
     if let Some(route) = final_route {
@@ -80,7 +81,7 @@ pub(crate) fn select_pipeline_for_turn(
     }
 }
 
-pub(crate) fn parse_tool_call_mode(value: &str) -> ToolCallMode {
+pub fn parse_tool_call_mode(value: &str) -> ToolCallMode {
     if value.trim().eq_ignore_ascii_case("strict") {
         ToolCallMode::Strict
     } else {
@@ -88,7 +89,7 @@ pub(crate) fn parse_tool_call_mode(value: &str) -> ToolCallMode {
     }
 }
 
-pub(crate) fn build_prior_messages(
+pub fn build_prior_messages(
     turns: &[ConversationTurn],
     current_prompt: &str,
     current_user_persisted: bool,
@@ -198,7 +199,7 @@ pub(crate) fn build_prior_messages(
     }
 }
 
-pub(crate) fn decide_turn_activation(
+pub fn decide_turn_activation(
     prompt: &str,
     configured_mode: ToolCallMode,
     configured_rounds: usize,
@@ -253,7 +254,7 @@ pub(crate) fn decide_turn_activation(
     }
 }
 
-pub(crate) fn apply_context_compiler_activation_gate(
+pub fn apply_context_compiler_activation_gate(
     base: TurnActivationDecision,
     allow_no_tools_fallback: bool,
 ) -> TurnActivationDecision {
@@ -270,8 +271,8 @@ pub(crate) fn apply_context_compiler_activation_gate(
     base
 }
 
-pub(crate) fn build_prompt_pipeline_for_turn(
-    final_route: Option<&medousa::stage_routing::StageRoute>,
+pub fn build_prompt_pipeline_for_turn(
+    final_route: Option<&StageRoute>,
     settings: &RuntimeSettings,
 ) -> PromptExecutionPipeline {
     let (provider, model, base_url) = match final_route {
@@ -304,7 +305,7 @@ pub(crate) fn build_prompt_pipeline_for_turn(
     PromptExecutionPipeline::new(chat_client)
 }
 
-pub(crate) fn build_intent_classifier_recent_context(
+pub fn build_intent_classifier_recent_context(
     turns: &[ConversationTurn],
     current_prompt: &str,
     current_user_persisted: bool,
@@ -375,10 +376,7 @@ fn contains_direct_answer_intent(prompt_lower: &str) -> bool {
     .any(|needle| prompt_lower.contains(needle))
 }
 
-fn route_base_url(
-    route: &medousa::stage_routing::StageRoute,
-    settings: &RuntimeSettings,
-) -> Option<String> {
+fn route_base_url(route: &StageRoute, settings: &RuntimeSettings) -> Option<String> {
     if route.provider.eq_ignore_ascii_case(settings.provider.trim()) {
         let candidate = settings.base_url.trim();
         if !candidate.is_empty() {
@@ -410,4 +408,215 @@ fn truncate_text_for_budget(text: &str, max_chars: usize) -> String {
         .skip(total_chars.saturating_sub(tail))
         .collect::<String>();
     format!("{head_part}\n...\n{tail_part}")
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
+
+    use super::{
+        PriorMessageLimits, apply_context_compiler_activation_gate, build_intent_classifier_recent_context,
+        build_prior_messages, decide_turn_activation, parse_tool_call_mode,
+    };
+    use crate::session::ConversationTurn;
+
+    fn sample_limits() -> PriorMessageLimits {
+        PriorMessageLimits {
+            max_prior_total_chars: 24_000,
+            max_single_prior_message_chars: 4_000,
+            hot_window_char_budget: 14_000,
+            cold_window_char_budget: 8_000,
+            cold_summary_line_chars: 240,
+        }
+    }
+
+    #[test]
+    fn parse_tool_call_mode_respects_strict() {
+        assert!(matches!(
+            parse_tool_call_mode("strict"),
+            ToolCallMode::Strict
+        ));
+        assert!(matches!(parse_tool_call_mode("auto"), ToolCallMode::Auto));
+    }
+
+    #[test]
+    fn activation_policy_prefers_no_tools_for_short_explanations() {
+        let policy = decide_turn_activation(
+            "Explain what this config means",
+            ToolCallMode::Auto,
+            10,
+            4,
+            320,
+            28,
+            420,
+        );
+        assert!(policy.enforce_no_tools);
+        assert_eq!(policy.max_tool_rounds, 1);
+    }
+
+    #[test]
+    fn activation_policy_prefers_tools_for_lookup_intent() {
+        let policy = decide_turn_activation(
+            "Search latest runtime failures and verify evidence",
+            ToolCallMode::Strict,
+            3,
+            8,
+            320,
+            28,
+            420,
+        );
+        assert!(!policy.enforce_no_tools);
+        assert_eq!(policy.tool_call_mode, ToolCallMode::Auto);
+    }
+
+    #[test]
+    fn activation_gate_blocks_no_tools_when_recall_not_verified() {
+        let base = decide_turn_activation(
+            "Explain what this config means",
+            ToolCallMode::Auto,
+            10,
+            4,
+            320,
+            28,
+            420,
+        );
+        assert!(base.enforce_no_tools);
+
+        let gated = apply_context_compiler_activation_gate(base, false);
+        assert!(!gated.enforce_no_tools);
+        assert_eq!(gated.tool_call_mode, ToolCallMode::Auto);
+        assert_eq!(gated.reason, "cheap_recall_first_no_verified_context");
+    }
+
+    #[test]
+    fn prior_messages_include_cold_history_summary() {
+        let mut turns = Vec::new();
+        for idx in 0..18 {
+            turns.push(ConversationTurn {
+                role: if idx % 2 == 0 {
+                    "user".to_string()
+                } else {
+                    "assistant".to_string()
+                },
+                content: format!("turn-{idx}-{}", "x".repeat(120)),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            });
+        }
+
+        let built = build_prior_messages(
+            &turns,
+            "new prompt",
+            false,
+            8,
+            24,
+            sample_limits(),
+        );
+        assert!(built.hot_turns_included > 0);
+        assert!(built.cold_turns_summarized > 0);
+        assert!(built.total_chars > 0);
+    }
+
+    #[test]
+    fn prior_messages_include_agent_role_as_assistant() {
+        let turns = vec![
+            ConversationTurn {
+                role: "user".to_string(),
+                content: "hello".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+            ConversationTurn {
+                role: "agent".to_string(),
+                content: "hi there".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+        ];
+
+        let built = build_prior_messages(&turns, "new prompt", false, 8, 24, sample_limits());
+        let has_assistant = built
+            .messages
+            .iter()
+            .any(|message| matches!(message.role, genai::chat::ChatRole::Assistant));
+        assert!(has_assistant);
+    }
+
+    #[test]
+    fn classifier_recent_context_excludes_current_persisted_user_turn() {
+        let turns = vec![
+            ConversationTurn {
+                role: "user".to_string(),
+                content: "earlier question".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+            ConversationTurn {
+                role: "agent".to_string(),
+                content: "earlier answer".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+            ConversationTurn {
+                role: "user".to_string(),
+                content: "thanks".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+        ];
+
+        let context = build_intent_classifier_recent_context(
+            &turns,
+            "thanks",
+            true,
+            4,
+            1400,
+            super::IntentContextLimits {
+                context_line_chars: 260,
+            },
+        );
+        assert!(context.contains("user: earlier question"));
+        assert!(context.contains("assistant: earlier answer"));
+        assert!(!context.contains("user: thanks"));
+    }
+
+    #[test]
+    fn classifier_recent_context_normalizes_agent_role() {
+        let turns = vec![
+            ConversationTurn {
+                role: "agent".to_string(),
+                content: "done".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+            ConversationTurn {
+                role: "user".to_string(),
+                content: "ok".to_string(),
+                timestamp: Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+            },
+        ];
+
+        let context = build_intent_classifier_recent_context(
+            &turns,
+            "new",
+            false,
+            4,
+            1400,
+            super::IntentContextLimits {
+                context_line_chars: 260,
+            },
+        );
+        assert!(context.contains("assistant: done"));
+        assert!(!context.contains("agent: done"));
+    }
 }

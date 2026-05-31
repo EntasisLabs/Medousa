@@ -85,4 +85,8 @@ SSE ingest streams remain for **typing indicators and incremental deltas** durin
 
 - Replacing Stasis outbox with a custom queue
 - External customer webhooks (Phase 4+ could expose optional outbound endpoints)
-- Removing ingest SSE entirely (keep for UX until Phase 3 lands)
+- Removing ingest SSE entirely (keep for typing until centralized agent runtime lands)
+
+## Successor track
+
+Reply **generation** converges on [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md). This delivery track remains the completion contract for all channels once the daemon hosts the gold-standard runtime.

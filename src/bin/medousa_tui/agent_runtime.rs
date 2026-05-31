@@ -10,6 +10,9 @@ use medousa::{
     InteractiveTurnRequest,
     InteractiveTurnStreamEvent,
     TuiRuntime,
+    agent_runtime::turn_services::{
+        self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, TurnActivationDecision,
+    },
     engine_context::{
         ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
         default_policy_profile_for_lane, lane_execution_budget,
@@ -29,9 +32,6 @@ use stasis::prelude::MemoryRecallRequest;
 
 use super::daemon_commands::daemon_start_interactive_turn;
 use super::{ConversationTurn, TuiState};
-use super::turn_services::{
-    self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, TurnActivationDecision,
-};
 
 const MAX_REQUEST_PROMPT_CHARS: usize = 48_000;
 const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
