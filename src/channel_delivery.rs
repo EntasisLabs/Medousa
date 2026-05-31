@@ -355,14 +355,6 @@ fn find_output_text(payload: &Value) -> Option<String> {
         }
     }
 
-    if let Some(turns) = payload.get("turns").and_then(|value| value.as_array()) {
-        for turn in turns.iter().rev() {
-            if let Some(text) = read_non_empty_text(turn.get("response_text")) {
-                return Some(text);
-            }
-        }
-    }
-
     if let Some(transcript) = payload.get("transcript").and_then(|value| value.as_array()) {
         for entry in transcript.iter().rev() {
             if let Some(text) = read_non_empty_text(Some(entry)) {
@@ -465,27 +457,6 @@ mod tests {
         assert_eq!(
             extract_output_text_from_diagnostics(Some(diagnostics)).as_deref(),
             Some("hello world")
-        );
-    }
-
-    #[test]
-    fn extract_output_text_from_agent_session_diagnostics() {
-        let diagnostics = r#"{
-            "provider": "stasis-agent-session",
-            "status": "success",
-            "turns": [{
-                "turn_number": 1,
-                "agent_id": "medousa.researcher",
-                "response_text": "Here is the research summary.",
-                "tool_name": "stasis.web.search.mock",
-                "rounds_executed": 1,
-                "termination_reason": "completed"
-            }],
-            "transcript_preview": "assistant: Here is the research summary."
-        }"#;
-        assert_eq!(
-            extract_output_text_from_diagnostics(Some(diagnostics)).as_deref(),
-            Some("Here is the research summary.")
         );
     }
 }

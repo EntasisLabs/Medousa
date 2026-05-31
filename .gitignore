@@ -7,3 +7,4 @@ package-lock.json
 /docs/design/
 .cargo-target/
 target-local/
+.tmp/

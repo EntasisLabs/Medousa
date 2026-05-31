@@ -15,9 +15,21 @@ It combines interaction, observability, and control in one surface:
 
 - Binary: medousa/src/bin/medousa_tui.rs
 
+## Agent Turn Path (daemon-primary)
+
+By default the TUI routes chat turns through the daemon's shared agent runtime:
+
+1. `POST /v1/interactive/turn` — accept turn, return SSE stream URL
+2. consume stream events into `TuiEvent` (content, reasoning, status, final)
+3. session history via daemon HTTP API (`append_turn_daemon_first`)
+
+When the daemon is unavailable or `--local-runtime-only` / `MEDOUSA_TUI_LOCAL_RUNTIME=1` is set, the TUI falls back to in-process `MedousaAgentRuntime` via `src/agent_runtime/*`.
+
+`/daemon ask` uses `POST /v1/jobs/ask` (agent runtime job + poll) for fire-and-forget API-style asks.
+
 ## Runtime Assembly
 
-Runtime composition is built through build_tui_runtime(...) in medousa/src/tools.rs.
+Local fallback runtime is built through `build_tui_runtime(...)` in medousa/src/tools.rs (same engine as daemon).
 
 Assembly includes:
 
@@ -42,6 +54,7 @@ It owns:
 - script editor state
 - thinking traces and grapheme console output
 - mode transitions across overlays
+- `local_runtime_only` — force in-process turns
 
 ## Event and Update Model
 
@@ -57,7 +70,7 @@ TuiEvent is the explicit async boundary between runtime activity and UI projecti
 
 Primary surfaces:
 
-- chat loop (prompt execution and streaming)
+- chat loop (daemon-primary prompt execution and streaming)
 - slash command control plane
 - history/session management overlay
 - settings and routing editor overlay
@@ -94,3 +107,4 @@ Runtime/env notes:
 - user-facing persistence survives restart
 - execution durability depends on selected backend (in-memory or surreal-mem)
 - evidence/confidence visibility is progressive, not forced
+- daemon-primary chat requires medousa-daemon running at `--daemon-url`

@@ -349,26 +349,6 @@ pub fn build_interactive_turn_request_for_ingest(
     }
 }
 
-/// Build an `EnqueueAskRequest` from an ingest outcome + session context.
-pub fn build_enqueue_ask_request(
-    channel: &str,
-    user_id: &str,
-    channel_id: &str,
-    _session_id: &str,
-    prompt: String,
-    model_hint: Option<String>,
-) -> crate::daemon_api::EnqueueAskRequest {
-    crate::daemon_api::EnqueueAskRequest {
-        prompt,
-        policy_profile: Some("interactive".to_string()),
-        model_hint,
-        max_turns: Some(1),
-        identity_user_id: Some(format!("{}:user:{}", channel, user_id)),
-        identity_persona_id: None,
-        identity_channel_id: Some(format!("{}:chat:{}", channel, channel_id)),
-    }
-}
-
 /// Load session history for context building. Returns formatted history string.
 pub fn load_session_context(session_id: &str, max_turns: usize) -> String {
     let turns = load_history(session_id);

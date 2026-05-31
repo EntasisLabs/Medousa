@@ -142,11 +142,12 @@ See [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md).
 
 Wire Stasis outbox publish → internal webhook → channel dispatch so completed jobs actually deliver replies to Telegram/Discord.
 
-### Phase 6 — Centralized Agent Runtime 🎯 (next major track)
+### Phase 6 — Centralized Agent Runtime ✅ (superseded by dedicated track)
 
-See [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md).
+See [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md) — **Phases 1–4 complete.**
 
-Extract the TUI tool-loop agent runtime into shared daemon-owned code. All surfaces (TUI, Telegram, Discord, CLI) converge on one turn engine; retire ingest `agent_session` jobs and the simplified interactive-turn LLM shortcut.
+All interactive surfaces now use `MedousaAgentRuntime` in the daemon. Ingest `agent_session` jobs and the bare LLM interactive-turn shortcut are retired. Remaining Stasis scheduler jobs: `/v1/jobs/prompt` and recurring materialization only.
+
 - [x] `/history` → list & resume past sessions
 - [x] Attachment/media support (`IngestAttachment` merged into ask prompts)
 - [x] `/health` + `/heartbeat` ingester routes (daemon queries)
@@ -159,8 +160,8 @@ Extract the TUI tool-loop agent runtime into shared daemon-owned code. All surfa
 1. **Session key uses channel+user**, not channel alone, so multiple users in the same group chat get their own sessions
 2. **Old sessions persist** — `/new` just creates a new active mapping, doesn't delete history
 3. **No adapter-level config duplication** — all policy, model, depth config lives in the daemon/ingester
-4. **Backward compatible** — existing `/v1/jobs/ask` endpoint remains for direct API usage
-5. **TUI stays as-is** — it's the reference implementation and power-user interface; ingester follows its patterns
+4. **`/v1/jobs/ask` API** — same agent runtime as ingest; clients poll `/v1/jobs/{id}/result`
+5. **TUI daemon-primary** — chat via `/v1/interactive/turn`; local runtime is offline/dev fallback only
 
 ## Check-in Points
 

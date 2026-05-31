@@ -118,20 +118,20 @@ Point all ingress at daemon agent turns.
 - [x] Discord/Telegram: unchanged adapter shell; daemon does the thinking
 - [x] Session history: append assistant turn on delivery completion (`IngestAgentStreamSink`)
 
-**Exit criteria:** Telegram, Discord, CLI, and TUI all hit the same daemon route; no `workflow.stasis.agent_session` ingest jobs in dashboard. ✅ for `/v1/ingest`; `POST /v1/jobs/ask` still legacy (Phase 4).
+**Exit criteria:** Telegram, Discord, CLI, and TUI all hit the same daemon route; no `workflow.stasis.agent_session` ingest jobs in dashboard. ✅
 
 ---
 
-### Phase 4 — Decommission legacy paths
+### Phase 4 — Decommission legacy paths ✅ **Done**
 
 - [x] Remove simplified `run_interactive_turn_stream_task` (PromptExecutionPipeline-only) — replaced in Phase 2
 - [x] Remove ingest `AgentSessionJobPayload` builder in `start_ingest_ask_stream`
-- [ ] Migrate `POST /v1/jobs/ask` (`enqueue_ask`) off `for_agent_session`
-- [ ] Remove bridge diagnostics extraction for `turns[].response_text` (no longer needed)
-- [ ] Update [component-daemon.md](component-daemon.md) and [component-tui.md](component-tui.md)
-- [ ] Archive notes in [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md) Phase 5 → superseded by this track
+- [x] Migrate `POST /v1/jobs/ask` and `/v1/jobs/report` off `for_agent_session` → `spawn_daemon_api_agent_turn`
+- [x] Remove bridge diagnostics extraction for `turns[].response_text`
+- [x] Update [component-daemon.md](component-daemon.md) and [component-tui.md](component-tui.md)
+- [x] Archive notes in [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md) Phase 6 → superseded
 
-**Exit criteria:** Single agent turn implementation in repo; grep for `for_agent_session` in ingest/daemon paths returns zero.
+**Exit criteria:** Single agent turn implementation in repo; grep for `for_agent_session` in ingest/daemon paths returns zero. ✅
 
 ---
 

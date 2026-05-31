@@ -58,9 +58,7 @@ use uuid::Uuid;
 
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::application::runtime::identity_context_compiler::prepend_identity_snapshot;
-use stasis::application::orchestration::runtime_job_payloads::{
-    AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
-};
+use stasis::application::orchestration::runtime_job_payloads::PromptJobPayload;
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextRequest,
@@ -95,6 +93,8 @@ struct AppState {
     last_agent_turn_at: Arc<RwLock<Option<DateTime<Utc>>>>,
     last_agent_turn_latency_ms: Arc<RwLock<Option<u64>>>,
     agent_tool_registry_count: usize,
+    agent_turn_jobs: Arc<RwLock<HashMap<String, AgentTurnJobRecord>>>,
+    default_runtime_config: session_mapping::IngestSessionRuntimeConfig,
     cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
     channel_session_history: Arc<RwLock<HashMap<String, Vec<String>>>>,
     session_runtime_configs:
@@ -110,6 +110,23 @@ struct AppState {
     heartbeat_metrics: Arc<RwLock<HeartbeatDeliveryMetrics>>,
     heartbeat_notify: HeartbeatNotifyConfig,
     webhook_client: Option<reqwest::Client>,
+}
+
+#[derive(Debug, Clone)]
+struct AgentTurnJobRecord {
+    status: String,
+    output_text: Option<String>,
+    error: Option<String>,
+}
+
+impl AgentTurnJobRecord {
+    fn pending() -> Self {
+        Self {
+            status: "pending".to_string(),
+            output_text: None,
+            error: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +358,7 @@ async fn main() -> Result<()> {
         .await
         .map(|tools| tools.len())
         .unwrap_or(0);
+    let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::default();
 
     let state = AppState {
         runtime: runtime.clone(),
@@ -363,6 +381,8 @@ async fn main() -> Result<()> {
         last_agent_turn_at: Arc::new(RwLock::new(None)),
         last_agent_turn_latency_ms: Arc::new(RwLock::new(None)),
         agent_tool_registry_count,
+        agent_turn_jobs: Arc::new(RwLock::new(HashMap::new())),
+        default_runtime_config,
         cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
         channel_session_history: Arc::new(RwLock::new(HashMap::new())),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
@@ -797,6 +817,10 @@ async fn get_job_result(
         return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
     }
 
+    if let Some(record) = state.agent_turn_jobs.read().await.get(&job_id) {
+        return Ok(Json(job_result_from_agent_turn(&job_id, record)));
+    }
+
     let attempts = match get_job_attempts_graceful(&state.runtime, &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
@@ -830,6 +854,21 @@ async fn get_job_report(
     let job_id = job_id.trim().to_string();
     if job_id.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
+    }
+
+    if let Some(record) = state.agent_turn_jobs.read().await.get(&job_id) {
+        let base = job_result_from_agent_turn(&job_id, record);
+        return Ok(Json(JobReportResponse {
+            job_id: base.job_id,
+            status: base.status,
+            is_terminal: base.is_terminal,
+            attempt_count: base.attempt_count,
+            latest_outcome: base.latest_outcome,
+            latest_execution_id: base.latest_execution_id,
+            output_text: base.output_text,
+            citations: Vec::new(),
+            evidence_report: None,
+        }));
     }
 
     let attempts = match get_job_attempts_graceful(&state.runtime, &job_id).await {
@@ -903,45 +942,24 @@ async fn enqueue_ask(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
-    let raw_prompt = request.prompt;
-    let prompt_with_identity = prepend_identity_snapshot(&raw_prompt, Some(&identity_context.summary));
-    let compiled_prompt = compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
+    let session_id = format!("daemon-api:{}", identity_context.user_id);
+    let (provider, model) =
+        resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
 
-    let payload = AgentSessionJobPayload {
-        thread_id: Some(job_id.clone()),
-        initial_user_prompt: compiled_prompt,
-        participants: vec![AgentSessionParticipantPayload {
-            agent_id: "medousa.researcher".to_string(),
-            system_prompt: Some(
-                "You are Medousa, a practical research assistant. Use tool evidence and cite findings succinctly.".to_string(),
-            ),
-            tool_name: "stasis.web.search.mock".to_string(),
-            tool_input: Some(serde_json::json!({
-                "query": raw_prompt
-            })),
-        }],
-        policy_profile: Some(effective_policy_profile),
-        model_hint: request.model_hint,
-        memory_policy: None,
-        max_turns: request.max_turns.map(|value| value as usize),
-        tool_call_mode: Some(AgentToolCallMode::Auto),
-    };
-
-    let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)
-        .map_err(internal_error)?
-        .with_correlation_id(identity_context.user_id)
-        .with_causation_id("medousa-daemon-api:interactive")
-        .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:ask")
-        .with_scheduled_at(now)
-        .build();
-
-    enqueue_runtime_job(state.runtime.as_ref(), new_job)
-        .await
-        .map_err(internal_error)?;
+    spawn_daemon_api_agent_turn(
+        &state,
+        job_id.clone(),
+        session_id,
+        request.prompt,
+        state.default_runtime_config.response_depth_mode.clone(),
+        provider,
+        model,
+    )
+    .await;
 
     Ok(Json(EnqueueResponse {
         job_id,
-        queue: "default".to_string(),
+        queue: "agent-runtime".to_string(),
         accepted_at_utc: now,
     }))
 }
@@ -975,49 +993,25 @@ async fn enqueue_report(
 
     let now = Utc::now();
     let job_id = format!("medousa-daemon-report-{}", now.timestamp_millis());
-    let raw_query = request.query;
-    let report_prompt = build_report_prompt(&raw_query);
-    let prompt_with_identity =
-        prepend_identity_snapshot(&report_prompt, Some(&identity_context.summary));
-    let compiled_prompt =
-        compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
+    let session_id = format!("daemon-report:{}", identity_context.user_id);
+    let (provider, model) =
+        resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
+    let prompt = build_report_prompt(&request.query);
 
-    let payload = AgentSessionJobPayload {
-        thread_id: Some(job_id.clone()),
-        initial_user_prompt: compiled_prompt,
-        participants: vec![AgentSessionParticipantPayload {
-            agent_id: "medousa.researcher".to_string(),
-            system_prompt: Some(
-                "You are Medousa report mode. Produce a structured report with explicit citations and evidence-first reasoning."
-                    .to_string(),
-            ),
-            tool_name: "stasis.web.search.mock".to_string(),
-            tool_input: Some(serde_json::json!({
-                "query": raw_query
-            })),
-        }],
-        policy_profile: Some(effective_policy_profile),
-        model_hint: request.model_hint,
-        memory_policy: None,
-        max_turns: request.max_turns.map(|value| value as usize).or(Some(2)),
-        tool_call_mode: Some(AgentToolCallMode::Auto),
-    };
-
-    let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id.clone(), &payload)
-        .map_err(internal_error)?
-        .with_correlation_id(identity_context.user_id)
-        .with_causation_id("medousa-daemon-api:interactive:report")
-        .with_sttp_input_node_id("sttp:in:medousa:daemon:interactive:report")
-        .with_scheduled_at(now)
-        .build();
-
-    enqueue_runtime_job(state.runtime.as_ref(), new_job)
-        .await
-        .map_err(internal_error)?;
+    spawn_daemon_api_agent_turn(
+        &state,
+        job_id.clone(),
+        session_id,
+        prompt,
+        state.default_runtime_config.response_depth_mode.clone(),
+        provider,
+        model,
+    )
+    .await;
 
     Ok(Json(EnqueueResponse {
         job_id,
-        queue: "default".to_string(),
+        queue: "agent-runtime".to_string(),
         accepted_at_utc: now,
     }))
 }
@@ -2077,6 +2071,172 @@ async fn mark_job_delivery_success(
     );
     *last_delivery_at.write().await = Some(now);
     *last_delivery_latency_ms.write().await = Some(latency_ms);
+}
+
+fn resolve_api_model_routing(
+    model_hint: Option<&str>,
+    defaults: &session_mapping::IngestSessionRuntimeConfig,
+) -> (String, String) {
+    let hint = model_hint.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(hint) = hint {
+        if let Some((provider, model)) = hint.split_once(':') {
+            let provider = provider.trim();
+            let model = model.trim();
+            if !provider.is_empty() && !model.is_empty() {
+                return (
+                    medousa::resolve_llm_provider(Some(provider)),
+                    medousa::resolve_llm_model(Some(model)),
+                );
+            }
+        }
+        return (
+            defaults.draft_provider.clone(),
+            medousa::resolve_llm_model(Some(hint)),
+        );
+    }
+
+    (
+        defaults.draft_provider.clone(),
+        defaults.draft_model.clone(),
+    )
+}
+
+fn job_result_from_agent_turn(job_id: &str, record: &AgentTurnJobRecord) -> JobResultResponse {
+    let is_terminal = record.status != "pending";
+    JobResultResponse {
+        job_id: job_id.to_string(),
+        status: record.status.clone(),
+        is_terminal,
+        attempt_count: usize::from(is_terminal),
+        latest_outcome: record
+            .error
+            .clone()
+            .or_else(|| Some(format!("status={}", record.status))),
+        latest_execution_id: None,
+        output_text: record.output_text.clone(),
+    }
+}
+
+async fn spawn_daemon_api_agent_turn(
+    state: &AppState,
+    job_id: String,
+    session_id: String,
+    prompt: String,
+    response_depth_mode: String,
+    provider: String,
+    model: String,
+) {
+    state.agent_turn_jobs.write().await.insert(
+        job_id.clone(),
+        AgentTurnJobRecord::pending(),
+    );
+
+    let interactive_request = session_mapping::build_interactive_turn_request_for_ingest(
+        &session_id,
+        prompt,
+        &provider,
+        &model,
+        &response_depth_mode,
+    );
+
+    let agent_runtime = state.agent_runtime.clone();
+    let backend = state.backend.clone();
+    let agent_turn_jobs = state.agent_turn_jobs.clone();
+    let last_agent_turn_at = state.last_agent_turn_at.clone();
+    let last_agent_turn_latency_ms = state.last_agent_turn_latency_ms.clone();
+    let job_id_for_task = job_id.clone();
+    let session_id_for_sink = session_id;
+
+    tokio::spawn(async move {
+        let sink: Arc<dyn AgentStreamSink> = Arc::new(ApiAgentStreamSink {
+            job_id: job_id_for_task.clone(),
+            session_id: session_id_for_sink,
+            agent_turn_jobs,
+            last_agent_turn_at,
+            last_agent_turn_latency_ms,
+            started: std::time::Instant::now(),
+        });
+
+        medousa::agent_runtime::run_agent_turn(
+            &job_id_for_task,
+            interactive_request,
+            &backend,
+            agent_runtime.as_ref(),
+            sink,
+        )
+        .await;
+    });
+}
+
+struct ApiAgentStreamSink {
+    job_id: String,
+    session_id: String,
+    agent_turn_jobs: Arc<RwLock<HashMap<String, AgentTurnJobRecord>>>,
+    last_agent_turn_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_agent_turn_latency_ms: Arc<RwLock<Option<u64>>>,
+    started: std::time::Instant,
+}
+
+#[async_trait]
+impl AgentStreamSink for ApiAgentStreamSink {
+    async fn content_chunk(&self, _turn_id: u64, _delta: String) {}
+
+    async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+
+    async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
+        medousa::session::append_turn(
+            &self.session_id,
+            &medousa::session::ConversationTurn {
+                role: "assistant".to_string(),
+                content: text.clone(),
+                timestamp: Utc::now(),
+                tool_names: _tool_names,
+                answer_state: None,
+            },
+        );
+
+        let latency_ms = self.started.elapsed().as_millis() as u64;
+        let now = Utc::now();
+        self.agent_turn_jobs.write().await.insert(
+            self.job_id.clone(),
+            AgentTurnJobRecord {
+                status: "succeeded".to_string(),
+                output_text: Some(text),
+                error: None,
+            },
+        );
+        *self.last_agent_turn_at.write().await = Some(now);
+        *self.last_agent_turn_latency_ms.write().await = Some(latency_ms);
+    }
+
+    async fn agent_error(&self, _turn_id: u64, message: String) {
+        let latency_ms = self.started.elapsed().as_millis() as u64;
+        let now = Utc::now();
+        self.agent_turn_jobs.write().await.insert(
+            self.job_id.clone(),
+            AgentTurnJobRecord {
+                status: "failed".to_string(),
+                output_text: None,
+                error: Some(message),
+            },
+        );
+        *self.last_agent_turn_at.write().await = Some(now);
+        *self.last_agent_turn_latency_ms.write().await = Some(latency_ms);
+    }
+
+    async fn notice(&self, _message: String) {}
+
+    async fn tool_invoked(&self, _tool_name: String, _input_summary: String) {}
+
+    async fn tool_payload(
+        &self,
+        _tool_name: String,
+        _tool_input: Value,
+        _tool_output: Value,
+        _input_receipt: Option<medousa::payload_receipt::ArtifactReceiptMeta>,
+        _output_receipt: Option<medousa::payload_receipt::ArtifactReceiptMeta>,
+    ) {
+    }
 }
 
 struct IngestAgentStreamSink {
@@ -3502,13 +3662,6 @@ mod tests {
         let diagnostics = r#"{"choices":[{"message":{"content":"assistant completion"}}]}"#;
         let output = extract_output_text_from_diagnostics(Some(diagnostics));
         assert_eq!(output.as_deref(), Some("assistant completion"));
-    }
-
-    #[test]
-    fn output_text_extraction_supports_agent_session_turns_shape() {
-        let diagnostics = r#"{"turns":[{"response_text":"agent session reply"}]}"#;
-        let output = extract_output_text_from_diagnostics(Some(diagnostics));
-        assert_eq!(output.as_deref(), Some("agent session reply"));
     }
 
     #[test]
