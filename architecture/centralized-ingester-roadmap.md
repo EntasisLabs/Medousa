@@ -1,0 +1,173 @@
+# Centralized Ingester/Router — Roadmap & Plan
+
+> Created: 2026-05-30  
+> Session: `medousa-ux`  
+> Mood: Focused (autonomy=0.90, friction=0.10, logic=0.95, stability=0.95)
+
+## Vision
+
+One centralized ingester/router that picks up from any comms channel outbox and routes to the proper handler — making all channels behave identically to the TUI experience. Continuous single-chat history per channel+user pair until `/new` is sent.
+
+## Core Principle
+
+**Adapters are thin shells.** All business logic, session management, slash command handling, and response generation lives in a single daemon endpoint (`POST /v1/ingest`). Adapters only listen for incoming messages, forward them, and render responses.
+
+## Architecture
+
+```
+                    ┌─────────────────────┐
+                    │   Channel Adapters   │
+                    │  (thin shells only)  │
+                    │                      │
+  Telegram ─────────┤    medousa_telegram  │
+                    │  (listen + forward)  │
+  Discord  ─────────┤    medousa_discord   │
+                    │  (listen + forward)  │
+  CLI      ─────────┤    medousa_cli       │
+                    │  (listen + forward)  │
+                    └────────┬────────────┘
+                             │ POST /v1/ingest
+                             ▼
+              ┌───────────────────────────┐
+              │   CENTRALIZED INGESTER    │
+              │   (in medousa_daemon)     │
+              │                           │
+              │   POST /v1/ingest         │
+              │   { channel, user_id,     │
+              │     channel_id, text,     │
+              │     attachments }         │
+              │                           │
+              │   Routes internally:      │
+              │   ├─ /new     → reset     │
+              │   ├─ /help    → respond   │
+              │   ├─ /model   → config    │
+              │   ├─ /depth   → config    │
+              │   ├─ /history → list      │
+              │   ├─ /stop    → cancel    │
+              │   ├─ /regen   → rerun     │
+              │   └─ text     → continuous│
+              │         session ask       │
+              └────────┬──────────────────┘
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+   Session Mgr    Slash Router   Ask Handler
+   (map channel   (parse cmd,    (enqueue job
+    + user →        route to      with session
+    session id)     handler)      context)
+```
+
+## Session Mapping
+
+- **Key**: `{channel_type}:{channel_id}:{user_id}`
+- **Value**: Active `session_id` (UUID v4)
+- Stored in-memory with optional SurrealDB persistence
+- `/new` generates a fresh `session_id` for the same key
+- Old sessions remain accessible via `/history`
+
+## Ingester Request/Response
+
+```rust
+struct IngestRequest {
+    channel: String,          // "telegram" | "discord" | "cli"
+    user_id: String,          // "telegram:user:12345"
+    channel_id: String,       // "telegram:chat:67890"
+    text: String,
+    attachments: Vec<Attachment>,
+}
+
+struct IngestResponse {
+    session_id: String,
+    turn_id: String,
+    job_id: Option<String>,
+    reply: String,            // immediate text or confirmation
+    is_new_session: bool,
+    // Future: stream_url for SSE streaming
+}
+```
+
+## Slash Command Parity Map
+
+| TUI Command        | Ingester Route        | Behavior                                      |
+|--------------------|-----------------------|-----------------------------------------------|
+| `/new`             | `/new`                | Reset session for this channel/user pair      |
+| `/ask <prompt>`    | Plain text            | Continuous session ask (same as text)         |
+| (plain text)       | Text                  | Continuous session ask                        |
+| `/help`            | `/help`               | Show available commands                       |
+| `/history`         | `/history`            | List recent sessions for this user            |
+| `/model <name>`    | `/model`              | Switch model for this session                 |
+| `/depth <mode>`    | `/depth`              | Switch response depth mode                    |
+| `/stop`            | `/stop`               | Cancel current processing                     |
+| `/regen`           | `/regen`              | Regenerate last response                      |
+| `/health`          | `/health`             | Daemon health check                           |
+| `/heartbeat`       | `/heartbeat`          | Daemon heartbeat status                       |
+
+## Phased Implementation
+
+### Phase 1 — Foundation ✅ (In Progress)
+- [ ] Add `POST /v1/ingest` endpoint to `medousa_daemon`
+- [ ] Add session mapping table (channel+user ↔ session_id)
+- [ ] Implement basic ingester handler:
+  - [ ] Session lookup/creation
+  - [ ] `/new` command → reset session
+  - [ ] `/help` command → return help text
+  - [ ] Plain text → load session history, enqueue ask job with context
+- [ ] Create `IngestRequest` / `IngestResponse` types in `daemon_api.rs`
+- [ ] Expose ingest types from `lib.rs`
+
+### Phase 2 — Adapter Thinning
+- [ ] Strip `medousa_telegram` down to thin shell
+  - [ ] Remove command parsing
+  - [ ] Remove session logic
+  - [ ] Remove result polling (done by daemon)
+  - [ ] POST to `/v1/ingest`, render response
+- [ ] Strip `medousa_discord` down to thin shell (same pattern)
+- [ ] Strip `medousa_cli daemon-ask` to use ingester
+
+### Phase 3 — Streaming Support
+- [ ] Add SSE streaming to `/v1/ingest` for real-time responses
+- [ ] Adapters switch from poll to stream
+- [ ] Enable typing indicators on Telegram/Discord during processing
+
+### Phase 4 — Full Feature Parity
+- [ ] `/stop` command → cancel active job for session
+- [ ] `/regen` command → regenerate last turn
+- [ ] `/model` + `/depth` → runtime config changes per session
+- [ ] `/history` → list & resume past sessions
+- [ ] Attachment/media support
+- [ ] Heartbeat nudge forwarding per channel
+
+---
+
+## Design Decisions
+
+1. **Session key uses channel+user**, not channel alone, so multiple users in the same group chat get their own sessions
+2. **Old sessions persist** — `/new` just creates a new active mapping, doesn't delete history
+3. **No adapter-level config duplication** — all policy, model, depth config lives in the daemon/ingester
+4. **Backward compatible** — existing `/v1/jobs/ask` endpoint remains for direct API usage
+5. **TUI stays as-is** — it's the reference implementation and power-user interface; ingester follows its patterns
+
+## Check-in Points
+
+- After Phase 1: Verify basic roundtrip (adapter → daemon → session → response)
+- After Phase 2: Verify all Telegram/Discord commands work identically
+- After Phase 3: Verify streaming latency matches TUI experience
+- After Phase 4: Full parity acceptance test
+Aight bro — roadmap is locked in at `architecture/centralized-ingester-roadmap.md`. That's our north star. 🧭
+
+**Now let's cook Phase 1.** Here's the implementation plan in detail:
+
+### Phase 1 Tasks
+
+1. **Add types** to `daemon_api.rs` — `IngestRequest`, `IngestResponse`, `SessionChannelMapping`
+2. **Add session mapping service** in `src/` — lightweight key-value for channel+user ↔ session_id
+3. **Add `POST /v1/ingest` route + handler** in `medousa_daemon.rs` — the central brain
+4. **Implement ingester logic** — session lookup, `/new`, `/help`, plain text → session load → job enqueue
+5. **Expose new types** from `lib.rs`
+
+Let's start by reading the key integration points so we don't break anything.
+
+```tool
+TOOL_NAME: read_file
+BEGIN_ARG: filepath
+"src/lib.rs"

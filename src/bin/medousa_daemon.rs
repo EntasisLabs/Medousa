@@ -39,14 +39,15 @@ use medousa::daemon_api::{
     DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
     EnqueueResponse, HealthResponse, HeartbeatDeliveryMetricsResponse,
     HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse, HeartbeatStatusResponse,
+    IngestRequest, IngestResponse,
     InteractiveTurnRequest, InteractiveTurnResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
-    RuntimeConfigCommandResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
-    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
+    RuntimeConfigCommandResponse,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
+use medousa::session_mapping;
 use medousa::{build_runtime_with_identity_store, parse_backend, remove_surrealkv_lock};
 use serde::Serialize;
 use serde_json::Value;
@@ -84,6 +85,8 @@ struct AppState {
     runtime: Arc<RuntimeComposition>,
     daemon_base_url: String,
     interactive_turn_streams: Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
+    // In-memory channel+user → session_id mapping for the ingester
+    session_mappings: Arc<RwLock<HashMap<String, String>>>,
     backend: String,
     worker_id: String,
     identity_service: Arc<IdentityMemoryService>,
@@ -300,6 +303,7 @@ async fn main() -> Result<()> {
         runtime: runtime.clone(),
         daemon_base_url: format!("http://{bind}"),
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
+        session_mappings: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
         worker_id: worker_id.clone(),
         identity_service,
@@ -345,6 +349,7 @@ async fn main() -> Result<()> {
         .route("/v1/identity/update/commit", post(identity_commit_update))
         .route("/v1/identity/history", post(identity_list_history))
         .route("/v1/identity/rollback", post(identity_rollback_version))
+        .route("/v1/ingest", post(ingest_handler))
         .with_state(state.clone());
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
@@ -1521,6 +1526,119 @@ async fn identity_rollback_version(
         .await
         .map_err(internal_error)?;
     Ok(Json(response))
+}
+
+/// POST /v1/ingest — centralized ingester handler.
+///
+/// Thin HTTP endpoint that resolves session mapping, delegates to the pure
+/// session_mapping::process_ingest logic, enqueues an ask job if needed,
+/// and returns the IngestResponse.
+async fn ingest_handler(
+    State(state): State<AppState>,
+    Json(request): Json<IngestRequest>,
+) -> Result<Json<IngestResponse>, (StatusCode, String)> {
+    if request.channel.trim().is_empty() || request.text.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "channel and text are required".to_string(),
+        ));
+    }
+
+    // Build session mapping key and look up existing session
+    let mapping_key = format!("{}:{}:{}", request.channel, request.channel_id, request.user_id);
+    let existing_session_id = {
+        let mappings = state.session_mappings.read().await;
+        mappings.get(&mapping_key).cloned()
+    };
+
+    // Process the ingest request via the pure core logic
+    let outcome = session_mapping::process_ingest(&request, &mapping_key, existing_session_id);
+
+    // Handle job enqueue when outcome requests it
+    let (job_id, reply) = if outcome.should_enqueue {
+        let prompt = outcome.prompt.clone().unwrap_or_default();
+
+        let identity_context = resolve_identity_context_for_request(
+            &state,
+            Some(&format!("medousa:user:{}", request.user_id)),
+            None,
+            Some(&format!("medousa:channel:{}", request.channel_id)),
+            Some("interactive"),
+            8,
+        )
+        .await?;
+
+        let now = Utc::now();
+        let job_id_str = format!(
+            "medousa-daemon-ingest-{}-{}",
+            now.timestamp_millis(),
+            &outcome.session_id[..8]
+        );
+
+        let ask_request = session_mapping::build_enqueue_ask_request(
+            &request.channel,
+            &request.user_id,
+            &request.channel_id,
+            &outcome.session_id,
+            prompt,
+        );
+
+        let raw_prompt = ask_request.prompt;
+        let prompt_with_identity =
+            prepend_identity_snapshot(&raw_prompt, Some(&identity_context.summary));
+        let compiled_prompt =
+            compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
+
+        let payload = AgentSessionJobPayload {
+            thread_id: Some(job_id_str.clone()),
+            initial_user_prompt: compiled_prompt,
+            participants: vec![AgentSessionParticipantPayload {
+                agent_id: "medousa.researcher".to_string(),
+                system_prompt: Some(
+                    "You are Medousa, a practical research assistant. Use tool evidence and cite findings succinctly."
+                        .to_string(),
+                ),
+                tool_name: "stasis.web.search.mock".to_string(),
+                tool_input: Some(serde_json::json!({
+                    "query": raw_prompt
+                })),
+            }],
+            policy_profile: Some("interactive".to_string()),
+            model_hint: None,
+            memory_policy: None,
+            max_turns: Some(1),
+            tool_call_mode: Some(AgentToolCallMode::Auto),
+        };
+
+        let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id_str.clone(), &payload)
+            .map_err(internal_error)?
+            .with_correlation_id(identity_context.user_id)
+            .with_causation_id("medousa-daemon-api:ingester")
+            .with_sttp_input_node_id("sttp:in:medousa:daemon:ingester")
+            .with_scheduled_at(now)
+            .build();
+
+        enqueue_runtime_job(state.runtime.as_ref(), new_job)
+            .await
+            .map_err(internal_error)?;
+
+        (Some(job_id_str), outcome.reply)
+    } else {
+        (None, outcome.reply)
+    };
+
+    // Persist the updated session mapping
+    {
+        let mut mappings = state.session_mappings.write().await;
+        mappings.insert(mapping_key, outcome.session_id.clone());
+    }
+
+    Ok(Json(IngestResponse {
+        session_id: outcome.session_id,
+        job_id,
+        reply,
+        is_new_session: outcome.is_new_session,
+    }))
 }
 
 async fn enqueue_runtime_job(

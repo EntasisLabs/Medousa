@@ -383,3 +383,31 @@ pub struct InteractiveTurnStreamEvent {
     pub terminal: bool,
     pub emitted_at_utc: DateTime<Utc>,
 }
+
+// ── Ingester types ────────────────────────────────────────────────────────────
+
+/// Request from any channel adapter to the centralized ingester.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestRequest {
+    /// Channel type identifier, e.g. "telegram", "discord", "cli"
+    pub channel: String,
+    /// User identifier within the channel, e.g. "telegram:user:12345"
+    pub user_id: String,
+    /// Channel/chat/conversation identifier, e.g. "telegram:chat:67890"
+    pub channel_id: String,
+    /// The text content of the message (command or prompt)
+    pub text: String,
+}
+
+/// Response from the centralized ingester.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestResponse {
+    /// The resolved or created session_id for this channel+user pair
+    pub session_id: String,
+    /// If a job was enqueued, its id (for polling/streaming)
+    pub job_id: Option<String>,
+    /// Immediate text reply (help text, confirmation, error message)
+    pub reply: String,
+    /// Whether this is a brand-new session (first message or after /new)
+    pub is_new_session: bool,
+}

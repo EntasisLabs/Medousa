@@ -13,6 +13,7 @@ pub mod interactive_turn_runtime;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
 pub mod session;
+pub mod session_mapping;
 pub mod session_store;
 pub mod settings_guard;
 pub mod stage_route_command_runtime;
@@ -40,6 +41,7 @@ pub use daemon_api::{
     EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
     HeartbeatPolicyResponse, HeartbeatStatusResponse,
+    IngestRequest, IngestResponse,
     InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
     JobReportResponse, RegisterRecurringPromptRequest, JobResultResponse,
