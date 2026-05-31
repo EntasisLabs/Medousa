@@ -25,6 +25,7 @@ Start here for product-level usage:
 8. [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md)
 9. [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md)
 10. [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md)
+11. [component-mcp-gateway.md](component-mcp-gateway.md)
 
 ## Primary Code Anchors
 

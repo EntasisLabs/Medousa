@@ -1,0 +1,674 @@
+//! Unified capability catalog — intent layer above Grapheme ops and MCP tools.
+//!
+//! Design: docs/internal/capability-catalog-design.md
+
+use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+
+/// Where a capability binding is implemented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilitySource {
+    Grapheme,
+    Mcp,
+}
+
+impl CapabilitySource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Grapheme => "grapheme",
+            Self::Mcp => "mcp",
+        }
+    }
+}
+
+/// Stable capability identifier (snake_case), e.g. `document_search`.
+pub type CapabilityId = String;
+
+/// Canonical capability definition from manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityDefinition {
+    pub id: CapabilityId,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+/// Explicit Grapheme binding from manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeCapabilityBindingSpec {
+    pub module_op: String,
+    #[serde(default)]
+    pub priority: u16,
+}
+
+/// Explicit MCP binding from manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpCapabilityBindingSpec {
+    pub server_id: String,
+    pub tool_name: String,
+    #[serde(default)]
+    pub priority: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect_class: Option<String>,
+}
+
+/// Manifest entry: definition fields + declared bindings (TOML-friendly layout).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityManifestEntry {
+    pub id: CapabilityId,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    #[serde(default)]
+    pub bindings: CapabilityManifestBindings,
+}
+
+impl CapabilityManifestEntry {
+    pub fn definition(&self) -> CapabilityDefinition {
+        CapabilityDefinition {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            description: self.description.clone(),
+            aliases: self.aliases.clone(),
+            keywords: self.keywords.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CapabilityManifestBindings {
+    #[serde(default)]
+    pub grapheme: Vec<GraphemeCapabilityBindingSpec>,
+    #[serde(default)]
+    pub mcp: Vec<McpCapabilityBindingSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityManifest {
+    #[serde(default)]
+    pub capabilities: Vec<CapabilityManifestEntry>,
+}
+
+/// Resolved binding ready for agent consumption.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityBinding {
+    pub source: CapabilitySource,
+    /// Canonical ref: `module.op` for Grapheme, `server_id.tool_name` for MCP.
+    pub reference: String,
+    pub priority: u16,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoke_via: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+impl CapabilityBinding {
+    pub fn grapheme(module_op: &str, priority: u16, available: bool) -> Self {
+        let (module, op) = split_module_op(module_op);
+        Self {
+            source: CapabilitySource::Grapheme,
+            reference: module_op.to_string(),
+            priority,
+            available,
+            unavailable_reason: None,
+            invoke_via: Some("cognition_grapheme_run".to_string()),
+            module: Some(module),
+            op: Some(op),
+            server_id: None,
+            tool_name: None,
+        }
+    }
+
+    pub fn mcp(server_id: &str, tool_name: &str, priority: u16, available: bool) -> Self {
+        Self {
+            source: CapabilitySource::Mcp,
+            reference: format!("{server_id}.{tool_name}"),
+            priority,
+            available,
+            unavailable_reason: None,
+            invoke_via: Some("cognition.mcp.invoke".to_string()),
+            module: None,
+            op: None,
+            server_id: Some(server_id.to_string()),
+            tool_name: Some(tool_name.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityResolveRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability: Option<CapabilityId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityImplementations {
+    #[serde(default)]
+    pub grapheme: Vec<CapabilityBinding>,
+    #[serde(default)]
+    pub mcp: Vec<CapabilityBinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityRecommendation {
+    pub source: CapabilitySource,
+    pub reference: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityResolveResponse {
+    pub capability: CapabilityId,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub implementations: CapabilityImplementations,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended: Option<CapabilityRecommendation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_unreachable: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilitySearchMatch {
+    pub capability: CapabilityId,
+    pub title: String,
+    pub score: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_on: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilitySearchRequest {
+    pub query: String,
+    #[serde(default = "default_search_limit")]
+    pub limit: usize,
+}
+
+fn default_search_limit() -> usize {
+    10
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilitySearchResponse {
+    pub query: String,
+    pub matches: Vec<CapabilitySearchMatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityListEntry {
+    pub id: CapabilityId,
+    pub title: String,
+    pub binding_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityListResponse {
+    pub capabilities: Vec<CapabilityListEntry>,
+}
+
+/// MCP catalog row synced from gateway (includes capability tags).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpCatalogSyncEntry {
+    pub server_id: String,
+    pub tool_name: String,
+    pub title: String,
+    #[serde(default)]
+    pub capability_ids: Vec<CapabilityId>,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpCatalogSyncResponse {
+    pub entries: Vec<McpCatalogSyncEntry>,
+    pub now_utc: chrono::DateTime<chrono::Utc>,
+}
+
+/// In-memory capability registry with inverted index.
+#[derive(Debug, Clone, Default)]
+pub struct CapabilityRegistry {
+    definitions: HashMap<CapabilityId, CapabilityDefinition>,
+    bindings: HashMap<CapabilityId, Vec<CapabilityBinding>>,
+}
+
+impl CapabilityRegistry {
+    pub fn from_manifest(manifest: &CapabilityManifest) -> Self {
+        let mut registry = Self::default();
+        for entry in &manifest.capabilities {
+            let id = entry.id.clone();
+            let definition = entry.definition();
+            registry.definitions.insert(id.clone(), definition);
+
+            let mut resolved = Vec::new();
+            for binding in &entry.bindings.grapheme {
+                resolved.push(CapabilityBinding::grapheme(
+                    &binding.module_op,
+                    binding.priority,
+                    true,
+                ));
+            }
+            for binding in &entry.bindings.mcp {
+                resolved.push(CapabilityBinding::mcp(
+                    &binding.server_id,
+                    &binding.tool_name,
+                    binding.priority,
+                    false,
+                ));
+            }
+            resolved.sort_by_key(|b| b.priority);
+            registry.bindings.insert(id, resolved);
+        }
+        registry
+    }
+
+    pub fn with_embedded_seed() -> Self {
+        Self::from_manifest(&embedded_capability_manifest())
+    }
+
+    pub fn list(&self) -> CapabilityListResponse {
+        let mut capabilities = self
+            .definitions
+            .iter()
+            .map(|(id, def)| CapabilityListEntry {
+                id: id.clone(),
+                title: def.title.clone(),
+                binding_count: self.bindings.get(id).map(|b| b.len()).unwrap_or(0),
+            })
+            .collect::<Vec<_>>();
+        capabilities.sort_by(|a, b| a.id.cmp(&b.id));
+        CapabilityListResponse { capabilities }
+    }
+
+    pub fn resolve(&self, capability_id: &str) -> Option<CapabilityResolveResponse> {
+        let definition = self.definitions.get(capability_id)?;
+        let bindings = self.bindings.get(capability_id)?.clone();
+
+        let mut grapheme = Vec::new();
+        let mut mcp = Vec::new();
+        for binding in bindings {
+            match binding.source {
+                CapabilitySource::Grapheme => grapheme.push(binding),
+                CapabilitySource::Mcp => mcp.push(binding),
+            }
+        }
+
+        let recommended = select_recommended(&grapheme, &mcp);
+
+        Some(CapabilityResolveResponse {
+            capability: capability_id.to_string(),
+            title: definition.title.clone(),
+            description: definition.description.clone(),
+            implementations: CapabilityImplementations { grapheme, mcp },
+            recommended,
+            gateway_unreachable: None,
+        })
+    }
+
+    pub fn search(&self, query: &str, limit: usize) -> CapabilitySearchResponse {
+        let normalized_query = normalize_tokens(query);
+        let mut matches = Vec::new();
+
+        for (id, def) in &self.definitions {
+            let (score, matched_on) = score_capability_match(id, def, &normalized_query);
+            if score > 0 {
+                matches.push(CapabilitySearchMatch {
+                    capability: id.clone(),
+                    title: def.title.clone(),
+                    score,
+                    matched_on,
+                });
+            }
+        }
+
+        matches.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.capability.cmp(&b.capability)));
+        matches.truncate(limit);
+
+        CapabilitySearchResponse {
+            query: query.to_string(),
+            matches,
+        }
+    }
+
+    /// Merge MCP catalog availability from gateway sync.
+    pub fn apply_mcp_catalog_sync(&mut self, sync: &McpCatalogSyncResponse) {
+        let catalog_index = sync
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    format!("{}.{}", entry.server_id, entry.tool_name),
+                    entry,
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        for bindings in self.bindings.values_mut() {
+            for binding in bindings.iter_mut() {
+                if binding.source != CapabilitySource::Mcp {
+                    continue;
+                }
+                let Some(entry) = catalog_index.get(&binding.reference) else {
+                    binding.available = false;
+                    binding.unavailable_reason =
+                        Some("tool not present in gateway catalog".to_string());
+                    continue;
+                };
+                binding.available = entry.available;
+                binding.unavailable_reason = entry.unavailable_reason.clone();
+            }
+        }
+
+        for entry in &sync.entries {
+            for capability_id in &entry.capability_ids {
+                if !self.definitions.contains_key(capability_id) {
+                    continue;
+                }
+                let reference = format!("{}.{}", entry.server_id, entry.tool_name);
+                let bindings = self.bindings.entry(capability_id.clone()).or_default();
+                if bindings.iter().any(|b| b.reference == reference) {
+                    continue;
+                }
+                let mut binding =
+                    CapabilityBinding::mcp(&entry.server_id, &entry.tool_name, 100, entry.available);
+                binding.unavailable_reason = entry.unavailable_reason.clone();
+                bindings.push(binding);
+                bindings.sort_by_key(|b| b.priority);
+            }
+        }
+    }
+}
+
+fn select_recommended(
+    grapheme: &[CapabilityBinding],
+    mcp: &[CapabilityBinding],
+) -> Option<CapabilityRecommendation> {
+    let best = grapheme
+        .iter()
+        .filter(|b| b.available)
+        .chain(mcp.iter().filter(|b| b.available))
+        .min_by_key(|b| b.priority)?;
+
+    Some(CapabilityRecommendation {
+        source: best.source,
+        reference: best.reference.clone(),
+        reason: "lowest priority number among available bindings".to_string(),
+    })
+}
+
+fn split_module_op(module_op: &str) -> (String, String) {
+    match module_op.split_once('.') {
+        Some((module, op)) => (module.to_string(), op.to_string()),
+        None => (module_op.to_string(), String::new()),
+    }
+}
+
+fn normalize_tokens(input: &str) -> Vec<String> {
+    input
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn score_capability_match(
+    id: &str,
+    def: &CapabilityDefinition,
+    query_tokens: &[String],
+) -> (u8, Option<String>) {
+    if query_tokens.is_empty() {
+        return (0, None);
+    }
+
+    let query_joined = query_tokens.join(" ");
+    if id.eq_ignore_ascii_case(&query_joined) || id.eq_ignore_ascii_case(query_tokens[0].as_str())
+    {
+        return (100, Some("id".to_string()));
+    }
+
+    for alias in &def.aliases {
+        if alias.eq_ignore_ascii_case(&query_joined) {
+            return (90, Some(format!("alias:{alias}")));
+        }
+    }
+
+    let corpus_tokens = collect_definition_tokens(def);
+    let overlap = query_tokens
+        .iter()
+        .filter(|token| corpus_tokens.contains(*token))
+        .count();
+    if overlap == 0 {
+        return (0, None);
+    }
+
+    let score = ((overlap as f32 / query_tokens.len() as f32) * 80.0).round() as u8;
+    (score.max(1), Some("keywords".to_string()))
+}
+
+fn collect_definition_tokens(def: &CapabilityDefinition) -> HashSet<String> {
+    let mut tokens = HashSet::new();
+    for source in [&def.title]
+        .into_iter()
+        .chain(def.aliases.iter())
+        .chain(def.keywords.iter())
+        .chain(def.description.iter())
+    {
+        for token in normalize_tokens(source) {
+            tokens.insert(token);
+        }
+    }
+    tokens
+}
+
+/// Embedded seed manifest — overridden/extended by `~/.config/medousa/capabilities.toml`.
+pub fn embedded_capability_manifest() -> CapabilityManifest {
+    CapabilityManifest {
+        capabilities: vec![
+            CapabilityManifestEntry {
+                id: "document_search".to_string(),
+                title: "Search documents and knowledge bases".to_string(),
+                description: Some(
+                    "Find pages, files, and docs across connected knowledge stores".to_string(),
+                ),
+                aliases: vec![
+                    "doc search".to_string(),
+                    "find documents".to_string(),
+                    "wiki search".to_string(),
+                ],
+                keywords: vec![
+                    "document".to_string(),
+                    "page".to_string(),
+                    "wiki".to_string(),
+                    "notion".to_string(),
+                    "confluence".to_string(),
+                    "drive".to_string(),
+                ],
+                bindings: CapabilityManifestBindings {
+                    grapheme: vec![
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "websearch.research_materials".to_string(),
+                            priority: 10,
+                        },
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "docs.search".to_string(),
+                            priority: 20,
+                        },
+                    ],
+                    mcp: vec![
+                        McpCapabilityBindingSpec {
+                            server_id: "notion".to_string(),
+                            tool_name: "search_pages".to_string(),
+                            priority: 30,
+                            effect_class: None,
+                        },
+                        McpCapabilityBindingSpec {
+                            server_id: "confluence".to_string(),
+                            tool_name: "search".to_string(),
+                            priority: 40,
+                            effect_class: None,
+                        },
+                        McpCapabilityBindingSpec {
+                            server_id: "google_drive".to_string(),
+                            tool_name: "search_docs".to_string(),
+                            priority: 50,
+                            effect_class: None,
+                        },
+                    ],
+                },
+            },
+            CapabilityManifestEntry {
+                id: "web_research".to_string(),
+                title: "Research the public web".to_string(),
+                description: None,
+                aliases: vec!["web search".to_string(), "look up online".to_string()],
+                keywords: vec![
+                    "web".to_string(),
+                    "internet".to_string(),
+                    "news".to_string(),
+                    "articles".to_string(),
+                ],
+                bindings: CapabilityManifestBindings {
+                    grapheme: vec![
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "websearch.search".to_string(),
+                            priority: 10,
+                        },
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "websearch.research_report".to_string(),
+                            priority: 20,
+                        },
+                    ],
+                    mcp: vec![],
+                },
+            },
+            CapabilityManifestEntry {
+                id: "http_fetch".to_string(),
+                title: "Fetch a URL or API endpoint".to_string(),
+                description: None,
+                aliases: vec![],
+                keywords: vec![
+                    "http".to_string(),
+                    "api".to_string(),
+                    "rest".to_string(),
+                    "url".to_string(),
+                ],
+                bindings: CapabilityManifestBindings {
+                    grapheme: vec![GraphemeCapabilityBindingSpec {
+                        module_op: "http.fetch".to_string(),
+                        priority: 10,
+                    }],
+                    mcp: vec![],
+                },
+            },
+            CapabilityManifestEntry {
+                id: "send_email".to_string(),
+                title: "Send email".to_string(),
+                description: None,
+                aliases: vec![],
+                keywords: vec![
+                    "email".to_string(),
+                    "smtp".to_string(),
+                    "mail".to_string(),
+                ],
+                bindings: CapabilityManifestBindings {
+                    grapheme: vec![GraphemeCapabilityBindingSpec {
+                        module_op: "smtp.send".to_string(),
+                        priority: 10,
+                    }],
+                    mcp: vec![McpCapabilityBindingSpec {
+                        server_id: "gmail".to_string(),
+                        tool_name: "send_message".to_string(),
+                        priority: 20,
+                        effect_class: Some("external_side_effect".to_string()),
+                    }],
+                },
+            },
+        ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_document_search_groups_grapheme_and_mcp() {
+        let registry = CapabilityRegistry::with_embedded_seed();
+        let response = registry
+            .resolve("document_search")
+            .expect("document_search capability");
+
+        assert_eq!(response.capability, "document_search");
+        assert_eq!(response.implementations.grapheme.len(), 2);
+        assert_eq!(
+            response.implementations.grapheme[0].reference,
+            "websearch.research_materials"
+        );
+        assert_eq!(response.implementations.mcp.len(), 3);
+        assert!(
+            response
+                .implementations
+                .mcp
+                .iter()
+                .any(|b| b.reference == "notion.search_pages")
+        );
+        assert!(response.recommended.is_some());
+    }
+
+    #[test]
+    fn search_finds_document_search_by_alias() {
+        let registry = CapabilityRegistry::with_embedded_seed();
+        let results = registry.search("wiki search", 5);
+        assert!(!results.matches.is_empty());
+        assert_eq!(results.matches[0].capability, "document_search");
+    }
+
+    #[test]
+    fn mcp_catalog_sync_marks_availability() {
+        let mut registry = CapabilityRegistry::with_embedded_seed();
+        let sync = McpCatalogSyncResponse {
+            entries: vec![McpCatalogSyncEntry {
+                server_id: "notion".to_string(),
+                tool_name: "search_pages".to_string(),
+                title: "Search pages".to_string(),
+                capability_ids: vec!["document_search".to_string()],
+                available: true,
+                unavailable_reason: None,
+            }],
+            now_utc: chrono::Utc::now(),
+        };
+        registry.apply_mcp_catalog_sync(&sync);
+
+        let response = registry.resolve("document_search").unwrap();
+        let notion = response
+            .implementations
+            .mcp
+            .iter()
+            .find(|b| b.reference == "notion.search_pages")
+            .expect("notion binding");
+        assert!(notion.available);
+    }
+}

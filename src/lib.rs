@@ -6,7 +6,9 @@ pub mod artifact_command_runtime;
 pub mod artifact_extraction;
 pub mod artifact_store;
 pub mod context_pack;
+pub mod capability_catalog;
 pub mod daemon_api;
+pub mod mcp_gateway_api;
 pub mod daemon_handlers;
 pub mod engine_context;
 pub mod events;
@@ -61,6 +63,22 @@ pub use daemon_api::{
     SessionHistoryListResponse, SessionHistoryResponse,
     RegisterRecurringResponse, StageRouteCommandRequest, StageRouteCommandResponse,
     StageRouteCommandSpec, resolve_daemon_url,
+};
+pub use capability_catalog::{
+    CapabilityBinding, CapabilityDefinition, CapabilityImplementations, CapabilityListEntry,
+    CapabilityListResponse, CapabilityManifest, CapabilityManifestBindings,
+    CapabilityManifestEntry, CapabilityRecommendation, CapabilityRegistry,
+    CapabilityResolveRequest, CapabilityResolveResponse, CapabilitySearchMatch,
+    CapabilitySearchRequest, CapabilitySearchResponse, CapabilitySource, GraphemeCapabilityBindingSpec,
+    McpCapabilityBindingSpec, McpCatalogSyncEntry, McpCatalogSyncResponse,
+    embedded_capability_manifest,
+};
+pub use mcp_gateway_api::{
+    McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse, McpEffectClass,
+    McpGatewayHealthResponse, McpInvokeError, McpInvokeRequest, McpInvokeResponse,
+    McpPolicyDecision, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse, McpServerSummary,
+    McpServersResponse, McpToolCatalogEntry, McpTurnContext, McpTurnLane,
+    resolve_mcp_gateway_url, DEFAULT_MCP_GATEWAY_BIND, DEFAULT_MCP_GATEWAY_URL,
 };
 pub use product_config::{
     ProductConfig, load_product_config, save_product_config, ingest_sender_allowed,
