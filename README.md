@@ -40,19 +40,59 @@ These are the things Medousa does out of the box:
 | Start over on a fresh machine | Run `medousa setup`. The wizard walks through provider, model, backend, channels, and daemon start in one flow. |
 
 
+## Powered by Stasis, Locus, and Resonantia
 
-## Quick start
+The reliability is not hand-waved. Medousa is built on the same infrastructure family as **[Resonantia](https://resonantia.me)** — not a chat wrapper pretending to be durable.
 
+**[Stasis](https://github.com/EntasisLabs/stasis)** — the durable job runtime underneath. When you send a message, schedule a check-in, or enqueue a workflow, Stasis turns it into real infrastructure: persisted jobs, lease-based execution, retries with backoff, a dead-letter queue you can replay, and an outbox that delivers finished work back to your channels. Survive a restart, a dropped connection, or a laptop sleep — the work waits, resumes, and finishes.
+
+**[Locus](https://github.com/EntasisLabs/locus)** — the memory layer. What matters compresses into STTP temporal nodes: self-sufficient records with provenance, a cognitive fingerprint at the moment of creation, and confidence-weighted meaning. Medousa writes them, recalls them across turns, and stops treating every conversation like a blank page.
+
+**[Resonantia](https://resonantia.me)** — the sibling application on the same Spatio-Temporal Transfer Protocol. Where Medousa is the workspace that runs, remembers, and verifies on your machine, Resonantia is the terrain you navigate: sessions as waves, moments as collapses, resonance as geometry — your mind, made visible. Same protocol. Different surface. If you want to see what this memory looks like when it becomes a map, start there.
+
+Medousa is the brain: agent loop, tools, channels, verification. Stasis makes work finish. Locus makes memory stick. Resonantia shows what that memory can become when it is made navigable.
+
+
+
+## Install and run
+
+**Install** — one command. Pulls the full binary set (launcher, daemon, TUI, and channel adapters) and installs to `~/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash
 ```
+
+Pin a release if you prefer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash -s -- --version v0.1.0
+```
+
+**Set up** — first-time configuration. The wizard detects your local Ollama installation, walks through provider configuration, backend selection, and channel setup, then starts the daemon and opens the chat interface. About sixty seconds:
+
+```bash
 medousa setup
 ```
 
-The wizard detects your local Ollama installation, walks through provider configuration, backend selection, and channel setup, then starts the daemon and opens the chat interface. It takes about sixty seconds.
+**Verify** — one pass over the stack:
 
-If you prefer non-interactive:
-
+```bash
+medousa doctor
 ```
+
+If you prefer non-interactive setup:
+
+```bash
 medousa setup --yes --provider ollama --model llama3.2
+```
+
+**From source** (developers):
+
+```bash
+git clone https://github.com/EntasisLabs/Medousa.git
+cd Medousa
+./scripts/install.sh --from-source
+medousa setup
 ```
 
 ## The commands
@@ -83,7 +123,7 @@ It is fast. It connects to the background engine automatically. If the engine is
 
 You are not watching Medousa when it works. That is the point.
 
-When you send a message or schedule a check-in, Medousa converts it into a unit of work that cannot be lost. If your laptop goes to sleep, if the network drops, if the daemon restarts — that work waits. It retries. It picks up at the exact step that was interrupted, not from the beginning.
+When you send a message or schedule a check-in, Medousa converts it into a unit of work that cannot be lost — backed by Stasis job persistence, not an in-memory queue. If your laptop goes to sleep, if the network drops, if the daemon restarts — that work waits. It retries. It picks up at the exact step that was interrupted, not from the beginning.
 
 You never have to wonder whether something finished. If Medousa accepted it, it ran.
 
@@ -104,6 +144,8 @@ When you return after a week away, Medousa does not ask "who are you?" It picks 
 Want to edit that picture by hand? Export it as markdown. Change it. Bring it back.
 
 This is not a gimmick. It is the entire point.
+
+
 
 ## Storage
 
@@ -145,7 +187,6 @@ Set the `MEDOUSA_LLM_PROVIDER`, `MEDOUSA_LLM_MODEL`, and `MEDOUSA_LLM_BASE_URL` 
 | `MEDOUSA_SURREAL_DATABASE` | SurrealDB database (default: runtime) |
 
 Provider-specific base URLs can also be set with `MEDOUSA_<PROVIDER>_BASE_URL` or `STASIS_<PROVIDER>_BASE_URL`. For Ollama, `OLLAMA_HOST` is honoured automatically.
-
 
 ---
 
