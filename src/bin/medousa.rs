@@ -1845,8 +1845,8 @@ fn print_help() {
     println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
     println!("    Telegram allowlist is configured in medousa setup (product_config.json).");
     println!("  medousa slack [--daemon-url <url>] [--bot-token <xoxb-…>] [--app-token <xapp-…>]");
-    println!("  medousa whatsapp [--daemon-url <url>] [--deliver-bind <host:port>]");
-    println!("    WhatsApp uses a local deliver endpoint; session is in-memory until sqlite storage lands.");
+    println!("  medousa whatsapp [--daemon-url <url>] [--deliver-bind <host:port>] [--session-db <path>]");
+    println!("    WhatsApp uses a local deliver endpoint; session persists in ~/.local/share/medousa/whatsapp/session.db by default.");
     println!("  medousa doctor");
     println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
     println!();

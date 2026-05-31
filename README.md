@@ -11,13 +11,17 @@
 
 Medousa is a permanent AI workspace that lives on your computer. It remembers everything you tell it, verifies what it tells you, and keeps working even when you close the window.
 
-You talk to it through a terminal interface, through Discord, or through Telegram. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
+One brain. Your terminal, your chats, your scheduled work, your memory — not four apps pretending to be one.
+
+You talk to it from the workspace, from Discord, Telegram, Slack, or WhatsApp. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
 
  **No cloud, no subscription, no hallucinated answers that you cannot trace.** 
   
 ## How it works
 
-Medousa runs two processes. A background engine that never stops, and an interface that you talk to. The engine holds your history, your memory, and your recurring tasks. The interface connects to it over your local network and gives you a workspace for conversations, commands, and automations. You can also connect Discord or Telegram and message Medousa from across the room.
+Medousa runs two processes. A background engine that never stops, and an interface that you talk to. The engine holds your history, your memory, and your recurring tasks. The interface connects to it over your local network and gives you a workspace for conversations, commands, and automations.
+
+Every channel hits that same engine. Message from your phone, your team chat, or the terminal — same assistant, same history, same rules. Until you say `/new`.
 
 ## What you can do with it
 
@@ -25,13 +29,15 @@ These are the things Medousa does out of the box:
 
 | You need to... | So you... |
 |---|---|
-| Remember where you left off | Ask Medousa. It keeps session history and identity memory across days. |
-| Get answers you can trust | Every turn shows you the verification trail. No flat strings. |
-| Automate a weekly check-in | Set a recurring prompt. The daemon runs it, and the result waits for you. |
-| Reach it from another room | Connect Discord or Telegram. Message it from your phone. |
+| Remember where you left off | Ask Medousa. It keeps session history and who you are across days. |
+| Get answers you can trust | For live facts it goes out, gathers sources, and shows the verification trail. No flat strings. |
+| Automate something that matters | Set a recurring prompt — or a whole workflow. The engine runs it. The result waits for you. |
+| Connect your other tools | Point it at the services you already use. It finds what they can do and asks before it acts. |
+| Reach it from anywhere | Connect Discord, Telegram, Slack, or WhatsApp. Message from your phone or your work chat. |
+| Get checked in on | Enable proactive check-ins. Medousa reaches out on a rhythm you choose — with reasoning, not a dumb ping. |
 | Run it fully offline | Use the Ollama provider with a local model. No network required. |
 | Check if everything is healthy | Run `medousa doctor`. It tests the model, the daemon, and your bridges in one pass. |
-| Start over on a fresh machine | Run `medousa setup`. The wizard walks through provider, model, backend, adapters, and daemon start in one flow. |
+| Start over on a fresh machine | Run `medousa setup`. The wizard walks through provider, model, backend, channels, and daemon start in one flow. |
 
 
 
@@ -41,7 +47,7 @@ These are the things Medousa does out of the box:
 medousa setup
 ```
 
-The wizard detects your local Ollama installation, walks through provider configuration, backend selection, and adapter setup, then starts the daemon and opens the chat interface. It takes about sixty seconds.
+The wizard detects your local Ollama installation, walks through provider configuration, backend selection, and channel setup, then starts the daemon and opens the chat interface. It takes about sixty seconds.
 
 If you prefer non-interactive:
 
@@ -54,19 +60,24 @@ medousa setup --yes --provider ollama --model llama3.2
 Everything is controlled through the `medousa` binary:
 
 ```
-medousa setup      Configure provider, model, backend, and adapters in one pass
-medousa tui        Open the chat workspace (starts daemon automatically)
-medousa daemon     Start the background engine explicitly
-medousa discord    Connect the Discord bridge
-medousa telegram   Connect the Telegram bridge
-medousa doctor     Run diagnostics on the full stack
+medousa setup            Configure provider, model, backend, and channels in one pass
+medousa tui              Open the chat workspace (starts daemon automatically)
+medousa daemon           Start the background engine explicitly
+medousa discord          Connect the Discord bridge
+medousa telegram         Connect the Telegram bridge
+medousa slack            Connect the Slack bridge
+medousa whatsapp         Connect the WhatsApp bridge
+medousa doctor           Run diagnostics on the full stack
+medousa identity-export  Export persona and policy as markdown files
 ```
 
 Each command has its own flags. Run `medousa <command> --help` for details.
 
 ## The workspace
 
-The workspace is a terminal interface with everything you need in one place. Turn history, slash commands, artifact previews, and a settings panel. It is fast. It connects to the background engine automatically. If the engine is not running, the workspace starts it.
+The workspace is a terminal interface with everything you need in one place. Turn history, slash commands, artifact previews, and a settings panel. When work is running, you see it — jobs, schedules, script output — beside the conversation, not buried in a log file.
+
+It is fast. It connects to the background engine automatically. If the engine is not running, the workspace starts it.
 
 ## What makes it reliable
 
@@ -80,6 +91,8 @@ You never have to wonder whether something finished. If Medousa accepted it, it 
 
 When Medousa runs a script — processing a spreadsheet, fetching a page, transforming a file — it runs inside a sealed environment. That script cannot touch your documents, your passwords, or your other applications unless you explicitly say it can.
 
+When it reaches outside — sending a message, calling an external service — it can ask you first.
+
 You do not have to trust the script. You only have to trust the seal.
 
 ## What makes it remember
@@ -87,6 +100,8 @@ You do not have to trust the script. You only have to trust the seal.
 Medousa does not treat every conversation as a blank page. It builds a picture of how you work — not just what you say, but how you approach things. The questions you ask. The patterns you repeat. The context you keep coming back to.
 
 When you return after a week away, Medousa does not ask "who are you?" It picks up where you left off. Not by scrolling through chat logs. By understanding what was relevant, what was resolved, and what was still in motion.
+
+Want to edit that picture by hand? Export it as markdown. Change it. Bring it back.
 
 This is not a gimmick. It is the entire point.
 
@@ -97,10 +112,14 @@ By default, Medousa keeps data in your local data directory:
 | What | Where |
 |---|---|
 | Runtime database (SurrealKV) | `~/.local/share/medousa/runtime.surrealkv` |
+| Product configuration | `~/.local/share/medousa/product_config.json` |
+| Onboarding profile | `~/.local/share/medousa/onboard_profile.json` |
 | Daemon log | `~/.local/share/medousa/logs/daemon.log` |
 | Discord log | `~/.local/share/medousa/logs/discord.log` |
 | Telegram log | `~/.local/share/medousa/logs/telegram.log` |
-| Onboarding profile | `~/.local/share/medousa/onboard_profile.json` |
+| Slack log | `~/.local/share/medousa/logs/slack.log` |
+| WhatsApp log | `~/.local/share/medousa/logs/whatsapp.log` |
+| WhatsApp session | `~/.local/share/medousa/whatsapp/session.db` |
 
 You can override the database path with the `--backend` flag or the `MEDOUSA_SURREALKV_PATH` environment variable.
 
