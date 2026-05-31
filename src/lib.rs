@@ -36,6 +36,7 @@ pub mod settings_guard;
 pub mod stage_route_command_runtime;
 pub mod stage_routing;
 pub mod bridge_tools;
+pub mod runtime;
 pub mod runtime_tools;
 pub mod workflow;
 pub mod workflow_plan;
@@ -110,6 +111,11 @@ pub use agent_runtime::{
     build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
 };
 pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
+pub use runtime::{
+    MedousaPlatformRuntime, PlatformBuildConfig, TuiPlatformBuildConfig, TuiPlatformMode,
+    build_daemon_platform, build_medousa_platform, build_tui_platform, is_daemon_bind_reachable,
+    resolve_tui_platform_mode,
+};
 pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
@@ -415,7 +421,7 @@ fn default_surrealkv_path() -> String {
         .to_string()
 }
 
-fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> {
+pub(crate) fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> {
     if let RuntimeBackend::SurrealKv { path, .. } = backend {
         let path_buf = PathBuf::from(path);
         if let Some(parent) = path_buf.parent()
@@ -429,21 +435,38 @@ fn ensure_runtime_backend_prerequisites(backend: &RuntimeBackend) -> Result<()> 
             })?;
         }
 
-        // Remove stale SurrealKV lock file. If another daemon is actually
-        // running, it will fail on port bind — not on a leftover LOCK file.
-        let lock_path = path_buf.join("LOCK");
-        if lock_path.exists() {
-            if let Err(err) = std::fs::remove_file(&lock_path) {
-                eprintln!(
-                    "warning: failed to remove stale SurrealKV lock file {}: {}",
-                    lock_path.display(),
-                    err
-                );
-            }
-        }
+        clear_stale_surrealkv_lock(backend)?;
     }
 
     Ok(())
+}
+
+/// Remove a leftover SurrealKV `LOCK` file when no daemon holds the database.
+pub fn clear_stale_surrealkv_lock(backend: &RuntimeBackend) -> Result<()> {
+    if let RuntimeBackend::SurrealKv { path, .. } = backend {
+        let lock_path = PathBuf::from(path).join("LOCK");
+        if !lock_path.exists() {
+            return Ok(());
+        }
+
+        std::fs::remove_file(&lock_path).with_context(|| {
+            format!(
+                "failed to remove stale SurrealKV lock at {} — another medousa_daemon may be running. \
+                 Stop it with `pkill -x medousa_daemon`, or remove the lock manually if no daemon is running.",
+                lock_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Path to the SurrealKV lock file for diagnostics (`None` for non-KV backends).
+pub fn surrealkv_lock_path(backend: &RuntimeBackend) -> Option<PathBuf> {
+    match backend {
+        RuntimeBackend::SurrealKv { path, .. } => Some(PathBuf::from(path).join("LOCK")),
+        _ => None,
+    }
 }
 
 /// Remove the SurrealKV lock file for a given backend (used during graceful shutdown).

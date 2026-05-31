@@ -1,5 +1,6 @@
 use medousa::{
     RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
+    build_tui_platform,
 };
 
 use super::daemon_commands::daemon_runtime_config_command;
@@ -30,21 +31,7 @@ pub(crate) async fn handle_new_session_command(
     save_last_session_id(&state.session_id);
     push_obs(state, format!("✓ new session {}", &state.session_id[..8]));
 
-    if let Ok(new_rt) = build_tui_runtime(
-        parse_backend(Some(&state.settings.backend)),
-        Some(&state.settings.provider),
-        Some(&state.settings.model),
-        if state.settings.base_url.trim().is_empty() {
-            None
-        } else {
-            Some(state.settings.base_url.as_str())
-        },
-        parse_allowed_modules(&state.settings.allowed_modules),
-        &state.session_id,
-        event_tx.clone(),
-    )
-    .await
-    {
+    if let Ok(new_rt) = build_tui_platform(build_tui_platform_config(state), event_tx.clone()).await {
         *tui_rt = new_rt;
     } else {
         push_obs(state, "⚠ new session runtime rebind failed".to_string());

@@ -23,10 +23,10 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use medousa::{
-    TuiRuntime, build_tui_runtime,
+    TuiPlatformBuildConfig, TuiPlatformMode, TuiRuntime, build_tui_platform,
     events::TuiEvent,
-    parse_backend, resolve_daemon_url, resolve_llm_base_url, resolve_llm_model,
-    resolve_llm_provider,
+    resolve_daemon_url, resolve_llm_base_url, resolve_llm_model,
+    resolve_llm_provider, resolve_tui_platform_mode,
     session::{
         ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary, TuiDefaults,
         detect_tui_api_key_storage_backend, load_history, load_tui_api_key, load_tui_defaults,
@@ -213,6 +213,23 @@ struct TuiState {
     markdown_cache: RefCell<HashMap<MarkdownCacheKey, Vec<Line<'static>>>>,
     markdown_cache_order: RefCell<VecDeque<MarkdownCacheKey>>,
     perf_baseline: Option<PerfSnapshot>,
+}
+
+pub(crate) fn build_tui_platform_config(state: &TuiState) -> TuiPlatformBuildConfig {
+    TuiPlatformBuildConfig::from_names(
+        state.settings.backend.trim(),
+        Some(state.settings.provider.as_str()),
+        Some(state.settings.model.as_str()),
+        if state.settings.base_url.trim().is_empty() {
+            None
+        } else {
+            Some(state.settings.base_url.as_str())
+        },
+        parse_allowed_modules(&state.settings.allowed_modules),
+        &state.session_id,
+        &state.daemon_url,
+        state.local_runtime_only,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -412,20 +429,19 @@ async fn main() -> Result<()> {
             .unwrap_or("standard"),
     );
     let resolved_daemon_url = resolve_daemon_url(daemon_url);
-    let daemon_agent_primary = if local_runtime_only {
-        false
-    } else {
-        daemon_commands::daemon_health(&resolved_daemon_url)
-            .await
-            .is_ok()
-    };
-
-    // If the daemon is already running, it owns the database lock.
-    // The TUI only needs an in-memory runtime for local tool execution;
-    // all persistence goes through the daemon'''s HTTP API.
-    if !resolved_backend.eq_ignore_ascii_case("in-memory") && is_bind_reachable_backend(&resolved_daemon_url) {
-        eprintln!("daemon already running at {resolved_daemon_url} — using in-memory backend");
-        let _ = std::mem::replace(&mut resolved_backend, "in-memory".to_string());
+    let tui_platform_config = TuiPlatformBuildConfig::from_names(
+        &resolved_backend,
+        Some(&resolved_provider),
+        Some(&resolved_model),
+        resolved_base_url.as_deref(),
+        parse_allowed_modules(&resolved_allowed_modules),
+        "", // session id filled below
+        &resolved_daemon_url,
+        local_runtime_only,
+    );
+    let (_, platform_mode) = resolve_tui_platform_mode(&tui_platform_config);
+    if platform_mode == TuiPlatformMode::ClientStub {
+        resolved_backend = "in-memory".to_string();
     }
 
     let session_id = if let Some(sid) = explicit_session {
@@ -446,16 +462,12 @@ async fn main() -> Result<()> {
 
     tokio::spawn(worker_loop(worker_cmd_rx, worker_result_tx));
 
-    let mut tui_rt = build_tui_runtime(
-        parse_backend(Some(&resolved_backend)),
-        Some(&resolved_provider),
-        Some(&resolved_model),
-        resolved_base_url.as_deref(),
-        parse_allowed_modules(&resolved_allowed_modules),
-        &session_id,
-        event_tx.clone(),
-    )
-    .await?;
+    let mut tui_platform_config = tui_platform_config;
+    tui_platform_config.session_id = session_id.clone();
+
+    let daemon_agent_primary = !local_runtime_only && platform_mode == TuiPlatformMode::ClientStub;
+
+    let mut tui_rt = build_tui_platform(tui_platform_config, event_tx.clone()).await?;
 
     // ── Terminal setup ────────────────────────────────────────────────────────
     enable_raw_mode()?;
@@ -694,28 +706,6 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     Ok(())
-}
-
-fn is_bind_reachable_backend(daemon_url: &str) -> bool {
-    use std::net::ToSocketAddrs;
-    let host_port = daemon_url
-        .strip_prefix("http://")
-        .or_else(|| daemon_url.strip_prefix("https://"))
-        .unwrap_or(daemon_url)
-        .split('/')
-        .next()
-        .unwrap_or(daemon_url);
-    if host_port.is_empty() || !host_port.contains(':') {
-        return false;
-    }
-    let addrs = match host_port.to_socket_addrs() {
-        Ok(mut a) => a.next(),
-        Err(_) => None,
-    };
-    match addrs {
-        Some(addr) => std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(250)).is_ok(),
-        None => false,
-    }
 }
 
 fn normalize_response_depth_mode(value: &str) -> String {
@@ -1083,10 +1073,11 @@ fn api_key_storage_backend_label() -> &'static str {
 mod tests {
     use super::{
         JobHistoryEntry, ObservabilityFilter, RuntimeSettings, StageRoutingMatrix, TextBuffer,
-        TuiState, UiMode, UiPerfStats, WorkerCommand, build_tui_runtime, load_editor_file,
+        TuiState, UiMode, UiPerfStats, WorkerCommand, load_editor_file,
         parse_allowed_modules, parse_backend, resolve_editor_run_source,
         run_editor_source_via_runtime, validate_editor_run_allowlist, write_editor_file,
     };
+    use medousa::build_tui_runtime;
     use medousa::events::TuiEvent;
     use medousa::session::{ConversationTurn, SessionHistorySummary};
     use std::collections::{HashMap, VecDeque};

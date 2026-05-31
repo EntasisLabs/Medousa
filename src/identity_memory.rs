@@ -63,6 +63,21 @@ pub async fn build_identity_memory_store_for_backend(
     }
 }
 
+/// Build a seeded identity store from an already-open runtime (no second SurrealKV connection).
+pub async fn build_seeded_identity_memory_store_for_runtime(
+    runtime: &RuntimeComposition,
+) -> Result<Arc<dyn IdentityMemoryStore>> {
+    match runtime {
+        RuntimeComposition::Surreal(rt) => {
+            let store = SurrealIdentityMemoryStore::new(rt.job_store.db());
+            store.ensure_schema().await?;
+            seed_baseline_surreal_identity_store(&store).await?;
+            Ok(Arc::new(store))
+        }
+        _ => build_seeded_identity_memory_store(),
+    }
+}
+
 async fn build_seeded_surreal_identity_memory_store(
     backend: &RuntimeBackend,
 ) -> Result<Arc<dyn IdentityMemoryStore>> {

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use medousa::{TuiRuntime, build_tui_runtime, events::TuiEvent, parse_backend};
+use medousa::{TuiRuntime, build_tui_platform, events::TuiEvent};
 
 use super::{EventOutcome, PendingSettingsApply, SettingsApplySnapshot, TuiState};
 
@@ -176,19 +176,25 @@ pub(crate) async fn apply_settings(
 
     let session_id = state.session_id.clone();
     let event_tx = event_tx.clone();
+    let daemon_url = state.daemon_url.clone();
+    let local_runtime_only = state.local_runtime_only;
     let backend_for_build = snapshot.backend.clone();
     let provider_for_build = snapshot.provider.clone();
     let model_for_build = snapshot.model.clone();
     let base_url_for_build = snapshot.base_url.clone();
     let allowed_modules_for_build = snapshot.allowed_modules.clone();
     let handle = tokio::spawn(async move {
-        build_tui_runtime(
-            parse_backend(Some(&backend_for_build)),
-            Some(&provider_for_build),
-            Some(&model_for_build),
-            base_url_for_build.as_deref(),
-            allowed_modules_for_build,
-            &session_id,
+        build_tui_platform(
+            medousa::TuiPlatformBuildConfig::from_names(
+                &backend_for_build,
+                Some(&provider_for_build),
+                Some(&model_for_build),
+                base_url_for_build.as_deref(),
+                allowed_modules_for_build,
+                &session_id,
+                &daemon_url,
+                local_runtime_only,
+            ),
             event_tx,
         )
         .await

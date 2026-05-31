@@ -15,9 +15,9 @@ use medousa::session::{
     save_slack_bot_token, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
 };
 use medousa::{
-    ProductConfig, apply_adapter_env, apply_daemon_env, format_i64_csv, format_u64_csv,
-    load_product_config, migrate_from_onboard_profile, parse_i64_csv, parse_u64_csv,
-    save_product_config,
+    ProductConfig, apply_adapter_env, apply_daemon_env, clear_stale_surrealkv_lock, format_i64_csv,
+    format_u64_csv, load_product_config, migrate_from_onboard_profile, parse_backend,
+    parse_i64_csv, parse_u64_csv, save_product_config, surrealkv_lock_path,
 };
 use serde::{Deserialize, Serialize};
 
@@ -429,7 +429,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
                 format!("[ok] Daemon already running at {}", selected.daemon_url).green()
             );
         } else {
-            start_daemon_background(&selected.backend, &daemon_bind)?;
+            ensure_daemon_running(&selected.backend, &daemon_bind)?;
             if wait_for_bind_reachable(&daemon_bind, Duration::from_secs(4)) {
                 println!(
                     "{}",
@@ -569,7 +569,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
 
     if selected.launch_tui {
         println!("{}", "Launching Medousa chat...".magenta().bold());
-        launch_tui_process(&selected.daemon_url, &[], None)?;
+        launch_tui_process(&selected.daemon_url, &[], Some("in-memory"))?;
     } else {
         println!("{}", "Next command: medousa tui".blue());
     }
@@ -598,14 +598,12 @@ fn run_tui(args: &[String]) -> Result<()> {
     let daemon_already_running = is_bind_reachable(&daemon_bind);
 
     if !has_flag(args, "--no-daemon") && !daemon_already_running {
-        start_daemon_background(&backend, &daemon_bind)?;
-        thread::sleep(Duration::from_millis(300));
+        ensure_daemon_running(&backend, &daemon_bind)?;
     }
 
-    // When the daemon is already running, it owns the database lock.
-    // The TUI only needs an in-memory runtime for local tool execution;
-    // all persistence goes through the daemon's HTTP API.
-    if daemon_already_running {
+    // When the daemon owns persistence, the TUI uses in-memory locally and talks to the daemon API.
+    let daemon_hosts_persistence = is_bind_reachable(&daemon_bind);
+    if daemon_hosts_persistence {
         launch_tui_process(&daemon_url, args, Some("in-memory"))
     } else {
         launch_tui_process(&daemon_url, args, None)
@@ -907,14 +905,35 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     let daemon_reachable = is_bind_reachable(&daemon_bind);
 
     println!("medousa doctor");
+    let backend_name = profile
+        .daemon_backend
+        .clone()
+        .or_else(|| defaults.backend.clone())
+        .unwrap_or_else(|| "in-memory".to_string());
     println!(
         "provider={} model={} base_url={} backend={}",
         defaults.provider.unwrap_or_else(|| "(unset)".to_string()),
         defaults.model.unwrap_or_else(|| "(unset)".to_string()),
         defaults.base_url.unwrap_or_else(|| "(unset)".to_string()),
-        defaults.backend.unwrap_or_else(|| "(unset)".to_string()),
+        backend_name,
     );
     println!("daemon_url={} bind={} reachable={}", daemon_url, daemon_bind, daemon_reachable);
+    let backend = parse_backend(Some(&backend_name));
+    let daemon_process_running = is_medousa_daemon_process_running();
+    println!("daemon_process_running={}", daemon_process_running);
+    if let Some(lock_path) = surrealkv_lock_path(&backend) {
+        println!(
+            "surrealkv_lock={} exists={}",
+            lock_path.display(),
+            lock_path.exists()
+        );
+        if lock_path.exists() && !daemon_process_running && !daemon_reachable {
+            println!(
+                "surrealkv_lock_hint=stale lock with no daemon — run: rm {}",
+                lock_path.display()
+            );
+        }
+    }
     println!(
         "response_depth={}",
         product_config.tui.response_depth_mode
@@ -1405,6 +1424,58 @@ fn wait_for_bind_reachable(bind: &str, timeout: Duration) -> bool {
         thread::sleep(Duration::from_millis(120));
     }
     false
+}
+
+fn is_medousa_daemon_process_running() -> bool {
+    #[cfg(unix)]
+    {
+        Command::new("pgrep")
+            .args(["-x", "medousa_daemon"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+fn ensure_daemon_running(backend: &str, bind: &str) -> Result<()> {
+    if is_bind_reachable(bind) {
+        return Ok(());
+    }
+
+    if is_medousa_daemon_process_running() {
+        if wait_for_bind_reachable(bind, Duration::from_secs(15)) {
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "medousa_daemon is running but not reachable at {bind} — check {}",
+            daemon_log_path().display()
+        ));
+    }
+
+    let parsed_backend = parse_backend(Some(backend));
+    clear_stale_surrealkv_lock(&parsed_backend).with_context(|| {
+        format!(
+            "could not clear SurrealKV lock before starting daemon (backend={backend}). \
+             If no daemon is running, remove the LOCK file under ~/.local/share/medousa/runtime.surrealkv/"
+        )
+    })?;
+
+    start_daemon_background(backend, bind)?;
+
+    if wait_for_bind_reachable(bind, Duration::from_secs(15)) {
+        return Ok(());
+    }
+
+    Err(anyhow!(
+        "medousa_daemon failed to start or is not reachable at {bind} — check {}",
+        daemon_log_path().display()
+    ))
 }
 
 fn start_daemon_background(backend: &str, bind: &str) -> Result<()> {

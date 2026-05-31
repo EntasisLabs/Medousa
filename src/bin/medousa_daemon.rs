@@ -45,9 +45,10 @@ use medousa::daemon_api::{
 };
 use medousa::session_mapping;
 use medousa::{
-    agent_runtime::stream_sink::AgentStreamSink,
-    build_daemon_runtime, channel_delivery, parse_backend, remove_surrealkv_lock,
+    PlatformBuildConfig, build_daemon_platform, channel_delivery, parse_backend,
+    remove_surrealkv_lock,
 };
+use medousa::agent_runtime::stream_sink::AgentStreamSink;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
@@ -75,8 +76,7 @@ use stasis::sdk::runtime_sdk::RuntimeStatsSnapshot;
 
 #[derive(Clone)]
 struct AppState {
-    runtime: Arc<RuntimeComposition>,
-    agent_runtime: Arc<medousa::agent_runtime::MedousaAgentRuntime>,
+    platform: Arc<medousa::MedousaPlatformRuntime>,
     daemon_base_url: String,
     interactive_turn_streams: Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
     // In-memory channel+user → session_id mapping for the ingester
@@ -110,6 +110,16 @@ struct AppState {
     heartbeat_metrics: Arc<RwLock<HeartbeatDeliveryMetrics>>,
     heartbeat_notify: HeartbeatNotifyConfig,
     webhook_client: Option<reqwest::Client>,
+}
+
+impl AppState {
+    fn composition(&self) -> &RuntimeComposition {
+        self.platform.composition()
+    }
+
+    fn agent(&self) -> &medousa::TuiRuntime {
+        self.platform.agent()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -274,6 +284,20 @@ async fn main() -> Result<()> {
     let heartbeat_delivery_policy = parse_heartbeat_delivery_policy(&args)?;
     let dashboard_action_auth = parse_dashboard_action_auth(&args)?;
 
+    // Hold the HTTP port before opening SurrealKV so a second launcher cannot
+    // race on the database LOCK while this process is still initializing.
+    let addr: SocketAddr = bind
+        .parse()
+        .with_context(|| format!("invalid --bind address: {bind}"))?;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to bind medousa daemon on {addr} — another daemon may already be running"
+            )
+        })?;
+    eprintln!("medousa-daemon acquired {addr}, initializing runtime…");
+
     let webhook_client = heartbeat_notify
         .webhook_url
         .as_ref()
@@ -285,29 +309,25 @@ async fn main() -> Result<()> {
         })
         .transpose()?;
 
-    let identity_store = medousa::identity_memory::build_identity_memory_store_for_backend(&backend)
-        .await?;
-    let identity_service = Arc::new(IdentityMemoryService::new(identity_store.clone()));
+    let deliver_webhook_url = channel_delivery::internal_deliver_webhook_url(bind);
+    let platform_config = PlatformBuildConfig {
+        provider: provider.map(str::to_string),
+        model: model.map(str::to_string),
+        base_url: base_url.map(str::to_string),
+        deliver_webhook_url: deliver_webhook_url.clone(),
+        allowed_grapheme_modules: Vec::new(),
+        session_id: "daemon-agent-runtime".to_string(),
+    };
+
+    let platform = build_daemon_platform(backend.clone(), platform_config)
+        .await
+        .context("failed to build medousa platform runtime")?;
+
+    let identity_service = platform.identity_service();
     let identity_default_user_id = resolve_identity_user_id(None);
 
-    let deliver_webhook_url = channel_delivery::internal_deliver_webhook_url(bind);
-    let runtime = Arc::new(
-        build_daemon_runtime(
-            backend.clone(),
-            provider,
-            model,
-            base_url,
-            Some(identity_store),
-            &deliver_webhook_url,
-        )
-        .await?,
-    );
-
-    // Initialize session store according to runtime (Surreal placeholder for now)
-    medousa::session_store::init_session_store_with_runtime(&runtime).await;
-
     if once {
-        let report = tick_runtime(runtime.as_ref(), &worker_id, heartbeat_policy).await?;
+        let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy).await?;
         println!("{}", format_tick_report("medousa-daemon once", &report));
         let mut heartbeat_metrics = HeartbeatDeliveryMetrics::default();
         let dispatch_decision = decide_heartbeat_dispatch(
@@ -339,21 +359,12 @@ async fn main() -> Result<()> {
             );
         }
 
+        remove_surrealkv_lock(&parse_backend(Some(&backend_name)));
         return Ok(());
     }
 
-    let agent_runtime = Arc::new(
-        medousa::agent_runtime::build_daemon_agent_runtime(
-            backend.clone(),
-            provider,
-            model,
-            base_url,
-            Vec::new(),
-        )
-        .await
-        .context("failed to build daemon agent runtime")?,
-    );
-    let agent_tool_registry_count = agent_runtime
+    let agent_tool_registry_count = platform
+        .agent()
         .tool_registry
         .list_tools()
         .await
@@ -362,8 +373,7 @@ async fn main() -> Result<()> {
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::default();
 
     let state = AppState {
-        runtime: runtime.clone(),
-        agent_runtime,
+        platform: platform.clone(),
         daemon_base_url: format!("http://{bind}"),
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
         session_mappings: Arc::new(RwLock::new(HashMap::new())),
@@ -453,7 +463,7 @@ async fn main() -> Result<()> {
             post(medousa::mcp_daemon_handlers::reindex_capabilities),
         )
         .with_state(medousa::mcp_daemon_handlers::CapabilityApiState {
-            agent_runtime: state.agent_runtime.clone(),
+            agent_runtime: state.platform.agent_handle(),
         });
 
     let policy_router = Router::new()
@@ -468,7 +478,7 @@ async fn main() -> Result<()> {
     let app = app.merge(capability_router).merge(policy_router);
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
-        runtime.as_ref().clone(),
+        state.composition().clone(),
     ));
     let dashboard_state =
         apply_dashboard_action_auth(DashboardState::new(dashboard_service), &dashboard_action_auth);
@@ -487,13 +497,6 @@ async fn main() -> Result<()> {
         )
         .await;
     });
-
-    let addr: SocketAddr = bind
-        .parse()
-        .with_context(|| format!("invalid --bind address: {bind}"))?;
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("failed to bind medousa daemon on {addr}"))?;
 
     println!("medousa-daemon listening on http://{addr}");
     println!("medousa-daemon dashboard at http://{addr}/dashboard");
@@ -539,7 +542,7 @@ async fn run_scheduler_loop(
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
     loop {
-        match tick_runtime(state.runtime.as_ref(), &worker_id, state.heartbeat_policy).await {
+        match tick_runtime(state.composition(), &worker_id, state.heartbeat_policy).await {
             Ok(report) => {
                 let now_utc = Utc::now();
                 *state.last_tick_at.write().await = Some(now_utc);
@@ -573,7 +576,7 @@ async fn run_scheduler_loop(
                             .default_runtime_config
                             .response_depth_mode
                             .clone(),
-                        agent_runtime: state.agent_runtime.clone(),
+                        agent_runtime: state.platform.agent_handle(),
                     };
                     dispatch_heartbeat_notifications(
                         &state.heartbeat_notify,
@@ -668,7 +671,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 async fn stats(
     State(state): State<AppState>,
 ) -> Result<Json<DaemonStatsResponse>, (StatusCode, String)> {
-    let sdk = RuntimeSdk::new(state.runtime.as_ref().clone());
+    let sdk = RuntimeSdk::new(state.composition().clone());
     let snapshot = safe_stats_snapshot(&sdk, 5000)
         .await
         .map_err(internal_error)?;
@@ -733,7 +736,7 @@ async fn heartbeat_status(
 async fn compute_heartbeat_snapshot_report(
     state: &AppState,
 ) -> Result<TickReport, (StatusCode, String)> {
-    let sdk = RuntimeSdk::new(state.runtime.as_ref().clone());
+    let sdk = RuntimeSdk::new(state.composition().clone());
     let snapshot = safe_stats_snapshot(&sdk, 5000)
         .await
         .map_err(internal_error)?;
@@ -863,7 +866,7 @@ async fn get_job_result(
         return Ok(Json(job_result_from_agent_turn(&job_id, record)));
     }
 
-    let attempts = match get_job_attempts_graceful(&state.runtime, &job_id).await {
+    let attempts = match get_job_attempts_graceful(&state.composition(), &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
     };
@@ -913,7 +916,7 @@ async fn get_job_report(
         }));
     }
 
-    let attempts = match get_job_attempts_graceful(&state.runtime, &job_id).await {
+    let attempts = match get_job_attempts_graceful(&state.composition(), &job_id).await {
         Ok(attempts) => attempts,
         Err(err) => return Err(err),
     };
@@ -1108,7 +1111,7 @@ async fn enqueue_prompt(
         .with_scheduled_at(now)
         .build();
 
-    enqueue_runtime_job(state.runtime.as_ref(), new_job)
+    enqueue_runtime_job(state.composition(), new_job)
         .await
         .map_err(internal_error)?;
 
@@ -1176,7 +1179,7 @@ async fn register_recurring_prompt(
         .compute_next_run_at(now)
         .map_err(internal_error)?;
 
-    let sdk = RuntimeSdk::new(state.runtime.as_ref().clone());
+    let sdk = RuntimeSdk::new(state.composition().clone());
     sdk.register_recurring(definition.clone())
         .await
         .map_err(internal_error)?;
@@ -1226,7 +1229,7 @@ async fn start_interactive_turn(
     record_job_delivery_pending(&state, &turn_id).await;
 
     let stream_registry = state.interactive_turn_streams.clone();
-    let agent_runtime = state.agent_runtime.clone();
+    let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let delivery_records = state.job_delivery_records.clone();
     let channel_deliveries = state.channel_deliveries.clone();
@@ -1905,7 +1908,7 @@ async fn deliver_outbox_webhook(
             {
                 message.to_string()
             } else {
-                resolve_job_output_text(state.runtime.as_ref(), &payload.job_id).await?
+                resolve_job_output_text(state.composition(), &payload.job_id).await?
             };
 
             channel_delivery::dispatch_channel_message(
@@ -2181,7 +2184,7 @@ async fn spawn_daemon_api_agent_turn(
         &response_depth_mode,
     );
 
-    let agent_runtime = state.agent_runtime.clone();
+    let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let agent_turn_jobs = state.agent_turn_jobs.clone();
     let last_agent_turn_at = state.last_agent_turn_at.clone();
@@ -2508,7 +2511,7 @@ async fn start_ingest_ask_stream(
 
     let stream_registry = state.interactive_turn_streams.clone();
     let cancelled_streams = state.cancelled_ingest_streams.clone();
-    let agent_runtime = state.agent_runtime.clone();
+    let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let dispatch_client = state.channel_dispatch_client.clone();
     let delivery_records = state.job_delivery_records.clone();

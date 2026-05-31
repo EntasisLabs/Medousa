@@ -37,7 +37,10 @@ pub use heartbeat_turn::{
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, run_agent_turn, run_daemon_interactive_turn,
 };
-pub use runtime::{MedousaAgentRuntime, build_agent_runtime, build_daemon_agent_runtime};
+pub use runtime::{
+    MedousaAgentRuntime, build_agent_runtime, build_daemon_agent_runtime,
+    build_daemon_agent_runtime_from_composition,
+};
 pub use settings::{default_daemon_runtime_settings, runtime_settings_for_interactive_turn};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 pub use system_prompt::DEFAULT_SYSTEM_PROMPT;

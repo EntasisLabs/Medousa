@@ -853,6 +853,48 @@ pub fn attach_workflow_handler(
         .with_extra_handler(MedousaHandoffWorkflowHandler::new(executor))
 }
 
+/// Register Medousa workflow job handlers on an already-open runtime composition.
+pub fn register_workflow_job_handlers<R>(
+    registrar: &R,
+    registry: Arc<WorkflowRegistry>,
+    prompt_pipeline: PromptExecutionPipeline,
+) -> stasis::prelude::Result<()>
+where
+    R: WorkflowHandlerRegistrar,
+{
+    let executor = WorkflowExecutor::with_defaults(registry, prompt_pipeline);
+    registrar.register_handler(MedousaSequentialWorkflowHandler::new(executor.clone()))?;
+    registrar.register_handler(MedousaConcurrentWorkflowHandler::new(executor.clone()))?;
+    registrar.register_handler(MedousaHandoffWorkflowHandler::new(executor))
+}
+
+pub trait WorkflowHandlerRegistrar {
+    fn register_handler<H: JobHandler + 'static>(
+        &self,
+        handler: H,
+    ) -> stasis::prelude::Result<()>;
+}
+
+impl WorkflowHandlerRegistrar
+    for stasis::application::runtime::in_memory_runtime::InMemoryRuntime
+{
+    fn register_handler<H: JobHandler + 'static>(
+        &self,
+        handler: H,
+    ) -> stasis::prelude::Result<()> {
+        self.register_handler(handler)
+    }
+}
+
+impl WorkflowHandlerRegistrar for stasis::application::runtime::surreal_runtime::SurrealRuntime {
+    fn register_handler<H: JobHandler + 'static>(
+        &self,
+        handler: H,
+    ) -> stasis::prelude::Result<()> {
+        self.register_handler(handler)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

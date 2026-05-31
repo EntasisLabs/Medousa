@@ -10,3 +10,4 @@ package-lock.json
 adapters/medousa-whatsapp/.cargo-target/
 target-local/
 .tmp/
+adapters/**/target/
