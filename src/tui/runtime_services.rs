@@ -17,14 +17,19 @@ use crate::engine_context::EngineExecutionLane;
 use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
 use crate::tools::{
+    CognitionCapabilityListTool, CognitionCapabilityResolveTool, CognitionCapabilitySearchTool,
     CognitionGraphemeCliRunTool, CognitionGraphemeExamplesTool, CognitionGraphemeModulesInfoTool,
     CognitionGraphemeModulesOpsTool, CognitionGraphemeModulesSearchTool,
     CognitionGraphemePromoteLastRunToRecurringTool, CognitionGraphemePromoteToJobTool,
     CognitionGraphemePromoteToRecurringTool, CognitionGraphemeRunTool, CognitionJobEnqueueTool,
-    CognitionMemoryRecallTool, CognitionMemoryStoreTool, CognitionRuntimeJobStatusTool,
-    CognitionRuntimeRecurringPreviewTool, CognitionUtilityDayOfWeekTool,
-    CognitionUtilityTimeNowTool, CognitionUtilityUuidTool, PolicyAwareToolRegistry, TuiRuntime,
+    CognitionMcpDiscoverTool, CognitionMemoryRecallTool, CognitionMemoryStoreTool,
+    CognitionRuntimeJobStatusTool, CognitionRuntimeRecurringPreviewTool,
+    CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
+    PolicyAwareToolRegistry, TuiRuntime,
 };
+use crate::capability_catalog::CapabilityRegistry;
+use crate::mcp_gateway_client::McpGatewayClient;
+use tokio::sync::RwLock;
 
 pub(crate) fn build_tool_loop_pipeline_for_target(
     provider: &str,
@@ -141,6 +146,23 @@ pub(crate) async fn build_tui_runtime_services(
     tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
 
+    let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_embedded_seed()));
+    let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());
+    tool_registry.register_tool(CognitionCapabilityResolveTool::new(
+        capability_registry.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionCapabilityListTool::new(capability_registry.clone()))?;
+    tool_registry.register_tool(CognitionCapabilitySearchTool::new(
+        capability_registry.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionMcpDiscoverTool::new(
+        mcp_gateway_client.clone(),
+        session_id.to_string(),
+        event_tx.clone(),
+    ))?;
+
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     let base_registry: Arc<dyn ToolRegistry> = Arc::new(tool_registry);
     let guarded_registry: Arc<dyn ToolRegistry> = Arc::new(PolicyAwareToolRegistry::new(
@@ -154,6 +176,8 @@ pub(crate) async fn build_tui_runtime_services(
         runtime,
         tool_loop_pipeline,
         tool_registry: guarded_registry,
+        capability_registry,
+        mcp_gateway_client,
         locus_store,
         identity_memory_store,
         memory_reader,

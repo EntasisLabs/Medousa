@@ -7,8 +7,12 @@ pub mod artifact_extraction;
 pub mod artifact_store;
 pub mod context_pack;
 pub mod capability_catalog;
-pub mod daemon_api;
+pub mod mcp_daemon_handlers;
+pub mod mcp_gateway;
+pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
+pub mod mcp_policy;
+pub mod daemon_api;
 pub mod daemon_handlers;
 pub mod engine_context;
 pub mod events;
@@ -94,6 +98,7 @@ pub use agent_runtime::{
     AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime,
     build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
 };
+pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
 pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";

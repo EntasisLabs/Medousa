@@ -29,7 +29,7 @@ pub async fn build_daemon_agent_runtime(
         while event_rx.recv().await.is_some() {}
     });
 
-    build_tui_runtime(
+    let runtime = build_tui_runtime(
         backend,
         provider,
         model,
@@ -38,5 +38,15 @@ pub async fn build_daemon_agent_runtime(
         "daemon-agent-runtime",
         event_tx,
     )
-    .await
+    .await?;
+
+    if let Ok(catalog) = runtime.mcp_gateway_client.fetch_catalog().await {
+        runtime
+            .capability_registry
+            .write()
+            .await
+            .apply_mcp_catalog_sync(&catalog);
+    }
+
+    Ok(runtime)
 }

@@ -22,7 +22,10 @@ use stasis::prelude::{
 };
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
+use crate::capability_catalog::CapabilityRegistry;
 use crate::events::TuiEvent;
+use crate::mcp_gateway_api::{McpDiscoverRequest, McpTurnContext, McpTurnLane};
+use crate::mcp_gateway_client::McpGatewayClient;
 use crate::engine_context::{
     EngineExecutionLane, LaneSafetyActionClass, validate_lane_action,
     validate_lane_policy_profile,
@@ -1888,6 +1891,337 @@ impl StasisTool for CognitionRuntimeJobStatusTool {
     }
 }
 
+// ── Capability catalog tools (Phase A) ───────────────────────────────────────
+
+pub struct CognitionCapabilityResolveTool {
+    capability_registry: Arc<RwLock<CapabilityRegistry>>,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionCapabilityResolveTool {
+    pub fn new(
+        capability_registry: Arc<RwLock<CapabilityRegistry>>,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            capability_registry,
+            event_tx,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionCapabilityResolveTool {
+    fn name(&self) -> &'static str {
+        "cognition.capability.resolve"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Resolve a capability intent to Grapheme and MCP implementations.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "capability": { "type": "string", "description": "Capability id, e.g. document_search" },
+                "query": { "type": "string", "description": "Optional fuzzy query when capability id is unknown" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let capability_id = input
+            .get("capability")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        let query = input
+            .get("query")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        if capability_id.is_none() && query.is_none() {
+            return Err(StasisError::PortFailure(
+                "cognition.capability.resolve: capability or query is required".to_string(),
+            ));
+        }
+
+        let summary = capability_id
+            .clone()
+            .or(query.clone())
+            .unwrap_or_default();
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: self.name().to_string(),
+                input_summary: summary,
+            })
+            .await;
+
+        let registry = self.capability_registry.read().await;
+        if let Some(capability_id) = capability_id {
+            let response = registry
+                .resolve(&capability_id)
+                .ok_or_else(|| {
+                    StasisError::PortFailure(format!(
+                        "cognition.capability.resolve: unknown capability '{capability_id}'"
+                    ))
+                })?;
+            return Ok(serde_json::to_value(response).map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "cognition.capability.resolve: failed to encode response: {error}"
+                ))
+            })?);
+        }
+
+        let search = registry.search(query.as_deref().unwrap_or_default(), 1);
+        let Some(first) = search.matches.first() else {
+            return Ok(json!({
+                "capability": null,
+                "matches": search.matches,
+                "message": "no capabilities matched query"
+            }));
+        };
+
+        let response = registry.resolve(&first.capability).ok_or_else(|| {
+            StasisError::PortFailure(format!(
+                "cognition.capability.resolve: matched capability '{}' but resolve failed",
+                first.capability
+            ))
+        })?;
+        Ok(serde_json::to_value(response).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition.capability.resolve: failed to encode response: {error}"
+            ))
+        })?)
+    }
+}
+
+pub struct CognitionCapabilityListTool {
+    capability_registry: Arc<RwLock<CapabilityRegistry>>,
+}
+
+impl CognitionCapabilityListTool {
+    pub fn new(capability_registry: Arc<RwLock<CapabilityRegistry>>) -> Self {
+        Self {
+            capability_registry,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionCapabilityListTool {
+    fn name(&self) -> &'static str {
+        "cognition.capability.list"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("List registered capability intents in the Medousa capability catalog.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "prefix": { "type": "string", "description": "Optional capability id prefix filter" },
+                "limit": { "type": "integer", "description": "Max entries (default 50)" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let prefix = input
+            .get("prefix")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let limit = input
+            .get("limit")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(50)
+            .clamp(1, 200) as usize;
+
+        let registry = self.capability_registry.read().await;
+        let mut response = registry.list();
+        if let Some(prefix) = prefix {
+            response.capabilities.retain(|entry| entry.id.starts_with(prefix));
+        }
+        response.capabilities.truncate(limit);
+        Ok(serde_json::to_value(response).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition.capability.list: failed to encode response: {error}"
+            ))
+        })?)
+    }
+}
+
+pub struct CognitionCapabilitySearchTool {
+    capability_registry: Arc<RwLock<CapabilityRegistry>>,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionCapabilitySearchTool {
+    pub fn new(
+        capability_registry: Arc<RwLock<CapabilityRegistry>>,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            capability_registry,
+            event_tx,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionCapabilitySearchTool {
+    fn name(&self) -> &'static str {
+        "cognition.capability.search"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Keyword search capability intents by query, alias, or keywords.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query" },
+                "limit": { "type": "integer", "description": "Max matches (default 10)" }
+            },
+            "required": ["query"]
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let query = input.get("query").and_then(|value| value.as_str()).ok_or_else(|| {
+            StasisError::PortFailure("cognition.capability.search: query is required".to_string())
+        })?;
+        let limit = input
+            .get("limit")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(10)
+            .clamp(1, 50) as usize;
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: self.name().to_string(),
+                input_summary: query.to_string(),
+            })
+            .await;
+
+        let registry = self.capability_registry.read().await;
+        let response = registry.search(query, limit);
+        Ok(serde_json::to_value(response).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition.capability.search: failed to encode response: {error}"
+            ))
+        })?)
+    }
+}
+
+pub struct CognitionMcpDiscoverTool {
+    gateway_client: Arc<McpGatewayClient>,
+    session_id: String,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionMcpDiscoverTool {
+    pub fn new(
+        gateway_client: Arc<McpGatewayClient>,
+        session_id: impl Into<String>,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            gateway_client,
+            session_id: session_id.into(),
+            event_tx,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionMcpDiscoverTool {
+    fn name(&self) -> &'static str {
+        "cognition.mcp.discover"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Search external MCP tools via the MCP Client gateway.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Search query" },
+                "server_id": { "type": "string", "description": "Optional MCP server id filter" },
+                "limit": { "type": "integer", "description": "Max matches (default 20)" }
+            },
+            "required": ["query"]
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let query = input.get("query").and_then(|value| value.as_str()).ok_or_else(|| {
+            StasisError::PortFailure("cognition.mcp.discover: query is required".to_string())
+        })?;
+        let server_id = input
+            .get("server_id")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let limit = input
+            .get("limit")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(20)
+            .clamp(1, 100) as usize;
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: self.name().to_string(),
+                input_summary: query.to_string(),
+            })
+            .await;
+
+        let request = McpDiscoverRequest {
+            query: query.to_string(),
+            server_id,
+            limit,
+            turn_context: McpTurnContext {
+                turn_id: format!("tool-{}", Uuid::new_v4()),
+                session_id: self.session_id.clone(),
+                user_id: "agent-runtime".to_string(),
+                channel_id: "agent-runtime".to_string(),
+                lane: McpTurnLane::Interactive,
+                policy_profile: None,
+            },
+        };
+
+        let response = self
+            .gateway_client
+            .discover(&request)
+            .await
+            .map_err(|error| {
+                StasisError::PortFailure(format!("cognition.mcp.discover: {error}"))
+            })?;
+
+        Ok(serde_json::to_value(response).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition.mcp.discover: failed to encode response: {error}"
+            ))
+        })?)
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct PolicyAwareToolRegistry {
     inner: Arc<dyn ToolRegistry>,
@@ -2126,6 +2460,8 @@ pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
     pub tool_loop_pipeline: ToolLoopPipeline,
     pub tool_registry: Arc<dyn ToolRegistry>,
+    pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
+    pub mcp_gateway_client: Arc<McpGatewayClient>,
     pub locus_store: Arc<dyn NodeStore>,
     pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,

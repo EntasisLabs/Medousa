@@ -29,6 +29,10 @@ path = "src/bin/medousa_telegram.rs"
 name = "medousa_discord"
 path = "src/bin/medousa_discord.rs"
 
+[[bin]]
+name = "medousa_mcp_gateway"
+path = "src/bin/medousa_mcp_gateway.rs"
+
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }

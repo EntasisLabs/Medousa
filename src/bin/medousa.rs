@@ -703,6 +703,42 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         if detect_local_ollama() { "yes" } else { "no" }
     );
 
+    let mcp_gateway_url = medousa::resolve_mcp_gateway_url(None);
+    let mcp_gateway_reachable = is_bind_reachable(
+        mcp_gateway_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://"),
+    );
+    println!(
+        "mcp_gateway_url={} reachable={} auth={}",
+        mcp_gateway_url,
+        mcp_gateway_reachable,
+        if medousa::gateway_auth_configured() {
+            "configured"
+        } else {
+            "open"
+        }
+    );
+    if mcp_gateway_reachable {
+        if let Ok(health) = fetch_mcp_gateway_health(&mcp_gateway_url) {
+            println!(
+                "mcp_gateway_status={} invokes_enabled={} catalog_entries={} connected_servers={}",
+                health.status,
+                health.invokes_enabled,
+                health.catalog_entries,
+                health.connected_servers
+            );
+        }
+        if daemon_reachable {
+            if let Ok(capabilities) = fetch_capabilities(&daemon_url) {
+                println!(
+                    "capability_catalog_count={}",
+                    capabilities.capabilities.len()
+                );
+            }
+        }
+    }
+
     if daemon_reachable {
         if let Ok(health) = fetch_daemon_health(&daemon_url) {
             println!(
@@ -738,6 +774,28 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn fetch_mcp_gateway_health(gateway_url: &str) -> Result<medousa::McpGatewayHealthResponse> {
+    let gateway_url = gateway_url.trim_end_matches('/');
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?
+        .get(format!("{gateway_url}/health"))
+        .send()?
+        .error_for_status()?;
+    Ok(response.json()?)
+}
+
+fn fetch_capabilities(daemon_url: &str) -> Result<medousa::CapabilityListResponse> {
+    let daemon_url = daemon_url.trim_end_matches('/');
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?
+        .get(format!("{daemon_url}/v1/capabilities"))
+        .send()?
+        .error_for_status()?;
+    Ok(response.json()?)
 }
 
 fn fetch_daemon_health(daemon_url: &str) -> Result<medousa::HealthResponse> {
