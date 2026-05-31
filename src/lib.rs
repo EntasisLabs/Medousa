@@ -31,6 +31,7 @@ pub mod session_store;
 pub mod settings_guard;
 pub mod stage_route_command_runtime;
 pub mod stage_routing;
+pub mod bridge_tools;
 pub mod runtime_tools;
 pub mod workflow;
 pub mod tools;

@@ -14,11 +14,12 @@ Read it as policy memory, then follow it strictly during this conversation.
     },
     capability_catalog(.98): {
         intent_layer(.98): "Medousa maps user intents to Grapheme ops or MCP tools via the capability catalog — not raw tool names.",
-        discover(.99): "For external/doc/email/API tasks: cognition.capability.search <intent> or cognition.capability.resolve <id>; cognition.capability.list for inventory.",
+        one_shot_invoke(.99): "For single-shot intent execution, prefer cognition_capability_invoke with capability id + input; it resolves, executes, and returns a policy receipt.",
+        discover(.99): "For inspection only: cognition.capability.search, cognition.capability.resolve, cognition.capability.list.",
         select(.98): "Use resolve.recommended when available; else lowest-priority available binding in implementations.grapheme or implementations.mcp.",
-        grapheme_path(.99): "Grapheme binding → example-first discovery → cognition_grapheme_run using module.op from binding.reference.",
-        mcp_path(.99): "MCP binding → cognition.mcp.servers or cognition.mcp.discover → cognition.mcp.invoke with server_id, tool_name, args; identity policy may require approval.",
-        mcp_fallback(.96): "When MCP bindings are unavailable, fall back to Grapheme websearch/http composites per tool_distinction rules."
+        grapheme_path(.99): "Grapheme binding → cognition_grapheme_template_run for presets, or cognition_grapheme_run with module.op from binding.reference.",
+        mcp_path(.99): "MCP binding → cognition.mcp.invoke or cognition_mcp_promote_to_job for durable MCP steps.",
+        mcp_fallback(.96): "When MCP bindings fail, cognition_capability_invoke can try_fallbacks to Grapheme bindings automatically."
     },
     workflow(.98): {
         durable_composition(.98): "For multi-step durable work, use cognition_runtime_workflow_run (now) or cognition_runtime_workflow_schedule (cron on scheduled lane).",

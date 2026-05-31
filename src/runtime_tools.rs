@@ -14,7 +14,7 @@ use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::ports::outbound::runtime::outbox_store::OutboxStore;
 use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 use stasis::application::orchestration::tool_registry::StasisTool;
-use stasis::prelude::{BackoffPolicy, NewJob, StasisError};
+use stasis::prelude::StasisError;
 use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -24,7 +24,8 @@ use crate::tools::validate_grapheme_source_for_schedule;
 use crate::workflow::{
     MedousaSequentialWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord,
     WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, encode_workflow_payload,
-    new_workflow_id, preflight_grapheme_steps, validate_workflow_request,
+    enqueue_sequential_workflow_job, new_workflow_id, preflight_grapheme_steps,
+    validate_workflow_request,
 };
 
 fn job_state_label(state: &JobState) -> &'static str {
@@ -837,35 +838,6 @@ fn build_workflow_payload(
     }
 }
 
-async fn enqueue_workflow_job(
-    runtime: &RuntimeComposition,
-    payload: &MedousaSequentialWorkflowPayload,
-    queue: &str,
-) -> stasis::prelude::Result<String> {
-    let job_id = format!("wf-job-{}", Uuid::new_v4().simple());
-    let now = Utc::now();
-    let job = NewJob {
-        id: job_id.clone(),
-        queue: queue.to_string(),
-        job_type: WORKFLOW_SEQUENTIAL_JOB_TYPE.to_string(),
-        payload_ref: encode_workflow_payload(payload)?,
-        priority: 100,
-        max_attempts: 1,
-        idempotency_key: format!("idem-{job_id}"),
-        correlation_id: payload.workflow_id.clone(),
-        causation_id: "cognition_runtime_workflow".to_string(),
-        trace_id: payload.workflow_id.clone(),
-        sttp_input_node_id: format!("sttp:in:workflow:{}", payload.workflow_id),
-        scheduled_at: now,
-        backoff_policy: BackoffPolicy::default(),
-    };
-
-    match runtime {
-        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
-        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
-    }
-    Ok(job_id)
-}
 
 fn workflow_record_to_json(record: &WorkflowRecord, root_job: Option<&Job>) -> Value {
     json!({
@@ -952,7 +924,8 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
             .and_then(|v| v.as_str())
             .unwrap_or("default");
         let payload = build_workflow_payload(&workflow_id, &request, "interactive");
-        let job_id = enqueue_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
+        let job_id =
+            enqueue_sequential_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
 
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),

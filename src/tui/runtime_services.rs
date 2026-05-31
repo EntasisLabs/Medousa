@@ -35,6 +35,10 @@ use crate::tools::{
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
     PolicyAwareToolRegistry, TuiRuntime,
 };
+use crate::bridge_tools::{
+    CognitionCapabilityInvokeTool, CognitionGraphemeTemplateRunTool,
+    CognitionMcpPromoteToJobTool,
+};
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::workflow;
@@ -222,6 +226,22 @@ pub(crate) async fn build_tui_runtime_services(
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
+    tool_registry.register_tool(CognitionCapabilityInvokeTool::new(
+        capability_registry.clone(),
+        runtime.clone(),
+        mcp_gateway_client.clone(),
+        session_id.to_string(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionMcpPromoteToJobTool::new(
+        runtime.clone(),
+        workflow_registry.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionGraphemeTemplateRunTool::new(
+        runtime.clone(),
+        event_tx.clone(),
+    ))?;
 
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     let base_registry: Arc<dyn ToolRegistry> = Arc::new(tool_registry);

@@ -15,7 +15,8 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
-use stasis::application::runtime::runtime_factory::RuntimeFactory;
+use stasis::application::runtime::runtime_factory::{RuntimeComposition, RuntimeFactory};
+use stasis::prelude::{BackoffPolicy, NewJob};
 use stasis::domain::runtime::job::Job;
 use stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine;
 use tokio::sync::RwLock;
@@ -556,6 +557,36 @@ pub async fn preflight_grapheme_steps(
         }
     }
     Ok(results)
+}
+
+pub async fn enqueue_sequential_workflow_job(
+    runtime: &RuntimeComposition,
+    payload: &MedousaSequentialWorkflowPayload,
+    queue: &str,
+) -> stasis::prelude::Result<String> {
+    let job_id = format!("wf-job-{}", Uuid::new_v4().simple());
+    let now = Utc::now();
+    let job = NewJob {
+        id: job_id.clone(),
+        queue: queue.to_string(),
+        job_type: WORKFLOW_SEQUENTIAL_JOB_TYPE.to_string(),
+        payload_ref: encode_workflow_payload(payload)?,
+        priority: 100,
+        max_attempts: 1,
+        idempotency_key: format!("idem-{job_id}"),
+        correlation_id: payload.workflow_id.clone(),
+        causation_id: "cognition_runtime_workflow".to_string(),
+        trace_id: payload.workflow_id.clone(),
+        sttp_input_node_id: format!("sttp:in:workflow:{}", payload.workflow_id),
+        scheduled_at: now,
+        backoff_policy: BackoffPolicy::default(),
+    };
+
+    match runtime {
+        RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
+        RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
+    }
+    Ok(job_id)
 }
 
 pub fn attach_workflow_handler(

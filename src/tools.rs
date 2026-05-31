@@ -76,7 +76,7 @@ fn truncate_for_error(text: &str, max_chars: usize) -> String {
     }
 }
 
-async fn run_grapheme_via_runtime(
+pub(crate) async fn run_grapheme_via_runtime(
     runtime: &Arc<RuntimeComposition>,
     source: &str,
     causation: &str,
@@ -2466,7 +2466,7 @@ fn lane_safety_action_for_tool_call(
     _input: &Value,
 ) -> Option<LaneSafetyActionClass> {
     match tool_name {
-        "cognition.job.enqueue" | "cognition_grapheme_promote_to_job" | "cognition_runtime_workflow_run" => {
+        "cognition.job.enqueue" | "cognition_grapheme_promote_to_job" | "cognition_runtime_workflow_run" | "cognition_mcp_promote_to_job" => {
             Some(LaneSafetyActionClass::InteractiveIngress)
         }
         "cognition_grapheme_promote_to_recurring"
@@ -2540,6 +2540,23 @@ fn referenced_module_ops_for_tool_call(
                 )
             })?;
             Ok(extract_module_ops_from_source(source))
+        }
+        "cognition_grapheme_template_run" => {
+            let template = input.get("template").and_then(|v| v.as_str()).ok_or_else(|| {
+                StasisError::PortFailure(
+                    "policy violation: cognition_grapheme_template_run requires template for module allowlist enforcement"
+                        .to_string(),
+                )
+            })?;
+            let params = input.get("params").cloned().unwrap_or_else(|| json!({}));
+            let source = crate::bridge_tools::render_grapheme_template(template, &params)?;
+            Ok(extract_module_ops_from_source(&source))
+        }
+        "cognition_capability_invoke" => {
+            if let Some(source) = input.get("source").and_then(|v| v.as_str()) {
+                return Ok(extract_module_ops_from_source(source));
+            }
+            Ok(Vec::new())
         }
         _ => Ok(Vec::new()),
     }
