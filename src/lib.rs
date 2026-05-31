@@ -31,6 +31,8 @@ pub mod session_store;
 pub mod settings_guard;
 pub mod stage_route_command_runtime;
 pub mod stage_routing;
+pub mod runtime_tools;
+pub mod workflow;
 pub mod tools;
 pub mod tui;
 pub mod verification_store;
@@ -43,6 +45,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::{Value, json};
+use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::infrastructure::runtime::http_webhook_event_publisher::HttpWebhookTransportPublisher;
@@ -243,6 +246,9 @@ pub async fn build_runtime_with_identity_store(
         base_url.as_deref(),
     ));
 
+    let workflow_registry = workflow::shared_workflow_registry();
+    let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
+
     let mut builder = StasisRuntimeBuilder::new(backend)
         .with_chat_client(chat_client)
         .with_locus_memory();
@@ -250,6 +256,8 @@ pub async fn build_runtime_with_identity_store(
     if let Some(store) = identity_memory_store {
         builder = builder.with_identity_memory_store(store);
     }
+
+    builder = workflow::attach_workflow_handler(builder, prompt_pipeline, workflow_registry);
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
 
@@ -283,6 +291,9 @@ pub async fn build_daemon_runtime(
         None
     };
 
+    let workflow_registry = workflow::shared_workflow_registry();
+    let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
+
     let mut builder = StasisRuntimeBuilder::new(backend)
         .with_chat_client(chat_client)
         .with_locus_memory()
@@ -301,6 +312,8 @@ pub async fn build_daemon_runtime(
     if let Some(store) = identity_memory_store {
         builder = builder.with_identity_memory_store(store);
     }
+
+    builder = workflow::attach_workflow_handler(builder, prompt_pipeline, workflow_registry);
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
 

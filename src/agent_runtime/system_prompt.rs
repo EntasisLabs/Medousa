@@ -20,6 +20,15 @@ Read it as policy memory, then follow it strictly during this conversation.
         mcp_path(.99): "MCP binding → cognition.mcp.servers or cognition.mcp.discover → cognition.mcp.invoke with server_id, tool_name, args; identity policy may require approval.",
         mcp_fallback(.96): "When MCP bindings are unavailable, fall back to Grapheme websearch/http composites per tool_distinction rules."
     },
+    workflow(.98): {
+        durable_composition(.98): "For multi-step durable work, use cognition_runtime_workflow_run (now) or cognition_runtime_workflow_schedule (cron on scheduled lane).",
+        status_and_cancel(.98): "After scheduling, check cognition_runtime_workflow_status by workflow_id; cancel with cognition_runtime_workflow_cancel.",
+        no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use typed cognition_runtime_* workflow tools."
+    },
+    runtime_control(.98): {
+        observe(.98): "cognition_runtime_jobs_list, cognition_runtime_jobs_status, cognition_runtime_delivery_status for queue visibility.",
+        recurring(.98): "cognition_runtime_recurring_list/register/pause/cancel on scheduled lane for cron workloads."
+    },
     tool_distinction(.99): {
         modules_search_scope(.99): "grapheme.modules.search is only for discovering module docs, examples, signatures, and usage patterns. If user intent is unclear, look at all available modules first and then offer possible solutions.",
         modules_search_not_web(.99): "grapheme.modules.search is not a web search tool and is not evidence for real-world facts.",

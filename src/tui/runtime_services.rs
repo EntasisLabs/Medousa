@@ -16,6 +16,14 @@ use tokio::sync::mpsc;
 use crate::engine_context::EngineExecutionLane;
 use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
+use crate::runtime_tools::{
+    CognitionRuntimeDeliveryStatusTool, CognitionRuntimeJobsCancelTool,
+    CognitionRuntimeJobsListTool, CognitionRuntimeRecurringCancelTool,
+    CognitionRuntimeRecurringListTool, CognitionRuntimeRecurringPauseTool,
+    CognitionRuntimeRecurringRegisterTool, CognitionRuntimeWorkflowCancelTool,
+    CognitionRuntimeWorkflowRunTool, CognitionRuntimeWorkflowScheduleTool,
+    CognitionRuntimeWorkflowStatusTool,
+};
 use crate::tools::{
     CognitionCapabilityListTool, CognitionCapabilityResolveTool, CognitionCapabilitySearchTool,
     CognitionGraphemeCliRunTool, CognitionGraphemeExamplesTool, CognitionGraphemeModulesInfoTool,
@@ -29,6 +37,7 @@ use crate::tools::{
 };
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
+use crate::workflow;
 use tokio::sync::RwLock;
 
 pub(crate) fn build_tool_loop_pipeline_for_target(
@@ -83,13 +92,20 @@ pub(crate) async fn build_tui_runtime_services(
         crate::identity_memory::build_identity_memory_store_for_backend(&backend_for_identity)
             .await?;
 
-    let runtime_composition = StasisRuntimeBuilder::new(backend)
-        .with_chat_client(chat_client.clone())
-        .with_memory_context_reader(memory_reader.clone())
-        .with_memory_context_writer(memory_writer.clone())
-        .with_identity_memory_store(identity_memory_store.clone())
-        .build()
-        .await?;
+    let workflow_registry = workflow::shared_workflow_registry();
+    let prompt_pipeline_for_handler = PromptExecutionPipeline::new(chat_client.clone());
+
+    let runtime_composition = workflow::attach_workflow_handler(
+        StasisRuntimeBuilder::new(backend)
+            .with_chat_client(chat_client.clone())
+            .with_memory_context_reader(memory_reader.clone())
+            .with_memory_context_writer(memory_writer.clone())
+            .with_identity_memory_store(identity_memory_store.clone()),
+        prompt_pipeline_for_handler,
+        workflow_registry.clone(),
+    )
+    .build()
+    .await?;
 
     let runtime = Arc::new(runtime_composition);
 
@@ -143,8 +159,46 @@ pub(crate) async fn build_tui_runtime_services(
     tool_registry.register_tool(CognitionUtilityTimeNowTool)?;
     tool_registry.register_tool(CognitionUtilityDayOfWeekTool)?;
     tool_registry.register_tool(CognitionUtilityUuidTool)?;
-    tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
+    tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
+    tool_registry.register_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
+    tool_registry.register_tool(CognitionRuntimeJobsCancelTool::new(
+        runtime.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeRecurringListTool::new(runtime.clone()))?;
+    tool_registry.register_tool(CognitionRuntimeRecurringRegisterTool::new(
+        runtime.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeRecurringPauseTool::new(
+        runtime.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeRecurringCancelTool::new(
+        runtime.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeDeliveryStatusTool::new(runtime.clone()))?;
+    tool_registry.register_tool(CognitionRuntimeWorkflowRunTool::new(
+        runtime.clone(),
+        workflow_registry.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeWorkflowScheduleTool::new(
+        runtime.clone(),
+        workflow_registry.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeWorkflowStatusTool::new(
+        runtime.clone(),
+        workflow_registry.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionRuntimeWorkflowCancelTool::new(
+        runtime.clone(),
+        workflow_registry.clone(),
+        event_tx.clone(),
+    ))?;
 
     let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest()));
     let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());
@@ -184,6 +238,7 @@ pub(crate) async fn build_tui_runtime_services(
         tool_registry: guarded_registry,
         capability_registry,
         mcp_gateway_client,
+        workflow_registry,
         locus_store,
         identity_memory_store,
         memory_reader,

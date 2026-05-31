@@ -137,7 +137,7 @@ async fn run_grapheme_via_runtime(
     }))
 }
 
-async fn validate_grapheme_source_for_schedule(
+pub(crate) async fn validate_grapheme_source_for_schedule(
     runtime: &Arc<RuntimeComposition>,
     source: &str,
 ) -> stasis::prelude::Result<Value> {
@@ -1825,7 +1825,7 @@ impl CognitionRuntimeJobStatusTool {
 #[async_trait]
 impl StasisTool for CognitionRuntimeJobStatusTool {
     fn name(&self) -> &'static str {
-        "cognition_runtime_job_status"
+        "cognition_runtime_jobs_status"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -1851,7 +1851,7 @@ impl StasisTool for CognitionRuntimeJobStatusTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
                 StasisError::PortFailure(
-                    "cognition_runtime_job_status job_id is required".to_string(),
+                    "cognition_runtime_jobs_status: job_id is required".to_string(),
                 )
             })?;
 
@@ -2466,11 +2466,13 @@ fn lane_safety_action_for_tool_call(
     _input: &Value,
 ) -> Option<LaneSafetyActionClass> {
     match tool_name {
-        "cognition.job.enqueue" | "cognition_grapheme_promote_to_job" => {
+        "cognition.job.enqueue" | "cognition_grapheme_promote_to_job" | "cognition_runtime_workflow_run" => {
             Some(LaneSafetyActionClass::InteractiveIngress)
         }
         "cognition_grapheme_promote_to_recurring"
-        | "cognition_grapheme_promote_last_run_to_recurring" => {
+        | "cognition_grapheme_promote_last_run_to_recurring"
+        | "cognition_runtime_recurring_register"
+        | "cognition_runtime_workflow_schedule" => {
             Some(LaneSafetyActionClass::RecurringRegistration)
         }
         _ => None,
@@ -2600,6 +2602,7 @@ pub struct TuiRuntime {
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
     pub mcp_gateway_client: Arc<McpGatewayClient>,
+    pub workflow_registry: Arc<crate::workflow::WorkflowRegistry>,
     pub locus_store: Arc<dyn NodeStore>,
     pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
