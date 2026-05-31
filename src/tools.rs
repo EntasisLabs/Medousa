@@ -23,20 +23,24 @@ use stasis::prelude::{
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
 use crate::capability_catalog::CapabilityRegistry;
-use crate::events::TuiEvent;
-use crate::mcp_gateway_api::{McpDiscoverRequest, McpInvokeRequest, McpTurnContext, McpTurnLane};
-use crate::mcp_gateway_client::McpGatewayClient;
-use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::engine_context::{
     EngineExecutionLane, LaneSafetyActionClass, validate_lane_action,
     validate_lane_policy_profile,
 };
+use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::{
     GraphemeCompactionModelTarget, maybe_compact_output_to_sttp,
 };
+use crate::mcp_gateway_api::{McpDiscoverRequest, McpInvokeRequest, McpTurnContext, McpTurnLane};
+use crate::mcp_gateway_client::McpGatewayClient;
+use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::process_once;
 use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
+};
+use crate::turn_continuation::{
+    self, ContinuationAwaitMode, TurnContinuationScope, apply_turn_correlation_to_job,
+    register_turn_child_job,
 };
 
 async fn run_grapheme_cli(args: Vec<String>) -> stasis::prelude::Result<Value> {
@@ -266,11 +270,20 @@ async fn emit_compaction_observability(
 pub struct CognitionJobEnqueueTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionJobEnqueueTool {
-    pub fn new(runtime: Arc<RuntimeComposition>, event_tx: mpsc::Sender<TuiEvent>) -> Self {
-        Self { runtime, event_tx }
+    pub fn new(
+        runtime: Arc<RuntimeComposition>,
+        event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            runtime,
+            event_tx,
+            turn_scope,
+        }
     }
 }
 
@@ -356,7 +369,7 @@ impl StasisTool for CognitionJobEnqueueTool {
         let job_id = format!("cognition-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let job = NewJob {
+        let mut job = NewJob {
             id: job_id.clone(),
             queue: "default".to_string(),
             job_type: job_type.to_string(),
@@ -371,6 +384,18 @@ impl StasisTool for CognitionJobEnqueueTool {
             scheduled_at: now,
             backoff_policy: BackoffPolicy::default(),
         };
+
+        if let Some(scope) = self.turn_scope.read().await.clone() {
+            apply_turn_correlation_to_job(&mut job, &scope, self.name());
+            register_turn_child_job(
+                &scope,
+                &job_id,
+                self.name(),
+                job_type,
+                ContinuationAwaitMode::Async,
+            )
+            .await;
+        }
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
@@ -400,6 +425,7 @@ pub struct CognitionGraphemeRunTool {
     event_tx: mpsc::Sender<TuiEvent>,
     session_id: String,
     model_target: GraphemeCompactionModelTarget,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionGraphemeRunTool {
@@ -408,12 +434,14 @@ impl CognitionGraphemeRunTool {
         event_tx: mpsc::Sender<TuiEvent>,
         session_id: String,
         model_target: GraphemeCompactionModelTarget,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     ) -> Self {
         Self {
             runtime,
             event_tx,
             session_id,
             model_target,
+            turn_scope,
         }
     }
 }
@@ -461,7 +489,7 @@ impl StasisTool for CognitionGraphemeRunTool {
         let job_id = format!("cognition-gph-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let job = NewJob {
+        let mut job = NewJob {
             id: job_id.clone(),
             queue: "default".to_string(),
             job_type: "workflow.grapheme.run".to_string(),
@@ -476,6 +504,18 @@ impl StasisTool for CognitionGraphemeRunTool {
             scheduled_at: now,
             backoff_policy: BackoffPolicy::default(),
         };
+
+        if let Some(scope) = self.turn_scope.read().await.clone() {
+            apply_turn_correlation_to_job(&mut job, &scope, self.name());
+            register_turn_child_job(
+                &scope,
+                &job_id,
+                self.name(),
+                "workflow.grapheme.run",
+                ContinuationAwaitMode::Sync,
+            )
+            .await;
+        }
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
@@ -520,6 +560,12 @@ impl StasisTool for CognitionGraphemeRunTool {
                                     execution_id: execution_id.clone(),
                                 })
                                 .await;
+
+                            if succeeded {
+                                let _ = turn_continuation::turn_continuation_store()
+                                    .mark_consumed(&job_id)
+                                    .await;
+                            }
 
                             json!({
                                 "job_id": job_id,
@@ -2647,6 +2693,7 @@ pub struct TuiRuntime {
     pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
+    pub turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl TuiRuntime {

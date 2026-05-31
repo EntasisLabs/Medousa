@@ -16,6 +16,8 @@ use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session::{ConversationTurn, append_turn, load_history};
 
+use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
+
 use super::prompt_prep::{truncate_text_for_budget, MAX_REQUEST_PROMPT_CHARS};
 use super::settings::runtime_settings_for_interactive_turn;
 use super::stream_sink::AgentStreamSink;
@@ -163,6 +165,47 @@ pub async fn run_agent_turn(
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
+    continuation_scope: Option<TurnContinuationScope>,
+) {
+    if let Some(scope) = continuation_scope.clone() {
+        *agent_rt.turn_scope.write().await = Some(scope);
+    }
+
+    let turn_correlation_id = continuation_scope.as_ref().map(|scope| scope.turn_correlation_id.clone());
+    let outcome: Arc<RwLock<Option<TurnOutcome>>> = Arc::new(RwLock::new(None));
+    let tracking_sink: SharedAgentStreamSink = Arc::new(TurnOutcomeTrackingSink {
+        inner: sink,
+        outcome: outcome.clone(),
+    });
+
+    run_agent_turn_inner(
+        _turn_id,
+        request,
+        backend,
+        agent_rt,
+        tracking_sink,
+    )
+    .await;
+
+    if let Some(correlation_id) = turn_correlation_id {
+        let final_outcome = outcome
+            .read()
+            .await
+            .unwrap_or(TurnOutcome::Error);
+        let _ = turn_continuation_store()
+            .mark_turn_finished(&correlation_id, final_outcome)
+            .await;
+    }
+
+    *agent_rt.turn_scope.write().await = None;
+}
+
+async fn run_agent_turn_inner(
+    _turn_id: &str,
+    request: InteractiveTurnRequest,
+    backend: &str,
+    agent_rt: &super::runtime::MedousaAgentRuntime,
+    sink: SharedAgentStreamSink,
 ) {
 
     let session_id = request.session_id.trim().to_string();
@@ -289,6 +332,59 @@ pub async fn run_agent_turn(
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
 }
 
+struct TurnOutcomeTrackingSink {
+    inner: SharedAgentStreamSink,
+    outcome: Arc<RwLock<Option<TurnOutcome>>>,
+}
+
+#[async_trait]
+impl AgentStreamSink for TurnOutcomeTrackingSink {
+    async fn content_chunk(&self, turn_id: u64, delta: String) {
+        self.inner.content_chunk(turn_id, delta).await;
+    }
+
+    async fn reasoning_chunk(&self, turn_id: u64, delta: String) {
+        self.inner.reasoning_chunk(turn_id, delta).await;
+    }
+
+    async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        *self.outcome.write().await = Some(TurnOutcome::Success);
+        self.inner.agent_response(turn_id, text, tool_names).await;
+    }
+
+    async fn agent_error(&self, turn_id: u64, message: String) {
+        *self.outcome.write().await = Some(TurnOutcome::Error);
+        self.inner.agent_error(turn_id, message).await;
+    }
+
+    async fn notice(&self, message: String) {
+        self.inner.notice(message).await;
+    }
+
+    async fn tool_invoked(&self, tool_name: String, input_summary: String) {
+        self.inner.tool_invoked(tool_name, input_summary).await;
+    }
+
+    async fn tool_payload(
+        &self,
+        tool_name: String,
+        tool_input: Value,
+        tool_output: Value,
+        input_receipt: Option<ArtifactReceiptMeta>,
+        output_receipt: Option<ArtifactReceiptMeta>,
+    ) {
+        self.inner
+            .tool_payload(
+                tool_name,
+                tool_input,
+                tool_output,
+                input_receipt,
+                output_receipt,
+            )
+            .await;
+    }
+}
+
 /// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
 pub async fn run_daemon_interactive_turn(
     turn_id: &str,
@@ -297,6 +393,7 @@ pub async fn run_daemon_interactive_turn(
     agent_rt: &super::runtime::MedousaAgentRuntime,
     stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
     delivery: Option<InteractiveTurnDeliveryContext>,
+    continuation_scope: Option<TurnContinuationScope>,
 ) {
     publish(
         &stream_tx,
@@ -315,5 +412,13 @@ pub async fn run_daemon_interactive_turn(
         delivery,
     });
 
-    run_agent_turn(turn_id, request, backend, agent_rt, sink).await;
+    run_agent_turn(
+        turn_id,
+        request,
+        backend,
+        agent_rt,
+        sink,
+        continuation_scope,
+    )
+    .await;
 }

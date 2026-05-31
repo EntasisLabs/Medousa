@@ -161,6 +161,7 @@ pub async fn run_heartbeat_agent_turn(
         backend,
         agent_rt,
         sink,
+        None,
     )
     .await;
 

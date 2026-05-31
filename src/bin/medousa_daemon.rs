@@ -71,7 +71,7 @@ use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::dashboard::{
     DashboardState, RuntimeDashboardQueryService, router as dashboard_router,
 };
-use stasis::prelude::{RecurringDefinition, RuntimeComposition, RuntimeSdk};
+use stasis::prelude::{JobState, RecurringDefinition, RuntimeComposition, RuntimeSdk};
 use stasis::sdk::runtime_sdk::RuntimeStatsSnapshot;
 
 #[derive(Clone)]
@@ -548,6 +548,12 @@ async fn run_scheduler_loop(
                     || report.heartbeat_action == HeartbeatAction::Notify
                 {
                     eprintln!("{}", format_tick_report("medousa-daemon tick", &report));
+                }
+
+                if let Some(ref job_id) = report.processed_job {
+                    if job_succeeded(state.composition(), job_id).await {
+                        let _ = maybe_resume_agent_turn_from_child_job(&state, job_id).await;
+                    }
                 }
 
                 let dispatch_decision = {
@@ -1238,6 +1244,21 @@ async fn start_interactive_turn(
         last_turn_latency_ms: last_agent_turn_latency_ms,
         started: std::time::Instant::now(),
     };
+    let continuation_scope = medousa::turn_continuation::TurnContinuationScope {
+        turn_correlation_id: turn_id.clone(),
+        session_id: request.session_id.clone(),
+        original_prompt: request.prompt.clone(),
+        delivery_target: Some(channel_delivery::ChannelDeliveryTarget {
+            channel: "tui".to_string(),
+            user_id: request.session_id.clone(),
+            channel_id: request.session_id.clone(),
+            session_id: request.session_id.clone(),
+            stream_id: Some(turn_id.clone()),
+        }),
+        provider: request.provider.clone(),
+        model: request.model.clone(),
+        response_depth_mode: request.response_depth_mode.clone(),
+    };
     tokio::spawn(async move {
         // Give the client a brief window to subscribe before first deltas.
         tokio::time::sleep(Duration::from_millis(120)).await;
@@ -1248,6 +1269,7 @@ async fn start_interactive_turn(
             agent_runtime.as_ref(),
             stream_tx,
             Some(delivery),
+            Some(continuation_scope),
         )
         .await;
 
@@ -1874,6 +1896,10 @@ async fn deliver_outbox_webhook(
 
     match payload.event_type.as_str() {
         "job_succeeded" => {
+            if maybe_resume_agent_turn_from_child_job(&state, &payload.job_id).await {
+                return Ok(StatusCode::OK);
+            }
+
             let Some(target) = target else {
                 eprintln!(
                     "deliver/outbox job_succeeded missing delivery target job_id={}",
@@ -1940,6 +1966,10 @@ async fn deliver_outbox_webhook(
             Ok(StatusCode::OK)
         }
         "job_dead_lettered" => {
+            let _ = medousa::turn_continuation::turn_continuation_store()
+                .mark_child_dead_letter(&payload.job_id)
+                .await;
+
             if let Some(target) = target {
                 let error_text = payload
                     .message
@@ -2144,6 +2174,155 @@ fn job_result_from_agent_turn(job_id: &str, record: &AgentTurnJobRecord) -> JobR
     }
 }
 
+async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
+    match runtime {
+        RuntimeComposition::InMemory(rt) => rt
+            .job_store
+            .get(job_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some_and(|job| job.state == JobState::Succeeded),
+        RuntimeComposition::Surreal(rt) => rt
+            .job_store
+            .get(job_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some_and(|job| job.state == JobState::Succeeded),
+    }
+}
+
+async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_id: &str) -> bool {
+    let store = medousa::turn_continuation::turn_continuation_store();
+    let Some(record) = store.get(child_job_id).await else {
+        return false;
+    };
+    if !record.should_resume() {
+        return false;
+    }
+    if !store.mark_resumed(child_job_id).await.unwrap_or(false) {
+        return false;
+    }
+
+    let job_output = medousa::turn_continuation::resolve_succeeded_job_output_text(
+        state.composition(),
+        child_job_id,
+    )
+    .await
+    .unwrap_or_else(|| "Job succeeded but output text was unavailable.".to_string());
+
+    let resume_prompt = medousa::turn_continuation::build_turn_resume_prompt(
+        &record.original_prompt,
+        &record.tool_name,
+        &record.job_type,
+        child_job_id,
+        &job_output,
+    );
+
+    eprintln!(
+        "turn continuation resume child_job_id={child_job_id} turn_correlation_id={} session_id={}",
+        record.turn_correlation_id, record.session_id
+    );
+
+    spawn_continuation_agent_turn(state, &record, resume_prompt).await;
+    true
+}
+
+async fn spawn_continuation_agent_turn(
+    state: &AppState,
+    record: &medousa::turn_continuation::TurnContinuationRecord,
+    resume_prompt: String,
+) {
+    let now = Utc::now();
+    let job_id = format!(
+        "medousa-daemon-continue-{}-{}",
+        now.timestamp_millis(),
+        &record.session_id[..record.session_id.len().min(8)]
+    );
+
+    let mut interactive_request = session_mapping::build_interactive_turn_request_for_ingest(
+        &record.session_id,
+        resume_prompt,
+        &record.provider,
+        &record.model,
+        &record.response_depth_mode,
+    );
+    interactive_request.persist_user_turn = false;
+
+    let continuation_scope = medousa::turn_continuation::TurnContinuationScope {
+        turn_correlation_id: job_id.clone(),
+        session_id: record.session_id.clone(),
+        original_prompt: record.original_prompt.clone(),
+        delivery_target: record
+            .delivery_target
+            .as_ref()
+            .map(channel_delivery::ChannelDeliveryTarget::from),
+        provider: record.provider.clone(),
+        model: record.model.clone(),
+        response_depth_mode: record.response_depth_mode.clone(),
+    };
+
+    if let Some(target) = record
+        .delivery_target
+        .as_ref()
+        .map(channel_delivery::ChannelDeliveryTarget::from)
+    {
+        state
+            .channel_deliveries
+            .write()
+            .await
+            .insert(job_id.clone(), target.clone());
+        record_job_delivery_pending(state, &job_id).await;
+
+        let stream_id = format!("continue-{}", Uuid::new_v4().simple());
+        let (stream_tx, _stream_rx) =
+            broadcast::channel::<InteractiveTurnStreamEvent>(64);
+
+        let sink: Arc<dyn AgentStreamSink> = Arc::new(IngestAgentStreamSink {
+            stream_id: stream_id.clone(),
+            session_id: record.session_id.clone(),
+            job_id: job_id.clone(),
+            stream_tx,
+            delivery_target: target,
+            dispatch_client: state.channel_dispatch_client.clone(),
+            delivery_records: state.job_delivery_records.clone(),
+            channel_deliveries: state.channel_deliveries.clone(),
+            last_delivery_at: state.last_delivery_at.clone(),
+            last_delivery_latency_ms: state.last_delivery_latency_ms.clone(),
+            cancelled_streams: state.cancelled_ingest_streams.clone(),
+            delivery_started: std::time::Instant::now(),
+        });
+
+        let agent_runtime = state.platform.agent_handle();
+        let backend = state.backend.clone();
+        tokio::spawn(async move {
+            medousa::agent_runtime::run_agent_turn(
+                &stream_id,
+                interactive_request,
+                &backend,
+                agent_runtime.as_ref(),
+                sink,
+                Some(continuation_scope),
+            )
+            .await;
+        });
+        return;
+    }
+
+    spawn_daemon_api_agent_turn_with_scope(
+        state,
+        job_id,
+        record.session_id.clone(),
+        interactive_request.prompt,
+        record.response_depth_mode.clone(),
+        record.provider.clone(),
+        record.model.clone(),
+        continuation_scope,
+    )
+    .await;
+}
+
 async fn spawn_daemon_api_agent_turn(
     state: &AppState,
     job_id: String,
@@ -2152,6 +2331,38 @@ async fn spawn_daemon_api_agent_turn(
     response_depth_mode: String,
     provider: String,
     model: String,
+) {
+    let continuation_scope = medousa::turn_continuation::TurnContinuationScope {
+        turn_correlation_id: job_id.clone(),
+        session_id: session_id.clone(),
+        original_prompt: prompt.clone(),
+        delivery_target: None,
+        provider: provider.clone(),
+        model: model.clone(),
+        response_depth_mode: response_depth_mode.clone(),
+    };
+    spawn_daemon_api_agent_turn_with_scope(
+        state,
+        job_id,
+        session_id,
+        prompt,
+        response_depth_mode,
+        provider,
+        model,
+        continuation_scope,
+    )
+    .await;
+}
+
+async fn spawn_daemon_api_agent_turn_with_scope(
+    state: &AppState,
+    job_id: String,
+    session_id: String,
+    prompt: String,
+    response_depth_mode: String,
+    provider: String,
+    model: String,
+    continuation_scope: medousa::turn_continuation::TurnContinuationScope,
 ) {
     state.agent_turn_jobs.write().await.insert(
         job_id.clone(),
@@ -2172,7 +2383,7 @@ async fn spawn_daemon_api_agent_turn(
     let last_agent_turn_at = state.last_agent_turn_at.clone();
     let last_agent_turn_latency_ms = state.last_agent_turn_latency_ms.clone();
     let job_id_for_task = job_id.clone();
-    let session_id_for_sink = session_id;
+    let session_id_for_sink = session_id.clone();
 
     tokio::spawn(async move {
         let sink: Arc<dyn AgentStreamSink> = Arc::new(ApiAgentStreamSink {
@@ -2190,6 +2401,7 @@ async fn spawn_daemon_api_agent_turn(
             &backend,
             agent_runtime.as_ref(),
             sink,
+            Some(continuation_scope),
         )
         .await;
     });
@@ -2514,6 +2726,21 @@ async fn start_ingest_ask_stream(
     };
 
     let job_id_for_sink = job_id_str.clone();
+    let continuation_scope = medousa::turn_continuation::TurnContinuationScope {
+        turn_correlation_id: job_id_str.clone(),
+        session_id: session_id_owned.clone(),
+        original_prompt: interactive_request.prompt.clone(),
+        delivery_target: Some(channel_delivery::ChannelDeliveryTarget {
+            channel: request.channel.clone(),
+            user_id: request.user_id.clone(),
+            channel_id: request.channel_id.clone(),
+            session_id: session_id_owned.clone(),
+            stream_id: Some(stream_id.clone()),
+        }),
+        provider: interactive_request.provider.clone(),
+        model: interactive_request.model.clone(),
+        response_depth_mode: interactive_request.response_depth_mode.clone(),
+    };
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(120)).await;
 
@@ -2547,6 +2774,7 @@ async fn start_ingest_ask_stream(
             &backend,
             agent_runtime.as_ref(),
             sink,
+            Some(continuation_scope),
         )
         .await;
 

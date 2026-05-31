@@ -9,6 +9,7 @@ use crate::events::TuiEvent;
 use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
 use crate::artifact_store;
 use crate::channel_session_store;
+use crate::turn_continuation;
 use crate::session_store;
 use crate::verification_store;
 use crate::tools::TuiRuntime;
@@ -108,6 +109,7 @@ async fn build_platform_inner(
     channel_session_store::init_channel_session_store_with_runtime(&composition).await;
     artifact_store::init_artifact_store_with_runtime(&composition).await;
     verification_store::init_verification_store_with_runtime(&composition).await;
+    turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
 
     let agent = assemble_tui_runtime(
         Arc::new(composition),

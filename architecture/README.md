@@ -26,6 +26,7 @@ Start here for product-level usage:
 9. [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md)
 10. [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md)
 11. [component-mcp-gateway.md](component-mcp-gateway.md)
+12. [dlq-replay-turn-continuation-plan.md](dlq-replay-turn-continuation-plan.md)
 
 ## Primary Code Anchors
 

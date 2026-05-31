@@ -41,6 +41,7 @@ use crate::bridge_tools::{
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::tool_aliases::ToolNameAlias;
+use crate::turn_continuation::TurnContinuationScope;
 use crate::workflow;
 use tokio::sync::RwLock;
 
@@ -83,6 +84,7 @@ pub(crate) async fn build_tui_runtime_services(
     crate::session_store::init_session_store_with_runtime(&composition).await;
     crate::artifact_store::init_artifact_store_with_runtime(&composition).await;
     crate::verification_store::init_verification_store_with_runtime(&composition).await;
+    crate::turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
 
     assemble_tui_runtime(
         Arc::new(composition),
@@ -128,6 +130,7 @@ pub(crate) async fn assemble_tui_runtime(
 
     let workflow_registry = workflow::shared_workflow_registry();
     let tool_registry = InMemoryToolRegistry::default();
+    let turn_scope = Arc::new(RwLock::new(None::<TurnContinuationScope>));
     let compaction_target = GraphemeCompactionModelTarget {
         provider: resolved_provider.clone(),
         model: resolved_model.clone(),
@@ -136,12 +139,14 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionJobEnqueueTool::new(
         runtime.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemeRunTool::new(
         runtime.clone(),
         event_tx.clone(),
         session_id.to_string(),
         compaction_target.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionMemoryStoreTool::new(
         memory_writer.clone(),
@@ -310,5 +315,6 @@ pub(crate) async fn assemble_tui_runtime(
         identity_memory_store,
         memory_reader,
         memory_writer,
+        turn_scope,
     })
 }
