@@ -200,6 +200,36 @@ pub fn build_turn_resume_prompt(
     )
 }
 
+/// Apply parent-turn correlation to a job and persist a continuation record.
+pub async fn wire_turn_child_job(
+    job: &mut stasis::prelude::NewJob,
+    scope: &TurnContinuationScope,
+    tool_name: &str,
+    job_type: &str,
+    await_mode: ContinuationAwaitMode,
+) {
+    apply_turn_correlation_to_job(job, scope, tool_name);
+    register_turn_child_job(scope, &job.id, tool_name, job_type, await_mode).await;
+}
+
+/// JSON fragment for tool responses when a child job is linked to the active turn.
+pub fn continuation_tool_metadata(
+    scope: &TurnContinuationScope,
+    child_job_id: &str,
+    await_mode: ContinuationAwaitMode,
+) -> serde_json::Value {
+    serde_json::json!({
+        "continuation_registered": true,
+        "child_job_id": child_job_id,
+        "turn_correlation_id": scope.turn_correlation_id,
+        "await_mode": match await_mode {
+            ContinuationAwaitMode::Sync => "sync",
+            ContinuationAwaitMode::Async => "async",
+        },
+        "resume_on_replay": true,
+    })
+}
+
 pub async fn register_turn_child_job(
     scope: &TurnContinuationScope,
     child_job_id: &str,

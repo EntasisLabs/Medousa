@@ -170,6 +170,7 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionGraphemePromoteToJobTool::new(
         runtime.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemePromoteToRecurringTool::new(
         runtime.clone(),
@@ -207,6 +208,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionRuntimeWorkflowScheduleTool::new(
         runtime.clone(),
@@ -289,6 +291,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemeTemplateRunTool::new(
         runtime.clone(),

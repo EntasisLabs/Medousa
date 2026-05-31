@@ -30,6 +30,7 @@ use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::tools::validate_grapheme_source_for_schedule;
+use crate::turn_continuation::{ContinuationAwaitMode, TurnContinuationScope, wire_turn_child_job};
 
 pub const WORKFLOW_SEQUENTIAL_JOB_TYPE: &str = "workflow.medousa.sequential";
 pub const WORKFLOW_CONCURRENT_JOB_TYPE: &str = "workflow.medousa.concurrent";
@@ -796,10 +797,17 @@ pub async fn preflight_grapheme_steps(
     Ok(results)
 }
 
+pub struct WorkflowEnqueueContinuation<'a> {
+    pub turn_scope: &'a TurnContinuationScope,
+    pub tool_name: &'a str,
+    pub await_mode: ContinuationAwaitMode,
+}
+
 pub async fn enqueue_workflow_job(
     runtime: &RuntimeComposition,
     payload: &MedousaWorkflowPayload,
     queue: &str,
+    continuation: Option<WorkflowEnqueueContinuation<'_>>,
 ) -> stasis::prelude::Result<String> {
     let job_type = workflow_job_type_for_strategy(&payload.strategy).ok_or_else(|| {
         stasis::prelude::StasisError::PortFailure(format!(
@@ -810,7 +818,7 @@ pub async fn enqueue_workflow_job(
 
     let job_id = format!("wf-job-{}", Uuid::new_v4().simple());
     let now = Utc::now();
-    let job = NewJob {
+    let mut job = NewJob {
         id: job_id.clone(),
         queue: queue.to_string(),
         job_type: job_type.to_string(),
@@ -826,6 +834,17 @@ pub async fn enqueue_workflow_job(
         backoff_policy: BackoffPolicy::default(),
     };
 
+    if let Some(ctx) = continuation {
+        wire_turn_child_job(
+            &mut job,
+            ctx.turn_scope,
+            ctx.tool_name,
+            job_type,
+            ctx.await_mode,
+        )
+        .await;
+    }
+
     match runtime {
         RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
         RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
@@ -838,7 +857,7 @@ pub async fn enqueue_sequential_workflow_job(
     payload: &MedousaWorkflowPayload,
     queue: &str,
 ) -> stasis::prelude::Result<String> {
-    enqueue_workflow_job(runtime, payload, queue).await
+    enqueue_workflow_job(runtime, payload, queue, None).await
 }
 
 pub fn attach_workflow_handler(

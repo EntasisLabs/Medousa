@@ -39,8 +39,8 @@ use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
 use crate::turn_continuation::{
-    self, ContinuationAwaitMode, TurnContinuationScope, apply_turn_correlation_to_job,
-    register_turn_child_job,
+    self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+    wire_turn_child_job,
 };
 
 async fn run_grapheme_cli(args: Vec<String>) -> stasis::prelude::Result<Value> {
@@ -386,10 +386,9 @@ impl StasisTool for CognitionJobEnqueueTool {
         };
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
-            apply_turn_correlation_to_job(&mut job, &scope, self.name());
-            register_turn_child_job(
+            wire_turn_child_job(
+                &mut job,
                 &scope,
-                &job_id,
                 self.name(),
                 job_type,
                 ContinuationAwaitMode::Async,
@@ -410,11 +409,25 @@ impl StasisTool for CognitionJobEnqueueTool {
             })
             .await;
 
-        Ok(json!({
+        let mut response = json!({
             "job_id": job_id,
             "status": "enqueued",
             "note": input.get("note").and_then(|v| v.as_str()).unwrap_or("")
-        }))
+        });
+        if let Some(scope) = self.turn_scope.read().await.clone() {
+            if let Some(obj) = response.as_object_mut() {
+                obj.insert(
+                    "continuation".to_string(),
+                    continuation_tool_metadata(
+                        &scope,
+                        &job_id,
+                        ContinuationAwaitMode::Async,
+                    ),
+                );
+            }
+        }
+
+        Ok(response)
     }
 }
 
@@ -506,16 +519,19 @@ impl StasisTool for CognitionGraphemeRunTool {
         };
 
         if let Some(scope) = self.turn_scope.read().await.clone() {
-            apply_turn_correlation_to_job(&mut job, &scope, self.name());
-            register_turn_child_job(
+            wire_turn_child_job(
+                &mut job,
                 &scope,
-                &job_id,
                 self.name(),
                 "workflow.grapheme.run",
                 ContinuationAwaitMode::Sync,
             )
             .await;
         }
+
+        let continuation_meta = self.turn_scope.read().await.clone().map(|scope| {
+            continuation_tool_metadata(&scope, &job_id, ContinuationAwaitMode::Sync)
+        });
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
@@ -531,7 +547,7 @@ impl StasisTool for CognitionGraphemeRunTool {
             .await;
 
         let runtime_ref = Arc::clone(&self.runtime);
-        let raw_output = match process_once(&runtime_ref, "cognition_tui").await {
+        let mut raw_output = match process_once(&runtime_ref, "cognition_tui").await {
             Ok(_) => {
                 let attempts = match &*runtime_ref {
                     RuntimeComposition::InMemory(rt) => {
@@ -638,6 +654,11 @@ impl StasisTool for CognitionGraphemeRunTool {
                 })
             }
         };
+        if let Some(meta) = continuation_meta {
+            if let Some(obj) = raw_output.as_object_mut() {
+                obj.insert("continuation".to_string(), meta);
+            }
+        }
         let serialized_raw_output =
             serde_json::to_string(&raw_output).unwrap_or_else(|_| raw_output.to_string());
 
@@ -1186,11 +1207,20 @@ impl StasisTool for CognitionGraphemeCliRunTool {
 pub struct CognitionGraphemePromoteToJobTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionGraphemePromoteToJobTool {
-    pub fn new(runtime: Arc<RuntimeComposition>, event_tx: mpsc::Sender<TuiEvent>) -> Self {
-        Self { runtime, event_tx }
+    pub fn new(
+        runtime: Arc<RuntimeComposition>,
+        event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            runtime,
+            event_tx,
+            turn_scope,
+        }
     }
 }
 
@@ -1259,7 +1289,7 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
         let job_id = format!("cognition-promote-job-{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let job = NewJob {
+        let mut job = NewJob {
             id: job_id.clone(),
             queue: queue.to_string(),
             job_type: "workflow.grapheme.run".to_string(),
@@ -1275,6 +1305,17 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
             backoff_policy: BackoffPolicy::default(),
         };
 
+        if let Some(scope) = self.turn_scope.read().await.clone() {
+            wire_turn_child_job(
+                &mut job,
+                &scope,
+                self.name(),
+                "workflow.grapheme.run",
+                ContinuationAwaitMode::Async,
+            )
+            .await;
+        }
+
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.enqueue(job).await?,
             RuntimeComposition::Surreal(rt) => rt.enqueue(job).await?,
@@ -1288,13 +1329,27 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
             })
             .await;
 
-        Ok(json!({
+        let mut response = json!({
             "job_id": job_id,
             "job_type": "workflow.grapheme.run",
             "queue": queue,
             "status": "enqueued",
             "validation": validation
-        }))
+        });
+        if let Some(scope) = self.turn_scope.read().await.clone() {
+            if let Some(obj) = response.as_object_mut() {
+                obj.insert(
+                    "continuation".to_string(),
+                    continuation_tool_metadata(
+                        &scope,
+                        &job_id,
+                        ContinuationAwaitMode::Async,
+                    ),
+                );
+            }
+        }
+
+        Ok(response)
     }
 }
 

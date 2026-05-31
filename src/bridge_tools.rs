@@ -21,9 +21,13 @@ use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
+use crate::turn_continuation::{
+    ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+};
 use crate::workflow::{
-    MedousaWorkflowPayload, WorkflowRecord, WorkflowRegistry, WorkflowStatus,
-    WorkflowStepSpec, enqueue_workflow_job, new_workflow_id,
+    MedousaWorkflowPayload, WorkflowEnqueueContinuation, WorkflowRecord, WorkflowRegistry,
+    WorkflowStatus, WorkflowStepSpec, enqueue_workflow_job, new_workflow_id,
+    workflow_job_type_for_strategy, WORKFLOW_SEQUENTIAL_JOB_TYPE,
 };
 
 fn escape_grapheme_literal(value: &str) -> String {
@@ -577,6 +581,7 @@ pub struct CognitionMcpPromoteToJobTool {
     runtime: Arc<RuntimeComposition>,
     workflow_registry: Arc<WorkflowRegistry>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionMcpPromoteToJobTool {
@@ -584,11 +589,13 @@ impl CognitionMcpPromoteToJobTool {
         runtime: Arc<RuntimeComposition>,
         workflow_registry: Arc<WorkflowRegistry>,
         event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     ) -> Self {
         Self {
             runtime,
             workflow_registry,
             event_tx,
+            turn_scope,
         }
     }
 }
@@ -666,8 +673,15 @@ impl StasisTool for CognitionMcpPromoteToJobTool {
             }],
         };
 
-        let job_id =
-            enqueue_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
+        let scope = self.turn_scope.read().await.clone();
+        let continuation = scope.as_ref().map(|turn_scope| WorkflowEnqueueContinuation {
+            turn_scope,
+            tool_name: self.name(),
+            await_mode: ContinuationAwaitMode::Async,
+        });
+        let job_id = enqueue_workflow_job(self.runtime.as_ref(), &payload, queue, continuation).await?;
+        let job_type = workflow_job_type_for_strategy(&payload.strategy)
+            .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),
@@ -694,10 +708,19 @@ impl StasisTool for CognitionMcpPromoteToJobTool {
 
         Ok(json!({
             "workflow_id": workflow_id,
-            "job_id": job_id,
+            "job_id": job_id.clone(),
+            "root_job_id": job_id,
+            "job_type": job_type,
             "status": "enqueued",
             "lane": "interactive",
-            "note": note
+            "note": note,
+            "continuation": scope.as_ref().map(|turn_scope| {
+                continuation_tool_metadata(
+                    turn_scope,
+                    &job_id,
+                    ContinuationAwaitMode::Async,
+                )
+            }),
         }))
     }
 }

@@ -16,16 +16,19 @@ use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::StasisError;
 use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 use crate::events::TuiEvent;
 use crate::tools::validate_grapheme_source_for_schedule;
+use crate::turn_continuation::{
+    ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+};
 use crate::workflow::{
     MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord,
-    WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, encode_workflow_payload,
-    enqueue_workflow_job, new_workflow_id, preflight_grapheme_steps,
-    validate_workflow_request,
+    WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, WorkflowEnqueueContinuation,
+    encode_workflow_payload, enqueue_workflow_job, new_workflow_id, preflight_grapheme_steps,
+    validate_workflow_request, workflow_job_type_for_strategy,
 };
 use crate::workflow_plan::{WorkflowPlanRequest, plan_workflow_from_goal};
 
@@ -863,6 +866,7 @@ pub struct CognitionRuntimeWorkflowRunTool {
     runtime: Arc<RuntimeComposition>,
     registry: Arc<WorkflowRegistry>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionRuntimeWorkflowRunTool {
@@ -870,11 +874,13 @@ impl CognitionRuntimeWorkflowRunTool {
         runtime: Arc<RuntimeComposition>,
         registry: Arc<WorkflowRegistry>,
         event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     ) -> Self {
         Self {
             runtime,
             registry,
             event_tx,
+            turn_scope,
         }
     }
 }
@@ -929,7 +935,21 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
             .and_then(|v| v.as_str())
             .unwrap_or("default");
         let payload = build_workflow_payload(&workflow_id, &request, "interactive");
-        let job_id = enqueue_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
+        let scope = self.turn_scope.read().await.clone();
+        let continuation = scope.as_ref().map(|turn_scope| WorkflowEnqueueContinuation {
+            turn_scope,
+            tool_name: self.name(),
+            await_mode: ContinuationAwaitMode::Async,
+        });
+        let job_id = enqueue_workflow_job(
+            self.runtime.as_ref(),
+            &payload,
+            queue,
+            continuation,
+        )
+        .await?;
+        let job_type = workflow_job_type_for_strategy(&request.strategy)
+            .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
 
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),
@@ -958,8 +978,17 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
             "workflow_id": workflow_id,
             "status": "enqueued",
             "strategy": request.strategy,
-            "job_ids": [job_id],
-            "lane": "interactive"
+            "job_ids": [job_id.clone()],
+            "root_job_id": job_id,
+            "job_type": job_type,
+            "lane": "interactive",
+            "continuation": scope.as_ref().map(|turn_scope| {
+                continuation_tool_metadata(
+                    turn_scope,
+                    &job_id,
+                    ContinuationAwaitMode::Async,
+                )
+            }),
         }))
     }
 }

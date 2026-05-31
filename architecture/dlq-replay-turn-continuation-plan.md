@@ -100,10 +100,12 @@ Do **not** resume when sync tool succeeded in-turn (`status = consumed`).
 
 ### Phase 3 — Hardening (follow-up)
 
-- [ ] Extend to `CognitionRuntimeWorkflowRunTool` and promote-to-job tools
+- [x] Extend to `CognitionRuntimeWorkflowRunTool`, `CognitionGraphemePromoteToJobTool`, and `CognitionMcpPromoteToJobTool`
+- [x] Tool responses include `continuation` metadata when a child job is linked to the active turn
 - [ ] `POST /v1/jobs/{id}/replay-and-resume` explicit operator endpoint
 - [ ] Doctor: pending continuations count + last resume
 - [ ] Metrics / dashboard lineage view by `turn_correlation_id`
+- [ ] `CognitionRuntimeWorkflowScheduleTool` when `start_immediately` materializes during turn
 
 ## Non-goals
 
