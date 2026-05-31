@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use medousa::{
-    IngestRequest, IngestResponse, consume_ingest_stream, render_stream_body, resolve_daemon_url,
+    IngestRequest, IngestResponse, adapter_heartbeat, consume_ingest_stream, render_stream_body,
+    resolve_daemon_url,
 };
 use reqwest::Client;
 use serenity::all::GatewayIntents;
@@ -20,6 +21,7 @@ struct DiscordAdapterState {
     client: Client,
     daemon_url: String,
     command_prefix: String,
+    discord_token: String,
 }
 
 struct DiscordHandler {
@@ -68,6 +70,7 @@ async fn main() -> Result<()> {
         client: Client::new(),
         daemon_url,
         command_prefix,
+        discord_token: token.clone(),
     });
 
     println!(
@@ -89,6 +92,8 @@ async fn main() -> Result<()> {
         .event_handler(handler)
         .await
         .context("failed to create discord client")?;
+
+    maybe_start_heartbeat_nudges(state.clone());
 
     discord
         .start()
@@ -112,6 +117,7 @@ async fn handle_message(
         user_id: format!("discord:user:{}", msg.author.id.get()),
         channel_id: format!("discord:channel:{}", msg.channel_id.get()),
         text,
+        attachments: Vec::new(),
     };
 
     let daemon_url = state.daemon_url.trim_end_matches('/');
@@ -229,8 +235,45 @@ fn normalize_for_ingester(input: &str, command_prefix: &str) -> String {
 
 fn explain_commands(prefix: &str) -> String {
     format!(
-        "Commands: {prefix}new (reset session), {prefix}help (show help), or just send a message to chat."
+        "Commands: {prefix}new {prefix}help {prefix}history {prefix}model {prefix}depth {prefix}stop {prefix}regen {prefix}health {prefix}heartbeat — or send a message to chat."
     )
+}
+
+fn maybe_start_heartbeat_nudges(state: Arc<DiscordAdapterState>) {
+    if !adapter_heartbeat::heartbeat_nudges_enabled("MEDOUSA_DISCORD") {
+        return;
+    }
+
+    let Some(channel_ids_raw) = non_empty_env("MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS") else {
+        eprintln!("medousa_discord heartbeat nudges enabled but MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS is empty");
+        return;
+    };
+
+    let channel_ids = channel_ids_raw
+        .split(',')
+        .filter_map(|value| value.trim().parse::<u64>().ok())
+        .collect::<Vec<_>>();
+    if channel_ids.is_empty() {
+        return;
+    }
+
+    tokio::spawn(async move {
+        let http = Arc::new(serenity::http::Http::new(&state.discord_token));
+        loop {
+            if let Some(summary) =
+                adapter_heartbeat::fetch_heartbeat_summary(&state.client, &state.daemon_url).await
+            {
+                if summary.contains("action=notify") {
+                    for channel_id in &channel_ids {
+                        let _ = serenity::model::id::ChannelId(*channel_id)
+                            .say(http.as_ref(), summary.clone())
+                            .await;
+                    }
+                }
+            }
+            tokio::time::sleep(adapter_heartbeat::heartbeat_poll_interval()).await;
+        }
+    });
 }
 
 fn resolve_discord_token(explicit: Option<&str>) -> Result<String> {

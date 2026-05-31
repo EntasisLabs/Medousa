@@ -386,6 +386,13 @@ pub struct InteractiveTurnStreamEvent {
 
 // ── Ingester types ────────────────────────────────────────────────────────────
 
+/// Optional attachment forwarded by a channel adapter.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IngestAttachment {
+    pub kind: String,
+    pub content: String,
+}
+
 /// Request from any channel adapter to the centralized ingester.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestRequest {
@@ -397,6 +404,9 @@ pub struct IngestRequest {
     pub channel_id: String,
     /// The text content of the message (command or prompt)
     pub text: String,
+    /// Optional attachment payloads merged into ask prompts
+    #[serde(default)]
+    pub attachments: Vec<IngestAttachment>,
 }
 
 /// Response from the centralized ingester.

@@ -131,13 +131,14 @@ struct IngestResponse {
 - [x] Adapters switch from poll to stream
 - [x] Enable typing indicators on Telegram/Discord during processing
 
-### Phase 4 — Full Feature Parity
-- [ ] `/stop` command → cancel active job for session
-- [ ] `/regen` command → regenerate last turn
-- [ ] `/model` + `/depth` → runtime config changes per session
-- [ ] `/history` → list & resume past sessions
-- [ ] Attachment/media support
-- [ ] Heartbeat nudge forwarding per channel
+### Phase 4 — Full Feature Parity ✅
+- [x] `/stop` command → cancel active job for session
+- [x] `/regen` command → regenerate last turn
+- [x] `/model` + `/depth` → runtime config changes per session
+- [x] `/history` → list & resume past sessions
+- [x] Attachment/media support (`IngestAttachment` merged into ask prompts)
+- [x] `/health` + `/heartbeat` ingester routes (daemon queries)
+- [x] Heartbeat nudge forwarding per channel (optional env-gated adapter background poll)
 
 ---
 

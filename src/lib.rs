@@ -9,6 +9,7 @@ pub mod engine_context;
 pub mod events;
 pub mod grapheme_sttp_compaction;
 pub mod identity_memory;
+pub mod adapter_heartbeat;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;
 pub mod payload_receipt;
@@ -42,7 +43,7 @@ pub use daemon_api::{
     EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
     HeartbeatPolicyResponse, HeartbeatStatusResponse,
-    IngestRequest, IngestResponse,
+    IngestRequest, IngestResponse, IngestAttachment,
     InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
     JobReportResponse, RegisterRecurringPromptRequest, JobResultResponse,

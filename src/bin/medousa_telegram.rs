@@ -2,7 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use medousa::{IngestRequest, IngestResponse, consume_ingest_stream, render_stream_body, resolve_daemon_url};
+use medousa::{
+    IngestRequest, IngestResponse, adapter_heartbeat, consume_ingest_stream, render_stream_body,
+    resolve_daemon_url,
+};
 use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use teloxide::dptree;
@@ -41,6 +44,7 @@ async fn main() -> Result<()> {
     println!("medousa_telegram streaming mode — ingester SSE for ask jobs");
 
     let bot = Bot::new(token);
+    maybe_start_heartbeat_nudges(bot.clone(), state.clone());
     let handler = Update::filter_message().endpoint(handle_message);
 
     Dispatcher::builder(bot, handler)
@@ -76,6 +80,7 @@ async fn handle_message(
             .unwrap_or_else(|| "telegram:user:unknown".to_string()),
         channel_id: format!("telegram:chat:{}", msg.chat.id.0),
         text: input.to_string(),
+        attachments: Vec::new(),
     };
 
     let daemon_url = state.daemon_url.trim_end_matches('/');
@@ -155,7 +160,41 @@ fn truncate_for_telegram(text: &str) -> String {
 }
 
 fn explain_commands() -> &'static str {
-    "Commands: /new (reset session), /help (show help), or just send a message to chat."
+    "Commands: /new /help /history /model /depth /stop /regen /health /heartbeat — or send a message to chat."
+}
+
+fn maybe_start_heartbeat_nudges(bot: Bot, state: Arc<TelegramAdapterState>) {
+    if !adapter_heartbeat::heartbeat_nudges_enabled("MEDOUSA_TELEGRAM") {
+        return;
+    }
+
+    let Some(chat_ids_raw) = non_empty_env("MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS") else {
+        eprintln!("medousa_telegram heartbeat nudges enabled but MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS is empty");
+        return;
+    };
+
+    let chat_ids = chat_ids_raw
+        .split(',')
+        .filter_map(|value| value.trim().parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    if chat_ids.is_empty() {
+        return;
+    }
+
+    tokio::spawn(async move {
+        loop {
+            if let Some(summary) =
+                adapter_heartbeat::fetch_heartbeat_summary(&state.client, &state.daemon_url).await
+            {
+                if summary.contains("action=notify") {
+                    for chat_id in &chat_ids {
+                        let _ = bot.send_message(ChatId(*chat_id), summary.clone()).await;
+                    }
+                }
+            }
+            tokio::time::sleep(adapter_heartbeat::heartbeat_poll_interval()).await;
+        }
+    });
 }
 
 fn resolve_telegram_token(explicit: Option<&str>) -> Result<String> {
@@ -218,6 +257,7 @@ usage:
 options:
   --daemon-url <url>   Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)
   --token <token>      Telegram bot token (or MEDOUSA_TELEGRAM_BOT_TOKEN / TELOXIDE_TOKEN)
+  env: MEDOUSA_TELEGRAM_HEARTBEAT_NUDGES_ENABLED=true + MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS=<csv>
   -h, --help           Show this message
 "
     );

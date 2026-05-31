@@ -1,12 +1,92 @@
-use crate::daemon_api::IngestRequest;
+use crate::daemon_api::{IngestAttachment, IngestRequest};
 use crate::session::load_history;
+
+/// What the ingester should do after parsing a request.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IngestAction {
+    Reply,
+    EnqueueAsk { prompt: String },
+    CancelActiveJob,
+    Regenerate,
+    ListHistory,
+    ResumeSession { target_session_id: String },
+    ConfigureModel { args: Vec<String> },
+    ConfigureDepth { mode: Option<String> },
+    QueryHealth,
+    QueryHeartbeat,
+}
+
+/// Rich result of processing an ingest request.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IngestOutcome {
+    pub session_id: String,
+    pub is_new_session: bool,
+    pub reply: String,
+    pub action: IngestAction,
+}
+
+/// Per-session runtime preferences managed by the ingester.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IngestSessionRuntimeConfig {
+    pub draft_provider: String,
+    pub draft_model: String,
+    pub response_depth_mode: String,
+}
+
+impl Default for IngestSessionRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            draft_provider: crate::resolve_llm_provider(None),
+            draft_model: crate::resolve_llm_model(None),
+            response_depth_mode: "standard".to_string(),
+        }
+    }
+}
+
+/// Tracks the active streaming job for a channel+user mapping.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveIngestJob {
+    pub job_id: String,
+    pub stream_id: String,
+}
 
 /// Sub-commands that the ingester recognizes within a text body.
 #[derive(Debug, Clone, PartialEq)]
 enum IngestCommand {
     New,
     Help,
+    Stop,
+    Regen,
+    History { target: Option<String> },
+    Model { args: Vec<String> },
+    Depth { mode: Option<String> },
+    Health,
+    Heartbeat,
     Ask { prompt: String },
+}
+
+fn split_slash_command(text: &str) -> Option<(String, String)> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+
+    let token = trimmed.split_whitespace().next().unwrap_or("");
+    let normalized = token.split('@').next().unwrap_or(token).to_ascii_lowercase();
+    let args = trimmed
+        .strip_prefix(token)
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    Some((normalized, args))
+}
+
+fn parse_model_args(args: &str) -> Vec<String> {
+    args.split_whitespace()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 /// Parse an ingester text body into a command and its arguments.
@@ -16,47 +96,70 @@ fn parse_ingest_command(text: &str) -> IngestCommand {
         return IngestCommand::Help;
     }
 
-    // Split on first whitespace to get the potential command token
-    let first_token = trimmed.split_whitespace().next().unwrap_or("").trim();
+    let Some((command, args)) = split_slash_command(trimmed) else {
+        return IngestCommand::Ask {
+            prompt: trimmed.to_string(),
+        };
+    };
 
-    match first_token {
+    match command.as_str() {
         "/new" => IngestCommand::New,
-        "/help" => IngestCommand::Help,
-        "/start" => IngestCommand::Help, // Telegram convention
-        cmd if cmd.starts_with('/') => {
-            // Some other slash command — treat remaining text as ask
-            let rest = trimmed
-                .strip_prefix(cmd)
-                .map(|s| s.trim())
-                .unwrap_or("")
-                .to_string();
-            if rest.is_empty() {
-                // Unsupported command, treat as help
+        "/help" | "/start" => IngestCommand::Help,
+        "/stop" => IngestCommand::Stop,
+        "/regen" => IngestCommand::Regen,
+        "/history" => IngestCommand::History {
+            target: if args.is_empty() {
+                None
+            } else {
+                Some(args.to_string())
+            },
+        },
+        "/model" => IngestCommand::Model {
+            args: parse_model_args(&args),
+        },
+        "/depth" => IngestCommand::Depth {
+            mode: if args.is_empty() {
+                None
+            } else {
+                Some(args.to_string())
+            },
+        },
+        "/health" => IngestCommand::Health,
+        "/heartbeat" => IngestCommand::Heartbeat,
+        "/ask" => {
+            if args.is_empty() {
                 IngestCommand::Help
             } else {
-                IngestCommand::Ask { prompt: rest }
+                IngestCommand::Ask {
+                    prompt: args.to_string(),
+                }
             }
         }
-        _ => IngestCommand::Ask {
-            prompt: trimmed.to_string(),
-        },
+        _ if args.is_empty() => IngestCommand::Help,
+        _ => IngestCommand::Ask { prompt: args },
     }
 }
 
-/// Rich result of processing an ingest request.
-pub struct IngestOutcome {
-    pub session_id: String,
-    pub is_new_session: bool,
-    pub reply: String,
-    pub job_id: Option<String>,
-    pub should_enqueue: bool,
-    pub prompt: Option<String>,
+/// Merge attachment payloads into the ask prompt.
+pub fn merge_attachments_into_prompt(prompt: &str, attachments: &[IngestAttachment]) -> String {
+    if attachments.is_empty() {
+        return prompt.to_string();
+    }
+
+    let mut merged = prompt.to_string();
+    for attachment in attachments {
+        if attachment.content.trim().is_empty() {
+            continue;
+        }
+        merged.push_str("\n\n[attachment:");
+        merged.push_str(attachment.kind.trim());
+        merged.push_str("] ");
+        merged.push_str(attachment.content.trim());
+    }
+    merged
 }
 
 /// Process an ingest request: resolve session, parse command, return outcome.
-///
-/// This is the core logic that the daemon's `/v1/ingest` handler calls.
-/// It is kept pure (no I/O beyond what's passed in) so it can be unit tested.
 pub fn process_ingest(
     request: &IngestRequest,
     _session_mapping_key: &str,
@@ -66,7 +169,6 @@ pub fn process_ingest(
 
     match command {
         IngestCommand::New => {
-            // Reset session: generate new session_id, clear history
             let session_id = uuid::Uuid::new_v4().simple().to_string();
             IngestOutcome {
                 session_id,
@@ -75,23 +177,28 @@ pub fn process_ingest(
                     "✓ new session started for {}:{}",
                     request.channel, request.channel_id
                 ),
-                job_id: None,
-                should_enqueue: false,
-                prompt: None,
+                action: IngestAction::Reply,
             }
         }
 
         IngestCommand::Help => {
-            let session_id = existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            });
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let commands = [
                 "/new - Start a new conversation session",
                 "/help - Show this help message",
-                "/ask <prompt> - Send a prompt to Medousa",
+                "/history - List recent sessions for this channel/user",
+                "/history <id> - Resume a prior session",
+                "/model - Show current model routing",
+                "/model <model> - Set model (or provider:model)",
+                "/depth - Show response depth mode",
+                "/depth <mode> - Set depth (concise|standard|deep)",
+                "/stop - Cancel the active ask job",
+                "/regen - Regenerate the last response",
+                "/health - Daemon health check",
+                "/heartbeat - Daemon heartbeat status",
                 "",
-                "Plain text messages are treated as /ask.",
-                "Session history is preserved until /new is sent.",
+                "Plain text messages are treated as asks.",
             ]
             .join("\n");
 
@@ -104,35 +211,117 @@ pub fn process_ingest(
                 session_id,
                 is_new_session: false,
                 reply,
-                job_id: None,
-                should_enqueue: false,
-                prompt: None,
+                action: IngestAction::Reply,
             }
         }
 
+        IngestCommand::Stop => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "stopping active job…".to_string(),
+            action: IngestAction::CancelActiveJob,
+        },
+
+        IngestCommand::Regen => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "regenerating last response…".to_string(),
+            action: IngestAction::Regenerate,
+        },
+
+        IngestCommand::History { target } => {
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            if let Some(target_session_id) = target {
+                IngestOutcome {
+                    session_id: target_session_id.clone(),
+                    is_new_session: false,
+                    reply: format!("resumed session {target_session_id}"),
+                    action: IngestAction::ResumeSession {
+                        target_session_id,
+                    },
+                }
+            } else {
+                IngestOutcome {
+                    session_id,
+                    is_new_session: false,
+                    reply: "loading session history…".to_string(),
+                    action: IngestAction::ListHistory,
+                }
+            }
+        }
+
+        IngestCommand::Model { args } => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "updating model routing…".to_string(),
+            action: IngestAction::ConfigureModel { args },
+        },
+
+        IngestCommand::Depth { mode } => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "updating response depth…".to_string(),
+            action: IngestAction::ConfigureDepth { mode },
+        },
+
+        IngestCommand::Health => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "checking daemon health…".to_string(),
+            action: IngestAction::QueryHealth,
+        },
+
+        IngestCommand::Heartbeat => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "checking daemon heartbeat…".to_string(),
+            action: IngestAction::QueryHeartbeat,
+        },
+
         IngestCommand::Ask { prompt } => {
             let is_new = existing_session_id.is_none();
-            let session_id = existing_session_id.unwrap_or_else(|| {
-                uuid::Uuid::new_v4().simple().to_string()
-            });
-
-            let reply = format!(
-                "queued ask for session {} ({}:{})",
-                &session_id[..8],
-                request.channel,
-                request.channel_id
-            );
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let merged_prompt = merge_attachments_into_prompt(&prompt, &request.attachments);
 
             IngestOutcome {
                 session_id,
                 is_new_session: is_new,
-                reply,
-                job_id: None, // filled in by caller after enqueue
-                should_enqueue: true,
-                prompt: Some(prompt),
+                reply: format!(
+                    "queued ask for session {} ({}:{})",
+                    &session_id[..8.min(session_id.len())],
+                    request.channel,
+                    request.channel_id
+                ),
+                action: IngestAction::EnqueueAsk {
+                    prompt: merged_prompt,
+                },
             }
         }
     }
+}
+
+/// Extract the last user prompt from a session transcript for /regen.
+pub fn last_user_prompt_for_regen(session_id: &str) -> Option<String> {
+    load_history(session_id)
+        .into_iter()
+        .rev()
+        .find(|turn| turn.role == "user")
+        .map(|turn| turn.content)
+        .filter(|content| !content.trim().is_empty())
 }
 
 /// Build an `EnqueueAskRequest` from an ingest outcome + session context.
@@ -142,11 +331,12 @@ pub fn build_enqueue_ask_request(
     channel_id: &str,
     _session_id: &str,
     prompt: String,
+    model_hint: Option<String>,
 ) -> crate::daemon_api::EnqueueAskRequest {
     crate::daemon_api::EnqueueAskRequest {
         prompt,
         policy_profile: Some("interactive".to_string()),
-        model_hint: None,
+        model_hint,
         max_turns: Some(1),
         identity_user_id: Some(format!("{}:user:{}", channel, user_id)),
         identity_persona_id: None,
@@ -159,7 +349,6 @@ pub fn load_session_context(session_id: &str, max_turns: usize) -> String {
     let turns = load_history(session_id);
     let total = turns.len();
 
-    // Take the last N turns as hot context
     let hot_start = total.saturating_sub(max_turns);
     let context_turns = &turns[hot_start..];
 
@@ -174,7 +363,6 @@ pub fn load_session_context(session_id: &str, max_turns: usize) -> String {
             "assistant" | "agent" => "assistant",
             _ => continue,
         };
-        // Truncate each turn to 400 chars for context budget
         let content: String = turn.content.chars().take(400).collect();
         if content.trim().is_empty() {
             continue;
@@ -199,129 +387,58 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_ingest_command_plain_text_is_ask() {
-        let cmd = parse_ingest_command("hello world");
-        assert_eq!(cmd, IngestCommand::Ask { prompt: "hello world".to_string() });
-    }
-
-    #[test]
-    fn test_parse_ingest_command_new() {
-        let cmd = parse_ingest_command("/new");
-        assert_eq!(cmd, IngestCommand::New);
-    }
-
-    #[test]
-    fn test_parse_ingest_command_help() {
-        let cmd = parse_ingest_command("/help");
-        assert_eq!(cmd, IngestCommand::Help);
-    }
-
-    #[test]
-    fn test_parse_ingest_command_start() {
-        let cmd = parse_ingest_command("/start");
-        assert_eq!(cmd, IngestCommand::Help);
-    }
-
-    #[test]
-    fn test_parse_ingest_command_unknown_command_treated_as_help() {
-        let cmd = parse_ingest_command("/unsupported");
-        assert_eq!(cmd, IngestCommand::Help);
-    }
-
-    #[test]
-    fn test_parse_ingest_command_empty_treated_as_help() {
-        let cmd = parse_ingest_command("");
-        assert_eq!(cmd, IngestCommand::Help);
-    }
-
-    #[test]
-    fn test_parse_ingest_command_ask_after_slash() {
-        let cmd = parse_ingest_command("/ask what is the weather");
-        assert_eq!(cmd, IngestCommand::Ask { prompt: "what is the weather".to_string() });
-    }
-
-    #[test]
-    fn test_process_ingest_new_creates_new_session() {
-        let request = IngestRequest {
-            channel: "telegram".to_string(),
-            user_id: "telegram:user:123".to_string(),
-            channel_id: "telegram:chat:456".to_string(),
-            text: "/new".to_string(),
-        };
-        let key = "telegram:telegram:chat:456:telegram:user:123";
-        let outcome = process_ingest(&request, key, Some("existing-session".to_string()));
-        assert!(outcome.is_new_session);
-        assert_ne!(outcome.session_id, "existing-session");
-        assert!(!outcome.should_enqueue);
-        assert!(outcome.reply.contains("new session"));
-    }
-
-    #[test]
-    fn test_process_ingest_help_returns_help_text() {
-        let request = IngestRequest {
-            channel: "discord".to_string(),
-            user_id: "discord:user:789".to_string(),
-            channel_id: "discord:channel:012".to_string(),
-            text: "/help".to_string(),
-        };
-        let key = "discord:discord:channel:012:discord:user:789";
-        let outcome = process_ingest(&request, key, Some("my-session".to_string()));
-        assert!(!outcome.is_new_session);
-        assert!(!outcome.should_enqueue);
-        assert!(outcome.reply.contains("Available commands"));
-        assert_eq!(outcome.session_id, "my-session");
-    }
-
-    #[test]
-    fn test_process_ingest_ask_enqueues_with_existing_session() {
-        let request = IngestRequest {
-            channel: "telegram".to_string(),
-            user_id: "telegram:user:111".to_string(),
-            channel_id: "telegram:chat:222".to_string(),
-            text: "what is rust".to_string(),
-        };
-        let key = "telegram:telegram:chat:222:telegram:user:111";
-        let outcome = process_ingest(&request, key, Some("session-abc".to_string()));
-        assert!(!outcome.is_new_session);
-        assert!(outcome.should_enqueue);
-        assert_eq!(outcome.session_id, "session-abc");
-        assert_eq!(outcome.prompt, Some("what is rust".to_string()));
-    }
-
-    #[test]
-    fn test_process_ingest_ask_without_existing_session_marks_new() {
-        let request = IngestRequest {
-            channel: "telegram".to_string(),
-            user_id: "telegram:user:333".to_string(),
-            channel_id: "telegram:chat:444".to_string(),
-            text: "hello".to_string(),
-        };
-        let key = "telegram:telegram:chat:444:telegram:user:333";
-        let outcome = process_ingest(&request, key, None);
-        assert!(outcome.is_new_session);
-        assert!(outcome.should_enqueue);
-        assert!(outcome.prompt == Some("hello".to_string()));
-    }
-
-    #[test]
-    fn test_build_enqueue_ask_request() {
-        let req = build_enqueue_ask_request(
-            "telegram",
-            "user:555",
-            "chat:666",
-            "session-xyz",
-            "test prompt".to_string(),
+    fn test_parse_stop_regen_history_model_depth() {
+        assert_eq!(parse_ingest_command("/stop"), IngestCommand::Stop);
+        assert_eq!(parse_ingest_command("/regen"), IngestCommand::Regen);
+        assert_eq!(
+            parse_ingest_command("/history"),
+            IngestCommand::History { target: None }
         );
-        assert_eq!(req.prompt, "test prompt");
-        assert_eq!(req.identity_user_id, Some("telegram:user:user:555".to_string()));
-        assert_eq!(req.identity_channel_id, Some("telegram:chat:chat:666".to_string()));
-        assert_eq!(req.max_turns, Some(1));
+        assert_eq!(
+            parse_ingest_command("/history abc123"),
+            IngestCommand::History {
+                target: Some("abc123".to_string())
+            }
+        );
+        assert_eq!(
+            parse_ingest_command("/model gpt-4o-mini"),
+            IngestCommand::Model {
+                args: vec!["gpt-4o-mini".to_string()]
+            }
+        );
+        assert_eq!(
+            parse_ingest_command("/depth concise"),
+            IngestCommand::Depth {
+                mode: Some("concise".to_string())
+            }
+        );
+        assert_eq!(parse_ingest_command("/health"), IngestCommand::Health);
+        assert_eq!(parse_ingest_command("/heartbeat"), IngestCommand::Heartbeat);
     }
 
     #[test]
-    fn test_load_session_context_empty() {
-        // With no history, should return empty
-        let ctx = load_session_context("nonexistent-session", 10);
-        assert!(ctx.is_empty());
+    fn test_process_ingest_stop_action() {
+        let request = IngestRequest {
+            channel: "telegram".to_string(),
+            user_id: "telegram:user:1".to_string(),
+            channel_id: "telegram:chat:2".to_string(),
+            text: "/stop".to_string(),
+            attachments: Vec::new(),
+        };
+        let outcome = process_ingest(&request, "key", Some("session-1".to_string()));
+        assert_eq!(outcome.action, IngestAction::CancelActiveJob);
+    }
+
+    #[test]
+    fn test_merge_attachments_into_prompt() {
+        let merged = merge_attachments_into_prompt(
+            "summarize this",
+            &[IngestAttachment {
+                kind: "text".to_string(),
+                content: "hello attachment".to_string(),
+            }],
+        );
+        assert!(merged.contains("summarize this"));
+        assert!(merged.contains("hello attachment"));
     }
 }

@@ -44,7 +44,7 @@ use medousa::daemon_api::{
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
-    RuntimeConfigCommandResponse,
+    RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
 use medousa::session_mapping;
@@ -87,6 +87,11 @@ struct AppState {
     interactive_turn_streams: Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
     // In-memory channel+user → session_id mapping for the ingester
     session_mappings: Arc<RwLock<HashMap<String, String>>>,
+    active_ingest_jobs: Arc<RwLock<HashMap<String, medousa::session_mapping::ActiveIngestJob>>>,
+    cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
+    channel_session_history: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    session_runtime_configs:
+        Arc<RwLock<HashMap<String, medousa::session_mapping::IngestSessionRuntimeConfig>>>,
     backend: String,
     worker_id: String,
     identity_service: Arc<IdentityMemoryService>,
@@ -304,6 +309,10 @@ async fn main() -> Result<()> {
         daemon_base_url: format!("http://{bind}"),
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
         session_mappings: Arc::new(RwLock::new(HashMap::new())),
+        active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
+        cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
+        channel_session_history: Arc::new(RwLock::new(HashMap::new())),
+        session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
         worker_id: worker_id.clone(),
         identity_service,
@@ -1549,10 +1558,6 @@ async fn identity_rollback_version(
 }
 
 /// POST /v1/ingest — centralized ingester handler.
-///
-/// Thin HTTP endpoint that resolves session mapping, delegates to the pure
-/// session_mapping::process_ingest logic, enqueues an ask job if needed,
-/// and returns the IngestResponse.
 async fn ingest_handler(
     State(state): State<AppState>,
     Json(request): Json<IngestRequest>,
@@ -1564,133 +1569,450 @@ async fn ingest_handler(
         ));
     }
 
-    // Build session mapping key and look up existing session
     let mapping_key = format!("{}:{}:{}", request.channel, request.channel_id, request.user_id);
     let existing_session_id = {
         let mappings = state.session_mappings.read().await;
         mappings.get(&mapping_key).cloned()
     };
 
-    // Process the ingest request via the pure core logic
-    let outcome = session_mapping::process_ingest(&request, &mapping_key, existing_session_id);
-
-    // Handle job enqueue when outcome requests it
-    let (job_id, reply, stream_id, stream_url, stream_ready) = if outcome.should_enqueue {
-        let prompt = outcome.prompt.clone().unwrap_or_default();
-
-        let identity_context = resolve_identity_context_for_request(
-            &state,
-            Some(&format!("medousa:user:{}", request.user_id)),
-            None,
-            Some(&format!("medousa:channel:{}", request.channel_id)),
-            Some("interactive"),
-            8,
-        )
-        .await?;
-
-        let now = Utc::now();
-        let job_id_str = format!(
-            "medousa-daemon-ingest-{}-{}",
-            now.timestamp_millis(),
-            &outcome.session_id[..8]
-        );
-
-        let ask_request = session_mapping::build_enqueue_ask_request(
-            &request.channel,
-            &request.user_id,
-            &request.channel_id,
-            &outcome.session_id,
-            prompt,
-        );
-
-        let raw_prompt = ask_request.prompt;
-        let prompt_with_identity =
-            prepend_identity_snapshot(&raw_prompt, Some(&identity_context.summary));
-        let compiled_prompt =
-            compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
-
-        let payload = AgentSessionJobPayload {
-            thread_id: Some(job_id_str.clone()),
-            initial_user_prompt: compiled_prompt,
-            participants: vec![AgentSessionParticipantPayload {
-                agent_id: "medousa.researcher".to_string(),
-                system_prompt: Some(
-                    "You are Medousa, a practical research assistant. Use tool evidence and cite findings succinctly."
-                        .to_string(),
-                ),
-                tool_name: "stasis.web.search.mock".to_string(),
-                tool_input: Some(serde_json::json!({
-                    "query": raw_prompt
-                })),
-            }],
-            policy_profile: Some("interactive".to_string()),
-            model_hint: None,
-            memory_policy: None,
-            max_turns: Some(1),
-            tool_call_mode: Some(AgentToolCallMode::Auto),
-        };
-
-        let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id_str.clone(), &payload)
-            .map_err(internal_error)?
-            .with_correlation_id(identity_context.user_id)
-            .with_causation_id("medousa-daemon-api:ingester")
-            .with_sttp_input_node_id("sttp:in:medousa:daemon:ingester")
-            .with_scheduled_at(now)
-            .build();
-
-        enqueue_runtime_job(state.runtime.as_ref(), new_job)
-            .await
-            .map_err(internal_error)?;
-
-        let stream_id = format!("ingest-{}", Uuid::new_v4().simple());
-        let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
-        {
-            let mut guard = state.interactive_turn_streams.write().await;
-            guard.insert(stream_id.clone(), stream_tx.clone());
+    if request.text.trim().eq_ignore_ascii_case("/new") {
+        if let Some(old_session_id) = existing_session_id.clone() {
+            push_channel_session_history(&state, &mapping_key, old_session_id).await;
         }
-        let stream_url = medousa::ingest_stream::build_ingest_stream_url(
-            &state.daemon_base_url,
-            &stream_id,
-        );
-        let stream_registry = state.interactive_turn_streams.clone();
-        let runtime = state.runtime.clone();
-        let job_for_stream = job_id_str.clone();
-        let stream_id_for_task = stream_id.clone();
-        let stream_id_for_cleanup = stream_id.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            run_ingest_job_stream_task(stream_id_for_task, job_for_stream, runtime, stream_tx).await;
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            let mut guard = stream_registry.write().await;
-            guard.remove(&stream_id_for_cleanup);
-        });
+    }
 
-        (
-            Some(job_id_str),
-            "processing your request…".to_string(),
-            Some(stream_id),
-            Some(stream_url),
-            true,
-        )
-    } else {
-        (None, outcome.reply, None, None, false)
-    };
+    let outcome =
+        session_mapping::process_ingest(&request, &mapping_key, existing_session_id.clone());
 
-    // Persist the updated session mapping
+    let mut job_id = None;
+    let mut stream_id = None;
+    let mut stream_url = None;
+    let mut stream_ready = false;
+    let mut reply = outcome.reply.clone();
+
+    match outcome.action {
+        session_mapping::IngestAction::Reply => {}
+        session_mapping::IngestAction::EnqueueAsk { prompt } => {
+            let stream = start_ingest_ask_stream(
+                &state,
+                &mapping_key,
+                &outcome.session_id,
+                prompt,
+                &request,
+            )
+            .await?;
+            job_id = Some(stream.job_id);
+            stream_id = Some(stream.stream_id);
+            stream_url = Some(stream.stream_url);
+            stream_ready = true;
+            reply = "processing your request…".to_string();
+        }
+        session_mapping::IngestAction::CancelActiveJob => {
+            reply = cancel_active_ingest_job(&state, &mapping_key).await;
+        }
+        session_mapping::IngestAction::Regenerate => {
+            let Some(prompt) = session_mapping::last_user_prompt_for_regen(&outcome.session_id)
+            else {
+                reply = "no user prompt available to regenerate".to_string();
+                return Ok(build_ingest_response(
+                    outcome.session_id,
+                    job_id,
+                    reply,
+                    outcome.is_new_session,
+                    stream_id,
+                    stream_url,
+                    stream_ready,
+                ));
+            };
+            let stream = start_ingest_ask_stream(
+                &state,
+                &mapping_key,
+                &outcome.session_id,
+                prompt,
+                &request,
+            )
+            .await?;
+            job_id = Some(stream.job_id);
+            stream_id = Some(stream.stream_id);
+            stream_url = Some(stream.stream_url);
+            stream_ready = true;
+            reply = "regenerating last response…".to_string();
+        }
+        session_mapping::IngestAction::ListHistory => {
+            reply = format_channel_session_history(&state, &mapping_key, &outcome.session_id).await;
+        }
+        session_mapping::IngestAction::ResumeSession { target_session_id } => {
+            push_channel_session_history(&state, &mapping_key, outcome.session_id.clone()).await;
+            {
+                let mut mappings = state.session_mappings.write().await;
+                mappings.insert(mapping_key.clone(), target_session_id.clone());
+            }
+            reply = format!("resumed session {target_session_id}");
+            return Ok(build_ingest_response(
+                target_session_id,
+                job_id,
+                reply,
+                false,
+                stream_id,
+                stream_url,
+                stream_ready,
+            ));
+        }
+        session_mapping::IngestAction::ConfigureModel { args } => {
+            reply = apply_session_model_config(&state, &outcome.session_id, args).await?;
+        }
+        session_mapping::IngestAction::ConfigureDepth { mode } => {
+            reply = apply_session_depth_config(&state, &outcome.session_id, mode).await?;
+        }
+        session_mapping::IngestAction::QueryHealth => {
+            reply = format!(
+                "daemon status=ok backend={} worker={} now={}",
+                state.backend,
+                state.worker_id,
+                Utc::now()
+            );
+        }
+        session_mapping::IngestAction::QueryHeartbeat => {
+            reply = format_ingest_heartbeat_reply(&state).await;
+        }
+    }
+
     {
         let mut mappings = state.session_mappings.write().await;
         mappings.insert(mapping_key, outcome.session_id.clone());
     }
 
-    Ok(Json(IngestResponse {
-        session_id: outcome.session_id,
+    Ok(build_ingest_response(
+        outcome.session_id,
         job_id,
         reply,
-        is_new_session: outcome.is_new_session,
+        outcome.is_new_session,
         stream_id,
         stream_url,
         stream_ready,
-    }))
+    ))
+}
+
+struct IngestAskStream {
+    job_id: String,
+    stream_id: String,
+    stream_url: String,
+}
+
+fn build_ingest_response(
+    session_id: String,
+    job_id: Option<String>,
+    reply: String,
+    is_new_session: bool,
+    stream_id: Option<String>,
+    stream_url: Option<String>,
+    stream_ready: bool,
+) -> Json<IngestResponse> {
+    Json(IngestResponse {
+        session_id,
+        job_id,
+        reply,
+        is_new_session,
+        stream_id,
+        stream_url,
+        stream_ready,
+    })
+}
+
+async fn push_channel_session_history(state: &AppState, mapping_key: &str, session_id: String) {
+    let mut history = state.channel_session_history.write().await;
+    let entries = history.entry(mapping_key.to_string()).or_default();
+    entries.retain(|existing| existing != &session_id);
+    entries.insert(0, session_id);
+    entries.truncate(20);
+}
+
+async fn format_channel_session_history(
+    state: &AppState,
+    mapping_key: &str,
+    active_session_id: &str,
+) -> String {
+    let entries = state
+        .channel_session_history
+        .read()
+        .await
+        .get(mapping_key)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut lines = vec![format!(
+        "* {} (active, {} turns)",
+        active_session_id,
+        medousa::session::load_history(active_session_id).len()
+    )];
+
+    for session_id in entries.into_iter().take(9) {
+        if session_id == active_session_id {
+            continue;
+        }
+        lines.push(format!(
+            "* {} ({} turns)",
+            session_id,
+            medousa::session::load_history(&session_id).len()
+        ));
+    }
+
+    format!(
+        "Recent sessions for this channel/user:\n{}\n\nUse /history <session_id> to resume.",
+        lines.join("\n")
+    )
+}
+
+async fn resolve_session_runtime_config(
+    state: &AppState,
+    session_id: &str,
+) -> session_mapping::IngestSessionRuntimeConfig {
+    state
+        .session_runtime_configs
+        .read()
+        .await
+        .get(session_id)
+        .cloned()
+        .unwrap_or_default()
+}
+
+async fn apply_session_model_config(
+    state: &AppState,
+    session_id: &str,
+    args: Vec<String>,
+) -> Result<String, (StatusCode, String)> {
+    let current = resolve_session_runtime_config(state, session_id).await;
+    let request = RuntimeConfigCommandRequest {
+        current_provider: current.draft_provider.clone(),
+        current_model: current.draft_model.clone(),
+        draft_provider: current.draft_provider.clone(),
+        draft_model: current.draft_model.clone(),
+        current_response_depth_mode: current.response_depth_mode.clone(),
+        command: RuntimeConfigCommandSpec::Model { args },
+    };
+    let response = medousa::runtime_config_command_runtime::execute_runtime_config_command(request)
+        .map_err(internal_error)?;
+    persist_session_runtime_config(state, session_id, &current, &response).await;
+    Ok(response
+        .rendered_output
+        .unwrap_or_else(|| format!("model {}:{}", response.next_draft_provider, response.next_draft_model)))
+}
+
+async fn apply_session_depth_config(
+    state: &AppState,
+    session_id: &str,
+    mode: Option<String>,
+) -> Result<String, (StatusCode, String)> {
+    let current = resolve_session_runtime_config(state, session_id).await;
+    let request = RuntimeConfigCommandRequest {
+        current_provider: current.draft_provider.clone(),
+        current_model: current.draft_model.clone(),
+        draft_provider: current.draft_provider.clone(),
+        draft_model: current.draft_model.clone(),
+        current_response_depth_mode: current.response_depth_mode.clone(),
+        command: RuntimeConfigCommandSpec::Depth { mode },
+    };
+    let response = medousa::runtime_config_command_runtime::execute_runtime_config_command(request)
+        .map_err(internal_error)?;
+    persist_session_runtime_config(state, session_id, &current, &response).await;
+    Ok(response
+        .rendered_output
+        .unwrap_or_else(|| format!("depth mode={}", response.next_response_depth_mode)))
+}
+
+async fn persist_session_runtime_config(
+    state: &AppState,
+    session_id: &str,
+    _current: &session_mapping::IngestSessionRuntimeConfig,
+    response: &RuntimeConfigCommandResponse,
+) {
+    let next = session_mapping::IngestSessionRuntimeConfig {
+        draft_provider: response.next_draft_provider.clone(),
+        draft_model: response.next_draft_model.clone(),
+        response_depth_mode: response.next_response_depth_mode.clone(),
+    };
+    state
+        .session_runtime_configs
+        .write()
+        .await
+        .insert(session_id.to_string(), next);
+}
+
+async fn cancel_active_ingest_job(state: &AppState, mapping_key: &str) -> String {
+    let active = state.active_ingest_jobs.write().await.remove(mapping_key);
+    let Some(active) = active else {
+        return "no active ingest job to stop".to_string();
+    };
+
+    state
+        .cancelled_ingest_streams
+        .write()
+        .await
+        .insert(active.stream_id.clone());
+
+    format!("stopped active job {}", active.job_id)
+}
+
+async fn format_ingest_heartbeat_reply(state: &AppState) -> String {
+    let now_utc = Utc::now();
+    let last_tick_at_utc = *state.last_tick_at.read().await;
+    let report = state.last_heartbeat_report.read().await.clone();
+    let metrics = state.heartbeat_metrics.read().await.clone();
+
+    if let Some(report) = report {
+        format!(
+            "heartbeat action={} significance={:.2} reason={}\nfailed={} dead_letter={} outbox_pending={}\ndelivery dispatched={} suppressed_quiet={} suppressed_interval={} last_tick={:?} now={}",
+            report.heartbeat_action.as_str(),
+            report.heartbeat_significance,
+            report.heartbeat_reason,
+            report.failed_jobs,
+            report.dead_letter_jobs,
+            report.pending_outbox_events,
+            metrics.dispatched_notifications,
+            metrics.suppressed_quiet_hours,
+            metrics.suppressed_min_interval,
+            last_tick_at_utc,
+            now_utc,
+        )
+    } else {
+        format!("heartbeat status unavailable last_tick={last_tick_at_utc:?} now={now_utc}")
+    }
+}
+
+async fn start_ingest_ask_stream(
+    state: &AppState,
+    mapping_key: &str,
+    session_id: &str,
+    prompt: String,
+    request: &IngestRequest,
+) -> Result<IngestAskStream, (StatusCode, String)> {
+    let runtime_config = resolve_session_runtime_config(state, session_id).await;
+    let session_context = session_mapping::load_session_context(session_id, 8);
+    let prompt = if session_context.is_empty() {
+        prompt
+    } else {
+        format!("{session_context}\n\n{prompt}")
+    };
+
+    let identity_context = resolve_identity_context_for_request(
+        state,
+        Some(&format!("medousa:user:{}", request.user_id)),
+        None,
+        Some(&format!("medousa:channel:{}", request.channel_id)),
+        Some("interactive"),
+        8,
+    )
+    .await?;
+
+    let now = Utc::now();
+    let job_id_str = format!(
+        "medousa-daemon-ingest-{}-{}",
+        now.timestamp_millis(),
+        &session_id[..8.min(session_id.len())]
+    );
+
+    let model_hint = Some(format!(
+        "{}:{}",
+        runtime_config.draft_provider, runtime_config.draft_model
+    ));
+    let ask_request = session_mapping::build_enqueue_ask_request(
+        &request.channel,
+        &request.user_id,
+        &request.channel_id,
+        session_id,
+        prompt.clone(),
+        model_hint,
+    );
+
+    let raw_prompt = ask_request.prompt;
+    let prompt_with_identity =
+        prepend_identity_snapshot(&raw_prompt, Some(&identity_context.summary));
+    let compiled_prompt =
+        compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
+
+    let payload = AgentSessionJobPayload {
+        thread_id: Some(job_id_str.clone()),
+        initial_user_prompt: compiled_prompt,
+        participants: vec![AgentSessionParticipantPayload {
+            agent_id: "medousa.researcher".to_string(),
+            system_prompt: Some(
+                "You are Medousa, a practical research assistant. Use tool evidence and cite findings succinctly."
+                    .to_string(),
+            ),
+            tool_name: "stasis.web.search.mock".to_string(),
+            tool_input: Some(serde_json::json!({
+                "query": raw_prompt
+            })),
+        }],
+        policy_profile: Some("interactive".to_string()),
+        model_hint: Some(format!(
+            "{}:{}",
+            runtime_config.draft_provider, runtime_config.draft_model
+        )),
+        memory_policy: None,
+        max_turns: Some(1),
+        tool_call_mode: Some(AgentToolCallMode::Auto),
+    };
+
+    let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id_str.clone(), &payload)
+        .map_err(internal_error)?
+        .with_correlation_id(identity_context.user_id)
+        .with_causation_id("medousa-daemon-api:ingester")
+        .with_sttp_input_node_id("sttp:in:medousa:daemon:ingester")
+        .with_scheduled_at(now)
+        .build();
+
+    enqueue_runtime_job(state.runtime.as_ref(), new_job)
+        .await
+        .map_err(internal_error)?;
+
+    let stream_id = format!("ingest-{}", Uuid::new_v4().simple());
+    let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
+    {
+        let mut guard = state.interactive_turn_streams.write().await;
+        guard.insert(stream_id.clone(), stream_tx.clone());
+    }
+    let stream_url =
+        medousa::ingest_stream::build_ingest_stream_url(&state.daemon_base_url, &stream_id);
+
+    state.active_ingest_jobs.write().await.insert(
+        mapping_key.to_string(),
+        session_mapping::ActiveIngestJob {
+            job_id: job_id_str.clone(),
+            stream_id: stream_id.clone(),
+        },
+    );
+
+    let stream_registry = state.interactive_turn_streams.clone();
+    let cancelled_streams = state.cancelled_ingest_streams.clone();
+    let runtime = state.runtime.clone();
+    let job_for_stream = job_id_str.clone();
+    let stream_id_for_task = stream_id.clone();
+    let stream_id_for_cleanup = stream_id.clone();
+    let active_jobs = state.active_ingest_jobs.clone();
+    let mapping_key_for_cleanup = mapping_key.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        run_ingest_job_stream_task(
+            stream_id_for_task,
+            job_for_stream,
+            runtime,
+            stream_tx,
+            cancelled_streams,
+            active_jobs,
+            mapping_key_for_cleanup,
+        )
+        .await;
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let mut guard = stream_registry.write().await;
+        guard.remove(&stream_id_for_cleanup);
+    });
+
+    Ok(IngestAskStream {
+        job_id: job_id_str,
+        stream_id,
+        stream_url,
+    })
 }
 
 async fn run_ingest_job_stream_task(
@@ -1698,6 +2020,9 @@ async fn run_ingest_job_stream_task(
     job_id: String,
     runtime: Arc<RuntimeComposition>,
     stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    cancelled_streams: Arc<RwLock<HashSet<String>>>,
+    active_jobs: Arc<RwLock<HashMap<String, session_mapping::ActiveIngestJob>>>,
+    mapping_key: String,
 ) {
     publish_interactive_turn_event(
         &stream_tx,
@@ -1714,6 +2039,18 @@ async fn run_ingest_job_stream_task(
     let mut last_output_len = 0usize;
 
     loop {
+        if cancelled_streams.read().await.contains(&stream_id) {
+            publish_interactive_turn_event(
+                &stream_tx,
+                medousa::interactive_turn_runtime::error_stream_event(
+                    &stream_id,
+                    "ingest job cancelled by /stop",
+                ),
+            );
+            active_jobs.write().await.remove(&mapping_key);
+            return;
+        }
+
         match get_job_attempts_graceful(runtime.as_ref(), &job_id).await {
             Ok(attempts) => {
                 let latest = attempts.last();
@@ -1774,6 +2111,7 @@ async fn run_ingest_job_stream_task(
                             );
                         }
                     }
+                    active_jobs.write().await.remove(&mapping_key);
                     return;
                 }
             }
@@ -1785,6 +2123,7 @@ async fn run_ingest_job_stream_task(
                         &format!("ingest job polling failed: {err}"),
                     ),
                 );
+                active_jobs.write().await.remove(&mapping_key);
                 return;
             }
         }
@@ -1797,6 +2136,7 @@ async fn run_ingest_job_stream_task(
                     "ingest job stream timed out before terminal result",
                 ),
             );
+            active_jobs.write().await.remove(&mapping_key);
             return;
         }
 
