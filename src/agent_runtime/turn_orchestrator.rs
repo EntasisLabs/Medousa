@@ -1,0 +1,786 @@
+use genai::chat::{ChatMessage, ChatRequest};
+use serde_json::Value;
+use stasis::application::orchestration::prompt_pipeline::{
+    PromptExecutionContext, PromptExecutionPipeline,
+};
+use stasis::application::orchestration::tool_loop_pipeline::{
+    ToolCallMode, ToolInvocation, ToolLoopExecutionRequest, ToolLoopPipeline,
+};
+use stasis::ports::outbound::ai_chat_client::StreamDelta;
+
+use crate::engine_context::{EngineExecutionLane, RecallReadiness};
+use crate::session::ConversationTurn;
+use crate::stage_routing::StageRoute;
+use crate::tools::TuiRuntime;
+use crate::tui::settings::{RuntimeSettings, parse_usize_with_bounds};
+
+use super::continuation::{
+    build_continuation_prior_messages, build_continuation_prompt, collect_tool_names,
+    should_run_continuation,
+};
+use super::prompt_prep::{
+    CheapRecallProbe, IdentityContextProbe, append_identity_context_hint,
+    append_memory_recall_hint, cheap_memory_recall_probe, compile_interactive_context_prompt,
+    derive_recall_readiness, identity_context_probe, resolve_prompt_with_context_pack,
+    truncate_text_for_budget, verifier_policy_from_settings_and_route, MAX_REQUEST_PROMPT_CHARS,
+};
+use super::stream_sink::SharedAgentStreamSink;
+use super::system_prompt::DEFAULT_SYSTEM_PROMPT;
+use super::turn_budget::{
+    emit_orchestration_summary, try_consume_classifier_budget, try_consume_continuation_budget,
+    try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
+    turn_budget_for_lane, TurnOrchestrationState,
+};
+use super::turn_services::{
+    self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
+    TurnActivationDecision,
+};
+
+pub const MAX_PRIOR_TOTAL_CHARS: usize = 24_000;
+pub const MAX_SINGLE_PRIOR_MESSAGE_CHARS: usize = 4_000;
+pub const DEFAULT_HOT_WINDOW_TURNS: usize = 8;
+pub const MIN_HOT_WINDOW_TURNS: usize = 2;
+pub const MAX_HOT_WINDOW_TURNS: usize = 32;
+pub const DEFAULT_COLD_WINDOW_TURNS: usize = 24;
+pub const MIN_COLD_WINDOW_TURNS: usize = 4;
+pub const MAX_COLD_WINDOW_TURNS: usize = 128;
+pub const HOT_WINDOW_CHAR_BUDGET: usize = 14_000;
+pub const COLD_WINDOW_CHAR_BUDGET: usize = 8_000;
+pub const COLD_SUMMARY_LINE_CHARS: usize = 240;
+pub const DEFAULT_ACTIVATION_DIRECT_PROMPT_CHARS: usize = 320;
+pub const DEFAULT_ACTIVATION_LONG_SESSION_TURN_THRESHOLD: usize = 28;
+pub const DEFAULT_ACTIVATION_LONG_SESSION_PROMPT_CHARS: usize = 420;
+pub const DEFAULT_RETRY_RUNTIME_MAX_RETRIES: usize = 1;
+pub const DEFAULT_RETRY_RUNTIME_MAX_ROUNDS: usize = 3;
+const CONTINUATION_MAX_ROUNDS: usize = 4;
+const INTENT_CLASSIFIER_MAX_PROMPT_CHARS: usize = 900;
+const INTENT_CLASSIFIER_MAX_CONTEXT_TURNS: usize = 4;
+const INTENT_CLASSIFIER_MAX_CONTEXT_CHARS: usize = 1400;
+const INTENT_CLASSIFIER_CONTEXT_LINE_CHARS: usize = 260;
+const INTENT_CLASSIFIER_CONFIDENCE_LOW: f32 = 0.45;
+const INTENT_CLASSIFIER_CONFIDENCE_CONVERSATIONAL: f32 = 0.55;
+const INTENT_CLASSIFIER_CONFIDENCE_TOOL_REQUIRED: f32 = 0.60;
+
+#[derive(Debug, Clone)]
+pub struct IntentClassification {
+    pub intent: String,
+    pub confidence: f32,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedTurnPrompt {
+    pub resolved_prompt: String,
+    pub pack_note: Option<String>,
+    pub verification_state: Option<bool>,
+    pub recall_probe: CheapRecallProbe,
+    pub identity_probe: IdentityContextProbe,
+    pub recall_readiness: RecallReadiness,
+    pub compiler_output: crate::engine_context::ContextCompilerOutput,
+}
+
+pub struct PrepareTurnPromptParams<'a> {
+    pub session_id: &'a str,
+    pub prompt: &'a str,
+    pub selected_context_pack_query: Option<&'a str>,
+    pub settings: &'a RuntimeSettings,
+    pub verifier_route: Option<&'a StageRoute>,
+    pub final_route: Option<&'a StageRoute>,
+    pub response_depth_mode: &'a str,
+    pub tui_rt: &'a TuiRuntime,
+}
+
+pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> PreparedTurnPrompt {
+    let verifier_policy =
+        verifier_policy_from_settings_and_route(params.settings, params.verifier_route);
+    let (mut resolved_prompt, pack_note, verification_state) = resolve_prompt_with_context_pack(
+        params.session_id,
+        params.prompt,
+        params.selected_context_pack_query,
+        &verifier_policy,
+    );
+
+    let recall_probe =
+        cheap_memory_recall_probe(params.tui_rt, params.session_id, params.prompt).await;
+    let identity_probe =
+        identity_context_probe(params.tui_rt, params.final_route.map(|route| route.policy_profile.as_str()))
+            .await;
+
+    resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
+    resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
+    let recall_readiness = derive_recall_readiness(
+        verification_state,
+        recall_probe.attempted,
+        recall_probe.retrieved,
+        identity_probe.summary.is_some(),
+    );
+    let compiler_output = compile_interactive_context_prompt(
+        &resolved_prompt,
+        params.response_depth_mode,
+        params.final_route,
+        recall_readiness,
+    );
+    resolved_prompt = compiler_output.compiled_prompt.clone();
+
+    PreparedTurnPrompt {
+        resolved_prompt,
+        pack_note,
+        verification_state,
+        recall_probe,
+        identity_probe,
+        recall_readiness,
+        compiler_output,
+    }
+}
+
+pub struct LocalTurnExecutionParams {
+    pub turn_id: u64,
+    pub activation: TurnActivationDecision,
+    pub pipeline: ToolLoopPipeline,
+    pub no_tools_pipeline: PromptExecutionPipeline,
+    pub prior_messages: Vec<ChatMessage>,
+    pub prompt_for_request: String,
+    pub original_prompt: String,
+    pub intent_classifier_recent_context: String,
+    pub retry_max_retries: usize,
+    pub retry_max_rounds: usize,
+    pub continuation_response_depth_mode: String,
+    pub continuation_stage_route: Option<StageRoute>,
+    pub continuation_recall_readiness: RecallReadiness,
+    pub prompt_preview: String,
+}
+
+pub struct AssembleLocalTurnParams<'a> {
+    pub settings: &'a RuntimeSettings,
+    pub conversation: &'a [ConversationTurn],
+    pub prompt: &'a str,
+    pub persist_user_turn: bool,
+    pub prepared: &'a PreparedTurnPrompt,
+    pub resolved_prompt: String,
+    pub tui_rt: &'a TuiRuntime,
+    pub final_route: Option<&'a StageRoute>,
+    pub response_depth_mode: &'a str,
+    pub turn_id: u64,
+}
+
+pub struct AssembledLocalTurn {
+    pub execution: LocalTurnExecutionParams,
+    pub pipeline_selection: SelectedTurnPipeline,
+    pub activation: TurnActivationDecision,
+    pub prior_build: PriorMessageBuild,
+}
+
+pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLocalTurn {
+    let configured_tool_call_mode = turn_services::parse_tool_call_mode(&params.settings.tool_call_mode);
+    let configured_max_tool_rounds =
+        parse_usize_with_bounds(&params.settings.max_tool_rounds, 10, 1, 50);
+    let activation = turn_services::decide_turn_activation(
+        params.prompt,
+        configured_tool_call_mode,
+        configured_max_tool_rounds,
+        params.conversation.len(),
+        parse_usize_with_bounds(
+            &params.settings.activation_direct_answer_max_prompt_chars,
+            DEFAULT_ACTIVATION_DIRECT_PROMPT_CHARS,
+            64,
+            4000,
+        ),
+        parse_usize_with_bounds(
+            &params.settings.activation_long_session_turn_threshold,
+            DEFAULT_ACTIVATION_LONG_SESSION_TURN_THRESHOLD,
+            8,
+            500,
+        ),
+        parse_usize_with_bounds(
+            &params.settings.activation_long_session_max_prompt_chars,
+            DEFAULT_ACTIVATION_LONG_SESSION_PROMPT_CHARS,
+            64,
+            4000,
+        ),
+    );
+    let activation = turn_services::apply_context_compiler_activation_gate(
+        activation,
+        params.prepared.compiler_output.allow_no_tools_fallback,
+    );
+
+    let hot_window_turns = parse_usize_with_bounds(
+        &params.settings.slice_hot_window_turns,
+        DEFAULT_HOT_WINDOW_TURNS,
+        MIN_HOT_WINDOW_TURNS,
+        MAX_HOT_WINDOW_TURNS,
+    );
+    let cold_window_turns = parse_usize_with_bounds(
+        &params.settings.slice_cold_window_turns,
+        DEFAULT_COLD_WINDOW_TURNS,
+        MIN_COLD_WINDOW_TURNS,
+        MAX_COLD_WINDOW_TURNS,
+    )
+    .max(hot_window_turns);
+
+    let prior_build = turn_services::build_prior_messages(
+        params.conversation,
+        params.prompt,
+        params.persist_user_turn,
+        hot_window_turns,
+        cold_window_turns,
+        PriorMessageLimits {
+            max_prior_total_chars: MAX_PRIOR_TOTAL_CHARS,
+            max_single_prior_message_chars: MAX_SINGLE_PRIOR_MESSAGE_CHARS,
+            hot_window_char_budget: HOT_WINDOW_CHAR_BUDGET,
+            cold_window_char_budget: COLD_WINDOW_CHAR_BUDGET,
+            cold_summary_line_chars: COLD_SUMMARY_LINE_CHARS,
+        },
+    );
+
+    let prompt_for_request = if activation.enforce_no_tools {
+        format!(
+            "{}\n\n[MEDOUSA_TOOL_POLICY]\nmode=no_tools\ninstruction=Do not call tools for this turn unless the user explicitly requests external lookup, execution, or fresh evidence. Answer directly from current context.",
+            params.resolved_prompt
+        )
+    } else {
+        params.resolved_prompt.clone()
+    };
+
+    let pipeline_selection = turn_services::select_pipeline_for_turn(
+        params.tui_rt,
+        params.final_route,
+        params.settings,
+    );
+
+    AssembledLocalTurn {
+        execution: LocalTurnExecutionParams {
+            turn_id: params.turn_id,
+            activation: activation.clone(),
+            pipeline: pipeline_selection.pipeline.clone(),
+            no_tools_pipeline: turn_services::build_prompt_pipeline_for_turn(
+                params.final_route,
+                params.settings,
+            ),
+            prior_messages: prior_build.messages.clone(),
+            prompt_for_request,
+            original_prompt: params.prompt.to_string(),
+            intent_classifier_recent_context: turn_services::build_intent_classifier_recent_context(
+                params.conversation,
+                params.prompt,
+                params.persist_user_turn,
+                INTENT_CLASSIFIER_MAX_CONTEXT_TURNS,
+                INTENT_CLASSIFIER_MAX_CONTEXT_CHARS,
+                IntentContextLimits {
+                    context_line_chars: INTENT_CLASSIFIER_CONTEXT_LINE_CHARS,
+                },
+            ),
+            retry_max_retries: parse_usize_with_bounds(
+                &params.settings.retry_runtime_max_retries,
+                DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
+                0,
+                5,
+            ),
+            retry_max_rounds: parse_usize_with_bounds(
+                &params.settings.retry_runtime_max_rounds,
+                DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+                1,
+                10,
+            ),
+            continuation_response_depth_mode: params.response_depth_mode.to_string(),
+            continuation_stage_route: params.final_route.cloned(),
+            continuation_recall_readiness: params.prepared.recall_readiness,
+            prompt_preview: params.resolved_prompt.chars().take(48).collect(),
+        },
+        pipeline_selection,
+        activation: activation.clone(),
+        prior_build,
+    }
+}
+
+pub fn should_invoke_intent_classifier(activation: &TurnActivationDecision) -> bool {
+    activation.reason == "configured_default"
+}
+
+pub async fn classify_turn_intent_with_model(
+    pipeline: &PromptExecutionPipeline,
+    prompt: &str,
+    recent_context: &str,
+) -> Option<IntentClassification> {
+    let bounded_prompt = truncate_text_for_budget(prompt, INTENT_CLASSIFIER_MAX_PROMPT_CHARS);
+    let bounded_context =
+        truncate_text_for_budget(recent_context, INTENT_CLASSIFIER_MAX_CONTEXT_CHARS);
+    let messages = vec![
+        ChatMessage::system(
+            "You are an intent router. Classify intent for tool routing using CURRENT_USER_MESSAGE plus RECENT_CONTEXT. RECENT_CONTEXT is only local grounding for short follow-ups (acknowledgements, confirmations, pivots); do not treat old unresolved tasks as active unless CURRENT_USER_MESSAGE explicitly re-requests them. Return strict JSON only with fields: intent, confidence, reason. intent must be one of: conversational, tool_required, clarify, mixed.".to_string(),
+        ),
+        ChatMessage::user(format!(
+            "RECENT_CONTEXT:\n{}\n\nCURRENT_USER_MESSAGE:\n{}\n\nClassify whether this turn should use tools now.",
+            if bounded_context.trim().is_empty() {
+                "(none)"
+            } else {
+                bounded_context.as_str()
+            },
+            bounded_prompt,
+        )),
+    ];
+
+    let completion = pipeline
+        .complete_chat_stream(
+            ChatRequest::new(messages),
+            PromptExecutionContext::default(),
+            None,
+        )
+        .await
+        .ok()?;
+
+    let raw = completion
+        .response
+        .into_first_text()
+        .map(|value| value.trim().to_string())?;
+
+    let parsed: Value = serde_json::from_str(&raw).ok()?;
+    let intent = parsed
+        .get("intent")
+        .and_then(|value| value.as_str())
+        .map(|value| value.trim().to_ascii_lowercase())?;
+    let confidence = parsed
+        .get("confidence")
+        .and_then(|value| value.as_f64())
+        .map(|value| value as f32)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let reason = parsed
+        .get("reason")
+        .and_then(|value| value.as_str())
+        .map(|value| truncate_text_for_budget(value, 120))
+        .unwrap_or_else(|| "none".to_string());
+
+    Some(IntentClassification {
+        intent,
+        confidence,
+        reason,
+    })
+}
+
+pub fn apply_intent_classifier_override(
+    base: TurnActivationDecision,
+    classification: &IntentClassification,
+) -> TurnActivationDecision {
+    if classification.confidence < INTENT_CLASSIFIER_CONFIDENCE_LOW {
+        return TurnActivationDecision {
+            turn_class: "a",
+            tool_call_mode: ToolCallMode::Strict,
+            max_tool_rounds: 1,
+            enforce_no_tools: true,
+            reason: "classifier_low_confidence_bias_no_tools",
+        };
+    }
+
+    match classification.intent.as_str() {
+        "conversational"
+            if classification.confidence >= INTENT_CLASSIFIER_CONFIDENCE_CONVERSATIONAL =>
+        {
+            TurnActivationDecision {
+                turn_class: "a",
+                tool_call_mode: ToolCallMode::Strict,
+                max_tool_rounds: 1,
+                enforce_no_tools: true,
+                reason: "classifier_conversational",
+            }
+        }
+        "clarify" => TurnActivationDecision {
+            turn_class: "a",
+            tool_call_mode: ToolCallMode::Strict,
+            max_tool_rounds: 1,
+            enforce_no_tools: true,
+            reason: "classifier_clarify",
+        },
+        "tool_required"
+            if classification.confidence >= INTENT_CLASSIFIER_CONFIDENCE_TOOL_REQUIRED =>
+        {
+            TurnActivationDecision {
+                turn_class: "c",
+                tool_call_mode: ToolCallMode::Auto,
+                max_tool_rounds: base.max_tool_rounds.max(2),
+                enforce_no_tools: false,
+                reason: "classifier_tool_required",
+            }
+        }
+        "mixed" => TurnActivationDecision {
+            reason: "classifier_mixed_keep_default",
+            ..base
+        },
+        _ => base,
+    }
+}
+
+pub fn retryable_runtime_reason(err_text: &str) -> Option<&'static str> {
+    let text = err_text.to_ascii_lowercase();
+    if text.contains("timeout") || text.contains("timed out") {
+        return Some("timeout");
+    }
+    if text.contains("queue") && (text.contains("busy") || text.contains("full")) {
+        return Some("queue_busy");
+    }
+    if text.contains("connection")
+        || text.contains("transport")
+        || text.contains("temporar")
+        || text.contains("unavailable")
+        || text.contains("5xx")
+    {
+        return Some("transient_runtime");
+    }
+    None
+}
+
+pub async fn emit_tool_payload_events(
+    sink: &SharedAgentStreamSink,
+    invocations: &[ToolInvocation],
+) {
+    for invocation in invocations {
+        let safe_input = crate::settings_guard::redact_json_value(&invocation.tool_input);
+        let safe_output = crate::settings_guard::redact_json_value(&invocation.tool_output);
+        sink.tool_payload(
+            invocation.tool_name.clone(),
+            invocation.tool_input.clone(),
+            invocation.tool_output.clone(),
+            crate::payload_receipt::receipt_meta(
+                &safe_input,
+                crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+            ),
+            crate::payload_receipt::receipt_meta(
+                &safe_output,
+                crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+            ),
+        )
+        .await;
+    }
+}
+
+pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
+    let LocalTurnExecutionParams {
+        turn_id,
+        mut activation,
+        pipeline,
+        no_tools_pipeline,
+        prior_messages,
+        prompt_for_request,
+        original_prompt,
+        intent_classifier_recent_context,
+        retry_max_retries,
+        retry_max_rounds,
+        continuation_response_depth_mode,
+        continuation_stage_route,
+        continuation_recall_readiness,
+        prompt_preview,
+    } = params;
+
+    let turn_budget = turn_budget_for_lane(EngineExecutionLane::Interactive);
+    let mut orchestration_state = TurnOrchestrationState {
+        final_mode: "unknown".to_string(),
+        ..TurnOrchestrationState::default()
+    };
+
+    if should_invoke_intent_classifier(&activation) {
+        if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await {
+            let classification = classify_turn_intent_with_model(
+                &no_tools_pipeline,
+                &original_prompt,
+                &intent_classifier_recent_context,
+            )
+            .await;
+            if let Some(classification) = classification {
+                sink.notice(format!(
+                    "◈ intent classifier intent={} confidence={:.2} reason={}",
+                    classification.intent, classification.confidence, classification.reason
+                ))
+                .await;
+
+                activation = apply_intent_classifier_override(activation, &classification);
+                sink.notice(format!(
+                    "◈ activation final class={} mode={} rounds={} no_tools={} reason={}",
+                    activation.turn_class,
+                    match activation.tool_call_mode {
+                        ToolCallMode::Auto => "auto",
+                        ToolCallMode::Strict => "strict",
+                    },
+                    activation.max_tool_rounds,
+                    activation.enforce_no_tools,
+                    activation.reason,
+                ))
+                .await;
+            } else {
+                sink.notice(
+                    "◈ intent classifier skipped: no parseable result; using heuristic"
+                        .to_string(),
+                )
+                .await;
+            }
+        } else {
+            orchestration_state.final_mode = "classifier_budget_denied".to_string();
+        }
+    }
+
+    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
+    let chunk_sink = sink.clone();
+    tokio::spawn(async move {
+        while let Some(delta) = chunk_rx.recv().await {
+            match delta {
+                StreamDelta::Content(delta) => chunk_sink.content_chunk(turn_id, delta).await,
+                StreamDelta::Reasoning(delta) | StreamDelta::ThoughtSignature(delta) => {
+                    chunk_sink.reasoning_chunk(turn_id, delta).await
+                }
+            }
+        }
+    });
+
+    sink.tool_invoked("llm.chat".to_string(), prompt_preview)
+        .await;
+
+    if activation.enforce_no_tools {
+        let mut messages = Vec::with_capacity(prior_messages.len() + 2);
+        messages.push(ChatMessage::system(DEFAULT_SYSTEM_PROMPT.to_string()));
+        messages.extend(prior_messages);
+        messages.push(ChatMessage::user(prompt_for_request));
+
+        if !try_consume_prompt_only_budget(&sink, &mut orchestration_state, &turn_budget).await {
+            orchestration_state.final_mode = "prompt_only_budget_denied".to_string();
+            sink.agent_error(
+                turn_id,
+                "turn budget exhausted before prompt-only execution".to_string(),
+            )
+            .await;
+            emit_orchestration_summary(&sink, &orchestration_state).await;
+            return;
+        }
+        orchestration_state.final_mode = "prompt_only".to_string();
+
+        sink.notice(
+            "◈ fallback_mode=prompt_only retry_count=0 retry_reason=none".to_string(),
+        )
+        .await;
+
+        match no_tools_pipeline
+            .complete_chat_stream(
+                ChatRequest::new(messages),
+                PromptExecutionContext::default(),
+                Some(&chunk_tx),
+            )
+            .await
+        {
+            Ok(completion) => {
+                let final_text = completion
+                    .response
+                    .into_first_text()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| {
+                        "I do not have enough information to answer confidently without tools for this turn."
+                            .to_string()
+                    });
+                sink.agent_response(turn_id, final_text, Vec::new()).await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+            }
+            Err(err) => {
+                sink.agent_error(turn_id, err.to_string()).await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+            }
+        }
+        return;
+    }
+
+    let request = ToolLoopExecutionRequest {
+        user_prompt: prompt_for_request,
+        system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: activation.tool_call_mode,
+    };
+    if !try_consume_tool_loop_budget(&sink, &mut orchestration_state, &turn_budget).await {
+        orchestration_state.final_mode = "tool_loop_budget_denied".to_string();
+        sink.agent_error(
+            turn_id,
+            "turn budget exhausted before tool-loop execution".to_string(),
+        )
+        .await;
+        emit_orchestration_summary(&sink, &orchestration_state).await;
+        return;
+    }
+    orchestration_state.final_mode = "tool_loop".to_string();
+    let first_attempt = pipeline
+        .execute_with_stream_prior_messages_max_rounds(
+            request.clone(),
+            prior_messages.clone(),
+            Some(&chunk_tx),
+            activation.max_tool_rounds,
+        )
+        .await;
+
+    match first_attempt {
+        Ok(response) => {
+            sink.notice(
+                "◈ fallback_mode=tool_loop retry_count=0 retry_reason=none".to_string(),
+            )
+            .await;
+            emit_tool_payload_events(&sink, &response.tool_invocations).await;
+
+            let mut combined_invocations = response.tool_invocations.clone();
+            let mut final_text = response.text;
+            if should_run_continuation(&combined_invocations) {
+                if let Some(continuation_prompt) = build_continuation_prompt(
+                    &original_prompt,
+                    &final_text,
+                    &combined_invocations,
+                ) {
+                    let continuation_compiler_output = compile_interactive_context_prompt(
+                        &continuation_prompt,
+                        &continuation_response_depth_mode,
+                        continuation_stage_route.as_ref(),
+                        continuation_recall_readiness,
+                    );
+                    let continuation_compiled_prompt = truncate_text_for_budget(
+                        &continuation_compiler_output.compiled_prompt,
+                        MAX_REQUEST_PROMPT_CHARS,
+                    );
+                    sink.notice(
+                        "◈ continuation synthesis: refining draft with chunked tool context"
+                            .to_string(),
+                    )
+                    .await;
+                    sink.notice(format!(
+                        "◈ {}",
+                        continuation_compiler_output.compiler_summary
+                    ))
+                    .await;
+
+                    sink.tool_invoked(
+                        "llm.chat".to_string(),
+                        "continuation synthesis".to_string(),
+                    )
+                    .await;
+
+                    let continuation_request = ToolLoopExecutionRequest {
+                        user_prompt: continuation_compiled_prompt,
+                        system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
+                        context: PromptExecutionContext::default(),
+                        tool_name: String::new(),
+                        tool_input: Value::Null,
+                        tool_call_mode: ToolCallMode::Auto,
+                    };
+                    let continuation_prior_messages =
+                        build_continuation_prior_messages(&original_prompt, &final_text);
+
+                    if try_consume_continuation_budget(&sink, &mut orchestration_state, &turn_budget)
+                        .await
+                    {
+                        orchestration_state.final_mode = "tool_loop_with_continuation".to_string();
+
+                        match pipeline
+                            .execute_with_stream_prior_messages_max_rounds(
+                                continuation_request,
+                                continuation_prior_messages,
+                                Some(&chunk_tx),
+                                activation.max_tool_rounds.min(CONTINUATION_MAX_ROUNDS).max(1),
+                            )
+                            .await
+                        {
+                            Ok(continuation_response) => {
+                                emit_tool_payload_events(
+                                    &sink,
+                                    &continuation_response.tool_invocations,
+                                )
+                                .await;
+                                final_text = continuation_response.text;
+                                combined_invocations.extend(continuation_response.tool_invocations);
+                            }
+                            Err(err) => {
+                                sink.notice(format!("⚠ continuation synthesis skipped: {err}"))
+                                    .await;
+                            }
+                        }
+                    } else {
+                        sink.notice(
+                            "◈ continuation synthesis skipped: turn budget limit".to_string(),
+                        )
+                        .await;
+                    }
+                }
+            }
+
+            let tool_names = collect_tool_names(&combined_invocations);
+            sink.tool_invoked(
+                "llm.chat".to_string(),
+                format!(
+                    "done  {} token(s)",
+                    final_text.split_whitespace().count()
+                ),
+            )
+            .await;
+            sink.agent_response(turn_id, final_text, tool_names).await;
+            emit_orchestration_summary(&sink, &orchestration_state).await;
+        }
+        Err(err) => {
+            let err_text = err.to_string();
+            if let Some(reason) = retryable_runtime_reason(&err_text) {
+                let retry_rounds = activation.max_tool_rounds.min(retry_max_rounds).max(1);
+                let mut last_err = err_text;
+                let mut retry_count = 0usize;
+                while retry_count < retry_max_retries {
+                    retry_count = retry_count.saturating_add(1);
+                    sink.notice(format!(
+                        "◈ retry_policy retry_count={} retry_reason={} fallback_mode=tool_loop rounds={}",
+                        retry_count, reason, retry_rounds
+                    ))
+                    .await;
+
+                    if !try_consume_retry_budget(&sink, &mut orchestration_state, &turn_budget)
+                        .await
+                    {
+                        orchestration_state.final_mode = "tool_loop_retry_budget_denied".to_string();
+                        sink.agent_error(
+                            turn_id,
+                            "turn budget exhausted before retry".to_string(),
+                        )
+                        .await;
+                        emit_orchestration_summary(&sink, &orchestration_state).await;
+                        return;
+                    }
+                    orchestration_state.final_mode = "tool_loop_retry".to_string();
+
+                    match pipeline
+                        .execute_with_stream_prior_messages_max_rounds(
+                            request.clone(),
+                            prior_messages.clone(),
+                            Some(&chunk_tx),
+                            retry_rounds,
+                        )
+                        .await
+                    {
+                        Ok(response) => {
+                            emit_tool_payload_events(&sink, &response.tool_invocations).await;
+                            let tool_names = collect_tool_names(&response.tool_invocations);
+                            sink.agent_response(turn_id, response.text, tool_names).await;
+                            orchestration_state.final_mode = "tool_loop_retry_success".to_string();
+                            emit_orchestration_summary(&sink, &orchestration_state).await;
+                            return;
+                        }
+                        Err(retry_err) => {
+                            last_err = format!("{}", retry_err);
+                        }
+                    }
+                }
+                sink.agent_error(
+                    turn_id,
+                    format!("{} (retry exhausted: {})", reason, last_err),
+                )
+                .await;
+                orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+            } else {
+                sink.notice(
+                    "◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string(),
+                )
+                .await;
+                sink.agent_error(turn_id, err_text).await;
+                orchestration_state.final_mode = "tool_loop_error_non_retryable".to_string();
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+            }
+        }
+    }
+}

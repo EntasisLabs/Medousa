@@ -75,7 +75,7 @@ See [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md).
 
 ---
 
-### Phase 1 — Extract the gold standard 🎯 **In progress**
+### Phase 1 — Extract the gold standard ✅
 
 Move TUI agent orchestration into `src/agent_runtime/` without changing behavior.
 
@@ -83,22 +83,23 @@ Move TUI agent orchestration into `src/agent_runtime/` without changing behavior
 - [x] Define `MedousaAgentRuntime` (tool loop, memory, identity, registry — today’s `TuiRuntime` minus TUI coupling)
 - [x] Define channel-agnostic `AgentTurnRequest` / `AgentStreamEvent` (session, prompt, routing, depth, identity hints)
 - [x] Move turn services: activation, prior messages, pipeline selection, intent context (from `turn_services.rs`)
-- [ ] Port turn orchestration: context pack, continuation, budgets, intent classifier (from `agent_runtime.rs`)
-- [ ] TUI calls extracted module in-process (no daemon change yet) — behavior must match current local fallback pixel-for-pixel on test prompts
+- [x] Port turn orchestration: context pack, continuation, budgets, intent classifier (from `agent_runtime.rs`)
+- [x] TUI calls extracted module in-process (no daemon change yet) — behavior must match current local fallback pixel-for-pixel on test prompts
 - [x] Unit tests on activation and prior-message slicing (no TUI harness required)
-- [ ] Unit tests on continuation gate
+- [x] Unit tests on continuation gate
 
-**Exit criteria:** TUI local fallback uses `medousa::agent_runtime::*` only; no orchestration logic left in `medousa_tui/agent_runtime.rs` except UI glue.
+**Exit criteria:** TUI local fallback uses `medousa::agent_runtime::*` only; no orchestration logic left in `medousa_tui/agent_runtime.rs` except UI glue. ✅ (Phase 1 slice 3)
 
 ---
 
-### Phase 2 — Daemon hosts the runtime
+### Phase 2 — Daemon hosts the runtime 🎯 **In progress**
 
 Run the extracted runtime inside `medousa_daemon`.
 
-- [ ] Add `POST /v1/agent/turn` + SSE stream (or upgrade `/v1/interactive/turn` to invoke `MedousaAgentRuntime` instead of bare `PromptExecutionPipeline`)
-- [ ] Wire session_id, stage routing, response depth from ingester session config
-- [ ] Stream `content_delta`, `reasoning_delta`, `tool`, `final`, `error` events (same contract adapters already consume)
+- [x] Upgrade `/v1/interactive/turn` to invoke `MedousaAgentRuntime` (replaces bare `PromptExecutionPipeline` path)
+- [x] Wire session_id, stage routing, response depth from interactive turn request
+- [x] Stream `content_delta`, `reasoning_delta`, `status`, `final`, `error` events (same SSE contract TUI/adapters consume)
+- [x] Daemon builds shared agent runtime at startup (`build_daemon_agent_runtime`)
 - [ ] Register delivery target + enqueue outbox on turn accept (reuse ingest delivery registry pattern)
 - [ ] TUI primary path → daemon agent turn; local runtime = offline/dev fallback only
 - [ ] Doctor: agent runtime version, last turn latency, tool registry count

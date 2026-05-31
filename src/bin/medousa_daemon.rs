@@ -13,18 +13,14 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Timelike, Utc};
 use futures_util::stream::{self, Stream};
-use genai::chat::{ChatMessage, ChatRequest};
 use medousa::artifact_chunking::chunk_json_payload;
 use medousa::artifact_extraction::{extract_claims_from_chunks, persist_extraction_run};
 use medousa::context_pack::{
     BuildContextPackInput, ContextPackBudgetProfile, build_context_pack, persist_context_pack,
 };
 use medousa::engine_context::{
-    ContextCompilerInput,
     EngineExecutionLane, HeartbeatAction, HeartbeatLanePolicy, HeartbeatSignals,
     LaneSafetyActionClass,
-    RecallReadiness,
-    compile_context_prompt,
     compile_default_lane_prompt, default_heartbeat_lane_policy,
     default_policy_profile_for_lane, evaluate_heartbeat_significance,
     validate_lane_action, validate_lane_policy_profile,
@@ -60,15 +56,10 @@ use uuid::Uuid;
 
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::application::runtime::identity_context_compiler::prepend_identity_snapshot;
-use stasis::application::orchestration::prompt_pipeline::{
-    PromptExecutionContext, PromptExecutionPipeline,
-};
 use stasis::application::orchestration::runtime_job_payloads::{
     AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
 };
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
-use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
-use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextRequest,
     GetIdentityContextResponse, ListEntityHistoryRequest, ListEntityHistoryResponse,
@@ -85,6 +76,7 @@ use stasis::sdk::runtime_sdk::RuntimeStatsSnapshot;
 #[derive(Clone)]
 struct AppState {
     runtime: Arc<RuntimeComposition>,
+    agent_runtime: Arc<medousa::agent_runtime::MedousaAgentRuntime>,
     daemon_base_url: String,
     interactive_turn_streams: Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
     // In-memory channel+user → session_id mapping for the ingester
@@ -279,7 +271,7 @@ async fn main() -> Result<()> {
     let deliver_webhook_url = channel_delivery::internal_deliver_webhook_url(bind);
     let runtime = Arc::new(
         build_daemon_runtime(
-            backend,
+            backend.clone(),
             provider,
             model,
             base_url,
@@ -327,8 +319,21 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    let agent_runtime = Arc::new(
+        medousa::agent_runtime::build_daemon_agent_runtime(
+            backend.clone(),
+            provider,
+            model,
+            base_url,
+            Vec::new(),
+        )
+        .await
+        .context("failed to build daemon agent runtime")?,
+    );
+
     let state = AppState {
         runtime: runtime.clone(),
+        agent_runtime,
         daemon_base_url: format!("http://{bind}"),
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
         session_mappings: Arc::new(RwLock::new(HashMap::new())),
@@ -1150,15 +1155,24 @@ async fn start_interactive_turn(
         true,
         false,
         None,
-        Some("interactive turn accepted; daemon streaming active".to_string()),
+        Some("interactive turn accepted; daemon agent runtime streaming active".to_string()),
     )
     .map_err(internal_error)?;
 
     let stream_registry = state.interactive_turn_streams.clone();
+    let agent_runtime = state.agent_runtime.clone();
+    let backend = state.backend.clone();
     tokio::spawn(async move {
         // Give the client a brief window to subscribe before first deltas.
         tokio::time::sleep(Duration::from_millis(120)).await;
-        run_interactive_turn_stream_task(turn_id.clone(), request, stream_tx).await;
+        medousa::agent_runtime::run_daemon_interactive_turn(
+            &turn_id,
+            request,
+            &backend,
+            agent_runtime.as_ref(),
+            stream_tx,
+        )
+        .await;
 
         // Keep stream available briefly for reconnect/debug then clean up.
         tokio::time::sleep(Duration::from_secs(30)).await;
@@ -1232,196 +1246,6 @@ async fn stream_events_from_registry(
         Sse::new(stream)
             .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keep-alive")),
     )
-}
-
-async fn run_interactive_turn_stream_task(
-    turn_id: String,
-    request: InteractiveTurnRequest,
-    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
-) {
-    publish_interactive_turn_event(
-        &stream_tx,
-        medousa::interactive_turn_runtime::status_stream_event(
-            &turn_id,
-            "accepted",
-            "interactive turn accepted; daemon streaming started",
-        ),
-    );
-
-    let final_route = request.stage_routing.get("final_response").cloned();
-    if let Some(route) = final_route.as_ref() {
-        publish_interactive_turn_event(
-            &stream_tx,
-            medousa::interactive_turn_runtime::status_stream_event(
-                &turn_id,
-                "routing",
-                format!(
-                    "final_response route target={}:{} policy={} fallback={}",
-                    route.provider,
-                    route.model,
-                    route.policy_profile,
-                    route.fallback_chain.join(",")
-                )
-                .as_str(),
-            ),
-        );
-    }
-
-    let compiler_output = compile_context_prompt(ContextCompilerInput {
-        lane: EngineExecutionLane::Interactive,
-        user_prompt: &request.prompt,
-        response_depth_mode: &request.response_depth_mode,
-        stage_route: final_route.as_ref(),
-        recall_readiness: RecallReadiness::Missing,
-    });
-
-    let resolved_provider = medousa::resolve_llm_provider(Some(request.provider.trim()));
-    let resolved_model = medousa::resolve_llm_model(Some(request.model.trim()));
-    let resolved_base_url = medousa::resolve_llm_base_url(Some(&resolved_provider), None);
-    let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&resolved_provider),
-            &resolved_model,
-            resolved_base_url.as_deref(),
-        ),
-    );
-    let pipeline = PromptExecutionPipeline::new(chat_client);
-
-    let messages = vec![
-        ChatMessage::system(
-            "You are Medousa, a practical assistant. Be concise and structured.".to_string(),
-        ),
-        ChatMessage::user(compiler_output.compiled_prompt),
-    ];
-
-    let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<StreamDelta>();
-    let chunk_stream_tx = stream_tx.clone();
-    let chunk_turn_id = turn_id.clone();
-    let chunk_forwarder = tokio::spawn(async move {
-        while let Some(delta) = chunk_rx.recv().await {
-            match delta {
-                StreamDelta::Content(value) => publish_interactive_turn_event(
-                    &chunk_stream_tx,
-                    medousa::interactive_turn_runtime::content_delta_stream_event(
-                        &chunk_turn_id,
-                        &value,
-                    ),
-                ),
-                StreamDelta::Reasoning(value) | StreamDelta::ThoughtSignature(value) => {
-                    publish_interactive_turn_event(
-                        &chunk_stream_tx,
-                        medousa::interactive_turn_runtime::reasoning_delta_stream_event(
-                            &chunk_turn_id,
-                            &value,
-                        ),
-                    )
-                }
-            }
-        }
-    });
-
-    let completion = pipeline
-        .complete_chat_stream(
-            ChatRequest::new(messages),
-            PromptExecutionContext::default(),
-            Some(&chunk_tx),
-        )
-        .await;
-    drop(chunk_tx);
-    let _ = chunk_forwarder.await;
-
-    match completion {
-        Ok(completion) => {
-            let final_text = completion
-                .response
-                .into_first_text()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| {
-                    "I do not have enough information to answer confidently for this turn."
-                        .to_string()
-                });
-
-            publish_interactive_turn_event(
-                &stream_tx,
-                medousa::interactive_turn_runtime::final_stream_event(&turn_id, &final_text),
-            );
-        }
-        Err(err) => {
-            publish_interactive_turn_event(
-                &stream_tx,
-                medousa::interactive_turn_runtime::status_stream_event(
-                    &turn_id,
-                    "degraded",
-                    format!(
-                        "daemon model stream unavailable; using deterministic fallback ({})",
-                        truncate_for_notice(&err.to_string(), 160)
-                    )
-                    .as_str(),
-                ),
-            );
-
-            let fallback_text = deterministic_fallback_turn_text(&request.prompt);
-            for chunk in chunk_text_for_stream(&fallback_text, 56) {
-                publish_interactive_turn_event(
-                    &stream_tx,
-                    medousa::interactive_turn_runtime::content_delta_stream_event(
-                        &turn_id,
-                        chunk.as_str(),
-                    ),
-                );
-            }
-            publish_interactive_turn_event(
-                &stream_tx,
-                medousa::interactive_turn_runtime::final_stream_event(&turn_id, &fallback_text),
-            );
-        }
-    }
-}
-
-fn deterministic_fallback_turn_text(prompt: &str) -> String {
-    let topic = truncate_for_notice(prompt.trim(), 140);
-    format!(
-        "Daemon fallback response: live model streaming is unavailable right now, but phase-2 transport is active.\n\nPrompt summary: {}",
-        if topic.is_empty() {
-            "(no prompt)".to_string()
-        } else {
-            topic
-        }
-    )
-}
-
-fn chunk_text_for_stream(text: &str, chunk_chars: usize) -> Vec<String> {
-    if text.is_empty() {
-        return Vec::new();
-    }
-
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-    let max_chars = chunk_chars.max(16);
-
-    for ch in text.chars() {
-        current.push(ch);
-        if current.chars().count() >= max_chars {
-            chunks.push(current.clone());
-            current.clear();
-        }
-    }
-
-    if !current.is_empty() {
-        chunks.push(current);
-    }
-
-    chunks
-}
-
-fn truncate_for_notice(value: &str, max_chars: usize) -> String {
-    let out = value.chars().take(max_chars).collect::<String>();
-    if value.chars().count() > max_chars {
-        format!("{out}...")
-    } else {
-        out
-    }
 }
 
 fn publish_interactive_turn_event(

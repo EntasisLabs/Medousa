@@ -109,9 +109,17 @@ pub fn reasoning_delta_stream_event(
 }
 
 pub fn final_stream_event(turn_id: &str, final_text: &str) -> Result<InteractiveTurnStreamEvent> {
+    final_stream_event_with_tools(turn_id, final_text, Vec::new())
+}
+
+pub fn final_stream_event_with_tools(
+    turn_id: &str,
+    final_text: &str,
+    tool_names: Vec<String>,
+) -> Result<InteractiveTurnStreamEvent> {
     let mut event = build_event(turn_id, "final", "complete", "interactive turn complete")?;
     event.final_text = Some(final_text.to_string());
-    event.tool_names = Some(Vec::new());
+    event.tool_names = Some(tool_names);
     event.terminal = true;
     Ok(event)
 }
