@@ -704,6 +704,15 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     );
 
     if daemon_reachable {
+        if let Ok(health) = fetch_daemon_health(&daemon_url) {
+            println!(
+                "agent_runtime_version={} tool_registry_count={} last_agent_turn_latency_ms={:?} last_agent_turn_at={:?}",
+                health.agent_runtime_version,
+                health.tool_registry_count,
+                health.last_agent_turn_latency_ms,
+                health.last_agent_turn_at_utc,
+            );
+        }
         if let Ok(delivery) = fetch_delivery_health(&daemon_url) {
             println!(
                 "delivery_endpoint={} seeded={} target={} webhook_auth={} pending={} last_delivery={:?} last_latency_ms={:?}",
@@ -729,6 +738,17 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn fetch_daemon_health(daemon_url: &str) -> Result<medousa::HealthResponse> {
+    let daemon_url = daemon_url.trim_end_matches('/');
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?
+        .get(format!("{daemon_url}/health"))
+        .send()?
+        .error_for_status()?;
+    Ok(response.json()?)
 }
 
 fn fetch_delivery_health(daemon_url: &str) -> Result<medousa::DeliveryHealthResponse> {

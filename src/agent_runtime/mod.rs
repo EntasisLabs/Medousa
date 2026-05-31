@@ -3,6 +3,9 @@
 //! Phase 1: turn services + runtime type scaffold.
 //! Phase 2+: daemon-hosted turn loop and channel-agnostic streaming.
 
+/// Version label exposed in daemon `/health` and doctor diagnostics.
+pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
+
 pub mod daemon_interactive_turn;
 pub mod continuation;
 pub mod prompt_prep;
@@ -26,7 +29,9 @@ pub use prompt_prep::{
     resolve_prompt_with_context_pack, truncate_text_for_budget, verifier_policy_from_settings_and_route,
     MAX_REQUEST_PROMPT_CHARS,
 };
-pub use daemon_interactive_turn::run_daemon_interactive_turn;
+pub use daemon_interactive_turn::{
+    InteractiveTurnDeliveryContext, run_agent_turn, run_daemon_interactive_turn,
+};
 pub use runtime::{MedousaAgentRuntime, build_agent_runtime, build_daemon_agent_runtime};
 pub use settings::{default_daemon_runtime_settings, runtime_settings_for_interactive_turn};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};

@@ -45,8 +45,10 @@ use medousa::daemon_api::{
 };
 use medousa::session_mapping;
 use medousa::{
+    agent_runtime::stream_sink::AgentStreamSink,
     build_daemon_runtime, channel_delivery, parse_backend, remove_surrealkv_lock,
 };
+use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::fs::OpenOptions;
@@ -90,6 +92,9 @@ struct AppState {
     deliver_webhook_target: String,
     last_delivery_at: Arc<RwLock<Option<DateTime<Utc>>>>,
     last_delivery_latency_ms: Arc<RwLock<Option<u64>>>,
+    last_agent_turn_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_agent_turn_latency_ms: Arc<RwLock<Option<u64>>>,
+    agent_tool_registry_count: usize,
     cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
     channel_session_history: Arc<RwLock<HashMap<String, Vec<String>>>>,
     session_runtime_configs:
@@ -330,6 +335,12 @@ async fn main() -> Result<()> {
         .await
         .context("failed to build daemon agent runtime")?,
     );
+    let agent_tool_registry_count = agent_runtime
+        .tool_registry
+        .list_tools()
+        .await
+        .map(|tools| tools.len())
+        .unwrap_or(0);
 
     let state = AppState {
         runtime: runtime.clone(),
@@ -349,6 +360,9 @@ async fn main() -> Result<()> {
         deliver_webhook_target: deliver_webhook_url.clone(),
         last_delivery_at: Arc::new(RwLock::new(None)),
         last_delivery_latency_ms: Arc::new(RwLock::new(None)),
+        last_agent_turn_at: Arc::new(RwLock::new(None)),
+        last_agent_turn_latency_ms: Arc::new(RwLock::new(None)),
+        agent_tool_registry_count,
         cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
         channel_session_history: Arc::new(RwLock::new(HashMap::new())),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
@@ -582,6 +596,10 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         backend: state.backend,
         worker_id: state.worker_id,
         now_utc: Utc::now(),
+        agent_runtime_version: medousa::agent_runtime::AGENT_RUNTIME_VERSION.to_string(),
+        tool_registry_count: state.agent_tool_registry_count,
+        last_agent_turn_latency_ms: *state.last_agent_turn_latency_ms.read().await,
+        last_agent_turn_at_utc: *state.last_agent_turn_at.read().await,
     })
 }
 
@@ -1159,9 +1177,33 @@ async fn start_interactive_turn(
     )
     .map_err(internal_error)?;
 
+    state.channel_deliveries.write().await.insert(
+        turn_id.clone(),
+        channel_delivery::ChannelDeliveryTarget {
+            channel: "tui".to_string(),
+            user_id: request.session_id.clone(),
+            channel_id: request.session_id.clone(),
+            session_id: request.session_id.clone(),
+            stream_id: Some(turn_id.clone()),
+        },
+    );
+    record_job_delivery_pending(&state, &turn_id).await;
+
     let stream_registry = state.interactive_turn_streams.clone();
     let agent_runtime = state.agent_runtime.clone();
     let backend = state.backend.clone();
+    let delivery_records = state.job_delivery_records.clone();
+    let channel_deliveries = state.channel_deliveries.clone();
+    let last_agent_turn_at = state.last_agent_turn_at.clone();
+    let last_agent_turn_latency_ms = state.last_agent_turn_latency_ms.clone();
+    let delivery = medousa::agent_runtime::InteractiveTurnDeliveryContext {
+        turn_key: turn_id.clone(),
+        delivery_records,
+        channel_deliveries,
+        last_turn_at: last_agent_turn_at,
+        last_turn_latency_ms: last_agent_turn_latency_ms,
+        started: std::time::Instant::now(),
+    };
     tokio::spawn(async move {
         // Give the client a brief window to subscribe before first deltas.
         tokio::time::sleep(Duration::from_millis(120)).await;
@@ -1171,6 +1213,7 @@ async fn start_interactive_turn(
             &backend,
             agent_runtime.as_ref(),
             stream_tx,
+            Some(delivery),
         )
         .await;
 
@@ -2014,6 +2057,197 @@ async fn resolve_job_output_text(
     })
 }
 
+async fn mark_job_delivery_success(
+    job_id: &str,
+    latency_ms: u64,
+    error: Option<String>,
+    delivery_records: &Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
+    last_delivery_at: &Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_delivery_latency_ms: &Arc<RwLock<Option<u64>>>,
+) {
+    let now = Utc::now();
+    delivery_records.write().await.insert(
+        job_id.to_string(),
+        channel_delivery::JobDeliveryRecord {
+            state: channel_delivery::JobDeliveryState::Delivered,
+            delivered_at: Some(now),
+            error,
+            latency_ms: Some(latency_ms),
+        },
+    );
+    *last_delivery_at.write().await = Some(now);
+    *last_delivery_latency_ms.write().await = Some(latency_ms);
+}
+
+struct IngestAgentStreamSink {
+    stream_id: String,
+    session_id: String,
+    job_id: String,
+    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    delivery_target: channel_delivery::ChannelDeliveryTarget,
+    dispatch_client: reqwest::Client,
+    delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
+    channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
+    last_delivery_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_delivery_latency_ms: Arc<RwLock<Option<u64>>>,
+    cancelled_streams: Arc<RwLock<HashSet<String>>>,
+    delivery_started: std::time::Instant,
+}
+
+#[async_trait]
+impl AgentStreamSink for IngestAgentStreamSink {
+    async fn content_chunk(&self, _turn_id: u64, delta: String) {
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::content_delta_stream_event(&self.stream_id, &delta),
+        );
+    }
+
+    async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::reasoning_delta_stream_event(
+                &self.stream_id,
+                &delta,
+            ),
+        );
+    }
+
+    async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+            publish_interactive_turn_event(
+                &self.stream_tx,
+                medousa::interactive_turn_runtime::error_stream_event(
+                    &self.stream_id,
+                    "ingest turn cancelled by /stop",
+                ),
+            );
+            return;
+        }
+
+        medousa::session::append_turn(
+            &self.session_id,
+            &medousa::session::ConversationTurn {
+                role: "assistant".to_string(),
+                content: text.clone(),
+                timestamp: Utc::now(),
+                tool_names: tool_names.clone(),
+                answer_state: None,
+            },
+        );
+
+        let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
+        if let Err(err) = channel_delivery::dispatch_channel_message(
+            &self.dispatch_client,
+            &self.delivery_target,
+            &text,
+        )
+        .await
+        {
+            eprintln!(
+                "ingest agent turn channel dispatch failed job_id={} channel={}: {err:#}",
+                self.job_id, self.delivery_target.channel
+            );
+            mark_job_delivery_success(
+                &self.job_id,
+                latency_ms,
+                Some(err.to_string()),
+                &self.delivery_records,
+                &self.last_delivery_at,
+                &self.last_delivery_latency_ms,
+            )
+            .await;
+        } else {
+            mark_job_delivery_success(
+                &self.job_id,
+                latency_ms,
+                None,
+                &self.delivery_records,
+                &self.last_delivery_at,
+                &self.last_delivery_latency_ms,
+            )
+            .await;
+        }
+
+        self.channel_deliveries.write().await.remove(&self.job_id);
+
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::final_stream_event_with_tools(
+                &self.stream_id,
+                &text,
+                tool_names,
+            ),
+        );
+    }
+
+    async fn agent_error(&self, _turn_id: u64, message: String) {
+        let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
+        let user_message = format!("Sorry — {message}");
+        let _ = channel_delivery::dispatch_channel_message(
+            &self.dispatch_client,
+            &self.delivery_target,
+            &user_message,
+        )
+        .await;
+        mark_job_delivery_success(
+            &self.job_id,
+            latency_ms,
+            Some(message.clone()),
+            &self.delivery_records,
+            &self.last_delivery_at,
+            &self.last_delivery_latency_ms,
+        )
+        .await;
+        self.channel_deliveries.write().await.remove(&self.job_id);
+
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::error_stream_event(&self.stream_id, &message),
+        );
+    }
+
+    async fn notice(&self, message: String) {
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::status_stream_event(
+                &self.stream_id,
+                "orchestration",
+                &message,
+            ),
+        );
+    }
+
+    async fn tool_invoked(&self, tool_name: String, input_summary: String) {
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::status_stream_event(
+                &self.stream_id,
+                "tool",
+                &format!("tool={tool_name} {input_summary}"),
+            ),
+        );
+    }
+
+    async fn tool_payload(
+        &self,
+        tool_name: String,
+        _tool_input: Value,
+        _tool_output: Value,
+        _input_receipt: Option<medousa::payload_receipt::ArtifactReceiptMeta>,
+        _output_receipt: Option<medousa::payload_receipt::ArtifactReceiptMeta>,
+    ) {
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::status_stream_event(
+                &self.stream_id,
+                "tool",
+                &format!("tool_payload={tool_name}"),
+            ),
+        );
+    }
+}
+
 async fn start_ingest_ask_stream(
     state: &AppState,
     mapping_key: &str,
@@ -2022,22 +2256,6 @@ async fn start_ingest_ask_stream(
     request: &IngestRequest,
 ) -> Result<IngestAskStream, (StatusCode, String)> {
     let runtime_config = resolve_session_runtime_config(state, session_id).await;
-    let session_context = session_mapping::load_session_context(session_id, 8);
-    let prompt = if session_context.is_empty() {
-        prompt
-    } else {
-        format!("{session_context}\n\n{prompt}")
-    };
-
-    let identity_context = resolve_identity_context_for_request(
-        state,
-        Some(&format!("medousa:user:{}", request.user_id)),
-        None,
-        Some(&format!("medousa:channel:{}", request.channel_id)),
-        Some("interactive"),
-        8,
-    )
-    .await?;
 
     let now = Utc::now();
     let job_id_str = format!(
@@ -2046,60 +2264,13 @@ async fn start_ingest_ask_stream(
         &session_id[..8.min(session_id.len())]
     );
 
-    let model_hint = Some(format!(
-        "{}:{}",
-        runtime_config.draft_provider, runtime_config.draft_model
-    ));
-    let ask_request = session_mapping::build_enqueue_ask_request(
-        &request.channel,
-        &request.user_id,
-        &request.channel_id,
+    let interactive_request = session_mapping::build_interactive_turn_request_for_ingest(
         session_id,
-        prompt.clone(),
-        model_hint,
+        prompt,
+        &runtime_config.draft_provider,
+        &runtime_config.draft_model,
+        &runtime_config.response_depth_mode,
     );
-
-    let raw_prompt = ask_request.prompt;
-    let prompt_with_identity =
-        prepend_identity_snapshot(&raw_prompt, Some(&identity_context.summary));
-    let compiled_prompt =
-        compile_lane_prompt(EngineExecutionLane::Interactive, &prompt_with_identity);
-
-    let payload = AgentSessionJobPayload {
-        thread_id: Some(job_id_str.clone()),
-        initial_user_prompt: compiled_prompt,
-        participants: vec![AgentSessionParticipantPayload {
-            agent_id: "medousa.researcher".to_string(),
-            system_prompt: Some(
-                "You are Medousa, a practical research assistant. Use tool evidence and cite findings succinctly."
-                    .to_string(),
-            ),
-            tool_name: "stasis.web.search.mock".to_string(),
-            tool_input: Some(serde_json::json!({
-                "query": raw_prompt
-            })),
-        }],
-        policy_profile: Some("interactive".to_string()),
-        model_hint: Some(format!(
-            "{}:{}",
-            runtime_config.draft_provider, runtime_config.draft_model
-        )),
-        memory_policy: None,
-        max_turns: Some(1),
-        tool_call_mode: Some(AgentToolCallMode::Auto),
-    };
-
-    let new_job = RuntimeWorkflowJobBuilder::for_agent_session(job_id_str.clone(), &payload)
-        .map_err(internal_error)?
-        .with_correlation_id(identity_context.user_id)
-        .with_causation_id("medousa-daemon-api:ingester")
-        .with_sttp_input_node_id("sttp:in:medousa:daemon:ingester")
-        .with_scheduled_at(now)
-        .build();
-
-    enqueue_runtime_job(state.runtime.as_ref(), new_job)
-        .await
-        .map_err(internal_error)?;
 
     let stream_id = format!("ingest-{}", Uuid::new_v4().simple());
     let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
@@ -2135,24 +2306,68 @@ async fn start_ingest_ask_stream(
 
     let stream_registry = state.interactive_turn_streams.clone();
     let cancelled_streams = state.cancelled_ingest_streams.clone();
-    let runtime = state.runtime.clone();
-    let job_for_stream = job_id_str.clone();
-    let stream_id_for_task = stream_id.clone();
-    let stream_id_for_cleanup = stream_id.clone();
+    let agent_runtime = state.agent_runtime.clone();
+    let backend = state.backend.clone();
+    let dispatch_client = state.channel_dispatch_client.clone();
+    let delivery_records = state.job_delivery_records.clone();
+    let channel_deliveries = state.channel_deliveries.clone();
+    let last_delivery_at = state.last_delivery_at.clone();
+    let last_delivery_latency_ms = state.last_delivery_latency_ms.clone();
     let active_jobs = state.active_ingest_jobs.clone();
     let mapping_key_for_cleanup = mapping_key.to_string();
+    let stream_id_for_task = stream_id.clone();
+    let stream_id_for_cleanup = stream_id.clone();
+    let session_id_owned = session_id.to_string();
+    let delivery_target = channel_delivery::ChannelDeliveryTarget {
+        channel: request.channel.clone(),
+        user_id: request.user_id.clone(),
+        channel_id: request.channel_id.clone(),
+        session_id: session_id_owned.clone(),
+        stream_id: Some(stream_id.clone()),
+    };
+
+    let job_id_for_sink = job_id_str.clone();
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(120)).await;
-        run_ingest_job_stream_task(
-            stream_id_for_task,
-            job_for_stream,
-            runtime,
-            stream_tx,
+
+        publish_interactive_turn_event(
+            &stream_tx,
+            medousa::interactive_turn_runtime::status_stream_event(
+                &stream_id_for_task,
+                "accepted",
+                "ingest accepted; agent runtime started",
+            ),
+        );
+
+        let sink: Arc<dyn AgentStreamSink> = Arc::new(IngestAgentStreamSink {
+            stream_id: stream_id_for_task.clone(),
+            session_id: session_id_owned,
+            job_id: job_id_for_sink,
+            stream_tx: stream_tx.clone(),
+            delivery_target,
+            dispatch_client,
+            delivery_records,
+            channel_deliveries,
+            last_delivery_at,
+            last_delivery_latency_ms,
             cancelled_streams,
-            active_jobs,
-            mapping_key_for_cleanup,
+            delivery_started: std::time::Instant::now(),
+        });
+
+        medousa::agent_runtime::run_agent_turn(
+            &stream_id_for_task,
+            interactive_request,
+            &backend,
+            agent_runtime.as_ref(),
+            sink,
         )
         .await;
+
+        active_jobs
+            .write()
+            .await
+            .remove(&mapping_key_for_cleanup);
+
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut guard = stream_registry.write().await;
         guard.remove(&stream_id_for_cleanup);
@@ -2163,137 +2378,6 @@ async fn start_ingest_ask_stream(
         stream_id,
         stream_url,
     })
-}
-
-async fn run_ingest_job_stream_task(
-    stream_id: String,
-    job_id: String,
-    runtime: Arc<RuntimeComposition>,
-    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
-    cancelled_streams: Arc<RwLock<HashSet<String>>>,
-    active_jobs: Arc<RwLock<HashMap<String, session_mapping::ActiveIngestJob>>>,
-    mapping_key: String,
-) {
-    publish_interactive_turn_event(
-        &stream_tx,
-        medousa::interactive_turn_runtime::status_stream_event(
-            &stream_id,
-            "accepted",
-            "ingest accepted; streaming job progress",
-        ),
-    );
-
-    let poll_interval = Duration::from_millis(700);
-    let timeout = Duration::from_secs(120);
-    let deadline = tokio::time::Instant::now() + timeout;
-    let mut last_output_len = 0usize;
-
-    loop {
-        if cancelled_streams.read().await.contains(&stream_id) {
-            publish_interactive_turn_event(
-                &stream_tx,
-                medousa::interactive_turn_runtime::error_stream_event(
-                    &stream_id,
-                    "ingest job cancelled by /stop",
-                ),
-            );
-            active_jobs.write().await.remove(&mapping_key);
-            return;
-        }
-
-        match get_job_attempts_graceful(runtime.as_ref(), &job_id).await {
-            Ok(attempts) => {
-                let latest = attempts.last();
-                let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
-                let output_text = latest.and_then(|attempt| {
-                    channel_delivery::extract_output_text_from_diagnostics(
-                        attempt.diagnostics.as_deref(),
-                    )
-                });
-                let (status, is_terminal) =
-                    derive_job_result_status(latest_outcome.as_deref(), attempts.len());
-
-                if let Some(text) = output_text.as_ref() {
-                    if text.len() > last_output_len {
-                        let delta = &text[last_output_len..];
-                        publish_interactive_turn_event(
-                            &stream_tx,
-                            medousa::interactive_turn_runtime::content_delta_stream_event(
-                                &stream_id,
-                                delta,
-                            ),
-                        );
-                        last_output_len = text.len();
-                    }
-                }
-
-                if is_terminal {
-                    match status.as_str() {
-                        "succeeded" => {
-                            let final_text = output_text.unwrap_or_else(|| {
-                                "job succeeded but no output_text was available".to_string()
-                            });
-                            publish_interactive_turn_event(
-                                &stream_tx,
-                                medousa::interactive_turn_runtime::final_stream_event(
-                                    &stream_id,
-                                    &final_text,
-                                ),
-                            );
-                        }
-                        "failed" => {
-                            let message = latest_outcome.unwrap_or_else(|| {
-                                "ingest job failed without outcome details".to_string()
-                            });
-                            publish_interactive_turn_event(
-                                &stream_tx,
-                                medousa::interactive_turn_runtime::error_stream_event(
-                                    &stream_id,
-                                    &message,
-                                ),
-                            );
-                        }
-                        _ => {
-                            publish_interactive_turn_event(
-                                &stream_tx,
-                                medousa::interactive_turn_runtime::error_stream_event(
-                                    &stream_id,
-                                    &format!("ingest job ended with unexpected status={status}"),
-                                ),
-                            );
-                        }
-                    }
-                    active_jobs.write().await.remove(&mapping_key);
-                    return;
-                }
-            }
-            Err(err) => {
-                publish_interactive_turn_event(
-                    &stream_tx,
-                    medousa::interactive_turn_runtime::error_stream_event(
-                        &stream_id,
-                        &format!("ingest job polling failed: {}", err.1),
-                    ),
-                );
-                active_jobs.write().await.remove(&mapping_key);
-                return;
-            }
-        }
-
-        if tokio::time::Instant::now() >= deadline {
-            publish_interactive_turn_event(
-                &stream_tx,
-                medousa::interactive_turn_runtime::error_stream_event(
-                    &stream_id,
-                    "ingest job stream timed out before terminal result",
-                ),
-            );
-            active_jobs.write().await.remove(&mapping_key);
-            return;
-        }
-
-        tokio::time::sleep(poll_interval).await;
-    }
 }
 
 async fn enqueue_runtime_job(

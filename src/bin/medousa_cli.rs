@@ -173,6 +173,13 @@ async fn run_daemon_health(daemon_url: &str) -> Result<()> {
         "status={} backend={} worker={} now={}",
         payload.status, payload.backend, payload.worker_id, payload.now_utc
     );
+    println!(
+        "agent_runtime_version={} tool_registry_count={} last_agent_turn_latency_ms={:?} last_agent_turn_at={:?}",
+        payload.agent_runtime_version,
+        payload.tool_registry_count,
+        payload.last_agent_turn_latency_ms,
+        payload.last_agent_turn_at_utc
+    );
     Ok(())
 }
 

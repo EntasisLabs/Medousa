@@ -1,5 +1,6 @@
-use crate::daemon_api::{IngestAttachment, IngestRequest};
+use crate::daemon_api::{IngestAttachment, IngestRequest, InteractiveTurnRequest};
 use crate::session::load_history;
+use crate::stage_routing::StageRoutingMatrix;
 
 /// What the ingester should do after parsing a request.
 #[derive(Debug, Clone, PartialEq)]
@@ -327,6 +328,25 @@ pub fn last_user_prompt_for_regen(session_id: &str) -> Option<String> {
         .find(|turn| turn.role == "user")
         .map(|turn| turn.content)
         .filter(|content| !content.trim().is_empty())
+}
+
+/// Build an interactive turn request for centralized ingest (agent runtime path).
+pub fn build_interactive_turn_request_for_ingest(
+    session_id: &str,
+    prompt: String,
+    provider: &str,
+    model: &str,
+    response_depth_mode: &str,
+) -> InteractiveTurnRequest {
+    InteractiveTurnRequest {
+        session_id: session_id.to_string(),
+        prompt,
+        persist_user_turn: true,
+        response_depth_mode: response_depth_mode.to_string(),
+        provider: provider.to_string(),
+        model: model.to_string(),
+        stage_routing: StageRoutingMatrix::default_for(provider, model),
+    }
 }
 
 /// Build an `EnqueueAskRequest` from an ingest outcome + session context.

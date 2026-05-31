@@ -1,10 +1,16 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tokio::sync::broadcast;
+use tokio::sync::RwLock;
 
+use crate::channel_delivery::{
+    ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState,
+};
 use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
@@ -16,10 +22,41 @@ use super::stream_sink::AgentStreamSink;
 use super::stream_sink::SharedAgentStreamSink;
 use super::turn_orchestrator::{self, AssembleLocalTurnParams, PrepareTurnPromptParams};
 
+/// Delivery registry hooks for interactive turns (mirrors ingest `channel_deliveries` pattern).
+#[derive(Clone)]
+pub struct InteractiveTurnDeliveryContext {
+    pub turn_key: String,
+    pub delivery_records: Arc<RwLock<HashMap<String, JobDeliveryRecord>>>,
+    pub channel_deliveries: Arc<RwLock<HashMap<String, ChannelDeliveryTarget>>>,
+    pub last_turn_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    pub last_turn_latency_ms: Arc<RwLock<Option<u64>>>,
+    pub started: Instant,
+}
+
+impl InteractiveTurnDeliveryContext {
+    pub async fn mark_complete(&self, error: Option<String>) {
+        let latency_ms = self.started.elapsed().as_millis() as u64;
+        let now = Utc::now();
+        self.delivery_records.write().await.insert(
+            self.turn_key.clone(),
+            JobDeliveryRecord {
+                state: JobDeliveryState::Delivered,
+                delivered_at: Some(now),
+                error,
+                latency_ms: Some(latency_ms),
+            },
+        );
+        *self.last_turn_at.write().await = Some(now);
+        *self.last_turn_latency_ms.write().await = Some(latency_ms);
+        self.channel_deliveries.write().await.remove(&self.turn_key);
+    }
+}
+
 struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
     stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    delivery: Option<InteractiveTurnDeliveryContext>,
 }
 
 #[async_trait]
@@ -56,6 +93,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 tool_names,
             ),
         );
+
+        if let Some(delivery) = &self.delivery {
+            delivery.mark_complete(None).await;
+        }
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
@@ -63,6 +104,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &self.stream_tx,
             interactive_turn_runtime::error_stream_event(&self.turn_id, &message),
         );
+
+        if let Some(delivery) = &self.delivery {
+            delivery.mark_complete(Some(message)).await;
+        }
     }
 
     async fn notice(&self, message: String) {
@@ -111,30 +156,20 @@ fn publish(
     }
 }
 
-/// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
-pub async fn run_daemon_interactive_turn(
-    turn_id: &str,
+/// Run a full agent turn, streaming events through the provided sink.
+pub async fn run_agent_turn(
+    _turn_id: &str,
     request: InteractiveTurnRequest,
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
-    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    sink: SharedAgentStreamSink,
 ) {
-    publish(
-        &stream_tx,
-        interactive_turn_runtime::status_stream_event(
-            turn_id,
-            "accepted",
-            "interactive turn accepted; agent runtime started",
-        ),
-    );
 
     let session_id = request.session_id.trim().to_string();
     let prompt = request.prompt.trim().to_string();
     if session_id.is_empty() || prompt.is_empty() {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::error_stream_event(turn_id, "session_id and prompt are required"),
-        );
+        sink.agent_error(1, "session_id and prompt are required".to_string())
+            .await;
         return;
     }
 
@@ -143,20 +178,14 @@ pub async fn run_daemon_interactive_turn(
     let verifier_route = request.stage_routing.get("verifier").cloned();
 
     if let Some(route) = final_route.as_ref() {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::status_stream_event(
-                turn_id,
-                "routing",
-                &format!(
-                    "final_response route target={}:{} policy={} fallback={}",
-                    route.provider,
-                    route.model,
-                    route.policy_profile,
-                    route.fallback_chain.join(",")
-                ),
-            ),
-        );
+        sink.notice(format!(
+            "◈ stage route final_response target={}:{} policy={} fallback={}",
+            route.provider,
+            route.model,
+            route.policy_profile,
+            route.fallback_chain.join(","),
+        ))
+        .await;
     }
 
     let mut conversation = load_history(&session_id);
@@ -185,62 +214,34 @@ pub async fn run_daemon_interactive_turn(
     .await;
 
     if let Some(err) = &prepared.recall_probe.error {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::status_stream_event(
-                turn_id,
-                "recall",
-                &format!("cheap_recall error={err}"),
-            ),
-        );
+        sink.notice(format!("◈ cheap_recall error={err}")).await;
     } else if prepared.recall_probe.attempted {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::status_stream_event(
-                turn_id,
-                "recall",
-                &format!(
-                    "cheap_recall retrieved={} path={} keys={}",
-                    prepared.recall_probe.retrieved,
-                    prepared
-                        .recall_probe
-                        .retrieval_path
-                        .as_deref()
-                        .unwrap_or("n/a"),
-                    prepared.recall_probe.node_sync_keys.len(),
-                ),
-            ),
-        );
+        sink.notice(format!(
+            "◈ cheap_recall retrieved={} path={} keys={}",
+            prepared.recall_probe.retrieved,
+            prepared
+                .recall_probe
+                .retrieval_path
+                .as_deref()
+                .unwrap_or("n/a"),
+            prepared.recall_probe.node_sync_keys.len(),
+        ))
+        .await;
     }
 
     if let Some(summary) = &prepared.identity_probe.summary {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::status_stream_event(
-                turn_id,
-                "identity",
-                &truncate_text_for_budget(
-                    &format!("identity_context loaded summary={summary}"),
-                    180,
-                ),
-            ),
-        );
+        sink.notice(format!(
+            "◈ identity_context loaded summary={}",
+            truncate_text_for_budget(summary, 180)
+        ))
+        .await;
     }
 
-    publish(
-        &stream_tx,
-        interactive_turn_runtime::status_stream_event(
-            turn_id,
-            "compiler",
-            &prepared.compiler_output.compiler_summary,
-        ),
-    );
+    sink.notice(format!("◈ {}", prepared.compiler_output.compiler_summary))
+        .await;
 
     if let Some(note) = &prepared.pack_note {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::status_stream_event(turn_id, "context_pack", note),
-        );
+        sink.notice(note.clone()).await;
     }
 
     let resolved_prompt = truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
@@ -258,55 +259,61 @@ pub async fn run_daemon_interactive_turn(
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {
-        publish(
-            &stream_tx,
-            interactive_turn_runtime::status_stream_event(turn_id, "routing", &route_notice),
-        );
+        sink.notice(route_notice).await;
     }
 
-    publish(
-        &stream_tx,
-        interactive_turn_runtime::status_stream_event(
-            turn_id,
-            "activation",
-            &format!(
-                "class={} mode={} rounds={} no_tools={} reason={}",
-                assembled.activation.turn_class,
-                match assembled.activation.tool_call_mode {
-                    stasis::application::orchestration::tool_loop_pipeline::ToolCallMode::Auto => {
-                        "auto"
-                    }
-                    stasis::application::orchestration::tool_loop_pipeline::ToolCallMode::Strict => {
-                        "strict"
-                    }
-                },
-                assembled.activation.max_tool_rounds,
-                assembled.activation.enforce_no_tools,
-                assembled.activation.reason,
-            ),
-        ),
-    );
+    sink.notice(format!(
+        "◈ activation heuristic class={} mode={} rounds={} no_tools={} reason={}",
+        assembled.activation.turn_class,
+        match assembled.activation.tool_call_mode {
+            stasis::application::orchestration::tool_loop_pipeline::ToolCallMode::Auto => "auto",
+            stasis::application::orchestration::tool_loop_pipeline::ToolCallMode::Strict => {
+                "strict"
+            }
+        },
+        assembled.activation.max_tool_rounds,
+        assembled.activation.enforce_no_tools,
+        assembled.activation.reason,
+    ))
+    .await;
 
-    publish(
-        &stream_tx,
-        interactive_turn_runtime::status_stream_event(
-            turn_id,
-            "slicing",
-            &format!(
-                "hot_turns={} cold_turns={} cold_chars={} prior_chars={}",
-                assembled.prior_build.hot_turns_included,
-                assembled.prior_build.cold_turns_summarized,
-                assembled.prior_build.cold_summary_chars,
-                assembled.prior_build.total_chars,
-            ),
-        ),
-    );
-
-    let sink: SharedAgentStreamSink = Arc::new(InteractiveTurnStreamSink {
-        turn_id: turn_id.to_string(),
-        session_id: session_id.clone(),
-        stream_tx: stream_tx.clone(),
-    });
+    sink.notice(format!(
+        "◈ turn slicing hot_turns={} cold_turns={} cold_chars={} prior_chars={}",
+        assembled.prior_build.hot_turns_included,
+        assembled.prior_build.cold_turns_summarized,
+        assembled.prior_build.cold_summary_chars,
+        assembled.prior_build.total_chars,
+    ))
+    .await;
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
+}
+
+/// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
+pub async fn run_daemon_interactive_turn(
+    turn_id: &str,
+    request: InteractiveTurnRequest,
+    backend: &str,
+    agent_rt: &super::runtime::MedousaAgentRuntime,
+    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    delivery: Option<InteractiveTurnDeliveryContext>,
+) {
+    publish(
+        &stream_tx,
+        interactive_turn_runtime::status_stream_event(
+            turn_id,
+            "accepted",
+            "interactive turn accepted; agent runtime started",
+        ),
+    );
+
+    let session_id = request.session_id.trim().to_string();
+    let sink: SharedAgentStreamSink = Arc::new(InteractiveTurnStreamSink {
+        turn_id: turn_id.to_string(),
+        session_id,
+        stream_tx,
+        delivery,
+    });
+
+    run_agent_turn(turn_id, request, backend, agent_rt, sink).await;
 }

@@ -195,6 +195,8 @@ struct TuiState {
     received_native_reasoning: bool,
     pending_response_verified: Option<bool>,
     daemon_url: String,
+    /// When true, chat turns skip daemon and use the in-process local runtime only.
+    local_runtime_only: bool,
     next_settings_apply_request_id: u64,
     active_settings_apply_request_id: Option<u64>,
     pending_settings_apply: Option<PendingSettingsApply>,
@@ -304,6 +306,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    let local_runtime_only = args.iter().any(|a| a == "--local-runtime-only")
+        || std::env::var("MEDOUSA_TUI_LOCAL_RUNTIME")
+            .ok()
+            .is_some_and(|value| {
+                value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
+            });
+
     let resolved_provider = resolve_llm_provider(provider.or(defaults.provider.as_deref()));
     let resolved_model = resolve_llm_model(model.or(defaults.model.as_deref()));
     let mut resolved_backend = resolve_backend_name(backend.or(defaults.backend.as_deref()));
@@ -403,6 +412,13 @@ async fn main() -> Result<()> {
             .unwrap_or("standard"),
     );
     let resolved_daemon_url = resolve_daemon_url(daemon_url);
+    let daemon_agent_primary = if local_runtime_only {
+        false
+    } else {
+        daemon_commands::daemon_health(&resolved_daemon_url)
+            .await
+            .is_ok()
+    };
 
     // If the daemon is already running, it owns the database lock.
     // The TUI only needs an in-memory runtime for local tool execution;
@@ -562,7 +578,8 @@ async fn main() -> Result<()> {
         stream_tag_tail: String::new(),
         received_native_reasoning: false,
         pending_response_verified: None,
-        daemon_url: resolved_daemon_url,
+        daemon_url: resolved_daemon_url.clone(),
+        local_runtime_only,
         next_settings_apply_request_id: 0,
         active_settings_apply_request_id: None,
         pending_settings_apply: None,
@@ -580,6 +597,30 @@ async fn main() -> Result<()> {
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
     };
+
+    if local_runtime_only {
+        push_obs(
+            &mut state,
+            "◈ local-runtime-only — agent turns stay in-process (offline/dev mode)".to_string(),
+        );
+    } else if daemon_agent_primary {
+        push_obs(
+            &mut state,
+            format!(
+                "◈ daemon-primary — agent turns via {} ({})",
+                resolved_daemon_url,
+                medousa::agent_runtime::AGENT_RUNTIME_VERSION
+            ),
+        );
+    } else {
+        push_obs(
+            &mut state,
+            format!(
+                "◈ daemon unavailable at {} — local runtime fallback for chat",
+                resolved_daemon_url
+            ),
+        );
+    }
 
     // ── Keyboard reader (spawn_blocking to keep async event loop clean) ───────
     let (key_tx, mut key_rx) = mpsc::channel::<Event>(64);
@@ -1206,6 +1247,7 @@ mod tests {
             received_native_reasoning: false,
             pending_response_verified: None,
             daemon_url: "http://127.0.0.1:8787".to_string(),
+            local_runtime_only: false,
             next_settings_apply_request_id: 0,
             active_settings_apply_request_id: None,
             pending_settings_apply: None,

@@ -21,6 +21,9 @@ pub(crate) fn print_help() {
     println!("  --thinking-capture <b> Capture thinking chunks: true | false");
     println!("  --thinking-max-lines <n> Retained thinking lines (50-5000)");
     println!("  --daemon-url <url>    Medousa daemon base URL (env: MEDOUSA_DAEMON_URL)");
+    println!(
+        "  --local-runtime-only  Force in-process agent runtime (env: MEDOUSA_TUI_LOCAL_RUNTIME=1)"
+    );
     println!("                        Grapheme timeout env: MEDOUSA_GRAPHEME_EXECUTION_TIMEOUT_MS");
     println!("  --session <id>        Resume a specific session by ID");
     println!("  --help, -h            Print this help");

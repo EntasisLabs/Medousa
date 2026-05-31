@@ -23,6 +23,18 @@ pub struct HealthResponse {
     pub backend: String,
     pub worker_id: String,
     pub now_utc: DateTime<Utc>,
+    #[serde(default = "default_agent_runtime_version")]
+    pub agent_runtime_version: String,
+    #[serde(default)]
+    pub tool_registry_count: usize,
+    #[serde(default)]
+    pub last_agent_turn_latency_ms: Option<u64>,
+    #[serde(default)]
+    pub last_agent_turn_at_utc: Option<DateTime<Utc>>,
+}
+
+fn default_agent_runtime_version() -> String {
+    crate::agent_runtime::AGENT_RUNTIME_VERSION.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -113,53 +113,60 @@ pub(crate) async fn start_prompt_run(
     prompt: String,
     persist_user_turn: bool,
 ) {
-    match attempt_daemon_interactive_turn(state, &prompt, persist_user_turn).await {
-        Ok(response) => {
-            if let Some(notice) = response.daemon_notice {
-                super::push_obs(state, format!("◈ {notice}"));
-            }
+    if !state.local_runtime_only {
+        match attempt_daemon_interactive_turn(state, &prompt, persist_user_turn).await {
+            Ok(response) => {
+                if let Some(notice) = response.daemon_notice {
+                    super::push_obs(state, format!("◈ {notice}"));
+                }
 
-            if response.fallback_to_local || !response.stream_ready {
+                if response.fallback_to_local || !response.stream_ready {
+                    super::push_obs(
+                        state,
+                        format!(
+                            "◈ interactive turn fallback local turn_id={} reason={} stream_ready={}",
+                            response.turn_id,
+                            response
+                                .fallback_reason
+                                .unwrap_or_else(|| "daemon_stream_not_ready".to_string()),
+                            response.stream_ready,
+                        ),
+                    );
+                } else {
+                    super::push_obs(
+                        state,
+                        format!(
+                            "◈ interactive turn accepted daemon turn_id={} stream={}",
+                            response.turn_id, response.stream_url
+                        ),
+                    );
+                    start_daemon_stream_prompt_run(
+                        state,
+                        event_tx,
+                        &prompt,
+                        persist_user_turn,
+                        &response.turn_id,
+                        &response.stream_url,
+                    )
+                    .await;
+                    return;
+                }
+            }
+            Err(err) => {
                 super::push_obs(
                     state,
                     format!(
-                        "◈ interactive turn fallback local turn_id={} reason={} stream_ready={}",
-                        response.turn_id,
-                        response
-                            .fallback_reason
-                            .unwrap_or_else(|| "daemon_stream_not_ready".to_string()),
-                        response.stream_ready,
+                        "◈ interactive turn daemon unavailable; using local runtime ({})",
+                        prompt_prep::truncate_text_for_budget(&err, 180)
                     ),
                 );
-            } else {
-                super::push_obs(
-                    state,
-                    format!(
-                        "◈ interactive turn accepted daemon turn_id={} stream={}",
-                        response.turn_id, response.stream_url
-                    ),
-                );
-                start_daemon_stream_prompt_run(
-                    state,
-                    event_tx,
-                    &prompt,
-                    persist_user_turn,
-                    &response.turn_id,
-                    &response.stream_url,
-                )
-                .await;
-                return;
             }
         }
-        Err(err) => {
-            super::push_obs(
-                state,
-                format!(
-                    "◈ interactive turn daemon unavailable; using local runtime ({})",
-                    prompt_prep::truncate_text_for_budget(&err, 180)
-                ),
-            );
-        }
+    } else {
+        super::push_obs(
+            state,
+            "◈ local-runtime-only — using in-process agent runtime".to_string(),
+        );
     }
 
     state.active_agent_turn_id = state.active_agent_turn_id.saturating_add(1);

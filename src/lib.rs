@@ -74,7 +74,7 @@ pub use adapter_ingest::{
 };
 pub use agent_runtime::{
     AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime,
-    build_daemon_agent_runtime, run_daemon_interactive_turn,
+    build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
 };
 pub use tools::{TuiRuntime, build_tui_runtime};
 

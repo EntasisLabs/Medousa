@@ -92,7 +92,7 @@ Move TUI agent orchestration into `src/agent_runtime/` without changing behavior
 
 ---
 
-### Phase 2 — Daemon hosts the runtime 🎯 **In progress**
+### Phase 2 — Daemon hosts the runtime ✅ **Done**
 
 Run the extracted runtime inside `medousa_daemon`.
 
@@ -100,32 +100,33 @@ Run the extracted runtime inside `medousa_daemon`.
 - [x] Wire session_id, stage routing, response depth from interactive turn request
 - [x] Stream `content_delta`, `reasoning_delta`, `status`, `final`, `error` events (same SSE contract TUI/adapters consume)
 - [x] Daemon builds shared agent runtime at startup (`build_daemon_agent_runtime`)
-- [ ] Register delivery target + enqueue outbox on turn accept (reuse ingest delivery registry pattern)
-- [ ] TUI primary path → daemon agent turn; local runtime = offline/dev fallback only
-- [ ] Doctor: agent runtime version, last turn latency, tool registry count
+- [x] Register delivery target + pending delivery record on interactive turn accept (`InteractiveTurnDeliveryContext`)
+- [x] TUI primary path → daemon agent turn; `--local-runtime-only` / `MEDOUSA_TUI_LOCAL_RUNTIME=1` for offline/dev fallback
+- [x] Doctor + `daemon-health`: agent runtime version, last turn latency, tool registry count
 
-**Exit criteria:** TUI chat via daemon matches local fallback quality on tool-using prompts; dashboard shows one code path in logs.
+**Exit criteria:** TUI chat via daemon matches local fallback quality on tool-using prompts; dashboard shows one code path in logs. ✅
 
 ---
 
-### Phase 3 — Channel convergence
+### Phase 3 — Channel convergence ✅ **Done (ingest path)**
 
 Point all ingress at daemon agent turns.
 
-- [ ] Ingest `EnqueueAsk` → start agent turn (not `agent_session` Stasis job)
-- [ ] Remove `start_ingest_ask_stream` job poll task + `run_ingest_job_stream_task`
-- [ ] CLI `daemon-ask` uses agent turn + delivery poll (already close)
-- [ ] Discord/Telegram: unchanged adapter shell; daemon does the thinking
-- [ ] Session history: append assistant turn on delivery completion (daemon-side)
+- [x] Ingest `EnqueueAsk` → start agent turn (not `agent_session` Stasis job)
+- [x] Remove ingest job poll task (`run_ingest_job_stream_task` deleted)
+- [x] CLI `daemon-ask` uses agent turn + delivery poll (via `/v1/ingest`)
+- [x] Discord/Telegram: unchanged adapter shell; daemon does the thinking
+- [x] Session history: append assistant turn on delivery completion (`IngestAgentStreamSink`)
 
-**Exit criteria:** Telegram, Discord, CLI, and TUI all hit the same daemon route; no `workflow.stasis.agent_session` ingest jobs in dashboard.
+**Exit criteria:** Telegram, Discord, CLI, and TUI all hit the same daemon route; no `workflow.stasis.agent_session` ingest jobs in dashboard. ✅ for `/v1/ingest`; `POST /v1/jobs/ask` still legacy (Phase 4).
 
 ---
 
 ### Phase 4 — Decommission legacy paths
 
-- [ ] Remove simplified `run_interactive_turn_stream_task` (PromptExecutionPipeline-only)
-- [ ] Remove ingest `AgentSessionJobPayload` builder in `start_ingest_ask_stream`
+- [x] Remove simplified `run_interactive_turn_stream_task` (PromptExecutionPipeline-only) — replaced in Phase 2
+- [x] Remove ingest `AgentSessionJobPayload` builder in `start_ingest_ask_stream`
+- [ ] Migrate `POST /v1/jobs/ask` (`enqueue_ask`) off `for_agent_session`
 - [ ] Remove bridge diagnostics extraction for `turns[].response_text` (no longer needed)
 - [ ] Update [component-daemon.md](component-daemon.md) and [component-tui.md](component-tui.md)
 - [ ] Archive notes in [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md) Phase 5 → superseded by this track
@@ -168,7 +169,7 @@ Point all ingress at daemon agent turns.
 | Turn activation / prior messages | `src/bin/medousa_tui/turn_services.rs` |
 | Runtime assembly | `src/tui/runtime_services.rs`, `src/tools.rs` |
 | Daemon simplified turn (replace) | `run_interactive_turn_stream_task` in `medousa_daemon.rs` |
-| Ingest agent_session (replace) | `start_ingest_ask_stream` in `medousa_daemon.rs` |
+| Ingest agent_session (replace) | ~~`start_ingest_ask_stream`~~ → `run_agent_turn` + `IngestAgentStreamSink` |
 | Delivery (keep) | `src/channel_delivery.rs`, outbox webhook |
 
 ## Suggested Phase 1 PR Slices
