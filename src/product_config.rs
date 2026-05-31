@@ -71,6 +71,8 @@ pub struct WhatsAppProductConfig {
     #[serde(default)]
     pub deliver_url: Option<String>,
     #[serde(default)]
+    pub session_db_path: Option<String>,
+    #[serde(default)]
     pub allowed_user_ids: Vec<String>,
     #[serde(default)]
     pub heartbeat_nudges_enabled: bool,
@@ -179,6 +181,7 @@ impl Default for WhatsAppProductConfig {
         Self {
             deliver_bind: default_whatsapp_deliver_bind(),
             deliver_url: None,
+            session_db_path: None,
             allowed_user_ids: Vec::new(),
             heartbeat_nudges_enabled: false,
             heartbeat_chat_jids: Vec::new(),
@@ -442,6 +445,17 @@ fn apply_whatsapp_env(config: &WhatsAppProductConfig) {
         unsafe { std::env::set_var("MEDOUSA_WHATSAPP_DELIVER_URL", url) };
     } else {
         unsafe { std::env::remove_var("MEDOUSA_WHATSAPP_DELIVER_URL") };
+    }
+
+    if let Some(path) = config
+        .session_db_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        unsafe { std::env::set_var("MEDOUSA_WHATSAPP_SESSION_DB", path) };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_WHATSAPP_SESSION_DB") };
     }
 
     if config.heartbeat_nudges_enabled {

@@ -101,6 +101,15 @@ pub(crate) enum WizardStep {
     TelegramAllowUserIds,
     TelegramHeartbeat,
     LaunchTelegram,
+    Slack,
+    SlackBotToken,
+    SlackAppToken,
+    SlackAllowUserIds,
+    LaunchSlack,
+    WhatsApp,
+    WhatsAppDeliverBind,
+    WhatsAppAllowUserIds,
+    LaunchWhatsApp,
     TuiResponseDepth,
     Confirm,
 }
@@ -112,8 +121,13 @@ pub(crate) struct WizardBootstrap {
     pub(crate) existing_api_key: bool,
     pub(crate) existing_discord_token: bool,
     pub(crate) existing_telegram_token: bool,
+    pub(crate) existing_slack_bot_token: bool,
+    pub(crate) existing_slack_app_token: bool,
     pub(crate) existing_mcp_gateway_config: bool,
     pub(crate) initial_telegram_allow_user_ids: Option<String>,
+    pub(crate) initial_slack_allow_user_ids: String,
+    pub(crate) initial_whatsapp_deliver_bind: String,
+    pub(crate) initial_whatsapp_allow_user_ids: String,
     pub(crate) initial_daemon_bind: String,
     pub(crate) initial_discord_command_prefix: String,
     pub(crate) initial_discord_heartbeat_nudges: bool,
@@ -154,6 +168,15 @@ pub(crate) struct WizardOutput {
     pub(crate) telegram_token: Option<String>,
     pub(crate) telegram_allow_user_ids: Option<String>,
     pub(crate) start_telegram: bool,
+    pub(crate) configure_slack: bool,
+    pub(crate) slack_bot_token: Option<String>,
+    pub(crate) slack_app_token: Option<String>,
+    pub(crate) slack_allow_user_ids: Option<String>,
+    pub(crate) start_slack: bool,
+    pub(crate) configure_whatsapp: bool,
+    pub(crate) whatsapp_deliver_bind: String,
+    pub(crate) whatsapp_allow_user_ids: Option<String>,
+    pub(crate) start_whatsapp: bool,
     pub(crate) configure_mcp_gateway: bool,
     pub(crate) start_mcp_gateway: bool,
     pub(crate) daemon_bind: String,
@@ -191,6 +214,15 @@ pub(crate) struct WizardState {
     pub(crate) telegram_token: String,
     pub(crate) telegram_allow_user_ids: String,
     pub(crate) start_telegram: bool,
+    pub(crate) configure_slack: bool,
+    pub(crate) slack_bot_token: String,
+    pub(crate) slack_app_token: String,
+    pub(crate) slack_allow_user_ids: String,
+    pub(crate) start_slack: bool,
+    pub(crate) configure_whatsapp: bool,
+    pub(crate) whatsapp_deliver_bind: String,
+    pub(crate) whatsapp_allow_user_ids: String,
+    pub(crate) start_whatsapp: bool,
     pub(crate) configure_mcp_gateway: bool,
     pub(crate) start_mcp_gateway: bool,
     pub(crate) daemon_bind: String,
@@ -219,6 +251,10 @@ impl WizardState {
             .to_string();
         let configure_telegram = bootstrap.existing_telegram_token
             || !initial_telegram_allow_user_ids.is_empty();
+        let configure_slack = (bootstrap.existing_slack_bot_token
+            && bootstrap.existing_slack_app_token)
+            || !bootstrap.initial_slack_allow_user_ids.is_empty();
+        let configure_whatsapp = !bootstrap.initial_whatsapp_allow_user_ids.is_empty();
 
         let mut start_daemon = true;
         if bootstrap.force_no_daemon {
@@ -276,6 +312,15 @@ impl WizardState {
             telegram_token: String::new(),
             telegram_allow_user_ids: initial_telegram_allow_user_ids,
             start_telegram: false,
+            configure_slack,
+            slack_bot_token: String::new(),
+            slack_app_token: String::new(),
+            slack_allow_user_ids: bootstrap.initial_slack_allow_user_ids.clone(),
+            start_slack: false,
+            configure_whatsapp,
+            whatsapp_deliver_bind: bootstrap.initial_whatsapp_deliver_bind.clone(),
+            whatsapp_allow_user_ids: bootstrap.initial_whatsapp_allow_user_ids.clone(),
+            start_whatsapp: false,
             configure_mcp_gateway: !bootstrap.existing_mcp_gateway_config,
             start_mcp_gateway: true,
             daemon_bind: bootstrap.initial_daemon_bind.clone(),
@@ -320,6 +365,15 @@ impl WizardState {
             WizardStep::TelegramAllowUserIds => "Telegram Allowlist",
             WizardStep::TelegramHeartbeat => "Telegram Heartbeat",
             WizardStep::LaunchTelegram => "Start Telegram",
+            WizardStep::Slack => "Slack Adapter",
+            WizardStep::SlackBotToken => "Slack Bot Token",
+            WizardStep::SlackAppToken => "Slack App Token",
+            WizardStep::SlackAllowUserIds => "Slack Allowlist",
+            WizardStep::LaunchSlack => "Start Slack",
+            WizardStep::WhatsApp => "WhatsApp Adapter",
+            WizardStep::WhatsAppDeliverBind => "WhatsApp Deliver Bind",
+            WizardStep::WhatsAppAllowUserIds => "WhatsApp Allowlist",
+            WizardStep::LaunchWhatsApp => "Start WhatsApp",
             WizardStep::TuiResponseDepth => "Response Depth",
             WizardStep::Confirm => "Confirm",
         }
@@ -386,6 +440,21 @@ impl WizardState {
             flow.push(WizardStep::TelegramAllowUserIds);
             flow.push(WizardStep::TelegramHeartbeat);
             flow.push(WizardStep::LaunchTelegram);
+        }
+
+        flow.push(WizardStep::Slack);
+        if self.configure_slack {
+            flow.push(WizardStep::SlackBotToken);
+            flow.push(WizardStep::SlackAppToken);
+            flow.push(WizardStep::SlackAllowUserIds);
+            flow.push(WizardStep::LaunchSlack);
+        }
+
+        flow.push(WizardStep::WhatsApp);
+        if self.configure_whatsapp {
+            flow.push(WizardStep::WhatsAppDeliverBind);
+            flow.push(WizardStep::WhatsAppAllowUserIds);
+            flow.push(WizardStep::LaunchWhatsApp);
         }
 
         flow.push(WizardStep::TuiResponseDepth);
@@ -662,6 +731,92 @@ impl WizardState {
                 }
                 _ => {}
             },
+            WizardStep::Slack => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.configure_slack = !self.configure_slack;
+                }
+                _ => {}
+            },
+            WizardStep::SlackBotToken => {
+                if key.code == KeyCode::Enter {
+                    self.slack_bot_token = self.slack_bot_token.trim().to_string();
+                    if self.slack_bot_token.is_empty() && !self.bootstrap.existing_slack_bot_token {
+                        self.status_message =
+                            Some("Slack bot token (xoxb-…) is required when Slack is enabled.".to_string());
+                    } else {
+                        self.move_next();
+                    }
+                } else {
+                    edit_text_field(&mut self.slack_bot_token, key);
+                }
+            }
+            WizardStep::SlackAppToken => {
+                if key.code == KeyCode::Enter {
+                    self.slack_app_token = self.slack_app_token.trim().to_string();
+                    if self.slack_app_token.is_empty() && !self.bootstrap.existing_slack_app_token {
+                        self.status_message = Some(
+                            "Slack app token (xapp-… Socket Mode) is required when Slack is enabled."
+                                .to_string(),
+                        );
+                    } else {
+                        self.move_next();
+                    }
+                } else {
+                    edit_text_field(&mut self.slack_app_token, key);
+                }
+            }
+            WizardStep::SlackAllowUserIds => {
+                if key.code == KeyCode::Enter {
+                    self.slack_allow_user_ids = normalize_slack_user_ids_csv(&self.slack_allow_user_ids);
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.slack_allow_user_ids, key);
+                }
+            }
+            WizardStep::LaunchSlack => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.start_slack = !self.start_slack;
+                }
+                _ => {}
+            },
+            WizardStep::WhatsApp => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.configure_whatsapp = !self.configure_whatsapp;
+                }
+                _ => {}
+            },
+            WizardStep::WhatsAppDeliverBind => {
+                if key.code == KeyCode::Enter {
+                    if self.whatsapp_deliver_bind.trim().is_empty() {
+                        self.whatsapp_deliver_bind =
+                            self.bootstrap.initial_whatsapp_deliver_bind.clone();
+                    } else {
+                        self.whatsapp_deliver_bind = self.whatsapp_deliver_bind.trim().to_string();
+                    }
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.whatsapp_deliver_bind, key);
+                }
+            }
+            WizardStep::WhatsAppAllowUserIds => {
+                if key.code == KeyCode::Enter {
+                    self.whatsapp_allow_user_ids =
+                        normalize_whatsapp_allowlist_csv(&self.whatsapp_allow_user_ids);
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.whatsapp_allow_user_ids, key);
+                }
+            }
+            WizardStep::LaunchWhatsApp => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.start_whatsapp = !self.start_whatsapp;
+                }
+                _ => {}
+            },
             WizardStep::TuiResponseDepth => match key.code {
                 KeyCode::Up => self.cycle_response_depth(-1),
                 KeyCode::Down => self.cycle_response_depth(1),
@@ -871,10 +1026,38 @@ impl WizardState {
             Some(self.telegram_allow_user_ids.trim().to_string())
         };
         let start_telegram = configure_telegram && self.start_telegram;
+        let configure_slack = self.configure_slack;
+        let slack_bot_token = if self.slack_bot_token.trim().is_empty() {
+            None
+        } else {
+            Some(self.slack_bot_token.trim().to_string())
+        };
+        let slack_app_token = if self.slack_app_token.trim().is_empty() {
+            None
+        } else {
+            Some(self.slack_app_token.trim().to_string())
+        };
+        let slack_allow_user_ids = if self.slack_allow_user_ids.trim().is_empty() {
+            None
+        } else {
+            Some(self.slack_allow_user_ids.trim().to_string())
+        };
+        let start_slack = configure_slack && self.start_slack;
+        let configure_whatsapp = self.configure_whatsapp;
+        let whatsapp_allow_user_ids = if self.whatsapp_allow_user_ids.trim().is_empty() {
+            None
+        } else {
+            Some(self.whatsapp_allow_user_ids.trim().to_string())
+        };
+        let start_whatsapp = configure_whatsapp && self.start_whatsapp;
         let configure_mcp_gateway = self.configure_mcp_gateway;
         let start_mcp_gateway = configure_mcp_gateway && self.start_mcp_gateway;
 
-        if (start_discord || start_telegram || start_mcp_gateway)
+        if (start_discord
+            || start_telegram
+            || start_slack
+            || start_whatsapp
+            || start_mcp_gateway)
             && !start_daemon
             && !self.bootstrap.force_no_daemon
         {
@@ -920,6 +1103,19 @@ impl WizardState {
                 Some(self.telegram_heartbeat_chat_ids.trim().to_string())
             },
             start_telegram,
+            configure_slack,
+            slack_bot_token,
+            slack_app_token,
+            slack_allow_user_ids,
+            start_slack,
+            configure_whatsapp,
+            whatsapp_deliver_bind: if self.whatsapp_deliver_bind.trim().is_empty() {
+                self.bootstrap.initial_whatsapp_deliver_bind.clone()
+            } else {
+                self.whatsapp_deliver_bind.trim().to_string()
+            },
+            whatsapp_allow_user_ids,
+            start_whatsapp,
             configure_mcp_gateway,
             start_mcp_gateway,
             tui_response_depth_mode: self.tui_response_depth_mode.clone(),
@@ -943,6 +1139,22 @@ fn default_model_for_choice(bootstrap: &WizardBootstrap, provider_choice: Provid
     } else {
         bootstrap.default_openai_model.clone()
     }
+}
+
+fn normalize_whatsapp_allowlist_csv(raw: &str) -> String {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn normalize_slack_user_ids_csv(raw: &str) -> String {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn normalize_telegram_user_ids_csv(raw: &str) -> Result<String, String> {

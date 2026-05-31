@@ -1,5 +1,6 @@
 //! Thin WhatsApp adapter — whatsapp-rust client + local deliver endpoint for daemon outbox push.
 
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,12 +15,13 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use wacore::proto_helpers::MessageExt;
-use wacore::store::InMemoryBackend;
+use wacore::store::traits::Backend;
 use wacore::types::events::Event;
 use waproto::whatsapp as wa;
 use whatsapp_rust::Jid;
 use whatsapp_rust::TokioRuntime;
 use whatsapp_rust::bot::{Bot, MessageContext};
+use whatsapp_rust::store::SqliteStore;
 use whatsapp_rust_tokio_transport::TokioWebSocketTransportFactory;
 use whatsapp_rust_ureq_http_client::UreqHttpClient;
 
@@ -100,8 +102,9 @@ async fn main() -> Result<()> {
 
     let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
     let deliver_bind = resolve_deliver_bind(find_arg_value(&args, "--deliver-bind"));
+    let session_db = resolve_session_db_path(find_arg_value(&args, "--session-db"));
 
-    let backend = Arc::new(InMemoryBackend::new().with_sent_message_ttl(30));
+    let backend = build_sqlite_backend(&session_db).await?;
     let mut transport_factory = TokioWebSocketTransportFactory::new();
     if let Ok(ws_url) = std::env::var("WHATSAPP_WS_URL") {
         transport_factory = transport_factory.with_url(ws_url);
@@ -142,9 +145,7 @@ async fn main() -> Result<()> {
     println!(
         "medousa_whatsapp deliver endpoint on http://{deliver_bind}/v1/deliver"
     );
-    println!(
-        "medousa_whatsapp uses in-memory session storage — re-pair via QR after restart"
-    );
+    println!("medousa_whatsapp session db: {}", session_db.display());
 
     let deliver_state = adapter_state.clone();
     tokio::spawn(async move {
@@ -183,6 +184,23 @@ async fn deliver_message(
             Err(StatusCode::BAD_GATEWAY)
         }
     }
+}
+
+async fn build_sqlite_backend(session_db: &Path) -> Result<Arc<dyn Backend>> {
+    if let Some(parent) = session_db.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "create whatsapp session directory {}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let backend = SqliteStore::new(session_db.to_string_lossy().as_ref())
+        .await
+        .with_context(|| format!("open whatsapp sqlite store at {}", session_db.display()))?;
+
+    Ok(Arc::new(backend))
 }
 
 async fn deliver_whatsapp_text(
@@ -422,6 +440,23 @@ fn resolve_daemon_url(explicit: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string())
 }
 
+fn default_session_db_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("medousa")
+        .join("whatsapp")
+        .join("session.db")
+}
+
+fn resolve_session_db_path(explicit: Option<&str>) -> PathBuf {
+    explicit
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| non_empty_env("MEDOUSA_WHATSAPP_SESSION_DB").map(PathBuf::from))
+        .unwrap_or_else(default_session_db_path)
+}
+
 fn resolve_deliver_bind(explicit: Option<&str>) -> String {
     explicit
         .map(str::trim)
@@ -452,13 +487,14 @@ fn print_usage() {
     println!("medousa_whatsapp — thin WhatsApp adapter (whatsapp-rust)");
     println!();
     println!("USAGE:");
-    println!("  medousa_whatsapp [--daemon-url <url>] [--deliver-bind <host:port>]");
+    println!("  medousa_whatsapp [--daemon-url <url>] [--deliver-bind <host:port>] [--session-db <path>]");
     println!();
     println!("ENV:");
     println!("  MEDOUSA_DAEMON_URL");
     println!("  MEDOUSA_WHATSAPP_DELIVER_BIND (default 127.0.0.1:7422)");
+    println!("  MEDOUSA_WHATSAPP_SESSION_DB (default ~/.local/share/medousa/whatsapp/session.db)");
     println!("  WHATSAPP_WS_URL (optional transport override)");
     println!();
-    println!("NOTE: Uses in-memory session storage. Re-scan QR after restart.");
+    println!("NOTE: First run prints a QR code for WhatsApp Linked Devices pairing.");
     println!("WhatsApp Web clients are unofficial — review Meta ToS before production use.");
 }

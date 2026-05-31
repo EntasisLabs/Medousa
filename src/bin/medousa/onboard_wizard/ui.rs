@@ -386,6 +386,85 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(toggle_line("Start Telegram", state.start_telegram));
             lines.push(Line::from(""));
         }
+        WizardStep::Slack => {
+            lines.push(Line::from("Configure Slack (Socket Mode)?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line("Configure Slack", state.configure_slack));
+            lines.push(Line::from(
+                "Requires xoxb- bot token and xapp- app token with connections:write.",
+            ));
+            lines.push(Line::from(if state.bootstrap.existing_slack_bot_token
+                && state.bootstrap.existing_slack_app_token
+            {
+                "Stored Slack tokens detected."
+            } else {
+                "No Slack tokens stored."
+            }));
+            lines.push(Line::from(""));
+        }
+        WizardStep::SlackBotToken => {
+            lines.push(Line::from("Slack bot token (xoxb-…):"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Bot token", &mask_secret(&state.slack_bot_token)));
+            lines.push(Line::from(if state.bootstrap.existing_slack_bot_token {
+                "Keep existing bot token when left blank."
+            } else {
+                "Required when Slack is enabled."
+            }));
+        }
+        WizardStep::SlackAppToken => {
+            lines.push(Line::from("Slack app token for Socket Mode (xapp-…):"));
+            lines.push(Line::from(""));
+            lines.push(input_line("App token", &mask_secret(&state.slack_app_token)));
+            lines.push(Line::from(if state.bootstrap.existing_slack_app_token {
+                "Keep existing app token when left blank."
+            } else {
+                "Required when Slack is enabled."
+            }));
+        }
+        WizardStep::SlackAllowUserIds => {
+            lines.push(Line::from("Optional Slack sender allowlist:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Allowed user ids", &state.slack_allow_user_ids));
+            lines.push(Line::from("Comma-separated Slack user ids (U…). Blank = all users."));
+        }
+        WizardStep::LaunchSlack => {
+            lines.push(Line::from("Start Slack adapter in background?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line("Start Slack", state.start_slack));
+            lines.push(Line::from(""));
+        }
+        WizardStep::WhatsApp => {
+            lines.push(Line::from("Configure WhatsApp (whatsapp-rust)?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line("Configure WhatsApp", state.configure_whatsapp));
+            lines.push(Line::from(
+                "Unofficial WhatsApp Web client — review Meta ToS. First run shows QR pairing.",
+            ));
+            lines.push(Line::from("Session persists in ~/.local/share/medousa/whatsapp/session.db"));
+            lines.push(Line::from(""));
+        }
+        WizardStep::WhatsAppDeliverBind => {
+            lines.push(Line::from("Local deliver endpoint bind (daemon outbox push):"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Deliver bind", &state.whatsapp_deliver_bind));
+            lines.push(Line::from("Default 127.0.0.1:7422 — POST /v1/deliver for outbound messages."));
+        }
+        WizardStep::WhatsAppAllowUserIds => {
+            lines.push(Line::from("Optional WhatsApp sender allowlist:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Allowed senders", &state.whatsapp_allow_user_ids));
+            lines.push(Line::from(
+                "Comma-separated JIDs or suffixes. Blank = all senders.",
+            ));
+        }
+        WizardStep::LaunchWhatsApp => {
+            lines.push(Line::from("Start WhatsApp adapter in background?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line("Start WhatsApp", state.start_whatsapp));
+            lines.push(Line::from("Scan QR in terminal log if first pairing."));
+            lines.push(Line::from(""));
+        }
         WizardStep::TuiResponseDepth => {
             lines.push(Line::from("Default response depth for chat:"));
             lines.push(Line::from(""));
@@ -519,6 +598,58 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 },
             ));
             lines.push(summary_line(
+                "Slack setup",
+                if state.configure_slack { "yes" } else { "no" },
+            ));
+            if state.configure_slack {
+                lines.push(summary_line(
+                    "Slack allowed users",
+                    if state.slack_allow_user_ids.trim().is_empty() {
+                        "(all users)"
+                    } else {
+                        state.slack_allow_user_ids.trim()
+                    },
+                ));
+            }
+            lines.push(summary_line(
+                "Start Slack",
+                if state.configure_slack && state.start_slack {
+                    "yes"
+                } else {
+                    "no"
+                },
+            ));
+            lines.push(summary_line(
+                "WhatsApp setup",
+                if state.configure_whatsapp { "yes" } else { "no" },
+            ));
+            if state.configure_whatsapp {
+                lines.push(summary_line(
+                    "WhatsApp deliver bind",
+                    if state.whatsapp_deliver_bind.trim().is_empty() {
+                        state.bootstrap.initial_whatsapp_deliver_bind.as_str()
+                    } else {
+                        state.whatsapp_deliver_bind.trim()
+                    },
+                ));
+                lines.push(summary_line(
+                    "WhatsApp allowed senders",
+                    if state.whatsapp_allow_user_ids.trim().is_empty() {
+                        "(all senders)"
+                    } else {
+                        state.whatsapp_allow_user_ids.trim()
+                    },
+                ));
+            }
+            lines.push(summary_line(
+                "Start WhatsApp",
+                if state.configure_whatsapp && state.start_whatsapp {
+                    "yes"
+                } else {
+                    "no"
+                },
+            ));
+            lines.push(summary_line(
                 "Response depth",
                 state.tui_response_depth_mode.as_str(),
             ));
@@ -560,17 +691,27 @@ fn footer_text(state: &WizardState) -> Text<'static> {
         | WizardStep::LaunchDiscord
         | WizardStep::Telegram
         | WizardStep::LaunchTelegram
+        | WizardStep::Slack
+        | WizardStep::LaunchSlack
+        | WizardStep::WhatsApp
+        | WizardStep::LaunchWhatsApp
         | WizardStep::DiscordHeartbeat
         | WizardStep::TelegramHeartbeat => {
             lines.push(Line::from("Space to toggle. Type channel/chat ids when enabled."));
         }
         WizardStep::ApiKey
         | WizardStep::DiscordToken
-        | WizardStep::TelegramToken => {
+        | WizardStep::TelegramToken
+        | WizardStep::SlackBotToken
+        | WizardStep::SlackAppToken => {
             lines.push(Line::from("Hidden input."));
         }
         WizardStep::DaemonBind
         | WizardStep::DiscordPrefix
+        | WizardStep::WhatsAppDeliverBind
+        | WizardStep::SlackAllowUserIds
+        | WizardStep::WhatsAppAllowUserIds
+        | WizardStep::TelegramAllowUserIds
         | WizardStep::BackendSurrealKvPath
         | WizardStep::BackendSurrealWsEndpoint => {
             lines.push(Line::from("Type a value, then Enter to confirm."));

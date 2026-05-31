@@ -3,6 +3,8 @@ name = "medousa-whatsapp"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+
 [[bin]]
 name = "medousa_whatsapp"
 path = "src/main.rs"
@@ -10,11 +12,12 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 axum = "0.8"
+dirs = "5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
-whatsapp-rust = { version = "0.6", default-features = false, features = ["moka-cache", "tokio-transport", "tokio-runtime", "ureq-client", "tokio-native", "signal"] }
+whatsapp-rust = { version = "0.6", default-features = false, features = ["moka-cache", "sqlite-storage", "tokio-transport", "tokio-runtime", "ureq-client", "tokio-native", "signal"] }
 whatsapp-rust-tokio-transport = "0.6"
 whatsapp-rust-ureq-http-client = "0.6"
 wacore = { version = "0.6", default-features = false }

@@ -11,8 +11,8 @@ use anyhow::{Context, Result, anyhow};
 use crossterm::style::Stylize;
 use medousa::session::{
     load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_telegram_bot_token,
-    load_tui_api_key, load_tui_defaults, save_discord_bot_token, save_telegram_bot_token,
-    save_tui_api_key, save_tui_defaults,
+    load_tui_api_key, load_tui_defaults, save_discord_bot_token, save_slack_app_token,
+    save_slack_bot_token, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
 };
 use medousa::{
     ProductConfig, apply_adapter_env, apply_daemon_env, format_i64_csv, format_u64_csv,
@@ -85,6 +85,8 @@ fn run_onboard(args: &[String]) -> Result<()> {
     let existing_api_key = load_tui_api_key();
     let existing_discord_token = load_discord_bot_token();
     let existing_telegram_token = load_telegram_bot_token();
+    let existing_slack_bot_token = load_slack_bot_token();
+    let existing_slack_app_token = load_slack_app_token();
     let mut profile = load_onboard_profile();
     let mut defaults = load_tui_defaults();
     let mut product_config = load_product_config();
@@ -189,6 +191,23 @@ fn run_onboard(args: &[String]) -> Result<()> {
                 Some(format_i64_csv(&product_config.telegram.heartbeat_chat_ids))
             },
             start_telegram: false,
+            configure_slack: false,
+            slack_bot_token: None,
+            slack_app_token: None,
+            slack_allow_user_ids: if product_config.slack.allowed_user_ids.is_empty() {
+                None
+            } else {
+                Some(product_config.slack.allowed_user_ids.join(","))
+            },
+            start_slack: false,
+            configure_whatsapp: false,
+            whatsapp_deliver_bind: product_config.whatsapp.deliver_bind.clone(),
+            whatsapp_allow_user_ids: if product_config.whatsapp.allowed_user_ids.is_empty() {
+                None
+            } else {
+                Some(product_config.whatsapp.allowed_user_ids.join(","))
+            },
+            start_whatsapp: false,
             configure_mcp_gateway: true,
             start_mcp_gateway: true,
             tui_response_depth_mode: product_config.tui.response_depth_mode.clone(),
@@ -210,8 +229,22 @@ fn run_onboard(args: &[String]) -> Result<()> {
             existing_api_key: existing_api_key.is_some(),
             existing_discord_token: existing_discord_token.is_some(),
             existing_telegram_token: existing_telegram_token.is_some(),
+            existing_slack_bot_token: existing_slack_bot_token.is_some(),
+            existing_slack_app_token: existing_slack_app_token.is_some(),
             existing_mcp_gateway_config: medousa::mcp_gateway::gateway_config_path().exists(),
             initial_telegram_allow_user_ids,
+            initial_slack_allow_user_ids: if product_config.slack.allowed_user_ids.is_empty() {
+                String::new()
+            } else {
+                product_config.slack.allowed_user_ids.join(",")
+            },
+            initial_whatsapp_deliver_bind: product_config.whatsapp.deliver_bind.clone(),
+            initial_whatsapp_allow_user_ids: if product_config.whatsapp.allowed_user_ids.is_empty()
+            {
+                String::new()
+            } else {
+                product_config.whatsapp.allowed_user_ids.join(",")
+            },
             initial_daemon_bind: product_config.daemon.bind.clone(),
             initial_discord_command_prefix: product_config.discord.command_prefix.clone(),
             initial_discord_heartbeat_nudges: product_config.discord.heartbeat_nudges_enabled,
@@ -316,7 +349,11 @@ fn run_onboard(args: &[String]) -> Result<()> {
     apply_adapter_env(&product_config);
     defaults.response_depth_mode = Some(selected.tui_response_depth_mode.clone());
 
-    if (selected.launch_tui || selected.start_discord || selected.start_telegram)
+    if (selected.launch_tui
+        || selected.start_discord
+        || selected.start_telegram
+        || selected.start_slack
+        || selected.start_whatsapp)
         && !selected.start_daemon
         && !explicit_no_daemon
         && !is_bind_reachable(&daemon_bind)
@@ -354,6 +391,29 @@ fn run_onboard(args: &[String]) -> Result<()> {
         } else if existing_telegram_token.is_some() {
             println!("{}", "[ok] Keeping existing Telegram bot token.".green());
         }
+    }
+
+    if selected.configure_slack {
+        if let Some(token) = selected.slack_bot_token.as_deref() {
+            save_slack_bot_token(Some(token));
+            println!("{}", "[ok] Saved Slack bot token.".green());
+        } else if existing_slack_bot_token.is_some() {
+            println!("{}", "[ok] Keeping existing Slack bot token.".green());
+        }
+        if let Some(token) = selected.slack_app_token.as_deref() {
+            save_slack_app_token(Some(token));
+            println!("{}", "[ok] Saved Slack app token.".green());
+        } else if existing_slack_app_token.is_some() {
+            println!("{}", "[ok] Keeping existing Slack app token.".green());
+        }
+    }
+
+    if selected.configure_whatsapp {
+        println!(
+            "{}",
+            "[ok] WhatsApp deliver bind saved in product_config (session db: ~/.local/share/medousa/whatsapp/session.db)."
+                .green()
+        );
     }
 
     profile.daemon_url = Some(selected.daemon_url.clone());
@@ -461,6 +521,40 @@ fn run_onboard(args: &[String]) -> Result<()> {
                 "[warn] Telegram adapter start requested, but no token is configured.".yellow()
             );
         }
+    }
+
+    if selected.start_slack {
+        let bot_token = load_slack_bot_token();
+        let app_token = load_slack_app_token();
+        match (bot_token, app_token) {
+            (Some(bot_token), Some(app_token)) => {
+                start_slack_background(&selected.daemon_url, &bot_token, &app_token)?;
+                println!("{}", "[ok] Slack adapter launch requested.".green());
+            }
+            _ => {
+                println!(
+                    "{}",
+                    "[warn] Slack adapter start requested, but bot/app tokens are missing.".yellow()
+                );
+            }
+        }
+    }
+
+    if selected.start_whatsapp {
+        start_whatsapp_background(
+            &selected.daemon_url,
+            &selected.whatsapp_deliver_bind,
+            product_config.whatsapp.session_db_path.as_deref(),
+        )?;
+        println!("{}", "[ok] WhatsApp adapter launch requested.".green());
+        println!(
+            "{}",
+            format!(
+                "Scan QR on first pairing — log: {}",
+                whatsapp_log_path().display()
+            )
+            .yellow()
+        );
     }
 
     let elapsed = started_at.elapsed().as_secs_f32();
@@ -770,6 +864,15 @@ fn run_whatsapp(args: &[String]) -> Result<()> {
 
     let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
     passthrough = drop_flag_value_pair(&passthrough, "--deliver-bind");
+    if let Some(path) = product_config
+        .whatsapp
+        .session_db_path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        passthrough.push("--session-db".to_string());
+        passthrough.push(path.trim().to_string());
+    }
 
     let adapter = resolve_component_command("medousa_whatsapp")?;
     let mut command = Command::new(&adapter.program);
@@ -888,6 +991,24 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         } else {
             product_config.whatsapp.allowed_user_ids.join(",")
         }
+    );
+    let whatsapp_session_db = product_config
+        .whatsapp
+        .session_db_path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            medousa_data_dir()
+                .join("whatsapp")
+                .join("session.db")
+                .display()
+                .to_string()
+        });
+    println!(
+        "whatsapp_session_db={} exists={}",
+        whatsapp_session_db,
+        Path::new(&whatsapp_session_db).exists()
     );
     println!(
         "deliver_webhook_token={}",
@@ -1159,6 +1280,17 @@ fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> Produc
         selected.discord_heartbeat_channel_ids.as_deref().unwrap_or(""),
     )
     .unwrap_or_default();
+    config.slack.allowed_user_ids = parse_string_csv(
+        selected.slack_allow_user_ids.as_deref().unwrap_or(""),
+    );
+    config.whatsapp.deliver_bind = if selected.whatsapp_deliver_bind.trim().is_empty() {
+        config.whatsapp.deliver_bind
+    } else {
+        selected.whatsapp_deliver_bind.trim().to_string()
+    };
+    config.whatsapp.allowed_user_ids = parse_string_csv(
+        selected.whatsapp_allow_user_ids.as_deref().unwrap_or(""),
+    );
     config.tui.response_depth_mode = selected.tui_response_depth_mode.clone();
     if config
         .daemon
@@ -1316,7 +1448,7 @@ fn start_discord_background(daemon_url: &str, token: &str) -> Result<()> {
     start_adapter_background(
         "medousa_discord",
         daemon_url,
-        token,
+        Some(token),
         &[],
         discord_log_path(),
         "discord",
@@ -1328,17 +1460,58 @@ fn start_telegram_background(daemon_url: &str, token: &str) -> Result<()> {
     start_adapter_background(
         "medousa_telegram",
         daemon_url,
-        token,
+        Some(token),
         &[],
         telegram_log_path(),
         "telegram",
     )
 }
 
+fn start_slack_background(daemon_url: &str, bot_token: &str, app_token: &str) -> Result<()> {
+    apply_adapter_env(&load_product_config());
+    start_adapter_background(
+        "medousa_slack",
+        daemon_url,
+        None,
+        &[
+            "--bot-token".to_string(),
+            bot_token.to_string(),
+            "--app-token".to_string(),
+            app_token.to_string(),
+        ],
+        slack_log_path(),
+        "slack",
+    )
+}
+
+fn start_whatsapp_background(
+    daemon_url: &str,
+    deliver_bind: &str,
+    session_db_path: Option<&str>,
+) -> Result<()> {
+    apply_adapter_env(&load_product_config());
+    let mut extra_args = vec![
+        "--deliver-bind".to_string(),
+        deliver_bind.to_string(),
+    ];
+    if let Some(path) = session_db_path.filter(|value| !value.trim().is_empty()) {
+        extra_args.push("--session-db".to_string());
+        extra_args.push(path.trim().to_string());
+    }
+    start_adapter_background(
+        "medousa_whatsapp",
+        daemon_url,
+        None,
+        &extra_args,
+        whatsapp_log_path(),
+        "whatsapp",
+    )
+}
+
 fn start_adapter_background(
     binary_name: &str,
     daemon_url: &str,
-    token: &str,
+    token: Option<&str>,
     extra_args: &[String],
     log_path: PathBuf,
     label: &str,
@@ -1361,7 +1534,9 @@ fn start_adapter_background(
     let mut command = Command::new(&adapter.program);
     command.args(&adapter.pre_args);
     command.arg("--daemon-url").arg(daemon_url);
-    command.arg("--token").arg(token);
+    if let Some(token) = token {
+        command.arg("--token").arg(token);
+    }
     command.args(extra_args);
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));
@@ -1435,16 +1610,27 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand> {
     }
 
     if find_command_in_path("cargo").is_some() && Path::new("Cargo.toml").exists() {
-        let package = match binary_name {
-            "medousa_whatsapp" => "medousa-whatsapp",
-            _ => "medousa",
-        };
+        if binary_name == "medousa_whatsapp" {
+            let manifest = Path::new("adapters/medousa-whatsapp/Cargo.toml");
+            if manifest.exists() {
+                return Ok(ComponentCommand {
+                    program: "cargo".to_string(),
+                    pre_args: vec![
+                        "run".to_string(),
+                        "--manifest-path".to_string(),
+                        manifest.to_string_lossy().to_string(),
+                        "--".to_string(),
+                    ],
+                });
+            }
+        }
+
         return Ok(ComponentCommand {
             program: "cargo".to_string(),
             pre_args: vec![
                 "run".to_string(),
                 "-p".to_string(),
-                package.to_string(),
+                "medousa".to_string(),
                 "--bin".to_string(),
                 binary_name.to_string(),
                 "--".to_string(),
@@ -1610,6 +1796,22 @@ fn discord_log_path() -> PathBuf {
 
 fn telegram_log_path() -> PathBuf {
     medousa_data_dir().join("logs").join("telegram.log")
+}
+
+fn slack_log_path() -> PathBuf {
+    medousa_data_dir().join("logs").join("slack.log")
+}
+
+fn whatsapp_log_path() -> PathBuf {
+    medousa_data_dir().join("logs").join("whatsapp.log")
+}
+
+fn parse_string_csv(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 fn load_onboard_profile() -> OnboardProfile {
