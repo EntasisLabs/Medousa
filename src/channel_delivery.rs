@@ -10,7 +10,9 @@ use stasis::runtime_prelude_ext::{DeliveryProtocol, NewDeliveryEndpoint, Surreal
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 
-use crate::session::{load_discord_bot_token, load_telegram_bot_token};
+use crate::session::{
+    load_discord_bot_token, load_slack_bot_token, load_telegram_bot_token,
+};
 
 const DELIVERY_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE TABLE delivery_endpoint SCHEMALESS",
@@ -203,6 +205,26 @@ pub fn truncate_for_discord(text: &str) -> String {
     format!("{truncated}...")
 }
 
+pub fn truncate_for_slack(text: &str) -> String {
+    const MAX_CHARS: usize = 3900;
+    if text.chars().count() <= MAX_CHARS {
+        return text.to_string();
+    }
+
+    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
+    format!("{truncated}...")
+}
+
+pub fn truncate_for_whatsapp(text: &str) -> String {
+    const MAX_CHARS: usize = 4000;
+    if text.chars().count() <= MAX_CHARS {
+        return text.to_string();
+    }
+
+    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
+    format!("{truncated}...")
+}
+
 pub fn parse_discord_channel_id(channel_id: &str) -> Result<u64> {
     channel_id
         .strip_prefix("discord:channel:")
@@ -210,6 +232,50 @@ pub fn parse_discord_channel_id(channel_id: &str) -> Result<u64> {
         .context("discord channel_id must be discord:channel:<id>")?
         .parse::<u64>()
         .context("discord channel id must be numeric")
+}
+
+pub fn parse_slack_channel_id(channel_id: &str) -> Result<String> {
+    channel_id
+        .strip_prefix("slack:channel:")
+        .or_else(|| channel_id.strip_prefix("slack:"))
+        .context("slack channel_id must be slack:channel:<id>")
+        .map(str::to_string)
+}
+
+pub fn parse_whatsapp_chat_jid(channel_id: &str) -> Result<String> {
+    channel_id
+        .strip_prefix("whatsapp:chat:")
+        .or_else(|| channel_id.strip_prefix("whatsapp:"))
+        .context("whatsapp channel_id must be whatsapp:chat:<jid>")
+        .map(str::to_string)
+}
+
+pub fn resolve_whatsapp_deliver_url() -> String {
+    std::env::var("MEDOUSA_WHATSAPP_DELIVER_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            crate::load_product_config()
+                .whatsapp
+                .deliver_url
+                .as_ref()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| {
+            let bind = std::env::var("MEDOUSA_WHATSAPP_DELIVER_BIND")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| {
+                    crate::load_product_config()
+                        .whatsapp
+                        .deliver_bind
+                        .clone()
+                });
+            format!("http://{bind}/v1/deliver")
+        })
 }
 
 pub async fn dispatch_channel_message(
@@ -220,6 +286,8 @@ pub async fn dispatch_channel_message(
     match target.channel.as_str() {
         "telegram" => dispatch_telegram_message(client, &target.channel_id, text).await,
         "discord" => dispatch_discord_message(client, &target.channel_id, text).await,
+        "slack" => dispatch_slack_message(client, &target.channel_id, text).await,
+        "whatsapp" => dispatch_whatsapp_message(client, &target.channel_id, text).await,
         "cli" => Ok(()),
         other => Err(anyhow!("unsupported delivery channel: {other}")),
     }
@@ -287,6 +355,79 @@ async fn dispatch_discord_message(
     Ok(())
 }
 
+async fn dispatch_slack_message(
+    client: &reqwest::Client,
+    channel_id: &str,
+    text: &str,
+) -> Result<()> {
+    let token = load_slack_bot_token()
+        .context("slack bot token missing; run medousa setup or set MEDOUSA_SLACK_BOT_TOKEN")?;
+    let channel = parse_slack_channel_id(channel_id)?;
+    let body = truncate_for_slack(text);
+
+    let response = client
+        .post("https://slack.com/api/chat.postMessage")
+        .bearer_auth(token)
+        .json(&json!({
+            "channel": channel,
+            "text": body,
+        }))
+        .send()
+        .await
+        .context("slack chat.postMessage request failed")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "slack chat.postMessage returned {status}: {detail}"
+        ));
+    }
+
+    let payload: serde_json::Value = response.json().await.context("decode slack response")?;
+    if payload.get("ok").and_then(|value| value.as_bool()) != Some(true) {
+        return Err(anyhow!(
+            "slack chat.postMessage failed: {}",
+            payload
+                .get("error")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+        ));
+    }
+
+    Ok(())
+}
+
+async fn dispatch_whatsapp_message(
+    client: &reqwest::Client,
+    channel_id: &str,
+    text: &str,
+) -> Result<()> {
+    let jid = parse_whatsapp_chat_jid(channel_id)?;
+    let url = resolve_whatsapp_deliver_url();
+    let body = truncate_for_whatsapp(text);
+
+    let response = client
+        .post(&url)
+        .json(&json!({
+            "channel_id": format!("whatsapp:chat:{jid}"),
+            "text": body,
+        }))
+        .send()
+        .await
+        .with_context(|| format!("whatsapp deliver request failed ({url})"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "whatsapp deliver endpoint returned {status}: {detail}"
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn format_heartbeat_nudge(summary: &str) -> String {
     summary.to_string()
 }
@@ -322,6 +463,32 @@ pub async fn dispatch_configured_heartbeat_nudges(
         };
         if let Err(err) = dispatch_channel_message(client, &target, &text).await {
             eprintln!("heartbeat discord dispatch channel_id={channel_id} err={err:#}");
+        }
+    }
+
+    for channel_id in &config.slack.heartbeat_channel_ids {
+        let target = ChannelDeliveryTarget {
+            channel: "slack".to_string(),
+            user_id: "medousa:system:heartbeat".to_string(),
+            channel_id: format!("slack:channel:{channel_id}"),
+            session_id: "medousa-heartbeat".to_string(),
+            stream_id: None,
+        };
+        if let Err(err) = dispatch_channel_message(client, &target, &text).await {
+            eprintln!("heartbeat slack dispatch channel_id={channel_id} err={err:#}");
+        }
+    }
+
+    for chat_jid in &config.whatsapp.heartbeat_chat_jids {
+        let target = ChannelDeliveryTarget {
+            channel: "whatsapp".to_string(),
+            user_id: "medousa:system:heartbeat".to_string(),
+            channel_id: format!("whatsapp:chat:{chat_jid}"),
+            session_id: "medousa-heartbeat".to_string(),
+            stream_id: None,
+        };
+        if let Err(err) = dispatch_channel_message(client, &target, &text).await {
+            eprintln!("heartbeat whatsapp dispatch chat_jid={chat_jid} err={err:#}");
         }
     }
 }
@@ -419,7 +586,8 @@ fn read_non_empty_text(value: Option<&Value>) -> Option<String> {
 mod tests {
     use super::{
         extract_output_text_from_diagnostics, internal_deliver_webhook_url,
-        is_missing_runtime_table_error, parse_telegram_chat_id, truncate_for_telegram,
+        is_missing_runtime_table_error, parse_slack_channel_id, parse_telegram_chat_id,
+        truncate_for_slack, truncate_for_telegram,
     };
 
     #[test]
@@ -449,6 +617,20 @@ mod tests {
     fn truncate_for_telegram_caps_length() {
         let long = "x".repeat(5000);
         assert_eq!(truncate_for_telegram(&long).chars().count(), 4003);
+    }
+
+    #[test]
+    fn parse_slack_channel_id_from_channel_id() {
+        assert_eq!(
+            parse_slack_channel_id("slack:channel:C123").unwrap(),
+            "C123"
+        );
+    }
+
+    #[test]
+    fn truncate_for_slack_caps_length() {
+        let long = "x".repeat(5000);
+        assert_eq!(truncate_for_slack(&long).chars().count(), 3903);
     }
 
     #[test]

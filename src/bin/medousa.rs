@@ -10,8 +10,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use crossterm::style::Stylize;
 use medousa::session::{
-    load_discord_bot_token, load_telegram_bot_token, load_tui_api_key, load_tui_defaults,
-    save_discord_bot_token, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
+    load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_telegram_bot_token,
+    load_tui_api_key, load_tui_defaults, save_discord_bot_token, save_telegram_bot_token,
+    save_tui_api_key, save_tui_defaults,
 };
 use medousa::{
     ProductConfig, apply_adapter_env, apply_daemon_env, format_i64_csv, format_u64_csv,
@@ -56,6 +57,8 @@ fn main() -> Result<()> {
         "daemon" => run_daemon(&args[1..]),
         "discord" => run_discord(&args[1..]),
         "telegram" => run_telegram(&args[1..]),
+        "slack" => run_slack(&args[1..]),
+        "whatsapp" => run_whatsapp(&args[1..]),
         "doctor" => run_doctor(&args[1..]),
         "identity-export" => run_identity_export(&args[1..]),
         "help" | "--help" | "-h" => {
@@ -664,6 +667,127 @@ fn run_telegram(args: &[String]) -> Result<()> {
     }
 }
 
+fn run_slack(args: &[String]) -> Result<()> {
+    if has_flag(args, "--help") || has_flag(args, "-h") {
+        let adapter = resolve_component_command("medousa_slack")?;
+        let mut command = Command::new(&adapter.program);
+        command.args(&adapter.pre_args);
+        command.args(args);
+        let status = command
+            .status()
+            .context("failed to launch medousa_slack")?;
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow!("medousa_slack exited with status {status}"))
+        };
+    }
+
+    let profile = load_onboard_profile();
+    let product_config = load_product_config();
+    apply_adapter_env(&product_config);
+    let daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or(profile.daemon_url)
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+
+    let bot_token = find_arg_value(args, "--bot-token")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(load_slack_bot_token)
+        .ok_or_else(|| {
+            anyhow!(
+                "slack bot token missing. pass --bot-token or set MEDOUSA_SLACK_BOT_TOKEN"
+            )
+        })?;
+    let app_token = find_arg_value(args, "--app-token")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(load_slack_app_token)
+        .ok_or_else(|| {
+            anyhow!(
+                "slack app token missing. pass --app-token or set MEDOUSA_SLACK_APP_TOKEN"
+            )
+        })?;
+
+    let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
+    passthrough = drop_flag_value_pair(&passthrough, "--bot-token");
+    passthrough = drop_flag_value_pair(&passthrough, "--app-token");
+
+    let adapter = resolve_component_command("medousa_slack")?;
+    let mut command = Command::new(&adapter.program);
+    command.args(&adapter.pre_args);
+    command.arg("--daemon-url").arg(daemon_url);
+    command.arg("--bot-token").arg(bot_token);
+    command.arg("--app-token").arg(app_token);
+    command.args(&passthrough);
+
+    let status = command
+        .status()
+        .context("failed to launch medousa_slack")?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("medousa_slack exited with status {status}"))
+    }
+}
+
+fn run_whatsapp(args: &[String]) -> Result<()> {
+    if has_flag(args, "--help") || has_flag(args, "-h") {
+        let adapter = resolve_component_command("medousa_whatsapp")?;
+        let mut command = Command::new(&adapter.program);
+        command.args(&adapter.pre_args);
+        command.args(args);
+        let status = command
+            .status()
+            .context("failed to launch medousa_whatsapp")?;
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow!("medousa_whatsapp exited with status {status}"))
+        };
+    }
+
+    let profile = load_onboard_profile();
+    let product_config = load_product_config();
+    apply_adapter_env(&product_config);
+    let daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or(profile.daemon_url)
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+
+    let deliver_bind = find_arg_value(args, "--deliver-bind")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| product_config.whatsapp.deliver_bind.clone());
+
+    let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
+    passthrough = drop_flag_value_pair(&passthrough, "--deliver-bind");
+
+    let adapter = resolve_component_command("medousa_whatsapp")?;
+    let mut command = Command::new(&adapter.program);
+    command.args(&adapter.pre_args);
+    command.arg("--daemon-url").arg(daemon_url);
+    command.arg("--deliver-bind").arg(deliver_bind);
+    command.args(&passthrough);
+
+    let status = command
+        .status()
+        .context("failed to launch medousa_whatsapp")?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!("medousa_whatsapp exited with status {status}"))
+    }
+}
+
 fn run_doctor(_args: &[String]) -> Result<()> {
     let defaults = load_tui_defaults();
     let profile = load_onboard_profile();
@@ -701,13 +825,23 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         }
     );
     println!(
-        "discord_token={} telegram_token={}",
+        "discord_token={} telegram_token={} slack_bot_token={} slack_app_token={}",
         if load_discord_bot_token().is_some() {
             "configured"
         } else {
             "missing"
         },
         if load_telegram_bot_token().is_some() {
+            "configured"
+        } else {
+            "missing"
+        },
+        if load_slack_bot_token().is_some() {
+            "configured"
+        } else {
+            "missing"
+        },
+        if load_slack_app_token().is_some() {
             "configured"
         } else {
             "missing"
@@ -736,6 +870,23 @@ fn run_doctor(_args: &[String]) -> Result<()> {
             "enabled"
         } else {
             "disabled"
+        }
+    );
+    println!(
+        "slack_allow_user_ids={}",
+        if product_config.slack.allowed_user_ids.is_empty() {
+            "(all users)".to_string()
+        } else {
+            product_config.slack.allowed_user_ids.join(",")
+        }
+    );
+    println!(
+        "whatsapp_deliver_bind={} whatsapp_allow_user_ids={}",
+        product_config.whatsapp.deliver_bind,
+        if product_config.whatsapp.allowed_user_ids.is_empty() {
+            "(all users)".to_string()
+        } else {
+            product_config.whatsapp.allowed_user_ids.join(",")
         }
     );
     println!(
@@ -1284,12 +1435,16 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand> {
     }
 
     if find_command_in_path("cargo").is_some() && Path::new("Cargo.toml").exists() {
+        let package = match binary_name {
+            "medousa_whatsapp" => "medousa-whatsapp",
+            _ => "medousa",
+        };
         return Ok(ComponentCommand {
             program: "cargo".to_string(),
             pre_args: vec![
                 "run".to_string(),
                 "-p".to_string(),
-                "medousa".to_string(),
+                package.to_string(),
                 "--bin".to_string(),
                 binary_name.to_string(),
                 "--".to_string(),
@@ -1487,6 +1642,9 @@ fn print_help() {
     println!("  medousa discord [--daemon-url <url>] [--token <token>] [-- <medousa_discord args>]");
     println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
     println!("    Telegram allowlist is configured in medousa setup (product_config.json).");
+    println!("  medousa slack [--daemon-url <url>] [--bot-token <xoxb-…>] [--app-token <xapp-…>]");
+    println!("  medousa whatsapp [--daemon-url <url>] [--deliver-bind <host:port>]");
+    println!("    WhatsApp uses a local deliver endpoint; session is in-memory until sqlite storage lands.");
     println!("  medousa doctor");
     println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
     println!();
@@ -1497,5 +1655,7 @@ fn print_help() {
     println!("  medousa tui");
     println!("  medousa discord");
     println!("  medousa telegram");
+    println!("  medousa slack");
+    println!("  medousa whatsapp");
     println!("  medousa doctor");
 }

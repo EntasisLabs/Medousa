@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
 const DEFAULT_DISCORD_PREFIX: &str = "!";
+const DEFAULT_WHATSAPP_DELIVER_BIND: &str = "127.0.0.1:7422";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProductConfig {
@@ -13,6 +14,10 @@ pub struct ProductConfig {
     pub telegram: TelegramProductConfig,
     #[serde(default)]
     pub discord: DiscordProductConfig,
+    #[serde(default)]
+    pub slack: SlackProductConfig,
+    #[serde(default)]
+    pub whatsapp: WhatsAppProductConfig,
     #[serde(default)]
     pub tui: TuiProductConfig,
     #[serde(default)]
@@ -47,6 +52,30 @@ pub struct DiscordProductConfig {
     pub heartbeat_nudges_enabled: bool,
     #[serde(default)]
     pub heartbeat_channel_ids: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SlackProductConfig {
+    #[serde(default)]
+    pub allowed_user_ids: Vec<String>,
+    #[serde(default)]
+    pub heartbeat_nudges_enabled: bool,
+    #[serde(default)]
+    pub heartbeat_channel_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WhatsAppProductConfig {
+    #[serde(default = "default_whatsapp_deliver_bind")]
+    pub deliver_bind: String,
+    #[serde(default)]
+    pub deliver_url: Option<String>,
+    #[serde(default)]
+    pub allowed_user_ids: Vec<String>,
+    #[serde(default)]
+    pub heartbeat_nudges_enabled: bool,
+    #[serde(default)]
+    pub heartbeat_chat_jids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -117,6 +146,8 @@ impl Default for ProductConfig {
             daemon: DaemonProductConfig::default(),
             telegram: TelegramProductConfig::default(),
             discord: DiscordProductConfig::default(),
+            slack: SlackProductConfig::default(),
+            whatsapp: WhatsAppProductConfig::default(),
             tui: TuiProductConfig::default(),
             runtime: RuntimeProductConfig::default(),
         }
@@ -143,6 +174,18 @@ impl Default for DiscordProductConfig {
     }
 }
 
+impl Default for WhatsAppProductConfig {
+    fn default() -> Self {
+        Self {
+            deliver_bind: default_whatsapp_deliver_bind(),
+            deliver_url: None,
+            allowed_user_ids: Vec::new(),
+            heartbeat_nudges_enabled: false,
+            heartbeat_chat_jids: Vec::new(),
+        }
+    }
+}
+
 impl Default for TuiProductConfig {
     fn default() -> Self {
         Self {
@@ -157,6 +200,10 @@ fn default_daemon_bind() -> String {
 
 fn default_discord_prefix() -> String {
     DEFAULT_DISCORD_PREFIX.to_string()
+}
+
+fn default_whatsapp_deliver_bind() -> String {
+    DEFAULT_WHATSAPP_DELIVER_BIND.to_string()
 }
 
 fn default_heartbeat_min_significance() -> f32 {
@@ -245,18 +292,46 @@ pub fn format_i64_csv(values: &[i64]) -> String {
 
 /// Returns true when the sender is allowed for this channel ingest request.
 pub fn ingest_sender_allowed(channel: &str, user_id: &str, config: &ProductConfig) -> bool {
-    if !channel.eq_ignore_ascii_case("telegram") {
-        return true;
-    }
+    match channel.to_ascii_lowercase().as_str() {
+        "telegram" => {
+            let allowed = &config.telegram.allowed_user_ids;
+            if allowed.is_empty() {
+                return true;
+            }
 
-    let allowed = &config.telegram.allowed_user_ids;
-    if allowed.is_empty() {
-        return true;
-    }
+            extract_numeric_user_id(user_id)
+                .map(|id| allowed.contains(&id))
+                .unwrap_or(false)
+        }
+        "slack" => {
+            let allowed = &config.slack.allowed_user_ids;
+            if allowed.is_empty() {
+                return true;
+            }
 
-    extract_numeric_user_id(user_id)
-        .map(|id| allowed.contains(&id))
-        .unwrap_or(false)
+            extract_slack_user_id(user_id)
+                .map(|id| allowed.iter().any(|entry| entry == &id))
+                .unwrap_or(false)
+        }
+        "whatsapp" => {
+            let allowed = &config.whatsapp.allowed_user_ids;
+            if allowed.is_empty() {
+                return true;
+            }
+
+            allowed
+                .iter()
+                .any(|entry| user_id == entry || user_id.ends_with(entry))
+        }
+        _ => true,
+    }
+}
+
+fn extract_slack_user_id(user_id: &str) -> Option<String> {
+    user_id
+        .strip_prefix("slack:user:")
+        .or_else(|| user_id.rsplit(':').next())
+        .map(str::to_string)
 }
 
 fn extract_numeric_user_id(user_id: &str) -> Option<u64> {
@@ -285,6 +360,8 @@ pub fn apply_daemon_env(config: &ProductConfig) {
 pub fn apply_adapter_env(config: &ProductConfig) {
     apply_telegram_env(&config.telegram);
     apply_discord_env(&config.discord);
+    apply_slack_env(&config.slack);
+    apply_whatsapp_env(&config.whatsapp);
 }
 
 fn apply_telegram_env(config: &TelegramProductConfig) {
@@ -327,6 +404,59 @@ fn apply_discord_env(config: &DiscordProductConfig) {
             std::env::set_var(
                 "MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS",
                 format_u64_csv(&config.heartbeat_channel_ids),
+            )
+        };
+    }
+}
+
+fn apply_slack_env(config: &SlackProductConfig) {
+    if config.heartbeat_nudges_enabled {
+        unsafe { std::env::set_var("MEDOUSA_SLACK_HEARTBEAT_NUDGES_ENABLED", "true") };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_SLACK_HEARTBEAT_NUDGES_ENABLED") };
+    }
+
+    if config.heartbeat_channel_ids.is_empty() {
+        unsafe { std::env::remove_var("MEDOUSA_SLACK_HEARTBEAT_CHANNEL_IDS") };
+    } else {
+        unsafe {
+            std::env::set_var(
+                "MEDOUSA_SLACK_HEARTBEAT_CHANNEL_IDS",
+                config.heartbeat_channel_ids.join(","),
+            )
+        };
+    }
+}
+
+fn apply_whatsapp_env(config: &WhatsAppProductConfig) {
+    unsafe {
+        std::env::set_var("MEDOUSA_WHATSAPP_DELIVER_BIND", config.deliver_bind.trim());
+    }
+
+    if let Some(url) = config
+        .deliver_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        unsafe { std::env::set_var("MEDOUSA_WHATSAPP_DELIVER_URL", url) };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_WHATSAPP_DELIVER_URL") };
+    }
+
+    if config.heartbeat_nudges_enabled {
+        unsafe { std::env::set_var("MEDOUSA_WHATSAPP_HEARTBEAT_NUDGES_ENABLED", "true") };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_WHATSAPP_HEARTBEAT_NUDGES_ENABLED") };
+    }
+
+    if config.heartbeat_chat_jids.is_empty() {
+        unsafe { std::env::remove_var("MEDOUSA_WHATSAPP_HEARTBEAT_CHAT_JIDS") };
+    } else {
+        unsafe {
+            std::env::set_var(
+                "MEDOUSA_WHATSAPP_HEARTBEAT_CHAT_JIDS",
+                config.heartbeat_chat_jids.join(","),
             )
         };
     }

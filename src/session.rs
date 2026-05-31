@@ -10,6 +10,10 @@ const DISCORD_BOT_TOKEN_SERVICE: &str = "medousa.discord";
 const DISCORD_BOT_TOKEN_ACCOUNT: &str = "bot_token";
 const TELEGRAM_BOT_TOKEN_SERVICE: &str = "medousa.telegram";
 const TELEGRAM_BOT_TOKEN_ACCOUNT: &str = "bot_token";
+const SLACK_BOT_TOKEN_SERVICE: &str = "medousa.slack";
+const SLACK_BOT_TOKEN_ACCOUNT: &str = "bot_token";
+const SLACK_APP_TOKEN_SERVICE: &str = "medousa.slack";
+const SLACK_APP_TOKEN_ACCOUNT: &str = "app_token";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationTurn {
@@ -103,6 +107,14 @@ fn telegram_bot_token_secret_path() -> PathBuf {
     medousa_data_dir().join("secrets").join("telegram_bot_token")
 }
 
+fn slack_bot_token_secret_path() -> PathBuf {
+    medousa_data_dir().join("secrets").join("slack_bot_token")
+}
+
+fn slack_app_token_secret_path() -> PathBuf {
+    medousa_data_dir().join("secrets").join("slack_app_token")
+}
+
 fn api_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
     keyring::Entry::new(API_KEY_SERVICE, API_KEY_ACCOUNT)
 }
@@ -113,6 +125,14 @@ fn discord_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
 
 fn telegram_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
     keyring::Entry::new(TELEGRAM_BOT_TOKEN_SERVICE, TELEGRAM_BOT_TOKEN_ACCOUNT)
+}
+
+fn slack_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new(SLACK_BOT_TOKEN_SERVICE, SLACK_BOT_TOKEN_ACCOUNT)
+}
+
+fn slack_app_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new(SLACK_APP_TOKEN_SERVICE, SLACK_APP_TOKEN_ACCOUNT)
 }
 
 fn file_api_key() -> Option<String> {
@@ -131,6 +151,20 @@ fn file_discord_bot_token() -> Option<String> {
 
 fn file_telegram_bot_token() -> Option<String> {
     std::fs::read_to_string(telegram_bot_token_secret_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn file_slack_bot_token() -> Option<String> {
+    std::fs::read_to_string(slack_bot_token_secret_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn file_slack_app_token() -> Option<String> {
+    std::fs::read_to_string(slack_app_token_secret_path())
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -177,6 +211,8 @@ fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
         if path.ends_with("api_key")
             || path.ends_with("discord_bot_token")
             || path.ends_with("telegram_bot_token")
+            || path.ends_with("slack_bot_token")
+            || path.ends_with("slack_app_token")
         {
             let _ = std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o600));
         }
@@ -323,6 +359,82 @@ pub fn save_telegram_bot_token(token: Option<&str>) {
         }
         None => {
             if let Ok(entry) = telegram_bot_token_keyring_entry() {
+                let _ = entry.delete_password();
+            }
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+pub fn load_slack_bot_token() -> Option<String> {
+    if let Ok(entry) = slack_bot_token_keyring_entry() {
+        if let Ok(value) = entry.get_password() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    file_slack_bot_token()
+}
+
+pub fn save_slack_bot_token(token: Option<&str>) {
+    let path = slack_bot_token_secret_path();
+
+    match token.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(value) => {
+            let mut persisted = false;
+            if let Ok(entry) = slack_bot_token_keyring_entry() {
+                persisted = entry.set_password(value).is_ok();
+            }
+
+            if persisted {
+                let _ = std::fs::remove_file(path);
+            } else {
+                let _ = atomic_write(&path, value.as_bytes());
+            }
+        }
+        None => {
+            if let Ok(entry) = slack_bot_token_keyring_entry() {
+                let _ = entry.delete_password();
+            }
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+pub fn load_slack_app_token() -> Option<String> {
+    if let Ok(entry) = slack_app_token_keyring_entry() {
+        if let Ok(value) = entry.get_password() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    file_slack_app_token()
+}
+
+pub fn save_slack_app_token(token: Option<&str>) {
+    let path = slack_app_token_secret_path();
+
+    match token.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(value) => {
+            let mut persisted = false;
+            if let Ok(entry) = slack_app_token_keyring_entry() {
+                persisted = entry.set_password(value).is_ok();
+            }
+
+            if persisted {
+                let _ = std::fs::remove_file(path);
+            } else {
+                let _ = atomic_write(&path, value.as_bytes());
+            }
+        }
+        None => {
+            if let Ok(entry) = slack_app_token_keyring_entry() {
                 let _ = entry.delete_password();
             }
             let _ = std::fs::remove_file(path);

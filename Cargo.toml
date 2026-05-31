@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
+members = [".", "adapters/medousa-whatsapp"]
 
 [[bin]]
 name = "medousa_cli"
@@ -28,6 +29,10 @@ path = "src/bin/medousa_telegram.rs"
 [[bin]]
 name = "medousa_discord"
 path = "src/bin/medousa_discord.rs"
+
+[[bin]]
+name = "medousa_slack"
+path = "src/bin/medousa_slack.rs"
 
 [[bin]]
 name = "medousa_mcp_gateway"
@@ -56,6 +61,7 @@ keyring = "2.3"
 locus-core-rs = "0.2.1"
 teloxide = "0.17.0"
 serenity = "0.12.5"
+slack-morphism = { version = "2.22", default-features = false, features = ["hyper"] }
 once_cell = "1"
 surrealdb-types = { version = "3" }
 surrealdb = { version = "3", default-features = false, features = ["kv-surrealkv", "rustls", "kv-mem", "protocol-ws"] }
