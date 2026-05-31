@@ -20,7 +20,7 @@ use crate::runtime_tools::{
     CognitionRuntimeDeliveryStatusTool, CognitionRuntimeJobsCancelTool,
     CognitionRuntimeJobsListTool, CognitionRuntimeRecurringCancelTool,
     CognitionRuntimeRecurringListTool, CognitionRuntimeRecurringPauseTool,
-    CognitionRuntimeRecurringRegisterTool, CognitionRuntimeWorkflowCancelTool,
+    CognitionRuntimeRecurringRegisterTool,     CognitionRuntimeWorkflowCancelTool, CognitionRuntimeWorkflowPlanTool,
     CognitionRuntimeWorkflowRunTool, CognitionRuntimeWorkflowScheduleTool,
     CognitionRuntimeWorkflowStatusTool,
 };
@@ -203,6 +203,7 @@ pub(crate) async fn build_tui_runtime_services(
         workflow_registry.clone(),
         event_tx.clone(),
     ))?;
+    tool_registry.register_tool(CognitionRuntimeWorkflowPlanTool::new(event_tx.clone()))?;
 
     let capability_registry = Arc::new(RwLock::new(CapabilityRegistry::with_loaded_manifest()));
     let mcp_gateway_client = Arc::new(McpGatewayClient::from_env());

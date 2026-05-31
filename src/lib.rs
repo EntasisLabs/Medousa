@@ -34,6 +34,7 @@ pub mod stage_routing;
 pub mod bridge_tools;
 pub mod runtime_tools;
 pub mod workflow;
+pub mod workflow_plan;
 pub mod tools;
 pub mod tui;
 pub mod verification_store;

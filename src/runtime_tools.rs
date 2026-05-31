@@ -27,6 +27,7 @@ use crate::workflow::{
     enqueue_sequential_workflow_job, new_workflow_id, preflight_grapheme_steps,
     validate_workflow_request,
 };
+use crate::workflow_plan::{WorkflowPlanRequest, plan_workflow_from_goal};
 
 fn job_state_label(state: &JobState) -> &'static str {
     match state {
@@ -1311,6 +1312,82 @@ impl StasisTool for CognitionRuntimeWorkflowCancelTool {
             "recurring_disabled": recurring_disabled,
             "job": job_status
         }))
+    }
+}
+
+// ── cognition_runtime_workflow_plan (D4) ────────────────────────────────────────
+
+pub struct CognitionRuntimeWorkflowPlanTool {
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionRuntimeWorkflowPlanTool {
+    pub fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionRuntimeWorkflowPlanTool {
+    fn name(&self) -> &'static str {
+        "cognition_runtime_workflow_plan"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Suggest a workflow JSON plan from a natural-language goal without executing it. \
+             Returns execute_with guidance (workflow_run, workflow_schedule, capability_invoke, etc.).",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "description": "Natural-language description of desired durable work"
+                },
+                "context": {
+                    "type": "object",
+                    "description": "Optional hints: url, csv_url, topic, query, telegram_chat_id, timezone"
+                }
+            },
+            "required": ["goal"]
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let goal = input
+            .get("goal")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                StasisError::PortFailure(
+                    "cognition_runtime_workflow_plan: goal is required".to_string(),
+                )
+            })?;
+
+        let request = WorkflowPlanRequest {
+            goal: goal.to_string(),
+            context: input.get("context").cloned(),
+        };
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: self.name().to_string(),
+                input_summary: goal.chars().take(80).collect(),
+            })
+            .await;
+
+        let plan = plan_workflow_from_goal(&request);
+        Ok(serde_json::to_value(plan).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition_runtime_workflow_plan: failed to encode plan: {error}"
+            ))
+        })?)
     }
 }
 

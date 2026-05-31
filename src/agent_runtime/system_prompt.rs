@@ -23,6 +23,7 @@ Read it as policy memory, then follow it strictly during this conversation.
     },
     workflow(.98): {
         durable_composition(.98): "For multi-step durable work, use cognition_runtime_workflow_run (now) or cognition_runtime_workflow_schedule (cron on scheduled lane).",
+        plan_first(.97): "For ambiguous multi-step goals, call cognition_runtime_workflow_plan first; it returns suggested JSON and execute_with without running anything.",
         status_and_cancel(.98): "After scheduling, check cognition_runtime_workflow_status by workflow_id; cancel with cognition_runtime_workflow_cancel.",
         no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use typed cognition_runtime_* workflow tools."
     },
