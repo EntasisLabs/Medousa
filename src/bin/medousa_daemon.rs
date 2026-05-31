@@ -3597,6 +3597,13 @@ mod tests {
     }
 
     #[test]
+    fn output_text_extraction_supports_agent_session_turns_shape() {
+        let diagnostics = r#"{"turns":[{"response_text":"agent session reply"}]}"#;
+        let output = extract_output_text_from_diagnostics(Some(diagnostics));
+        assert_eq!(output.as_deref(), Some("agent session reply"));
+    }
+
+    #[test]
     fn report_prompt_builder_includes_query_and_citation_requirements() {
         let query = "Assess three practical async Rust operations trends";
         let prompt = build_report_prompt(query);
