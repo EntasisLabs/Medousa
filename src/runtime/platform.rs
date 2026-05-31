@@ -7,7 +7,10 @@ use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
+use crate::artifact_store;
+use crate::channel_session_store;
 use crate::session_store;
+use crate::verification_store;
 use crate::tools::TuiRuntime;
 use crate::tui::runtime_services::assemble_tui_runtime;
 
@@ -102,6 +105,9 @@ async fn build_platform_inner(
         .context("failed to build stasis daemon composition")?;
 
     session_store::init_session_store_with_runtime(&composition).await;
+    channel_session_store::init_channel_session_store_with_runtime(&composition).await;
+    artifact_store::init_artifact_store_with_runtime(&composition).await;
+    verification_store::init_verification_store_with_runtime(&composition).await;
 
     let agent = assemble_tui_runtime(
         Arc::new(composition),

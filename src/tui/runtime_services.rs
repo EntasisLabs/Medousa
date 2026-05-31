@@ -80,6 +80,9 @@ pub(crate) async fn build_tui_runtime_services(
         base_url,
     };
     let (composition, memory) = build_local_stasis_composition(wire_config).await?;
+    crate::session_store::init_session_store_with_runtime(&composition).await;
+    crate::artifact_store::init_artifact_store_with_runtime(&composition).await;
+    crate::verification_store::init_verification_store_with_runtime(&composition).await;
 
     assemble_tui_runtime(
         Arc::new(composition),

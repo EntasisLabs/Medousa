@@ -1,11 +1,69 @@
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::future::IntoFuture;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
+use stasis::prelude::RuntimeComposition;
+use surrealdb::engine::any::Any;
+use surrealdb::Surreal;
+use surrealdb_types::SurrealValue;
+use tokio::runtime::Handle;
 
 use crate::verifier::{VerificationPolicy, VerificationReport};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const VERIFICATION_INDEX_TABLE: &str = "verification_record";
+
+const VERIFICATION_SCHEMA_STATEMENTS: &[&str] = &[
+    "DEFINE TABLE verification_record SCHEMAFULL",
+    "DEFINE FIELD verification_id ON TABLE verification_record TYPE string",
+    "DEFINE FIELD session_id ON TABLE verification_record TYPE string",
+    "DEFINE FIELD pack_id ON TABLE verification_record TYPE string",
+    "DEFINE FIELD artifact_id ON TABLE verification_record TYPE string",
+    "DEFINE FIELD selector ON TABLE verification_record TYPE string",
+    "DEFINE FIELD source ON TABLE verification_record TYPE string",
+    "DEFINE FIELD is_verified ON TABLE verification_record TYPE bool",
+    "DEFINE FIELD confidence_score ON TABLE verification_record TYPE float",
+    "DEFINE FIELD created_at_utc ON TABLE verification_record TYPE datetime",
+    "DEFINE FIELD output_path ON TABLE verification_record TYPE string",
+    "DEFINE INDEX idx_verification_record_session ON TABLE verification_record COLUMNS session_id",
+    "DEFINE INDEX idx_verification_record_id ON TABLE verification_record COLUMNS verification_id UNIQUE",
+];
+
+static VERIFICATION_INDEX_STORE: Lazy<RwLock<Arc<dyn VerificationIndexStore>>> =
+    Lazy::new(|| RwLock::new(Arc::new(FileVerificationIndexStore)));
+
+pub async fn init_verification_store_with_runtime(runtime: &RuntimeComposition) {
+    match runtime {
+        RuntimeComposition::Surreal(rt) => {
+            let store = SurrealVerificationIndexStore::new(rt.job_store.db());
+            if let Err(err) = store.ensure_schema().await {
+                eprintln!(
+                    "Surreal verification index schema init error: {err}; keeping file-backed index"
+                );
+                return;
+            }
+            set_verification_index_store(Arc::new(store));
+            eprintln!(
+                "Surreal runtime detected; verification index switched to SurrealDB backend"
+            );
+        }
+        _ => {}
+    }
+}
+
+fn set_verification_index_store(store: Arc<dyn VerificationIndexStore>) {
+    let mut guard = VERIFICATION_INDEX_STORE.write().unwrap();
+    *guard = store;
+}
+
+trait VerificationIndexStore: Send + Sync {
+    fn read_all(&self) -> Vec<VerificationRunRecord>;
+    fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
 pub struct VerificationRunRecord {
     pub verification_id: String,
     pub session_id: String,
@@ -103,6 +161,91 @@ pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<Verifi
 }
 
 fn append_index_record(record: &VerificationRunRecord) -> std::result::Result<(), String> {
+    verification_index_store().append(record)
+}
+
+fn read_index_records() -> Vec<VerificationRunRecord> {
+    verification_index_store().read_all()
+}
+
+fn verification_index_store() -> Arc<dyn VerificationIndexStore> {
+    VERIFICATION_INDEX_STORE.read().unwrap().clone()
+}
+
+struct FileVerificationIndexStore;
+
+impl VerificationIndexStore for FileVerificationIndexStore {
+    fn read_all(&self) -> Vec<VerificationRunRecord> {
+        file_read_index_records()
+    }
+
+    fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String> {
+        file_append_index_record(record)
+    }
+}
+
+struct SurrealVerificationIndexStore {
+    db: Surreal<Any>,
+}
+
+impl SurrealVerificationIndexStore {
+    fn new(db: Surreal<Any>) -> Self {
+        Self { db }
+    }
+
+    async fn ensure_schema(&self) -> Result<(), surrealdb::Error> {
+        for statement in VERIFICATION_SCHEMA_STATEMENTS {
+            if let Err(err) = self.db.query(*statement).await {
+                let text = err.to_string();
+                if !(text.contains("already exists")
+                    || text.contains("already defined")
+                    || text.contains("Overwrite index"))
+                {
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl VerificationIndexStore for SurrealVerificationIndexStore {
+    fn read_all(&self) -> Vec<VerificationRunRecord> {
+        let sql = "SELECT * FROM type::table($table) ORDER BY created_at_utc ASC";
+        let mut response = match block_on(
+            self.db
+                .query(sql)
+                .bind(("table", VERIFICATION_INDEX_TABLE)),
+        ) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!("SurrealVerificationIndexStore::read_all query error: {err}");
+                return Vec::new();
+            }
+        };
+
+        response.take::<Vec<VerificationRunRecord>>(0).unwrap_or_default()
+    }
+
+    fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String> {
+        let sql = "UPSERT type::record($table, $id) CONTENT $data";
+        block_on(
+            self.db
+                .query(sql)
+                .bind(("table", VERIFICATION_INDEX_TABLE))
+                .bind(("id", record.verification_id.clone()))
+                .bind(("data", record.clone())),
+        )
+        .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+}
+
+fn block_on<F: IntoFuture>(f: F) -> F::Output {
+    tokio::task::block_in_place(move || Handle::current().block_on(f.into_future()))
+}
+
+fn file_append_index_record(record: &VerificationRunRecord) -> std::result::Result<(), String> {
     let index_path = verifications_root().join("index.jsonl");
     if let Some(parent) = index_path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
@@ -118,7 +261,7 @@ fn append_index_record(record: &VerificationRunRecord) -> std::result::Result<()
     Ok(())
 }
 
-fn read_index_records() -> Vec<VerificationRunRecord> {
+fn file_read_index_records() -> Vec<VerificationRunRecord> {
     let index_path = verifications_root().join("index.jsonl");
     let Ok(file) = std::fs::File::open(index_path) else {
         return Vec::new();

@@ -5,6 +5,7 @@ pub mod artifact_chunking;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
 pub mod artifact_store;
+pub mod channel_session_store;
 pub mod context_pack;
 pub mod capability_catalog;
 pub mod mcp_daemon_handlers;

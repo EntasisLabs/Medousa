@@ -182,3 +182,73 @@ medousa_require_cmd() {
     exit 1
   fi
 }
+
+medousa_sha256_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+  else
+    echo "error: sha256sum or shasum required" >&2
+    return 1
+  fi
+}
+
+# Fingerprint of the full binary set — detects partial or mismatched installs.
+medousa_component_set_id() {
+  local bin_dir="$1"
+  local target="$2"
+  local bin file path tmp result
+  tmp="$(mktemp)"
+  for bin in "${MEDOUSA_BINARIES[@]}"; do
+    file="$(medousa_binary_filename "${bin}" "${target}")"
+    path="${bin_dir}/${file}"
+    if [[ ! -f "${path}" ]]; then
+      rm -f "${tmp}"
+      echo "error: missing binary for component set: ${path}" >&2
+      return 1
+    fi
+    medousa_sha256_file "${path}" >>"${tmp}"
+  done
+  result="$(medousa_sha256_file "${tmp}")"
+  rm -f "${tmp}"
+  echo "${result}"
+}
+
+medousa_write_install_manifest() {
+  local bin_dir="$1"
+  local version="$2"
+  local target="$3"
+  local out_path="$4"
+  local built_at="${5:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+  local component_set_id
+  component_set_id="$(medousa_component_set_id "${bin_dir}" "${target}")"
+
+  local bin_list=""
+  local bin
+  for bin in "${MEDOUSA_BINARIES[@]}"; do
+    if [[ -n "${bin_list}" ]]; then
+      bin_list+=", "
+    fi
+    bin_list+="\"${bin}\""
+  done
+
+  cat >"${out_path}" <<EOF
+{
+  "schema_version": 1,
+  "product": "medousa",
+  "version": "${version}",
+  "target": "${target}",
+  "built_at": "${built_at}",
+  "binaries": [${bin_list}],
+  "component_set_id": "${component_set_id}"
+}
+EOF
+}
+
+medousa_read_manifest_field() {
+  local manifest_path="$1"
+  local field="$2"
+  sed -n "s/.*\"${field}\": \"\\([^\"]*\\)\".*/\\1/p" "${manifest_path}" | head -1
+}

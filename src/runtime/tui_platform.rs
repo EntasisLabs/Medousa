@@ -5,10 +5,12 @@ use anyhow::{Context, Result};
 use stasis::prelude::RuntimeBackend;
 use tokio::sync::mpsc;
 
+use crate::artifact_store;
 use crate::events::TuiEvent;
 use crate::runtime::stasis_wire::LocalStasisWireConfig;
 use crate::runtime::stasis_wire::build_local_stasis_composition;
 use crate::session_store;
+use crate::verification_store;
 use crate::tools::TuiRuntime;
 use crate::tui::runtime_services::assemble_tui_runtime;
 
@@ -130,8 +132,14 @@ async fn build_tui_local_platform(
     };
 
     let (composition, memory) = build_local_stasis_composition(wire_config).await?;
-    session_store::init_session_store_with_runtime(&composition).await;
+    init_local_platform_stores(&composition).await;
     assemble_tui_agent(composition, memory, config, event_tx).await
+}
+
+async fn init_local_platform_stores(composition: &stasis::prelude::RuntimeComposition) {
+    session_store::init_session_store_with_runtime(composition).await;
+    artifact_store::init_artifact_store_with_runtime(composition).await;
+    verification_store::init_verification_store_with_runtime(composition).await;
 }
 
 async fn assemble_tui_agent(

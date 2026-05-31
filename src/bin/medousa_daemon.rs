@@ -79,8 +79,6 @@ struct AppState {
     platform: Arc<medousa::MedousaPlatformRuntime>,
     daemon_base_url: String,
     interactive_turn_streams: Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
-    // In-memory channel+user → session_id mapping for the ingester
-    session_mappings: Arc<RwLock<HashMap<String, String>>>,
     active_ingest_jobs: Arc<RwLock<HashMap<String, medousa::session_mapping::ActiveIngestJob>>>,
     channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
     job_delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
@@ -96,7 +94,6 @@ struct AppState {
     agent_turn_jobs: Arc<RwLock<HashMap<String, AgentTurnJobRecord>>>,
     default_runtime_config: session_mapping::IngestSessionRuntimeConfig,
     cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
-    channel_session_history: Arc<RwLock<HashMap<String, Vec<String>>>>,
     session_runtime_configs:
         Arc<RwLock<HashMap<String, medousa::session_mapping::IngestSessionRuntimeConfig>>>,
     backend: String,
@@ -376,7 +373,6 @@ async fn main() -> Result<()> {
         platform: platform.clone(),
         daemon_base_url: format!("http://{bind}"),
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
-        session_mappings: Arc::new(RwLock::new(HashMap::new())),
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
         channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
         job_delivery_records: Arc::new(RwLock::new(HashMap::new())),
@@ -395,7 +391,6 @@ async fn main() -> Result<()> {
         agent_turn_jobs: Arc::new(RwLock::new(HashMap::new())),
         default_runtime_config,
         cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
-        channel_session_history: Arc::new(RwLock::new(HashMap::new())),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
         worker_id: worker_id.clone(),
@@ -1519,17 +1514,14 @@ async fn ingest_handler(
 
     let product_config = medousa::load_product_config();
     if !medousa::ingest_sender_allowed(&request.channel, &request.user_id, &product_config) {
-        let session_id = {
-            let mappings = state.session_mappings.read().await;
-            let mapping_key = format!(
-                "{}:{}:{}",
-                request.channel, request.channel_id, request.user_id
-            );
-            mappings
-                .get(&mapping_key)
-                .cloned()
-                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string())
-        };
+        let mapping_key = format!(
+            "{}:{}:{}",
+            request.channel, request.channel_id, request.user_id
+        );
+        let session_id = medousa::channel_session_store::channel_session_store()
+            .get_session_id(&mapping_key)
+            .await
+            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
         return Ok(build_ingest_response(
             session_id,
             None,
@@ -1542,14 +1534,13 @@ async fn ingest_handler(
     }
 
     let mapping_key = format!("{}:{}:{}", request.channel, request.channel_id, request.user_id);
-    let existing_session_id = {
-        let mappings = state.session_mappings.read().await;
-        mappings.get(&mapping_key).cloned()
-    };
+    let existing_session_id = medousa::channel_session_store::channel_session_store()
+        .get_session_id(&mapping_key)
+        .await;
 
     if request.text.trim().eq_ignore_ascii_case("/new") {
         if let Some(old_session_id) = existing_session_id.clone() {
-            push_channel_session_history(&state, &mapping_key, old_session_id).await;
+            push_channel_session_history(&mapping_key, old_session_id).await;
         }
     }
 
@@ -1611,14 +1602,13 @@ async fn ingest_handler(
             reply = "regenerating last response…".to_string();
         }
         session_mapping::IngestAction::ListHistory => {
-            reply = format_channel_session_history(&state, &mapping_key, &outcome.session_id).await;
+            reply = format_channel_session_history(&mapping_key, &outcome.session_id).await;
         }
         session_mapping::IngestAction::ResumeSession { target_session_id } => {
-            push_channel_session_history(&state, &mapping_key, outcome.session_id.clone()).await;
-            {
-                let mut mappings = state.session_mappings.write().await;
-                mappings.insert(mapping_key.clone(), target_session_id.clone());
-            }
+            push_channel_session_history(&mapping_key, outcome.session_id.clone()).await;
+            medousa::channel_session_store::channel_session_store()
+                .set_session_id(&mapping_key, target_session_id.clone())
+                .await;
             reply = format!("resumed session {target_session_id}");
             return Ok(build_ingest_response(
                 target_session_id,
@@ -1649,10 +1639,9 @@ async fn ingest_handler(
         }
     }
 
-    {
-        let mut mappings = state.session_mappings.write().await;
-        mappings.insert(mapping_key, outcome.session_id.clone());
-    }
+    medousa::channel_session_store::channel_session_store()
+        .set_session_id(&mapping_key, outcome.session_id.clone())
+        .await;
 
     Ok(build_ingest_response(
         outcome.session_id,
@@ -1691,26 +1680,19 @@ fn build_ingest_response(
     })
 }
 
-async fn push_channel_session_history(state: &AppState, mapping_key: &str, session_id: String) {
-    let mut history = state.channel_session_history.write().await;
-    let entries = history.entry(mapping_key.to_string()).or_default();
-    entries.retain(|existing| existing != &session_id);
-    entries.insert(0, session_id);
-    entries.truncate(20);
+async fn push_channel_session_history(mapping_key: &str, session_id: String) {
+    medousa::channel_session_store::channel_session_store()
+        .push_session_history(mapping_key, session_id)
+        .await;
 }
 
 async fn format_channel_session_history(
-    state: &AppState,
     mapping_key: &str,
     active_session_id: &str,
 ) -> String {
-    let entries = state
-        .channel_session_history
-        .read()
-        .await
-        .get(mapping_key)
-        .cloned()
-        .unwrap_or_default();
+    let entries = medousa::channel_session_store::channel_session_store()
+        .list_session_history(mapping_key, 20)
+        .await;
 
     let mut lines = vec![format!(
         "* {} (active, {} turns)",

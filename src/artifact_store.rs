@@ -1,11 +1,66 @@
 use chrono::{DateTime, Duration, Utc};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::future::IntoFuture;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
+use stasis::prelude::RuntimeComposition;
+use surrealdb::engine::any::Any;
+use surrealdb::Surreal;
+use surrealdb_types::SurrealValue;
+use tokio::runtime::Handle;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const ARTIFACT_INDEX_TABLE: &str = "artifact_record";
+
+const ARTIFACT_SCHEMA_STATEMENTS: &[&str] = &[
+    "DEFINE TABLE artifact_record SCHEMAFULL",
+    "DEFINE FIELD artifact_id ON TABLE artifact_record TYPE string",
+    "DEFINE FIELD session_id ON TABLE artifact_record TYPE string",
+    "DEFINE FIELD tool_name ON TABLE artifact_record TYPE string",
+    "DEFINE FIELD direction ON TABLE artifact_record TYPE string",
+    "DEFINE FIELD hash64 ON TABLE artifact_record TYPE string",
+    "DEFINE FIELD byte_size ON TABLE artifact_record TYPE int",
+    "DEFINE FIELD stored_at_utc ON TABLE artifact_record TYPE datetime",
+    "DEFINE FIELD payload_path ON TABLE artifact_record TYPE string",
+    "DEFINE INDEX idx_artifact_record_session ON TABLE artifact_record COLUMNS session_id",
+    "DEFINE INDEX idx_artifact_record_id ON TABLE artifact_record COLUMNS artifact_id UNIQUE",
+];
+
+static ARTIFACT_INDEX_STORE: Lazy<RwLock<Arc<dyn ArtifactIndexStore>>> =
+    Lazy::new(|| RwLock::new(Arc::new(FileArtifactIndexStore)));
+
+pub async fn init_artifact_store_with_runtime(runtime: &RuntimeComposition) {
+    match runtime {
+        RuntimeComposition::Surreal(rt) => {
+            let store = SurrealArtifactIndexStore::new(rt.job_store.db());
+            if let Err(err) = store.ensure_schema().await {
+                eprintln!(
+                    "Surreal artifact index schema init error: {err}; keeping file-backed index"
+                );
+                return;
+            }
+            set_artifact_index_store(Arc::new(store));
+            eprintln!("Surreal runtime detected; artifact index switched to SurrealDB backend");
+        }
+        _ => {}
+    }
+}
+
+fn set_artifact_index_store(store: Arc<dyn ArtifactIndexStore>) {
+    let mut guard = ARTIFACT_INDEX_STORE.write().unwrap();
+    *guard = store;
+}
+
+trait ArtifactIndexStore: Send + Sync {
+    fn read_all(&self) -> Vec<ArtifactRecord>;
+    fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String>;
+    fn overwrite_all(&self, records: &[ArtifactRecord]) -> std::result::Result<(), String>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
 pub struct ArtifactRecord {
     pub artifact_id: String,
     pub session_id: String,
@@ -229,6 +284,112 @@ pub fn run_artifact_maintenance(
 }
 
 fn append_index_record(record: &ArtifactRecord) -> std::result::Result<(), String> {
+    artifact_index_store().append(record)
+}
+
+fn overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<(), String> {
+    artifact_index_store().overwrite_all(records)
+}
+
+fn read_index_records() -> Vec<ArtifactRecord> {
+    artifact_index_store().read_all()
+}
+
+fn artifact_index_store() -> Arc<dyn ArtifactIndexStore> {
+    ARTIFACT_INDEX_STORE.read().unwrap().clone()
+}
+
+struct FileArtifactIndexStore;
+
+impl ArtifactIndexStore for FileArtifactIndexStore {
+    fn read_all(&self) -> Vec<ArtifactRecord> {
+        file_read_index_records()
+    }
+
+    fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String> {
+        file_append_index_record(record)
+    }
+
+    fn overwrite_all(&self, records: &[ArtifactRecord]) -> std::result::Result<(), String> {
+        file_overwrite_index_records(records)
+    }
+}
+
+struct SurrealArtifactIndexStore {
+    db: Surreal<Any>,
+}
+
+impl SurrealArtifactIndexStore {
+    fn new(db: Surreal<Any>) -> Self {
+        Self { db }
+    }
+
+    async fn ensure_schema(&self) -> Result<(), surrealdb::Error> {
+        for statement in ARTIFACT_SCHEMA_STATEMENTS {
+            if let Err(err) = self.db.query(*statement).await {
+                let text = err.to_string();
+                if !(text.contains("already exists")
+                    || text.contains("already defined")
+                    || text.contains("Overwrite index"))
+                {
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ArtifactIndexStore for SurrealArtifactIndexStore {
+    fn read_all(&self) -> Vec<ArtifactRecord> {
+        let sql = "SELECT * FROM type::table($table) ORDER BY stored_at_utc ASC";
+        let mut response = match block_on(
+            self.db
+                .query(sql)
+                .bind(("table", ARTIFACT_INDEX_TABLE)),
+        ) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!("SurrealArtifactIndexStore::read_all query error: {err}");
+                return Vec::new();
+            }
+        };
+
+        response.take::<Vec<ArtifactRecord>>(0).unwrap_or_default()
+    }
+
+    fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String> {
+        let sql = "UPSERT type::record($table, $id) CONTENT $data";
+        block_on(
+            self.db
+                .query(sql)
+                .bind(("table", ARTIFACT_INDEX_TABLE))
+                .bind(("id", record.artifact_id.clone()))
+                .bind(("data", record.clone())),
+        )
+        .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+
+    fn overwrite_all(&self, records: &[ArtifactRecord]) -> std::result::Result<(), String> {
+        block_on(self.db.query("DELETE type::table($table)").bind((
+            "table",
+            ARTIFACT_INDEX_TABLE,
+        )))
+        .map_err(|err| err.to_string())?;
+
+        for record in records {
+            self.append(record)?;
+        }
+        Ok(())
+    }
+}
+
+fn block_on<F: IntoFuture>(f: F) -> F::Output {
+    tokio::task::block_in_place(move || Handle::current().block_on(f.into_future()))
+}
+
+fn file_append_index_record(record: &ArtifactRecord) -> std::result::Result<(), String> {
     let index_path = artifacts_root().join("index.jsonl");
     if let Some(parent) = index_path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
@@ -243,7 +404,7 @@ fn append_index_record(record: &ArtifactRecord) -> std::result::Result<(), Strin
     Ok(())
 }
 
-fn overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<(), String> {
+fn file_overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<(), String> {
     let index_path = artifacts_root().join("index.jsonl");
     if let Some(parent) = index_path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
@@ -259,7 +420,7 @@ fn overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<()
     Ok(())
 }
 
-fn read_index_records() -> Vec<ArtifactRecord> {
+fn file_read_index_records() -> Vec<ArtifactRecord> {
     let index_path = artifacts_root().join("index.jsonl");
     let Ok(file) = std::fs::File::open(index_path) else {
         return Vec::new();

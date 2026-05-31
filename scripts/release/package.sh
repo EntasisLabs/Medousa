@@ -97,8 +97,17 @@ medousa_log "packaging ${ARCHIVE_NAME}"
 # Archive layout: medousa-vX.Y.Z-target/bin/<binaries>
 WORK="${DIST_DIR}/.pack-work-${BASENAME}"
 rm -rf "${WORK}"
-mkdir -p "${WORK}/${BASENAME}"
+mkdir -p "${WORK}/${BASENAME}/bin"
 cp -a "${BIN_DIR}/." "${WORK}/${BASENAME}/bin/"
+
+BUILT_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+medousa_write_install_manifest \
+  "${WORK}/${BASENAME}/bin" \
+  "${VERSION}" \
+  "${TARGET}" \
+  "${WORK}/${BASENAME}/install-manifest.json" \
+  "${BUILT_AT}"
+medousa_log "install-manifest component_set_id=$(medousa_read_manifest_field "${WORK}/${BASENAME}/install-manifest.json" component_set_id)"
 
 tar -czf "${ARCHIVE_PATH}" -C "${WORK}" "${BASENAME}"
 rm -rf "${WORK}"
