@@ -296,13 +296,14 @@ pub fn process_ingest(
             let session_id = existing_session_id
                 .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let merged_prompt = merge_attachments_into_prompt(&prompt, &request.attachments);
+            let session_prefix = session_id[..8.min(session_id.len())].to_string();
 
             IngestOutcome {
                 session_id,
                 is_new_session: is_new,
                 reply: format!(
                     "queued ask for session {} ({}:{})",
-                    &session_id[..8.min(session_id.len())],
+                    session_prefix,
                     request.channel,
                     request.channel_id
                 ),

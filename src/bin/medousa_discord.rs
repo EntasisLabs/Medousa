@@ -265,7 +265,7 @@ fn maybe_start_heartbeat_nudges(state: Arc<DiscordAdapterState>) {
             {
                 if summary.contains("action=notify") {
                     for channel_id in &channel_ids {
-                        let _ = serenity::model::id::ChannelId(*channel_id)
+                        let _ = serenity::model::id::ChannelId::new(*channel_id)
                             .say(http.as_ref(), summary.clone())
                             .await;
                     }

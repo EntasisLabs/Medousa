@@ -10,6 +10,7 @@ pub mod events;
 pub mod grapheme_sttp_compaction;
 pub mod identity_memory;
 pub mod adapter_heartbeat;
+pub mod product_config;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;
 pub mod payload_receipt;
@@ -53,6 +54,11 @@ pub use daemon_api::{
     SessionHistoryListResponse, SessionHistoryResponse,
     RegisterRecurringResponse, StageRouteCommandRequest, StageRouteCommandResponse,
     StageRouteCommandSpec, resolve_daemon_url,
+};
+pub use product_config::{
+    ProductConfig, load_product_config, save_product_config, ingest_sender_allowed,
+    apply_adapter_env, parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv,
+    migrate_from_onboard_profile,
 };
 pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
 pub use tools::{TuiRuntime, build_tui_runtime};

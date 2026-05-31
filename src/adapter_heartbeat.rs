@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use medousa::HeartbeatStatusResponse;
+use crate::HeartbeatStatusResponse;
 use reqwest::Client;
 
 /// Whether proactive heartbeat nudges are enabled for an adapter env prefix.

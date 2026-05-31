@@ -13,6 +13,10 @@ use medousa::session::{
     load_discord_bot_token, load_telegram_bot_token, load_tui_api_key, load_tui_defaults,
     save_discord_bot_token, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
 };
+use medousa::{
+    ProductConfig, apply_adapter_env, format_i64_csv, format_u64_csv, load_product_config,
+    migrate_from_onboard_profile, parse_i64_csv, parse_u64_csv, save_product_config,
+};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
@@ -78,6 +82,17 @@ fn run_onboard(args: &[String]) -> Result<()> {
     let existing_telegram_token = load_telegram_bot_token();
     let mut profile = load_onboard_profile();
     let mut defaults = load_tui_defaults();
+    let mut product_config = load_product_config();
+    migrate_from_onboard_profile(
+        &mut product_config,
+        profile.telegram_allow_user_ids.as_deref(),
+    );
+
+    let initial_telegram_allow_user_ids = if product_config.telegram.allowed_user_ids.is_empty() {
+        profile.telegram_allow_user_ids.clone()
+    } else {
+        Some(format_u64_csv(&product_config.telegram.allowed_user_ids))
+    };
 
     let ollama_detected = detect_local_ollama();
     let detected_provider = if ollama_detected { "ollama" } else { "openai" };
@@ -143,15 +158,33 @@ fn run_onboard(args: &[String]) -> Result<()> {
             api_key: initial_api_key,
             backend: initial_backend,
             daemon_url: initial_daemon_url,
+            daemon_bind: product_config.daemon.bind.clone(),
             start_daemon: true,
             launch_tui: true,
             configure_discord: false,
             discord_token: None,
+            discord_command_prefix: product_config.discord.command_prefix.clone(),
+            discord_heartbeat_nudges_enabled: product_config.discord.heartbeat_nudges_enabled,
+            discord_heartbeat_channel_ids: if product_config.discord.heartbeat_channel_ids.is_empty()
+            {
+                None
+            } else {
+                Some(format_u64_csv(
+                    &product_config.discord.heartbeat_channel_ids,
+                ))
+            },
             start_discord: false,
             configure_telegram: false,
             telegram_token: None,
-            telegram_allow_user_ids: None,
+            telegram_allow_user_ids: initial_telegram_allow_user_ids.clone(),
+            telegram_heartbeat_nudges_enabled: product_config.telegram.heartbeat_nudges_enabled,
+            telegram_heartbeat_chat_ids: if product_config.telegram.heartbeat_chat_ids.is_empty() {
+                None
+            } else {
+                Some(format_i64_csv(&product_config.telegram.heartbeat_chat_ids))
+            },
             start_telegram: false,
+            tui_response_depth_mode: product_config.tui.response_depth_mode.clone(),
         }
     } else {
         if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -170,7 +203,18 @@ fn run_onboard(args: &[String]) -> Result<()> {
             existing_api_key: existing_api_key.is_some(),
             existing_discord_token: existing_discord_token.is_some(),
             existing_telegram_token: existing_telegram_token.is_some(),
-            initial_telegram_allow_user_ids: profile.telegram_allow_user_ids.clone(),
+            initial_telegram_allow_user_ids,
+            initial_daemon_bind: product_config.daemon.bind.clone(),
+            initial_discord_command_prefix: product_config.discord.command_prefix.clone(),
+            initial_discord_heartbeat_nudges: product_config.discord.heartbeat_nudges_enabled,
+            initial_discord_heartbeat_channel_ids: format_u64_csv(
+                &product_config.discord.heartbeat_channel_ids,
+            ),
+            initial_telegram_heartbeat_nudges: product_config.telegram.heartbeat_nudges_enabled,
+            initial_telegram_heartbeat_chat_ids: format_i64_csv(
+                &product_config.telegram.heartbeat_chat_ids,
+            ),
+            initial_tui_response_depth: product_config.tui.response_depth_mode.clone(),
             initial_provider,
             initial_model,
             initial_base_url,
@@ -253,8 +297,16 @@ fn run_onboard(args: &[String]) -> Result<()> {
         selected.daemon_url = selected.daemon_url.trim().to_string();
     }
 
-    let daemon_bind =
-        daemon_bind_from_url(&selected.daemon_url).unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string());
+    let daemon_bind = if selected.daemon_bind.trim().is_empty() {
+        daemon_bind_from_url(&selected.daemon_url).unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string())
+    } else {
+        selected.daemon_bind.trim().to_string()
+    };
+
+    product_config = product_config_from_wizard(&selected);
+    save_product_config(&product_config)?;
+    apply_adapter_env(&product_config);
+    defaults.response_depth_mode = Some(selected.tui_response_depth_mode.clone());
 
     if (selected.launch_tui || selected.start_discord || selected.start_telegram)
         && !selected.start_daemon
@@ -294,20 +346,13 @@ fn run_onboard(args: &[String]) -> Result<()> {
         } else if existing_telegram_token.is_some() {
             println!("{}", "[ok] Keeping existing Telegram bot token.".green());
         }
-
-        profile.telegram_allow_user_ids = selected
-            .telegram_allow_user_ids
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string);
     }
 
     profile.daemon_url = Some(selected.daemon_url.clone());
     profile.daemon_backend = Some(selected.backend.clone());
     save_onboard_profile(&profile)?;
 
-    println!("{}", "[ok] Saved defaults and startup profile.".green());
+    println!("{}", "[ok] Saved defaults, product config, and startup profile.".green());
 
     if selected.start_daemon {
         if is_bind_reachable(&daemon_bind) {
@@ -351,11 +396,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
 
     if selected.start_telegram {
         if let Some(token) = load_telegram_bot_token() {
-            start_telegram_background(
-                &selected.daemon_url,
-                &token,
-                selected.telegram_allow_user_ids.as_deref(),
-            )?;
+            start_telegram_background(&selected.daemon_url, &token)?;
             println!("{}", "[ok] Telegram adapter launch requested.".green());
         } else {
             println!(
@@ -388,16 +429,18 @@ fn run_onboard(args: &[String]) -> Result<()> {
 fn run_tui(args: &[String]) -> Result<()> {
     let profile = load_onboard_profile();
     let defaults = load_tui_defaults();
+    let product_config = load_product_config();
+    apply_adapter_env(&product_config);
+    let daemon_bind = resolve_daemon_bind(args, &profile, &product_config);
     let daemon_url = find_arg_value(args, "--daemon-url")
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or(profile.daemon_url)
+        .or_else(|| profile.daemon_url.clone())
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
-    let daemon_bind =
-        daemon_bind_from_url(&daemon_url).unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string());
     let backend = profile
         .daemon_backend
+        .clone()
         .or(defaults.backend)
         .unwrap_or_else(|| "in-memory".to_string());
 
@@ -421,25 +464,15 @@ fn run_tui(args: &[String]) -> Result<()> {
 fn run_daemon(args: &[String]) -> Result<()> {
     let profile = load_onboard_profile();
     let defaults = load_tui_defaults();
+    let product_config = load_product_config();
+    let bind = resolve_daemon_bind(args, &profile, &product_config);
     let backend = find_arg_value(args, "--backend")
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or(profile.daemon_backend)
+        .or_else(|| profile.daemon_backend.clone())
         .or(defaults.backend)
         .unwrap_or_else(|| "in-memory".to_string());
-
-    let bind = find_arg_value(args, "--bind")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| {
-            profile
-                .daemon_url
-                .as_deref()
-                .and_then(daemon_bind_from_url)
-        })
-        .unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string());
 
     let mut passthrough = drop_flag_value_pair(args, "--backend");
     passthrough = drop_flag_value_pair(&passthrough, "--bind");
@@ -478,6 +511,8 @@ fn run_discord(args: &[String]) -> Result<()> {
     }
 
     let profile = load_onboard_profile();
+    let product_config = load_product_config();
+    apply_adapter_env(&product_config);
     let daemon_url = find_arg_value(args, "--daemon-url")
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -533,6 +568,8 @@ fn run_telegram(args: &[String]) -> Result<()> {
     }
 
     let profile = load_onboard_profile();
+    let product_config = load_product_config();
+    apply_adapter_env(&product_config);
     let daemon_url = find_arg_value(args, "--daemon-url")
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -551,19 +588,6 @@ fn run_telegram(args: &[String]) -> Result<()> {
             )
         })?;
 
-    let allow_user_ids = find_arg_value(args, "--allow-user-ids")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| {
-            profile
-                .telegram_allow_user_ids
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToString::to_string)
-        });
-
     let mut passthrough = drop_flag_value_pair(args, "--daemon-url");
     passthrough = drop_flag_value_pair(&passthrough, "--token");
     passthrough = drop_flag_value_pair(&passthrough, "--allow-user-ids");
@@ -573,9 +597,6 @@ fn run_telegram(args: &[String]) -> Result<()> {
     command.args(&adapter.pre_args);
     command.arg("--daemon-url").arg(daemon_url);
     command.arg("--token").arg(token);
-    if let Some(user_ids) = allow_user_ids {
-        command.arg("--allow-user-ids").arg(user_ids);
-    }
     command.args(&passthrough);
 
     let status = command
@@ -591,12 +612,16 @@ fn run_telegram(args: &[String]) -> Result<()> {
 fn run_doctor(_args: &[String]) -> Result<()> {
     let defaults = load_tui_defaults();
     let profile = load_onboard_profile();
+    let mut product_config = load_product_config();
+    migrate_from_onboard_profile(
+        &mut product_config,
+        profile.telegram_allow_user_ids.as_deref(),
+    );
     let daemon_url = profile
         .daemon_url
         .clone()
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
-    let daemon_bind = daemon_bind_from_url(&daemon_url)
-        .unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string());
+    let daemon_bind = resolve_daemon_bind(&[], &profile, &product_config);
     let daemon_reachable = is_bind_reachable(&daemon_bind);
 
     println!("medousa doctor");
@@ -607,7 +632,11 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         defaults.base_url.unwrap_or_else(|| "(unset)".to_string()),
         defaults.backend.unwrap_or_else(|| "(unset)".to_string()),
     );
-    println!("daemon_url={} reachable={}", daemon_url, daemon_reachable);
+    println!("daemon_url={} bind={} reachable={}", daemon_url, daemon_bind, daemon_reachable);
+    println!(
+        "response_depth={}",
+        product_config.tui.response_depth_mode
+    );
     println!(
         "api_key={}",
         if load_tui_api_key().is_some() {
@@ -630,13 +659,29 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         },
     );
     println!(
+        "discord_prefix={} discord_heartbeat={}",
+        product_config.discord.command_prefix,
+        if product_config.discord.heartbeat_nudges_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    println!(
         "telegram_allow_user_ids={}",
-        profile
-            .telegram_allow_user_ids
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .unwrap_or("(all users)")
+        if product_config.telegram.allowed_user_ids.is_empty() {
+            "(all users)".to_string()
+        } else {
+            format_u64_csv(&product_config.telegram.allowed_user_ids)
+        }
+    );
+    println!(
+        "telegram_heartbeat={}",
+        if product_config.telegram.heartbeat_nudges_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
     println!(
         "ollama_detected={}",
@@ -648,6 +693,53 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> ProductConfig {
+    let mut config = load_product_config();
+    config.daemon.bind = if selected.daemon_bind.trim().is_empty() {
+        DEFAULT_DAEMON_BIND.to_string()
+    } else {
+        selected.daemon_bind.trim().to_string()
+    };
+    config.telegram.allowed_user_ids = parse_u64_csv(
+        selected.telegram_allow_user_ids.as_deref().unwrap_or(""),
+    )
+    .unwrap_or_default();
+    config.telegram.heartbeat_nudges_enabled = selected.telegram_heartbeat_nudges_enabled;
+    config.telegram.heartbeat_chat_ids = parse_i64_csv(
+        selected.telegram_heartbeat_chat_ids.as_deref().unwrap_or(""),
+    );
+    config.discord.command_prefix = if selected.discord_command_prefix.trim().is_empty() {
+        "!".to_string()
+    } else {
+        selected.discord_command_prefix.trim().to_string()
+    };
+    config.discord.heartbeat_nudges_enabled = selected.discord_heartbeat_nudges_enabled;
+    config.discord.heartbeat_channel_ids = parse_u64_csv(
+        selected.discord_heartbeat_channel_ids.as_deref().unwrap_or(""),
+    )
+    .unwrap_or_default();
+    config.tui.response_depth_mode = selected.tui_response_depth_mode.clone();
+    config
+}
+
+fn resolve_daemon_bind(args: &[String], profile: &OnboardProfile, product: &ProductConfig) -> String {
+    find_arg_value(args, "--bind")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| {
+            if product.daemon.bind.trim().is_empty() {
+                profile
+                    .daemon_url
+                    .as_deref()
+                    .and_then(daemon_bind_from_url)
+                    .unwrap_or_else(|| DEFAULT_DAEMON_BIND.to_string())
+            } else {
+                product.daemon.bind.clone()
+            }
+        })
 }
 
 fn normalize_provider(raw: &str) -> String {
@@ -769,36 +861,24 @@ fn start_daemon_background(backend: &str, bind: &str) -> Result<()> {
 }
 
 fn start_discord_background(daemon_url: &str, token: &str) -> Result<()> {
-    let extra_args = Vec::new();
+    apply_adapter_env(&load_product_config());
     start_adapter_background(
         "medousa_discord",
         daemon_url,
         token,
-        &extra_args,
+        &[],
         discord_log_path(),
         "discord",
     )
 }
 
-fn start_telegram_background(
-    daemon_url: &str,
-    token: &str,
-    allow_user_ids: Option<&str>,
-) -> Result<()> {
-    let mut extra_args = Vec::new();
-    if let Some(user_ids) = allow_user_ids
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        extra_args.push("--allow-user-ids".to_string());
-        extra_args.push(user_ids.to_string());
-    }
-
+fn start_telegram_background(daemon_url: &str, token: &str) -> Result<()> {
+    apply_adapter_env(&load_product_config());
     start_adapter_background(
         "medousa_telegram",
         daemon_url,
         token,
-        &extra_args,
+        &[],
         telegram_log_path(),
         "telegram",
     )
@@ -1008,7 +1088,8 @@ fn print_help() {
     println!("  medousa tui [--daemon-url <url>] [--no-daemon] [-- <medousa_tui args>]");
     println!("  medousa daemon [--backend <name>] [--bind <host:port>] [-- <medousa_daemon args>]");
     println!("  medousa discord [--daemon-url <url>] [--token <token>] [-- <medousa_discord args>]");
-    println!("  medousa telegram [--daemon-url <url>] [--token <token>] [--allow-user-ids <csv>] [-- <medousa_telegram args>]");
+    println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
+    println!("    Telegram allowlist is configured in medousa setup (product_config.json).");
     println!("  medousa doctor");
     println!();
     println!("EXAMPLES:");

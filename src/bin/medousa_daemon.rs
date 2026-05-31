@@ -1130,26 +1130,26 @@ async fn start_interactive_turn(
 async fn interactive_turn_stream(
     State(state): State<AppState>,
     AxumPath(turn_id): AxumPath<String>,
-) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
-    stream_events_from_registry(&state.interactive_turn_streams, &turn_id, "interactive turn")
-        .await
+    let registry = state.interactive_turn_streams.clone();
+    stream_events_from_registry(&registry, &turn_id, "interactive turn").await
 }
 
 async fn ingest_stream(
     State(state): State<AppState>,
     AxumPath(stream_id): AxumPath<String>,
-) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
-    stream_events_from_registry(&state.interactive_turn_streams, &stream_id, "ingest stream")
-        .await
+    let registry = state.interactive_turn_streams.clone();
+    stream_events_from_registry(&registry, &stream_id, "ingest stream").await
 }
 
 async fn stream_events_from_registry(
     registry: &Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
     stream_id: &str,
     label: &str,
-) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
     let sender = {
         let guard = registry.read().await;
@@ -1566,6 +1566,30 @@ async fn ingest_handler(
         return Err((
             StatusCode::BAD_REQUEST,
             "channel and text are required".to_string(),
+        ));
+    }
+
+    let product_config = medousa::load_product_config();
+    if !medousa::ingest_sender_allowed(&request.channel, &request.user_id, &product_config) {
+        let session_id = {
+            let mappings = state.session_mappings.read().await;
+            let mapping_key = format!(
+                "{}:{}:{}",
+                request.channel, request.channel_id, request.user_id
+            );
+            mappings
+                .get(&mapping_key)
+                .cloned()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string())
+        };
+        return Ok(build_ingest_response(
+            session_id,
+            None,
+            "This sender is not on the Telegram allowlist for this bot.".to_string(),
+            false,
+            None,
+            None,
+            false,
         ));
     }
 
@@ -2120,7 +2144,7 @@ async fn run_ingest_job_stream_task(
                     &stream_tx,
                     medousa::interactive_turn_runtime::error_stream_event(
                         &stream_id,
-                        &format!("ingest job polling failed: {err}"),
+                        &format!("ingest job polling failed: {}", err.1),
                     ),
                 );
                 active_jobs.write().await.remove(&mapping_key);

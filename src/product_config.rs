@@ -1,0 +1,292 @@
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+
+const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
+const DEFAULT_DISCORD_PREFIX: &str = "!";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductConfig {
+    #[serde(default)]
+    pub daemon: DaemonProductConfig,
+    #[serde(default)]
+    pub telegram: TelegramProductConfig,
+    #[serde(default)]
+    pub discord: DiscordProductConfig,
+    #[serde(default)]
+    pub tui: TuiProductConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DaemonProductConfig {
+    #[serde(default = "default_daemon_bind")]
+    pub bind: String,
+    #[serde(default = "default_heartbeat_min_significance")]
+    pub heartbeat_min_significance: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct TelegramProductConfig {
+    #[serde(default)]
+    pub allowed_user_ids: Vec<u64>,
+    #[serde(default)]
+    pub heartbeat_nudges_enabled: bool,
+    #[serde(default)]
+    pub heartbeat_chat_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiscordProductConfig {
+    #[serde(default = "default_discord_prefix")]
+    pub command_prefix: String,
+    #[serde(default)]
+    pub heartbeat_nudges_enabled: bool,
+    #[serde(default)]
+    pub heartbeat_channel_ids: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TuiProductConfig {
+    #[serde(default = "default_response_depth")]
+    pub response_depth_mode: String,
+}
+
+impl Default for ProductConfig {
+    fn default() -> Self {
+        Self {
+            daemon: DaemonProductConfig::default(),
+            telegram: TelegramProductConfig::default(),
+            discord: DiscordProductConfig::default(),
+            tui: TuiProductConfig::default(),
+        }
+    }
+}
+
+impl Default for DaemonProductConfig {
+    fn default() -> Self {
+        Self {
+            bind: default_daemon_bind(),
+            heartbeat_min_significance: default_heartbeat_min_significance(),
+        }
+    }
+}
+
+impl Default for DiscordProductConfig {
+    fn default() -> Self {
+        Self {
+            command_prefix: default_discord_prefix(),
+            heartbeat_nudges_enabled: false,
+            heartbeat_channel_ids: Vec::new(),
+        }
+    }
+}
+
+impl Default for TuiProductConfig {
+    fn default() -> Self {
+        Self {
+            response_depth_mode: default_response_depth(),
+        }
+    }
+}
+
+fn default_daemon_bind() -> String {
+    DEFAULT_DAEMON_BIND.to_string()
+}
+
+fn default_discord_prefix() -> String {
+    DEFAULT_DISCORD_PREFIX.to_string()
+}
+
+fn default_heartbeat_min_significance() -> f32 {
+    0.65
+}
+
+fn default_response_depth() -> String {
+    "standard".to_string()
+}
+
+pub fn product_config_path() -> PathBuf {
+    medousa_data_dir().join("product_config.json")
+}
+
+fn medousa_data_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("medousa")
+}
+
+pub fn load_product_config() -> ProductConfig {
+    let path = product_config_path();
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return ProductConfig::default();
+    };
+
+    serde_json::from_str(&raw).unwrap_or_default()
+}
+
+pub fn save_product_config(config: &ProductConfig) -> anyhow::Result<()> {
+    let path = product_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let body = serde_json::to_string_pretty(config)?;
+    std::fs::write(path, body)?;
+    Ok(())
+}
+
+/// Merge legacy onboard profile telegram allowlist into product config when present.
+pub fn migrate_from_onboard_profile(
+    config: &mut ProductConfig,
+    telegram_allow_user_ids: Option<&str>,
+) {
+    if !config.telegram.allowed_user_ids.is_empty() {
+        return;
+    }
+    if let Some(ids) = parse_u64_csv(telegram_allow_user_ids.unwrap_or("")) {
+        config.telegram.allowed_user_ids = ids;
+    }
+}
+
+pub fn parse_u64_csv(raw: &str) -> Option<Vec<u64>> {
+    let ids = raw
+        .split(',')
+        .filter_map(|token| token.trim().parse::<u64>().ok())
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
+}
+
+pub fn parse_i64_csv(raw: &str) -> Vec<i64> {
+    raw.split(',')
+        .filter_map(|token| token.trim().parse::<i64>().ok())
+        .collect()
+}
+
+pub fn format_u64_csv(values: &[u64]) -> String {
+    values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub fn format_i64_csv(values: &[i64]) -> String {
+    values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Returns true when the sender is allowed for this channel ingest request.
+pub fn ingest_sender_allowed(channel: &str, user_id: &str, config: &ProductConfig) -> bool {
+    if !channel.eq_ignore_ascii_case("telegram") {
+        return true;
+    }
+
+    let allowed = &config.telegram.allowed_user_ids;
+    if allowed.is_empty() {
+        return true;
+    }
+
+    extract_numeric_user_id(user_id)
+        .map(|id| allowed.contains(&id))
+        .unwrap_or(false)
+}
+
+fn extract_numeric_user_id(user_id: &str) -> Option<u64> {
+    user_id
+        .rsplit(':')
+        .next()
+        .and_then(|segment| segment.parse::<u64>().ok())
+}
+
+/// Apply adapter-facing environment variables from product config for child processes.
+pub fn apply_adapter_env(config: &ProductConfig) {
+    apply_telegram_env(&config.telegram);
+    apply_discord_env(&config.discord);
+}
+
+fn apply_telegram_env(config: &TelegramProductConfig) {
+    if config.heartbeat_nudges_enabled {
+        unsafe { std::env::set_var("MEDOUSA_TELEGRAM_HEARTBEAT_NUDGES_ENABLED", "true") };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_TELEGRAM_HEARTBEAT_NUDGES_ENABLED") };
+    }
+
+    if config.heartbeat_chat_ids.is_empty() {
+        unsafe { std::env::remove_var("MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS") };
+    } else {
+        unsafe {
+            std::env::set_var(
+                "MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS",
+                format_i64_csv(&config.heartbeat_chat_ids),
+            )
+        };
+    }
+}
+
+fn apply_discord_env(config: &DiscordProductConfig) {
+    let prefix = config.command_prefix.trim();
+    if prefix.is_empty() {
+        unsafe { std::env::set_var("MEDOUSA_DISCORD_COMMAND_PREFIX", DEFAULT_DISCORD_PREFIX) };
+    } else {
+        unsafe { std::env::set_var("MEDOUSA_DISCORD_COMMAND_PREFIX", prefix) };
+    }
+
+    if config.heartbeat_nudges_enabled {
+        unsafe { std::env::set_var("MEDOUSA_DISCORD_HEARTBEAT_NUDGES_ENABLED", "true") };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_DISCORD_HEARTBEAT_NUDGES_ENABLED") };
+    }
+
+    if config.heartbeat_channel_ids.is_empty() {
+        unsafe { std::env::remove_var("MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS") };
+    } else {
+        unsafe {
+            std::env::set_var(
+                "MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS",
+                format_u64_csv(&config.heartbeat_channel_ids),
+            )
+        };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn telegram_allowlist_blocks_unknown_users() {
+        let config = ProductConfig {
+            telegram: TelegramProductConfig {
+                allowed_user_ids: vec![123, 456],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(ingest_sender_allowed(
+            "telegram",
+            "telegram:user:123",
+            &config
+        ));
+        assert!(!ingest_sender_allowed(
+            "telegram",
+            "telegram:user:999",
+            &config
+        ));
+    }
+
+    #[test]
+    fn empty_allowlist_allows_all() {
+        let config = ProductConfig::default();
+        assert!(ingest_sender_allowed(
+            "telegram",
+            "telegram:user:999",
+            &config
+        ));
+    }
+}

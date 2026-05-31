@@ -91,10 +91,28 @@ async fn handle_message(
         .json(&request)
         .send()
         .await
-        .and_then(|resp| resp.error_for_status())
-        .and_then(|resp| resp.json::<IngestResponse>())
     {
-        Ok(response) => response,
+        Ok(resp) => match resp.error_for_status() {
+            Ok(resp) => match resp.json::<IngestResponse>().await {
+                Ok(response) => response,
+                Err(err) => {
+                    let error_msg = format!(
+                        "ingester error: {}",
+                        single_line_summary(&err.to_string(), 300)
+                    );
+                    bot.send_message(msg.chat.id, error_msg).await?;
+                    return Ok(());
+                }
+            },
+            Err(err) => {
+                let error_msg = format!(
+                    "ingester error: {}",
+                    single_line_summary(&err.to_string(), 300)
+                );
+                bot.send_message(msg.chat.id, error_msg).await?;
+                return Ok(());
+            }
+        },
         Err(err) => {
             let error_msg = format!(
                 "ingester error: {}",

@@ -239,6 +239,12 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from(""));
             lines.push(input_line("Daemon URL", &state.daemon_url));
         }
+        WizardStep::DaemonBind => {
+            lines.push(Line::from("Daemon listen address:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Bind", &state.daemon_bind));
+            lines.push(Line::from("Example: 127.0.0.1:7419"));
+        }
         WizardStep::LaunchDaemon => {
             lines.push(Line::from("Start runtime in background?"));
             lines.push(Line::from(""));
@@ -271,6 +277,30 @@ fn body_text(state: &WizardState) -> Text<'static> {
             } else {
                 "Required when enabled."
             }));
+        }
+        WizardStep::DiscordPrefix => {
+            lines.push(Line::from("Command prefix for Discord messages:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Prefix", &state.discord_command_prefix));
+            lines.push(Line::from("Messages starting with this prefix route to Medousa."));
+        }
+        WizardStep::DiscordHeartbeat => {
+            lines.push(Line::from("Optional heartbeat nudges for Discord:"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line(
+                "Enable heartbeat nudges",
+                state.discord_heartbeat_nudges_enabled,
+            ));
+            lines.push(Line::from(""));
+            lines.push(input_line(
+                "Channel ids",
+                if state.discord_heartbeat_channel_ids.trim().is_empty() {
+                    "(all channels when enabled)"
+                } else {
+                    state.discord_heartbeat_channel_ids.trim()
+                },
+            ));
+            lines.push(Line::from("Comma-separated channel ids. Space toggles nudges."));
         }
         WizardStep::LaunchDiscord => {
             lines.push(Line::from("Start Discord in background?"));
@@ -308,11 +338,48 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from("Comma-separated numeric ids, e.g. 123456789,987654321."));
             lines.push(Line::from("Leave blank to allow all Telegram users."));
         }
+        WizardStep::TelegramHeartbeat => {
+            lines.push(Line::from("Optional heartbeat nudges for Telegram:"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line(
+                "Enable heartbeat nudges",
+                state.telegram_heartbeat_nudges_enabled,
+            ));
+            lines.push(Line::from(""));
+            lines.push(input_line(
+                "Chat ids",
+                if state.telegram_heartbeat_chat_ids.trim().is_empty() {
+                    "(all chats when enabled)"
+                } else {
+                    state.telegram_heartbeat_chat_ids.trim()
+                },
+            ));
+            lines.push(Line::from("Comma-separated chat ids. Space toggles nudges."));
+        }
         WizardStep::LaunchTelegram => {
             lines.push(Line::from("Start Telegram in background?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Start Telegram", state.start_telegram));
             lines.push(Line::from(""));
+        }
+        WizardStep::TuiResponseDepth => {
+            lines.push(Line::from("Default response depth for chat:"));
+            lines.push(Line::from(""));
+            lines.push(option_line(
+                state.tui_response_depth_mode == "concise",
+                "concise",
+                "shorter answers, faster turns",
+            ));
+            lines.push(option_line(
+                state.tui_response_depth_mode == "standard",
+                "standard",
+                "balanced detail",
+            ));
+            lines.push(option_line(
+                state.tui_response_depth_mode == "deep",
+                "deep",
+                "thorough reasoning and context",
+            ));
         }
         WizardStep::Confirm => {
             lines.push(Line::from("Review setup choices:"));
@@ -336,7 +403,17 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 },
             ));
             lines.push(summary_line("Backend", &state.backend_choice.as_backend_id()));
-            lines.push(summary_line("Daemon URL", &state.daemon_url));
+            if state.bootstrap.advanced_mode {
+                lines.push(summary_line("Daemon URL", &state.daemon_url));
+            }
+            lines.push(summary_line(
+                "Daemon bind",
+                if state.daemon_bind.trim().is_empty() {
+                    state.bootstrap.initial_daemon_bind.as_str()
+                } else {
+                    state.daemon_bind.trim()
+                },
+            ));
             lines.push(summary_line(
                 "Start daemon",
                 if state.start_daemon { "yes" } else { "no" },
@@ -349,6 +426,24 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 "Discord setup",
                 if state.configure_discord { "yes" } else { "no" },
             ));
+            if state.configure_discord {
+                lines.push(summary_line(
+                    "Discord prefix",
+                    if state.discord_command_prefix.trim().is_empty() {
+                        state.bootstrap.initial_discord_command_prefix.as_str()
+                    } else {
+                        state.discord_command_prefix.trim()
+                    },
+                ));
+                lines.push(summary_line(
+                    "Discord heartbeat",
+                    if state.discord_heartbeat_nudges_enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                ));
+            }
             lines.push(summary_line(
                 "Start Discord",
                 if state.configure_discord && state.start_discord {
@@ -369,6 +464,16 @@ fn body_text(state: &WizardState) -> Text<'static> {
                     state.telegram_allow_user_ids.trim()
                 },
             ));
+            if state.configure_telegram {
+                lines.push(summary_line(
+                    "Telegram heartbeat",
+                    if state.telegram_heartbeat_nudges_enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                ));
+            }
             lines.push(summary_line(
                 "Start Telegram",
                 if state.configure_telegram && state.start_telegram {
@@ -376,6 +481,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 } else {
                     "no"
                 },
+            ));
+            lines.push(summary_line(
+                "Response depth",
+                state.tui_response_depth_mode.as_str(),
             ));
             lines.push(Line::from(""));
             lines.push(Line::from("Press Enter to apply and finish."));
@@ -404,7 +513,7 @@ fn footer_text(state: &WizardState) -> Text<'static> {
     ])];
 
     match state.step {
-        WizardStep::Provider | WizardStep::Backend => {
+        WizardStep::Provider | WizardStep::Backend | WizardStep::TuiResponseDepth => {
             lines.push(Line::from("↑↓ to change selection."));
         }
         WizardStep::LaunchDaemon
@@ -412,15 +521,20 @@ fn footer_text(state: &WizardState) -> Text<'static> {
         | WizardStep::Discord
         | WizardStep::LaunchDiscord
         | WizardStep::Telegram
-        | WizardStep::LaunchTelegram => {
-            lines.push(Line::from("Space to toggle."));
+        | WizardStep::LaunchTelegram
+        | WizardStep::DiscordHeartbeat
+        | WizardStep::TelegramHeartbeat => {
+            lines.push(Line::from("Space to toggle. Type channel/chat ids when enabled."));
         }
         WizardStep::ApiKey
         | WizardStep::DiscordToken
         | WizardStep::TelegramToken => {
             lines.push(Line::from("Hidden input."));
         }
-        WizardStep::BackendSurrealKvPath | WizardStep::BackendSurrealWsEndpoint => {
+        WizardStep::DaemonBind
+        | WizardStep::DiscordPrefix
+        | WizardStep::BackendSurrealKvPath
+        | WizardStep::BackendSurrealWsEndpoint => {
             lines.push(Line::from("Type a value, then Enter to confirm."));
         }
         _ => {}

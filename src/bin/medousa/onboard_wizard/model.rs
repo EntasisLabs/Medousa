@@ -86,15 +86,20 @@ pub(crate) enum WizardStep {
     BackendSurrealKvPath,
     BackendSurrealWsEndpoint,
     DaemonUrl,
+    DaemonBind,
     LaunchDaemon,
     LaunchChat,
     Discord,
     DiscordToken,
+    DiscordPrefix,
+    DiscordHeartbeat,
     LaunchDiscord,
     Telegram,
     TelegramToken,
     TelegramAllowUserIds,
+    TelegramHeartbeat,
     LaunchTelegram,
+    TuiResponseDepth,
     Confirm,
 }
 
@@ -106,6 +111,13 @@ pub(crate) struct WizardBootstrap {
     pub(crate) existing_discord_token: bool,
     pub(crate) existing_telegram_token: bool,
     pub(crate) initial_telegram_allow_user_ids: Option<String>,
+    pub(crate) initial_daemon_bind: String,
+    pub(crate) initial_discord_command_prefix: String,
+    pub(crate) initial_discord_heartbeat_nudges: bool,
+    pub(crate) initial_discord_heartbeat_channel_ids: String,
+    pub(crate) initial_telegram_heartbeat_nudges: bool,
+    pub(crate) initial_telegram_heartbeat_chat_ids: String,
+    pub(crate) initial_tui_response_depth: String,
     pub(crate) initial_provider: String,
     pub(crate) initial_model: String,
     pub(crate) initial_base_url: Option<String>,
@@ -139,6 +151,13 @@ pub(crate) struct WizardOutput {
     pub(crate) telegram_token: Option<String>,
     pub(crate) telegram_allow_user_ids: Option<String>,
     pub(crate) start_telegram: bool,
+    pub(crate) daemon_bind: String,
+    pub(crate) discord_command_prefix: String,
+    pub(crate) discord_heartbeat_nudges_enabled: bool,
+    pub(crate) discord_heartbeat_channel_ids: Option<String>,
+    pub(crate) telegram_heartbeat_nudges_enabled: bool,
+    pub(crate) telegram_heartbeat_chat_ids: Option<String>,
+    pub(crate) tui_response_depth_mode: String,
 }
 
 pub(crate) enum WizardTransition {
@@ -167,6 +186,13 @@ pub(crate) struct WizardState {
     pub(crate) telegram_token: String,
     pub(crate) telegram_allow_user_ids: String,
     pub(crate) start_telegram: bool,
+    pub(crate) daemon_bind: String,
+    pub(crate) discord_command_prefix: String,
+    pub(crate) discord_heartbeat_nudges_enabled: bool,
+    pub(crate) discord_heartbeat_channel_ids: String,
+    pub(crate) telegram_heartbeat_nudges_enabled: bool,
+    pub(crate) telegram_heartbeat_chat_ids: String,
+    pub(crate) tui_response_depth_mode: String,
     pub(crate) status_message: Option<String>,
 }
 
@@ -243,6 +269,13 @@ impl WizardState {
             telegram_token: String::new(),
             telegram_allow_user_ids: initial_telegram_allow_user_ids,
             start_telegram: false,
+            daemon_bind: bootstrap.initial_daemon_bind.clone(),
+            discord_command_prefix: bootstrap.initial_discord_command_prefix.clone(),
+            discord_heartbeat_nudges_enabled: bootstrap.initial_discord_heartbeat_nudges,
+            discord_heartbeat_channel_ids: bootstrap.initial_discord_heartbeat_channel_ids.clone(),
+            telegram_heartbeat_nudges_enabled: bootstrap.initial_telegram_heartbeat_nudges,
+            telegram_heartbeat_chat_ids: bootstrap.initial_telegram_heartbeat_chat_ids.clone(),
+            tui_response_depth_mode: bootstrap.initial_tui_response_depth.clone(),
             status_message: None,
             bootstrap,
         };
@@ -263,15 +296,20 @@ impl WizardState {
             WizardStep::BackendSurrealKvPath => "SurrealKV Path",
             WizardStep::BackendSurrealWsEndpoint => "SurrealWS Endpoint",
             WizardStep::DaemonUrl => "Runtime URL",
+            WizardStep::DaemonBind => "Runtime Bind",
             WizardStep::LaunchDaemon => "Background Runtime",
             WizardStep::LaunchChat => "Launch Chat",
             WizardStep::Discord => "Discord Adapter",
             WizardStep::DiscordToken => "Discord Token",
+            WizardStep::DiscordPrefix => "Discord Prefix",
+            WizardStep::DiscordHeartbeat => "Discord Heartbeat",
             WizardStep::LaunchDiscord => "Start Discord",
             WizardStep::Telegram => "Telegram Adapter",
             WizardStep::TelegramToken => "Telegram Token",
             WizardStep::TelegramAllowUserIds => "Telegram Allowlist",
+            WizardStep::TelegramHeartbeat => "Telegram Heartbeat",
             WizardStep::LaunchTelegram => "Start Telegram",
+            WizardStep::TuiResponseDepth => "Response Depth",
             WizardStep::Confirm => "Confirm",
         }
     }
@@ -311,6 +349,8 @@ impl WizardState {
             flow.push(WizardStep::DaemonUrl);
         }
 
+        flow.push(WizardStep::DaemonBind);
+
         if !self.bootstrap.force_daemon && !self.bootstrap.force_no_daemon {
             flow.push(WizardStep::LaunchDaemon);
         }
@@ -322,6 +362,8 @@ impl WizardState {
         flow.push(WizardStep::Discord);
         if self.configure_discord {
             flow.push(WizardStep::DiscordToken);
+            flow.push(WizardStep::DiscordPrefix);
+            flow.push(WizardStep::DiscordHeartbeat);
             flow.push(WizardStep::LaunchDiscord);
         }
 
@@ -329,9 +371,11 @@ impl WizardState {
         if self.configure_telegram {
             flow.push(WizardStep::TelegramToken);
             flow.push(WizardStep::TelegramAllowUserIds);
+            flow.push(WizardStep::TelegramHeartbeat);
             flow.push(WizardStep::LaunchTelegram);
         }
 
+        flow.push(WizardStep::TuiResponseDepth);
         flow.push(WizardStep::Confirm);
         flow
     }
@@ -467,6 +511,18 @@ impl WizardState {
                     edit_text_field(&mut self.daemon_url, key);
                 }
             }
+            WizardStep::DaemonBind => {
+                if key.code == KeyCode::Enter {
+                    if self.daemon_bind.trim().is_empty() {
+                        self.daemon_bind = self.bootstrap.initial_daemon_bind.clone();
+                    } else {
+                        self.daemon_bind = self.daemon_bind.trim().to_string();
+                    }
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.daemon_bind, key);
+                }
+            }
             WizardStep::LaunchDaemon => match key.code {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
@@ -501,6 +557,27 @@ impl WizardState {
                     edit_text_field(&mut self.discord_token, key);
                 }
             }
+            WizardStep::DiscordPrefix => {
+                if key.code == KeyCode::Enter {
+                    if self.discord_command_prefix.trim().is_empty() {
+                        self.discord_command_prefix =
+                            self.bootstrap.initial_discord_command_prefix.clone();
+                    } else {
+                        self.discord_command_prefix = self.discord_command_prefix.trim().to_string();
+                    }
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.discord_command_prefix, key);
+                }
+            }
+            WizardStep::DiscordHeartbeat => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.discord_heartbeat_nudges_enabled = !self.discord_heartbeat_nudges_enabled;
+                }
+                KeyCode::Left => {}
+                _ => edit_text_field(&mut self.discord_heartbeat_channel_ids, key),
+            },
             WizardStep::LaunchDiscord => match key.code {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
@@ -543,11 +620,25 @@ impl WizardState {
                     edit_text_field(&mut self.telegram_allow_user_ids, key);
                 }
             }
+            WizardStep::TelegramHeartbeat => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.telegram_heartbeat_nudges_enabled = !self.telegram_heartbeat_nudges_enabled;
+                }
+                KeyCode::Left => {}
+                _ => edit_text_field(&mut self.telegram_heartbeat_chat_ids, key),
+            },
             WizardStep::LaunchTelegram => match key.code {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
                     self.start_telegram = !self.start_telegram;
                 }
+                _ => {}
+            },
+            WizardStep::TuiResponseDepth => match key.code {
+                KeyCode::Up => self.cycle_response_depth(-1),
+                KeyCode::Down => self.cycle_response_depth(1),
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
                 _ => {}
             },
             WizardStep::Confirm => {
@@ -595,7 +686,6 @@ impl WizardState {
     }
 
     fn cycle_backend(&mut self, delta: i32) {
-        // Cycle: InMemory → SurrealMem → SurrealKv → SurrealWs → InMemory
         let variants: Vec<BackendChoice> = vec![
             BackendChoice::InMemory,
             BackendChoice::SurrealMem,
@@ -766,16 +856,50 @@ impl WizardState {
             api_key,
             backend: self.backend_choice.as_backend_id(),
             daemon_url,
+            daemon_bind: if self.daemon_bind.trim().is_empty() {
+                self.bootstrap.initial_daemon_bind.clone()
+            } else {
+                self.daemon_bind.trim().to_string()
+            },
             start_daemon,
             launch_tui,
             configure_discord,
             discord_token,
+            discord_command_prefix: if self.discord_command_prefix.trim().is_empty() {
+                self.bootstrap.initial_discord_command_prefix.clone()
+            } else {
+                self.discord_command_prefix.trim().to_string()
+            },
+            discord_heartbeat_nudges_enabled: self.discord_heartbeat_nudges_enabled,
+            discord_heartbeat_channel_ids: if self.discord_heartbeat_channel_ids.trim().is_empty()
+            {
+                None
+            } else {
+                Some(self.discord_heartbeat_channel_ids.trim().to_string())
+            },
             start_discord,
             configure_telegram,
             telegram_token,
             telegram_allow_user_ids,
+            telegram_heartbeat_nudges_enabled: self.telegram_heartbeat_nudges_enabled,
+            telegram_heartbeat_chat_ids: if self.telegram_heartbeat_chat_ids.trim().is_empty() {
+                None
+            } else {
+                Some(self.telegram_heartbeat_chat_ids.trim().to_string())
+            },
             start_telegram,
+            tui_response_depth_mode: self.tui_response_depth_mode.clone(),
         }
+    }
+
+    fn cycle_response_depth(&mut self, delta: i32) {
+        let modes = ["concise", "standard", "deep"];
+        let current_idx = modes
+            .iter()
+            .position(|mode| *mode == self.tui_response_depth_mode.as_str())
+            .unwrap_or(1) as i32;
+        let next_idx = (current_idx + delta).rem_euclid(modes.len() as i32) as usize;
+        self.tui_response_depth_mode = modes[next_idx].to_string();
     }
 }
 
