@@ -88,6 +88,8 @@ pub(crate) enum WizardStep {
     DaemonUrl,
     DaemonBind,
     LaunchDaemon,
+    McpGateway,
+    LaunchMcpGateway,
     LaunchChat,
     Discord,
     DiscordToken,
@@ -110,6 +112,7 @@ pub(crate) struct WizardBootstrap {
     pub(crate) existing_api_key: bool,
     pub(crate) existing_discord_token: bool,
     pub(crate) existing_telegram_token: bool,
+    pub(crate) existing_mcp_gateway_config: bool,
     pub(crate) initial_telegram_allow_user_ids: Option<String>,
     pub(crate) initial_daemon_bind: String,
     pub(crate) initial_discord_command_prefix: String,
@@ -151,6 +154,8 @@ pub(crate) struct WizardOutput {
     pub(crate) telegram_token: Option<String>,
     pub(crate) telegram_allow_user_ids: Option<String>,
     pub(crate) start_telegram: bool,
+    pub(crate) configure_mcp_gateway: bool,
+    pub(crate) start_mcp_gateway: bool,
     pub(crate) daemon_bind: String,
     pub(crate) discord_command_prefix: String,
     pub(crate) discord_heartbeat_nudges_enabled: bool,
@@ -186,6 +191,8 @@ pub(crate) struct WizardState {
     pub(crate) telegram_token: String,
     pub(crate) telegram_allow_user_ids: String,
     pub(crate) start_telegram: bool,
+    pub(crate) configure_mcp_gateway: bool,
+    pub(crate) start_mcp_gateway: bool,
     pub(crate) daemon_bind: String,
     pub(crate) discord_command_prefix: String,
     pub(crate) discord_heartbeat_nudges_enabled: bool,
@@ -269,6 +276,8 @@ impl WizardState {
             telegram_token: String::new(),
             telegram_allow_user_ids: initial_telegram_allow_user_ids,
             start_telegram: false,
+            configure_mcp_gateway: !bootstrap.existing_mcp_gateway_config,
+            start_mcp_gateway: true,
             daemon_bind: bootstrap.initial_daemon_bind.clone(),
             discord_command_prefix: bootstrap.initial_discord_command_prefix.clone(),
             discord_heartbeat_nudges_enabled: bootstrap.initial_discord_heartbeat_nudges,
@@ -298,6 +307,8 @@ impl WizardState {
             WizardStep::DaemonUrl => "Runtime URL",
             WizardStep::DaemonBind => "Runtime Bind",
             WizardStep::LaunchDaemon => "Background Runtime",
+            WizardStep::McpGateway => "MCP Gateway Config",
+            WizardStep::LaunchMcpGateway => "Start MCP Gateway",
             WizardStep::LaunchChat => "Launch Chat",
             WizardStep::Discord => "Discord Adapter",
             WizardStep::DiscordToken => "Discord Token",
@@ -353,6 +364,8 @@ impl WizardState {
 
         if !self.bootstrap.force_daemon && !self.bootstrap.force_no_daemon {
             flow.push(WizardStep::LaunchDaemon);
+            flow.push(WizardStep::McpGateway);
+            flow.push(WizardStep::LaunchMcpGateway);
         }
 
         if !self.bootstrap.force_tui && !self.bootstrap.force_no_tui {
@@ -527,6 +540,20 @@ impl WizardState {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
                     self.start_daemon = !self.start_daemon;
+                }
+                _ => {}
+            },
+            WizardStep::McpGateway => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.configure_mcp_gateway = !self.configure_mcp_gateway;
+                }
+                _ => {}
+            },
+            WizardStep::LaunchMcpGateway => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.start_mcp_gateway = !self.start_mcp_gateway;
                 }
                 _ => {}
             },
@@ -844,8 +871,13 @@ impl WizardState {
             Some(self.telegram_allow_user_ids.trim().to_string())
         };
         let start_telegram = configure_telegram && self.start_telegram;
+        let configure_mcp_gateway = self.configure_mcp_gateway;
+        let start_mcp_gateway = configure_mcp_gateway && self.start_mcp_gateway;
 
-        if (start_discord || start_telegram) && !start_daemon && !self.bootstrap.force_no_daemon {
+        if (start_discord || start_telegram || start_mcp_gateway)
+            && !start_daemon
+            && !self.bootstrap.force_no_daemon
+        {
             start_daemon = true;
         }
 
@@ -888,6 +920,8 @@ impl WizardState {
                 Some(self.telegram_heartbeat_chat_ids.trim().to_string())
             },
             start_telegram,
+            configure_mcp_gateway,
+            start_mcp_gateway,
             tui_response_depth_mode: self.tui_response_depth_mode.clone(),
         }
     }

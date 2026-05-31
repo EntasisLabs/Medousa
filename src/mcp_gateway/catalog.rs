@@ -84,14 +84,24 @@ pub fn discover_from_catalog(
     server_id: Option<&str>,
     limit: usize,
 ) -> Vec<McpToolCatalogEntry> {
+    discover_from_entries(&mock_tool_catalog(), query, server_id, limit)
+}
+
+pub fn discover_from_entries(
+    catalog: &[McpToolCatalogEntry],
+    query: &str,
+    server_id: Option<&str>,
+    limit: usize,
+) -> Vec<McpToolCatalogEntry> {
     let normalized = query.trim().to_ascii_lowercase();
     let tokens = normalized
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|token| !token.is_empty())
         .collect::<Vec<_>>();
 
-    let mut scored = mock_tool_catalog()
-        .into_iter()
+    let mut scored = catalog
+        .iter()
+        .cloned()
         .filter(|tool| {
             server_id.is_none_or(|expected| tool.server_id.eq_ignore_ascii_case(expected))
         })
@@ -111,6 +121,28 @@ pub fn discover_from_catalog(
         .take(limit)
         .map(|(_, tool)| tool)
         .collect()
+}
+
+pub fn auto_tag_capabilities(tool_name: &str, description: Option<&str>) -> Vec<String> {
+    let corpus = format!(
+        "{} {}",
+        tool_name.to_ascii_lowercase(),
+        description.unwrap_or("").to_ascii_lowercase()
+    );
+    let mut tags = Vec::new();
+    if corpus.contains("search") && (corpus.contains("page") || corpus.contains("doc")) {
+        tags.push("document_search".to_string());
+    }
+    if corpus.contains("send") && (corpus.contains("mail") || corpus.contains("email")) {
+        tags.push("send_email".to_string());
+    }
+    if corpus.contains("search") && corpus.contains("issue") {
+        tags.push("issue_search".to_string());
+    }
+    if corpus.contains("research") || (corpus.contains("search") && corpus.contains("web")) {
+        tags.push("web_research".to_string());
+    }
+    tags
 }
 
 fn score_tool_match(tool: &McpToolCatalogEntry, query: &str, tokens: &[&str]) -> u8 {
@@ -185,5 +217,11 @@ mod tests {
         assert!(matches
             .iter()
             .any(|entry| entry.server_id == "notion" && entry.tool_name == "search_pages"));
+    }
+
+    #[test]
+    fn auto_tags_document_search() {
+        let tags = auto_tag_capabilities("search_pages", Some("Search workspace pages"));
+        assert!(tags.contains(&"document_search".to_string()));
     }
 }

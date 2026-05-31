@@ -436,10 +436,6 @@ async fn main() -> Result<()> {
         .route("/v1/deliver/outbox", post(deliver_outbox_webhook))
         .route("/v1/deliver/poll/{job_id}", get(deliver_poll))
         .route("/v1/delivery/status", get(delivery_status))
-        .route(
-            "/v1/mcp/policy/evaluate",
-            post(medousa::mcp_daemon_handlers::mcp_policy_evaluate),
-        )
         .with_state(state.clone());
 
     let capability_router = Router::new()
@@ -451,11 +447,24 @@ async fn main() -> Result<()> {
             "/v1/capabilities/{capability_id}",
             get(medousa::mcp_daemon_handlers::get_capability),
         )
+        .route(
+            "/v1/capabilities/reindex",
+            post(medousa::mcp_daemon_handlers::reindex_capabilities),
+        )
         .with_state(medousa::mcp_daemon_handlers::CapabilityApiState {
             agent_runtime: state.agent_runtime.clone(),
         });
 
-    let app = app.merge(capability_router);
+    let policy_router = Router::new()
+        .route(
+            "/v1/mcp/policy/evaluate",
+            post(medousa::mcp_daemon_handlers::mcp_policy_evaluate),
+        )
+        .with_state(medousa::mcp_daemon_handlers::McpPolicyApiState {
+            identity_service: state.identity_service.clone(),
+        });
+
+    let app = app.merge(capability_router).merge(policy_router);
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         runtime.as_ref().clone(),

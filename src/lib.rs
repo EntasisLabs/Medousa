@@ -11,6 +11,7 @@ pub mod mcp_daemon_handlers;
 pub mod mcp_gateway;
 pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
+pub mod mcp_turn_token;
 pub mod mcp_policy;
 pub mod daemon_api;
 pub mod daemon_handlers;
@@ -75,7 +76,8 @@ pub use capability_catalog::{
     CapabilityResolveRequest, CapabilityResolveResponse, CapabilitySearchMatch,
     CapabilitySearchRequest, CapabilitySearchResponse, CapabilitySource, GraphemeCapabilityBindingSpec,
     McpCapabilityBindingSpec, McpCatalogSyncEntry, McpCatalogSyncResponse,
-    embedded_capability_manifest,
+    CapabilityReindexResponse, capabilities_manifest_path, embedded_capability_manifest,
+    load_capability_manifest,
 };
 pub use mcp_gateway_api::{
     McpAdminStatusResponse, McpDiscoverRequest, McpDiscoverResponse, McpEffectClass,

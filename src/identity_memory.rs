@@ -150,6 +150,7 @@ async fn seed_baseline_surreal_identity_store(
                     "analysis".to_string(),
                     "planning".to_string(),
                     "drafting".to_string(),
+                    "external_read".to_string(),
                 ],
                 deny: vec![
                     "external_posting".to_string(),
@@ -158,6 +159,8 @@ async fn seed_baseline_surreal_identity_store(
                 approval_required: vec![
                     "system_config_change".to_string(),
                     "destructive_command".to_string(),
+                    "external_write".to_string(),
+                    "external_side_effect".to_string(),
                 ],
             },
             now,
@@ -279,6 +282,7 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
                 "analysis".to_string(),
                 "planning".to_string(),
                 "drafting".to_string(),
+                "external_read".to_string(),
             ],
             deny: vec![
                 "external_posting".to_string(),
@@ -287,6 +291,8 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
             approval_required: vec![
                 "system_config_change".to_string(),
                 "destructive_command".to_string(),
+                "external_write".to_string(),
+                "external_side_effect".to_string(),
             ],
         },
         now,

@@ -6,8 +6,8 @@ use reqwest::Client;
 use crate::capability_catalog::McpCatalogSyncResponse;
 use crate::mcp_gateway::resolve_mcp_gateway_token;
 use crate::mcp_gateway_api::{
-    McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse,
-    resolve_mcp_gateway_url,
+    McpDiscoverRequest, McpDiscoverResponse, McpGatewayHealthResponse, McpInvokeRequest,
+    McpInvokeResponse, McpServersResponse, resolve_mcp_gateway_url,
 };
 
 #[derive(Clone)]
@@ -92,6 +92,32 @@ impl McpGatewayClient {
             truncated: false,
             gateway_unreachable: Some(true),
         })
+    }
+
+    pub async fn invoke(&self, request: &McpInvokeRequest) -> Result<McpInvokeResponse> {
+        let response = self
+            .apply_auth(
+                self.client
+                    .post(format!("{}/v1/mcp/invoke", self.base_url))
+                    .json(request),
+            )
+            .send()
+            .await
+            .context("failed to reach MCP gateway invoke endpoint")?
+            .error_for_status()
+            .context("MCP gateway invoke endpoint returned error")?;
+        Ok(response.json().await?)
+    }
+
+    pub async fn list_servers(&self) -> Result<McpServersResponse> {
+        let response = self
+            .apply_auth(self.client.get(format!("{}/v1/mcp/servers", self.base_url)))
+            .send()
+            .await
+            .context("failed to reach MCP gateway servers endpoint")?
+            .error_for_status()
+            .context("MCP gateway servers endpoint returned error")?;
+        Ok(response.json().await?)
     }
 
     pub fn is_auth_configured(&self) -> bool {

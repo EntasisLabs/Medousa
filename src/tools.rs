@@ -24,8 +24,9 @@ use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 
 use crate::capability_catalog::CapabilityRegistry;
 use crate::events::TuiEvent;
-use crate::mcp_gateway_api::{McpDiscoverRequest, McpTurnContext, McpTurnLane};
+use crate::mcp_gateway_api::{McpDiscoverRequest, McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
+use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::engine_context::{
     EngineExecutionLane, LaneSafetyActionClass, validate_lane_action,
     validate_lane_policy_profile,
@@ -2192,18 +2193,12 @@ impl StasisTool for CognitionMcpDiscoverTool {
             })
             .await;
 
+        let turn_context = build_agent_mcp_turn_context(&self.session_id);
         let request = McpDiscoverRequest {
             query: query.to_string(),
             server_id,
             limit,
-            turn_context: McpTurnContext {
-                turn_id: format!("tool-{}", Uuid::new_v4()),
-                session_id: self.session_id.clone(),
-                user_id: "agent-runtime".to_string(),
-                channel_id: "agent-runtime".to_string(),
-                lane: McpTurnLane::Interactive,
-                policy_profile: None,
-            },
+            turn_context,
         };
 
         let response = self
@@ -2219,6 +2214,149 @@ impl StasisTool for CognitionMcpDiscoverTool {
                 "cognition.mcp.discover: failed to encode response: {error}"
             ))
         })?)
+    }
+}
+
+pub struct CognitionMcpInvokeTool {
+    gateway_client: Arc<McpGatewayClient>,
+    session_id: String,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionMcpInvokeTool {
+    pub fn new(
+        gateway_client: Arc<McpGatewayClient>,
+        session_id: impl Into<String>,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            gateway_client,
+            session_id: session_id.into(),
+            event_tx,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionMcpInvokeTool {
+    fn name(&self) -> &'static str {
+        "cognition.mcp.invoke"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("Invoke an external MCP tool via the MCP Client gateway.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "server_id": { "type": "string" },
+                "tool_name": { "type": "string" },
+                "input": { "type": "object" },
+                "turn_token": { "type": "string", "description": "Optional pre-minted turn token" }
+            },
+            "required": ["server_id", "tool_name"]
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let server_id = input.get("server_id").and_then(|value| value.as_str()).ok_or_else(|| {
+            StasisError::PortFailure("cognition.mcp.invoke: server_id is required".to_string())
+        })?;
+        let tool_name = input.get("tool_name").and_then(|value| value.as_str()).ok_or_else(|| {
+            StasisError::PortFailure("cognition.mcp.invoke: tool_name is required".to_string())
+        })?;
+        let tool_input = input
+            .get("input")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: self.name().to_string(),
+                input_summary: format!("{server_id}.{tool_name}"),
+            })
+            .await;
+
+        let turn_context = build_agent_mcp_turn_context(&self.session_id);
+        let turn_token = if let Some(token) = input.get("turn_token").and_then(|value| value.as_str()) {
+            Some(token.to_string())
+        } else {
+            mint_mcp_turn_token(&turn_context).map_err(|error| {
+                StasisError::PortFailure(format!("cognition.mcp.invoke: {error}"))
+            })?
+        };
+
+        let request = McpInvokeRequest {
+            server_id: server_id.to_string(),
+            tool_name: tool_name.to_string(),
+            input: tool_input,
+            turn_context,
+            turn_token,
+        };
+
+        let response = self
+            .gateway_client
+            .invoke(&request)
+            .await
+            .map_err(|error| StasisError::PortFailure(format!("cognition.mcp.invoke: {error}")))?;
+
+        Ok(serde_json::to_value(response).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition.mcp.invoke: failed to encode response: {error}"
+            ))
+        })?)
+    }
+}
+
+pub struct CognitionMcpServersTool {
+    gateway_client: Arc<McpGatewayClient>,
+}
+
+impl CognitionMcpServersTool {
+    pub fn new(gateway_client: Arc<McpGatewayClient>) -> Self {
+        Self { gateway_client }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionMcpServersTool {
+    fn name(&self) -> &'static str {
+        "cognition.mcp.servers"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some("List MCP servers known to the MCP Client gateway.")
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({ "type": "object", "properties": {} }))
+    }
+
+    async fn invoke(&self, _input: Value) -> stasis::prelude::Result<Value> {
+        let response = self
+            .gateway_client
+            .list_servers()
+            .await
+            .map_err(|error| StasisError::PortFailure(format!("cognition.mcp.servers: {error}")))?;
+        Ok(serde_json::to_value(response).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "cognition.mcp.servers: failed to encode response: {error}"
+            ))
+        })?)
+    }
+}
+
+fn build_agent_mcp_turn_context(session_id: &str) -> McpTurnContext {
+    McpTurnContext {
+        turn_id: format!("tool-{}", Uuid::new_v4()),
+        session_id: session_id.to_string(),
+        user_id: crate::identity_memory::resolve_identity_user_id(None),
+        channel_id: crate::identity_memory::resolve_identity_channel_id(Some("interactive")),
+        lane: McpTurnLane::Interactive,
+        policy_profile: Some("interactive".to_string()),
     }
 }
 

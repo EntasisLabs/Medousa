@@ -59,4 +59,7 @@ serenity = "0.12.5"
 once_cell = "1"
 surrealdb-types = { version = "3" }
 surrealdb = { version = "3", default-features = false, features = ["kv-surrealkv", "rustls", "kv-mem", "protocol-ws"] }
-
+toml = "0.8"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"

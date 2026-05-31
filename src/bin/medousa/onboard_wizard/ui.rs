@@ -251,6 +251,30 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(toggle_line("Start daemon", state.start_daemon));
             lines.push(Line::from(""));
         }
+        WizardStep::McpGateway => {
+            lines.push(Line::from("Install MCP gateway config?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line(
+                "Write ~/.config/medousa/mcp-gateway.toml",
+                state.configure_mcp_gateway,
+            ));
+            lines.push(Line::from(if state.bootstrap.existing_mcp_gateway_config {
+                "Existing config detected — skip to keep current file."
+            } else {
+                "Creates a starter config with mock MCP servers."
+            }));
+            lines.push(Line::from(
+                "Optional env: MEDOUSA_MCP_POLICY_TOKEN, MEDOUSA_MCP_TURN_TOKEN_SECRET",
+            ));
+            lines.push(Line::from(""));
+        }
+        WizardStep::LaunchMcpGateway => {
+            lines.push(Line::from("Start MCP gateway in background?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line("Start medousa_mcp_gateway", state.start_mcp_gateway));
+            lines.push(Line::from("Gateway listens on 127.0.0.1:7420 by default."));
+            lines.push(Line::from(""));
+        }
         WizardStep::LaunchChat => {
             lines.push(Line::from("Open chat after setup?"));
             lines.push(Line::from(""));
@@ -419,6 +443,18 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 if state.start_daemon { "yes" } else { "no" },
             ));
             lines.push(summary_line(
+                "MCP gateway config",
+                if state.configure_mcp_gateway { "yes" } else { "no" },
+            ));
+            lines.push(summary_line(
+                "Start MCP gateway",
+                if state.configure_mcp_gateway && state.start_mcp_gateway {
+                    "yes"
+                } else {
+                    "no"
+                },
+            ));
+            lines.push(summary_line(
                 "Launch chat",
                 if state.launch_tui { "yes" } else { "no" },
             ));
@@ -518,6 +554,8 @@ fn footer_text(state: &WizardState) -> Text<'static> {
         }
         WizardStep::LaunchDaemon
         | WizardStep::LaunchChat
+        | WizardStep::McpGateway
+        | WizardStep::LaunchMcpGateway
         | WizardStep::Discord
         | WizardStep::LaunchDiscord
         | WizardStep::Telegram

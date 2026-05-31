@@ -3,7 +3,9 @@
 //! Design: docs/internal/capability-catalog-design.md
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Where a capability binding is implemented.
@@ -228,6 +230,17 @@ pub struct CapabilityListResponse {
     pub capabilities: Vec<CapabilityListEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityReindexResponse {
+    pub capability_count: usize,
+    pub binding_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_path: Option<String>,
+    pub manifest_loaded_from_file: bool,
+    pub gateway_synced: bool,
+    pub now_utc: DateTime<Utc>,
+}
+
 /// MCP catalog row synced from gateway (includes capability tags).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpCatalogSyncEntry {
@@ -286,6 +299,15 @@ impl CapabilityRegistry {
 
     pub fn with_embedded_seed() -> Self {
         Self::from_manifest(&embedded_capability_manifest())
+    }
+
+    pub fn with_loaded_manifest() -> Self {
+        let (manifest, _) = load_capability_manifest();
+        Self::from_manifest(&manifest)
+    }
+
+    pub fn binding_count(&self) -> usize {
+        self.bindings.values().map(|bindings| bindings.len()).sum()
     }
 
     pub fn list(&self) -> CapabilityListResponse {
@@ -483,6 +505,47 @@ fn collect_definition_tokens(def: &CapabilityDefinition) -> HashSet<String> {
     tokens
 }
 
+pub fn capabilities_manifest_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("medousa")
+        .join("capabilities.toml")
+}
+
+/// Load embedded seed merged with optional `~/.config/medousa/capabilities.toml`.
+/// File entries override same-id capabilities and append new ones.
+pub fn load_capability_manifest() -> (CapabilityManifest, bool) {
+    let mut manifest = embedded_capability_manifest();
+    let path = capabilities_manifest_path();
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return (manifest, false);
+    };
+
+    match toml::from_str::<CapabilityManifest>(&raw) {
+        Ok(file_manifest) => {
+            merge_capability_manifests(&mut manifest, file_manifest);
+            (manifest, true)
+        }
+        Err(error) => {
+            eprintln!(
+                "medousa: failed to parse {}: {error}",
+                path.display()
+            );
+            (manifest, false)
+        }
+    }
+}
+
+fn merge_capability_manifests(base: &mut CapabilityManifest, overlay: CapabilityManifest) {
+    for entry in overlay.capabilities {
+        if let Some(existing) = base.capabilities.iter_mut().find(|item| item.id == entry.id) {
+            *existing = entry;
+        } else {
+            base.capabilities.push(entry);
+        }
+    }
+}
+
 /// Embedded seed manifest — overridden/extended by `~/.config/medousa/capabilities.toml`.
 pub fn embedded_capability_manifest() -> CapabilityManifest {
     CapabilityManifest {
@@ -644,6 +707,35 @@ mod tests {
         let results = registry.search("wiki search", 5);
         assert!(!results.matches.is_empty());
         assert_eq!(results.matches[0].capability, "document_search");
+    }
+
+    #[test]
+    fn file_manifest_merges_with_embedded_seed() {
+        let mut manifest = embedded_capability_manifest();
+        let file_manifest = CapabilityManifest {
+            capabilities: vec![CapabilityManifestEntry {
+                id: "custom_capability".to_string(),
+                title: "Custom test capability".to_string(),
+                description: None,
+                aliases: vec![],
+                keywords: vec!["custom".to_string()],
+                bindings: CapabilityManifestBindings::default(),
+            }],
+        };
+        merge_capability_manifests(&mut manifest, file_manifest);
+
+        assert!(
+            manifest
+                .capabilities
+                .iter()
+                .any(|entry| entry.id == "custom_capability")
+        );
+        assert!(
+            manifest
+                .capabilities
+                .iter()
+                .any(|entry| entry.id == "document_search")
+        );
     }
 
     #[test]

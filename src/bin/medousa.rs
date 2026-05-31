@@ -185,6 +185,8 @@ fn run_onboard(args: &[String]) -> Result<()> {
                 Some(format_i64_csv(&product_config.telegram.heartbeat_chat_ids))
             },
             start_telegram: false,
+            configure_mcp_gateway: true,
+            start_mcp_gateway: true,
             tui_response_depth_mode: product_config.tui.response_depth_mode.clone(),
         }
     } else {
@@ -204,6 +206,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             existing_api_key: existing_api_key.is_some(),
             existing_discord_token: existing_discord_token.is_some(),
             existing_telegram_token: existing_telegram_token.is_some(),
+            existing_mcp_gateway_config: medousa::mcp_gateway::gateway_config_path().exists(),
             initial_telegram_allow_user_ids,
             initial_daemon_bind: product_config.daemon.bind.clone(),
             initial_discord_command_prefix: product_config.discord.command_prefix.clone(),
@@ -381,6 +384,55 @@ fn run_onboard(args: &[String]) -> Result<()> {
         }
     } else {
         println!("{}", "[ok] Daemon start skipped.".green());
+    }
+
+    if selected.configure_mcp_gateway {
+        match install_default_mcp_gateway_config() {
+            Ok(path) => {
+                println!(
+                    "{}",
+                    format!("[ok] MCP gateway config ready at {}", path.display()).green()
+                );
+            }
+            Err(error) => {
+                println!(
+                    "{}",
+                    format!("[warn] MCP gateway config install failed: {error:#}").yellow()
+                );
+            }
+        }
+    }
+
+    if selected.start_mcp_gateway {
+        let mcp_bind = medousa::DEFAULT_MCP_GATEWAY_BIND;
+        if is_bind_reachable(mcp_bind) {
+            println!(
+                "{}",
+                format!("[ok] MCP gateway already running at {}", medousa::DEFAULT_MCP_GATEWAY_URL)
+                    .green()
+            );
+        } else {
+            start_mcp_gateway_background()?;
+            if wait_for_bind_reachable(mcp_bind, Duration::from_secs(4)) {
+                println!(
+                    "{}",
+                    format!(
+                        "[ok] MCP gateway started at {}",
+                        medousa::DEFAULT_MCP_GATEWAY_URL
+                    )
+                    .green()
+                );
+            } else {
+                println!(
+                    "{}",
+                    format!(
+                        "[warn] MCP gateway start requested, but it is not reachable yet. Check {}",
+                        mcp_gateway_log_path().display()
+                    )
+                    .yellow()
+                );
+            }
+        }
     }
 
     if selected.start_discord {
@@ -704,30 +756,74 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     );
 
     let mcp_gateway_url = medousa::resolve_mcp_gateway_url(None);
-    let mcp_gateway_reachable = is_bind_reachable(
-        mcp_gateway_url
-            .trim_start_matches("http://")
-            .trim_start_matches("https://"),
-    );
+    let mcp_gateway_bind = mcp_gateway_url
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    let mcp_gateway_reachable = is_bind_reachable(mcp_gateway_bind);
+    let policy_token_configured = medousa::mcp_gateway::resolve_mcp_policy_token().is_some();
+    let turn_token_configured = env::var("MEDOUSA_MCP_TURN_TOKEN_SECRET")
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty());
     println!(
-        "mcp_gateway_url={} reachable={} auth={}",
+        "mcp_gateway_url={} reachable={} auth={} policy_token={} turn_token_secret={}",
         mcp_gateway_url,
         mcp_gateway_reachable,
         if medousa::gateway_auth_configured() {
             "configured"
         } else {
             "open"
+        },
+        if policy_token_configured {
+            "configured"
+        } else {
+            "open"
+        },
+        if turn_token_configured {
+            "configured"
+        } else {
+            "open"
         }
     );
+    if daemon_reachable && !mcp_gateway_reachable {
+        println!(
+            "{}",
+            format!(
+                "[warn] Daemon is up but MCP gateway is not reachable at {mcp_gateway_url}. cognition.mcp.* tools will fail until medousa_mcp_gateway is running."
+            )
+            .yellow()
+        );
+    }
     if mcp_gateway_reachable {
         if let Ok(health) = fetch_mcp_gateway_health(&mcp_gateway_url) {
             println!(
-                "mcp_gateway_status={} invokes_enabled={} catalog_entries={} connected_servers={}",
+                "mcp_gateway_status={} invokes_enabled={} registered_servers={} connected_servers={} catalog_entries={}",
                 health.status,
                 health.invokes_enabled,
-                health.catalog_entries,
-                health.connected_servers
+                health.registered_servers,
+                health.connected_servers,
+                health.catalog_entries
             );
+            if !health.invokes_enabled {
+                println!(
+                    "{}",
+                    "[warn] MCP gateway invokes are disabled — cognition.mcp.invoke will be rejected."
+                        .yellow()
+                );
+            }
+            if health.registered_servers > 0 && health.connected_servers == 0 {
+                println!(
+                    "{}",
+                    "[warn] MCP gateway has registered servers but none are connected. Check ~/.config/medousa/mcp-gateway.toml or enable use_mock on servers."
+                        .yellow()
+                );
+            }
+            if health.registered_servers == 0 {
+                println!(
+                    "{}",
+                    "[hint] No MCP servers registered. Run medousa setup to install mcp-gateway.toml or add [[servers]] entries."
+                        .blue()
+                );
+            }
         }
         if daemon_reachable {
             if let Ok(capabilities) = fetch_capabilities(&daemon_url) {
@@ -737,6 +833,12 @@ fn run_doctor(_args: &[String]) -> Result<()> {
                 );
             }
         }
+    } else if medousa::gateway_auth_configured() && !policy_token_configured {
+        println!(
+            "{}",
+            "[hint] MEDOUSA_MCP_GATEWAY_TOKEN is set but MEDOUSA_MCP_POLICY_TOKEN is unset — gateway→daemon policy calls may fail if policy auth is required."
+                .blue()
+        );
     }
 
     if daemon_reachable {
@@ -1187,6 +1289,103 @@ fn onboard_profile_path() -> PathBuf {
 
 fn daemon_log_path() -> PathBuf {
     medousa_data_dir().join("logs").join("daemon.log")
+}
+
+fn mcp_gateway_log_path() -> PathBuf {
+    medousa_data_dir().join("logs").join("mcp-gateway.log")
+}
+
+const DEFAULT_MCP_GATEWAY_EXAMPLE_TOML: &str = r#"# Medousa MCP Client gateway — starter config
+# Docs: docs/internal/mcp-client-gateway-design.md
+
+[gateway]
+bind = "127.0.0.1:7420"
+daemon_policy_url = "http://127.0.0.1:7419/v1/mcp/policy/evaluate"
+use_mock_fallback = true
+
+# Optional auth (set matching env vars on daemon + gateway):
+# MEDOUSA_MCP_GATEWAY_TOKEN, MEDOUSA_MCP_GATEWAY_ADMIN_TOKEN, MEDOUSA_MCP_POLICY_TOKEN
+# MEDOUSA_MCP_TURN_TOKEN_SECRET — required for cognition.mcp.invoke turn tokens
+
+[[servers]]
+id = "notion"
+title = "Notion MCP"
+enabled = true
+transport = "stdio"
+use_mock = true
+allowed_lanes = ["interactive", "scheduled"]
+allowed_effect_classes = ["external_read", "external_write", "external_side_effect"]
+
+[[servers]]
+id = "gmail"
+title = "Gmail MCP"
+enabled = true
+transport = "stdio"
+use_mock = true
+allowed_lanes = ["interactive", "scheduled"]
+allowed_effect_classes = ["external_read", "external_write", "external_side_effect"]
+"#;
+
+fn install_default_mcp_gateway_config() -> Result<PathBuf> {
+    let path = medousa::mcp_gateway::gateway_config_path();
+    if path.exists() {
+        return Ok(path);
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create MCP gateway config directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(&path, DEFAULT_MCP_GATEWAY_EXAMPLE_TOML).with_context(|| {
+        format!(
+            "failed to write MCP gateway config {}",
+            path.display()
+        )
+    })?;
+    Ok(path)
+}
+
+fn start_mcp_gateway_background() -> Result<()> {
+    let gateway = resolve_component_command("medousa_mcp_gateway")?;
+    let log_path = mcp_gateway_log_path();
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create MCP gateway log directory {}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .with_context(|| format!("failed to open MCP gateway log file {}", log_path.display()))?;
+    let log_file_err = log_file
+        .try_clone()
+        .context("failed to clone MCP gateway log handle")?;
+
+    let mut command = Command::new(&gateway.program);
+    command.args(&gateway.pre_args);
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+
+    let child = command.spawn().with_context(|| {
+        format!(
+            "failed to spawn medousa_mcp_gateway using {}",
+            gateway.program
+        )
+    })?;
+    println!(
+        "mcp gateway launch requested pid={} log={}",
+        child.id(),
+        log_path.display()
+    );
+    Ok(())
 }
 
 fn discord_log_path() -> PathBuf {
