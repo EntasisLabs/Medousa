@@ -214,6 +214,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         workflow_registry.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionRuntimeWorkflowStatusTool::new(
         runtime.clone(),

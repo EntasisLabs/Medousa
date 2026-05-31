@@ -1,7 +1,7 @@
 # DLQ Replay → Agent Turn Continuation — Plan
 
 > Created: 2026-05-31  
-> Status: In progress  
+> Status: Complete  
 > Related: [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md), [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md)
 
 ## Problem
@@ -98,14 +98,14 @@ Do **not** resume when sync tool succeeded in-turn (`status = consumed`).
 - [x] `deliver/outbox`: `job_dead_lettered` → mark dead letter; `job_succeeded` → try resume before delivery lookup
 - [x] `spawn_continuation_agent_turn` in daemon (new ingest job id + delivery registry)
 
-### Phase 3 — Hardening (follow-up)
+### Phase 3 — Hardening ✅
 
 - [x] Extend to `CognitionRuntimeWorkflowRunTool`, `CognitionGraphemePromoteToJobTool`, and `CognitionMcpPromoteToJobTool`
 - [x] Tool responses include `continuation` metadata when a child job is linked to the active turn
-- [ ] `POST /v1/jobs/{id}/replay-and-resume` explicit operator endpoint
-- [ ] Doctor: pending continuations count + last resume
-- [ ] Metrics / dashboard lineage view by `turn_correlation_id`
-- [ ] `CognitionRuntimeWorkflowScheduleTool` when `start_immediately` materializes during turn
+- [x] `POST /v1/jobs/{id}/replay-and-resume` explicit operator endpoint
+- [x] Doctor: pending continuations count + last resume via `/v1/continuations/status`
+- [x] Lineage view by `turn_correlation_id` via `GET /v1/continuations/lineage/{turn_correlation_id}`
+- [x] `CognitionRuntimeWorkflowScheduleTool` when `start_immediately` materializes during turn
 
 ## Non-goals
 
@@ -121,6 +121,7 @@ Do **not** resume when sync tool succeeded in-turn (`status = consumed`).
 | Turn scope + outcome tracking | `src/agent_runtime/daemon_interactive_turn.rs` |
 | Tool correlation | `src/tools.rs` |
 | Daemon hooks | `src/bin/medousa_daemon.rs` |
+| Continuation API | `GET /v1/continuations/status`, `GET /v1/continuations/lineage/{id}`, `POST /v1/jobs/{id}/replay-and-resume` |
 | Store init | `src/runtime/platform.rs` |
 
 ## Stasis reference

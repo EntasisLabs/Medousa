@@ -5,6 +5,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use stasis::domain::runtime::job::JobState;
+use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
+use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::RuntimeComposition;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
@@ -69,14 +72,14 @@ pub async fn init_turn_continuation_store_with_runtime(runtime: &RuntimeComposit
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, SurrealValue)]
 #[serde(rename_all = "snake_case")]
 pub enum ContinuationAwaitMode {
     Sync,
     Async,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, SurrealValue)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnContinuationStatus {
     Pending,
@@ -85,14 +88,14 @@ pub enum TurnContinuationStatus {
     Abandoned,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, SurrealValue)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnOutcome {
     Success,
     Error,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, SurrealValue)]
 pub struct StoredDeliveryTarget {
     pub channel: String,
     pub user_id: String,
@@ -137,7 +140,7 @@ pub struct TurnContinuationScope {
     pub response_depth_mode: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, SurrealValue)]
 pub struct TurnContinuationRecord {
     pub child_job_id: String,
     pub turn_correlation_id: String,
@@ -181,6 +184,166 @@ pub fn apply_turn_correlation_to_job(
     job.correlation_id = scope.turn_correlation_id.clone();
     job.causation_id = format!("{}:{}", scope.session_id, tool_name);
     job.trace_id = scope.turn_correlation_id.clone();
+}
+
+pub fn apply_turn_correlation_to_existing_job(
+    job: &mut stasis::domain::runtime::job::Job,
+    scope: &TurnContinuationScope,
+    tool_name: &str,
+) {
+    job.correlation_id = scope.turn_correlation_id.clone();
+    job.causation_id = format!("{}:{}", scope.session_id, tool_name);
+    job.trace_id = scope.turn_correlation_id.clone();
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TurnContinuationSnapshot {
+    pub pending_count: usize,
+    pub consumed_count: usize,
+    pub resumed_count: usize,
+    pub dead_letter_pending_count: usize,
+    pub total_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TurnContinuationResumeEvent {
+    pub child_job_id: String,
+    pub turn_correlation_id: String,
+    pub session_id: String,
+    pub resumed_at: DateTime<Utc>,
+}
+
+static LAST_CONTINUATION_RESUME: Lazy<RwLock<Option<TurnContinuationResumeEvent>>> =
+    Lazy::new(|| RwLock::new(None));
+
+pub fn record_continuation_resume(event: TurnContinuationResumeEvent) {
+    if let Ok(mut guard) = LAST_CONTINUATION_RESUME.write() {
+        *guard = Some(event);
+    }
+}
+
+pub fn last_continuation_resume() -> Option<TurnContinuationResumeEvent> {
+    LAST_CONTINUATION_RESUME.read().ok()?.clone()
+}
+
+pub async fn replay_dead_letter_job(
+    runtime: &RuntimeComposition,
+    job_id: &str,
+) -> anyhow::Result<bool> {
+    match runtime {
+        RuntimeComposition::InMemory(rt) => rt
+            .replay_dead_letter_now(job_id)
+            .await
+            .map_err(|err| anyhow::anyhow!("replay dead letter failed: {err}")),
+        RuntimeComposition::Surreal(rt) => rt
+            .replay_dead_letter_now(job_id)
+            .await
+            .map_err(|err| anyhow::anyhow!("replay dead letter failed: {err}")),
+    }
+}
+
+pub async fn materialize_recurring_now(
+    runtime: &RuntimeComposition,
+    scheduler_id: &str,
+) -> anyhow::Result<usize> {
+    match runtime {
+        RuntimeComposition::InMemory(rt) => rt
+            .materialize_recurring_now(scheduler_id)
+            .await
+            .map_err(|err| anyhow::anyhow!("materialize recurring failed: {err}")),
+        RuntimeComposition::Surreal(rt) => rt
+            .materialize_recurring_now(scheduler_id)
+            .await
+            .map_err(|err| anyhow::anyhow!("materialize recurring failed: {err}")),
+    }
+}
+
+pub async fn find_active_job_by_correlation_id(
+    runtime: &RuntimeComposition,
+    correlation_id: &str,
+) -> Option<String> {
+    for state in [JobState::Enqueued, JobState::Leased, JobState::Running] {
+        let jobs = match runtime {
+            RuntimeComposition::InMemory(rt) => rt.job_store.list_by_state(state).await,
+            RuntimeComposition::Surreal(rt) => rt.job_store.list_by_state(state).await,
+        };
+        let Ok(jobs) = jobs else {
+            continue;
+        };
+        if let Some(job) = jobs
+            .into_iter()
+            .filter(|job| job.correlation_id == correlation_id)
+            .max_by_key(|job| job.scheduled_at)
+        {
+            return Some(job.id);
+        }
+    }
+    None
+}
+
+pub async fn patch_existing_job_correlation(
+    runtime: &RuntimeComposition,
+    job_id: &str,
+    scope: &TurnContinuationScope,
+    tool_name: &str,
+) -> anyhow::Result<()> {
+    let job = match runtime {
+        RuntimeComposition::InMemory(rt) => rt.job_store.get(job_id).await,
+        RuntimeComposition::Surreal(rt) => rt.job_store.get(job_id).await,
+    }
+    .map_err(|err| anyhow::anyhow!("load job for correlation patch failed: {err}"))?;
+
+    let Some(mut job) = job else {
+        return Ok(());
+    };
+    apply_turn_correlation_to_existing_job(&mut job, scope, tool_name);
+    match runtime {
+        RuntimeComposition::InMemory(rt) => rt.job_store.save(job).await?,
+        RuntimeComposition::Surreal(rt) => rt.job_store.save(job).await?,
+    }
+    Ok(())
+}
+
+pub async fn continuation_snapshot() -> TurnContinuationSnapshot {
+    turn_continuation_store().snapshot().await
+}
+
+pub async fn continuation_lineage_for_turn(
+    turn_correlation_id: &str,
+    limit: usize,
+) -> Vec<TurnContinuationRecord> {
+    turn_continuation_store()
+        .list_by_turn_correlation(turn_correlation_id, limit)
+        .await
+}
+
+pub fn lineage_entry_from_record(record: &TurnContinuationRecord) -> crate::daemon_api::TurnContinuationLineageEntry {
+    crate::daemon_api::TurnContinuationLineageEntry {
+        child_job_id: record.child_job_id.clone(),
+        turn_correlation_id: record.turn_correlation_id.clone(),
+        session_id: record.session_id.clone(),
+        tool_name: record.tool_name.clone(),
+        job_type: record.job_type.clone(),
+        await_mode: match record.await_mode {
+            ContinuationAwaitMode::Sync => "sync".to_string(),
+            ContinuationAwaitMode::Async => "async".to_string(),
+        },
+        status: match record.status {
+            TurnContinuationStatus::Pending => "pending",
+            TurnContinuationStatus::Consumed => "consumed",
+            TurnContinuationStatus::Resumed => "resumed",
+            TurnContinuationStatus::Abandoned => "abandoned",
+        }
+        .to_string(),
+        turn_finished: record.turn_finished,
+        turn_outcome: record.turn_outcome.map(|outcome| match outcome {
+            TurnOutcome::Success => "success".to_string(),
+            TurnOutcome::Error => "error".to_string(),
+        }),
+        child_was_dead_letter: record.child_was_dead_letter,
+        created_at_utc: record.created_at,
+        updated_at_utc: record.updated_at,
+    }
 }
 
 pub fn build_turn_resume_prompt(
@@ -292,6 +455,12 @@ pub trait TurnContinuationStore: Send + Sync {
         turn_correlation_id: &str,
         outcome: TurnOutcome,
     ) -> anyhow::Result<()>;
+    async fn snapshot(&self) -> TurnContinuationSnapshot;
+    async fn list_by_turn_correlation(
+        &self,
+        turn_correlation_id: &str,
+        limit: usize,
+    ) -> Vec<TurnContinuationRecord>;
 }
 
 #[derive(Default)]
@@ -360,6 +529,44 @@ impl TurnContinuationStore for InMemoryTurnContinuationStore {
         }
         Ok(())
     }
+
+    async fn snapshot(&self) -> TurnContinuationSnapshot {
+        let guard = self.records.read().await;
+        let mut snapshot = TurnContinuationSnapshot::default();
+        snapshot.total_count = guard.len();
+        for record in guard.values() {
+            match record.status {
+                TurnContinuationStatus::Pending => {
+                    snapshot.pending_count += 1;
+                    if record.child_was_dead_letter {
+                        snapshot.dead_letter_pending_count += 1;
+                    }
+                }
+                TurnContinuationStatus::Consumed => snapshot.consumed_count += 1,
+                TurnContinuationStatus::Resumed => snapshot.resumed_count += 1,
+                TurnContinuationStatus::Abandoned => {}
+            }
+        }
+        snapshot
+    }
+
+    async fn list_by_turn_correlation(
+        &self,
+        turn_correlation_id: &str,
+        limit: usize,
+    ) -> Vec<TurnContinuationRecord> {
+        let mut records: Vec<_> = self
+            .records
+            .read()
+            .await
+            .values()
+            .filter(|record| record.turn_correlation_id == turn_correlation_id)
+            .cloned()
+            .collect();
+        records.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        records.truncate(limit.max(1));
+        records
+    }
 }
 
 struct SurrealTurnContinuationStore {
@@ -397,21 +604,27 @@ impl SurrealTurnContinuationStore {
 impl TurnContinuationStore for SurrealTurnContinuationStore {
     async fn upsert(&self, record: TurnContinuationRecord) -> anyhow::Result<()> {
         let id = Self::record_id(&record.child_job_id);
-        let _: Option<TurnContinuationRecord> = self
-            .db
-            .upsert((TABLE, id))
-            .content(record)
+        let sql = "UPSERT type::record($table, $id) CONTENT $data";
+        self.db
+            .query(sql)
+            .bind(("table", TABLE))
+            .bind(("id", id))
+            .bind(("data", record))
             .await?;
         Ok(())
     }
 
     async fn get(&self, child_job_id: &str) -> Option<TurnContinuationRecord> {
         let id = Self::record_id(child_job_id);
-        self.db
-            .select((TABLE, id))
+        let sql = "SELECT * FROM type::record($table, $id)";
+        let mut response = self
+            .db
+            .query(sql)
+            .bind(("table", TABLE))
+            .bind(("id", id))
             .await
-            .ok()
-            .flatten()
+            .ok()?;
+        response.take::<Option<TurnContinuationRecord>>(0).ok().flatten()
     }
 
     async fn mark_consumed(&self, child_job_id: &str) -> anyhow::Result<()> {
@@ -450,23 +663,72 @@ impl TurnContinuationStore for SurrealTurnContinuationStore {
         turn_correlation_id: &str,
         outcome: TurnOutcome,
     ) -> anyhow::Result<()> {
+        let outcome = match outcome {
+            TurnOutcome::Success => "success",
+            TurnOutcome::Error => "error",
+        };
         let mut response = self
             .db
             .query(format!(
                 "UPDATE {TABLE} SET turn_finished = true, turn_outcome = $outcome, updated_at = time::now() \
                  WHERE turn_correlation_id = $turn_id"
             ))
-            .bind((
-                "outcome",
-                match outcome {
-                    TurnOutcome::Success => "success".to_string(),
-                    TurnOutcome::Error => "error".to_string(),
-                },
-            ))
+            .bind(("outcome", outcome.to_string()))
             .bind(("turn_id", turn_correlation_id.to_string()))
             .await?;
         let _: Vec<TurnContinuationRecord> = response.take(0)?;
         Ok(())
+    }
+
+    async fn snapshot(&self) -> TurnContinuationSnapshot {
+        let sql = format!("SELECT status, child_was_dead_letter FROM {TABLE}");
+        let Ok(mut response) = self.db.query(sql).await else {
+            return TurnContinuationSnapshot::default();
+        };
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct Row {
+            status: TurnContinuationStatus,
+            child_was_dead_letter: bool,
+        }
+        let rows = response.take::<Vec<Row>>(0).unwrap_or_default();
+        let mut snapshot = TurnContinuationSnapshot {
+            total_count: rows.len(),
+            ..TurnContinuationSnapshot::default()
+        };
+        for row in rows {
+            match row.status {
+                TurnContinuationStatus::Pending => {
+                    snapshot.pending_count += 1;
+                    if row.child_was_dead_letter {
+                        snapshot.dead_letter_pending_count += 1;
+                    }
+                }
+                TurnContinuationStatus::Consumed => snapshot.consumed_count += 1,
+                TurnContinuationStatus::Resumed => snapshot.resumed_count += 1,
+                TurnContinuationStatus::Abandoned => {}
+            }
+        }
+        snapshot
+    }
+
+    async fn list_by_turn_correlation(
+        &self,
+        turn_correlation_id: &str,
+        limit: usize,
+    ) -> Vec<TurnContinuationRecord> {
+        let sql = format!(
+            "SELECT * FROM {TABLE} WHERE turn_correlation_id = $turn_id ORDER BY created_at DESC LIMIT $limit"
+        );
+        let Ok(mut response) = self
+            .db
+            .query(sql)
+            .bind(("turn_id", turn_correlation_id.to_string()))
+            .bind(("limit", limit.max(1) as i64))
+            .await
+        else {
+            return Vec::new();
+        };
+        response.take::<Vec<TurnContinuationRecord>>(0).unwrap_or_default()
     }
 }
 

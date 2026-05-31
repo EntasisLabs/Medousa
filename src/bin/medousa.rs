@@ -1161,6 +1161,20 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         } else {
             println!("delivery_status=unavailable (daemon did not return /v1/delivery/status)");
         }
+        if let Ok(continuations) = fetch_continuation_health(&daemon_url) {
+            println!(
+                "continuation_pending={} dead_letter_pending={} resumed={} consumed={} total={} last_resume_at={:?} last_resume_job_id={:?}",
+                continuations.pending_count,
+                continuations.dead_letter_pending_count,
+                continuations.resumed_count,
+                continuations.consumed_count,
+                continuations.total_count,
+                continuations.last_resume_at_utc,
+                continuations.last_resume_child_job_id,
+            );
+        } else {
+            println!("continuation_status=unavailable (daemon did not return /v1/continuations/status)");
+        }
     }
 
     if !daemon_reachable {
@@ -1269,6 +1283,17 @@ fn fetch_delivery_health(daemon_url: &str) -> Result<medousa::DeliveryHealthResp
         .timeout(Duration::from_secs(3))
         .build()?
         .get(format!("{daemon_url}/v1/delivery/status"))
+        .send()?
+        .error_for_status()?;
+    Ok(response.json()?)
+}
+
+fn fetch_continuation_health(daemon_url: &str) -> Result<medousa::ContinuationStatusResponse> {
+    let daemon_url = daemon_url.trim_end_matches('/');
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?
+        .get(format!("{daemon_url}/v1/continuations/status"))
         .send()?
         .error_for_status()?;
     Ok(response.json()?)

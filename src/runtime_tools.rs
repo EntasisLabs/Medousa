@@ -23,6 +23,8 @@ use crate::events::TuiEvent;
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
+    find_active_job_by_correlation_id, materialize_recurring_now, patch_existing_job_correlation,
+    register_turn_child_job,
 };
 use crate::workflow::{
     MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord,
@@ -999,6 +1001,7 @@ pub struct CognitionRuntimeWorkflowScheduleTool {
     runtime: Arc<RuntimeComposition>,
     registry: Arc<WorkflowRegistry>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionRuntimeWorkflowScheduleTool {
@@ -1006,11 +1009,13 @@ impl CognitionRuntimeWorkflowScheduleTool {
         runtime: Arc<RuntimeComposition>,
         registry: Arc<WorkflowRegistry>,
         event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     ) -> Self {
         Self {
             runtime,
             registry,
             event_tx,
+            turn_scope,
         }
     }
 }
@@ -1133,6 +1138,39 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 
+        let mut materialized_job_id = None;
+        if start_immediately {
+            let _ = materialize_recurring_now(self.runtime.as_ref(), "cognition_tui")
+                .await
+                .map_err(|err| {
+                    StasisError::PortFailure(format!("materialize recurring failed: {err:#}"))
+                })?;
+            if let Some(job_id) =
+                find_active_job_by_correlation_id(self.runtime.as_ref(), &workflow_id).await
+            {
+                if let Some(scope) = self.turn_scope.read().await.clone() {
+                    let job_type = workflow_job_type_for_strategy(&request.strategy)
+                        .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
+                    let _ = patch_existing_job_correlation(
+                        self.runtime.as_ref(),
+                        &job_id,
+                        &scope,
+                        self.name(),
+                    )
+                    .await;
+                    register_turn_child_job(
+                        &scope,
+                        &job_id,
+                        self.name(),
+                        job_type,
+                        ContinuationAwaitMode::Async,
+                    )
+                    .await;
+                }
+                materialized_job_id = Some(job_id);
+            }
+        }
+
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),
             name: request.name.clone(),
@@ -1140,7 +1178,7 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             mode: request.mode.clone(),
             on_failure: request.on_failure.clone(),
             note: request.note.clone(),
-            root_job_id: String::new(),
+            root_job_id: materialized_job_id.clone().unwrap_or_default(),
             status: WorkflowStatus::Enqueued,
             created_at: now,
             scheduled_recurring_id: Some(recurring_id.clone()),
@@ -1156,6 +1194,7 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             })
             .await;
 
+        let scope = self.turn_scope.read().await.clone();
         Ok(json!({
             "workflow_id": workflow_id,
             "status": "scheduled",
@@ -1164,7 +1203,18 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             "cron_expr": cron_expr,
             "timezone": timezone,
             "next_run_at_utc": definition.next_run_at.to_rfc3339(),
-            "lane": "scheduled"
+            "lane": "scheduled",
+            "start_immediately": start_immediately,
+            "materialized_job_id": materialized_job_id,
+            "continuation": materialized_job_id.as_ref().and_then(|job_id| {
+                scope.as_ref().map(|turn_scope| {
+                    continuation_tool_metadata(
+                        turn_scope,
+                        job_id,
+                        ContinuationAwaitMode::Async,
+                    )
+                })
+            }),
         }))
     }
 }

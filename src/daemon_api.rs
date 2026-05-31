@@ -462,3 +462,46 @@ pub struct DeliveryHealthResponse {
     pub last_delivery_at_utc: Option<DateTime<Utc>>,
     pub last_delivery_latency_ms: Option<u64>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinuationStatusResponse {
+    pub pending_count: usize,
+    pub consumed_count: usize,
+    pub resumed_count: usize,
+    pub dead_letter_pending_count: usize,
+    pub total_count: usize,
+    pub last_resume_at_utc: Option<DateTime<Utc>>,
+    pub last_resume_child_job_id: Option<String>,
+    pub last_resume_turn_correlation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnContinuationLineageEntry {
+    pub child_job_id: String,
+    pub turn_correlation_id: String,
+    pub session_id: String,
+    pub tool_name: String,
+    pub job_type: String,
+    pub await_mode: String,
+    pub status: String,
+    pub turn_finished: bool,
+    pub turn_outcome: Option<String>,
+    pub child_was_dead_letter: bool,
+    pub created_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnContinuationLineageResponse {
+    pub turn_correlation_id: String,
+    pub records: Vec<TurnContinuationLineageEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayAndResumeResponse {
+    pub job_id: String,
+    pub replayed: bool,
+    pub job_succeeded: bool,
+    pub agent_turn_resumed: bool,
+    pub message: String,
+}
