@@ -17,6 +17,8 @@ pub mod daemon_api;
 pub mod daemon_handlers;
 pub mod engine_context;
 pub mod events;
+pub mod execution_policy;
+pub mod medousa_tool_loop;
 pub mod grapheme_sttp_compaction;
 pub mod identity_markdown;
 pub mod identity_memory;

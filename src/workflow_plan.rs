@@ -254,6 +254,7 @@ fn build_csv_digest_workflow(
                 "chat_id": context_telegram_chat(context),
                 "text": "CSV digest complete for {{workflow}} — see step output in cognition_runtime_workflow_status."
             }),
+            effect_class: Some("external_side_effect".to_string()),
         });
         assumptions.push(
             "Telegram MCP server must be connected; set context.telegram_chat_id for chat routing."
@@ -434,6 +435,7 @@ pub fn plan_workflow_from_goal(request: &WorkflowPlanRequest) -> WorkflowPlanRes
                     "chat_id": context_telegram_chat(context),
                     "text": goal
                 }),
+                effect_class: Some("external_side_effect".to_string()),
             }],
             on_failure: "stop".to_string(),
             note: Some(goal.to_string()),

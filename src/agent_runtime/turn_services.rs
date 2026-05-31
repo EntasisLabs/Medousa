@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use genai::chat::ChatMessage;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
-use stasis::application::orchestration::tool_loop_pipeline::{ToolCallMode, ToolLoopPipeline};
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
+use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
@@ -44,7 +45,7 @@ pub struct IntentContextLimits {
 }
 
 pub struct SelectedTurnPipeline {
-    pub pipeline: ToolLoopPipeline,
+    pub pipeline: MedousaToolLoopPipeline,
     pub route_dispatch_notice: Option<String>,
 }
 

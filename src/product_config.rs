@@ -15,6 +15,8 @@ pub struct ProductConfig {
     pub discord: DiscordProductConfig,
     #[serde(default)]
     pub tui: TuiProductConfig,
+    #[serde(default)]
+    pub runtime: RuntimeProductConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -48,6 +50,62 @@ pub struct DiscordProductConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RuntimeProductConfig {
+    #[serde(default)]
+    pub workflow: RuntimeWorkflowConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RuntimeWorkflowConfig {
+    #[serde(default = "default_workflow_strategy")]
+    pub default_strategy: String,
+    #[serde(default = "default_parallel_tool_calls_enabled")]
+    pub parallel_tool_calls_enabled: bool,
+    #[serde(default = "default_max_parallel_tool_calls")]
+    pub max_parallel_tool_calls: usize,
+    #[serde(default = "default_max_concurrent_workflow_steps")]
+    pub max_concurrent_workflow_steps: usize,
+    #[serde(default)]
+    pub allow_mutating_parallel: bool,
+}
+
+impl Default for RuntimeProductConfig {
+    fn default() -> Self {
+        Self {
+            workflow: RuntimeWorkflowConfig::default(),
+        }
+    }
+}
+
+impl Default for RuntimeWorkflowConfig {
+    fn default() -> Self {
+        Self {
+            default_strategy: default_workflow_strategy(),
+            parallel_tool_calls_enabled: default_parallel_tool_calls_enabled(),
+            max_parallel_tool_calls: default_max_parallel_tool_calls(),
+            max_concurrent_workflow_steps: default_max_concurrent_workflow_steps(),
+            allow_mutating_parallel: false,
+        }
+    }
+}
+
+fn default_workflow_strategy() -> String {
+    "sequential".to_string()
+}
+
+fn default_parallel_tool_calls_enabled() -> bool {
+    true
+}
+
+fn default_max_parallel_tool_calls() -> usize {
+    4
+}
+
+fn default_max_concurrent_workflow_steps() -> usize {
+    8
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TuiProductConfig {
     #[serde(default = "default_response_depth")]
     pub response_depth_mode: String,
@@ -60,6 +118,7 @@ impl Default for ProductConfig {
             telegram: TelegramProductConfig::default(),
             discord: DiscordProductConfig::default(),
             tui: TuiProductConfig::default(),
+            runtime: RuntimeProductConfig::default(),
         }
     }
 }

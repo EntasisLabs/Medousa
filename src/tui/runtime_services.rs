@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
-use stasis::application::orchestration::tool_loop_pipeline::ToolLoopPipeline;
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
@@ -50,7 +50,7 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
     model: &str,
     base_url: Option<&str>,
     tool_registry: Arc<dyn ToolRegistry>,
-) -> ToolLoopPipeline {
+) -> MedousaToolLoopPipeline {
     let resolved_provider = crate::resolve_llm_provider(Some(provider));
     let resolved_model = crate::resolve_llm_model(Some(model));
     let resolved_base_url = crate::resolve_llm_base_url(Some(&resolved_provider), base_url);
@@ -62,7 +62,7 @@ pub(crate) fn build_tool_loop_pipeline_for_target(
         ),
     );
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
-    ToolLoopPipeline::new(prompt_pipeline, tool_registry)
+    MedousaToolLoopPipeline::new(prompt_pipeline, tool_registry)
 }
 
 pub(crate) async fn build_tui_runtime_services(
@@ -284,7 +284,7 @@ pub(crate) async fn build_tui_runtime_services(
         allowed_grapheme_modules,
         EngineExecutionLane::Interactive,
     ));
-    let tool_loop_pipeline = ToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone());
+    let tool_loop_pipeline = MedousaToolLoopPipeline::new(prompt_pipeline, guarded_registry.clone());
 
     Ok(TuiRuntime {
         runtime,

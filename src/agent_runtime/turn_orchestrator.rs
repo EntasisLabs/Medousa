@@ -3,9 +3,8 @@ use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
 };
-use stasis::application::orchestration::tool_loop_pipeline::{
-    ToolCallMode, ToolInvocation, ToolLoopExecutionRequest, ToolLoopPipeline,
-};
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
+use stasis::application::orchestration::tool_loop_pipeline::{ToolCallMode, ToolInvocation, ToolLoopExecutionRequest};
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::engine_context::{EngineExecutionLane, RecallReadiness};
@@ -136,7 +135,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
 pub struct LocalTurnExecutionParams {
     pub turn_id: u64,
     pub activation: TurnActivationDecision,
-    pub pipeline: ToolLoopPipeline,
+    pub pipeline: MedousaToolLoopPipeline,
     pub no_tools_pipeline: PromptExecutionPipeline,
     pub prior_messages: Vec<ChatMessage>,
     pub prompt_for_request: String,

@@ -22,6 +22,9 @@ use stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::execution_policy::{
+    load_parallel_execution_settings, validate_concurrent_workflow,
+};
 use crate::identity_memory;
 use crate::mcp_gateway_api::{McpInvokeRequest, McpTurnContext, McpTurnLane};
 use crate::mcp_gateway_client::McpGatewayClient;
@@ -29,8 +32,19 @@ use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::tools::validate_grapheme_source_for_schedule;
 
 pub const WORKFLOW_SEQUENTIAL_JOB_TYPE: &str = "workflow.medousa.sequential";
+pub const WORKFLOW_CONCURRENT_JOB_TYPE: &str = "workflow.medousa.concurrent";
+pub const WORKFLOW_HANDOFF_JOB_TYPE: &str = "workflow.medousa.handoff";
 pub const WORKFLOW_PAYLOAD_PREFIX: &str = "medousa:workflow:";
 pub const MAX_WORKFLOW_STEPS: usize = 20;
+
+pub fn workflow_job_type_for_strategy(strategy: &str) -> Option<&'static str> {
+    match strategy.trim().to_ascii_lowercase().as_str() {
+        "sequential" => Some(WORKFLOW_SEQUENTIAL_JOB_TYPE),
+        "concurrent" => Some(WORKFLOW_CONCURRENT_JOB_TYPE),
+        "handoff" => Some(WORKFLOW_HANDOFF_JOB_TYPE),
+        _ => None,
+    }
+}
 
 static WORKFLOW_REGISTRY: OnceCell<Arc<WorkflowRegistry>> = OnceCell::new();
 
@@ -81,6 +95,8 @@ pub enum WorkflowStepSpec {
         tool_name: String,
         #[serde(default)]
         args: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effect_class: Option<String>,
     },
 }
 
@@ -122,7 +138,7 @@ fn default_on_failure() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MedousaSequentialWorkflowPayload {
+pub struct MedousaWorkflowPayload {
     pub workflow_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -134,6 +150,8 @@ pub struct MedousaSequentialWorkflowPayload {
     pub lane: String,
     pub steps: Vec<WorkflowStepSpec>,
 }
+
+pub type MedousaSequentialWorkflowPayload = MedousaWorkflowPayload;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStepResult {
@@ -206,7 +224,7 @@ impl WorkflowRegistry {
     }
 }
 
-pub fn encode_workflow_payload(payload: &MedousaSequentialWorkflowPayload) -> stasis::prelude::Result<String> {
+pub fn encode_workflow_payload(payload: &MedousaWorkflowPayload) -> stasis::prelude::Result<String> {
     let raw = serde_json::to_string(payload).map_err(|error| {
         stasis::prelude::StasisError::PortFailure(format!(
             "failed to encode workflow payload: {error}"
@@ -215,7 +233,7 @@ pub fn encode_workflow_payload(payload: &MedousaSequentialWorkflowPayload) -> st
     Ok(format!("{WORKFLOW_PAYLOAD_PREFIX}{raw}"))
 }
 
-pub fn decode_workflow_payload(payload_ref: &str) -> stasis::prelude::Result<MedousaSequentialWorkflowPayload> {
+pub fn decode_workflow_payload(payload_ref: &str) -> stasis::prelude::Result<MedousaWorkflowPayload> {
     let raw = payload_ref
         .strip_prefix(WORKFLOW_PAYLOAD_PREFIX)
         .unwrap_or(payload_ref);
@@ -237,11 +255,23 @@ pub fn validate_workflow_request(request: &WorkflowRunRequest) -> stasis::prelud
             "workflow exceeds max steps ({MAX_WORKFLOW_STEPS})"
         )));
     }
-    if request.strategy != "sequential" {
+    if request.strategy != "sequential"
+        && request.strategy != "concurrent"
+        && request.strategy != "handoff"
+    {
         return Err(stasis::prelude::StasisError::PortFailure(format!(
-            "unsupported workflow strategy '{}'; v1 supports sequential only",
+            "unsupported workflow strategy '{}'; supported: sequential, concurrent, handoff",
             request.strategy
         )));
+    }
+
+    let parallel_settings = load_parallel_execution_settings();
+    if request.strategy == "concurrent" {
+        validate_concurrent_workflow(&request.steps, &parallel_settings).map_err(|reason| {
+            stasis::prelude::StasisError::PortFailure(format!(
+                "concurrent workflow policy violation: {reason}"
+            ))
+        })?;
     }
 
     let mut seen_ids = HashMap::new();
@@ -269,12 +299,21 @@ pub fn validate_workflow_request(request: &WorkflowRunRequest) -> stasis::prelud
     Ok(())
 }
 
-pub fn apply_step_refs(template: &str, outputs: &HashMap<String, Value>) -> String {
+pub fn apply_step_refs(
+    template: &str,
+    outputs: &HashMap<String, Value>,
+    handoff: Option<&Value>,
+) -> String {
     let mut result = template.to_string();
     for (step_id, output) in outputs {
         let needle = format!("$steps.{step_id}.output");
         let replacement = output_to_string(output);
         result = result.replace(&needle, &replacement);
+    }
+    if let Some(handoff_value) = handoff {
+        let handoff_json = serde_json::to_string(handoff_value)
+            .unwrap_or_else(|_| handoff_value.to_string());
+        result = result.replace("$handoff.context", &handoff_json);
     }
     result
 }
@@ -291,14 +330,103 @@ pub fn new_workflow_id() -> String {
 }
 
 pub struct MedousaSequentialWorkflowHandler {
+    executor: WorkflowExecutor,
+}
+
+impl MedousaSequentialWorkflowHandler {
+    pub fn new(executor: WorkflowExecutor) -> Self {
+        Self { executor }
+    }
+
+    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+        Self::new(WorkflowExecutor::with_defaults(registry, prompt_pipeline))
+    }
+}
+
+#[async_trait]
+impl JobHandler for MedousaSequentialWorkflowHandler {
+    fn job_type(&self) -> &'static str {
+        WORKFLOW_SEQUENTIAL_JOB_TYPE
+    }
+
+    async fn execute(&self, job: &Job) -> stasis::prelude::Result<JobExecutionOutcome> {
+        self.executor
+            .execute(job, WorkflowExecutionMode::Sequential)
+            .await
+    }
+}
+
+pub struct MedousaConcurrentWorkflowHandler {
+    executor: WorkflowExecutor,
+}
+
+impl MedousaConcurrentWorkflowHandler {
+    pub fn new(executor: WorkflowExecutor) -> Self {
+        Self { executor }
+    }
+
+    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+        Self::new(WorkflowExecutor::with_defaults(registry, prompt_pipeline))
+    }
+}
+
+#[async_trait]
+impl JobHandler for MedousaConcurrentWorkflowHandler {
+    fn job_type(&self) -> &'static str {
+        WORKFLOW_CONCURRENT_JOB_TYPE
+    }
+
+    async fn execute(&self, job: &Job) -> stasis::prelude::Result<JobExecutionOutcome> {
+        self.executor
+            .execute(job, WorkflowExecutionMode::Concurrent)
+            .await
+    }
+}
+
+pub struct MedousaHandoffWorkflowHandler {
+    executor: WorkflowExecutor,
+}
+
+impl MedousaHandoffWorkflowHandler {
+    pub fn new(executor: WorkflowExecutor) -> Self {
+        Self { executor }
+    }
+
+    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+        Self::new(WorkflowExecutor::with_defaults(registry, prompt_pipeline))
+    }
+}
+
+#[async_trait]
+impl JobHandler for MedousaHandoffWorkflowHandler {
+    fn job_type(&self) -> &'static str {
+        WORKFLOW_HANDOFF_JOB_TYPE
+    }
+
+    async fn execute(&self, job: &Job) -> stasis::prelude::Result<JobExecutionOutcome> {
+        self.executor
+            .execute(job, WorkflowExecutionMode::Handoff)
+            .await
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkflowExecutionMode {
+    Sequential,
+    Concurrent,
+    Handoff,
+}
+
+#[derive(Clone)]
+struct WorkflowExecutor {
     workflow_engine: Arc<dyn WorkflowEngine>,
     prompt_pipeline: PromptExecutionPipeline,
     mcp_client: Arc<McpGatewayClient>,
     registry: Arc<WorkflowRegistry>,
 }
 
-impl MedousaSequentialWorkflowHandler {
-    pub fn new(
+impl WorkflowExecutor {
+    fn new(
         workflow_engine: Arc<dyn WorkflowEngine>,
         prompt_pipeline: PromptExecutionPipeline,
         mcp_client: Arc<McpGatewayClient>,
@@ -312,7 +440,7 @@ impl MedousaSequentialWorkflowHandler {
         }
     }
 
-    pub fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
+    fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
         Self::new(
             RuntimeFactory::default_workflow_engine(),
             prompt_pipeline,
@@ -320,15 +448,12 @@ impl MedousaSequentialWorkflowHandler {
             registry,
         )
     }
-}
 
-#[async_trait]
-impl JobHandler for MedousaSequentialWorkflowHandler {
-    fn job_type(&self) -> &'static str {
-        WORKFLOW_SEQUENTIAL_JOB_TYPE
-    }
-
-    async fn execute(&self, job: &Job) -> stasis::prelude::Result<JobExecutionOutcome> {
+    async fn execute(
+        &self,
+        job: &Job,
+        mode: WorkflowExecutionMode,
+    ) -> stasis::prelude::Result<JobExecutionOutcome> {
         let started = Instant::now();
         let payload = match decode_workflow_payload(&job.payload_ref) {
             Ok(payload) => payload,
@@ -351,31 +476,15 @@ impl JobHandler for MedousaSequentialWorkflowHandler {
             McpTurnLane::Interactive
         };
 
-        let mut step_outputs: HashMap<String, Value> = HashMap::new();
-        let mut step_results = Vec::new();
-        let stop_on_failure = payload.on_failure == "stop";
-
-        for step in &payload.steps {
-            let result = execute_workflow_step(
-                step,
-                &step_outputs,
-                &self.workflow_engine,
-                &self.prompt_pipeline,
-                &self.mcp_client,
-                &payload.workflow_id,
-                lane,
-            )
-            .await;
-
-            let failed = result.status == "failed";
-            step_results.push(result.clone());
-            if let Some(output) = result.output.clone() {
-                step_outputs.insert(result.id.clone(), output);
+        let step_results = match mode {
+            WorkflowExecutionMode::Sequential => {
+                self.run_sequential(&payload, lane).await
             }
-            if failed && stop_on_failure {
-                break;
+            WorkflowExecutionMode::Concurrent => {
+                self.run_concurrent(&payload, lane).await
             }
-        }
+            WorkflowExecutionMode::Handoff => self.run_handoff(&payload, lane).await,
+        };
 
         let workflow_failed = step_results.iter().any(|step| step.status == "failed");
         let final_status = if workflow_failed {
@@ -391,6 +500,7 @@ impl JobHandler for MedousaSequentialWorkflowHandler {
         let duration_ms = started.elapsed().as_millis();
         let diagnostics = json!({
             "workflow_id": payload.workflow_id,
+            "strategy": payload.strategy,
             "status": final_status.as_str(),
             "duration_ms": duration_ms,
             "steps": step_results,
@@ -411,11 +521,132 @@ impl JobHandler for MedousaSequentialWorkflowHandler {
             })
         }
     }
+
+    async fn run_sequential(
+        &self,
+        payload: &MedousaWorkflowPayload,
+        lane: McpTurnLane,
+    ) -> Vec<WorkflowStepResult> {
+        let mut step_outputs: HashMap<String, Value> = HashMap::new();
+        let mut step_results = Vec::new();
+        let stop_on_failure = payload.on_failure == "stop";
+
+        for step in &payload.steps {
+            let result = execute_workflow_step(
+                step,
+                &step_outputs,
+                None,
+                &self.workflow_engine,
+                &self.prompt_pipeline,
+                &self.mcp_client,
+                &payload.workflow_id,
+                lane,
+            )
+            .await;
+
+            let failed = result.status == "failed";
+            step_results.push(result.clone());
+            if let Some(output) = result.output.clone() {
+                step_outputs.insert(result.id.clone(), output);
+            }
+            if failed && stop_on_failure {
+                break;
+            }
+        }
+
+        step_results
+    }
+
+    async fn run_concurrent(
+        &self,
+        payload: &MedousaWorkflowPayload,
+        lane: McpTurnLane,
+    ) -> Vec<WorkflowStepResult> {
+        let empty_outputs = HashMap::new();
+        let mut join_set = tokio::task::JoinSet::new();
+        for step in payload.steps.clone() {
+            let workflow_engine = self.workflow_engine.clone();
+            let prompt_pipeline = self.prompt_pipeline.clone();
+            let mcp_client = self.mcp_client.clone();
+            let workflow_id = payload.workflow_id.clone();
+            let prior_outputs = empty_outputs.clone();
+            join_set.spawn(async move {
+                execute_workflow_step(
+                    &step,
+                    &prior_outputs,
+                    None,
+                    &workflow_engine,
+                    &prompt_pipeline,
+                    &mcp_client,
+                    &workflow_id,
+                    lane,
+                )
+                .await
+            });
+        }
+
+        let mut step_results = Vec::new();
+        while let Some(joined) = join_set.join_next().await {
+            match joined {
+                Ok(result) => step_results.push(result),
+                Err(error) => step_results.push(WorkflowStepResult {
+                    id: "unknown".to_string(),
+                    kind: "unknown".to_string(),
+                    status: "failed".to_string(),
+                    output: None,
+                    error: Some(format!("concurrent step join failed: {error}")),
+                }),
+            }
+        }
+
+        step_results.sort_by(|left, right| left.id.cmp(&right.id));
+        step_results
+    }
+
+    async fn run_handoff(
+        &self,
+        payload: &MedousaWorkflowPayload,
+        lane: McpTurnLane,
+    ) -> Vec<WorkflowStepResult> {
+        let mut step_outputs: HashMap<String, Value> = HashMap::new();
+        let mut handoff_context = json!({});
+        let mut step_results = Vec::new();
+        let stop_on_failure = payload.on_failure == "stop";
+
+        for step in &payload.steps {
+            let result = execute_workflow_step(
+                step,
+                &step_outputs,
+                Some(&handoff_context),
+                &self.workflow_engine,
+                &self.prompt_pipeline,
+                &self.mcp_client,
+                &payload.workflow_id,
+                lane,
+            )
+            .await;
+
+            let failed = result.status == "failed";
+            step_results.push(result.clone());
+            if let Some(output) = result.output.clone() {
+                step_outputs.insert(result.id.clone(), output.clone());
+                if let Some(handoff_obj) = handoff_context.as_object_mut() {
+                    handoff_obj.insert(result.id.clone(), output);
+                }
+            }
+            if failed && stop_on_failure {
+                break;
+            }
+        }
+
+        step_results
+    }
 }
 
 async fn execute_workflow_step(
     step: &WorkflowStepSpec,
     prior_outputs: &HashMap<String, Value>,
+    handoff: Option<&Value>,
     workflow_engine: &Arc<dyn WorkflowEngine>,
     prompt_pipeline: &PromptExecutionPipeline,
     mcp_client: &McpGatewayClient,
@@ -424,7 +655,7 @@ async fn execute_workflow_step(
 ) -> WorkflowStepResult {
     match step {
         WorkflowStepSpec::Grapheme { id, source } => {
-            let rendered_source = apply_step_refs(source, prior_outputs);
+            let rendered_source = apply_step_refs(source, prior_outputs, handoff);
             match workflow_engine
                 .execute_grapheme_source(&rendered_source, None)
                 .await
@@ -454,10 +685,14 @@ async fn execute_workflow_step(
             user_prompt,
             system_prompt,
         } => {
-            let rendered_prompt = apply_step_refs(user_prompt, prior_outputs);
+            let rendered_prompt = apply_step_refs(user_prompt, prior_outputs, handoff);
             let mut request = PromptExecutionRequest::from_user_prompt(rendered_prompt);
             if let Some(system_prompt) = system_prompt.as_deref() {
-                request = request.with_system_prompt(apply_step_refs(system_prompt, prior_outputs));
+                request = request.with_system_prompt(apply_step_refs(
+                    system_prompt,
+                    prior_outputs,
+                    handoff,
+                ));
             }
             match prompt_pipeline.execute(request).await {
                 Ok(response) => WorkflowStepResult {
@@ -481,6 +716,7 @@ async fn execute_workflow_step(
             server_id,
             tool_name,
             args,
+            effect_class: _,
         } => {
             let turn_context = McpTurnContext {
                 turn_id: format!("wf-{workflow_id}-{}", Uuid::new_v4().simple()),
@@ -560,17 +796,24 @@ pub async fn preflight_grapheme_steps(
     Ok(results)
 }
 
-pub async fn enqueue_sequential_workflow_job(
+pub async fn enqueue_workflow_job(
     runtime: &RuntimeComposition,
-    payload: &MedousaSequentialWorkflowPayload,
+    payload: &MedousaWorkflowPayload,
     queue: &str,
 ) -> stasis::prelude::Result<String> {
+    let job_type = workflow_job_type_for_strategy(&payload.strategy).ok_or_else(|| {
+        stasis::prelude::StasisError::PortFailure(format!(
+            "unsupported workflow strategy '{}'",
+            payload.strategy
+        ))
+    })?;
+
     let job_id = format!("wf-job-{}", Uuid::new_v4().simple());
     let now = Utc::now();
     let job = NewJob {
         id: job_id.clone(),
         queue: queue.to_string(),
-        job_type: WORKFLOW_SEQUENTIAL_JOB_TYPE.to_string(),
+        job_type: job_type.to_string(),
         payload_ref: encode_workflow_payload(payload)?,
         priority: 100,
         max_attempts: 1,
@@ -590,15 +833,24 @@ pub async fn enqueue_sequential_workflow_job(
     Ok(job_id)
 }
 
+pub async fn enqueue_sequential_workflow_job(
+    runtime: &RuntimeComposition,
+    payload: &MedousaWorkflowPayload,
+    queue: &str,
+) -> stasis::prelude::Result<String> {
+    enqueue_workflow_job(runtime, payload, queue).await
+}
+
 pub fn attach_workflow_handler(
     builder: stasis::prelude::StasisRuntimeBuilder,
     prompt_pipeline: PromptExecutionPipeline,
     registry: Arc<WorkflowRegistry>,
 ) -> stasis::prelude::StasisRuntimeBuilder {
-    builder.with_extra_handler(MedousaSequentialWorkflowHandler::with_defaults(
-        registry,
-        prompt_pipeline,
-    ))
+    let executor = WorkflowExecutor::with_defaults(registry.clone(), prompt_pipeline.clone());
+    builder
+        .with_extra_handler(MedousaSequentialWorkflowHandler::new(executor.clone()))
+        .with_extra_handler(MedousaConcurrentWorkflowHandler::new(executor.clone()))
+        .with_extra_handler(MedousaHandoffWorkflowHandler::new(executor))
 }
 
 #[cfg(test)]
@@ -633,13 +885,13 @@ mod tests {
     fn apply_step_refs_substitutes_output() {
         let mut outputs = HashMap::new();
         outputs.insert("fetch".to_string(), json!("csv-data"));
-        let rendered = apply_step_refs("process {{ $steps.fetch.output }}", &outputs);
+        let rendered = apply_step_refs("process {{ $steps.fetch.output }}", &outputs, None);
         assert!(rendered.contains("csv-data"));
     }
 
     #[test]
     fn encode_decode_roundtrip() {
-        let payload = MedousaSequentialWorkflowPayload {
+        let payload = MedousaWorkflowPayload {
             workflow_id: "wf-test".to_string(),
             name: Some("demo".to_string()),
             strategy: "sequential".to_string(),
@@ -657,5 +909,42 @@ mod tests {
         let decoded = decode_workflow_payload(&encoded).expect("decode");
         assert_eq!(decoded.workflow_id, "wf-test");
         assert_eq!(decoded.steps.len(), 1);
+    }
+
+    #[test]
+    fn validate_concurrent_strategy_rejects_step_refs() {
+        let request = WorkflowRunRequest {
+            name: None,
+            strategy: "concurrent".to_string(),
+            mode: "default".to_string(),
+            steps: vec![WorkflowStepSpec::Prompt {
+                id: "b".to_string(),
+                user_prompt: "after $steps.a.output".to_string(),
+                system_prompt: None,
+            }],
+            on_failure: "stop".to_string(),
+            note: None,
+            queue: None,
+        };
+        assert!(validate_workflow_request(&request).is_err());
+    }
+
+    #[test]
+    fn workflow_job_type_maps_strategies() {
+        assert_eq!(
+            workflow_job_type_for_strategy("concurrent"),
+            Some(WORKFLOW_CONCURRENT_JOB_TYPE)
+        );
+        assert_eq!(
+            workflow_job_type_for_strategy("handoff"),
+            Some(WORKFLOW_HANDOFF_JOB_TYPE)
+        );
+    }
+
+    #[test]
+    fn apply_handoff_context_substitution() {
+        let handoff = json!({ "a": { "text": "hello" } });
+        let rendered = apply_step_refs("ctx=$handoff.context", &HashMap::new(), Some(&handoff));
+        assert!(rendered.contains("hello"));
     }
 }

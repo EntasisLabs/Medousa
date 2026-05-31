@@ -22,8 +22,8 @@ use crate::mcp_gateway_client::McpGatewayClient;
 use crate::mcp_turn_token::mint_mcp_turn_token;
 use crate::tools::{run_grapheme_via_runtime, validate_grapheme_source_for_schedule};
 use crate::workflow::{
-    MedousaSequentialWorkflowPayload, WorkflowRecord, WorkflowRegistry, WorkflowStatus,
-    WorkflowStepSpec, enqueue_sequential_workflow_job, new_workflow_id,
+    MedousaWorkflowPayload, WorkflowRecord, WorkflowRegistry, WorkflowStatus,
+    WorkflowStepSpec, enqueue_workflow_job, new_workflow_id,
 };
 
 fn escape_grapheme_literal(value: &str) -> String {
@@ -649,7 +649,7 @@ impl StasisTool for CognitionMcpPromoteToJobTool {
             .unwrap_or("mcp_step");
 
         let workflow_id = new_workflow_id();
-        let payload = MedousaSequentialWorkflowPayload {
+        let payload = MedousaWorkflowPayload {
             workflow_id: workflow_id.clone(),
             name: Some(format!("mcp:{server_id}.{tool_name}")),
             strategy: "sequential".to_string(),
@@ -662,11 +662,12 @@ impl StasisTool for CognitionMcpPromoteToJobTool {
                 server_id: server_id.to_string(),
                 tool_name: tool_name.to_string(),
                 args,
+                effect_class: None,
             }],
         };
 
         let job_id =
-            enqueue_sequential_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
+            enqueue_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
 
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),

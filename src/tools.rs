@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
-use stasis::application::orchestration::tool_loop_pipeline::ToolLoopPipeline;
+use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{
     StasisTool, ToolRegistry,
 };
@@ -2638,7 +2638,7 @@ pub fn extract_module_ops_from_source(source: &str) -> Vec<String> {
 
 pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
-    pub tool_loop_pipeline: ToolLoopPipeline,
+    pub tool_loop_pipeline: MedousaToolLoopPipeline,
     pub tool_registry: Arc<dyn ToolRegistry>,
     pub capability_registry: Arc<RwLock<CapabilityRegistry>>,
     pub mcp_gateway_client: Arc<McpGatewayClient>,
@@ -2655,7 +2655,7 @@ impl TuiRuntime {
         provider: &str,
         model: &str,
         base_url: Option<&str>,
-    ) -> ToolLoopPipeline {
+    ) -> MedousaToolLoopPipeline {
         build_tool_loop_pipeline_for_target(provider, model, base_url, self.tool_registry.clone())
     }
 }

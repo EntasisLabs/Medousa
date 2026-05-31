@@ -22,9 +22,9 @@ use uuid::Uuid;
 use crate::events::TuiEvent;
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::workflow::{
-    MedousaSequentialWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord,
+    MedousaWorkflowPayload, WORKFLOW_SEQUENTIAL_JOB_TYPE, WorkflowRecord,
     WorkflowRegistry, WorkflowRunRequest, WorkflowStatus, encode_workflow_payload,
-    enqueue_sequential_workflow_job, new_workflow_id, preflight_grapheme_steps,
+    enqueue_workflow_job, new_workflow_id, preflight_grapheme_steps,
     validate_workflow_request,
 };
 use crate::workflow_plan::{WorkflowPlanRequest, plan_workflow_from_goal};
@@ -826,8 +826,8 @@ fn build_workflow_payload(
     workflow_id: &str,
     request: &WorkflowRunRequest,
     lane: &str,
-) -> MedousaSequentialWorkflowPayload {
-    MedousaSequentialWorkflowPayload {
+) -> MedousaWorkflowPayload {
+    MedousaWorkflowPayload {
         workflow_id: workflow_id.to_string(),
         name: request.name.clone(),
         strategy: request.strategy.clone(),
@@ -888,7 +888,7 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Execute a declarative multi-step workflow now. \
-             v1 supports sequential strategy with grapheme, prompt, and MCP steps.",
+             Strategies: sequential (default), concurrent (parallel read-only steps), handoff (sequential with $handoff.context).",
         )
     }
 
@@ -897,7 +897,11 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
             "type": "object",
             "properties": {
                 "name": { "type": "string", "description": "Optional human-readable workflow name" },
-                "strategy": { "type": "string", "default": "sequential" },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["sequential", "concurrent", "handoff"],
+                    "default": "sequential"
+                },
                 "mode": { "type": "string", "default": "default" },
                 "steps": {
                     "type": "array",
@@ -925,8 +929,7 @@ impl StasisTool for CognitionRuntimeWorkflowRunTool {
             .and_then(|v| v.as_str())
             .unwrap_or("default");
         let payload = build_workflow_payload(&workflow_id, &request, "interactive");
-        let job_id =
-            enqueue_sequential_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
+        let job_id = enqueue_workflow_job(self.runtime.as_ref(), &payload, queue).await?;
 
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),
@@ -1001,7 +1004,11 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             "type": "object",
             "properties": {
                 "name": { "type": "string" },
-                "strategy": { "type": "string", "default": "sequential" },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["sequential", "concurrent", "handoff"],
+                    "default": "sequential"
+                },
                 "mode": { "type": "string", "default": "default" },
                 "steps": { "type": "array", "items": { "type": "object" } },
                 "on_failure": { "type": "string", "enum": ["stop", "continue"], "default": "stop" },
