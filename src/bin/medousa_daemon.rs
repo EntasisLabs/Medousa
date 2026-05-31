@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use axum::extract::{Path as AxumPath,  State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -39,7 +39,7 @@ use medousa::daemon_api::{
     DaemonStatsResponse, EnqueueAskRequest, EnqueuePromptRequest, EnqueueReportRequest,
     EnqueueResponse, HealthResponse, HeartbeatDeliveryMetricsResponse,
     HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse, HeartbeatStatusResponse,
-    IngestRequest, IngestResponse,
+    IngestRequest, IngestResponse, DeliverPollResponse, DeliveryHealthResponse,
     InteractiveTurnRequest, InteractiveTurnResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent,
@@ -48,7 +48,9 @@ use medousa::daemon_api::{
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
 use medousa::session_mapping;
-use medousa::{build_runtime_with_identity_store, parse_backend, remove_surrealkv_lock};
+use medousa::{
+    build_daemon_runtime, channel_delivery, parse_backend, remove_surrealkv_lock,
+};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::fs::OpenOptions;
@@ -88,6 +90,14 @@ struct AppState {
     // In-memory channel+user → session_id mapping for the ingester
     session_mappings: Arc<RwLock<HashMap<String, String>>>,
     active_ingest_jobs: Arc<RwLock<HashMap<String, medousa::session_mapping::ActiveIngestJob>>>,
+    channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
+    job_delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
+    delivered_outbox_events: Arc<RwLock<HashSet<String>>>,
+    channel_dispatch_client: reqwest::Client,
+    deliver_webhook_token: Option<String>,
+    deliver_webhook_target: String,
+    last_delivery_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    last_delivery_latency_ms: Arc<RwLock<Option<u64>>>,
     cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
     channel_session_history: Arc<RwLock<HashMap<String, Vec<String>>>>,
     session_runtime_configs:
@@ -266,9 +276,17 @@ async fn main() -> Result<()> {
     let identity_service = Arc::new(IdentityMemoryService::new(identity_store.clone()));
     let identity_default_user_id = resolve_identity_user_id(None);
 
+    let deliver_webhook_url = channel_delivery::internal_deliver_webhook_url(bind);
     let runtime = Arc::new(
-        build_runtime_with_identity_store(backend, provider, model, base_url, Some(identity_store))
-            .await?,
+        build_daemon_runtime(
+            backend,
+            provider,
+            model,
+            base_url,
+            Some(identity_store),
+            &deliver_webhook_url,
+        )
+        .await?,
     );
 
     // Initialize session store according to runtime (Surreal placeholder for now)
@@ -286,9 +304,14 @@ async fn main() -> Result<()> {
         );
 
         if dispatch_decision == HeartbeatDispatchDecision::Dispatch {
+            let channel_client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()
+                .context("failed to build heartbeat channel dispatch client")?;
             dispatch_heartbeat_notifications(
                 &heartbeat_notify,
                 webhook_client.as_ref(),
+                &channel_client,
                 &backend_name,
                 &worker_id,
                 &report,
@@ -310,6 +333,17 @@ async fn main() -> Result<()> {
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
         session_mappings: Arc::new(RwLock::new(HashMap::new())),
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
+        channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
+        job_delivery_records: Arc::new(RwLock::new(HashMap::new())),
+        delivered_outbox_events: Arc::new(RwLock::new(HashSet::new())),
+        channel_dispatch_client: reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .context("failed to build channel dispatch client")?,
+        deliver_webhook_token: channel_delivery::resolve_deliver_webhook_token(),
+        deliver_webhook_target: deliver_webhook_url.clone(),
+        last_delivery_at: Arc::new(RwLock::new(None)),
+        last_delivery_latency_ms: Arc::new(RwLock::new(None)),
         cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
         channel_session_history: Arc::new(RwLock::new(HashMap::new())),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
@@ -360,6 +394,9 @@ async fn main() -> Result<()> {
         .route("/v1/identity/rollback", post(identity_rollback_version))
         .route("/v1/ingest", post(ingest_handler))
         .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
+        .route("/v1/deliver/outbox", post(deliver_outbox_webhook))
+        .route("/v1/deliver/poll/{job_id}", get(deliver_poll))
+        .route("/v1/delivery/status", get(delivery_status))
         .with_state(state.clone());
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
@@ -461,6 +498,7 @@ async fn run_scheduler_loop(
                     dispatch_heartbeat_notifications(
                         &state.heartbeat_notify,
                         state.webhook_client.as_ref(),
+                        &state.channel_dispatch_client,
                         &state.backend,
                         &state.worker_id,
                         &report,
@@ -745,7 +783,9 @@ async fn get_job_result(
     let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
     let latest_execution_id = latest.and_then(|attempt| attempt.execution_id.clone());
     let output_text = latest
-        .and_then(|attempt| extract_output_text_from_diagnostics(attempt.diagnostics.as_deref()));
+        .and_then(|attempt| {
+            channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+        });
 
     let (status, is_terminal) = derive_job_result_status(latest_outcome.as_deref(), attempts.len());
 
@@ -778,7 +818,9 @@ async fn get_job_report(
     let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
     let latest_execution_id = latest.and_then(|attempt| attempt.execution_id.clone());
     let output_text = latest
-        .and_then(|attempt| extract_output_text_from_diagnostics(attempt.diagnostics.as_deref()));
+        .and_then(|attempt| {
+            channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+        });
     let diagnostics = latest
         .and_then(|attempt| attempt.diagnostics.as_deref())
         .and_then(parse_diagnostics_json);
@@ -1873,6 +1915,12 @@ async fn cancel_active_ingest_job(state: &AppState, mapping_key: &str) -> String
         .write()
         .await
         .insert(active.stream_id.clone());
+    state
+        .channel_deliveries
+        .write()
+        .await
+        .remove(&active.job_id);
+    state.job_delivery_records.write().await.remove(&active.job_id);
 
     format!("stopped active job {}", active.job_id)
 }
@@ -1901,6 +1949,245 @@ async fn format_ingest_heartbeat_reply(state: &AppState) -> String {
     } else {
         format!("heartbeat status unavailable last_tick={last_tick_at_utc:?} now={now_utc}")
     }
+}
+
+async fn deliver_outbox_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<channel_delivery::OutboxDeliveryWebhook>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let auth = headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+    if !channel_delivery::verify_deliver_webhook_bearer(
+        auth,
+        state.deliver_webhook_token.as_deref(),
+    ) {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "deliver webhook bearer token required".to_string(),
+        ));
+    }
+
+    {
+        let mut delivered = state.delivered_outbox_events.write().await;
+        if !delivered.insert(payload.event_id.clone()) {
+            return Ok(StatusCode::OK);
+        }
+    }
+
+    let started = std::time::Instant::now();
+    let target = state
+        .channel_deliveries
+        .read()
+        .await
+        .get(&payload.job_id)
+        .cloned();
+
+    match payload.event_type.as_str() {
+        "job_succeeded" => {
+            let Some(target) = target else {
+                eprintln!(
+                    "deliver/outbox job_succeeded missing delivery target job_id={}",
+                    payload.job_id
+                );
+                return Ok(StatusCode::OK);
+            };
+
+            let output = if let Some(message) = payload
+                .message
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                message.to_string()
+            } else {
+                resolve_job_output_text(state.runtime.as_ref(), &payload.job_id).await?
+            };
+
+            channel_delivery::dispatch_channel_message(
+                &state.channel_dispatch_client,
+                &target,
+                &output,
+            )
+            .await
+            .map_err(|err| {
+                eprintln!(
+                    "deliver/outbox channel dispatch failed job_id={} channel={}: {err:#}",
+                    payload.job_id, target.channel
+                );
+                (StatusCode::BAD_GATEWAY, err.to_string())
+            })?;
+
+            if let Some(stream_id) = target.stream_id.as_deref() {
+                if let Some(stream_tx) = state
+                    .interactive_turn_streams
+                    .read()
+                    .await
+                    .get(stream_id)
+                    .cloned()
+                {
+                    publish_interactive_turn_event(
+                        &stream_tx,
+                        medousa::interactive_turn_runtime::final_stream_event(
+                            stream_id,
+                            &output,
+                        ),
+                    );
+                }
+            }
+
+            record_job_delivery_success(
+                &state,
+                &payload.job_id,
+                started.elapsed().as_millis() as u64,
+                None,
+            )
+            .await;
+            state
+                .channel_deliveries
+                .write()
+                .await
+                .remove(&payload.job_id);
+            Ok(StatusCode::OK)
+        }
+        "job_dead_lettered" => {
+            if let Some(target) = target {
+                let error_text = payload
+                    .message
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "your request could not be completed".to_string());
+                let user_message = format!("Sorry — {error_text}");
+                let _ = channel_delivery::dispatch_channel_message(
+                    &state.channel_dispatch_client,
+                    &target,
+                    &user_message,
+                )
+                .await;
+                record_job_delivery_success(
+                    &state,
+                    &payload.job_id,
+                    started.elapsed().as_millis() as u64,
+                    Some(error_text),
+                )
+                .await;
+                state
+                    .channel_deliveries
+                    .write()
+                    .await
+                    .remove(&payload.job_id);
+            }
+            Ok(StatusCode::OK)
+        }
+        _ => Ok(StatusCode::OK),
+    }
+}
+
+async fn deliver_poll(
+    State(state): State<AppState>,
+    AxumPath(job_id): AxumPath<String>,
+) -> Result<Json<DeliverPollResponse>, (StatusCode, String)> {
+    let job_id = job_id.trim().to_string();
+    if job_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
+    }
+
+    Ok(Json(build_deliver_poll_response(&state, &job_id).await))
+}
+
+async fn delivery_status(State(state): State<AppState>) -> Json<DeliveryHealthResponse> {
+    let pending_job_deliveries = state
+        .job_delivery_records
+        .read()
+        .await
+        .values()
+        .filter(|record| record.state == channel_delivery::JobDeliveryState::Pending)
+        .count();
+
+    Json(DeliveryHealthResponse {
+        endpoint_id: channel_delivery::INTERNAL_OUTBOX_ENDPOINT_ID.to_string(),
+        endpoint_seeded: true,
+        endpoint_target: state.deliver_webhook_target.clone(),
+        deliver_webhook_auth_configured: state.deliver_webhook_token.is_some(),
+        pending_job_deliveries,
+        last_delivery_at_utc: *state.last_delivery_at.read().await,
+        last_delivery_latency_ms: *state.last_delivery_latency_ms.read().await,
+    })
+}
+
+async fn build_deliver_poll_response(state: &AppState, job_id: &str) -> DeliverPollResponse {
+    if let Some(record) = state.job_delivery_records.read().await.get(job_id) {
+        return DeliverPollResponse {
+            job_id: job_id.to_string(),
+            status: job_delivery_status_label(&record.state).to_string(),
+            delivered_at_utc: record.delivered_at,
+            error: record.error.clone(),
+        };
+    }
+
+    DeliverPollResponse {
+        job_id: job_id.to_string(),
+        status: "not_registered".to_string(),
+        delivered_at_utc: None,
+        error: None,
+    }
+}
+
+fn job_delivery_status_label(state: &channel_delivery::JobDeliveryState) -> &'static str {
+    match state {
+        channel_delivery::JobDeliveryState::Pending => "pending",
+        channel_delivery::JobDeliveryState::Delivered => "delivered",
+        channel_delivery::JobDeliveryState::Failed => "failed",
+    }
+}
+
+async fn record_job_delivery_pending(state: &AppState, job_id: &str) {
+    state.job_delivery_records.write().await.insert(
+        job_id.to_string(),
+        channel_delivery::JobDeliveryRecord {
+            state: channel_delivery::JobDeliveryState::Pending,
+            delivered_at: None,
+            error: None,
+            latency_ms: None,
+        },
+    );
+}
+
+async fn record_job_delivery_success(
+    state: &AppState,
+    job_id: &str,
+    latency_ms: u64,
+    error: Option<String>,
+) {
+    let now = Utc::now();
+    state.job_delivery_records.write().await.insert(
+        job_id.to_string(),
+        channel_delivery::JobDeliveryRecord {
+            state: channel_delivery::JobDeliveryState::Delivered,
+            delivered_at: Some(now),
+            error,
+            latency_ms: Some(latency_ms),
+        },
+    );
+    *state.last_delivery_at.write().await = Some(now);
+    *state.last_delivery_latency_ms.write().await = Some(latency_ms);
+}
+
+async fn resolve_job_output_text(
+    runtime: &RuntimeComposition,
+    job_id: &str,
+) -> Result<String, (StatusCode, String)> {
+    let attempts = get_job_attempts_graceful(runtime, job_id).await?;
+    let output = attempts.iter().rev().find_map(|attempt| {
+        channel_delivery::extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+    });
+
+    output.ok_or_else(|| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("job {job_id} succeeded but no output text was found"),
+        )
+    })
 }
 
 async fn start_ingest_ask_stream(
@@ -2004,8 +2291,23 @@ async fn start_ingest_ask_stream(
         session_mapping::ActiveIngestJob {
             job_id: job_id_str.clone(),
             stream_id: stream_id.clone(),
+            channel: request.channel.clone(),
+            user_id: request.user_id.clone(),
+            channel_id: request.channel_id.clone(),
+            session_id: session_id.to_string(),
         },
     );
+    state.channel_deliveries.write().await.insert(
+        job_id_str.clone(),
+        channel_delivery::ChannelDeliveryTarget {
+            channel: request.channel.clone(),
+            user_id: request.user_id.clone(),
+            channel_id: request.channel_id.clone(),
+            session_id: session_id.to_string(),
+            stream_id: Some(stream_id.clone()),
+        },
+    );
+    record_job_delivery_pending(state, &job_id_str).await;
 
     let stream_registry = state.interactive_turn_streams.clone();
     let cancelled_streams = state.cancelled_ingest_streams.clone();
@@ -2080,7 +2382,9 @@ async fn run_ingest_job_stream_task(
                 let latest = attempts.last();
                 let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
                 let output_text = latest.and_then(|attempt| {
-                    extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+                    channel_delivery::extract_output_text_from_diagnostics(
+                        attempt.diagnostics.as_deref(),
+                    )
                 });
                 let (status, is_terminal) =
                     derive_job_result_status(latest_outcome.as_deref(), attempts.len());
@@ -2175,16 +2479,6 @@ async fn enqueue_runtime_job(
     let sdk = RuntimeSdk::new(runtime.clone());
     sdk.enqueue(job).await?;
     Ok(())
-}
-
-fn extract_output_text_from_diagnostics(diagnostics_raw: Option<&str>) -> Option<String> {
-    let diagnostics_raw = diagnostics_raw?.trim();
-    if diagnostics_raw.is_empty() {
-        return None;
-    }
-
-    let parsed: Value = serde_json::from_str(diagnostics_raw).ok()?;
-    find_output_text(&parsed)
 }
 
 fn parse_diagnostics_json(raw: &str) -> Option<Value> {
@@ -2369,76 +2663,6 @@ fn derive_job_result_status(latest_outcome: Option<&str>, attempt_count: usize) 
         Some("RetryableFailure") => ("running".to_string(), false),
         _ => ("running".to_string(), false),
     }
-}
-
-fn find_output_text(payload: &Value) -> Option<String> {
-    const ROOT_KEYS: [&str; 8] = [
-        "output_text",
-        "final_output_text",
-        "response_text",
-        "assistant_message",
-        "final_text",
-        "answer",
-        "content",
-        "text",
-    ];
-
-    for key in ROOT_KEYS {
-        if let Some(text) = read_non_empty_text(payload.get(key)) {
-            return Some(text);
-        }
-    }
-
-    for key in ["result", "response", "output", "final", "completion"] {
-        let Some(section) = payload.get(key) else {
-            continue;
-        };
-
-        for nested_key in ROOT_KEYS {
-            if let Some(text) = read_non_empty_text(section.get(nested_key)) {
-                return Some(text);
-            }
-        }
-    }
-
-    if let Some(choices) = payload.get("choices").and_then(|value| value.as_array()) {
-        for choice in choices.iter().rev() {
-            if let Some(text) = read_non_empty_text(choice.get("text")) {
-                return Some(text);
-            }
-            if let Some(text) = read_non_empty_text(
-                choice
-                    .get("message")
-                    .and_then(|message| message.get("content")),
-            ) {
-                return Some(text);
-            }
-        }
-    }
-
-    if let Some(messages) = payload.get("messages").and_then(|value| value.as_array()) {
-        for message in messages.iter().rev() {
-            let role = message
-                .get("role")
-                .and_then(|value| value.as_str())
-                .map(|value| value.to_ascii_lowercase());
-            if role.as_deref() == Some("assistant") || role.is_none() {
-                if let Some(text) = read_non_empty_text(message.get("content")) {
-                    return Some(text);
-                }
-            }
-        }
-    }
-
-    read_non_empty_text(Some(payload))
-}
-
-fn read_non_empty_text(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
 }
 
 fn enforce_lane_safety(
@@ -2805,6 +3029,7 @@ fn normalize_heartbeat_weights(policy: &mut HeartbeatLanePolicy) -> Result<()> {
 async fn dispatch_heartbeat_notifications(
     notify: &HeartbeatNotifyConfig,
     webhook_client: Option<&reqwest::Client>,
+    channel_dispatch_client: &reqwest::Client,
     backend: &str,
     worker_id: &str,
     report: &TickReport,
@@ -2848,6 +3073,23 @@ async fn dispatch_heartbeat_notifications(
             eprintln!("medousa-daemon heartbeat sink webhook error url={url} err={err}");
         }
     }
+
+    let summary = format!(
+        "heartbeat action={} significance={:.2} reason={}\nfailed={} dead_letter={} outbox_pending={}",
+        notification.heartbeat_action,
+        notification.heartbeat_significance,
+        notification.heartbeat_reason,
+        notification.failed_jobs,
+        notification.dead_letter_jobs,
+        notification.pending_outbox_events,
+    );
+    let product_config = medousa::load_product_config();
+    channel_delivery::dispatch_configured_heartbeat_nudges(
+        channel_dispatch_client,
+        &product_config,
+        &summary,
+    )
+    .await;
 }
 
 async fn append_heartbeat_jsonl(path: &Path, notification: &HeartbeatNotification) -> Result<()> {
@@ -2951,10 +3193,10 @@ mod tests {
         extract_citations_from_payload,
         parse_heartbeat_delivery_policy,
         parse_heartbeat_policy,
-        extract_output_text_from_diagnostics,
         build_operator_first_run_guide,
         format_tick_report, parse_backend, tick_runtime,
     };
+    use medousa::channel_delivery::extract_output_text_from_diagnostics;
     use serde_json::json;
 
     fn sample_notify_report() -> TickReport {

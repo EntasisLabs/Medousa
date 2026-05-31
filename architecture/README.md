@@ -22,6 +22,8 @@ Start here for product-level usage:
 5. [component-daemon.md](component-daemon.md)
 6. [interaction-and-state-model.md](interaction-and-state-model.md)
 7. [tui-performance-target-plan.md](tui-performance-target-plan.md)
+8. [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md)
+9. [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md)
 
 ## Primary Code Anchors
 

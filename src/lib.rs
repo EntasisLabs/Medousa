@@ -1,3 +1,5 @@
+pub mod adapter_ingest;
+pub mod channel_delivery;
 pub mod artifact_chunking;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
@@ -35,8 +37,11 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
+use stasis::infrastructure::runtime::http_webhook_event_publisher::HttpWebhookTransportPublisher;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
+use stasis::ports::outbound::runtime::delivery_endpoint_store::DeliveryEndpointStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisRuntimeBuilder};
+use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 
 pub use daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
@@ -45,6 +50,7 @@ pub use daemon_api::{
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
     HeartbeatPolicyResponse, HeartbeatStatusResponse,
     IngestRequest, IngestResponse, IngestAttachment,
+    DeliverPollResponse, DeliveryHealthResponse,
     InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
     JobReportResponse, RegisterRecurringPromptRequest, JobResultResponse,
@@ -57,10 +63,14 @@ pub use daemon_api::{
 };
 pub use product_config::{
     ProductConfig, load_product_config, save_product_config, ingest_sender_allowed,
-    apply_adapter_env, parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv,
+    apply_adapter_env, apply_daemon_env, parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv,
     migrate_from_onboard_profile,
 };
 pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
+pub use adapter_ingest::{
+    AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,
+    wait_for_ask_delivery, ADAPTER_COMMAND_HINT,
+};
 pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
@@ -212,6 +222,64 @@ pub async fn build_runtime_with_identity_store(
     }
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
+
+    Ok(runtime)
+}
+
+/// Daemon runtime with Stasis outbox endpoint routing enabled and internal webhook seeded.
+pub async fn build_daemon_runtime(
+    backend: RuntimeBackend,
+    explicit_provider: Option<&str>,
+    explicit_model: Option<&str>,
+    explicit_base_url: Option<&str>,
+    identity_memory_store: Option<Arc<dyn IdentityMemoryStore>>,
+    deliver_webhook_url: &str,
+) -> Result<RuntimeComposition> {
+    ensure_runtime_backend_prerequisites(&backend)?;
+
+    let provider = resolve_llm_provider(explicit_provider);
+    let model = resolve_llm_model(explicit_model);
+    let base_url = resolve_llm_base_url(Some(&provider), explicit_base_url);
+    let chat_client = Arc::new(GenaiChatClient::from_provider_model_with_base_url(
+        Some(&provider),
+        &model,
+        base_url.as_deref(),
+    ));
+
+    let in_memory_endpoint_store = if matches!(backend, RuntimeBackend::InMemory) {
+        Some(Arc::new(InMemoryDeliveryEndpointStore::default())
+            as Arc<dyn DeliveryEndpointStore>)
+    } else {
+        None
+    };
+
+    let mut builder = StasisRuntimeBuilder::new(backend)
+        .with_chat_client(chat_client)
+        .with_locus_memory()
+        .with_endpoint_routing_delivery();
+
+    if let Some(token) = channel_delivery::resolve_deliver_webhook_token() {
+        builder = builder.with_endpoint_transport_publisher(
+            HttpWebhookTransportPublisher::new().with_bearer_token(token),
+        );
+    }
+
+    if let Some(store) = &in_memory_endpoint_store {
+        builder = builder.with_delivery_endpoint_store(store.clone());
+    }
+
+    if let Some(store) = identity_memory_store {
+        builder = builder.with_identity_memory_store(store);
+    }
+
+    let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
+
+    channel_delivery::seed_internal_outbox_endpoint_for_runtime(
+        &runtime,
+        in_memory_endpoint_store,
+        deliver_webhook_url,
+    )
+    .await?;
 
     Ok(runtime)
 }

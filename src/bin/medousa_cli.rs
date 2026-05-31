@@ -9,8 +9,9 @@ use medousa::engine_context::{
     default_policy_profile_for_lane,
 };
 use medousa::{
-    DaemonStatsResponse, EnqueueReportRequest, EnqueueResponse,
-    HealthResponse, IngestRequest, IngestResponse, consume_ingest_stream, render_stream_body,
+    AdapterDeliveryOutcome, DaemonStatsResponse, EnqueueReportRequest, EnqueueResponse,
+    HealthResponse, IngestRequest, IngestResponse, fetch_job_result, wait_for_ask_delivery,
+    default_delivery_timeout,
     HeartbeatStatusResponse,
     IdentityContextRequest,
     JobReportResponse,
@@ -278,6 +279,7 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
     let prompt = args
         .get(1)
         .ok_or_else(|| anyhow!("missing prompt: medousa-cli daemon-ask <prompt>"))?;
+    let wait = !args.iter().any(|arg| arg == "--no-wait");
     let client = Client::new();
     let user_id = find_arg_value(args, "--identity-user-id")
         .map(ToString::to_string)
@@ -302,17 +304,43 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
         .error_for_status()?;
     let payload: IngestResponse = response.json().await?;
     if payload.stream_ready {
-        if let Some(stream_url) = payload.stream_url.as_ref() {
-            let stream_result = consume_ingest_stream(&client, stream_url).await?;
+        let job_id = payload.job_id.clone().unwrap_or_else(|| "none".to_string());
+        if !wait {
             println!(
-                "ingester stream complete session_id={} job_id={} new_session={}",
-                payload.session_id,
-                payload.job_id.as_deref().unwrap_or("none"),
-                payload.is_new_session,
+                "ingester accepted session_id={} job_id={} new_session={} reply={}",
+                payload.session_id, job_id, payload.is_new_session, payload.reply
             );
-            println!("{}", render_stream_body(&stream_result));
             return Ok(());
         }
+
+        let delivery_outcome = wait_for_ask_delivery(
+            &client,
+            daemon_url,
+            &payload,
+            default_delivery_timeout(),
+        )
+        .await?;
+
+        match delivery_outcome {
+            AdapterDeliveryOutcome::StreamError { message } => {
+                return Err(anyhow!(message));
+            }
+            AdapterDeliveryOutcome::PushDelivered | AdapterDeliveryOutcome::Fallback { .. } => {
+                let result = fetch_job_result(&client, daemon_url, &job_id).await?;
+                println!(
+                    "ingester complete session_id={} job_id={} new_session={} status={}",
+                    payload.session_id, job_id, payload.is_new_session, result.status
+                );
+                if let Some(text) = result.output_text.filter(|value| !value.trim().is_empty()) {
+                    println!("{text}");
+                } else if let AdapterDeliveryOutcome::Fallback { text } = delivery_outcome {
+                    println!("{text}");
+                } else {
+                    println!("(empty response)");
+                }
+            }
+        }
+        return Ok(());
     }
 
     println!(
@@ -1628,7 +1656,7 @@ fn print_usage() {
         "  medousa-cli daemon-first-run [--daemon-url <url>] [--report-query <query>]"
     );
     println!(
-        "  medousa-cli daemon-ask <prompt> [--identity-user-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
+        "  medousa-cli daemon-ask <prompt> [--no-wait] [--identity-user-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
     println!(
         "  medousa-cli daemon-report <query> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--poll-timeout-ms <n>] [--poll-interval-ms <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"

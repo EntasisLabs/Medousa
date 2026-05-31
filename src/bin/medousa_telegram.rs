@@ -3,17 +3,18 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use medousa::{
-    IngestRequest, IngestResponse, adapter_heartbeat, consume_ingest_stream, render_stream_body,
-    resolve_daemon_url,
+    AdapterDeliveryOutcome, IngestRequest, IngestResponse, default_delivery_timeout,
+    format_ingest_ack, wait_for_ask_delivery, resolve_daemon_url,
 };
+use medousa::channel_delivery::truncate_for_telegram;
 use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use teloxide::dptree;
 use teloxide::prelude::*;
 use teloxide::types::ChatAction;
 
-/// Thin Telegram adapter — listens for messages, forwards to daemon ingester,
-/// consumes SSE stream for ask jobs, and renders the final response.
+/// Thin Telegram adapter — forwards to daemon ingester, shows typing during processing,
+/// and relies on outbox-driven push for final replies.
 
 #[derive(Clone)]
 struct TelegramAdapterState {
@@ -41,10 +42,9 @@ async fn main() -> Result<()> {
         "medousa_telegram thin adapter started — forwarding to daemon at {}",
         state.daemon_url
     );
-    println!("medousa_telegram streaming mode — ingester SSE for ask jobs");
+    println!("medousa_telegram outbox push mode — final replies delivered by daemon");
 
     let bot = Bot::new(token);
-    maybe_start_heartbeat_nudges(bot.clone(), state.clone());
     let handler = Update::filter_message().endpoint(handle_message);
 
     Dispatcher::builder(bot, handler)
@@ -124,95 +124,53 @@ async fn handle_message(
     };
 
     if response.stream_ready {
-        if let Some(stream_url) = response.stream_url.as_ref() {
-            let typing_bot = bot.clone();
-            let chat_id = msg.chat.id;
-            let typing_task = tokio::spawn(async move {
-                loop {
-                    let _ = typing_bot
-                        .send_chat_action(chat_id, ChatAction::Typing)
-                        .await;
-                    tokio::time::sleep(Duration::from_secs(4)).await;
-                }
-            });
+        bot.send_message(msg.chat.id, format_ingest_ack(&response))
+            .await?;
 
-            let stream_result = consume_ingest_stream(&state.client, stream_url).await;
-            typing_task.abort();
-
-            let body = match stream_result {
-                Ok(result) => render_stream_body(&result),
-                Err(err) => format!("stream error: {}", single_line_summary(&err.to_string(), 300)),
-            };
-            let reply = format_stream_reply(&response, &body);
-            bot.send_message(msg.chat.id, truncate_for_telegram(&reply)).await?;
-            return Ok(());
-        }
-    }
-
-    let reply = if response.is_new_session {
-        format!("🆕 {}\n\n{}", response.reply, explain_commands())
-    } else {
-        response.reply.clone()
-    };
-    bot.send_message(msg.chat.id, reply).await?;
-
-    Ok(())
-}
-
-fn format_stream_reply(response: &IngestResponse, body: &str) -> String {
-    if response.is_new_session {
-        format!("🆕 {body}\n\n{}", explain_commands())
-    } else {
-        body.to_string()
-    }
-}
-
-fn truncate_for_telegram(text: &str) -> String {
-    const MAX_CHARS: usize = 4000;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
-    format!("{truncated}...")
-}
-
-fn explain_commands() -> &'static str {
-    "Commands: /new /help /history /model /depth /stop /regen /health /heartbeat — or send a message to chat."
-}
-
-fn maybe_start_heartbeat_nudges(bot: Bot, state: Arc<TelegramAdapterState>) {
-    if !adapter_heartbeat::heartbeat_nudges_enabled("MEDOUSA_TELEGRAM") {
-        return;
-    }
-
-    let Some(chat_ids_raw) = non_empty_env("MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS") else {
-        eprintln!("medousa_telegram heartbeat nudges enabled but MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS is empty");
-        return;
-    };
-
-    let chat_ids = chat_ids_raw
-        .split(',')
-        .filter_map(|value| value.trim().parse::<i64>().ok())
-        .collect::<Vec<_>>();
-    if chat_ids.is_empty() {
-        return;
-    }
-
-    tokio::spawn(async move {
-        loop {
-            if let Some(summary) =
-                adapter_heartbeat::fetch_heartbeat_summary(&state.client, &state.daemon_url).await
-            {
-                if summary.contains("action=notify") {
-                    for chat_id in &chat_ids {
-                        let _ = bot.send_message(ChatId(*chat_id), summary.clone()).await;
-                    }
-                }
+        let typing_bot = bot.clone();
+        let chat_id = msg.chat.id;
+        let typing_task = tokio::spawn(async move {
+            loop {
+                let _ = typing_bot
+                    .send_chat_action(chat_id, ChatAction::Typing)
+                    .await;
+                tokio::time::sleep(Duration::from_secs(4)).await;
             }
-            tokio::time::sleep(adapter_heartbeat::heartbeat_poll_interval()).await;
+        });
+
+        let delivery_outcome = wait_for_ask_delivery(
+            &state.client,
+            &state.daemon_url,
+            &response,
+            default_delivery_timeout(),
+        )
+        .await;
+        typing_task.abort();
+
+        match delivery_outcome {
+            Ok(AdapterDeliveryOutcome::PushDelivered) => {}
+            Ok(AdapterDeliveryOutcome::Fallback { text }) => {
+                bot.send_message(msg.chat.id, truncate_for_telegram(&text))
+                    .await?;
+            }
+            Ok(AdapterDeliveryOutcome::StreamError { message }) => {
+                bot.send_message(msg.chat.id, truncate_for_telegram(&message))
+                    .await?;
+            }
+            Err(err) => {
+                let error_msg = format!(
+                    "delivery error: {}",
+                    single_line_summary(&err.to_string(), 300)
+                );
+                bot.send_message(msg.chat.id, truncate_for_telegram(&error_msg))
+                    .await?;
+            }
         }
-    });
+        return Ok(());
+    }
+
+    bot.send_message(msg.chat.id, format_ingest_ack(&response)).await?;
+    Ok(())
 }
 
 fn resolve_telegram_token(explicit: Option<&str>) -> Result<String> {
@@ -267,7 +225,8 @@ fn print_usage() {
         "medousa_telegram — thin adapter
 
 Thin Telegram ingress adapter. Forwards all messages to the daemon's centralized
-ingester endpoint (POST /v1/ingest) and consumes SSE streams for ask jobs.
+ingester endpoint (POST /v1/ingest). Final replies are delivered by the daemon via
+outbox push; this process only sends acks, typing indicators, and fallback text.
 
 usage:
   cargo run -p medousa --bin medousa_telegram -- [options]
@@ -275,7 +234,6 @@ usage:
 options:
   --daemon-url <url>   Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)
   --token <token>      Telegram bot token (or MEDOUSA_TELEGRAM_BOT_TOKEN / TELOXIDE_TOKEN)
-  env: MEDOUSA_TELEGRAM_HEARTBEAT_NUDGES_ENABLED=true + MEDOUSA_TELEGRAM_HEARTBEAT_CHAT_IDS=<csv>
   -h, --help           Show this message
 "
     );

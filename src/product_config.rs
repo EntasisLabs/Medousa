@@ -23,6 +23,8 @@ pub struct DaemonProductConfig {
     pub bind: String,
     #[serde(default = "default_heartbeat_min_significance")]
     pub heartbeat_min_significance: f32,
+    #[serde(default)]
+    pub deliver_webhook_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -67,6 +69,7 @@ impl Default for DaemonProductConfig {
         Self {
             bind: default_daemon_bind(),
             heartbeat_min_significance: default_heartbeat_min_significance(),
+            deliver_webhook_token: None,
         }
     }
 }
@@ -202,6 +205,21 @@ fn extract_numeric_user_id(user_id: &str) -> Option<u64> {
         .rsplit(':')
         .next()
         .and_then(|segment| segment.parse::<u64>().ok())
+}
+
+/// Apply daemon-facing environment variables from product config for child processes.
+pub fn apply_daemon_env(config: &ProductConfig) {
+    if let Some(token) = config
+        .daemon
+        .deliver_webhook_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        unsafe { std::env::set_var("MEDOUSA_DELIVER_WEBHOOK_TOKEN", token) };
+    } else {
+        unsafe { std::env::remove_var("MEDOUSA_DELIVER_WEBHOOK_TOKEN") };
+    }
 }
 
 /// Apply adapter-facing environment variables from product config for child processes.

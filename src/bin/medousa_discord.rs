@@ -3,9 +3,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use medousa::{
-    IngestRequest, IngestResponse, adapter_heartbeat, consume_ingest_stream, render_stream_body,
-    resolve_daemon_url,
+    AdapterDeliveryOutcome, IngestRequest, IngestResponse,
+    default_delivery_timeout, wait_for_ask_delivery, resolve_daemon_url,
 };
+use medousa::channel_delivery::truncate_for_discord;
 use reqwest::Client;
 use serenity::all::GatewayIntents;
 use serenity::model::channel::Message;
@@ -13,15 +14,14 @@ use serenity::model::gateway::Ready;
 use serenity::prelude::{Context as DiscordContext, EventHandler};
 use serenity::{Client as DiscordClient, async_trait};
 
-/// Thin Discord adapter — listens for messages, forwards to daemon ingester,
-/// renders the response. All business logic lives in the daemon.
+/// Thin Discord adapter — forwards to daemon ingester, shows typing during processing,
+/// and relies on outbox-driven push for final replies.
 
 #[derive(Clone)]
 struct DiscordAdapterState {
     client: Client,
     daemon_url: String,
     command_prefix: String,
-    discord_token: String,
 }
 
 struct DiscordHandler {
@@ -70,14 +70,13 @@ async fn main() -> Result<()> {
         client: Client::new(),
         daemon_url,
         command_prefix,
-        discord_token: token.clone(),
     });
 
     println!(
         "medousa_discord thin adapter started — forwarding to daemon at {}",
         state.daemon_url
     );
-    println!("medousa_discord streaming mode — ingester SSE for ask jobs");
+    println!("medousa_discord outbox push mode — final replies delivered by daemon");
 
     let intents = GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MESSAGES
@@ -92,8 +91,6 @@ async fn main() -> Result<()> {
         .event_handler(handler)
         .await
         .context("failed to create discord client")?;
-
-    maybe_start_heartbeat_nudges(state.clone());
 
     discord
         .start()
@@ -136,69 +133,78 @@ async fn handle_message(
         .context("failed to decode daemon ingest response")?;
 
     if response.stream_ready {
-        if let Some(stream_url) = response.stream_url.as_ref() {
-            let http = ctx.http.clone();
-            let channel_id = msg.channel_id;
-            let typing_task = tokio::spawn(async move {
-                loop {
-                    let _ = channel_id.broadcast_typing(&http).await;
-                    tokio::time::sleep(Duration::from_secs(4)).await;
-                }
-            });
+        msg.channel_id
+            .say(&ctx.http, format_discord_ack(&response, &state.command_prefix))
+            .await
+            .context("failed to send discord ack")?;
 
-            let stream_result = consume_ingest_stream(&state.client, stream_url).await;
-            typing_task.abort();
+        let http = ctx.http.clone();
+        let channel_id = msg.channel_id;
+        let typing_task = tokio::spawn(async move {
+            loop {
+                let _ = channel_id.broadcast_typing(&http).await;
+                tokio::time::sleep(Duration::from_secs(4)).await;
+            }
+        });
 
-            let body = match stream_result {
-                Ok(result) => render_stream_body(&result),
-                Err(err) => format!("stream error: {}", single_line_summary(&err.to_string(), 300)),
-            };
-            let reply = format_stream_reply(&response, &body, &state.command_prefix);
-            msg.channel_id
-                .say(&ctx.http, truncate_for_discord(&reply))
-                .await
-                .context("failed to send discord stream reply")?;
-            return Ok(());
+        let delivery_outcome = wait_for_ask_delivery(
+            &state.client,
+            &state.daemon_url,
+            &response,
+            default_delivery_timeout(),
+        )
+        .await;
+        typing_task.abort();
+
+        match delivery_outcome {
+            Ok(AdapterDeliveryOutcome::PushDelivered) => {}
+            Ok(AdapterDeliveryOutcome::Fallback { text }) => {
+                msg.channel_id
+                    .say(&ctx.http, truncate_for_discord(&text))
+                    .await
+                    .context("failed to send discord fallback reply")?;
+            }
+            Ok(AdapterDeliveryOutcome::StreamError { message }) => {
+                msg.channel_id
+                    .say(&ctx.http, truncate_for_discord(&message))
+                    .await
+                    .context("failed to send discord delivery error")?;
+            }
+            Err(err) => {
+                let error_msg = format!(
+                    "delivery error: {}",
+                    single_line_summary(&err.to_string(), 300)
+                );
+                msg.channel_id
+                    .say(&ctx.http, truncate_for_discord(&error_msg))
+                    .await
+                    .context("failed to send discord delivery error")?;
+            }
         }
+        return Ok(());
     }
 
-    let reply = if response.is_new_session {
-        format!(
-            "🆕 {}\n\n{}",
-            response.reply,
-            explain_commands(&state.command_prefix)
-        )
-    } else {
-        response.reply
-    };
     msg.channel_id
-        .say(&ctx.http, reply)
+        .say(
+            &ctx.http,
+            format_discord_ack(&response, &state.command_prefix),
+        )
         .await
         .context("failed to send discord reply")?;
 
     Ok(())
 }
 
-fn format_stream_reply(
-    response: &IngestResponse,
-    body: &str,
-    command_prefix: &str,
-) -> String {
+fn format_discord_ack(response: &IngestResponse, command_prefix: &str) -> String {
     if response.is_new_session {
-        format!("🆕 {body}\n\n{}", explain_commands(command_prefix))
+        format!(
+            "🆕 {}\n\n{}",
+            response.reply,
+            explain_commands(command_prefix)
+        )
     } else {
-        body.to_string()
+        response.reply.clone()
     }
-}
-
-fn truncate_for_discord(text: &str) -> String {
-    const MAX_CHARS: usize = 1900;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    let truncated = text.chars().take(MAX_CHARS).collect::<String>();
-    format!("{truncated}...")
 }
 
 /// Translate Discord prefix commands (`!help`) into ingester slash commands (`/help`).
@@ -239,50 +245,12 @@ fn explain_commands(prefix: &str) -> String {
     )
 }
 
-fn maybe_start_heartbeat_nudges(state: Arc<DiscordAdapterState>) {
-    if !adapter_heartbeat::heartbeat_nudges_enabled("MEDOUSA_DISCORD") {
-        return;
-    }
-
-    let Some(channel_ids_raw) = non_empty_env("MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS") else {
-        eprintln!("medousa_discord heartbeat nudges enabled but MEDOUSA_DISCORD_HEARTBEAT_CHANNEL_IDS is empty");
-        return;
-    };
-
-    let channel_ids = channel_ids_raw
-        .split(',')
-        .filter_map(|value| value.trim().parse::<u64>().ok())
-        .collect::<Vec<_>>();
-    if channel_ids.is_empty() {
-        return;
-    }
-
-    tokio::spawn(async move {
-        let http = Arc::new(serenity::http::Http::new(&state.discord_token));
-        loop {
-            if let Some(summary) =
-                adapter_heartbeat::fetch_heartbeat_summary(&state.client, &state.daemon_url).await
-            {
-                if summary.contains("action=notify") {
-                    for channel_id in &channel_ids {
-                        let _ = serenity::model::id::ChannelId::new(*channel_id)
-                            .say(http.as_ref(), summary.clone())
-                            .await;
-                    }
-                }
-            }
-            tokio::time::sleep(adapter_heartbeat::heartbeat_poll_interval()).await;
-        }
-    });
-}
-
 fn resolve_discord_token(explicit: Option<&str>) -> Result<String> {
     explicit
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .or_else(|| non_empty_env("MEDOUSA_DISCORD_BOT_TOKEN"))
-        .or_else(|| non_empty_env("MEDOUSA_DISCORD_TOKEN"))
         .or_else(|| non_empty_env("DISCORD_TOKEN"))
         .ok_or_else(|| {
             anyhow!(
@@ -328,34 +296,17 @@ fn print_usage() {
         "medousa_discord — thin adapter
 
 Thin Discord ingress adapter. Forwards all messages to the daemon's centralized
-ingester endpoint (POST /v1/ingest). Prefix commands are translated to slash
-commands server-side; session and job logic live in the daemon.
+ingester endpoint (POST /v1/ingest). Final replies are delivered by the daemon via
+outbox push; this process only sends acks, typing indicators, and fallback text.
 
 usage:
   cargo run -p medousa --bin medousa_discord -- [options]
 
 options:
-  --daemon-url <url>       Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)
-  --token <token>          Discord bot token (or MEDOUSA_DISCORD_BOT_TOKEN / DISCORD_TOKEN)
-  --command-prefix <pfx>   Prefix for command messages (default: !)
-  -h, --help               Show this message
+  --daemon-url <url>        Daemon base URL (default: MEDOUSA_DAEMON_URL or http://127.0.0.1:7419)
+  --token <token>           Discord bot token (or MEDOUSA_DISCORD_BOT_TOKEN / DISCORD_TOKEN)
+  --command-prefix <prefix> Command prefix (default: MEDOUSA_DISCORD_COMMAND_PREFIX or !)
+  -h, --help                Show this message
 "
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::normalize_for_ingester;
-
-    #[test]
-    fn prefix_commands_translate_to_slash() {
-        assert_eq!(normalize_for_ingester("!help", "!"), "/help");
-        assert_eq!(normalize_for_ingester("!new", "!"), "/new");
-        assert_eq!(normalize_for_ingester("!ask hello", "!"), "/ask hello");
-    }
-
-    #[test]
-    fn plain_text_passes_through() {
-        assert_eq!(normalize_for_ingester("hello world", "!"), "hello world");
-    }
 }

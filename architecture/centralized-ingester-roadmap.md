@@ -135,6 +135,12 @@ struct IngestResponse {
 - [x] `/stop` command → cancel active job for session
 - [x] `/regen` command → regenerate last turn
 - [x] `/model` + `/depth` → runtime config changes per session
+
+### Phase 5 — Outbox Channel Delivery ✅
+
+See [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md).
+
+Wire Stasis outbox publish → internal webhook → channel dispatch so completed jobs actually deliver replies to Telegram/Discord. Pending outbox is treated as a product bug, not dashboard noise.
 - [x] `/history` → list & resume past sessions
 - [x] Attachment/media support (`IngestAttachment` merged into ask prompts)
 - [x] `/health` + `/heartbeat` ingester routes (daemon queries)

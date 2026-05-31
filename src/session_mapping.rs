@@ -48,6 +48,10 @@ impl Default for IngestSessionRuntimeConfig {
 pub struct ActiveIngestJob {
     pub job_id: String,
     pub stream_id: String,
+    pub channel: String,
+    pub user_id: String,
+    pub channel_id: String,
+    pub session_id: String,
 }
 
 /// Sub-commands that the ingester recognizes within a text body.

@@ -14,8 +14,9 @@ use medousa::session::{
     save_discord_bot_token, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
 };
 use medousa::{
-    ProductConfig, apply_adapter_env, format_i64_csv, format_u64_csv, load_product_config,
-    migrate_from_onboard_profile, parse_i64_csv, parse_u64_csv, save_product_config,
+    ProductConfig, apply_adapter_env, apply_daemon_env, format_i64_csv, format_u64_csv,
+    load_product_config, migrate_from_onboard_profile, parse_i64_csv, parse_u64_csv,
+    save_product_config,
 };
 use serde::{Deserialize, Serialize};
 
@@ -482,6 +483,7 @@ fn run_daemon(args: &[String]) -> Result<()> {
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(bind);
+    apply_daemon_env(&product_config);
     command.args(&passthrough);
 
     let status = command
@@ -684,15 +686,60 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         }
     );
     println!(
+        "deliver_webhook_token={}",
+        if product_config
+            .daemon
+            .deliver_webhook_token
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            "configured"
+        } else {
+            "missing"
+        }
+    );
+    println!(
         "ollama_detected={}",
         if detect_local_ollama() { "yes" } else { "no" }
     );
+
+    if daemon_reachable {
+        if let Ok(delivery) = fetch_delivery_health(&daemon_url) {
+            println!(
+                "delivery_endpoint={} seeded={} target={} webhook_auth={} pending={} last_delivery={:?} last_latency_ms={:?}",
+                delivery.endpoint_id,
+                delivery.endpoint_seeded,
+                delivery.endpoint_target,
+                if delivery.deliver_webhook_auth_configured {
+                    "configured"
+                } else {
+                    "open"
+                },
+                delivery.pending_job_deliveries,
+                delivery.last_delivery_at_utc,
+                delivery.last_delivery_latency_ms,
+            );
+        } else {
+            println!("delivery_status=unavailable (daemon did not return /v1/delivery/status)");
+        }
+    }
 
     if !daemon_reachable {
         println!("next: medousa setup or medousa tui");
     }
 
     Ok(())
+}
+
+fn fetch_delivery_health(daemon_url: &str) -> Result<medousa::DeliveryHealthResponse> {
+    let daemon_url = daemon_url.trim_end_matches('/');
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()?
+        .get(format!("{daemon_url}/v1/delivery/status"))
+        .send()?
+        .error_for_status()?;
+    Ok(response.json()?)
 }
 
 fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> ProductConfig {
@@ -721,6 +768,17 @@ fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> Produc
     )
     .unwrap_or_default();
     config.tui.response_depth_mode = selected.tui_response_depth_mode.clone();
+    if config
+        .daemon
+        .deliver_webhook_token
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .is_empty()
+    {
+        config.daemon.deliver_webhook_token =
+            Some(uuid::Uuid::new_v4().simple().to_string());
+    }
     config
 }
 
@@ -846,6 +904,7 @@ fn start_daemon_background(backend: &str, bind: &str) -> Result<()> {
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(bind);
+    apply_daemon_env(&load_product_config());
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));
 

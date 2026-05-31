@@ -430,3 +430,23 @@ pub struct IngestResponse {
     #[serde(default)]
     pub stream_ready: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliverPollResponse {
+    pub job_id: String,
+    /// pending | delivered | failed | not_registered
+    pub status: String,
+    pub delivered_at_utc: Option<DateTime<Utc>>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliveryHealthResponse {
+    pub endpoint_id: String,
+    pub endpoint_seeded: bool,
+    pub endpoint_target: String,
+    pub deliver_webhook_auth_configured: bool,
+    pub pending_job_deliveries: usize,
+    pub last_delivery_at_utc: Option<DateTime<Utc>>,
+    pub last_delivery_latency_ms: Option<u64>,
+}
