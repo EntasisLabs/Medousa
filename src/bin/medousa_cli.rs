@@ -10,7 +10,7 @@ use medousa::engine_context::{
 };
 use medousa::{
     DaemonStatsResponse, EnqueueAskRequest, EnqueueReportRequest, EnqueueResponse,
-    HealthResponse,
+    HealthResponse, IngestRequest, IngestResponse, consume_ingest_stream, render_stream_body,
     HeartbeatStatusResponse,
     IdentityContextRequest,
     JobReportResponse,
@@ -279,34 +279,47 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
         .get(1)
         .ok_or_else(|| anyhow!("missing prompt: medousa-cli daemon-ask <prompt>"))?;
     let client = Client::new();
-    let request = EnqueueAskRequest {
-        prompt: prompt.to_string(),
-        policy_profile: Some(
-            find_arg_value(args, "--policy-profile")
-                .unwrap_or(default_policy_profile_for_lane(EngineExecutionLane::Interactive))
-                .to_string(),
-        ),
-        model_hint: find_arg_value(args, "--model-hint").map(ToString::to_string),
-        max_turns: find_arg_value(args, "--max-turns")
-            .and_then(|raw| raw.parse::<u32>().ok())
-            .or(Some(1)),
-        identity_user_id: find_arg_value(args, "--identity-user-id").map(ToString::to_string),
-        identity_persona_id: find_arg_value(args, "--identity-persona-id")
-            .map(ToString::to_string),
-        identity_channel_id: find_arg_value(args, "--identity-channel-id")
-            .map(ToString::to_string),
+    let user_id = find_arg_value(args, "--identity-user-id")
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "cli:user:local".to_string());
+    let channel_id = find_arg_value(args, "--identity-channel-id")
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "cli:channel:default".to_string());
+
+    let request = IngestRequest {
+        channel: "cli".to_string(),
+        user_id,
+        channel_id,
+        text: prompt.to_string(),
     };
 
     let response = client
-        .post(format!("{daemon_url}/v1/jobs/ask"))
+        .post(format!("{daemon_url}/v1/ingest"))
         .json(&request)
         .send()
         .await?
         .error_for_status()?;
-    let payload: EnqueueResponse = response.json().await?;
+    let payload: IngestResponse = response.json().await?;
+    if payload.stream_ready {
+        if let Some(stream_url) = payload.stream_url.as_ref() {
+            let stream_result = consume_ingest_stream(&client, stream_url).await?;
+            println!(
+                "ingester stream complete session_id={} job_id={} new_session={}",
+                payload.session_id,
+                payload.job_id.as_deref().unwrap_or("none"),
+                payload.is_new_session,
+            );
+            println!("{}", render_stream_body(&stream_result));
+            return Ok(());
+        }
+    }
+
     println!(
-        "daemon accepted ask job_id={} queue={} at={}",
-        payload.job_id, payload.queue, payload.accepted_at_utc
+        "ingester reply session_id={} job_id={} new_session={} reply={}",
+        payload.session_id,
+        payload.job_id.as_deref().unwrap_or("none"),
+        payload.is_new_session,
+        payload.reply
     );
     Ok(())
 }
@@ -1614,7 +1627,7 @@ fn print_usage() {
         "  medousa-cli daemon-first-run [--daemon-url <url>] [--report-query <query>]"
     );
     println!(
-        "  medousa-cli daemon-ask <prompt> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
+        "  medousa-cli daemon-ask <prompt> [--identity-user-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
     println!(
         "  medousa-cli daemon-report <query> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--poll-timeout-ms <n>] [--poll-interval-ms <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"

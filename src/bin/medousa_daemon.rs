@@ -350,6 +350,7 @@ async fn main() -> Result<()> {
         .route("/v1/identity/history", post(identity_list_history))
         .route("/v1/identity/rollback", post(identity_rollback_version))
         .route("/v1/ingest", post(ingest_handler))
+        .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
         .with_state(state.clone());
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
@@ -1122,14 +1123,33 @@ async fn interactive_turn_stream(
     AxumPath(turn_id): AxumPath<String>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
 {
+    stream_events_from_registry(&state.interactive_turn_streams, &turn_id, "interactive turn")
+        .await
+}
+
+async fn ingest_stream(
+    State(state): State<AppState>,
+    AxumPath(stream_id): AxumPath<String>,
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
+{
+    stream_events_from_registry(&state.interactive_turn_streams, &stream_id, "ingest stream")
+        .await
+}
+
+async fn stream_events_from_registry(
+    registry: &Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
+    stream_id: &str,
+    label: &str,
+) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>>>, (StatusCode, String)>
+{
     let sender = {
-        let guard = state.interactive_turn_streams.read().await;
-        guard.get(&turn_id).cloned()
+        let guard = registry.read().await;
+        guard.get(stream_id).cloned()
     }
     .ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            format!("unknown interactive turn_id '{}'", turn_id),
+            format!("unknown {} id '{}'", label, stream_id),
         )
     })?;
 
@@ -1555,7 +1575,7 @@ async fn ingest_handler(
     let outcome = session_mapping::process_ingest(&request, &mapping_key, existing_session_id);
 
     // Handle job enqueue when outcome requests it
-    let (job_id, reply) = if outcome.should_enqueue {
+    let (job_id, reply, stream_id, stream_url, stream_ready) = if outcome.should_enqueue {
         let prompt = outcome.prompt.clone().unwrap_or_default();
 
         let identity_context = resolve_identity_context_for_request(
@@ -1622,9 +1642,38 @@ async fn ingest_handler(
             .await
             .map_err(internal_error)?;
 
-        (Some(job_id_str), outcome.reply)
+        let stream_id = format!("ingest-{}", Uuid::new_v4().simple());
+        let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
+        {
+            let mut guard = state.interactive_turn_streams.write().await;
+            guard.insert(stream_id.clone(), stream_tx.clone());
+        }
+        let stream_url = medousa::ingest_stream::build_ingest_stream_url(
+            &state.daemon_base_url,
+            &stream_id,
+        );
+        let stream_registry = state.interactive_turn_streams.clone();
+        let runtime = state.runtime.clone();
+        let job_for_stream = job_id_str.clone();
+        let stream_id_for_task = stream_id.clone();
+        let stream_id_for_cleanup = stream_id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            run_ingest_job_stream_task(stream_id_for_task, job_for_stream, runtime, stream_tx).await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let mut guard = stream_registry.write().await;
+            guard.remove(&stream_id_for_cleanup);
+        });
+
+        (
+            Some(job_id_str),
+            "processing your request…".to_string(),
+            Some(stream_id),
+            Some(stream_url),
+            true,
+        )
     } else {
-        (None, outcome.reply)
+        (None, outcome.reply, None, None, false)
     };
 
     // Persist the updated session mapping
@@ -1638,7 +1687,121 @@ async fn ingest_handler(
         job_id,
         reply,
         is_new_session: outcome.is_new_session,
+        stream_id,
+        stream_url,
+        stream_ready,
     }))
+}
+
+async fn run_ingest_job_stream_task(
+    stream_id: String,
+    job_id: String,
+    runtime: Arc<RuntimeComposition>,
+    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+) {
+    publish_interactive_turn_event(
+        &stream_tx,
+        medousa::interactive_turn_runtime::status_stream_event(
+            &stream_id,
+            "accepted",
+            "ingest accepted; streaming job progress",
+        ),
+    );
+
+    let poll_interval = Duration::from_millis(700);
+    let timeout = Duration::from_secs(120);
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut last_output_len = 0usize;
+
+    loop {
+        match get_job_attempts_graceful(runtime.as_ref(), &job_id).await {
+            Ok(attempts) => {
+                let latest = attempts.last();
+                let latest_outcome = latest.map(|attempt| format!("{:?}", attempt.outcome));
+                let output_text = latest.and_then(|attempt| {
+                    extract_output_text_from_diagnostics(attempt.diagnostics.as_deref())
+                });
+                let (status, is_terminal) =
+                    derive_job_result_status(latest_outcome.as_deref(), attempts.len());
+
+                if let Some(text) = output_text.as_ref() {
+                    if text.len() > last_output_len {
+                        let delta = &text[last_output_len..];
+                        publish_interactive_turn_event(
+                            &stream_tx,
+                            medousa::interactive_turn_runtime::content_delta_stream_event(
+                                &stream_id,
+                                delta,
+                            ),
+                        );
+                        last_output_len = text.len();
+                    }
+                }
+
+                if is_terminal {
+                    match status.as_str() {
+                        "succeeded" => {
+                            let final_text = output_text.unwrap_or_else(|| {
+                                "job succeeded but no output_text was available".to_string()
+                            });
+                            publish_interactive_turn_event(
+                                &stream_tx,
+                                medousa::interactive_turn_runtime::final_stream_event(
+                                    &stream_id,
+                                    &final_text,
+                                ),
+                            );
+                        }
+                        "failed" => {
+                            let message = latest_outcome.unwrap_or_else(|| {
+                                "ingest job failed without outcome details".to_string()
+                            });
+                            publish_interactive_turn_event(
+                                &stream_tx,
+                                medousa::interactive_turn_runtime::error_stream_event(
+                                    &stream_id,
+                                    &message,
+                                ),
+                            );
+                        }
+                        _ => {
+                            publish_interactive_turn_event(
+                                &stream_tx,
+                                medousa::interactive_turn_runtime::error_stream_event(
+                                    &stream_id,
+                                    &format!("ingest job ended with unexpected status={status}"),
+                                ),
+                            );
+                        }
+                    }
+                    return;
+                }
+            }
+            Err(err) => {
+                publish_interactive_turn_event(
+                    &stream_tx,
+                    medousa::interactive_turn_runtime::error_stream_event(
+                        &stream_id,
+                        &format!("ingest job polling failed: {err}"),
+                    ),
+                );
+                return;
+            }
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            publish_interactive_turn_event(
+                &stream_tx,
+                medousa::interactive_turn_runtime::error_stream_event(
+                    &stream_id,
+                    "ingest job stream timed out before terminal result",
+                ),
+            );
+            return;
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
 }
 
 async fn enqueue_runtime_job(

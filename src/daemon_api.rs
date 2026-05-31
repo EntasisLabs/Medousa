@@ -410,4 +410,13 @@ pub struct IngestResponse {
     pub reply: String,
     /// Whether this is a brand-new session (first message or after /new)
     pub is_new_session: bool,
+    /// SSE stream id when a job-backed ask is processing
+    #[serde(default)]
+    pub stream_id: Option<String>,
+    /// Absolute URL for SSE stream consumption by adapters
+    #[serde(default)]
+    pub stream_url: Option<String>,
+    /// Whether the stream endpoint is ready for subscription
+    #[serde(default)]
+    pub stream_ready: bool,
 }

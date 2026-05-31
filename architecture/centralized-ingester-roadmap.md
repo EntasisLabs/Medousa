@@ -82,7 +82,9 @@ struct IngestResponse {
     job_id: Option<String>,
     reply: String,            // immediate text or confirmation
     is_new_session: bool,
-    // Future: stream_url for SSE streaming
+    stream_id: Option<String>,
+    stream_url: Option<String>,  // SSE stream for job-backed asks
+    stream_ready: bool,
 }
 ```
 
@@ -104,30 +106,30 @@ struct IngestResponse {
 
 ## Phased Implementation
 
-### Phase 1 — Foundation ✅ (In Progress)
-- [ ] Add `POST /v1/ingest` endpoint to `medousa_daemon`
-- [ ] Add session mapping table (channel+user ↔ session_id)
-- [ ] Implement basic ingester handler:
-  - [ ] Session lookup/creation
-  - [ ] `/new` command → reset session
-  - [ ] `/help` command → return help text
-  - [ ] Plain text → load session history, enqueue ask job with context
-- [ ] Create `IngestRequest` / `IngestResponse` types in `daemon_api.rs`
-- [ ] Expose ingest types from `lib.rs`
+### Phase 1 — Foundation ✅
+- [x] Add `POST /v1/ingest` endpoint to `medousa_daemon`
+- [x] Add session mapping table (channel+user ↔ session_id)
+- [x] Implement basic ingester handler:
+  - [x] Session lookup/creation
+  - [x] `/new` command → reset session
+  - [x] `/help` command → return help text
+  - [x] Plain text → load session history, enqueue ask job with context
+- [x] Create `IngestRequest` / `IngestResponse` types in `daemon_api.rs`
+- [x] Expose ingest types from `lib.rs`
 
-### Phase 2 — Adapter Thinning
-- [ ] Strip `medousa_telegram` down to thin shell
-  - [ ] Remove command parsing
-  - [ ] Remove session logic
-  - [ ] Remove result polling (done by daemon)
-  - [ ] POST to `/v1/ingest`, render response
-- [ ] Strip `medousa_discord` down to thin shell (same pattern)
-- [ ] Strip `medousa_cli daemon-ask` to use ingester
+### Phase 2 — Adapter Thinning ✅
+- [x] Strip `medousa_telegram` down to thin shell
+  - [x] Remove command parsing
+  - [x] Remove session logic
+  - [x] Remove result polling (done by daemon)
+  - [x] POST to `/v1/ingest`, render response
+- [x] Strip `medousa_discord` down to thin shell (same pattern)
+- [x] Strip `medousa_cli daemon-ask` to use ingester
 
-### Phase 3 — Streaming Support
-- [ ] Add SSE streaming to `/v1/ingest` for real-time responses
-- [ ] Adapters switch from poll to stream
-- [ ] Enable typing indicators on Telegram/Discord during processing
+### Phase 3 — Streaming Support ✅
+- [x] Add SSE streaming to `/v1/ingest` for real-time responses
+- [x] Adapters switch from poll to stream
+- [x] Enable typing indicators on Telegram/Discord during processing
 
 ### Phase 4 — Full Feature Parity
 - [ ] `/stop` command → cancel active job for session
@@ -153,21 +155,3 @@ struct IngestResponse {
 - After Phase 2: Verify all Telegram/Discord commands work identically
 - After Phase 3: Verify streaming latency matches TUI experience
 - After Phase 4: Full parity acceptance test
-Aight bro — roadmap is locked in at `architecture/centralized-ingester-roadmap.md`. That's our north star. 🧭
-
-**Now let's cook Phase 1.** Here's the implementation plan in detail:
-
-### Phase 1 Tasks
-
-1. **Add types** to `daemon_api.rs` — `IngestRequest`, `IngestResponse`, `SessionChannelMapping`
-2. **Add session mapping service** in `src/` — lightweight key-value for channel+user ↔ session_id
-3. **Add `POST /v1/ingest` route + handler** in `medousa_daemon.rs` — the central brain
-4. **Implement ingester logic** — session lookup, `/new`, `/help`, plain text → session load → job enqueue
-5. **Expose new types** from `lib.rs`
-
-Let's start by reading the key integration points so we don't break anything.
-
-```tool
-TOOL_NAME: read_file
-BEGIN_ARG: filepath
-"src/lib.rs"

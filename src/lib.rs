@@ -9,6 +9,7 @@ pub mod engine_context;
 pub mod events;
 pub mod grapheme_sttp_compaction;
 pub mod identity_memory;
+pub mod ingest_stream;
 pub mod interactive_turn_runtime;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
@@ -52,6 +53,7 @@ pub use daemon_api::{
     RegisterRecurringResponse, StageRouteCommandRequest, StageRouteCommandResponse,
     StageRouteCommandSpec, resolve_daemon_url,
 };
+pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
 pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
