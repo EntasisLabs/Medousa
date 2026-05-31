@@ -2254,7 +2254,11 @@ impl StasisTool for CognitionMcpInvokeTool {
                 "server_id": { "type": "string" },
                 "tool_name": { "type": "string" },
                 "input": { "type": "object" },
-                "turn_token": { "type": "string", "description": "Optional pre-minted turn token" }
+                "turn_token": { "type": "string", "description": "Optional pre-minted turn token" },
+                "approval_granted": {
+                    "type": "boolean",
+                    "description": "Set true after the operator approves a prior approval_required response"
+                }
             },
             "required": ["server_id", "tool_name"]
         }))
@@ -2288,6 +2292,9 @@ impl StasisTool for CognitionMcpInvokeTool {
                 StasisError::PortFailure(format!("cognition.mcp.invoke: {error}"))
             })?
         };
+        let operator_approval_granted = input
+            .get("approval_granted")
+            .and_then(|value| value.as_bool());
 
         let request = McpInvokeRequest {
             server_id: server_id.to_string(),
@@ -2295,6 +2302,7 @@ impl StasisTool for CognitionMcpInvokeTool {
             input: tool_input,
             turn_context,
             turn_token,
+            operator_approval_granted,
         };
 
         let response = self
@@ -2302,6 +2310,21 @@ impl StasisTool for CognitionMcpInvokeTool {
             .invoke(&request)
             .await
             .map_err(|error| StasisError::PortFailure(format!("cognition.mcp.invoke: {error}")))?;
+
+        if !response.ok {
+            if let Some(error) = response.error.as_ref() {
+                if error.code == "approval_required" {
+                    let _ = self
+                        .event_tx
+                        .send(TuiEvent::ApprovalRequired {
+                            server_id: server_id.to_string(),
+                            tool_name: tool_name.to_string(),
+                            reason: error.message.clone(),
+                        })
+                        .await;
+                }
+            }
+        }
 
         Ok(serde_json::to_value(response).map_err(|error| {
             StasisError::PortFailure(format!(

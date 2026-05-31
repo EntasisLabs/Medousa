@@ -329,6 +329,7 @@ async fn main() -> Result<()> {
                 &backend_name,
                 &worker_id,
                 &report,
+                None,
             )
             .await;
         } else if report.heartbeat_action == HeartbeatAction::Notify {
@@ -562,6 +563,18 @@ async fn run_scheduler_loop(
                 };
 
                 if dispatch_decision == HeartbeatDispatchDecision::Dispatch {
+                    let (provider, model) =
+                        resolve_api_model_routing(None, &state.default_runtime_config);
+                    let agent = HeartbeatAgentContext {
+                        backend: state.backend.clone(),
+                        provider,
+                        model,
+                        response_depth_mode: state
+                            .default_runtime_config
+                            .response_depth_mode
+                            .clone(),
+                        agent_runtime: state.agent_runtime.clone(),
+                    };
                     dispatch_heartbeat_notifications(
                         &state.heartbeat_notify,
                         state.webhook_client.as_ref(),
@@ -569,6 +582,7 @@ async fn run_scheduler_loop(
                         &state.backend,
                         &state.worker_id,
                         &report,
+                        Some(&agent),
                     )
                     .await;
                 } else if report.heartbeat_action == HeartbeatAction::Notify {
@@ -3122,6 +3136,60 @@ fn normalize_heartbeat_weights(policy: &mut HeartbeatLanePolicy) -> Result<()> {
     Ok(())
 }
 
+struct HeartbeatAgentContext {
+    backend: String,
+    provider: String,
+    model: String,
+    response_depth_mode: String,
+    agent_runtime: Arc<medousa::agent_runtime::MedousaAgentRuntime>,
+}
+
+fn heartbeat_snapshot_from_report(report: &TickReport) -> medousa::agent_runtime::HeartbeatRuntimeSnapshot {
+    medousa::agent_runtime::HeartbeatRuntimeSnapshot {
+        significance: report.heartbeat_significance,
+        reason: report.heartbeat_reason.clone(),
+        failed_jobs: report.failed_jobs,
+        dead_letter_jobs: report.dead_letter_jobs,
+        pending_outbox_events: report.pending_outbox_events,
+        materialized_jobs: report.materialized,
+        processed_job: report.processed_job.clone(),
+        published_events: report.published,
+    }
+}
+
+async fn compose_heartbeat_summary(
+    report: &TickReport,
+    agent: Option<&HeartbeatAgentContext>,
+) -> String {
+    if let Some(ctx) = agent {
+        if medousa::agent_runtime::heartbeat_agent_turn_enabled() {
+            let snapshot = heartbeat_snapshot_from_report(report);
+            if let Some(text) = medousa::agent_runtime::run_heartbeat_agent_turn(
+                &snapshot,
+                &ctx.backend,
+                &ctx.provider,
+                &ctx.model,
+                &ctx.response_depth_mode,
+                ctx.agent_runtime.as_ref(),
+            )
+            .await
+            {
+                return text;
+            }
+        }
+    }
+
+    format!(
+        "heartbeat action={} significance={:.2} reason={}\nfailed={} dead_letter={} outbox_pending={}",
+        report.heartbeat_action.as_str(),
+        report.heartbeat_significance,
+        report.heartbeat_reason,
+        report.failed_jobs,
+        report.dead_letter_jobs,
+        report.pending_outbox_events,
+    )
+}
+
 async fn dispatch_heartbeat_notifications(
     notify: &HeartbeatNotifyConfig,
     webhook_client: Option<&reqwest::Client>,
@@ -3129,6 +3197,7 @@ async fn dispatch_heartbeat_notifications(
     backend: &str,
     worker_id: &str,
     report: &TickReport,
+    agent: Option<&HeartbeatAgentContext>,
 ) {
     if let Err(reason) = validate_lane_action(
         report.lane,
@@ -3170,15 +3239,7 @@ async fn dispatch_heartbeat_notifications(
         }
     }
 
-    let summary = format!(
-        "heartbeat action={} significance={:.2} reason={}\nfailed={} dead_letter={} outbox_pending={}",
-        notification.heartbeat_action,
-        notification.heartbeat_significance,
-        notification.heartbeat_reason,
-        notification.failed_jobs,
-        notification.dead_letter_jobs,
-        notification.pending_outbox_events,
-    );
+    let summary = compose_heartbeat_summary(report, agent).await;
     let product_config = medousa::load_product_config();
     channel_delivery::dispatch_configured_heartbeat_nudges(
         channel_dispatch_client,

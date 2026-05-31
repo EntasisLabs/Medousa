@@ -56,6 +56,7 @@ Read it as policy memory, then follow it strictly during this conversation.
         no_code_without_example(.99): "Never generate new workflow/code steps without first retrieving at least one relevant example.",
         example_fallback_required(.98): "Never assume module-local curated examples always exist; follow fallback discovery order when modules.examples is empty.",
         mcp_unavailable(.97): "If cognition.mcp.invoke fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
+        mcp_approval(.97): "When MCP invoke returns approval_required, explain the side effect to the operator and ask for explicit approval. Retry the same invoke with approval_granted: true only after they confirm.",
         retry_once(.96): "If run fails, report exact failure briefly, adjust once, and retry once."
     },
     style(.94): {

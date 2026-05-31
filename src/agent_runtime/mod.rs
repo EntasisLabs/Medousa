@@ -7,6 +7,7 @@
 pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 
 pub mod daemon_interactive_turn;
+pub mod heartbeat_turn;
 pub mod continuation;
 pub mod prompt_prep;
 pub mod runtime;
@@ -28,6 +29,10 @@ pub use prompt_prep::{
     compile_interactive_context_prompt, derive_recall_readiness, identity_context_probe,
     resolve_prompt_with_context_pack, truncate_text_for_budget, verifier_policy_from_settings_and_route,
     MAX_REQUEST_PROMPT_CHARS,
+};
+pub use heartbeat_turn::{
+    HeartbeatRuntimeSnapshot, build_heartbeat_turn_prompt, heartbeat_agent_turn_enabled,
+    heartbeat_policy_doc_path, load_heartbeat_policy_doc, run_heartbeat_agent_turn,
 };
 pub use daemon_interactive_turn::{
     InteractiveTurnDeliveryContext, run_agent_turn, run_daemon_interactive_turn,

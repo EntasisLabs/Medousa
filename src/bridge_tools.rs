@@ -353,6 +353,7 @@ async fn invoke_mcp_binding(
             .unwrap_or_else(|| json!({})),
         turn_context,
         turn_token,
+        operator_approval_granted: None,
     };
 
     let response = gateway_client.invoke(&request).await.map_err(|error| {

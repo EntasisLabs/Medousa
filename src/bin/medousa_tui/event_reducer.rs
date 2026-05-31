@@ -17,6 +17,19 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
         TuiEvent::UiNotice(text) => {
             super::push_obs(state, text);
         }
+        TuiEvent::ApprovalRequired {
+            server_id,
+            tool_name,
+            reason,
+        } => {
+            super::push_obs(
+                state,
+                format!(
+                    "⏸ approval required: {server_id}.{tool_name} — {reason}. \
+                     Reply yes/approve to retry with approval_granted: true."
+                ),
+            );
+        }
         TuiEvent::AgentChunk { turn_id, delta } => {
             if !is_active_stream_turn(state, turn_id) {
                 return;

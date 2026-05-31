@@ -319,6 +319,7 @@ impl ServerRegistry {
             tool_name: request.tool_name.clone(),
             effect_class: tool.effect_class,
             turn_context: request.turn_context.clone(),
+            operator_approval_granted: request.operator_approval_granted,
         };
 
         match self.policy_client.evaluate(&policy_request).await {

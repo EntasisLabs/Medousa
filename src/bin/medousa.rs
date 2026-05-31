@@ -57,6 +57,7 @@ fn main() -> Result<()> {
         "discord" => run_discord(&args[1..]),
         "telegram" => run_telegram(&args[1..]),
         "doctor" => run_doctor(&args[1..]),
+        "identity-export" => run_identity_export(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -875,6 +876,66 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         println!("next: medousa setup or medousa tui");
     }
 
+    let heartbeat_agent_turn = medousa::agent_runtime::heartbeat_agent_turn_enabled();
+    println!(
+        "heartbeat_agent_turn={}",
+        if heartbeat_agent_turn {
+            "enabled"
+        } else {
+            "disabled (set MEDOUSA_HEARTBEAT_AGENT_TURN_ENABLED=1)"
+        }
+    );
+    let heartbeat_policy = medousa::agent_runtime::heartbeat_policy_doc_path();
+    println!(
+        "heartbeat_policy_doc={} exists={}",
+        heartbeat_policy.display(),
+        heartbeat_policy.is_file()
+    );
+
+    let identity_export_dir = medousa::identity_markdown::identity_markdown_export_dir();
+    println!(
+        "identity_export_dir={} exists={}",
+        identity_export_dir.display(),
+        identity_export_dir.is_dir()
+    );
+    if !identity_export_dir.is_dir() {
+        println!(
+            "{}",
+            "[hint] Run `medousa identity-export` to write SOUL.md, USER.md, and IDENTITY.md from identity memory."
+                .blue()
+        );
+    }
+
+    println!(
+        "{}",
+        "[hint] For DOM/browser automation, register a browser MCP server (Playwright, Puppeteer, etc.) in ~/.config/medousa/mcp-gateway.toml — Medousa uses MCP BYOB, not native browser."
+            .blue()
+    );
+
+    Ok(())
+}
+
+fn run_identity_export(args: &[String]) -> Result<()> {
+    let user_id = find_arg_value(args, "--user-id").map(str::to_string);
+    let dir = find_arg_value(args, "--dir")
+        .map(PathBuf::from)
+        .unwrap_or_else(medousa::identity_markdown::identity_markdown_export_dir);
+
+    let store = medousa::identity_memory::build_seeded_identity_memory_store()
+        .context("build identity memory store")?;
+    let rt = tokio::runtime::Runtime::new().context("start tokio runtime")?;
+    let written = rt
+        .block_on(medousa::identity_markdown::write_identity_markdown_export(
+            store.as_ref(),
+            user_id.as_deref(),
+            &dir,
+        ))
+        .context("export identity markdown")?;
+
+    println!("identity markdown exported to {}", written.display());
+    println!("  SOUL.md");
+    println!("  USER.md");
+    println!("  IDENTITY.md");
     Ok(())
 }
 
@@ -1427,6 +1488,7 @@ fn print_help() {
     println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
     println!("    Telegram allowlist is configured in medousa setup (product_config.json).");
     println!("  medousa doctor");
+    println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

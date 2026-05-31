@@ -41,6 +41,7 @@ use crate::bridge_tools::{
 };
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
+use crate::tool_aliases::ToolNameAlias;
 use crate::workflow;
 use tokio::sync::RwLock;
 
@@ -211,22 +212,54 @@ pub(crate) async fn build_tui_runtime_services(
         capability_registry.clone(),
         event_tx.clone(),
     ))?;
+    tool_registry.register_tool(ToolNameAlias::new(
+        "cognition_capability_resolve",
+        CognitionCapabilityResolveTool::new(capability_registry.clone(), event_tx.clone()),
+    ))?;
     tool_registry.register_tool(CognitionCapabilityListTool::new(capability_registry.clone()))?;
+    tool_registry.register_tool(ToolNameAlias::new(
+        "cognition_capability_list",
+        CognitionCapabilityListTool::new(capability_registry.clone()),
+    ))?;
     tool_registry.register_tool(CognitionCapabilitySearchTool::new(
         capability_registry.clone(),
         event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(ToolNameAlias::new(
+        "cognition_capability_search",
+        CognitionCapabilitySearchTool::new(capability_registry.clone(), event_tx.clone()),
     ))?;
     tool_registry.register_tool(CognitionMcpDiscoverTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
         event_tx.clone(),
     ))?;
+    tool_registry.register_tool(ToolNameAlias::new(
+        "cognition_mcp_discover",
+        CognitionMcpDiscoverTool::new(
+            mcp_gateway_client.clone(),
+            session_id.to_string(),
+            event_tx.clone(),
+        ),
+    ))?;
     tool_registry.register_tool(CognitionMcpInvokeTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
         event_tx.clone(),
     ))?;
+    tool_registry.register_tool(ToolNameAlias::new(
+        "cognition_mcp_invoke",
+        CognitionMcpInvokeTool::new(
+            mcp_gateway_client.clone(),
+            session_id.to_string(),
+            event_tx.clone(),
+        ),
+    ))?;
     tool_registry.register_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
+    tool_registry.register_tool(ToolNameAlias::new(
+        "cognition_mcp_servers",
+        CognitionMcpServersTool::new(mcp_gateway_client.clone()),
+    ))?;
     tool_registry.register_tool(CognitionCapabilityInvokeTool::new(
         capability_registry.clone(),
         runtime.clone(),

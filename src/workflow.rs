@@ -519,6 +519,7 @@ async fn execute_workflow_step(
                 input: args.clone(),
                 turn_context,
                 turn_token,
+                operator_approval_granted: None,
             };
             match mcp_client.invoke(&invoke_request).await {
                 Ok(response) => WorkflowStepResult {

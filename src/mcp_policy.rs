@@ -12,6 +12,9 @@ use crate::mcp_gateway_api::{
 };
 
 pub fn evaluate_mcp_policy(request: &McpPolicyEvaluateRequest) -> McpPolicyEvaluateResponse {
+    if operator_approval_granted(request) {
+        return allow("operator approval granted for MCP invoke");
+    }
     evaluate_lane_policy(request)
 }
 
@@ -19,6 +22,9 @@ pub async fn evaluate_mcp_policy_with_identity(
     request: &McpPolicyEvaluateRequest,
     identity_service: &IdentityMemoryService,
 ) -> McpPolicyEvaluateResponse {
+    if operator_approval_granted(request) {
+        return allow("operator approval granted for MCP invoke");
+    }
     let action = effect_to_action_class(request.effect_class);
     let context = match identity_service
         .get_identity_context(&GetIdentityContextRequest {
@@ -66,6 +72,13 @@ pub async fn evaluate_mcp_policy_with_identity(
     }
 
     evaluate_lane_policy(request)
+}
+
+fn operator_approval_granted(request: &McpPolicyEvaluateRequest) -> bool {
+    request
+        .operator_approval_granted
+        .unwrap_or(false)
+        && request.turn_context.lane == McpTurnLane::Interactive
 }
 
 fn evaluate_lane_policy(request: &McpPolicyEvaluateRequest) -> McpPolicyEvaluateResponse {
@@ -184,6 +197,7 @@ mod tests {
                 lane,
                 policy_profile: Some("interactive".to_string()),
             },
+            operator_approval_granted: None,
         }
     }
 
@@ -223,6 +237,30 @@ mod tests {
         ));
         assert!(!response.allowed);
         assert_eq!(response.decision, McpPolicyDecision::ApprovalRequired);
+    }
+
+    #[test]
+    fn operator_approval_granted_bypasses_side_effect_gate() {
+        let mut request = sample_request(
+            McpTurnLane::Interactive,
+            McpEffectClass::ExternalSideEffect,
+        );
+        request.operator_approval_granted = Some(true);
+        let response = evaluate_mcp_policy(&request);
+        assert!(response.allowed);
+        assert_eq!(response.decision, McpPolicyDecision::Allow);
+    }
+
+    #[test]
+    fn operator_approval_granted_does_not_bypass_scheduled_write_deny() {
+        let mut request = sample_request(
+            McpTurnLane::Scheduled,
+            McpEffectClass::ExternalWrite,
+        );
+        request.operator_approval_granted = Some(true);
+        let response = evaluate_mcp_policy(&request);
+        assert!(!response.allowed);
+        assert_eq!(response.decision, McpPolicyDecision::Deny);
     }
 
     #[tokio::test]

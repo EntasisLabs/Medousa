@@ -36,4 +36,10 @@ pub enum TuiEvent {
     AgentError { turn_id: u64, message: String },
     /// General UI notification emitted by background workers.
     UiNotice(String),
+    /// MCP invoke blocked pending operator approval for a side-effect action.
+    ApprovalRequired {
+        server_id: String,
+        tool_name: String,
+        reason: String,
+    },
 }

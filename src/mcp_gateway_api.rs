@@ -116,6 +116,9 @@ pub struct McpInvokeRequest {
     pub turn_context: McpTurnContext,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_token: Option<String>,
+    /// When true, bypass AutonomyScope approval_required for this invoke (operator confirmed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_approval_granted: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,6 +176,8 @@ pub struct McpPolicyEvaluateRequest {
     pub tool_name: String,
     pub effect_class: McpEffectClass,
     pub turn_context: McpTurnContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_approval_granted: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
