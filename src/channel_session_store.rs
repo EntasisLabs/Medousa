@@ -56,12 +56,30 @@ pub async fn init_channel_session_store_with_runtime(runtime: &RuntimeCompositio
     }
 }
 
+/// Canonical ingest mapping key: `{channel}:{channel_id}:{user_id}`.
+pub fn channel_mapping_key(channel: &str, channel_id: &str, user_id: &str) -> String {
+    format!("{channel}:{channel_id}:{user_id}")
+}
+
+/// Parse a mapping key produced by [`channel_mapping_key`].
+pub fn parse_channel_mapping_key(mapping_key: &str) -> Option<(String, String, String)> {
+    let channel = mapping_key.split(':').next()?.to_string();
+    let rest = mapping_key.strip_prefix(&format!("{channel}:"))?;
+    let marker = format!(":{channel}:user:");
+    let idx = rest.find(&marker)?;
+    let channel_id = rest[..idx].to_string();
+    let user_id = rest[idx + 1..].to_string();
+    Some((channel, channel_id, user_id))
+}
+
 #[async_trait]
 pub trait ChannelSessionStore: Send + Sync {
     async fn get_session_id(&self, mapping_key: &str) -> Option<String>;
     async fn set_session_id(&self, mapping_key: &str, session_id: String);
     async fn push_session_history(&self, mapping_key: &str, session_id: String);
     async fn list_session_history(&self, mapping_key: &str, limit: usize) -> Vec<String>;
+    /// Most recently updated mapping for `channel` whose session id matches (e.g. TUI session linked via prior Telegram ingest).
+    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String>;
 }
 
 #[derive(Default)]
@@ -97,6 +115,16 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
             .get(mapping_key)
             .map(|entries| entries.iter().take(limit.max(1)).cloned().collect())
             .unwrap_or_default()
+    }
+
+    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String> {
+        let prefix = format!("{channel}:");
+        self.mappings
+            .read()
+            .await
+            .iter()
+            .find(|(key, sid)| key.starts_with(&prefix) && sid.as_str() == session_id)
+            .map(|(key, _)| key.clone())
     }
 }
 
@@ -246,5 +274,34 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
             .into_iter()
             .map(|row| row.session_id)
             .collect()
+    }
+
+    async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String> {
+        let prefix = format!("{channel}:");
+        let sql = "SELECT mapping_key FROM type::table($table) \
+                   WHERE session_id = $session_id \
+                   AND string::starts_with(mapping_key, $prefix) \
+                   ORDER BY updated_at DESC \
+                   LIMIT 1";
+        let mut response = self
+            .db
+            .query(sql)
+            .bind(("table", MAPPING_TABLE))
+            .bind(("session_id", session_id.to_string()))
+            .bind(("prefix", prefix))
+            .await
+            .ok()?;
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct Row {
+            mapping_key: String,
+        }
+
+        response
+            .take::<Vec<Row>>(0)
+            .ok()?
+            .into_iter()
+            .next()
+            .map(|row| row.mapping_key)
     }
 }

@@ -1195,13 +1195,18 @@ async fn register_recurring_prompt(
         .compute_next_run_at(now)
         .map_err(internal_error)?;
 
+    let fallback_session_id = request
+        .session_id
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("recurring-{recurring_id}"));
     let delivery_input = serde_json::json!({ "delivery": request.delivery });
     medousa::recurring_delivery::persist_recurring_delivery_binding(
         &recurring_id,
         &delivery_input,
         medousa::recurring_delivery::DeliveryResolveContext {
             ambient: None,
-            fallback_session_id: format!("recurring-{recurring_id}"),
+            fallback_session_id,
         },
     )
     .await

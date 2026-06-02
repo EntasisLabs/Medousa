@@ -567,6 +567,8 @@ async fn run_daemon_watch_add(
             default_policy_profile_for_lane(EngineExecutionLane::Scheduled).to_string(),
         ),
         model_hint: None,
+        delivery: None,
+        session_id: None,
     };
 
     let response = client

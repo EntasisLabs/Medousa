@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 
 use medousa::{
     InteractiveTurnRequest, InteractiveTurnStreamEvent, TuiRuntime,
+    turn_continuation::TurnContinuationScope,
     agent_runtime::{
         prompt_prep,
         stream_sink::AgentStreamSink,
@@ -407,7 +408,22 @@ pub(crate) async fn start_prompt_run(
     let continuation_stage_route = final_route.clone();
     let continuation_recall_readiness = prepared.recall_readiness;
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
+    let turn_scope = tui_rt.turn_scope.clone();
+    let session_id = state.session_id.clone();
+    let provider = state.settings.provider.clone();
+    let model = state.settings.model.clone();
     let handle = tokio::spawn(async move {
+        let previous_scope = turn_scope.read().await.clone();
+        *turn_scope.write().await = Some(TurnContinuationScope {
+            turn_correlation_id: format!("tui-turn-{turn_id}"),
+            session_id: session_id.clone(),
+            original_prompt: original_prompt_for_continuation.clone(),
+            delivery_target: None,
+            provider,
+            model,
+            response_depth_mode: continuation_response_depth_mode.clone(),
+        });
+
         turn_orchestrator::execute_local_turn(
             sink,
             LocalTurnExecutionParams {
@@ -428,6 +444,8 @@ pub(crate) async fn start_prompt_run(
             },
         )
         .await;
+
+        *turn_scope.write().await = previous_scope;
     });
 
     state.active_request_task = Some(handle);

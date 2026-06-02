@@ -1046,6 +1046,17 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         "ollama_detected={}",
         if detect_local_ollama() { "yes" } else { "no" }
     );
+    println!(
+        "telegram_heartbeat_chat_ids={}",
+        if product_config.telegram.heartbeat_chat_ids.is_empty() {
+            "(none — use explicit delivery.telegram_chat_id)".to_string()
+        } else {
+            medousa::format_i64_csv(&product_config.telegram.heartbeat_chat_ids)
+        }
+    );
+    println!(
+        "recurring_delivery=Phase 2: use cognition_runtime_recurring_doctor or cognition_runtime_recurring_list in TUI/agent; delivery modes: explicit | current_channel | linked_channel | product_default"
+    );
 
     let mcp_gateway_url = medousa::resolve_mcp_gateway_url(None);
     let mcp_gateway_bind = mcp_gateway_url

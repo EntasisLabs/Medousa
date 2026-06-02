@@ -1,11 +1,9 @@
 //! Bind recurring definition ids to channel delivery targets for outbox push.
 
-use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use cron::Schedule;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,8 +16,9 @@ use surrealdb_types::SurrealValue;
 use tokio::sync::RwLock as AsyncRwLock;
 
 use crate::channel_delivery::ChannelDeliveryTarget;
+use crate::channel_session_store::{self, parse_channel_mapping_key};
 use crate::product_config::{self, ProductConfig};
-use crate::turn_continuation::StoredDeliveryTarget;
+use crate::turn_continuation::{StoredDeliveryTarget, TurnContinuationScope};
 
 const TABLE: &str = "recurring_delivery_binding";
 
@@ -76,6 +75,26 @@ pub struct DeliveryResolveContext<'a> {
     pub fallback_session_id: String,
 }
 
+/// Delivery target from an active agent turn (ingest / daemon interactive), if any.
+pub fn ambient_from_turn_scope(scope: Option<&TurnContinuationScope>) -> Option<ChannelDeliveryTarget> {
+    scope
+        .and_then(|turn| turn.delivery_target.as_ref())
+        .cloned()
+}
+
+/// Validate cron, parse optional `delivery`, and persist binding for `recurring_id`.
+pub async fn bind_recurring_delivery_for_registration(
+    recurring_id: &str,
+    cron_expr: &str,
+    timezone: &str,
+    input: &Value,
+    ctx: DeliveryResolveContext<'_>,
+) -> StasisResult<(bool, Option<ChannelDeliveryTarget>)> {
+    validate_recurring_cron(cron_expr, timezone)?;
+    let bound = persist_recurring_delivery_binding(recurring_id, input, ctx).await?;
+    Ok((bound.is_some(), bound))
+}
+
 /// Validate cron and ensure the first two scheduled firings are not sub-minute.
 pub fn validate_recurring_cron(cron_expr: &str, timezone: &str) -> StasisResult<()> {
     let definition = RecurringDefinition {
@@ -103,13 +122,6 @@ pub fn validate_recurring_cron(cron_expr: &str, timezone: &str) -> StasisResult<
         )));
     }
 
-    // Also verify the expression parses in isolation for clearer errors.
-    let _ = Schedule::from_str(cron_expr.trim()).map_err(|err| {
-        StasisError::PortFailure(format!(
-            "invalid cron expression: {err}. Use 7-field cron: {CRON_FORMAT_HINT}"
-        ))
-    })?;
-
     Ok(())
 }
 
@@ -126,16 +138,16 @@ pub async fn persist_recurring_delivery_binding(
         return Ok(None);
     };
 
-    let target = parse_delivery_spec(delivery_value, ctx)?;
+    let target = parse_delivery_spec(delivery_value, ctx).await?;
     recurring_delivery_store()
         .upsert(recurring_id, &target)
         .await
-        .map_err(|err| StasisError::PortFailure(err))?;
+        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
 
     Ok(Some(target))
 }
 
-pub fn parse_delivery_spec(
+pub async fn parse_delivery_spec(
     value: &Value,
     ctx: DeliveryResolveContext<'_>,
 ) -> StasisResult<ChannelDeliveryTarget> {
@@ -157,10 +169,13 @@ pub fn parse_delivery_spec(
                     .to_string(),
             )
         }),
-        "product_default" => resolve_product_default_delivery(value, &config, &ctx.fallback_session_id),
+        "product_default" => {
+            resolve_product_default_delivery(value, &config, &ctx.fallback_session_id)
+        }
+        "linked_channel" => resolve_linked_channel_delivery(value, &config, &ctx).await,
         "explicit" | "" => resolve_explicit_delivery(value, &config, &ctx.fallback_session_id),
         other => Err(StasisError::PortFailure(format!(
-            "unsupported delivery.mode={other}; use explicit, current_channel, or product_default"
+            "unsupported delivery.mode={other}; use explicit, current_channel, linked_channel, or product_default"
         ))),
     }
 }
@@ -178,6 +193,54 @@ fn resolve_explicit_delivery(
         .unwrap_or_else(|| default_user_id_for_channel(&channel));
     let session_id = optional_string_field(value, &["session_id"])
         .unwrap_or_else(|| fallback_session_id.to_string());
+
+    let target = ChannelDeliveryTarget {
+        channel: channel.clone(),
+        user_id,
+        channel_id,
+        session_id,
+        stream_id: None,
+    };
+
+    enforce_delivery_policy(&target, config)?;
+    Ok(target)
+}
+
+async fn resolve_linked_channel_delivery(
+    value: &Value,
+    config: &ProductConfig,
+    ctx: &DeliveryResolveContext<'_>,
+) -> StasisResult<ChannelDeliveryTarget> {
+    let channel = value
+        .get("channel")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_lowercase())
+        .ok_or_else(|| {
+            StasisError::PortFailure(
+                "delivery.mode=linked_channel requires delivery.channel (e.g. telegram)".to_string(),
+            )
+        })?;
+
+    let session_id = optional_string_field(value, &["session_id"])
+        .unwrap_or_else(|| ctx.fallback_session_id.clone());
+
+    let mapping_key = channel_session_store::channel_session_store()
+        .find_mapping_key_for_session(&channel, &session_id)
+        .await
+        .ok_or_else(|| {
+            StasisError::PortFailure(format!(
+                "delivery.mode=linked_channel: no {channel} ingest mapping for session_id={session_id}; \
+                 message that channel first or use explicit telegram_chat_id"
+            ))
+        })?;
+
+    let (_, channel_id, user_id) = parse_channel_mapping_key(&mapping_key).ok_or_else(|| {
+        StasisError::PortFailure(format!(
+            "delivery.mode=linked_channel: invalid mapping_key={mapping_key}"
+        ))
+    })?;
 
     let target = ChannelDeliveryTarget {
         channel: channel.clone(),
@@ -317,11 +380,11 @@ fn resolve_channel_id(channel: &str, value: &Value) -> StasisResult<String> {
                 }
             }),
         "cli" => Some("cli:session:default".to_string()),
-        other => None,
+        _ => None,
     }
     .ok_or_else(|| {
         StasisError::PortFailure(format!(
-            "delivery for channel={other} requires channel_id or channel-specific id field \
+            "delivery for channel={channel} requires channel_id or channel-specific id field \
              (e.g. telegram_chat_id, discord_channel_id)"
         ))
     })
@@ -446,16 +509,22 @@ pub async fn resolve_delivery_target_for_job(
     Some(ChannelDeliveryTarget::from(&stored))
 }
 
-impl From<&StoredDeliveryTarget> for ChannelDeliveryTarget {
-    fn from(value: &StoredDeliveryTarget) -> Self {
-        Self {
-            channel: value.channel.clone(),
-            user_id: value.user_id.clone(),
-            channel_id: value.channel_id.clone(),
-            session_id: value.session_id.clone(),
-            stream_id: value.stream_id.clone(),
-        }
-    }
+pub fn delivery_binding_to_json(target: &StoredDeliveryTarget) -> Value {
+    serde_json::json!({
+        "channel": target.channel,
+        "channel_id": target.channel_id,
+        "user_id": target.user_id,
+        "session_id": target.session_id,
+        "stream_id": target.stream_id,
+    })
+}
+
+pub async fn delivery_binding_for_recurring(recurring_id: &str) -> Option<StoredDeliveryTarget> {
+    recurring_delivery_store()
+        .get(recurring_id)
+        .await
+        .ok()
+        .flatten()
 }
 
 pub fn delivery_spec_schema_fragment() -> Value {
@@ -466,7 +535,7 @@ pub fn delivery_spec_schema_fragment() -> Value {
             "properties": {
                 "mode": {
                     "type": "string",
-                    "enum": ["explicit", "current_channel", "product_default"],
+                    "enum": ["explicit", "current_channel", "linked_channel", "product_default"],
                     "default": "explicit"
                 },
                 "channel": { "type": "string", "description": "telegram | discord | slack | whatsapp | cli" },
@@ -547,6 +616,10 @@ impl SurrealRecurringDeliveryStore {
         Self { db }
     }
 
+    fn record_id(recurring_id: &str) -> String {
+        recurring_id.replace(':', "_")
+    }
+
     pub async fn ensure_schema(&self) -> Result<(), surrealdb::Error> {
         for statement in SCHEMA_STATEMENTS {
             if let Err(err) = self.db.query(*statement).await {
@@ -577,23 +650,23 @@ impl RecurringDeliveryStore for SurrealRecurringDeliveryStore {
             created_at: now,
             updated_at: now,
         };
+        let id = Self::record_id(recurring_id);
         self.db
-            .query(
-                "UPSERT type::record($table, $id) CONTENT $data",
-            )
+            .query("UPSERT type::record($table, $id) CONTENT $data")
             .bind(("table", TABLE))
-            .bind(("id", recurring_id))
+            .bind(("id", id))
             .bind(("data", record))
             .await?;
         Ok(())
     }
 
     async fn get(&self, recurring_id: &str) -> anyhow::Result<Option<StoredDeliveryTarget>> {
+        let id = Self::record_id(recurring_id);
         let mut response = self
             .db
             .query("SELECT * FROM type::record($table, $id)")
             .bind(("table", TABLE))
-            .bind(("id", recurring_id))
+            .bind(("id", id))
             .await?;
 
         let record: Option<RecurringDeliveryRecord> = response.take(0)?;
@@ -607,10 +680,11 @@ impl RecurringDeliveryStore for SurrealRecurringDeliveryStore {
     }
 
     async fn remove(&self, recurring_id: &str) -> anyhow::Result<()> {
+        let id = Self::record_id(recurring_id);
         self.db
             .query("DELETE type::record($table, $id)")
             .bind(("table", TABLE))
-            .bind(("id", recurring_id))
+            .bind(("id", id))
             .await?;
         Ok(())
     }
@@ -661,5 +735,17 @@ mod tests {
     #[test]
     fn cron_accepts_four_hour_schedule() {
         validate_recurring_cron("0 0 */4 * * * *", "UTC").expect("valid 4h cron");
+    }
+
+    #[test]
+    fn channel_mapping_key_roundtrip() {
+        use crate::channel_session_store::{channel_mapping_key, parse_channel_mapping_key};
+
+        let key = channel_mapping_key("telegram", "telegram:chat:42", "telegram:user:99");
+        let (channel, channel_id, user_id) =
+            parse_channel_mapping_key(&key).expect("parse mapping key");
+        assert_eq!(channel, "telegram");
+        assert_eq!(channel_id, "telegram:chat:42");
+        assert_eq!(user_id, "telegram:user:99");
     }
 }

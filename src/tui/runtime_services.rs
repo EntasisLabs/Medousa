@@ -19,7 +19,8 @@ use crate::runtime_tools::{
     CognitionRuntimeDeliveryStatusTool, CognitionRuntimeJobsCancelTool,
     CognitionRuntimeJobsListTool, CognitionRuntimeRecurringCancelTool,
     CognitionRuntimeRecurringListTool, CognitionRuntimeRecurringPauseTool,
-    CognitionRuntimeRecurringRegisterTool,     CognitionRuntimeWorkflowCancelTool, CognitionRuntimeWorkflowPlanTool,
+    CognitionRuntimeRecurringDoctorTool, CognitionRuntimeRecurringRegisterTool,
+    CognitionRuntimeWorkflowCancelTool, CognitionRuntimeWorkflowPlanTool,
     CognitionRuntimeWorkflowRunTool, CognitionRuntimeWorkflowScheduleTool,
     CognitionRuntimeWorkflowStatusTool,
 };
@@ -175,10 +176,12 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionGraphemePromoteToRecurringTool::new(
         runtime.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemePromoteLastRunToRecurringTool::new(
         runtime.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionUtilityTimeNowTool)?;
     tool_registry.register_tool(CognitionUtilityDayOfWeekTool)?;
@@ -191,9 +194,11 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionRuntimeRecurringListTool::new(runtime.clone()))?;
+    tool_registry.register_tool(CognitionRuntimeRecurringDoctorTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeRecurringRegisterTool::new(
         runtime.clone(),
         event_tx.clone(),
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionRuntimeRecurringPauseTool::new(
         runtime.clone(),

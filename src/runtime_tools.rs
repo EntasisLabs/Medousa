@@ -19,10 +19,10 @@ use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
-use crate::channel_delivery::ChannelDeliveryTarget;
 use crate::events::TuiEvent;
 use crate::recurring_delivery::{
-    DeliveryResolveContext, persist_recurring_delivery_binding, validate_recurring_cron,
+    DeliveryResolveContext, ambient_from_turn_scope, bind_recurring_delivery_for_registration,
+    delivery_binding_for_recurring, delivery_binding_to_json,
 };
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
@@ -40,25 +40,6 @@ use crate::workflow_plan::{WorkflowPlanRequest, plan_workflow_from_goal};
 
 const CRON_EXPR_SCHEMA_HINT: &str =
     "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)";
-
-async fn bind_recurring_delivery_from_input(
-    recurring_id: &str,
-    cron_expr: &str,
-    timezone: &str,
-    input: &Value,
-    ambient: Option<&ChannelDeliveryTarget>,
-) -> stasis::prelude::Result<Option<ChannelDeliveryTarget>> {
-    validate_recurring_cron(cron_expr, timezone)?;
-    persist_recurring_delivery_binding(
-        recurring_id,
-        input,
-        DeliveryResolveContext {
-            ambient,
-            fallback_session_id: format!("recurring-{recurring_id}"),
-        },
-    )
-    .await
-}
 
 fn job_state_label(state: &JobState) -> &'static str {
     match state {
@@ -377,7 +358,7 @@ impl StasisTool for CognitionRuntimeRecurringListTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some("List registered recurring job definitions.")
+        Some("List registered recurring job definitions with optional channel delivery bindings.")
     }
 
     fn input_schema(&self) -> Option<Value> {
@@ -405,9 +386,112 @@ impl StasisTool for CognitionRuntimeRecurringListTool {
         }
         definitions.sort_by(|a, b| a.id.cmp(&b.id));
 
+        let mut rows = Vec::with_capacity(definitions.len());
+        for definition in &definitions {
+            let mut row = recurring_to_json(definition);
+            if let Some(binding) = delivery_binding_for_recurring(&definition.id).await {
+                row["delivery"] = delivery_binding_to_json(&binding);
+            }
+            rows.push(row);
+        }
+
         Ok(json!({
             "count": definitions.len(),
-            "recurring": definitions.iter().map(recurring_to_json).collect::<Vec<_>>()
+            "recurring": rows
+        }))
+    }
+}
+
+// ── cognition_runtime_recurring_doctor ────────────────────────────────────────
+
+pub struct CognitionRuntimeRecurringDoctorTool {
+    runtime: Arc<RuntimeComposition>,
+}
+
+impl CognitionRuntimeRecurringDoctorTool {
+    pub fn new(runtime: Arc<RuntimeComposition>) -> Self {
+        Self { runtime }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionRuntimeRecurringDoctorTool {
+    fn name(&self) -> &'static str {
+        "cognition_runtime_recurring_doctor"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Diagnose recurring schedules: cron, next run, enabled state, and channel delivery bindings.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "recurring_id": {
+                    "type": "string",
+                    "description": "Optional single recurring id; omit to inspect all"
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let filter_id = input
+            .get("recurring_id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        let mut definitions = list_recurring_definitions(self.runtime.as_ref()).await?;
+        if let Some(id) = filter_id.as_deref() {
+            definitions.retain(|definition| definition.id == id);
+        }
+        definitions.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let mut entries = Vec::with_capacity(definitions.len());
+        let mut missing_delivery = 0usize;
+        let mut cron_warnings = 0usize;
+
+        for definition in &definitions {
+            let delivery = delivery_binding_for_recurring(&definition.id).await;
+            if delivery.is_none() {
+                missing_delivery += 1;
+            }
+
+            let cron_ok = crate::recurring_delivery::validate_recurring_cron(
+                &definition.cron_expr,
+                &definition.timezone,
+            )
+            .is_ok();
+            if !cron_ok {
+                cron_warnings += 1;
+            }
+
+            let mut row = recurring_to_json(definition);
+            row["delivery"] = delivery
+                .as_ref()
+                .map(delivery_binding_to_json)
+                .unwrap_or(Value::Null);
+            row["cron_valid"] = json!(cron_ok);
+            row["delivery_bound"] = json!(delivery.is_some());
+            row["push_ready"] = json!(delivery.is_some() && definition.enabled);
+            entries.push(row);
+        }
+
+        Ok(json!({
+            "count": entries.len(),
+            "missing_delivery_bindings": missing_delivery,
+            "cron_warnings": cron_warnings,
+            "recurring": entries,
+            "hints": [
+                "Set delivery.telegram_chat_id or delivery.mode=linked_channel when registering from TUI after Telegram ingest on the same session.",
+                "Use delivery.mode=current_channel during an active ingest agent turn.",
+                "Cron uses 7 fields: sec min hour dom month dow year (e.g. 0 0 */4 * * * *)."
+            ]
         }))
     }
 }
@@ -417,11 +501,20 @@ impl StasisTool for CognitionRuntimeRecurringListTool {
 pub struct CognitionRuntimeRecurringRegisterTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionRuntimeRecurringRegisterTool {
-    pub fn new(runtime: Arc<RuntimeComposition>, event_tx: mpsc::Sender<TuiEvent>) -> Self {
-        Self { runtime, event_tx }
+    pub fn new(
+        runtime: Arc<RuntimeComposition>,
+        event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            runtime,
+            event_tx,
+            turn_scope,
+        }
     }
 }
 
@@ -574,15 +667,23 @@ impl StasisTool for CognitionRuntimeRecurringRegisterTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
-        let delivery_bound = bind_recurring_delivery_from_input(
+        let scope = self.turn_scope.read().await.clone();
+        let ambient = ambient_from_turn_scope(scope.as_ref());
+        let fallback_session_id = scope
+            .as_ref()
+            .map(|turn| turn.session_id.clone())
+            .unwrap_or_else(|| format!("recurring-{recurring_id}"));
+        let (delivery_bound, _) = bind_recurring_delivery_for_registration(
             &recurring_id,
             cron_expr,
             timezone,
             &input,
-            None,
+            DeliveryResolveContext {
+                ambient: ambient.as_ref(),
+                fallback_session_id,
+            },
         )
-        .await?
-        .is_some();
+        .await?;
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 
@@ -1175,22 +1276,23 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
-        let ambient = self
-            .turn_scope
-            .read()
-            .await
+        let scope = self.turn_scope.read().await.clone();
+        let ambient = ambient_from_turn_scope(scope.as_ref());
+        let fallback_session_id = scope
             .as_ref()
-            .and_then(|scope| scope.delivery_target.as_ref())
-            .map(ChannelDeliveryTarget::from);
-        let delivery_bound = bind_recurring_delivery_from_input(
+            .map(|turn| turn.session_id.clone())
+            .unwrap_or_else(|| format!("recurring-{recurring_id}"));
+        let (delivery_bound, _) = bind_recurring_delivery_for_registration(
             &recurring_id,
             cron_expr,
             timezone,
             &input,
-            ambient.as_ref(),
+            DeliveryResolveContext {
+                ambient: ambient.as_ref(),
+                fallback_session_id,
+            },
         )
-        .await?
-        .is_some();
+        .await?;
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 

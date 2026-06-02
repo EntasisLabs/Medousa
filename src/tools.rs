@@ -39,7 +39,7 @@ use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
 use crate::recurring_delivery::{
-    DeliveryResolveContext, persist_recurring_delivery_binding, validate_recurring_cron,
+    DeliveryResolveContext, ambient_from_turn_scope, bind_recurring_delivery_for_registration,
 };
 use crate::turn_continuation::{
     self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
@@ -1359,11 +1359,20 @@ impl StasisTool for CognitionGraphemePromoteToJobTool {
 pub struct CognitionGraphemePromoteToRecurringTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionGraphemePromoteToRecurringTool {
-    pub fn new(runtime: Arc<RuntimeComposition>, event_tx: mpsc::Sender<TuiEvent>) -> Self {
-        Self { runtime, event_tx }
+    pub fn new(
+        runtime: Arc<RuntimeComposition>,
+        event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            runtime,
+            event_tx,
+            turn_scope,
+        }
     }
 }
 
@@ -1483,17 +1492,23 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
-        validate_recurring_cron(cron_expr, timezone)?;
-        let delivery_bound = persist_recurring_delivery_binding(
+        let scope = self.turn_scope.read().await.clone();
+        let ambient = ambient_from_turn_scope(scope.as_ref());
+        let fallback_session_id = scope
+            .as_ref()
+            .map(|turn| turn.session_id.clone())
+            .unwrap_or_else(|| format!("recurring-{recurring_id}"));
+        let (delivery_bound, _) = bind_recurring_delivery_for_registration(
             &recurring_id,
+            cron_expr,
+            timezone,
             &input,
             DeliveryResolveContext {
-                ambient: None,
-                fallback_session_id: format!("recurring-{recurring_id}"),
+                ambient: ambient.as_ref(),
+                fallback_session_id,
             },
         )
-        .await?
-        .is_some();
+        .await?;
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
@@ -1526,11 +1541,20 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
 pub struct CognitionGraphemePromoteLastRunToRecurringTool {
     runtime: Arc<RuntimeComposition>,
     event_tx: mpsc::Sender<TuiEvent>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionGraphemePromoteLastRunToRecurringTool {
-    pub fn new(runtime: Arc<RuntimeComposition>, event_tx: mpsc::Sender<TuiEvent>) -> Self {
-        Self { runtime, event_tx }
+    pub fn new(
+        runtime: Arc<RuntimeComposition>,
+        event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            runtime,
+            event_tx,
+            turn_scope,
+        }
     }
 }
 
@@ -1654,17 +1678,23 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
-        validate_recurring_cron(cron_expr, timezone)?;
-        let delivery_bound = persist_recurring_delivery_binding(
+        let scope = self.turn_scope.read().await.clone();
+        let ambient = ambient_from_turn_scope(scope.as_ref());
+        let fallback_session_id = scope
+            .as_ref()
+            .map(|turn| turn.session_id.clone())
+            .unwrap_or_else(|| format!("recurring-{recurring_id}"));
+        let (delivery_bound, _) = bind_recurring_delivery_for_registration(
             &recurring_id,
+            cron_expr,
+            timezone,
             &input,
             DeliveryResolveContext {
-                ambient: None,
-                fallback_session_id: format!("recurring-{recurring_id}"),
+                ambient: ambient.as_ref(),
+                fallback_session_id,
             },
         )
-        .await?
-        .is_some();
+        .await?;
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,

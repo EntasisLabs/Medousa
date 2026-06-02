@@ -203,6 +203,8 @@ pub(crate) async fn daemon_register_recurring_prompt(
         max_attempts: Some(1),
         policy_profile: Some("scheduled".to_string()),
         model_hint: None,
+        delivery: None,
+        session_id: None,
     };
 
     let response = client

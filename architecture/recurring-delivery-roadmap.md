@@ -1,7 +1,7 @@
 # Recurring schedule → channel delivery — Roadmap
 
 > Created: 2026-05-30  
-> Status: Phase 1 implemented (verify with `cargo test -p medousa recurring_delivery`)  
+> Status: Phase 2 implemented (verify with `cargo test -p medousa recurring_delivery`)  
 > Related: [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md), [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md)
 
 ## Problem
@@ -76,7 +76,8 @@ Same as ingest (`ChannelDeliveryTarget`):
 | Mode | Behavior |
 |------|----------|
 | *(omit)* / `explicit` | Require resolvable channel + destination id |
-| `current_channel` | Use ambient `ChannelDeliveryTarget` from active agent turn scope (ingest / continuation) |
+| `current_channel` | Use ambient `ChannelDeliveryTarget` from active agent turn scope (ingest / daemon interactive) |
+| `linked_channel` | Resolve chat from `channel_session_store` using the active Medousa `session_id` (TUI session shared with prior Telegram ingest) |
 | `product_default` | First configured heartbeat chat for that channel in product config |
 
 ### Cron format
@@ -114,9 +115,10 @@ Registration rejects schedules whose first two firings are **&lt; 60 seconds** a
 
 ### Phase 2 — Ergonomics
 
-- [ ] `turn_scope` on recurring register tools for `current_channel` from ingest-originated agent turns
-- [ ] Doctor / list tools show `recurring_id`, cron, delivery binding
-- [ ] Resolve Telegram chat from `channel_session_store` by identity (TUI user linked prior Telegram chat)
+- [x] `turn_scope` on recurring register tools for `current_channel` from ingest-originated agent turns
+- [x] Doctor / list tools show `recurring_id`, cron, delivery binding (`cognition_runtime_recurring_list`, `cognition_runtime_recurring_doctor`)
+- [x] Resolve Telegram chat from `channel_session_store` via `delivery.mode=linked_channel` and active session id
+- [x] TUI local turns set `turn_scope` so recurring tools see session id for linked delivery
 
 ### Phase 3 — Richer jobs (later)
 

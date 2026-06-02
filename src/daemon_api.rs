@@ -173,6 +173,8 @@ pub struct RegisterRecurringPromptRequest {
     pub model_hint: Option<String>,
     /// Optional channel push target for each successful materialized run.
     pub delivery: Option<serde_json::Value>,
+    /// Medousa session id for `delivery.mode=linked_channel` (defaults to `recurring-{id}`).
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
