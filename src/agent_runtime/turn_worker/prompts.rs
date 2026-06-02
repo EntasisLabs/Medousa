@@ -24,7 +24,32 @@ Rules:
 - Do not emit user-facing prose until work is done.
 - When finished, call cognition_turn_prepare_final once, then send one complete result message on the next turn without further tools.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
-- Do not repeat the same status table without new tool output."#;
+- Do not repeat the same status table without new tool output.
+- On every cognition_memory_* tool call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
+
+pub fn worker_system_prompt(session_id: &str) -> String {
+    format!(
+        "{WORKER_SYSTEM_PROMPT}\n\n[MEDOUSA_WORKER_CONTEXT]\nsession_id={session_id}\n\
+         Always include \"session_id\": \"{session_id}\" on cognition_memory_calibrate, \
+         cognition_memory_moods, cognition_memory_context, cognition_memory_store, and related tools."
+    )
+}
+
+pub fn worker_failure_user_prompt(
+    parent_user_prompt: &str,
+    work_id: &str,
+    intent: &str,
+    error: &str,
+) -> String {
+    format!(
+        "The background worker failed. Write one clear user-facing message explaining what went wrong \
+         and what they can try next (retry, clarify session, or simpler request). Do not invent tool results.\n\n\
+         WORK_ID: {work_id}\n\
+         WORKER_INTENT: {intent}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\n\
+         WORKER_ERROR:\n{error}\n"
+    )
+}
 
 pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_intent: Option<&str>) -> String {
     if !host_bus_active {

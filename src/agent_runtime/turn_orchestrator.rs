@@ -729,6 +729,13 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
             let mut combined_invocations = response.tool_invocations.clone();
             let mut final_text = response.text;
+            if response.termination_reason == "worker_spawned" {
+                let tool_names = collect_tool_names(&combined_invocations);
+                sink.agent_worker_ack(turn_id, final_text, tool_names)
+                    .await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+                return;
+            }
             if should_run_continuation(&combined_invocations) {
                 if let Some(continuation_prompt) = build_continuation_prompt(
                     &original_prompt,

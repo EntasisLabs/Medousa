@@ -27,6 +27,8 @@ pub enum TuiEvent {
         turn_id: u64,
         text: String,
         tool_names: Vec<String>,
+        /// When false, the turn stays open (host worker ack); a later terminal response completes it.
+        terminal: bool,
     },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },

@@ -28,8 +28,8 @@ use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use super::policy::{TurnWorkerIntent, allowed_tool_names_for_intent, max_worker_tool_rounds};
-use super::prompts::{WORKER_SYSTEM_PROMPT, synthesis_user_prompt};
-use super::registry::AllowlistToolRegistry;
+use super::prompts::{synthesis_user_prompt, worker_failure_user_prompt, worker_system_prompt};
+use super::registry::{AllowlistToolRegistry, WorkerSessionToolRegistry};
 use super::store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore};
 
 /// Live host-turn context used when spawning a worker from the tool loop.
@@ -240,10 +240,11 @@ pub async fn run_worker_turn(
 
     let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
     let allowlist = allowed_tool_names_for_intent(intent);
-    let filtered_registry = Arc::new(AllowlistToolRegistry::new(
+    let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
-        allowlist,
+        record.session_id.clone(),
     ));
+    let filtered_registry = Arc::new(AllowlistToolRegistry::new(session_registry, allowlist));
     let worker_pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
         &record.provider,
         &record.model,
@@ -267,7 +268,7 @@ pub async fn run_worker_turn(
 
     let request = ToolLoopExecutionRequest {
         user_prompt: record.task_prompt.clone(),
-        system_prompt: Some(WORKER_SYSTEM_PROMPT.to_string()),
+        system_prompt: Some(worker_system_prompt(&record.session_id)),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
         tool_input: Value::Null,
@@ -315,7 +316,7 @@ pub async fn run_worker_turn(
             sink.notice(format!("◈ work_completed work_id={work_id}"))
                 .await;
             if let Some(updated) = store.get(&work_id) {
-                run_synthesis_turn(&ctx, updated, sink, worker_turn_id.wrapping_add(1)).await;
+                run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
             }
         }
         Err(err) => {
@@ -327,13 +328,85 @@ pub async fn run_worker_turn(
             ledger_bus_event(
                 &record.session_id,
                 stream_turn_id,
-                TurnLedgerEventKind::Stuck,
-                format!("work_failed work_id={work_id} error={message}"),
+                TurnLedgerEventKind::WorkFailed,
+                format!("work_id={work_id} error={message}"),
             );
             sink.notice(format!("◈ work_failed work_id={work_id} error={message}"))
                 .await;
+            if let Some(failed) = store.get(&work_id) {
+                run_worker_failure_notify(&ctx, failed, sink, stream_turn_id).await;
+            }
         }
     }
+}
+
+async fn run_worker_failure_notify(
+    ctx: &WorkerRuntimeContext,
+    record: TurnWorkRecord,
+    sink: SharedAgentStreamSink,
+    notify_turn_id: u64,
+) {
+    let parent_prompt = record
+        .parent_user_prompt
+        .clone()
+        .unwrap_or_else(|| record.task_prompt.clone());
+    let error = record
+        .error
+        .clone()
+        .unwrap_or_else(|| "unknown worker error".to_string());
+
+    sink.notice(format!(
+        "◈ work_failure_notify work_id={} delivering user-visible error",
+        record.work_id
+    ))
+    .await;
+
+    let prompt = worker_failure_user_prompt(
+        &parent_prompt,
+        &record.work_id,
+        &record.intent,
+        &error,
+    );
+
+    let resolved_provider = crate::resolve_llm_provider(Some(record.provider.as_str()));
+    let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
+    let resolved_base_url =
+        crate::resolve_llm_base_url(Some(&resolved_provider), ctx.base_url.as_deref());
+    let chat_client: Arc<dyn AiChatClient> = Arc::new(
+        GenaiChatClient::from_provider_model_with_base_url(
+            Some(&resolved_provider),
+            &resolved_model,
+            resolved_base_url.as_deref(),
+        ),
+    );
+    let pipeline = PromptExecutionPipeline::new(chat_client);
+    let request = PromptExecutionRequest::from_user_prompt(truncate_text_for_budget(
+        &prompt,
+        MAX_REQUEST_PROMPT_CHARS,
+    ))
+    .with_context(PromptExecutionContext::default())
+    .with_system_prompt(DEFAULT_SYSTEM_PROMPT.to_string());
+
+    let text = match pipeline.execute(request).await {
+        Ok(response) => response.text,
+        Err(err) => format!(
+            "The background task didn't finish (notify error: {err}). Worker error: {}",
+            truncate_text_for_budget(&error, 400)
+        ),
+    };
+
+    crate::session::append_turn(
+        &record.session_id,
+        &crate::session::ConversationTurn {
+            role: "assistant".to_string(),
+            content: text.clone(),
+            timestamp: chrono::Utc::now(),
+            tool_names: vec!["turn_worker.failure".to_string()],
+            answer_state: None,
+        },
+    );
+    sink.agent_response(notify_turn_id, text, vec!["turn_worker.failure".to_string()])
+        .await;
 }
 
 async fn run_synthesis_turn(

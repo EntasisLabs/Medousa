@@ -27,6 +27,7 @@ pub enum TurnLedgerEventKind {
     ReceiptMissing,
     WorkDelegated,
     WorkCompleted,
+    WorkFailed,
     Finalized,
     Stuck,
 }

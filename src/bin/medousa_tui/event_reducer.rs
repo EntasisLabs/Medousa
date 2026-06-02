@@ -71,13 +71,16 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             turn_id,
             text,
             tool_names,
+            terminal,
         } => {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
-            state.is_processing = false;
-            state.active_request_task = None;
-            state.open_stream_turn_id = None;
+            if terminal {
+                state.is_processing = false;
+                state.active_request_task = None;
+                state.open_stream_turn_id = None;
+            }
             let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
             if !state.received_native_reasoning {
                 for chunk in thinking_chunks {
@@ -109,7 +112,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             };
             let final_text = visible_text;
 
-            if let Some(idx) = state.active_agent_stream_turn.take() {
+            if let Some(idx) = state.active_agent_stream_turn {
                 let mut persisted_turn: Option<ConversationTurn> = None;
                 if let Some(turn) = state.conversation.get_mut(idx) {
                     turn.content = merge_streamed_and_final_body(&turn.content, &final_text);
@@ -117,6 +120,9 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     turn.answer_state = answer_state.clone();
                     turn.timestamp = Utc::now();
                     persisted_turn = Some(turn.clone());
+                }
+                if terminal {
+                    state.active_agent_stream_turn = None;
                 }
                 if let Some(turn) = persisted_turn {
                     let session_id = state.session_id.clone();
@@ -128,13 +134,17 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     role: "agent".to_string(),
                     content: final_text,
                     timestamp: Utc::now(),
-                    tool_names,
-                    answer_state,
+                    tool_names: tool_names.clone(),
+                    answer_state: answer_state.clone(),
                 };
                 let session_id = state.session_id.clone();
                 super::history_services::append_turn_daemon_first(state, &session_id, &turn)
                     .await;
-                state.conversation.push(turn);
+                state.conversation.push(turn.clone());
+                if !terminal {
+                    state.active_agent_stream_turn =
+                        Some(state.conversation.len().saturating_sub(1));
+                }
             }
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;

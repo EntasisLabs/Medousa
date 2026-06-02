@@ -77,6 +77,26 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         );
     }
 
+    async fn agent_worker_ack(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        let assistant_turn = ConversationTurn {
+            role: "assistant".to_string(),
+            content: text.clone(),
+            timestamp: Utc::now(),
+            tool_names: tool_names.clone(),
+            answer_state: None,
+        };
+        append_turn(&self.session_id, &assistant_turn);
+
+        publish(
+            &self.stream_tx,
+            interactive_turn_runtime::worker_ack_stream_event_with_tools(
+                &self.turn_id,
+                &text,
+                tool_names,
+            ),
+        );
+    }
+
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         let assistant_turn = ConversationTurn {
             role: "assistant".to_string(),
@@ -347,6 +367,10 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn reasoning_chunk(&self, turn_id: u64, delta: String) {
         self.inner.reasoning_chunk(turn_id, delta).await;
+    }
+
+    async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        self.inner.agent_worker_ack(turn_id, text, tool_names).await;
     }
 
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {

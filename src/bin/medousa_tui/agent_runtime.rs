@@ -54,6 +54,18 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
+    async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        let _ = self
+            .tx
+            .send(TuiEvent::AgentResponse {
+                turn_id,
+                text,
+                tool_names,
+                terminal: false,
+            })
+            .await;
+    }
+
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         let _ = self
             .tx
@@ -61,6 +73,7 @@ impl AgentStreamSink for TuiStreamSink {
                 turn_id,
                 text,
                 tool_names,
+                terminal: true,
             })
             .await;
     }
@@ -654,6 +667,7 @@ async fn dispatch_daemon_stream_event(
                     turn_id,
                     text,
                     tool_names,
+                    terminal: payload.terminal,
                 })
                 .await
                 .map_err(|err| err.to_string())?;

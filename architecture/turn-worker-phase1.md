@@ -81,6 +81,12 @@ Example spawn (model or manual tool call):
 }
 ```
 
+## Worker failures
+
+On worker error (e.g. tool policy failure), the bus emits `◈ work_failed` and a **failure notify** turn posts a user-visible assistant message (same sink as synthesis) — not only obs.
+
+Worker memory tools receive automatic `session_id` injection via `WorkerSessionToolRegistry` when the model passes null.
+
 ## Not in Phase 1
 
 - Durable Stasis worker jobs (Phase 3)
