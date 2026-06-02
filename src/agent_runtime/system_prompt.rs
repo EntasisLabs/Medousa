@@ -32,7 +32,7 @@ Read it as policy memory, then follow it strictly during this conversation.
         observe(.98): "cognition_runtime_jobs_list, cognition_runtime_jobs_status, cognition_runtime_delivery_status for queue visibility.",
         recurring(.98): "cognition_runtime_recurring_list/register/pause/cancel on scheduled lane for cron workloads.",
         turn_finalize(.99): "When tool work is complete, call cognition_turn_prepare_final once, then send the full user-facing answer on the next message without further tools. Do not use it for short status while still working.",
-        turn_worker_bus(.97): "For heavy multi-tool rituals (AVEC pull+calibrate, long memory work), call cognition_spawn_turn_worker with intent+task+user_ack; the worker runs in the background and synthesis delivers the final answer. Use cognition_turn_worker_status to check pending work."
+        turn_worker_bus(.97): "On host turns you orchestrate: light cognition_memory_* , capability catalog inspect (list/search/resolve), runtime workflow/job tools, and cognition_spawn_turn_worker for execution (Grapheme, MCP, capability invoke, deep rituals). Workers run the grunt work; synthesis delivers the final answer. Use cognition_turn_worker_status for pending work."
     },
     locus_memory(.99): {
         schema_first(.99): "cognition_memory_schema before first store; cognition_memory_calibrate and cognition_memory_moods when AVEC posture is unset.",

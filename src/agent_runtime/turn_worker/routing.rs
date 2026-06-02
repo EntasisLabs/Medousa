@@ -3,8 +3,21 @@
 use super::policy::TurnWorkerIntent;
 use crate::agent_runtime::turn_services::TurnActivationDecision;
 
-/// Max tool rounds for the host when the bus is active (coordinator only).
-pub const HOST_BUS_MAX_TOOL_ROUNDS: usize = 4;
+/// Default max tool rounds for the host orchestrator (coordinator only).
+pub const HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT: usize = 8;
+
+/// Back-compat alias.
+pub const HOST_BUS_MAX_TOOL_ROUNDS: usize = HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT;
+
+/// Host orchestrator round cap. Override with `MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS` (1–50).
+/// The effective host budget is `min(settings.max_tool_rounds, this cap)`.
+pub fn host_bus_max_tool_rounds_cap() -> usize {
+    std::env::var("MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .map(|n| n.clamp(1, 50))
+        .unwrap_or(HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostBusEnvMode {
@@ -152,11 +165,10 @@ pub fn classify_host_turn_route_heuristic(prompt: &str) -> HostTurnRoute {
     HostTurnRoute::HandleInline
 }
 
-pub fn resolve_host_bus_active(env_mode: HostBusEnvMode, route: &HostTurnRoute) -> bool {
+pub fn resolve_host_bus_active(env_mode: HostBusEnvMode, _route: &HostTurnRoute) -> bool {
     match env_mode {
         HostBusEnvMode::Off => false,
-        HostBusEnvMode::Force => true,
-        HostBusEnvMode::Auto => matches!(route, HostTurnRoute::Delegate { .. }),
+        HostBusEnvMode::Force | HostBusEnvMode::Auto => true,
     }
 }
 
@@ -166,7 +178,7 @@ pub fn resolve_host_turn_profile(prompt: &str, configured_max_tool_rounds: usize
     let host_bus_active = resolve_host_bus_active(env_mode, &route);
     let host_max_tool_rounds = if host_bus_active {
         configured_max_tool_rounds
-            .min(HOST_BUS_MAX_TOOL_ROUNDS)
+            .min(host_bus_max_tool_rounds_cap())
             .max(1)
     } else {
         configured_max_tool_rounds
@@ -241,10 +253,17 @@ mod tests {
     }
 
     #[test]
-    fn auto_enables_bus_only_on_delegate() {
+    fn auto_enables_orchestrator_tools_by_default() {
         let profile = resolve_host_turn_profile("hello there", 10);
-        assert!(!profile.host_bus_active);
+        assert!(profile.host_bus_active);
         let profile = resolve_host_turn_profile("calibrate my focused avec", 10);
         assert!(profile.host_bus_active);
+        assert!(matches!(
+            profile.route,
+            HostTurnRoute::Delegate {
+                intent: TurnWorkerIntent::MemoryAvecCalibrate,
+                ..
+            }
+        ));
     }
 }

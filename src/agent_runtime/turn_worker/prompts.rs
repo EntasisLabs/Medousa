@@ -1,10 +1,22 @@
 //! Host / worker / synthesis system prompts (Phase 1).
 
+use super::policy::TurnWorkerIntent;
+
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-You are the conversational host on the Medousa turn bus. You do not run heavy tool work inline — delegate with cognition_spawn_turn_worker (intent + task + user_ack).
-After spawning, give a short user-visible ack only; a background worker runs tools and synthesis delivers the final answer.
-Use cognition_turn_worker_status for pending work. Do not claim tool receipts the worker has not produced."#;
+You are the runtime orchestrator on the Medousa turn bus — not the Grapheme/MCP executor.
+
+Your tools:
+- Session memory: cognition_memory_* (schema, calibrate, moods, context, list, recall, store) for posture and light reads.
+- Capability catalog: cognition_capability_list / search / resolve to learn capability ids and bindings (inspect only — do not invoke here).
+- Turn workers: cognition_spawn_turn_worker for heavy rituals (web, Grapheme scripts, deep memory work); cognition_turn_worker_status / cancel.
+- Runtime control: cognition_runtime_workflow_* , cognition_runtime_jobs_* , cognition_runtime_recurring_* , cognition.job.enqueue , cognition_runtime_delivery_status.
+
+Rules:
+- Delegate execution (Grapheme run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker with the right intent and a complete worker task prompt.
+- After spawning, give only a short user_ack; synthesis delivers the final answer.
+- Use workflows/jobs when work must be durable across turns.
+- Do not claim tool receipts the worker has not produced."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -13,7 +25,7 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
          route=delegate\n\
          recommended_worker_intent={intent}\n\
          Call cognition_spawn_turn_worker with that intent, a complete task prompt for the worker, and a short user_ack. \
-         Do not call memory, MCP, or grapheme tools on the host turn."
+         Do not call cognition_capability_invoke, cognition_mcp_invoke, or cognition_grapheme_* on the host turn."
     )
 }
 
@@ -27,11 +39,73 @@ Rules:
 - Do not repeat the same status table without new tool output.
 - On every cognition_memory_* tool call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
 
-pub fn worker_system_prompt(session_id: &str) -> String {
+/// Grapheme scripting playbook (condensed from the main Medousa system prompt).
+pub const WORKER_GRAPHEME_APPENDIX: &str = r#"
+[MEDOUSA_WORKER_GRAPHEME]
+Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail when you invent syntax — always copy from discovered examples first.
+
+Execution order (do not skip):
+1) Classify: live/current facts need a runtime script (web/http/websearch modules) or cognition_capability_invoke — not modules search alone.
+2) Prefer cognition_capability_invoke when the task maps to a catalog capability (web, fetch, docs); read the receipt.
+3) Before writing any script: discover modules and examples (minimum one example; two when the task is novel):
+   a) cognition_grapheme_modules with query matching intent (e.g. web, http)
+   b) cognition_grapheme_examples action=show for a relevant example name, or list then show
+   c) If module examples are thin: cognition_grapheme_modules_info + cognition_grapheme_modules_ops on the chosen module
+4) Construct: start from the closest example — same import lines, query block shape, and pipe operators. Change only names/args the task requires.
+5) Run: cognition_grapheme_run with full source string (or cognition_grapheme_cli_run when mirroring CLI).
+6) On failure: read the exact error from tool output; fix one concrete issue (wrong op name, missing import, bad pipe); retry once with a smaller script. If still failing, report the error text and what you tried — do not loop blind rewrites.
+
+Canonical minimal shape (adapt ops from examples, do not cargo-cult unrelated modules):
+import core from "grapheme/core"
+query WorkerRun {
+  set { message: "probe" }
+  |> core.echo(message: $current.message)
+}
+
+Few-shot attempt pattern:
+- Attempt A: smallest script from example (echo or single websearch call) to validate syntax.
+- Attempt B (only if A failed): adjusted script using ops/signatures from modules_ops output.
+
+Never treat cognition_grapheme_modules output as final evidence for real-world facts. Never write a long script before any discovery tool call."#;
+
+pub const WORKER_MEMORY_APPENDIX: &str = r#"
+[MEDOUSA_WORKER_MEMORY]
+Locus memory ritual (follow in order when calibrating or loading context):
+1) cognition_memory_schema if the session may be new or schema unknown
+2) cognition_memory_moods and/or cognition_memory_calibrate when AVEC posture is needed (calibrate before claiming calibration receipts)
+3) cognition_memory_context with session_id and optional context_keywords for the task
+4) cognition_memory_recall / cognition_memory_list when inventory or keyword lookup is required
+5) cognition_memory_store only with a full STTP node string when persisting
+
+Pass session_id on every memory tool call. Summarize tool JSON receipts in your final worker message — do not invent AVEC numbers."#;
+
+pub const WORKER_CAPABILITY_APPENDIX: &str = r#"
+[MEDOUSA_WORKER_CAPABILITY]
+For single-shot external actions, prefer cognition_capability_invoke (capability id + input) before hand-authoring Grapheme.
+Use cognition_capability_search / cognition_capability_resolve only to inspect bindings.
+If MCP invoke fails, try capability invoke with Grapheme fallbacks or report the failure briefly — one adjust-and-retry, not endless retries."#;
+
+fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
+    match intent {
+        TurnWorkerIntent::MemoryAvecCalibrate | TurnWorkerIntent::MemoryContext => {
+            WORKER_MEMORY_APPENDIX.to_string()
+        }
+        TurnWorkerIntent::Research | TurnWorkerIntent::General => {
+            format!("{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}")
+        }
+    }
+}
+
+pub fn worker_system_prompt(session_id: &str, intent: TurnWorkerIntent) -> String {
     format!(
-        "{WORKER_SYSTEM_PROMPT}\n\n[MEDOUSA_WORKER_CONTEXT]\nsession_id={session_id}\n\
+        "{WORKER_SYSTEM_PROMPT}\n\n{}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+         session_id={session_id}\n\
+         worker_intent={}\n\
          Always include \"session_id\": \"{session_id}\" on cognition_memory_calibrate, \
-         cognition_memory_moods, cognition_memory_context, cognition_memory_store, and related tools."
+         cognition_memory_moods, cognition_memory_context, cognition_memory_store, and related tools.",
+        worker_intent_appendix(intent),
+        intent.as_str(),
+        session_id = session_id,
     )
 }
 
@@ -87,4 +161,24 @@ pub fn synthesis_user_prompt(
          Produce the final answer for the user. Include outcomes and receipts from the worker. \
          Do not mention internal worker IDs unless helpful for debugging."
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn research_worker_prompt_includes_grapheme_discovery() {
+        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research);
+        assert!(prompt.contains("cognition_grapheme_modules"));
+        assert!(prompt.contains("cognition_grapheme_examples"));
+        assert!(prompt.contains("Attempt A"));
+    }
+
+    #[test]
+    fn memory_worker_prompt_includes_calibrate_ritual() {
+        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate);
+        assert!(prompt.contains("cognition_memory_calibrate"));
+        assert!(!prompt.contains("cognition_grapheme_run"));
+    }
 }

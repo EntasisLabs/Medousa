@@ -268,7 +268,10 @@ pub async fn run_worker_turn(
 
     let request = ToolLoopExecutionRequest {
         user_prompt: record.task_prompt.clone(),
-        system_prompt: Some(worker_system_prompt(&record.session_id)),
+        system_prompt: Some(worker_system_prompt(
+            &record.session_id,
+            TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
+        )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
         tool_input: Value::Null,
@@ -283,7 +286,6 @@ pub async fn run_worker_turn(
         budget: None,
     };
 
-    let worker_turn_id = stream_turn_id.wrapping_add(10_000);
     let result = worker_pipeline
         .execute_with_stream_prior_messages_max_rounds(
             request,

@@ -104,7 +104,10 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition.mcp.invoke",
                     "cognition_mcp_discover",
                     "cognition.mcp.discover",
-                    "cognition_grapheme_modules_search",
+                    "cognition_grapheme_modules",
+                    "cognition_grapheme_modules_info",
+                    "cognition_grapheme_modules_ops",
+                    "cognition_grapheme_examples",
                     "cognition_grapheme_run",
                     "cognition_grapheme_cli_run",
                 ],
@@ -133,20 +136,82 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
     names
 }
 
+/// Tools exposed to the host (main) agent — runtime orchestrator, not Grapheme/MCP executor.
 pub fn host_bus_tool_names() -> HashSet<String> {
     let mut names = HashSet::new();
-    for name in [
-        "cognition_spawn_turn_worker",
-        "cognition_turn_worker_status",
-        "cognition_turn_worker_cancel",
-        "cognition_turn_prepare_final",
-        "cognition.turn.prepare_final",
-        "cognition_utility_time_now",
-        "cognition_utility_day_of_week",
-        "cognition_utility_uuid",
-    ] {
-        names.insert(name.to_string());
-    }
+    let push = |names: &mut HashSet<String>, list: &[&str]| {
+        for name in list {
+            names.insert((*name).to_string());
+        }
+    };
+
+    push(
+        &mut names,
+        &[
+            "cognition_turn_prepare_final",
+            "cognition.turn.prepare_final",
+            "cognition_utility_time_now",
+            "cognition_utility_day_of_week",
+            "cognition_utility_uuid",
+        ],
+    );
+
+    push(
+        &mut names,
+        &[
+            "cognition_spawn_turn_worker",
+            "cognition_turn_worker_status",
+            "cognition_turn_worker_cancel",
+        ],
+    );
+
+    push(
+        &mut names,
+        &[
+            "cognition_memory_schema",
+            "cognition_memory_moods",
+            "cognition_memory_calibrate",
+            "cognition_memory_context",
+            "cognition_memory_list",
+            "cognition_memory_recall",
+            "cognition_memory_store",
+        ],
+    );
+
+    push(
+        &mut names,
+        &[
+            "cognition_capability_list",
+            "cognition.capability.list",
+            "cognition_capability_search",
+            "cognition.capability.search",
+            "cognition_capability_resolve",
+            "cognition.capability.resolve",
+        ],
+    );
+
+    push(
+        &mut names,
+        &[
+            "cognition.job.enqueue",
+            "cognition_runtime_jobs_list",
+            "cognition_runtime_jobs_status",
+            "cognition_runtime_jobs_cancel",
+            "cognition_runtime_delivery_status",
+            "cognition_runtime_recurring_list",
+            "cognition_runtime_recurring_register",
+            "cognition_runtime_recurring_pause",
+            "cognition_runtime_recurring_cancel",
+            "cognition_runtime_recurring_doctor",
+            "cognition_runtime_recurring_preview",
+            "cognition_runtime_workflow_run",
+            "cognition_runtime_workflow_schedule",
+            "cognition_runtime_workflow_status",
+            "cognition_runtime_workflow_cancel",
+            "cognition_runtime_workflow_plan",
+        ],
+    );
+
     names
 }
 
@@ -183,5 +248,25 @@ mod tests {
             TurnWorkerIntent::parse("research"),
             Some(TurnWorkerIntent::Research)
         );
+    }
+
+    #[test]
+    fn research_intent_includes_grapheme_discovery_tools() {
+        let names = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
+        assert!(names.contains("cognition_grapheme_modules"));
+        assert!(names.contains("cognition_grapheme_examples"));
+        assert!(names.contains("cognition_grapheme_run"));
+    }
+
+    #[test]
+    fn host_orchestrator_has_memory_runtime_and_catalog_not_grapheme() {
+        let names = host_bus_tool_names();
+        assert!(names.contains("cognition_memory_calibrate"));
+        assert!(names.contains("cognition_spawn_turn_worker"));
+        assert!(names.contains("cognition_capability_search"));
+        assert!(names.contains("cognition_runtime_workflow_run"));
+        assert!(!names.contains("cognition_grapheme_run"));
+        assert!(!names.contains("cognition_capability_invoke"));
+        assert!(!names.contains("cognition_mcp_invoke"));
     }
 }

@@ -18,6 +18,9 @@ pub(crate) fn print_help() {
     );
     println!("  --tool-call-mode <m>  Tool call mode: auto | strict");
     println!("  --max-tool-rounds <n> Max model tool-call rounds (1-50, default 10)");
+    println!(
+        "                        Host orchestrator cap: MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS (default 8)"
+    );
     println!("  --thinking-capture <b> Capture thinking chunks: true | false");
     println!("  --thinking-max-lines <n> Retained thinking lines (50-5000)");
     println!("  --daemon-url <url>    Medousa daemon base URL (env: MEDOUSA_DAEMON_URL)");
