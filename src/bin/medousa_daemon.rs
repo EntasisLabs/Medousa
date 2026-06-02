@@ -316,6 +316,7 @@ async fn main() -> Result<()> {
         deliver_webhook_url: deliver_webhook_url.clone(),
         allowed_grapheme_modules: Vec::new(),
         session_id: "daemon-agent-runtime".to_string(),
+        backend_label: backend_name.clone(),
     };
 
     let platform = build_daemon_platform(backend.clone(), platform_config)
@@ -1161,24 +1162,78 @@ async fn register_recurring_prompt(
     let recurring_id = request
         .id
         .unwrap_or_else(|| format!("medousa-recurring-{}", Uuid::new_v4().simple()));
-    let compiled_prompt = compile_lane_prompt(EngineExecutionLane::Scheduled, &request.prompt);
+    let fallback_session_id = request
+        .session_id
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("recurring-{recurring_id}"));
+    let execution_mode = request
+        .execution_mode
+        .as_deref()
+        .unwrap_or("prompt")
+        .trim()
+        .to_ascii_lowercase();
 
-    let prompt_payload = PromptJobPayload {
-        user_prompt: compiled_prompt,
-        system_prompt: request.system_prompt,
-        policy_profile: request.policy_profile.or_else(|| {
-            Some(default_policy_profile_for_lane(EngineExecutionLane::Scheduled).to_string())
-        }),
-        model_hint: request.model_hint,
-        memory_policy: None,
+    let (job_type, payload_template_ref) = match execution_mode.as_str() {
+        "prompt" => {
+            let compiled_prompt =
+                compile_lane_prompt(EngineExecutionLane::Scheduled, &request.prompt);
+            let prompt_payload = PromptJobPayload {
+                user_prompt: compiled_prompt,
+                system_prompt: request.system_prompt.clone(),
+                policy_profile: request.policy_profile.or_else(|| {
+                    Some(
+                        default_policy_profile_for_lane(EngineExecutionLane::Scheduled)
+                            .to_string(),
+                    )
+                }),
+                model_hint: request.model_hint.clone(),
+                memory_policy: None,
+            };
+            (
+                "workflow.stasis.prompt".to_string(),
+                prompt_payload.to_payload_ref().map_err(internal_error)?,
+            )
+        }
+        "agent_turn" | "agent-turn" => {
+            let provider = medousa::resolve_llm_provider(None);
+            let model = medousa::resolve_llm_model(
+                request
+                    .model_hint
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty()),
+            );
+            let agent_payload = medousa::recurring_agent_turn::build_recurring_agent_turn_payload(
+                &request.prompt,
+                &fallback_session_id,
+                request.system_prompt.clone(),
+                request.policy_profile.clone(),
+                request.model_hint.clone(),
+                Some(provider),
+                Some(model),
+            );
+            (
+                medousa::recurring_agent_turn::RECURRING_AGENT_TURN_JOB_TYPE.to_string(),
+                agent_payload.to_payload_ref().map_err(|err| {
+                    (StatusCode::BAD_REQUEST, err.to_string())
+                })?,
+            )
+        }
+        other => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "execution_mode={other} is invalid; use prompt or agent_turn"
+                ),
+            ));
+        }
     };
-
-    let payload_template_ref = prompt_payload.to_payload_ref().map_err(internal_error)?;
 
     let mut definition = RecurringDefinition {
         id: recurring_id.clone(),
         queue: queue.clone(),
-        job_type: "workflow.stasis.prompt".to_string(),
+        job_type,
         payload_template_ref,
         cron_expr: request.cron_expr.clone(),
         timezone: timezone.clone(),
@@ -1195,11 +1250,6 @@ async fn register_recurring_prompt(
         .compute_next_run_at(now)
         .map_err(internal_error)?;
 
-    let fallback_session_id = request
-        .session_id
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| format!("recurring-{recurring_id}"));
     let delivery_input = serde_json::json!({ "delivery": request.delivery });
     medousa::recurring_delivery::persist_recurring_delivery_binding(
         &recurring_id,

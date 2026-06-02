@@ -176,6 +176,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         }
         "cognition_capability_invoke" => StepExecutionClass::Mutating,
         "cognition_memory_store"
+        | "cognition_memory_calibrate"
         | "cognition_runtime_workflow_run"
         | "cognition_runtime_workflow_schedule"
         | "cognition_runtime_recurring_register"
@@ -183,6 +184,10 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_grapheme_promote_to_job"
         | "cognition.job.enqueue" => StepExecutionClass::Mutating,
         "cognition_memory_recall"
+        | "cognition_memory_context"
+        | "cognition_memory_list"
+        | "cognition_memory_schema"
+        | "cognition_memory_moods"
         | "cognition_runtime_jobs_list"
         | "cognition_runtime_jobs_status"
         | "cognition_runtime_delivery_status"

@@ -20,6 +20,22 @@ use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_ba
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 
+/// Whether assistant text with no tool calls should end the loop (vs. continue for tool use).
+pub(crate) fn should_finalize_on_text_only_response(
+    has_selected_tool: bool,
+    invocations_len: usize,
+    rounds_executed: usize,
+    max_tool_rounds: usize,
+) -> bool {
+    if has_selected_tool {
+        return false;
+    }
+    if invocations_len > 0 {
+        return true;
+    }
+    rounds_executed >= max_tool_rounds
+}
+
 #[derive(Clone)]
 pub struct MedousaToolLoopPipeline {
     prompt_pipeline: PromptExecutionPipeline,
@@ -225,6 +241,16 @@ impl MedousaToolLoopPipeline {
                     }
 
                     if let Some(text) = maybe_text {
+                        if !should_finalize_on_text_only_response(
+                            has_selected_tool,
+                            invocations.len(),
+                            rounds_executed,
+                            max_tool_rounds,
+                        ) {
+                            messages.push(ChatMessage::assistant(text));
+                            continue;
+                        }
+
                         let last = invocations.last().cloned().unwrap_or(ToolInvocation {
                             tool_name: shared_inputs.selected_tool_name().to_string(),
                             tool_input: (*shared_inputs.tool_input).clone(),
@@ -392,6 +418,26 @@ fn build_fallback_synthesis_prompt(
     prompt.push_str(&tool_output_text);
     prompt.push_str("\n\nProduce final answer grounded in the tool output.");
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_finalize_on_text_only_response;
+
+    #[test]
+    fn interim_status_continues_agent_loop() {
+        assert!(!should_finalize_on_text_only_response(false, 0, 1, 10));
+    }
+
+    #[test]
+    fn final_answer_after_tools() {
+        assert!(should_finalize_on_text_only_response(false, 2, 3, 10));
+    }
+
+    #[test]
+    fn text_only_on_last_round_finalizes() {
+        assert!(should_finalize_on_text_only_response(false, 0, 10, 10));
+    }
 }
 
 fn sanitize_tool_name_for_model(name: &str) -> String {

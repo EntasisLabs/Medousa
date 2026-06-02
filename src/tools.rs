@@ -17,7 +17,7 @@ use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::prelude::{
-    BackoffPolicy, MemoryRecallRequest, MemoryStoreRequest, NewJob, RecurringDefinition,
+    BackoffPolicy, NewJob, RecurringDefinition,
     RuntimeBackend, RuntimeComposition, StasisError,
 };
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
@@ -683,188 +683,11 @@ impl StasisTool for CognitionGraphemeRunTool {
     }
 }
 
-// ── CognitionMemoryStoreTool ─────────────────────────────────────────────────
-
-pub struct CognitionMemoryStoreTool {
-    writer: Arc<dyn MemoryContextWriter>,
-    session_id: String,
-    event_tx: mpsc::Sender<TuiEvent>,
-}
-
-impl CognitionMemoryStoreTool {
-    pub fn new(
-        writer: Arc<dyn MemoryContextWriter>,
-        session_id: String,
-        event_tx: mpsc::Sender<TuiEvent>,
-    ) -> Self {
-        Self {
-            writer,
-            session_id,
-            event_tx,
-        }
-    }
-}
-
-#[async_trait]
-impl StasisTool for CognitionMemoryStoreTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_store"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Persist a memory node into the Locus memory store for future recall across turns. \
-             Use this to remember important context, decisions, insights, or any information \
-             that should survive beyond the current conversation window. \
-             canonical example:
-
-             ⊕⟨ ⏣0{ trigger: manual, response_format: temporal_node, origin_session: \"session-abc\", compression_depth: 1, parent_node: null, prime: { attractor_config: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85 }, context_summary: \"parser hardening session\", relevant_tier: raw, retrieval_budget: 8 } } ⟩
-            ⦿⟨ ⏣0{ timestamp: \"2026-04-25T00:00:00Z\", tier: raw, session_id: \"session-abc\", schema_version: \"sttp-1.0\", user_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 }, model_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 } } ⟩
-            ◈⟨ ⏣0{ focus(.99): \"grammar update\", decision(.96): { parser_mode(.95): \"strict_and_tolerant\" } } ⟩
-            ⍉⟨ ⏣0{ rho: 0.95, kappa: 0.94, psi: 2.93, compression_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 } } ⟩            
-             ",
-        )
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                    "description": "The content to store. Should be a concise, self-contained statement."
-                },
-                "tier": {
-                    "type": "string",
-                    "description": "Memory tier: 'insight', 'context', or 'decision'. Defaults to 'context'."
-                }
-            },
-            "required": ["content"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let content = input
-            .get("content")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure("cognition_memory_store: content is required".to_string())
-            })?;
-        let tier = input
-            .get("tier")
-            .and_then(|v| v.as_str())
-            .unwrap_or("context");
-
-        let raw_node = json!({
-            "content": content,
-            "tier": tier
-        })
-        .to_string();
-
-        let request = MemoryStoreRequest {
-            session_id: self.session_id.clone(),
-            raw_node,
-        };
-
-        let response = self.writer.store_context(&request).await?;
-
-        let _ = self
-            .event_tx
-            .send(TuiEvent::ToolInvoked {
-                tool_name: "cognition_memory_store".to_string(),
-                input_summary: content.chars().take(50).collect(),
-            })
-            .await;
-
-        Ok(json!({
-            "node_id": response.node_id,
-            "stored": response.valid,
-            "validation_error": response.validation_error
-        }))
-    }
-}
-
-// ── CognitionMemoryRecallTool ────────────────────────────────────────────────
-
-pub struct CognitionMemoryRecallTool {
-    reader: Arc<dyn MemoryContextReader>,
-    event_tx: mpsc::Sender<TuiEvent>,
-}
-
-impl CognitionMemoryRecallTool {
-    pub fn new(reader: Arc<dyn MemoryContextReader>, event_tx: mpsc::Sender<TuiEvent>) -> Self {
-        Self { reader, event_tx }
-    }
-}
-
-#[async_trait]
-impl StasisTool for CognitionMemoryRecallTool {
-    fn name(&self) -> &'static str {
-        "cognition_memory_recall"
-    }
-
-    fn description(&self) -> Option<&'static str> {
-        Some(
-            "Retrieve relevant memory nodes from the Locus store by semantic query. \
-             Use this to surface previously stored context, decisions, or insights \
-             relevant to the current moment of work.",
-        )
-    }
-
-    fn input_schema(&self) -> Option<Value> {
-        Some(json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Natural language query using keywords describing what context to retrieve"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum nodes to retrieve (1–20, default 5)",
-                    "minimum": 1,
-                    "maximum": 20
-                }
-            },
-            "required": ["query"]
-        }))
-    }
-
-    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let query = input.get("query").and_then(|v| v.as_str()).ok_or_else(|| {
-            StasisError::PortFailure("cognition_memory_recall: query is required".to_string())
-        })?;
-        let limit = input
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5)
-            .min(20) as usize;
-
-        let request = MemoryRecallRequest {
-            query_text: Some(query.to_string()),
-            limit,
-            ..Default::default()
-        };
-
-        let response = self.reader.recall(&request).await?;
-
-        let _ = self
-            .event_tx
-            .send(TuiEvent::ToolInvoked {
-                tool_name: "cognition_memory_recall".to_string(),
-                input_summary: query.chars().take(50).collect(),
-            })
-            .await;
-
-        Ok(json!({
-            "retrieved": response.retrieved,
-            "node_sync_keys": response.node_sync_keys,
-            "has_more": response.has_more,
-            "retrieval_path": response.retrieval_path,
-            "fallback_triggered": response.fallback_triggered
-        }))
-    }
-}
+pub use crate::memory_tools::{
+    CognitionMemoryCalibrateTool, CognitionMemoryContextTool, CognitionMemoryListTool,
+    CognitionMemoryMoodsTool, CognitionMemoryRecallTool, CognitionMemorySchemaTool,
+    CognitionMemoryStoreTool,
+};
 
 // ── Grapheme CLI Discovery/Run Tools (Phase A) ─────────────────────────────
 
@@ -2851,7 +2674,6 @@ mod tests {
     use async_trait::async_trait;
     use genai::chat::Tool;
     use serde_json::json;
-    use stasis::prelude::StasisError;
     use stasis::application::orchestration::tool_registry::ToolRegistry;
 
     use super::{

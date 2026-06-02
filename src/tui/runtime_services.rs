@@ -30,7 +30,10 @@ use crate::tools::{
     CognitionGraphemeModulesOpsTool, CognitionGraphemeModulesSearchTool,
     CognitionGraphemePromoteLastRunToRecurringTool, CognitionGraphemePromoteToJobTool,
     CognitionGraphemePromoteToRecurringTool, CognitionGraphemeRunTool, CognitionJobEnqueueTool,
-    CognitionMcpDiscoverTool, CognitionMcpInvokeTool, CognitionMcpServersTool, CognitionMemoryRecallTool, CognitionMemoryStoreTool,
+    CognitionMcpDiscoverTool, CognitionMcpInvokeTool, CognitionMcpServersTool,
+    CognitionMemoryCalibrateTool, CognitionMemoryContextTool, CognitionMemoryListTool,
+    CognitionMemoryMoodsTool, CognitionMemoryRecallTool, CognitionMemorySchemaTool,
+    CognitionMemoryStoreTool,
     CognitionRuntimeJobStatusTool, CognitionRuntimeRecurringPreviewTool,
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
     PolicyAwareToolRegistry, TuiRuntime,
@@ -149,13 +152,34 @@ pub(crate) async fn assemble_tui_runtime(
         compaction_target.clone(),
         turn_scope.clone(),
     ))?;
+    tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
+    tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
+    tool_registry.register_tool(CognitionMemoryCalibrateTool::new(
+        locus_store.clone(),
+        session_id.to_string(),
+        event_tx.clone(),
+    ))?;
     tool_registry.register_tool(CognitionMemoryStoreTool::new(
         memory_writer.clone(),
         session_id.to_string(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(CognitionMemoryRecallTool::new(
+    tool_registry.register_tool(CognitionMemoryContextTool::new(
+        locus_store.clone(),
         memory_reader.clone(),
+        session_id.to_string(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionMemoryListTool::new(
+        locus_store.clone(),
+        memory_reader.clone(),
+        session_id.to_string(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionMemoryRecallTool::new(
+        locus_store.clone(),
+        memory_reader.clone(),
+        session_id.to_string(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemeModulesSearchTool::new(event_tx.clone()))?;

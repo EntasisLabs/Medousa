@@ -5,7 +5,6 @@ use locus_core_rs::domain::contracts::NodeStoreInitializer;
 use locus_core_rs::storage::surrealdb::node_store::SurrealDbNodeStore;
 use locus_core_rs::NodeStore;
 use stasis::infrastructure::memory::locus_context_reader::LocusContextReader;
-use stasis::infrastructure::memory::locus_context_writer::LocusContextWriter;
 use stasis::infrastructure::memory::locus_memory_operations::LocusMemoryOperations;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::memory::memory_context_reader::MemoryContextReader;
@@ -15,6 +14,7 @@ use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};
 use stasis::prelude_ext::LocusNodeStoreFactory;
 
 use crate::identity_memory;
+use crate::locus_memory::{MedousaLocusContextWriter, resolve_locus_ingest_profile};
 use crate::runtime::locus_surreal_client::StasisSurrealDbClient;
 
 /// Shared memory adapters wired into Stasis and the agent tool surface.
@@ -77,10 +77,13 @@ impl MemoryAdapterBundle {
         locus_store: Arc<dyn NodeStore>,
         identity_store: Arc<dyn IdentityMemoryStore>,
     ) -> Self {
+        let ingest_profile = resolve_locus_ingest_profile();
         let memory_reader: Arc<dyn MemoryContextReader> =
             Arc::new(LocusContextReader::new(locus_store.clone()));
-        let memory_writer: Arc<dyn MemoryContextWriter> =
-            Arc::new(LocusContextWriter::new(locus_store.clone()));
+        let memory_writer: Arc<dyn MemoryContextWriter> = Arc::new(MedousaLocusContextWriter::new(
+            locus_store.clone(),
+            ingest_profile,
+        ));
         let memory_operations: Arc<dyn MemoryOperations> =
             Arc::new(LocusMemoryOperations::new(locus_store.clone(), None));
 

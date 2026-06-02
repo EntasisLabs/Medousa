@@ -54,11 +54,11 @@ ratatui-image = { version = "11.0.2", default-features = false, features = ["cro
 image = { version = "0.25.6", default-features = false, features = ["png"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 futures-util = "0.3"
-stasis-rs = { version = "0.1.0"}
+stasis-rs = { version = "0.2.0"}
 stasis-rs-macros = { version = "0.1.0"}
 genai = "0.5.3"
 keyring = "2.3"
-locus-core-rs = "0.2.1"
+locus-core-rs = "0.3"
 teloxide = "0.17.0"
 serenity = "0.12.5"
 slack-morphism = { version = "2.22", default-features = false, features = ["hyper"] }

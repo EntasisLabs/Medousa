@@ -120,10 +120,11 @@ Registration rejects schedules whose first two firings are **&lt; 60 seconds** a
 - [x] Resolve Telegram chat from `channel_session_store` via `delivery.mode=linked_channel` and active session id
 - [x] TUI local turns set `turn_scope` so recurring tools see session id for linked delivery
 
-### Phase 3 — Richer jobs (later)
+### Phase 3 — Richer jobs
 
-- [ ] Recurring **agent turns** (`run_agent_turn` per tick) vs prompt/grapheme-only output
+- [x] Recurring **agent turns** (`execution_mode: agent_turn` → `workflow.medousa.recurring_agent_turn` + `run_agent_turn` per tick)
 - [ ] User-level default delivery profile in product config
+- [x] Tool loop interim-text fix (see [tool-loop-interim-text-fix.md](tool-loop-interim-text-fix.md))
 
 ## Code anchors
 

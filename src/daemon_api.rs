@@ -175,6 +175,8 @@ pub struct RegisterRecurringPromptRequest {
     pub delivery: Option<serde_json::Value>,
     /// Medousa session id for `delivery.mode=linked_channel` (defaults to `recurring-{id}`).
     pub session_id: Option<String>,
+    /// `prompt` (single LLM, default) or `agent_turn` (full Medousa tool loop per tick).
+    pub execution_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

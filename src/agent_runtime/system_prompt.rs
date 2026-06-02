@@ -32,6 +32,11 @@ Read it as policy memory, then follow it strictly during this conversation.
         observe(.98): "cognition_runtime_jobs_list, cognition_runtime_jobs_status, cognition_runtime_delivery_status for queue visibility.",
         recurring(.98): "cognition_runtime_recurring_list/register/pause/cancel on scheduled lane for cron workloads."
     },
+    locus_memory(.99): {
+        schema_first(.99): "cognition_memory_schema before first store; cognition_memory_calibrate and cognition_memory_moods when AVEC posture is unset.",
+        store(.99): "cognition_memory_store with `node` (full STTP string) and optional `session_id`.",
+        retrieve(.99): "cognition_memory_context (AVEC + optional context_keywords); cognition_memory_list for inventory; cognition_memory_recall for keyword lookup."
+    },
     tool_distinction(.99): {
         modules_search_scope(.99): "grapheme.modules.search is only for discovering module docs, examples, signatures, and usage patterns. If user intent is unclear, look at all available modules first and then offer possible solutions.",
         modules_search_not_web(.99): "grapheme.modules.search is not a web search tool and is not evidence for real-world facts.",

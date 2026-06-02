@@ -11,6 +11,7 @@ use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_co
 use crate::artifact_store;
 use crate::channel_session_store;
 use crate::turn_continuation;
+use crate::recurring_agent_turn;
 use crate::recurring_delivery;
 use crate::session_store;
 use crate::verification_store;
@@ -52,6 +53,7 @@ pub struct PlatformBuildConfig {
     pub deliver_webhook_url: String,
     pub allowed_grapheme_modules: Vec<String>,
     pub session_id: String,
+    pub backend_label: String,
 }
 
 impl PlatformBuildConfig {
@@ -63,6 +65,7 @@ impl PlatformBuildConfig {
             deliver_webhook_url: deliver_webhook_url.into(),
             allowed_grapheme_modules: Vec::new(),
             session_id: "daemon-agent-runtime".to_string(),
+            backend_label: "in-memory".to_string(),
         }
     }
 }
@@ -136,9 +139,16 @@ async fn build_platform_inner(
 
     sync_mcp_catalog(&agent).await;
 
-    Ok(Arc::new(MedousaPlatformRuntime {
-        agent: Arc::new(agent),
-    }))
+    let agent = Arc::new(agent);
+    recurring_agent_turn::register_recurring_agent_turn_handler(
+        agent.runtime.as_ref(),
+        agent.clone(),
+        config.backend_label.clone(),
+    )
+    .await
+    .context("failed to register recurring agent-turn job handler")?;
+
+    Ok(Arc::new(MedousaPlatformRuntime { agent }))
 }
 
 async fn sync_mcp_catalog(agent: &TuiRuntime) {

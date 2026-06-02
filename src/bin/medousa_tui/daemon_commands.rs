@@ -205,6 +205,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         model_hint: None,
         delivery: None,
         session_id: None,
+        execution_mode: None,
     };
 
     let response = client

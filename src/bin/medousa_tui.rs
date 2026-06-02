@@ -1074,10 +1074,11 @@ mod tests {
     use super::{
         JobHistoryEntry, ObservabilityFilter, RuntimeSettings, StageRoutingMatrix, TextBuffer,
         TuiState, UiMode, UiPerfStats, WorkerCommand, load_editor_file,
-        parse_allowed_modules, parse_backend, resolve_editor_run_source,
-        run_editor_source_via_runtime, validate_editor_run_allowlist, write_editor_file,
+        parse_allowed_modules, resolve_editor_run_source, run_editor_source_via_runtime,
+        validate_editor_run_allowlist, write_editor_file,
     };
     use medousa::build_tui_runtime;
+    use medousa::parse_backend;
     use medousa::events::TuiEvent;
     use medousa::session::{ConversationTurn, SessionHistorySummary};
     use std::collections::{HashMap, VecDeque};
