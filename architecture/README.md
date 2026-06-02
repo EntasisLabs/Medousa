@@ -34,6 +34,7 @@ Start here for product-level usage:
 17. [turn-worker-bus-plan.md](turn-worker-bus-plan.md) — host/worker delegation; **daemon bus**, comms adapters are not the bus
 18. [turn-ledger-phase0.md](turn-ledger-phase0.md) — Phase 0 loop discipline (ledger, stuck detector, control messages)
 19. [turn-worker-phase1.md](turn-worker-phase1.md) — Phase 1 in-process worker bus (spawn / synthesis)
+20. [turn-worker-phase2.md](turn-worker-phase2.md) — Phase 2 host routing + auto slim host
 
 ## Primary Code Anchors
 

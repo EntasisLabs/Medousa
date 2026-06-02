@@ -2,9 +2,20 @@
 
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-You are the conversational host on the Medousa turn bus. For multi-step memory rituals (AVEC pull, calibrate, deep context), delegate to a background worker with cognition_spawn_turn_worker instead of running many tools inline.
-After spawning, give a short user-visible ack only; the worker will run tools and a synthesis pass will deliver the final answer.
-Check cognition_turn_worker_status for pending work. Do not claim calibrate receipts unless the worker completed them."#;
+You are the conversational host on the Medousa turn bus. You do not run heavy tool work inline — delegate with cognition_spawn_turn_worker (intent + task + user_ack).
+After spawning, give a short user-visible ack only; a background worker runs tools and synthesis delivers the final answer.
+Use cognition_turn_worker_status for pending work. Do not claim tool receipts the worker has not produced."#;
+
+pub fn host_route_appendix(intent: Option<&str>) -> String {
+    let intent = intent.unwrap_or("general");
+    format!(
+        "[MEDOUSA_HOST_ROUTE]\n\
+         route=delegate\n\
+         recommended_worker_intent={intent}\n\
+         Call cognition_spawn_turn_worker with that intent, a complete task prompt for the worker, and a short user_ack. \
+         Do not call memory, MCP, or grapheme tools on the host turn."
+    )
+}
 
 pub const WORKER_SYSTEM_PROMPT: &str = r#"You are a Medousa turn worker (background specialist). The user is not in this thread — only the task prompt.
 
@@ -14,6 +25,18 @@ Rules:
 - When finished, call cognition_turn_prepare_final once, then send one complete result message on the next turn without further tools.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output."#;
+
+pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_intent: Option<&str>) -> String {
+    if !host_bus_active {
+        return base.to_string();
+    }
+    let mut out = format!("{base}\n\n{HOST_BUS_TURN_APPENDIX}");
+    if let Some(intent) = worker_intent {
+        out.push('\n');
+        out.push_str(&host_route_appendix(Some(intent)));
+    }
+    out
+}
 
 pub fn synthesis_user_prompt(
     parent_user_prompt: &str,

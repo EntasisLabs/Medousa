@@ -65,7 +65,7 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
         Some(
             "Delegate heavy work to a background turn worker (memory rituals, multi-tool tasks). \
              Returns immediately; the worker runs tools with a focused policy, then a synthesis pass \
-             delivers the final user-facing answer. Use intent memory.avec_calibrate for AVEC pull+calibrate flows.",
+             delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general.",
         )
     }
 

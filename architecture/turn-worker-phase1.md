@@ -28,13 +28,15 @@ Phase 1 of [turn-worker-bus-plan.md](turn-worker-bus-plan.md): in-process **host
 
 Defined in `src/agent_runtime/turn_worker/policy.rs`.
 
-## Optional strict host mode
+## Host bus env (updated in Phase 2)
 
-```bash
-export MEDOUSA_TURN_HOST_BUS=1   # host turn sees only spawn/status/cancel + prepare_final + utilities
-```
+| `MEDOUSA_TURN_HOST_BUS` | Behavior |
+|-------------------------|----------|
+| *(unset)* / `auto` | Slim host only when route is `delegate:*` (default) |
+| `force` / `1` / `true` | Slim host on every tool turn |
+| `off` / `0` / `false` | Full host registry; spawn still available |
 
-Without this, the host keeps the **full registry** but can still delegate via spawn (recommended for gradual rollout).
+See [turn-worker-phase2.md](turn-worker-phase2.md).
 
 ## State
 

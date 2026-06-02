@@ -34,8 +34,9 @@ use super::turn_budget::{
 };
 use super::turn_completion::ToolLoopCompletionGate;
 use super::turn_worker::{
-    ActiveWorkerBusSession, WorkerRuntimeContext, host_bus_mode_enabled,
-    pipeline_for_turn_profile, system_prompt_for_host_bus,
+    ActiveWorkerBusSession, WorkerRuntimeContext, apply_host_profile_to_activation,
+    host_route_notice, pipeline_for_turn_profile, resolve_host_turn_profile,
+    system_prompt_for_host_profile,
 };
 use crate::turn_continuation::StoredDeliveryTarget;
 use super::turn_services::{
@@ -506,7 +507,15 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         prompt_preview,
     } = params;
 
-    let host_bus = host_bus_mode_enabled();
+    let host_profile = resolve_host_turn_profile(&original_prompt, activation.max_tool_rounds);
+    activation = apply_host_profile_to_activation(activation, &host_profile);
+    let host_bus = host_profile.host_bus_active;
+    let suggested_intent = host_profile
+        .route
+        .suggested_worker_intent()
+        .map(|i| i.as_str());
+    sink.notice(host_route_notice(&host_profile)).await;
+
     worker_scheduler
         .set_runtime_context(WorkerRuntimeContext {
             tool_registry: tool_registry.clone(),
@@ -613,9 +622,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
     if activation.enforce_no_tools {
         let mut messages = Vec::with_capacity(prior_messages.len() + 2);
-        messages.push(ChatMessage::system(system_prompt_for_host_bus(
+        messages.push(ChatMessage::system(system_prompt_for_host_profile(
             DEFAULT_SYSTEM_PROMPT,
             host_bus,
+            suggested_intent,
         )));
         messages.extend(prior_messages);
         messages.push(ChatMessage::user(prompt_for_request));
@@ -668,7 +678,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
     let request = ToolLoopExecutionRequest {
         user_prompt: prompt_for_request,
-        system_prompt: Some(system_prompt_for_host_bus(DEFAULT_SYSTEM_PROMPT, host_bus)),
+        system_prompt: Some(system_prompt_for_host_profile(
+            DEFAULT_SYSTEM_PROMPT,
+            host_bus,
+            suggested_intent,
+        )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
         tool_input: Value::Null,

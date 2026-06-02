@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phase 0** — [turn-ledger-phase0.md](turn-ledger-phase0.md). **Phase 1** — [turn-worker-phase1.md](turn-worker-phase1.md). Phases 2+ below remain planning.
+**Phase 0** — [turn-ledger-phase0.md](turn-ledger-phase0.md). **Phase 1** — [turn-worker-phase1.md](turn-worker-phase1.md). **Phase 2** — [turn-worker-phase2.md](turn-worker-phase2.md). Phases 3+ below remain planning.
 
 ## Thesis
 
@@ -211,11 +211,9 @@ All logic in **daemon agent runtime** (`agent_runtime/`, `medousa_tool_loop.rs`,
 
 **Adapters:** no new business logic in TUI/Telegram — they consume new sink events and pending state from daemon responses.
 
-### Phase 2 — Slim host + capability policy
+### Phase 2 — Slim host + capability policy ✅
 
-- Host classifies: `handle_inline` vs `delegate:memory.avec_calibrate` vs `delegate:research`.
-- Reuse [`execution_policy.rs`](../src/execution_policy.rs) / lane ideas: allowlist + max rounds per intent.
-- Reduces “full registry in one context” without the model inventing tool names.
+Implemented — see [turn-worker-phase2.md](turn-worker-phase2.md). Heuristic host routing, `MEDOUSA_TURN_HOST_BUS=auto|force|off`, host round cap, per-intent worker budgets.
 
 ### Phase 3 — Durable worker (Stasis)
 

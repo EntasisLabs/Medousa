@@ -64,6 +64,10 @@ pub use turn_ledger::{
     developer_message_for_heuristic_interim_continue, persist_ledger_record,
     push_turn_control_message, stuck_turn_user_message,
 };
+pub use turn_worker::{
+    HostTurnProfile, HostTurnRoute, classify_host_turn_route_heuristic, host_bus_env_mode,
+    resolve_host_turn_profile,
+};
 pub use turn_orchestrator::{
     IntentClassification, LocalTurnExecutionParams, PreparedTurnPrompt, PrepareTurnPromptParams,
     AssembleLocalTurnParams, AssembledLocalTurn,

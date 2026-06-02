@@ -18,7 +18,6 @@ use crate::agent_runtime::{
 };
 use crate::daemon_api::InteractiveTurnRequest;
 use crate::stage_routing::StageRoutingMatrix;
-use crate::tui::settings::parse_usize_with_bounds;
 use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use crate::tui::settings::RuntimeSettings;
 use stasis::application::orchestration::prompt_pipeline::{
@@ -28,7 +27,7 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
-use super::policy::{TurnWorkerIntent, allowed_tool_names_for_intent};
+use super::policy::{TurnWorkerIntent, allowed_tool_names_for_intent, max_worker_tool_rounds};
 use super::prompts::{WORKER_SYSTEM_PROMPT, synthesis_user_prompt};
 use super::registry::AllowlistToolRegistry;
 use super::store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore};
@@ -253,10 +252,13 @@ pub async fn run_worker_turn(
     );
 
     let settings = worker_settings_from_record(&record);
+    let worker_rounds = TurnWorkerIntent::parse(&record.intent)
+        .map(max_worker_tool_rounds)
+        .unwrap_or(10);
     let activation = turn_services::decide_turn_activation(
         &record.task_prompt,
         turn_services::parse_tool_call_mode(&settings.tool_call_mode),
-        parse_usize_with_bounds(&settings.max_tool_rounds, 12, 1, 50),
+        worker_rounds,
         0,
         256,
         32,
@@ -425,14 +427,9 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
     settings
 }
 
+/// Prefer [`super::routing::resolve_host_turn_profile`] for Phase 2 auto routing.
 pub fn host_bus_mode_enabled() -> bool {
-    matches!(
-        std::env::var("MEDOUSA_TURN_HOST_BUS")
-            .ok()
-            .map(|v| v.trim().to_ascii_lowercase())
-            .as_deref(),
-        Some("1") | Some("true") | Some("yes") | Some("on")
-    )
+    super::routing::host_bus_force_enabled()
 }
 
 pub fn pipeline_for_turn_profile(
@@ -456,11 +453,5 @@ pub fn pipeline_for_turn_profile(
 }
 
 pub fn system_prompt_for_host_bus(base: &str, host_bus: bool) -> String {
-    if !host_bus {
-        return base.to_string();
-    }
-    format!(
-        "{base}\n\n{}",
-        super::prompts::HOST_BUS_TURN_APPENDIX
-    )
+    super::prompts::system_prompt_for_host_profile(base, host_bus, None)
 }
