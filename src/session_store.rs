@@ -254,6 +254,7 @@ impl SessionStore for SurrealSessionStore {
 
                 SessionHistorySummary {
                     session_id: agg.session_id,
+                    display_name: None,
                     turns: agg.turns,
                     verification_runs: verifications.len(),
                     last_timestamp: agg.last_timestamp,

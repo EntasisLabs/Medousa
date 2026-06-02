@@ -163,7 +163,7 @@ pub fn validate_concurrent_workflow(
 
 pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass {
     match tool_name {
-        "cognition_mcp_invoke" | "cognition.mcp.invoke" => {
+        "cognition_mcp_invoke" => {
             let read_only = input
                 .get("effect_class")
                 .and_then(|value| value.as_str())
@@ -182,7 +182,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_runtime_recurring_register"
         | "cognition_mcp_promote_to_job"
         | "cognition_grapheme_promote_to_job"
-        | "cognition.job.enqueue" => StepExecutionClass::Mutating,
+        | "cognition_job_enqueue" => StepExecutionClass::Mutating,
         "cognition_memory_recall"
         | "cognition_memory_context"
         | "cognition_memory_list"
@@ -192,10 +192,9 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_runtime_jobs_status"
         | "cognition_runtime_delivery_status"
         | "cognition_mcp_discover"
-        | "cognition.mcp.discover"
         | "cognition_capability_search"
-        | "cognition.capability.search"
-        | "cognition_grapheme_modules_search"
+        | "cognition_grapheme_modules"
+        | "cognition_grapheme_template_run"
         | "cognition_turn_prepare_final"
         | "cognition.turn.prepare_final" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {

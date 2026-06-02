@@ -499,6 +499,18 @@ async fn attempt_daemon_interactive_turn(
         provider: state.settings.provider.clone(),
         model: state.settings.model.clone(),
         stage_routing: state.stage_routing.clone(),
+        max_tool_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
+            &state.settings.max_tool_rounds,
+            10,
+            1,
+            50,
+        )),
+        retry_runtime_max_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
+            &state.settings.retry_runtime_max_rounds,
+            medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+            1,
+            10,
+        )),
     };
 
     daemon_start_interactive_turn(&state.daemon_url, &request)

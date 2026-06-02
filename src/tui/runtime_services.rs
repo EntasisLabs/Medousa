@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use locus_core_rs::NodeStore;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
+use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
@@ -12,6 +13,12 @@ use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 use tokio::sync::mpsc;
 
 use crate::engine_context::EngineExecutionLane;
+use crate::identity_memory::{
+    resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
+};
+use crate::identity_tools::{
+    CognitionIdentityCommitTool, CognitionIdentityContextTool, CognitionIdentityProposeTool,
+};
 use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
 use crate::runtime::stasis_wire::{LocalStasisWireConfig, build_local_stasis_composition};
@@ -44,10 +51,7 @@ use crate::bridge_tools::{
 };
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
-use crate::tool_aliases::ToolNameAlias;
-use crate::turn_control_tools::{
-    CognitionTurnPrepareFinalTool, COGNITION_TURN_PREPARE_FINAL_DOTTED,
-};
+use crate::turn_control_tools::CognitionTurnPrepareFinalTool;
 use crate::turn_continuation::TurnContinuationScope;
 use crate::workflow;
 use tokio::sync::RwLock;
@@ -155,6 +159,26 @@ pub(crate) async fn assemble_tui_runtime(
         compaction_target.clone(),
         turn_scope.clone(),
     ))?;
+    let identity_service = Arc::new(IdentityMemoryService::new(identity_memory_store.clone()));
+    let identity_user_id = resolve_identity_user_id(Some(session_id));
+    let identity_persona_id = resolve_identity_persona_id();
+    let identity_channel_id = resolve_identity_channel_id(Some("interactive"));
+    tool_registry.register_tool(CognitionIdentityContextTool::new(
+        identity_service.clone(),
+        identity_user_id,
+        identity_persona_id,
+        identity_channel_id,
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionIdentityProposeTool::new(
+        identity_service.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionIdentityCommitTool::new(
+        identity_service,
+        event_tx.clone(),
+    ))?;
+
     tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
     tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionMemoryCalibrateTool::new(
@@ -222,10 +246,6 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
 
     tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        COGNITION_TURN_PREPARE_FINAL_DOTTED,
-        CognitionTurnPrepareFinalTool,
-    ))?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
@@ -278,54 +298,22 @@ pub(crate) async fn assemble_tui_runtime(
         capability_registry.clone(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        "cognition_capability_resolve",
-        CognitionCapabilityResolveTool::new(capability_registry.clone(), event_tx.clone()),
-    ))?;
     tool_registry.register_tool(CognitionCapabilityListTool::new(capability_registry.clone()))?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        "cognition_capability_list",
-        CognitionCapabilityListTool::new(capability_registry.clone()),
-    ))?;
     tool_registry.register_tool(CognitionCapabilitySearchTool::new(
         capability_registry.clone(),
         event_tx.clone(),
-    ))?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        "cognition_capability_search",
-        CognitionCapabilitySearchTool::new(capability_registry.clone(), event_tx.clone()),
     ))?;
     tool_registry.register_tool(CognitionMcpDiscoverTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        "cognition_mcp_discover",
-        CognitionMcpDiscoverTool::new(
-            mcp_gateway_client.clone(),
-            session_id.to_string(),
-            event_tx.clone(),
-        ),
-    ))?;
     tool_registry.register_tool(CognitionMcpInvokeTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
         event_tx.clone(),
     ))?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        "cognition_mcp_invoke",
-        CognitionMcpInvokeTool::new(
-            mcp_gateway_client.clone(),
-            session_id.to_string(),
-            event_tx.clone(),
-        ),
-    ))?;
     tool_registry.register_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
-    tool_registry.register_tool(ToolNameAlias::new(
-        "cognition_mcp_servers",
-        CognitionMcpServersTool::new(mcp_gateway_client.clone()),
-    ))?;
     tool_registry.register_tool(CognitionCapabilityInvokeTool::new(
         capability_registry.clone(),
         runtime.clone(),

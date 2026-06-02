@@ -85,6 +85,10 @@ pub(crate) enum WizardStep {
     Backend,
     BackendSurrealKvPath,
     BackendSurrealWsEndpoint,
+    BackendSurrealWsUsername,
+    BackendSurrealWsPassword,
+    BackendSurrealNamespace,
+    BackendSurrealDatabase,
     DaemonUrl,
     DaemonBind,
     LaunchDaemon,
@@ -145,6 +149,12 @@ pub(crate) struct WizardBootstrap {
     pub(crate) default_ollama_model: String,
     pub(crate) default_ollama_base_url: String,
     pub(crate) surreal_kv_default_path: String,
+    pub(crate) initial_surreal_username: String,
+    pub(crate) initial_surreal_password: String,
+    pub(crate) initial_surreal_namespace: String,
+    pub(crate) initial_surreal_database: String,
+    pub(crate) default_surreal_namespace: String,
+    pub(crate) default_surreal_database: String,
     pub(crate) force_daemon: bool,
     pub(crate) force_no_daemon: bool,
     pub(crate) force_tui: bool,
@@ -186,6 +196,11 @@ pub(crate) struct WizardOutput {
     pub(crate) telegram_heartbeat_nudges_enabled: bool,
     pub(crate) telegram_heartbeat_chat_ids: Option<String>,
     pub(crate) tui_response_depth_mode: String,
+    pub(crate) surreal_endpoint: String,
+    pub(crate) surreal_username: String,
+    pub(crate) surreal_password: String,
+    pub(crate) surreal_namespace: String,
+    pub(crate) surreal_database: String,
 }
 
 pub(crate) enum WizardTransition {
@@ -232,6 +247,10 @@ pub(crate) struct WizardState {
     pub(crate) telegram_heartbeat_nudges_enabled: bool,
     pub(crate) telegram_heartbeat_chat_ids: String,
     pub(crate) tui_response_depth_mode: String,
+    pub(crate) surreal_username: String,
+    pub(crate) surreal_password: String,
+    pub(crate) surreal_namespace: String,
+    pub(crate) surreal_database: String,
     pub(crate) status_message: Option<String>,
 }
 
@@ -330,11 +349,23 @@ impl WizardState {
             telegram_heartbeat_nudges_enabled: bootstrap.initial_telegram_heartbeat_nudges,
             telegram_heartbeat_chat_ids: bootstrap.initial_telegram_heartbeat_chat_ids.clone(),
             tui_response_depth_mode: bootstrap.initial_tui_response_depth.clone(),
+            surreal_username: bootstrap.initial_surreal_username.clone(),
+            surreal_password: bootstrap.initial_surreal_password.clone(),
+            surreal_namespace: if bootstrap.initial_surreal_namespace.trim().is_empty() {
+                bootstrap.default_surreal_namespace.clone()
+            } else {
+                bootstrap.initial_surreal_namespace.clone()
+            },
+            surreal_database: if bootstrap.initial_surreal_database.trim().is_empty() {
+                bootstrap.default_surreal_database.clone()
+            } else {
+                bootstrap.initial_surreal_database.clone()
+            },
             status_message: None,
             bootstrap,
         };
 
-        state.apply_provider_defaults();
+        state.apply_provider_defaults(false);
         state
     }
 
@@ -349,6 +380,10 @@ impl WizardState {
             WizardStep::Backend => "Storage Backend",
             WizardStep::BackendSurrealKvPath => "SurrealKV Path",
             WizardStep::BackendSurrealWsEndpoint => "SurrealWS Endpoint",
+            WizardStep::BackendSurrealWsUsername => "SurrealDB Username",
+            WizardStep::BackendSurrealWsPassword => "SurrealDB Password",
+            WizardStep::BackendSurrealNamespace => "Surreal Namespace",
+            WizardStep::BackendSurrealDatabase => "Surreal Database",
             WizardStep::DaemonUrl => "Runtime URL",
             WizardStep::DaemonBind => "Runtime Bind",
             WizardStep::LaunchDaemon => "Background Runtime",
@@ -408,6 +443,10 @@ impl WizardState {
                 }
                 BackendChoice::SurrealWs { .. } => {
                     flow.push(WizardStep::BackendSurrealWsEndpoint);
+                    flow.push(WizardStep::BackendSurrealWsUsername);
+                    flow.push(WizardStep::BackendSurrealWsPassword);
+                    flow.push(WizardStep::BackendSurrealNamespace);
+                    flow.push(WizardStep::BackendSurrealDatabase);
                 }
                 _ => {}
             }
@@ -579,6 +618,46 @@ impl WizardState {
                     }
                 } else {
                     edit_text_field(&mut self.backend_config_input, key);
+                }
+            }
+            WizardStep::BackendSurrealWsUsername => {
+                if key.code == KeyCode::Enter {
+                    self.surreal_username = self.surreal_username.trim().to_string();
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.surreal_username, key);
+                }
+            }
+            WizardStep::BackendSurrealWsPassword => {
+                if key.code == KeyCode::Enter {
+                    self.surreal_password = self.surreal_password.trim().to_string();
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.surreal_password, key);
+                }
+            }
+            WizardStep::BackendSurrealNamespace => {
+                if key.code == KeyCode::Enter {
+                    if self.surreal_namespace.trim().is_empty() {
+                        self.surreal_namespace = self.bootstrap.default_surreal_namespace.clone();
+                    } else {
+                        self.surreal_namespace = self.surreal_namespace.trim().to_string();
+                    }
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.surreal_namespace, key);
+                }
+            }
+            WizardStep::BackendSurrealDatabase => {
+                if key.code == KeyCode::Enter {
+                    if self.surreal_database.trim().is_empty() {
+                        self.surreal_database = self.bootstrap.default_surreal_database.clone();
+                    } else {
+                        self.surreal_database = self.surreal_database.trim().to_string();
+                    }
+                    self.move_next();
+                } else {
+                    edit_text_field(&mut self.surreal_database, key);
                 }
             }
             WizardStep::DaemonUrl => {
@@ -864,7 +943,7 @@ impl WizardState {
             .unwrap_or(0) as i32;
         let next_idx = (current_idx + delta).rem_euclid(provider_choices.len() as i32) as usize;
         self.provider_choice = provider_choices[next_idx];
-        self.apply_provider_defaults();
+        self.apply_provider_defaults(true);
     }
 
     fn cycle_backend(&mut self, delta: i32) {
@@ -900,8 +979,10 @@ impl WizardState {
         };
     }
 
-    fn apply_provider_defaults(&mut self) {
-        self.model = default_model_for_choice(&self.bootstrap, self.provider_choice);
+    fn apply_provider_defaults(&mut self, reset_model: bool) {
+        if reset_model {
+            self.model = default_model_for_choice(&self.bootstrap, self.provider_choice);
+        }
 
         if self.provider_choice == ProviderChoice::Ollama {
             if self.base_url.trim().is_empty() {
@@ -1119,6 +1200,22 @@ impl WizardState {
             configure_mcp_gateway,
             start_mcp_gateway,
             tui_response_depth_mode: self.tui_response_depth_mode.clone(),
+            surreal_endpoint: match &self.backend_choice {
+                BackendChoice::SurrealWs { endpoint } => endpoint.clone(),
+                _ => String::new(),
+            },
+            surreal_username: self.surreal_username.trim().to_string(),
+            surreal_password: self.surreal_password.trim().to_string(),
+            surreal_namespace: if self.surreal_namespace.trim().is_empty() {
+                self.bootstrap.default_surreal_namespace.clone()
+            } else {
+                self.surreal_namespace.trim().to_string()
+            },
+            surreal_database: if self.surreal_database.trim().is_empty() {
+                self.bootstrap.default_surreal_database.clone()
+            } else {
+                self.surreal_database.trim().to_string()
+            },
         }
     }
 

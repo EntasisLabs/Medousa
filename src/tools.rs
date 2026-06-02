@@ -293,7 +293,7 @@ impl CognitionJobEnqueueTool {
 #[async_trait]
 impl StasisTool for CognitionJobEnqueueTool {
     fn name(&self) -> &'static str {
-        "cognition.job.enqueue"
+        "cognition_job_enqueue"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -334,14 +334,14 @@ impl StasisTool for CognitionJobEnqueueTool {
             .get("job_type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                StasisError::PortFailure("cognition.job.enqueue: job_type is required".to_string())
+                StasisError::PortFailure("cognition_job_enqueue: job_type is required".to_string())
             })?;
         let payload_ref = input
             .get("payload_ref")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
                 StasisError::PortFailure(
-                    "cognition.job.enqueue: payload_ref is required".to_string(),
+                    "cognition_job_enqueue: payload_ref is required".to_string(),
                 )
             })?;
 
@@ -1553,7 +1553,7 @@ pub struct CognitionUtilityTimeNowTool;
 #[async_trait]
 impl StasisTool for CognitionUtilityTimeNowTool {
     fn name(&self) -> &'static str {
-        "cognition_util_time_now"
+        "cognition_utility_time_now"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -1587,7 +1587,7 @@ pub struct CognitionUtilityDayOfWeekTool;
 #[async_trait]
 impl StasisTool for CognitionUtilityDayOfWeekTool {
     fn name(&self) -> &'static str {
-        "cognition_util_time_day_of_week"
+        "cognition_utility_day_of_week"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -1612,7 +1612,7 @@ impl StasisTool for CognitionUtilityDayOfWeekTool {
         let date = if let Some(date_str) = date_opt {
             NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
                 StasisError::PortFailure(format!(
-                    "cognition_util_time_day_of_week: invalid date '{}': {}",
+                    "cognition_utility_day_of_week: invalid date '{}': {}",
                     date_str, e
                 ))
             })?
@@ -1634,7 +1634,7 @@ pub struct CognitionUtilityUuidTool;
 #[async_trait]
 impl StasisTool for CognitionUtilityUuidTool {
     fn name(&self) -> &'static str {
-        "cognition_util_id_uuid"
+        "cognition_utility_uuid"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -1899,7 +1899,7 @@ impl CognitionCapabilityResolveTool {
 #[async_trait]
 impl StasisTool for CognitionCapabilityResolveTool {
     fn name(&self) -> &'static str {
-        "cognition.capability.resolve"
+        "cognition_capability_resolve"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -2003,7 +2003,7 @@ impl CognitionCapabilityListTool {
 #[async_trait]
 impl StasisTool for CognitionCapabilityListTool {
     fn name(&self) -> &'static str {
-        "cognition.capability.list"
+        "cognition_capability_list"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -2066,7 +2066,7 @@ impl CognitionCapabilitySearchTool {
 #[async_trait]
 impl StasisTool for CognitionCapabilitySearchTool {
     fn name(&self) -> &'static str {
-        "cognition.capability.search"
+        "cognition_capability_search"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -2135,7 +2135,7 @@ impl CognitionMcpDiscoverTool {
 #[async_trait]
 impl StasisTool for CognitionMcpDiscoverTool {
     fn name(&self) -> &'static str {
-        "cognition.mcp.discover"
+        "cognition_mcp_discover"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -2225,7 +2225,7 @@ impl CognitionMcpInvokeTool {
 #[async_trait]
 impl StasisTool for CognitionMcpInvokeTool {
     fn name(&self) -> &'static str {
-        "cognition.mcp.invoke"
+        "cognition_mcp_invoke"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -2332,7 +2332,7 @@ impl CognitionMcpServersTool {
 #[async_trait]
 impl StasisTool for CognitionMcpServersTool {
     fn name(&self) -> &'static str {
-        "cognition.mcp.servers"
+        "cognition_mcp_servers"
     }
 
     fn description(&self) -> Option<&'static str> {
@@ -2474,7 +2474,7 @@ fn lane_safety_action_for_tool_call(
     _input: &Value,
 ) -> Option<LaneSafetyActionClass> {
     match tool_name {
-        "cognition.job.enqueue" | "cognition_grapheme_promote_to_job" | "cognition_runtime_workflow_run" | "cognition_mcp_promote_to_job" => {
+        "cognition_job_enqueue" | "cognition_grapheme_promote_to_job" | "cognition_runtime_workflow_run" | "cognition_mcp_promote_to_job" => {
             Some(LaneSafetyActionClass::InteractiveIngress)
         }
         "cognition_grapheme_promote_to_recurring"
@@ -2522,7 +2522,7 @@ fn referenced_module_ops_for_tool_call(
                 })?;
             Ok(extract_module_ops_from_source(source))
         }
-        "cognition.job.enqueue" => {
+        "cognition_job_enqueue" => {
             let job_type = input
                 .get("job_type")
                 .and_then(|v| v.as_str())

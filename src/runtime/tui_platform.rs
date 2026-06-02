@@ -10,6 +10,7 @@ use crate::events::TuiEvent;
 use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
 use crate::runtime::stasis_wire::LocalStasisWireConfig;
 use crate::runtime::stasis_wire::build_local_stasis_composition;
+use crate::session_meta_store;
 use crate::session_store;
 use crate::verification_store;
 use crate::tools::TuiRuntime;
@@ -142,6 +143,7 @@ async fn build_tui_local_platform(
 
 async fn init_local_platform_stores(composition: &stasis::prelude::RuntimeComposition) {
     session_store::init_session_store_with_runtime(composition).await;
+    session_meta_store::init_session_meta_store_with_runtime(composition).await;
     artifact_store::init_artifact_store_with_runtime(composition).await;
     verification_store::init_verification_store_with_runtime(composition).await;
     crate::turn_continuation::init_turn_continuation_store_with_runtime(composition).await;

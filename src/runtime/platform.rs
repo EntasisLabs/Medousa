@@ -13,6 +13,7 @@ use crate::channel_session_store;
 use crate::turn_continuation;
 use crate::recurring_agent_turn;
 use crate::recurring_delivery;
+use crate::session_meta_store;
 use crate::session_store;
 use crate::verification_store;
 use crate::tools::TuiRuntime;
@@ -115,6 +116,7 @@ async fn build_platform_inner(
         .context("failed to ensure Stasis SurrealDB runtime tables")?;
 
     session_store::init_session_store_with_runtime(&composition).await;
+    session_meta_store::init_session_meta_store_with_runtime(&composition).await;
     channel_session_store::init_channel_session_store_with_runtime(&composition).await;
     artifact_store::init_artifact_store_with_runtime(&composition).await;
     verification_store::init_verification_store_with_runtime(&composition).await;

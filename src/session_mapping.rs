@@ -13,6 +13,7 @@ pub enum IngestAction {
     ResumeSession { target_session_id: String },
     ConfigureModel { args: Vec<String> },
     ConfigureDepth { mode: Option<String> },
+    SetDisplayName { label: Option<String> },
     QueryHealth,
     QueryHeartbeat,
 }
@@ -82,6 +83,7 @@ enum IngestCommand {
     History { target: Option<String> },
     Model { args: Vec<String> },
     Depth { mode: Option<String> },
+    Name { label: Option<String> },
     Health,
     Heartbeat,
     Ask { prompt: String },
@@ -141,6 +143,13 @@ fn parse_ingest_command(text: &str) -> IngestCommand {
         },
         "/depth" => IngestCommand::Depth {
             mode: if args.is_empty() {
+                None
+            } else {
+                Some(args.to_string())
+            },
+        },
+        "/name" => IngestCommand::Name {
+            label: if args.is_empty() {
                 None
             } else {
                 Some(args.to_string())
@@ -215,6 +224,8 @@ pub fn process_ingest(
                 "/model <model> - Set model (or provider:model)",
                 "/depth - Show response depth mode",
                 "/depth <mode> - Set depth (concise|standard|deep)",
+                "/name - Show this session's display name",
+                "/name <label> - Set a global display name for this session",
                 "/stop - Cancel the active ask job",
                 "/regen - Regenerate the last response",
                 "/health - Daemon health check",
@@ -258,11 +269,17 @@ pub fn process_ingest(
         IngestCommand::History { target } => {
             let session_id = existing_session_id
                 .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-            if let Some(target_session_id) = target {
+            if let Some(target_raw) = target {
+                let target_session_id = crate::session::resolve_history_resume_target(&target_raw)
+                    .unwrap_or(target_raw);
+                let label = crate::session::format_session_history_label(
+                    &target_session_id,
+                    crate::session::get_session_display_name(&target_session_id).as_deref(),
+                );
                 IngestOutcome {
                     session_id: target_session_id.clone(),
                     is_new_session: false,
-                    reply: format!("resumed session {target_session_id}"),
+                    reply: format!("resumed session {label}"),
                     action: IngestAction::ResumeSession {
                         target_session_id,
                     },
@@ -294,6 +311,43 @@ pub fn process_ingest(
             reply: "updating response depth…".to_string(),
             action: IngestAction::ConfigureDepth { mode },
         },
+
+        IngestCommand::Name { label } => {
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let reply = match label {
+                None => {
+                    let current = crate::session::get_session_display_name(&session_id);
+                    match current {
+                        Some(name) => format!(
+                            "session name: {} ({})",
+                            name,
+                            &session_id[..session_id.len().min(8)]
+                        ),
+                        None => format!(
+                            "no display name set for session {}",
+                            &session_id[..session_id.len().min(8)]
+                        ),
+                    }
+                }
+                Some(ref raw) => {
+                    match crate::session::set_session_display_name(&session_id, raw) {
+                        Ok(()) => {
+                            let name = crate::session::get_session_display_name(&session_id)
+                                .unwrap_or_else(|| raw.clone());
+                            format!("✓ session name set to \"{name}\" (global)")
+                        }
+                        Err(err) => format!("⚠ could not set session name: {err}"),
+                    }
+                }
+            };
+            IngestOutcome {
+                session_id,
+                is_new_session: false,
+                reply,
+                action: IngestAction::SetDisplayName { label },
+            }
+        }
 
         IngestCommand::Health => IngestOutcome {
             session_id: existing_session_id.unwrap_or_else(|| {
@@ -355,6 +409,7 @@ pub fn build_interactive_turn_request_for_ingest(
     model: &str,
     response_depth_mode: &str,
 ) -> InteractiveTurnRequest {
+    let defaults = crate::session::load_tui_defaults();
     InteractiveTurnRequest {
         session_id: session_id.to_string(),
         prompt,
@@ -363,6 +418,8 @@ pub fn build_interactive_turn_request_for_ingest(
         provider: provider.to_string(),
         model: model.to_string(),
         stage_routing: StageRoutingMatrix::default_for(provider, model),
+        max_tool_rounds: defaults.max_tool_rounds,
+        retry_runtime_max_rounds: defaults.retry_runtime_max_rounds,
     }
 }
 
@@ -436,6 +493,16 @@ mod tests {
         );
         assert_eq!(parse_ingest_command("/health"), IngestCommand::Health);
         assert_eq!(parse_ingest_command("/heartbeat"), IngestCommand::Heartbeat);
+        assert_eq!(
+            parse_ingest_command("/name"),
+            IngestCommand::Name { label: None }
+        );
+        assert_eq!(
+            parse_ingest_command("/name research sprint"),
+            IngestCommand::Name {
+                label: Some("research sprint".to_string())
+            }
+        );
     }
 
     #[test]

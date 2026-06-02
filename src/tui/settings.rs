@@ -365,7 +365,7 @@ mod tests {
             slice_hot_window_turns: "8".to_string(),
             slice_cold_window_turns: "24".to_string(),
             retry_runtime_max_retries: "1".to_string(),
-            retry_runtime_max_rounds: "3".to_string(),
+            retry_runtime_max_rounds: "10".to_string(),
             verifier_min_citation_coverage: "0.6".to_string(),
             verifier_min_avg_support_strength: "0.7".to_string(),
             verifier_min_supported_claim_ratio: "0.6".to_string(),

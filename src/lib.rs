@@ -28,9 +28,13 @@ pub mod medousa_tool_loop;
 pub mod grapheme_sttp_compaction;
 pub mod identity_markdown;
 pub mod identity_memory;
+pub mod identity_store_ext;
+pub mod identity_tools;
+pub mod identity_write_policy;
 pub mod locus_memory;
 pub mod memory_tools;
 pub mod tool_aliases;
+pub mod tool_names;
 pub mod adapter_heartbeat;
 pub mod product_config;
 pub mod ingest_stream;
@@ -41,6 +45,8 @@ pub mod session;
 pub mod service_launch;
 pub mod session_mapping;
 pub mod session_store;
+pub mod session_meta_store;
+pub mod surreal_config;
 pub mod settings_guard;
 pub mod stage_route_command_runtime;
 pub mod stage_routing;
@@ -85,7 +91,8 @@ pub use daemon_api::{
     RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     RuntimeVerifyPolicyState,
     SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListRequest,
-    SessionHistoryListResponse, SessionHistoryResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
+    SessionSetDisplayNameResponse,
     RegisterRecurringResponse, StageRouteCommandRequest, StageRouteCommandResponse,
     StageRouteCommandSpec, resolve_daemon_url,
 };
@@ -108,7 +115,8 @@ pub use mcp_gateway_api::{
 };
 pub use product_config::{
     ProductConfig, load_product_config, save_product_config, ingest_sender_allowed,
-    apply_adapter_env, apply_daemon_env, parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv,
+    apply_adapter_env, apply_daemon_env, apply_surreal_env, apply_surreal_env_from_fields,
+    parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv, SurrealProductConfig,
     migrate_from_onboard_profile,
 };
 pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
@@ -354,40 +362,43 @@ pub async fn build_daemon_runtime(
 
 pub fn parse_backend(value: Option<&str>) -> RuntimeBackend {
     let raw = value.unwrap_or("in-memory").trim();
+    let surreal = surreal_config::resolve_surreal_connection_settings(
+        &load_product_config(),
+        &session::load_tui_defaults(),
+    );
+    let namespace = surreal_config::resolve_surreal_namespace(&surreal);
+    let database = surreal_config::resolve_surreal_database(&surreal);
+
     if raw.eq_ignore_ascii_case("surreal-mem") {
         return RuntimeBackend::SurrealMem {
-            namespace: resolve_surreal_namespace(),
-            database: resolve_surreal_database(),
+            namespace,
+            database,
         };
     }
 
     if raw.eq_ignore_ascii_case("surreal-kv") || raw.starts_with("surreal-kv:") {
-        return parse_surreal_kv_backend(raw);
+        let mut backend = parse_surreal_kv_backend(raw);
+        if let RuntimeBackend::SurrealKv {
+            namespace: ref mut ns,
+            database: ref mut db,
+            ..
+        } = backend
+        {
+            *ns = namespace;
+            *db = database;
+        }
+        return backend;
     }
 
     if raw.starts_with("surreal-ws:") {
-        return parse_surreal_ws_backend(raw);
+        return RuntimeBackend::SurrealWs {
+            endpoint: surreal_config::resolve_surreal_ws_endpoint(raw, &surreal),
+            namespace,
+            database,
+        };
     }
 
     RuntimeBackend::InMemory
-}
-
-fn resolve_surreal_namespace() -> String {
-    std::env::var("MEDOUSA_SURREAL_NAMESPACE")
-        .ok()
-        .or_else(|| std::env::var("STASIS_SURREAL_NAMESPACE").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_SURREAL_NAMESPACE.to_string())
-}
-
-fn resolve_surreal_database() -> String {
-    std::env::var("MEDOUSA_SURREAL_DATABASE")
-        .ok()
-        .or_else(|| std::env::var("STASIS_SURREAL_DATABASE").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_SURREAL_DATABASE.to_string())
 }
 
 fn parse_surreal_kv_backend(raw: &str) -> RuntimeBackend {
@@ -406,23 +417,8 @@ fn parse_surreal_kv_backend(raw: &str) -> RuntimeBackend {
 
     RuntimeBackend::SurrealKv {
         path,
-        namespace: resolve_surreal_namespace(),
-        database: resolve_surreal_database(),
-    }
-}
-
-fn parse_surreal_ws_backend(raw: &str) -> RuntimeBackend {
-    let endpoint = raw
-        .strip_prefix("surreal-ws:")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("ws://127.0.0.1:8000/rpc")
-        .to_string();
-
-    RuntimeBackend::SurrealWs {
-        endpoint,
-        namespace: resolve_surreal_namespace(),
-        database: resolve_surreal_database(),
+        namespace: DEFAULT_SURREAL_NAMESPACE.to_string(),
+        database: DEFAULT_SURREAL_DATABASE.to_string(),
     }
 }
 

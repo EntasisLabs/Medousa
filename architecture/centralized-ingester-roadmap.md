@@ -97,6 +97,8 @@ struct IngestResponse {
 | (plain text)       | Text                  | Continuous session ask                        |
 | `/help`            | `/help`               | Show available commands                       |
 | `/history`         | `/history`            | List recent sessions for this user            |
+| `/name`            | `/name`               | Show or set global session display name (Surreal) |
+| `/name <label>`    | `/name <label>`       | Name persists across TUI, Telegram, daemon API |
 | `/model <name>`    | `/model`              | Switch model for this session                 |
 | `/depth <mode>`    | `/depth`              | Switch response depth mode                    |
 | `/stop`            | `/stop`               | Cancel current processing                     |

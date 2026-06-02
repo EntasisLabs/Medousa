@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::future::IntoFuture;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -9,6 +10,7 @@ use stasis::prelude::RuntimeComposition;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
+use tokio::runtime::Handle;
 use tokio::sync::RwLock as AsyncRwLock;
 
 const MAPPING_TABLE: &str = "channel_session_mapping";
@@ -78,6 +80,8 @@ pub trait ChannelSessionStore: Send + Sync {
     async fn set_session_id(&self, mapping_key: &str, session_id: String);
     async fn push_session_history(&self, mapping_key: &str, session_id: String);
     async fn list_session_history(&self, mapping_key: &str, limit: usize) -> Vec<String>;
+    /// Distinct session ids known to channel mappings (active + history).
+    async fn list_distinct_session_ids(&self, limit: usize) -> Vec<String>;
     /// Most recently updated mapping for `channel` whose session id matches (e.g. TUI session linked via prior Telegram ingest).
     async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String>;
 }
@@ -115,6 +119,25 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
             .get(mapping_key)
             .map(|entries| entries.iter().take(limit.max(1)).cloned().collect())
             .unwrap_or_default()
+    }
+
+    async fn list_distinct_session_ids(&self, limit: usize) -> Vec<String> {
+        let mut ids = HashSet::new();
+        let mappings = self.mappings.read().await;
+        for session_id in mappings.values() {
+            ids.insert(session_id.clone());
+        }
+        drop(mappings);
+        let history = self.history.read().await;
+        for entries in history.values() {
+            for session_id in entries {
+                ids.insert(session_id.clone());
+            }
+        }
+        let mut out: Vec<String> = ids.into_iter().collect();
+        out.sort();
+        out.truncate(limit.max(1));
+        out
     }
 
     async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String> {
@@ -276,6 +299,35 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
             .collect()
     }
 
+    async fn list_distinct_session_ids(&self, limit: usize) -> Vec<String> {
+        let mut ids = HashSet::new();
+        for table in [MAPPING_TABLE, HISTORY_TABLE] {
+            let sql = "SELECT session_id FROM type::table($table) GROUP BY session_id LIMIT $limit";
+            let Ok(mut response) = self
+                .db
+                .query(sql)
+                .bind(("table", table))
+                .bind(("limit", limit.max(1) as i64))
+                .await
+            else {
+                continue;
+            };
+            #[derive(Debug, Deserialize, SurrealValue)]
+            struct Row {
+                session_id: String,
+            }
+            if let Ok(rows) = response.take::<Vec<Row>>(0) {
+                for row in rows {
+                    ids.insert(row.session_id);
+                }
+            }
+        }
+        let mut out: Vec<String> = ids.into_iter().collect();
+        out.sort();
+        out.truncate(limit.max(1));
+        out
+    }
+
     async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String> {
         let prefix = format!("{channel}:");
         let sql = "SELECT mapping_key FROM type::table($table) \
@@ -304,4 +356,14 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
             .next()
             .map(|row| row.mapping_key)
     }
+}
+
+fn block_on<F: IntoFuture>(f: F) -> F::Output {
+    tokio::task::block_in_place(move || Handle::current().block_on(f.into_future()))
+}
+
+/// Distinct session ids from channel mappings (Telegram/Discord/etc.), for global history lists.
+pub fn list_distinct_channel_session_ids(limit: usize) -> Vec<String> {
+    let store = channel_session_store();
+    block_on(store.list_distinct_session_ids(limit))
 }

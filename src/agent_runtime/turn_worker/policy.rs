@@ -95,15 +95,12 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 &mut names,
                 &[
                     "cognition_capability_invoke",
-                    "cognition.capability.invoke",
                     "cognition_capability_search",
-                    "cognition.capability.search",
                     "cognition_capability_resolve",
-                    "cognition.capability.resolve",
                     "cognition_mcp_invoke",
-                    "cognition.mcp.invoke",
                     "cognition_mcp_discover",
-                    "cognition.mcp.discover",
+                    "cognition_mcp_servers",
+                    "cognition_grapheme_template_run",
                     "cognition_grapheme_modules",
                     "cognition_grapheme_modules_info",
                     "cognition_grapheme_modules_ops",
@@ -125,9 +122,14 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_memory_recall",
                     "cognition_memory_store",
                     "cognition_capability_invoke",
-                    "cognition.capability.invoke",
+                    "cognition_capability_search",
+                    "cognition_capability_resolve",
                     "cognition_mcp_invoke",
-                    "cognition.mcp.invoke",
+                    "cognition_mcp_discover",
+                    "cognition_grapheme_template_run",
+                    "cognition_grapheme_modules",
+                    "cognition_grapheme_examples",
+                    "cognition_grapheme_run",
                 ],
             );
         }
@@ -168,6 +170,15 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
+            "cognition_identity_context",
+            "cognition_identity_propose",
+            "cognition_identity_commit",
+        ],
+    );
+
+    push(
+        &mut names,
+        &[
             "cognition_memory_schema",
             "cognition_memory_moods",
             "cognition_memory_calibrate",
@@ -193,6 +204,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
+            "cognition_job_enqueue",
             "cognition.job.enqueue",
             "cognition_runtime_jobs_list",
             "cognition_runtime_jobs_status",
@@ -216,12 +228,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
 }
 
 pub fn tool_allowed(name: &str, allowlist: &HashSet<String>) -> bool {
-    let trimmed = name.trim();
-    if allowlist.contains(trimmed) {
-        return true;
-    }
-    let lower = trimmed.to_ascii_lowercase();
-    allowlist.contains(&lower)
+    crate::tool_aliases::tool_allowed_matches_with_legacy(name, allowlist)
 }
 
 #[cfg(test)]
@@ -256,12 +263,16 @@ mod tests {
         assert!(names.contains("cognition_grapheme_modules"));
         assert!(names.contains("cognition_grapheme_examples"));
         assert!(names.contains("cognition_grapheme_run"));
+        assert!(names.contains("cognition_grapheme_template_run"));
+        assert!(names.contains("cognition_capability_invoke"));
     }
 
     #[test]
     fn host_orchestrator_has_memory_runtime_and_catalog_not_grapheme() {
         let names = host_bus_tool_names();
         assert!(names.contains("cognition_memory_calibrate"));
+        assert!(names.contains("cognition_identity_propose"));
+        assert!(names.contains("cognition_job_enqueue"));
         assert!(names.contains("cognition_spawn_turn_worker"));
         assert!(names.contains("cognition_capability_search"));
         assert!(names.contains("cognition_runtime_workflow_run"));

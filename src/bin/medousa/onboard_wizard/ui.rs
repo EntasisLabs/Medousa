@@ -234,6 +234,36 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(input_line("Endpoint", &state.backend_config_input));
             lines.push(Line::from("Example: ws://127.0.0.1:8000/rpc"));
         }
+        WizardStep::BackendSurrealWsUsername => {
+            lines.push(Line::from("SurrealDB sign-in username (optional):"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Username", &state.surreal_username));
+            lines.push(Line::from("Leave empty if your server has no auth."));
+        }
+        WizardStep::BackendSurrealWsPassword => {
+            lines.push(Line::from("SurrealDB sign-in password (optional):"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Password", &mask_secret(&state.surreal_password)));
+            lines.push(Line::from("Saved to product_config.json and keychain."));
+        }
+        WizardStep::BackendSurrealNamespace => {
+            lines.push(Line::from("Surreal namespace:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Namespace", &state.surreal_namespace));
+            lines.push(Line::from(format!(
+                "Default: {}",
+                state.bootstrap.default_surreal_namespace
+            )));
+        }
+        WizardStep::BackendSurrealDatabase => {
+            lines.push(Line::from("Surreal database:"));
+            lines.push(Line::from(""));
+            lines.push(input_line("Database", &state.surreal_database));
+            lines.push(Line::from(format!(
+                "Default: {}",
+                state.bootstrap.default_surreal_database
+            )));
+        }
         WizardStep::DaemonUrl => {
             lines.push(Line::from("Set runtime URL:"));
             lines.push(Line::from(""));

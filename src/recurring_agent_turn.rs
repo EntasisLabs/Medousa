@@ -162,6 +162,8 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             provider,
             model,
             stage_routing,
+            max_tool_rounds: None,
+            retry_runtime_max_rounds: None,
         };
 
         let output = Arc::new(Mutex::new(None));

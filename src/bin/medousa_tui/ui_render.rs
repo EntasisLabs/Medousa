@@ -77,7 +77,10 @@ pub(crate) fn render(frame: &mut ratatui::Frame, state: &mut TuiState) {
     let jobs_count = state.job_history.len();
     let drops = state.perf.dropped_events;
 
-    let session_short: String = state.session_id.chars().take(8).collect();
+    let session_short = medousa::session::format_session_history_label(
+        &state.session_id,
+        state.session_display_name.as_deref(),
+    );
     let thinking_hint = if state.is_processing {
         "  thinking... (F2 peek / Ctrl+T detail)"
     } else if !state.thinking_trace.is_empty() {
@@ -564,7 +567,10 @@ fn render_history_overlay(frame: &mut ratatui::Frame, state: &mut TuiState) {
                 .last_verification_timestamp
                 .map(|t| t.format("%m-%d %H:%M").to_string())
                 .unwrap_or_else(|| "-".to_string());
-            let id_short: String = item.session_id.chars().take(8).collect();
+            let label = medousa::session::format_session_history_label(
+                &item.session_id,
+                item.display_name.as_deref(),
+            );
             let trust = item
                 .last_verification_confidence
                 .map(|confidence| {
@@ -579,7 +585,7 @@ fn render_history_overlay(frame: &mut ratatui::Frame, state: &mut TuiState) {
                 })
                 .unwrap_or_else(|| "-".to_string());
             let line = format!(
-                "{marker} {id_short}  {ts}  turn={} ver={} trust={} last_verify={}  {}",
+                "{marker} {label}  {ts}  turn={} ver={} trust={} last_verify={}  {}",
                 item.turns, item.verification_runs, trust, verification_ts, item.preview
             );
 

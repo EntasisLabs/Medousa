@@ -11,8 +11,9 @@ use anyhow::{Context, Result, anyhow};
 use crossterm::style::Stylize;
 use medousa::session::{
     load_discord_bot_token, load_slack_app_token, load_slack_bot_token, load_telegram_bot_token,
-    load_tui_api_key, load_tui_defaults, save_discord_bot_token, save_slack_app_token,
-    save_slack_bot_token, save_telegram_bot_token, save_tui_api_key, save_tui_defaults,
+    load_surreal_password, load_tui_api_key, load_tui_defaults, save_discord_bot_token,
+    save_slack_app_token, save_slack_bot_token, save_surreal_password, save_telegram_bot_token,
+    save_tui_api_key, save_tui_defaults,
 };
 use medousa::{
     ProductConfig, apply_adapter_env, apply_daemon_env, clear_stale_surrealkv_lock, format_i64_csv,
@@ -212,6 +213,24 @@ fn run_onboard(args: &[String]) -> Result<()> {
             configure_mcp_gateway: true,
             start_mcp_gateway: true,
             tui_response_depth_mode: product_config.tui.response_depth_mode.clone(),
+            surreal_endpoint: defaults
+                .surreal_endpoint
+                .clone()
+                .unwrap_or_else(|| "ws://127.0.0.1:8000/rpc".to_string()),
+            surreal_username: defaults.surreal_username.clone().unwrap_or_default(),
+            surreal_password: defaults
+                .surreal_password
+                .clone()
+                .or_else(|| load_surreal_password())
+                .unwrap_or_default(),
+            surreal_namespace: defaults
+                .surreal_namespace
+                .clone()
+                .unwrap_or_else(|| "medousa".to_string()),
+            surreal_database: defaults
+                .surreal_database
+                .clone()
+                .unwrap_or_else(|| "runtime".to_string()),
         }
     } else {
         if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -224,6 +243,33 @@ fn run_onboard(args: &[String]) -> Result<()> {
             .join("runtime.surrealkv")
             .to_string_lossy()
             .to_string();
+        let initial_surreal_endpoint = defaults
+            .surreal_endpoint
+            .clone()
+            .or_else(|| product_config.surreal.endpoint.clone())
+            .unwrap_or_else(|| "ws://127.0.0.1:8000/rpc".to_string());
+        let initial_surreal_username = defaults
+            .surreal_username
+            .clone()
+            .or_else(|| product_config.surreal.username.clone())
+            .unwrap_or_default();
+        let initial_surreal_password = defaults
+            .surreal_password
+            .clone()
+            .or_else(|| product_config.surreal.password.clone())
+            .or_else(|| load_surreal_password())
+            .unwrap_or_default();
+        let initial_surreal_namespace = defaults
+            .surreal_namespace
+            .clone()
+            .or_else(|| product_config.surreal.namespace.clone())
+            .unwrap_or_else(|| "medousa".to_string());
+        let initial_surreal_database = defaults
+            .surreal_database
+            .clone()
+            .or_else(|| product_config.surreal.database.clone())
+            .unwrap_or_else(|| "runtime".to_string());
+
         let bootstrap = onboard_wizard::WizardBootstrap {
             ollama_detected,
             advanced_mode,
@@ -268,6 +314,12 @@ fn run_onboard(args: &[String]) -> Result<()> {
             default_ollama_base_url: default_base_url_for_provider("ollama")
                 .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_string()),
             surreal_kv_default_path,
+            initial_surreal_username,
+            initial_surreal_password,
+            initial_surreal_namespace,
+            initial_surreal_database,
+            default_surreal_namespace: "medousa".to_string(),
+            default_surreal_database: "runtime".to_string(),
             force_daemon: explicit_daemon,
             force_no_daemon: explicit_no_daemon,
             force_tui: explicit_tui,
@@ -370,7 +422,34 @@ fn run_onboard(args: &[String]) -> Result<()> {
     defaults.model = Some(selected.model.clone());
     defaults.base_url = selected.base_url.clone();
     defaults.backend = Some(selected.backend.clone());
+    defaults.surreal_endpoint = if selected.surreal_endpoint.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_endpoint.trim().to_string())
+    };
+    defaults.surreal_username = if selected.surreal_username.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_username.trim().to_string())
+    };
+    defaults.surreal_namespace = if selected.surreal_namespace.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_namespace.trim().to_string())
+    };
+    defaults.surreal_database = if selected.surreal_database.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_database.trim().to_string())
+    };
+    defaults.surreal_password = None;
     save_tui_defaults(&defaults);
+
+    if selected.surreal_password.trim().is_empty() {
+        save_surreal_password(None);
+    } else {
+        save_surreal_password(Some(selected.surreal_password.trim()));
+    }
 
     if let Some(api_key) = selected.api_key.as_deref() {
         save_tui_api_key(Some(api_key));
@@ -1365,6 +1444,31 @@ fn product_config_from_wizard(selected: &onboard_wizard::WizardOutput) -> Produc
         selected.whatsapp_allow_user_ids.as_deref().unwrap_or(""),
     );
     config.tui.response_depth_mode = selected.tui_response_depth_mode.clone();
+    config.surreal.endpoint = if selected.surreal_endpoint.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_endpoint.trim().to_string())
+    };
+    config.surreal.username = if selected.surreal_username.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_username.trim().to_string())
+    };
+    config.surreal.password = if selected.surreal_password.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_password.trim().to_string())
+    };
+    config.surreal.namespace = if selected.surreal_namespace.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_namespace.trim().to_string())
+    };
+    config.surreal.database = if selected.surreal_database.trim().is_empty() {
+        None
+    } else {
+        Some(selected.surreal_database.trim().to_string())
+    };
     if config
         .daemon
         .deliver_webhook_token

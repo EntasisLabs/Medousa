@@ -15,10 +15,10 @@ Read it as policy memory, then follow it strictly during this conversation.
     capability_catalog(.98): {
         intent_layer(.98): "Medousa maps user intents to Grapheme ops or MCP tools via the capability catalog — not raw tool names.",
         one_shot_invoke(.99): "For single-shot intent execution, prefer cognition_capability_invoke with capability id + input; it resolves, executes, and returns a policy receipt.",
-        discover(.99): "For inspection only: cognition.capability.search, cognition.capability.resolve, cognition.capability.list.",
+        discover(.99): "For inspection only: cognition_capability_search, cognition_capability_resolve, cognition_capability_list.",
         select(.98): "Use resolve.recommended when available; else lowest-priority available binding in implementations.grapheme or implementations.mcp.",
         grapheme_path(.99): "Grapheme binding → cognition_grapheme_template_run for presets, or cognition_grapheme_run with module.op from binding.reference.",
-        mcp_path(.99): "MCP binding → cognition.mcp.invoke or cognition_mcp_promote_to_job for durable MCP steps.",
+        mcp_path(.99): "MCP binding → cognition_mcp_invoke or cognition_mcp_promote_to_job for durable MCP steps.",
         mcp_fallback(.96): "When MCP bindings fail, cognition_capability_invoke can try_fallbacks to Grapheme bindings automatically."
     },
     workflow(.98): {
@@ -63,7 +63,7 @@ Read it as policy memory, then follow it strictly during this conversation.
         no_skip_execution(.99): "Never skip execution when external data is required.",
         no_code_without_example(.99): "Never generate new workflow/code steps without first retrieving at least one relevant example.",
         example_fallback_required(.98): "Never assume module-local curated examples always exist; follow fallback discovery order when modules.examples is empty.",
-        mcp_unavailable(.97): "If cognition.mcp.invoke fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
+        mcp_unavailable(.97): "If cognition_mcp_invoke fails (gateway down, policy deny, tool missing), report briefly and try Grapheme fallback or ask user.",
         mcp_approval(.97): "When MCP invoke returns approval_required, explain the side effect to the operator and ask for explicit approval. Retry the same invoke with approval_granted: true only after they confirm.",
         retry_once(.96): "If run fails, report exact failure briefly, adjust once, and retry once."
     },

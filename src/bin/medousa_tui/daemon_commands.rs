@@ -9,7 +9,7 @@ use medousa::{
     InteractiveTurnRequest, InteractiveTurnResponse,
     RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
     SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListResponse,
-    SessionHistoryResponse,
+    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
 
@@ -298,6 +298,24 @@ pub(crate) async fn daemon_load_session_history(
         .await?
         .error_for_status()?;
     Ok(response.json::<SessionHistoryResponse>().await?)
+}
+
+pub(crate) async fn daemon_set_session_display_name(
+    daemon_url: &str,
+    session_id: &str,
+    display_name: &str,
+) -> Result<SessionSetDisplayNameResponse> {
+    let client = Client::new();
+    let request = SessionSetDisplayNameRequest {
+        display_name: display_name.to_string(),
+    };
+    let response = client
+        .put(format!("{daemon_url}/v1/sessions/{session_id}/name"))
+        .json(&request)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<SessionSetDisplayNameResponse>().await?)
 }
 
 pub(crate) async fn daemon_append_session_turn(

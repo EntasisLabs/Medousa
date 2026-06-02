@@ -420,6 +420,10 @@ async fn main() -> Result<()> {
             "/v1/sessions/{session_id}/turns",
             post(medousa::daemon_handlers::append_session_turn),
         )
+        .route(
+            "/v1/sessions/{session_id}/name",
+            axum::routing::put(medousa::daemon_handlers::set_session_display_name),
+        )
         .route("/v1/heartbeat/status", get(heartbeat_status))
         .route("/v1/jobs/{job_id}/result", get(get_job_result))
         .route("/v1/jobs/{job_id}/report", get(get_job_report))
@@ -1730,6 +1734,9 @@ async fn ingest_handler(
         session_mapping::IngestAction::ConfigureDepth { mode } => {
             reply = apply_session_depth_config(&state, &outcome.session_id, mode).await?;
         }
+        session_mapping::IngestAction::SetDisplayName { .. } => {
+            // Reply text already set in process_ingest (name show/set).
+        }
         session_mapping::IngestAction::QueryHealth => {
             reply = format!(
                 "daemon status=ok backend={} worker={} now={}",
@@ -1798,9 +1805,12 @@ async fn format_channel_session_history(
         .list_session_history(mapping_key, 20)
         .await;
 
-    let mut lines = vec![format!(
-        "* {} (active, {} turns)",
+    let active_label = medousa::session::format_session_history_label(
         active_session_id,
+        medousa::session::get_session_display_name(active_session_id).as_deref(),
+    );
+    let mut lines = vec![format!(
+        "* {active_label} (active, {} turns)",
         medousa::session::load_history(active_session_id).len()
     )];
 
@@ -1808,15 +1818,18 @@ async fn format_channel_session_history(
         if session_id == active_session_id {
             continue;
         }
+        let label = medousa::session::format_session_history_label(
+            &session_id,
+            medousa::session::get_session_display_name(&session_id).as_deref(),
+        );
         lines.push(format!(
-            "* {} ({} turns)",
-            session_id,
+            "* {label} ({} turns)",
             medousa::session::load_history(&session_id).len()
         ));
     }
 
     format!(
-        "Recent sessions for this channel/user:\n{}\n\nUse /history <session_id> to resume.",
+        "Recent sessions for this channel/user:\n{}\n\nUse /history <name or session id> to resume.",
         lines.join("\n")
     )
 }

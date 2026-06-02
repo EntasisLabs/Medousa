@@ -14,6 +14,7 @@ use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
 
 use crate::engine_context::{EngineExecutionLane, default_policy_profile_for_lane};
+use crate::identity_store_ext::{wrap_in_memory, wrap_surreal};
 
 const DEFAULT_PERSONA_ID: &str = "persona:default";
 const DEFAULT_USER_ID: &str = "user:default";
@@ -47,9 +48,9 @@ pub fn resolve_identity_channel_id(policy_profile: Option<&str>) -> String {
 }
 
 pub fn build_seeded_identity_memory_store() -> Result<Arc<dyn IdentityMemoryStore>> {
-    let store = InMemoryIdentityMemoryStore::default();
-    seed_baseline_identity_store(&store)?;
-    Ok(Arc::new(store))
+    let store = Arc::new(InMemoryIdentityMemoryStore::default());
+    seed_baseline_identity_store(store.as_ref())?;
+    Ok(wrap_in_memory(store))
 }
 
 pub async fn build_identity_memory_store_for_backend(
@@ -69,10 +70,11 @@ pub async fn build_seeded_identity_memory_store_for_runtime(
 ) -> Result<Arc<dyn IdentityMemoryStore>> {
     match runtime {
         RuntimeComposition::Surreal(rt) => {
-            let store = SurrealIdentityMemoryStore::new(rt.job_store.db());
+            let db = rt.job_store.db();
+            let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
             store.ensure_schema().await?;
-            seed_baseline_surreal_identity_store(&store).await?;
-            Ok(Arc::new(store))
+            seed_baseline_surreal_identity_store(store.as_ref()).await?;
+            Ok(wrap_surreal(store, db))
         }
         _ => build_seeded_identity_memory_store(),
     }
@@ -86,10 +88,11 @@ async fn build_seeded_surreal_identity_memory_store(
         return build_seeded_identity_memory_store();
     };
 
-    let store = SurrealIdentityMemoryStore::new(rt.job_store.db());
+    let db = rt.job_store.db();
+    let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
     store.ensure_schema().await?;
-    seed_baseline_surreal_identity_store(&store).await?;
-    Ok(Arc::new(store))
+    seed_baseline_surreal_identity_store(store.as_ref()).await?;
+    Ok(wrap_surreal(store, db))
 }
 
 async fn seed_baseline_surreal_identity_store(

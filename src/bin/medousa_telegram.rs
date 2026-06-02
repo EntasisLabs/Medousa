@@ -6,7 +6,8 @@ use medousa::{
     AdapterDeliveryOutcome, IngestRequest, IngestResponse, default_delivery_timeout,
     format_ingest_ack, wait_for_ask_delivery, resolve_daemon_url,
 };
-use medousa::channel_delivery::truncate_for_telegram;
+use medousa::channel_delivery::{format_for_telegram_markdown_v2, truncate_for_telegram};
+use teloxide::types::ParseMode;
 use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use teloxide::dptree;
@@ -150,12 +151,10 @@ async fn handle_message(
         match delivery_outcome {
             Ok(AdapterDeliveryOutcome::PushDelivered) => {}
             Ok(AdapterDeliveryOutcome::Fallback { text }) => {
-                bot.send_message(msg.chat.id, truncate_for_telegram(&text))
-                    .await?;
+                send_telegram_agent_message(&bot, msg.chat.id, &text).await?;
             }
             Ok(AdapterDeliveryOutcome::StreamError { message }) => {
-                bot.send_message(msg.chat.id, truncate_for_telegram(&message))
-                    .await?;
+                send_telegram_agent_message(&bot, msg.chat.id, &message).await?;
             }
             Err(err) => {
                 let error_msg = format!(
@@ -170,6 +169,18 @@ async fn handle_message(
     }
 
     bot.send_message(msg.chat.id, format_ingest_ack(&response)).await?;
+    Ok(())
+}
+
+async fn send_telegram_agent_message(
+    bot: &Bot,
+    chat_id: ChatId,
+    text: &str,
+) -> ResponseResult<()> {
+    let formatted = format_for_telegram_markdown_v2(text);
+    bot.send_message(chat_id, formatted)
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
     Ok(())
 }
 

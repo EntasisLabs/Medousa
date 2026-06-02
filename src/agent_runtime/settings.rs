@@ -100,7 +100,7 @@ pub fn default_daemon_runtime_settings(
         slice_hot_window_turns: "8".to_string(),
         slice_cold_window_turns: "24".to_string(),
         retry_runtime_max_retries: "1".to_string(),
-        retry_runtime_max_rounds: "3".to_string(),
+        retry_runtime_max_rounds: "10".to_string(),
         verifier_min_citation_coverage: "0.60".to_string(),
         verifier_min_avg_support_strength: "0.70".to_string(),
         verifier_min_supported_claim_ratio: "0.60".to_string(),
@@ -124,5 +124,11 @@ pub fn runtime_settings_for_interactive_turn(
     settings.provider = provider;
     settings.model = model;
     settings.base_url = base_url;
+    if let Some(value) = request.max_tool_rounds {
+        settings.max_tool_rounds = value.to_string();
+    }
+    if let Some(value) = request.retry_runtime_max_rounds {
+        settings.retry_runtime_max_rounds = value.to_string();
+    }
     settings
 }

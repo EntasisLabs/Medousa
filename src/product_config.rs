@@ -22,6 +22,25 @@ pub struct ProductConfig {
     pub tui: TuiProductConfig,
     #[serde(default)]
     pub runtime: RuntimeProductConfig,
+    #[serde(default)]
+    pub identity: IdentityProductConfig,
+    #[serde(default)]
+    pub surreal: SurrealProductConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SurrealProductConfig {
+    /// WebSocket RPC URL without the `surreal-ws:` prefix (e.g. `ws://127.0.0.1:8000/rpc`).
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub database: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -137,6 +156,44 @@ fn default_max_concurrent_workflow_steps() -> usize {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IdentityProductConfig {
+    #[serde(default = "default_identity_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_identity_auto_commit_min_confidence")]
+    pub auto_commit_min_confidence: f32,
+    #[serde(default = "default_identity_model_inferred_auto_commit_fields")]
+    pub model_inferred_auto_commit_fields: Vec<String>,
+}
+
+impl Default for IdentityProductConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_identity_enabled(),
+            auto_commit_min_confidence: default_identity_auto_commit_min_confidence(),
+            model_inferred_auto_commit_fields: default_identity_model_inferred_auto_commit_fields(),
+        }
+    }
+}
+
+fn default_identity_enabled() -> bool {
+    true
+}
+
+fn default_identity_auto_commit_min_confidence() -> f32 {
+    0.85
+}
+
+fn default_identity_model_inferred_auto_commit_fields() -> Vec<String> {
+    vec![
+        "display_name".to_string(),
+        "timezone".to_string(),
+        "language_variant".to_string(),
+        "recency_score".to_string(),
+        "confidence".to_string(),
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TuiProductConfig {
     #[serde(default = "default_response_depth")]
     pub response_depth_mode: String,
@@ -152,6 +209,8 @@ impl Default for ProductConfig {
             whatsapp: WhatsAppProductConfig::default(),
             tui: TuiProductConfig::default(),
             runtime: RuntimeProductConfig::default(),
+            identity: IdentityProductConfig::default(),
+            surreal: SurrealProductConfig::default(),
         }
     }
 }
@@ -345,7 +404,28 @@ fn extract_numeric_user_id(user_id: &str) -> Option<u64> {
 }
 
 /// Apply daemon-facing environment variables from product config for child processes.
+pub fn apply_surreal_env(config: &ProductConfig) {
+    apply_surreal_env_from_fields(&config.surreal);
+}
+
+pub fn apply_surreal_env_from_fields(surreal: &SurrealProductConfig) {
+    set_or_remove_env("MEDOUSA_SURREAL_ENDPOINT", surreal.endpoint.as_deref());
+    set_or_remove_env("MEDOUSA_SURREAL_USERNAME", surreal.username.as_deref());
+    set_or_remove_env("MEDOUSA_SURREAL_PASSWORD", surreal.password.as_deref());
+    set_or_remove_env("MEDOUSA_SURREAL_NAMESPACE", surreal.namespace.as_deref());
+    set_or_remove_env("MEDOUSA_SURREAL_DATABASE", surreal.database.as_deref());
+}
+
+fn set_or_remove_env(key: &str, value: Option<&str>) {
+    if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+        unsafe { std::env::set_var(key, value) };
+    } else {
+        unsafe { std::env::remove_var(key) };
+    }
+}
+
 pub fn apply_daemon_env(config: &ProductConfig) {
+    apply_surreal_env(config);
     if let Some(token) = config
         .daemon
         .deliver_webhook_token

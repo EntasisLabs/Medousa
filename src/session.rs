@@ -14,6 +14,8 @@ const SLACK_BOT_TOKEN_SERVICE: &str = "medousa.slack";
 const SLACK_BOT_TOKEN_ACCOUNT: &str = "bot_token";
 const SLACK_APP_TOKEN_SERVICE: &str = "medousa.slack";
 const SLACK_APP_TOKEN_ACCOUNT: &str = "app_token";
+const SURREAL_PASSWORD_SERVICE: &str = "medousa.surreal";
+const SURREAL_PASSWORD_ACCOUNT: &str = "password";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationTurn {
@@ -52,11 +54,18 @@ pub struct TuiDefaults {
     pub response_depth_mode: Option<String>,
     pub stage_routing: Option<crate::stage_routing::StageRoutingMatrix>,
     pub command_usage_counts: Option<std::collections::HashMap<String, u64>>,
+    pub surreal_endpoint: Option<String>,
+    pub surreal_username: Option<String>,
+    pub surreal_password: Option<String>,
+    pub surreal_namespace: Option<String>,
+    pub surreal_database: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistorySummary {
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub turns: usize,
     pub verification_runs: usize,
     pub last_timestamp: Option<DateTime<Utc>>,
@@ -75,7 +84,7 @@ pub enum ApiKeyStorageBackend {
     FileFallbackReady,
 }
 
-fn medousa_data_dir() -> PathBuf {
+pub(crate) fn medousa_data_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("medousa")
@@ -193,7 +202,7 @@ pub fn detect_tui_api_key_storage_backend() -> ApiKeyStorageBackend {
     }
 }
 
-fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -213,6 +222,7 @@ fn atomic_write(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
             || path.ends_with("telegram_bot_token")
             || path.ends_with("slack_bot_token")
             || path.ends_with("slack_app_token")
+            || path.ends_with("surreal_password")
         {
             let _ = std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o600));
         }
@@ -243,6 +253,57 @@ pub fn load_tui_defaults() -> TuiDefaults {
         .ok()
         .and_then(|raw| serde_json::from_str::<TuiDefaults>(&raw).ok())
         .unwrap_or_default()
+}
+
+fn surreal_password_secret_path() -> PathBuf {
+    medousa_data_dir().join("surreal_password")
+}
+
+fn surreal_password_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new(SURREAL_PASSWORD_SERVICE, SURREAL_PASSWORD_ACCOUNT)
+}
+
+fn file_surreal_password() -> Option<String> {
+    std::fs::read_to_string(surreal_password_secret_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+pub fn load_surreal_password() -> Option<String> {
+    if let Ok(entry) = surreal_password_keyring_entry() {
+        if let Ok(value) = entry.get_password() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    file_surreal_password()
+}
+
+pub fn save_surreal_password(password: Option<&str>) {
+    let path = surreal_password_secret_path();
+
+    match password.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(value) => {
+            let mut persisted = false;
+            if let Ok(entry) = surreal_password_keyring_entry() {
+                persisted = entry.set_password(value).is_ok();
+            }
+            if persisted {
+                let _ = std::fs::remove_file(&path);
+            } else {
+                let _ = atomic_write(&path, value.as_bytes());
+            }
+        }
+        None => {
+            if let Ok(entry) = surreal_password_keyring_entry() {
+                let _ = entry.delete_password();
+            }
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 pub fn save_tui_defaults(defaults: &TuiDefaults) {
@@ -528,6 +589,7 @@ pub(crate) fn file_list_history_sessions(limit: usize) -> Vec<SessionHistorySumm
 
             SessionHistorySummary {
                 session_id,
+                display_name: None,
                 turns: turns.len(),
                 verification_runs: verifications.len(),
                 last_timestamp,
@@ -551,5 +613,142 @@ pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
-    crate::session_store::get_session_store().list_history_sessions(limit)
+    let limit = limit.max(1);
+    let mut sessions = crate::session_store::get_session_store().list_history_sessions(limit);
+    let mut seen: std::collections::HashSet<String> = sessions
+        .iter()
+        .map(|item| item.session_id.clone())
+        .collect();
+
+    for session_id in crate::channel_session_store::list_distinct_channel_session_ids(limit) {
+        if !seen.insert(session_id.clone()) {
+            continue;
+        }
+        let turns = load_history(&session_id);
+        let verifications =
+            crate::verification_store::list_verifications(&session_id, usize::MAX);
+        let last_timestamp = turns.last().map(|t| t.timestamp);
+        let latest_verification =
+            crate::verification_store::find_verification(&session_id, None);
+        let preview = turns
+            .iter()
+            .rev()
+            .find(|t| !t.content.trim().is_empty())
+            .and_then(|t| t.content.lines().next())
+            .unwrap_or("(channel session)")
+            .chars()
+            .take(72)
+            .collect::<String>();
+
+        sessions.push(SessionHistorySummary {
+            session_id,
+            display_name: None,
+            turns: turns.len(),
+            verification_runs: verifications.len(),
+            last_timestamp,
+            last_verification_timestamp: latest_verification
+                .as_ref()
+                .map(|run| run.record.created_at_utc),
+            last_verification_confidence: latest_verification
+                .as_ref()
+                .map(|run| run.record.confidence_score),
+            last_verification_coverage: latest_verification
+                .as_ref()
+                .map(|run| run.report.citation_coverage),
+            last_verification_verified: latest_verification
+                .as_ref()
+                .map(|run| run.record.is_verified),
+            preview,
+        });
+    }
+
+    // Named sessions without turns still appear in global history.
+    for (session_id, display_name) in crate::session_meta_store::list_session_display_names(limit) {
+        if !seen.insert(session_id.clone()) {
+            continue;
+        }
+        sessions.push(SessionHistorySummary {
+            session_id,
+            display_name: Some(display_name),
+            turns: 0,
+            verification_runs: 0,
+            last_timestamp: None,
+            last_verification_timestamp: None,
+            last_verification_confidence: None,
+            last_verification_coverage: None,
+            last_verification_verified: None,
+            preview: "(named session)".to_string(),
+        });
+    }
+
+    enrich_session_summaries(&mut sessions);
+    sessions.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
+    sessions.truncate(limit);
+    sessions
+}
+
+pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<(), String> {
+    crate::session_meta_store::set_session_display_name(session_id, display_name)
+}
+
+pub fn get_session_display_name(session_id: &str) -> Option<String> {
+    crate::session_meta_store::get_session_display_name(session_id)
+}
+
+pub fn enrich_session_summaries(sessions: &mut [SessionHistorySummary]) {
+    let ids: Vec<String> = sessions.iter().map(|s| s.session_id.clone()).collect();
+    let names = crate::session_meta_store::load_session_display_names(&ids);
+    for session in sessions.iter_mut() {
+        if session.display_name.is_none() {
+            session.display_name = names.get(&session.session_id).cloned();
+        }
+    }
+}
+
+/// Resolve `/history <target>`: full id, id prefix, or global display name (unique).
+pub fn resolve_history_resume_target(target: &str) -> Option<String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return None;
+    }
+
+    if let Some(session_id) = crate::session_meta_store::find_session_id_by_display_name(target) {
+        return Some(session_id);
+    }
+
+    if !load_history(target).is_empty() {
+        return Some(target.to_string());
+    }
+
+    let summaries = list_history_sessions(500);
+    let prefix_matches = summaries
+        .iter()
+        .filter(|item| item.session_id.starts_with(target))
+        .collect::<Vec<_>>();
+    if prefix_matches.len() == 1 {
+        return Some(prefix_matches[0].session_id.clone());
+    }
+
+    let lower = target.to_ascii_lowercase();
+    let name_matches = summaries
+        .iter()
+        .filter(|item| {
+            item.display_name
+                .as_deref()
+                .is_some_and(|name| name.to_ascii_lowercase() == lower)
+        })
+        .collect::<Vec<_>>();
+    if name_matches.len() == 1 {
+        return Some(name_matches[0].session_id.clone());
+    }
+
+    None
+}
+
+pub fn format_session_history_label(session_id: &str, display_name: Option<&str>) -> String {
+    let id_short: String = session_id.chars().take(8).collect();
+    match display_name.filter(|name| !name.trim().is_empty()) {
+        Some(name) => format!("{name} ({id_short})"),
+        None => format!("{id_short}…"),
+    }
 }

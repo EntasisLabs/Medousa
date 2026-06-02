@@ -34,7 +34,7 @@ const CATEGORY_ORDER: [PaletteCategory; 5] = [
     PaletteCategory::SafetyKeys,
 ];
 
-const PALETTE_ACTIONS: [PaletteAction; 17] = [
+const PALETTE_ACTIONS: [PaletteAction; 18] = [
     PaletteAction {
         category: PaletteCategory::QuickActions,
         title: "Start New Chat",
@@ -52,6 +52,15 @@ const PALETTE_ACTIONS: [PaletteAction; 17] = [
         risk: ActionRisk::Safe,
         key_hint: "Ctrl+H",
         aliases: &["history", "sessions", "recent"],
+    },
+    PaletteAction {
+        category: PaletteCategory::Session,
+        title: "Name Session",
+        subtitle: "Set a global display name for the current session (/name <label>)",
+        command: "/name ",
+        risk: ActionRisk::Safe,
+        key_hint: "/name",
+        aliases: &["rename", "title", "label"],
     },
     PaletteAction {
         category: PaletteCategory::QuickActions,
@@ -371,120 +380,120 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
         .or_insert(0);
     *entry = entry.saturating_add(1);
 
-    save_tui_defaults(&TuiDefaults {
-        backend: Some(state.settings.backend.clone()),
-        theme_id: Some(state.settings.theme_id.clone()),
-        provider: Some(state.settings.provider.clone()),
-        model: Some(state.settings.model.clone()),
-        base_url: if state.settings.base_url.trim().is_empty() {
+    let mut defaults = load_tui_defaults();
+    defaults.backend = Some(state.settings.backend.clone());
+    defaults.theme_id = Some(state.settings.theme_id.clone());
+    defaults.provider = Some(state.settings.provider.clone());
+    defaults.model = Some(state.settings.model.clone());
+    defaults.base_url = if state.settings.base_url.trim().is_empty() {
+        None
+    } else {
+        Some(state.settings.base_url.clone())
+    };
+    defaults.env_overrides = if state.settings.env_overrides.trim().is_empty() {
+        None
+    } else {
+        Some(state.settings.env_overrides.clone())
+    };
+    defaults.allowed_modules = {
+        let parsed = parse_allowed_modules(&state.settings.allowed_modules);
+        if parsed.is_empty() {
             None
         } else {
-            Some(state.settings.base_url.clone())
-        },
-        env_overrides: if state.settings.env_overrides.trim().is_empty() {
-            None
-        } else {
-            Some(state.settings.env_overrides.clone())
-        },
-        allowed_modules: {
-            let parsed = parse_allowed_modules(&state.settings.allowed_modules);
-            if parsed.is_empty() {
-                None
-            } else {
-                Some(parsed)
-            }
-        },
-        tool_call_mode: Some(state.settings.tool_call_mode.clone()),
-        max_tool_rounds: Some(parse_usize_with_bounds(
-            &state.settings.max_tool_rounds,
-            10,
-            1,
-            50,
-        )),
-        thinking_capture: Some(parse_bool_with_default(
-            &state.settings.thinking_capture,
-            true,
-        )),
-        thinking_max_lines: Some(parse_usize_with_bounds(
-            &state.settings.thinking_max_lines,
-            300,
-            50,
-            5000,
-        )),
-        activation_direct_answer_max_prompt_chars: Some(parse_usize_with_bounds(
-            &state.settings.activation_direct_answer_max_prompt_chars,
-            320,
-            64,
-            4000,
-        )),
-        activation_long_session_turn_threshold: Some(parse_usize_with_bounds(
-            &state.settings.activation_long_session_turn_threshold,
-            28,
-            8,
-            500,
-        )),
-        activation_long_session_max_prompt_chars: Some(parse_usize_with_bounds(
-            &state.settings.activation_long_session_max_prompt_chars,
-            420,
-            64,
-            4000,
-        )),
-        slice_hot_window_turns: Some(parse_usize_with_bounds(
-            &state.settings.slice_hot_window_turns,
-            8,
-            2,
-            32,
-        )),
-        slice_cold_window_turns: Some(parse_usize_with_bounds(
-            &state.settings.slice_cold_window_turns,
-            24,
-            4,
-            128,
-        )),
-        retry_runtime_max_retries: Some(parse_usize_with_bounds(
-            &state.settings.retry_runtime_max_retries,
-            1,
-            0,
-            5,
-        )),
-        retry_runtime_max_rounds: Some(parse_usize_with_bounds(
-            &state.settings.retry_runtime_max_rounds,
-            3,
-            1,
-            10,
-        )),
-        verifier_min_citation_coverage: Some(parse_f32_with_bounds(
-            &state.settings.verifier_min_citation_coverage,
-            0.60,
-            0.0,
-            1.0,
-        )),
-        verifier_min_avg_support_strength: Some(parse_f32_with_bounds(
-            &state.settings.verifier_min_avg_support_strength,
-            0.70,
-            0.0,
-            1.0,
-        )),
-        verifier_min_supported_claim_ratio: Some(parse_f32_with_bounds(
-            &state.settings.verifier_min_supported_claim_ratio,
-            0.60,
-            0.0,
-            1.0,
-        )),
-        verifier_min_claim_support_strength: Some(parse_f32_with_bounds(
-            &state.settings.verifier_min_claim_support_strength,
-            0.65,
-            0.0,
-            1.0,
-        )),
-        response_depth_mode: Some(state.response_depth_mode.clone()),
-        stage_routing: Some(state.stage_routing.clone()),
-        command_usage_counts: if state.command_usage_counts.is_empty() {
-            None
-        } else {
-            Some(state.command_usage_counts.clone())
-        },
-    });
+            Some(parsed)
+        }
+    };
+    defaults.tool_call_mode = Some(state.settings.tool_call_mode.clone());
+    defaults.max_tool_rounds = Some(parse_usize_with_bounds(
+        &state.settings.max_tool_rounds,
+        10,
+        1,
+        50,
+    ));
+    defaults.thinking_capture = Some(parse_bool_with_default(
+        &state.settings.thinking_capture,
+        true,
+    ));
+    defaults.thinking_max_lines = Some(parse_usize_with_bounds(
+        &state.settings.thinking_max_lines,
+        300,
+        50,
+        5000,
+    ));
+    defaults.activation_direct_answer_max_prompt_chars = Some(parse_usize_with_bounds(
+        &state.settings.activation_direct_answer_max_prompt_chars,
+        320,
+        64,
+        4000,
+    ));
+    defaults.activation_long_session_turn_threshold = Some(parse_usize_with_bounds(
+        &state.settings.activation_long_session_turn_threshold,
+        28,
+        8,
+        500,
+    ));
+    defaults.activation_long_session_max_prompt_chars = Some(parse_usize_with_bounds(
+        &state.settings.activation_long_session_max_prompt_chars,
+        420,
+        64,
+        4000,
+    ));
+    defaults.slice_hot_window_turns = Some(parse_usize_with_bounds(
+        &state.settings.slice_hot_window_turns,
+        8,
+        2,
+        32,
+    ));
+    defaults.slice_cold_window_turns = Some(parse_usize_with_bounds(
+        &state.settings.slice_cold_window_turns,
+        24,
+        4,
+        128,
+    ));
+    defaults.retry_runtime_max_retries = Some(parse_usize_with_bounds(
+        &state.settings.retry_runtime_max_retries,
+        1,
+        0,
+        5,
+    ));
+    defaults.retry_runtime_max_rounds = Some(parse_usize_with_bounds(
+        &state.settings.retry_runtime_max_rounds,
+        3,
+        1,
+        10,
+    ));
+    defaults.verifier_min_citation_coverage = Some(parse_f32_with_bounds(
+        &state.settings.verifier_min_citation_coverage,
+        0.60,
+        0.0,
+        1.0,
+    ));
+    defaults.verifier_min_avg_support_strength = Some(parse_f32_with_bounds(
+        &state.settings.verifier_min_avg_support_strength,
+        0.70,
+        0.0,
+        1.0,
+    ));
+    defaults.verifier_min_supported_claim_ratio = Some(parse_f32_with_bounds(
+        &state.settings.verifier_min_supported_claim_ratio,
+        0.60,
+        0.0,
+        1.0,
+    ));
+    defaults.verifier_min_claim_support_strength = Some(parse_f32_with_bounds(
+        &state.settings.verifier_min_claim_support_strength,
+        0.65,
+        0.0,
+        1.0,
+    ));
+    defaults.response_depth_mode = Some(state.response_depth_mode.clone());
+    defaults.stage_routing = Some(state.stage_routing.clone());
+    defaults.command_usage_counts = if state.command_usage_counts.is_empty() {
+        None
+    } else {
+        Some(state.command_usage_counts.clone())
+    };
+    save_tui_defaults(&defaults);
 }
 
 pub(crate) fn handle_allowlist_preview_key_event(
@@ -793,6 +802,8 @@ fn command_effect(command: &str) -> &'static str {
     match command {
         "/new" => "Resets context to a fresh conversation.",
         "/history" => "Opens session history for quick switching.",
+        "/name" => "Shows or sets a global display name for the current session.",
+        "/name " => "Sets the global display name (stored in Surreal on daemon runtime).",
         "/settings" => "Opens settings tabs for model/runtime changes.",
         "/edit" => "Opens script editor.",
         "/run" | "/run-current" => "Executes script against runtime and tools.",

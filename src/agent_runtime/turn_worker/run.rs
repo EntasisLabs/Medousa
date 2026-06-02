@@ -496,6 +496,8 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         provider: record.provider.clone(),
         model: record.model.clone(),
         stage_routing: StageRoutingMatrix::default_for(&record.provider, &record.model),
+        max_tool_rounds: None,
+        retry_runtime_max_rounds: None,
     };
     let mut settings = runtime_settings_for_interactive_turn("worker", &request);
     settings.max_tool_rounds = "12".to_string();

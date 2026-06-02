@@ -59,7 +59,7 @@ pub const DEFAULT_ACTIVATION_DIRECT_PROMPT_CHARS: usize = 320;
 pub const DEFAULT_ACTIVATION_LONG_SESSION_TURN_THRESHOLD: usize = 28;
 pub const DEFAULT_ACTIVATION_LONG_SESSION_PROMPT_CHARS: usize = 420;
 pub const DEFAULT_RETRY_RUNTIME_MAX_RETRIES: usize = 1;
-pub const DEFAULT_RETRY_RUNTIME_MAX_ROUNDS: usize = 3;
+pub const DEFAULT_RETRY_RUNTIME_MAX_ROUNDS: usize = 10;
 const CONTINUATION_MAX_ROUNDS: usize = 4;
 const INTENT_CLASSIFIER_MAX_PROMPT_CHARS: usize = 900;
 const INTENT_CLASSIFIER_MAX_CONTEXT_TURNS: usize = 4;
@@ -844,7 +844,12 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         Err(err) => {
             let err_text = err.to_string();
             if let Some(reason) = retryable_runtime_reason(&err_text) {
-                let retry_rounds = activation.max_tool_rounds.min(retry_max_rounds).max(1);
+                // Retry uses the same tool-round budget as the primary loop unless the
+                // operator explicitly set a lower retry_runtime_max_rounds cap.
+                let retry_rounds = activation
+                    .max_tool_rounds
+                    .min(retry_max_rounds.max(activation.max_tool_rounds))
+                    .max(1);
                 let mut last_err = err_text;
                 let mut retry_count = 0usize;
                 while retry_count < retry_max_retries {

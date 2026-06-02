@@ -12,7 +12,10 @@ pub const COGNITION_TURN_PREPARE_FINAL_DOTTED: &str = "cognition.turn.prepare_fi
 
 pub fn is_prepare_final_tool_name(name: &str) -> bool {
     let trimmed = name.trim();
-    trimmed == COGNITION_TURN_PREPARE_FINAL || trimmed == COGNITION_TURN_PREPARE_FINAL_DOTTED
+    trimmed == COGNITION_TURN_PREPARE_FINAL
+        || trimmed == COGNITION_TURN_PREPARE_FINAL_DOTTED
+        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
+            == COGNITION_TURN_PREPARE_FINAL
 }
 
 /// Signal that the **next** assistant message (text-only) should be the user-facing final answer.

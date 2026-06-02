@@ -13,6 +13,7 @@ pub(crate) async fn handle_new_session_command(
 ) {
     stop_active_generation(state);
     state.session_id = Uuid::new_v4().simple().to_string();
+    state.session_display_name = None;
     state.selected_context_pack_query = None;
     state.conversation.clear();
     invalidate_markdown_cache(state);

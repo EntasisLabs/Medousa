@@ -294,55 +294,52 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             state.settings_draft = state.settings.clone();
             state.stage_routing_draft = state.stage_routing.clone();
 
-            super::save_tui_defaults(&super::TuiDefaults {
-                backend: Some(snapshot.backend),
-                theme_id: Some(snapshot.theme_id),
-                provider: Some(snapshot.provider),
-                model: Some(snapshot.model),
-                base_url: snapshot.base_url,
-                env_overrides: if snapshot.env_overrides_raw.trim().is_empty() {
-                    None
-                } else {
-                    Some(snapshot.env_overrides_raw)
-                },
-                allowed_modules: if snapshot.allowed_modules.is_empty() {
-                    None
-                } else {
-                    Some(snapshot.allowed_modules)
-                },
-                tool_call_mode: Some(snapshot.tool_call_mode),
-                max_tool_rounds: Some(snapshot.max_tool_rounds),
-                thinking_capture: Some(snapshot.thinking_capture),
-                thinking_max_lines: Some(snapshot.thinking_max_lines),
-                activation_direct_answer_max_prompt_chars: Some(
-                    snapshot.activation_direct_answer_max_prompt_chars,
-                ),
-                activation_long_session_turn_threshold: Some(
-                    snapshot.activation_long_session_turn_threshold,
-                ),
-                activation_long_session_max_prompt_chars: Some(
-                    snapshot.activation_long_session_max_prompt_chars,
-                ),
-                slice_hot_window_turns: Some(snapshot.slice_hot_window_turns),
-                slice_cold_window_turns: Some(snapshot.slice_cold_window_turns),
-                retry_runtime_max_retries: Some(snapshot.retry_runtime_max_retries),
-                retry_runtime_max_rounds: Some(snapshot.retry_runtime_max_rounds),
-                verifier_min_citation_coverage: Some(snapshot.verifier_min_citation_coverage),
-                verifier_min_avg_support_strength: Some(snapshot.verifier_min_avg_support_strength),
-                verifier_min_supported_claim_ratio: Some(
-                    snapshot.verifier_min_supported_claim_ratio,
-                ),
-                verifier_min_claim_support_strength: Some(
-                    snapshot.verifier_min_claim_support_strength,
-                ),
-                response_depth_mode: Some(state.response_depth_mode.clone()),
-                stage_routing: Some(state.stage_routing.clone()),
-                command_usage_counts: if state.command_usage_counts.is_empty() {
-                    None
-                } else {
-                    Some(state.command_usage_counts.clone())
-                },
-            });
+            let mut defaults = super::load_tui_defaults();
+            defaults.backend = Some(snapshot.backend);
+            defaults.theme_id = Some(snapshot.theme_id);
+            defaults.provider = Some(snapshot.provider);
+            defaults.model = Some(snapshot.model);
+            defaults.base_url = snapshot.base_url;
+            defaults.env_overrides = if snapshot.env_overrides_raw.trim().is_empty() {
+                None
+            } else {
+                Some(snapshot.env_overrides_raw)
+            };
+            defaults.allowed_modules = if snapshot.allowed_modules.is_empty() {
+                None
+            } else {
+                Some(snapshot.allowed_modules)
+            };
+            defaults.tool_call_mode = Some(snapshot.tool_call_mode);
+            defaults.max_tool_rounds = Some(snapshot.max_tool_rounds);
+            defaults.thinking_capture = Some(snapshot.thinking_capture);
+            defaults.thinking_max_lines = Some(snapshot.thinking_max_lines);
+            defaults.activation_direct_answer_max_prompt_chars =
+                Some(snapshot.activation_direct_answer_max_prompt_chars);
+            defaults.activation_long_session_turn_threshold =
+                Some(snapshot.activation_long_session_turn_threshold);
+            defaults.activation_long_session_max_prompt_chars =
+                Some(snapshot.activation_long_session_max_prompt_chars);
+            defaults.slice_hot_window_turns = Some(snapshot.slice_hot_window_turns);
+            defaults.slice_cold_window_turns = Some(snapshot.slice_cold_window_turns);
+            defaults.retry_runtime_max_retries = Some(snapshot.retry_runtime_max_retries);
+            defaults.retry_runtime_max_rounds = Some(snapshot.retry_runtime_max_rounds);
+            defaults.verifier_min_citation_coverage =
+                Some(snapshot.verifier_min_citation_coverage);
+            defaults.verifier_min_avg_support_strength =
+                Some(snapshot.verifier_min_avg_support_strength);
+            defaults.verifier_min_supported_claim_ratio =
+                Some(snapshot.verifier_min_supported_claim_ratio);
+            defaults.verifier_min_claim_support_strength =
+                Some(snapshot.verifier_min_claim_support_strength);
+            defaults.response_depth_mode = Some(state.response_depth_mode.clone());
+            defaults.stage_routing = Some(state.stage_routing.clone());
+            defaults.command_usage_counts = if state.command_usage_counts.is_empty() {
+                None
+            } else {
+                Some(state.command_usage_counts.clone())
+            };
+            super::save_tui_defaults(&defaults);
 
             super::push_obs(
                 state,

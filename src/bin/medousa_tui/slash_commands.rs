@@ -17,6 +17,45 @@ pub(crate) async fn handle_slash_command(
         "/new" => {
             slash_command_services::handle_new_session_command(state, tui_rt, event_tx).await;
         }
+        "/name" => {
+            let label = parts.collect::<Vec<_>>().join(" ").trim().to_string();
+            if label.is_empty() {
+                session_name_services::refresh_session_display_name(state);
+                match &state.session_display_name {
+                    Some(name) => push_obs(
+                        state,
+                        format!(
+                            "◈ session name: {} ({})",
+                            name,
+                            &state.session_id[..state.session_id.len().min(8)]
+                        ),
+                    ),
+                    None => push_obs(
+                        state,
+                        format!(
+                            "◈ no display name for session {}",
+                            &state.session_id[..state.session_id.len().min(8)]
+                        ),
+                    ),
+                }
+            } else {
+                match session_name_services::set_session_display_name_daemon_first(state, &label)
+                    .await
+                {
+                    Ok(()) => push_obs(
+                        state,
+                        format!(
+                            "✓ session name set to \"{}\" (global)",
+                            state
+                                .session_display_name
+                                .as_deref()
+                                .unwrap_or(label.as_str())
+                        ),
+                    ),
+                    Err(err) => push_obs(state, format!("⚠ could not set session name: {err}")),
+                }
+            }
+        }
         "/history" => {
             state.history_items = history_services::list_history_sessions_daemon_first(state, 200).await;
             state.history_selected = 0;

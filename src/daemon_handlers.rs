@@ -4,7 +4,8 @@ use axum::Json;
 
 use crate::daemon_api::{
     SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListRequest,
-    SessionHistoryListResponse, SessionHistoryResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
+    SessionSetDisplayNameResponse,
 };
 
 /// Session history HTTP handlers extracted to library so they can be tested.
@@ -41,5 +42,26 @@ pub async fn append_session_turn(
     Ok(Json(SessionAppendTurnResponse {
         session_id,
         stored: true,
+    }))
+}
+
+pub async fn set_session_display_name(
+    AxumPath(session_id): AxumPath<String>,
+    Json(request): Json<SessionSetDisplayNameRequest>,
+) -> Result<Json<SessionSetDisplayNameResponse>, (StatusCode, String)> {
+    let session_id = session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+
+    crate::session::set_session_display_name(&session_id, &request.display_name)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+
+    let display_name = crate::session::get_session_display_name(&session_id)
+        .unwrap_or_else(|| request.display_name.trim().to_string());
+
+    Ok(Json(SessionSetDisplayNameResponse {
+        session_id,
+        display_name,
     }))
 }

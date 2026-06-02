@@ -29,8 +29,8 @@ use medousa::{
     resolve_llm_provider, resolve_tui_platform_mode,
     session::{
         ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary, TuiDefaults,
-        detect_tui_api_key_storage_backend, load_history, load_tui_api_key, load_tui_defaults,
-        save_last_session_id, save_tui_api_key, save_tui_defaults,
+        detect_tui_api_key_storage_backend, load_history, load_last_session_id, load_tui_api_key,
+        load_tui_defaults, save_last_session_id, save_tui_api_key, save_tui_defaults,
     },
     settings_guard::{invalid_module_ids, parse_allowed_modules},
     stage_routing::StageRoutingMatrix,
@@ -54,6 +54,8 @@ mod command_preview_ui;
 mod daemon_commands;
 #[path = "medousa_tui/history_services.rs"]
 mod history_services;
+#[path = "medousa_tui/session_name_services.rs"]
+mod session_name_services;
 #[path = "medousa_tui/editor_runtime.rs"]
 mod editor_runtime;
 #[path = "medousa_tui/event_reducer.rs"]
@@ -176,6 +178,7 @@ struct TuiState {
     provider_model: String,
     response_depth_mode: String,
     session_id: String,
+    session_display_name: Option<String>,
     selected_context_pack_query: Option<String>,
     stage_routing: StageRoutingMatrix,
     stage_routing_draft: StageRoutingMatrix,
@@ -444,11 +447,15 @@ async fn main() -> Result<()> {
         resolved_backend = "in-memory".to_string();
     }
 
-    let session_id = if let Some(sid) = explicit_session {
-        sid.to_string()
-    } else {
-        Uuid::new_v4().simple().to_string()
-    };
+    let session_id = explicit_session
+        .map(str::to_string)
+        .or_else(|| {
+            load_last_session_id().and_then(|id| {
+                let trimmed = id.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            })
+        })
+        .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
     save_last_session_id(&session_id);
 
     let history = match daemon_commands::daemon_load_session_history(&resolved_daemon_url, &session_id).await {
@@ -572,6 +579,7 @@ async fn main() -> Result<()> {
         provider_model,
         response_depth_mode: resolved_response_depth_mode,
         session_id: session_id.clone(),
+        session_display_name: medousa::session::get_session_display_name(&session_id),
         selected_context_pack_query: None,
         stage_routing: resolved_stage_routing.clone(),
         stage_routing_draft: resolved_stage_routing,
@@ -816,8 +824,10 @@ async fn handle_history_key_event(code: KeyCode, state: &mut TuiState) -> EventO
             if let Some(selected) = state.history_items.get(state.history_selected).cloned() {
                 stop_active_generation(state);
                 state.session_id = selected.session_id.clone();
+                state.session_display_name = selected.display_name.clone();
                 let session_id = state.session_id.clone();
                 state.conversation = history_services::load_history_daemon_first(state, &session_id).await;
+                session_name_services::refresh_session_display_name(state);
                 invalidate_markdown_cache(state);
                 state.thinking_trace.clear();
                 state.pending_thinking_buffer.clear();
@@ -1220,6 +1230,7 @@ mod tests {
             provider_model: "openai:gpt-4o-mini".to_string(),
             response_depth_mode: "standard".to_string(),
             session_id: "test-session".to_string(),
+            session_display_name: None,
             selected_context_pack_query: None,
             stage_routing: StageRoutingMatrix::default_for("openai", "gpt-4o-mini"),
             stage_routing_draft: StageRoutingMatrix::default_for("openai", "gpt-4o-mini"),

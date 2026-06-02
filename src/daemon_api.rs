@@ -114,6 +114,17 @@ pub struct SessionAppendTurnResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSetDisplayNameRequest {
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSetDisplayNameResponse {
+    pub session_id: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobResultResponse {
     pub job_id: String,
     pub status: String,
@@ -375,6 +386,11 @@ pub struct InteractiveTurnRequest {
     pub provider: String,
     pub model: String,
     pub stage_routing: StageRoutingMatrix,
+    /// When set, overrides `tui_defaults.json` for this turn (TUI live settings).
+    #[serde(default)]
+    pub max_tool_rounds: Option<usize>,
+    #[serde(default)]
+    pub retry_runtime_max_rounds: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

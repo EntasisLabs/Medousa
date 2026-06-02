@@ -147,7 +147,7 @@ impl CapabilityBinding {
             priority,
             available,
             unavailable_reason: None,
-            invoke_via: Some("cognition.mcp.invoke".to_string()),
+            invoke_via: Some("cognition_mcp_invoke".to_string()),
             module: None,
             op: None,
             server_id: Some(server_id.to_string()),

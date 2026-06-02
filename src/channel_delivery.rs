@@ -186,6 +186,11 @@ pub fn truncate_for_telegram(text: &str) -> String {
     format!("{truncated}...")
 }
 
+/// Escape model markdown for Telegram `MarkdownV2` delivery (preserves structure, escapes specials).
+pub fn format_for_telegram_markdown_v2(text: &str) -> String {
+    telegram_escape::tg_escape(&truncate_for_telegram(text))
+}
+
 pub fn parse_telegram_chat_id(channel_id: &str) -> Result<i64> {
     channel_id
         .strip_prefix("telegram:chat:")
@@ -301,7 +306,7 @@ async fn dispatch_telegram_message(
     let token = load_telegram_bot_token()
         .context("telegram bot token missing; run medousa setup to configure Telegram")?;
     let chat_id = parse_telegram_chat_id(channel_id)?;
-    let body = truncate_for_telegram(text);
+    let body = format_for_telegram_markdown_v2(text);
     let url = format!("https://api.telegram.org/bot{token}/sendMessage");
 
     let response = client
@@ -309,6 +314,7 @@ async fn dispatch_telegram_message(
         .json(&json!({
             "chat_id": chat_id,
             "text": body,
+            "parse_mode": "MarkdownV2",
         }))
         .send()
         .await
@@ -585,9 +591,9 @@ fn read_non_empty_text(value: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_output_text_from_diagnostics, internal_deliver_webhook_url,
-        is_missing_runtime_table_error, parse_slack_channel_id, parse_telegram_chat_id,
-        truncate_for_slack, truncate_for_telegram,
+        extract_output_text_from_diagnostics, format_for_telegram_markdown_v2,
+        internal_deliver_webhook_url, is_missing_runtime_table_error, parse_slack_channel_id,
+        parse_telegram_chat_id, truncate_for_slack, truncate_for_telegram,
     };
 
     #[test]
@@ -617,6 +623,13 @@ mod tests {
     fn truncate_for_telegram_caps_length() {
         let long = "x".repeat(5000);
         assert_eq!(truncate_for_telegram(&long).chars().count(), 4003);
+    }
+
+    #[test]
+    fn telegram_markdown_escape_preserves_bold_markers() {
+        let escaped = format_for_telegram_markdown_v2("*hello* _world_");
+        assert!(escaped.contains('*'));
+        assert!(escaped.contains('_'));
     }
 
     #[test]

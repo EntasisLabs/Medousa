@@ -10,10 +10,10 @@ Your tools:
 - Session memory: cognition_memory_* (schema, calibrate, moods, context, list, recall, store) for posture and light reads.
 - Capability catalog: cognition_capability_list / search / resolve to learn capability ids and bindings (inspect only — do not invoke here).
 - Turn workers: cognition_spawn_turn_worker for heavy rituals (web, Grapheme scripts, deep memory work); cognition_turn_worker_status / cancel.
-- Runtime control: cognition_runtime_workflow_* , cognition_runtime_jobs_* , cognition_runtime_recurring_* , cognition.job.enqueue , cognition_runtime_delivery_status.
+- Runtime control: cognition_runtime_workflow_* , cognition_runtime_jobs_* , cognition_runtime_recurring_* , cognition_job_enqueue , cognition_runtime_delivery_status.
 
 Rules:
-- Delegate execution (Grapheme run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker with the right intent and a complete worker task prompt.
+- Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — use intent research for web/Grapheme rituals, general for lighter capability+template work.
 - After spawning, give only a short user_ack; synthesis delivers the final answer.
 - Use workflows/jobs when work must be durable across turns.
 - Do not claim tool receipts the worker has not produced."#;
@@ -47,13 +47,14 @@ Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail whe
 Execution order (do not skip):
 1) Classify: live/current facts need a runtime script (web/http/websearch modules) or cognition_capability_invoke — not modules search alone.
 2) Prefer cognition_capability_invoke when the task maps to a catalog capability (web, fetch, docs); read the receipt.
-3) Before writing any script: discover modules and examples (minimum one example; two when the task is novel):
+3) Preset workflows (prefer before hand-authoring source): cognition_grapheme_template_run with template research_report | http_poll | csv_digest and params (topic/query, url).
+4) Before writing any custom script: discover modules and examples (minimum one example; two when the task is novel):
    a) cognition_grapheme_modules with query matching intent (e.g. web, http)
    b) cognition_grapheme_examples action=show for a relevant example name, or list then show
    c) If module examples are thin: cognition_grapheme_modules_info + cognition_grapheme_modules_ops on the chosen module
-4) Construct: start from the closest example — same import lines, query block shape, and pipe operators. Change only names/args the task requires.
-5) Run: cognition_grapheme_run with full source string (or cognition_grapheme_cli_run when mirroring CLI).
-6) On failure: read the exact error from tool output; fix one concrete issue (wrong op name, missing import, bad pipe); retry once with a smaller script. If still failing, report the error text and what you tried — do not loop blind rewrites.
+5) Construct: start from the closest example — same import lines, query block shape, and pipe operators. Change only names/args the task requires.
+6) Run: cognition_grapheme_run with full source string (or cognition_grapheme_cli_run when mirroring CLI).
+7) On failure: read the exact error from tool output; fix one concrete issue (wrong op name, missing import, bad pipe); retry once with a smaller script. If still failing, report the error text and what you tried — do not loop blind rewrites.
 
 Canonical minimal shape (adapt ops from examples, do not cargo-cult unrelated modules):
 import core from "grapheme/core"
@@ -172,6 +173,7 @@ mod tests {
         let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research);
         assert!(prompt.contains("cognition_grapheme_modules"));
         assert!(prompt.contains("cognition_grapheme_examples"));
+        assert!(prompt.contains("cognition_grapheme_template_run"));
         assert!(prompt.contains("Attempt A"));
     }
 
