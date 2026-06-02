@@ -30,6 +30,8 @@ pub enum TuiEvent {
     },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },
+    /// Replace in-flight assistant scratch text (new model round / gatekeeper continue).
+    AgentScratchReset { turn_id: u64 },
     /// Partial model reasoning chunk streamed from the model.
     AgentReasoningChunk { turn_id: u64, delta: String },
     /// The tool loop failed with an error.

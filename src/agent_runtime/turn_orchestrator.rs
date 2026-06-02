@@ -30,6 +30,7 @@ use super::turn_budget::{
     try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
     turn_budget_for_lane, TurnOrchestrationState,
 };
+use super::turn_completion::ToolLoopCompletionGate;
 use super::turn_services::{
     self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
     TurnActivationDecision,
@@ -602,14 +603,23 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         return;
     }
     orchestration_state.final_mode = "tool_loop".to_string();
-    let first_attempt = pipeline
-        .execute_with_stream_prior_messages_max_rounds(
-            request.clone(),
-            prior_messages.clone(),
-            Some(&chunk_tx),
-            activation.max_tool_rounds,
-        )
-        .await;
+    let first_attempt = {
+        let mut completion_gate = ToolLoopCompletionGate {
+            stream_turn_id: turn_id,
+            sink: Some(sink.clone()),
+            orchestration: Some(&mut orchestration_state),
+            budget: Some(&turn_budget),
+        };
+        pipeline
+            .execute_with_stream_prior_messages_max_rounds(
+                request.clone(),
+                prior_messages.clone(),
+                Some(&chunk_tx),
+                activation.max_tool_rounds,
+                Some(&mut completion_gate),
+            )
+            .await
+    };
 
     match first_attempt {
         Ok(response) => {
@@ -670,14 +680,25 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     {
                         orchestration_state.final_mode = "tool_loop_with_continuation".to_string();
 
-                        match pipeline
-                            .execute_with_stream_prior_messages_max_rounds(
-                                continuation_request,
-                                continuation_prior_messages,
-                                Some(&chunk_tx),
-                                activation.max_tool_rounds.min(CONTINUATION_MAX_ROUNDS).max(1),
-                            )
-                            .await
+                        let continuation_result = {
+                            let mut continuation_gate = ToolLoopCompletionGate {
+                                stream_turn_id: turn_id,
+                                sink: Some(sink.clone()),
+                                orchestration: Some(&mut orchestration_state),
+                                budget: Some(&turn_budget),
+                            };
+                            pipeline
+                                .execute_with_stream_prior_messages_max_rounds(
+                                    continuation_request,
+                                    continuation_prior_messages,
+                                    Some(&chunk_tx),
+                                    activation.max_tool_rounds.min(CONTINUATION_MAX_ROUNDS).max(1),
+                                    Some(&mut continuation_gate),
+                                )
+                                .await
+                        };
+
+                        match continuation_result
                         {
                             Ok(continuation_response) => {
                                 emit_tool_payload_events(
@@ -742,14 +763,25 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     }
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
 
-                    match pipeline
-                        .execute_with_stream_prior_messages_max_rounds(
-                            request.clone(),
-                            prior_messages.clone(),
-                            Some(&chunk_tx),
-                            retry_rounds,
-                        )
-                        .await
+                    let retry_result = {
+                        let mut retry_gate = ToolLoopCompletionGate {
+                            stream_turn_id: turn_id,
+                            sink: Some(sink.clone()),
+                            orchestration: Some(&mut orchestration_state),
+                            budget: Some(&turn_budget),
+                        };
+                        pipeline
+                            .execute_with_stream_prior_messages_max_rounds(
+                                request.clone(),
+                                prior_messages.clone(),
+                                Some(&chunk_tx),
+                                retry_rounds,
+                                Some(&mut retry_gate),
+                            )
+                            .await
+                    };
+
+                    match retry_result
                     {
                         Ok(response) => {
                             emit_tool_payload_events(&sink, &response.tool_invocations).await;

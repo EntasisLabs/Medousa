@@ -384,6 +384,10 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
             )
             .await;
     }
+
+    async fn scratch_reset(&self, turn_id: u64) {
+        self.inner.scratch_reset(turn_id).await;
+    }
 }
 
 /// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.

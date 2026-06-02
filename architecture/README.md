@@ -30,6 +30,8 @@ Start here for product-level usage:
 13. [recurring-delivery-roadmap.md](recurring-delivery-roadmap.md)
 14. [tool-loop-interim-text-fix.md](tool-loop-interim-text-fix.md)
 15. [agent-experience-gap-analysis.md](agent-experience-gap-analysis.md)
+16. [turn-completion-gatekeeper.md](turn-completion-gatekeeper.md)
+17. [turn-worker-bus-plan.md](turn-worker-bus-plan.md) — host/worker delegation; **daemon bus**, comms adapters are not the bus
 
 ## Primary Code Anchors
 

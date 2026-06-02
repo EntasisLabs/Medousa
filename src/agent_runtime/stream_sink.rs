@@ -21,6 +21,11 @@ pub trait AgentStreamSink: Send + Sync {
         input_receipt: Option<ArtifactReceiptMeta>,
         output_receipt: Option<ArtifactReceiptMeta>,
     );
+
+    /// Clear in-flight assistant scratch text before the next model round (TUI replaces draft).
+    async fn scratch_reset(&self, turn_id: u64) {
+        let _ = turn_id;
+    }
 }
 
 pub type SharedAgentStreamSink = Arc<dyn AgentStreamSink>;

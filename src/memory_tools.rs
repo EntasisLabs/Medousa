@@ -11,7 +11,7 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::memory_prelude::{MemoryRecallRequest, MemoryScope, MemoryStoreRequest};
 use stasis::memory_prelude_ext::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_models::{
-    MemoryAvecState, MemoryFallbackPolicy, MemoryFindRequest, MemoryFilter, MemorySortDirection,
+    MemoryAvecState, MemoryFallbackPolicy, MemoryFindRequest, MemorySortDirection,
     MemorySortField, MemoryStrictnessMode,
 };
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
@@ -479,7 +479,7 @@ impl StasisTool for CognitionMemoryContextTool {
         let beta = input.get("beta").and_then(|v| v.as_f64()).unwrap_or(0.3) as f32;
         let query_text = keywords.join(" ");
 
-        let mut recall = MemoryRecallRequest {
+        let recall = MemoryRecallRequest {
             scope: MemoryScope {
                 session_ids: session_scope.map(|s| vec![s.to_string()]),
                 tiers: tiers_ref.map(|t| t.to_vec()),

@@ -13,6 +13,10 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
         flush_pending_agent_chunks(state);
     }
 
+    if matches!(event, TuiEvent::AgentScratchReset { .. }) {
+        flush_pending_agent_chunks(state);
+    }
+
     match event {
         TuiEvent::UiNotice(text) => {
             super::push_obs(state, text);
@@ -29,6 +33,19 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                      Reply yes/approve to retry with approval_granted: true."
                 ),
             );
+        }
+        TuiEvent::AgentScratchReset { turn_id } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            if let Some(idx) = state.active_agent_stream_turn {
+                if let Some(turn) = state.conversation.get_mut(idx) {
+                    turn.content.clear();
+                }
+            }
+            state.pending_agent_chunk_delta.clear();
+            state.pending_agent_chunk_count = 0;
+            super::invalidate_markdown_cache(state);
         }
         TuiEvent::AgentChunk { turn_id, delta } => {
             if !is_active_stream_turn(state, turn_id) {

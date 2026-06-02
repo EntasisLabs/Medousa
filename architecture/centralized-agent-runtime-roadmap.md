@@ -179,3 +179,7 @@ Point all ingress at daemon agent turns.
 3. **Orchestrator core** — move activation, prior messages, context pack, continuation (no TuiEvent; callback/trait for stream sink)
 4. **TUI rewiring** — TUI imports shared module; delete duplicated code from bin
 5. **CI** — prompt fixture tests comparing output structure pre/post
+
+## Future: host / worker bus
+
+Interactive turns today remain a **single monolithic tool loop** per message. Planned evolution: **daemon-owned bus** (host delegates, worker executes, ledger + synthesis) with **comms adapters** (TUI, Telegram, API) as transport only — see [turn-worker-bus-plan.md](turn-worker-bus-plan.md).

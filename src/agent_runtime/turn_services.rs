@@ -353,8 +353,32 @@ pub fn build_intent_classifier_recent_context(
 
 fn contains_tool_intent(prompt_lower: &str) -> bool {
     [
-        "search", "look up", "lookup", "run ", "execute", "query", "fetch", "verify", "evidence",
-        "grapheme", "tool", "call", "api", "latest",
+        "search",
+        "look up",
+        "lookup",
+        "run ",
+        "execute",
+        "query",
+        "fetch",
+        "verify",
+        "evidence",
+        "grapheme",
+        "tool",
+        "call",
+        "api",
+        "latest",
+        // memory / AVEC / posture (avoid long-session no-tools misclassification)
+        "calibrat",
+        "avec",
+        "memory",
+        "mood",
+        "locus",
+        "recall",
+        "context",
+        "schema",
+        "store",
+        "pull",
+        "focus",
     ]
     .iter()
     .any(|needle| prompt_lower.contains(needle))
@@ -469,6 +493,22 @@ mod tests {
         );
         assert!(!policy.enforce_no_tools);
         assert_eq!(policy.tool_call_mode, ToolCallMode::Auto);
+    }
+
+    #[test]
+    fn activation_policy_prefers_tools_for_avec_calibrate_intent() {
+        let policy = decide_turn_activation(
+            "yoo can you pull a focused AVEC and calibrate to it?",
+            ToolCallMode::Auto,
+            10,
+            40,
+            320,
+            28,
+            420,
+        );
+        assert!(!policy.enforce_no_tools);
+        assert_eq!(policy.reason, "tool_intent_detected");
+        assert!(policy.max_tool_rounds >= 2);
     }
 
     #[test]

@@ -105,6 +105,13 @@ impl AgentStreamSink for TuiStreamSink {
             })
             .await;
     }
+
+    async fn scratch_reset(&self, turn_id: u64) {
+        let _ = self
+            .tx
+            .send(TuiEvent::AgentScratchReset { turn_id })
+            .await;
+    }
 }
 
 pub(crate) async fn start_prompt_run(

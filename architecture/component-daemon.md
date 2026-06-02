@@ -61,6 +61,8 @@ Interactive paths that use the shared turn engine:
 
 Legacy Stasis scheduler jobs remain for `/v1/jobs/prompt` and recurring materialization.
 
+Planned **host/worker bus** (delegation, pending work, synthesis turns) lives in this runtime layer so every route above behaves the same; TUI/Telegram/API only adapt presentation. See [turn-worker-bus-plan.md](turn-worker-bus-plan.md).
+
 ## Service State Ownership
 
 Daemon AppState stores runtime composition and service metadata:

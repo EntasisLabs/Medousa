@@ -6,6 +6,7 @@ use super::stream_sink::SharedAgentStreamSink;
 pub struct TurnOrchestrationState {
     pub calls_total: usize,
     pub classifier_calls: usize,
+    pub gatekeeper_calls: usize,
     pub tool_loop_calls: usize,
     pub prompt_only_calls: usize,
     pub continuations: usize,
@@ -20,6 +21,7 @@ pub struct TurnBudget {
     pub max_tool_loop_calls: usize,
     pub max_prompt_only_calls: usize,
     pub max_classifier_calls: usize,
+    pub max_gatekeeper_calls: usize,
     pub max_retries: usize,
     pub max_continuations: usize,
 }
@@ -31,6 +33,7 @@ pub fn turn_budget_for_lane(lane: EngineExecutionLane) -> TurnBudget {
         max_tool_loop_calls: lane_budget.max_tool_loop_calls,
         max_prompt_only_calls: lane_budget.max_prompt_only_calls,
         max_classifier_calls: lane_budget.max_classifier_calls,
+        max_gatekeeper_calls: lane_budget.max_gatekeeper_calls,
         max_retries: lane_budget.max_retries,
         max_continuations: lane_budget.max_continuations,
     }
@@ -65,6 +68,41 @@ pub async fn try_consume_classifier_budget(
     }
     state.calls_total = state.calls_total.saturating_add(1);
     state.classifier_calls = state.classifier_calls.saturating_add(1);
+    true
+}
+
+pub async fn try_consume_gatekeeper_budget(
+    sink: &SharedAgentStreamSink,
+    state: &mut TurnOrchestrationState,
+    budget: &TurnBudget,
+) -> bool {
+    if budget.max_gatekeeper_calls == 0 {
+        return false;
+    }
+    if state.gatekeeper_calls >= budget.max_gatekeeper_calls {
+        return emit_budget_deny(
+            sink,
+            state,
+            "gatekeeper",
+            "max_gatekeeper_calls",
+            state.gatekeeper_calls,
+            budget.max_gatekeeper_calls,
+        )
+        .await;
+    }
+    if state.calls_total >= budget.max_llm_calls_total {
+        return emit_budget_deny(
+            sink,
+            state,
+            "gatekeeper",
+            "max_llm_calls_total",
+            state.calls_total,
+            budget.max_llm_calls_total,
+        )
+        .await;
+    }
+    state.calls_total = state.calls_total.saturating_add(1);
+    state.gatekeeper_calls = state.gatekeeper_calls.saturating_add(1);
     true
 }
 

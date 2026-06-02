@@ -54,6 +54,10 @@ State touched:
 - runtime backend durable stores
 - daemon in-memory service metadata (for example last_tick_at)
 
+## Agent turn bus (planned)
+
+Host/worker delegation and pending-work lifecycle are **daemon agent runtime** concerns, not TUI-specific. Any comms medium (TUI SSE, Telegram ingest, `interactive/turn`, `jobs/ask`) should observe the same bus events and session ledger. See [turn-worker-bus-plan.md](turn-worker-bus-plan.md).
+
 ## State Domains
 
 ## A) UI state domain (TUI)

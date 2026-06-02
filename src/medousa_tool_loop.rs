@@ -16,25 +16,17 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::{Result, StasisError};
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
+use crate::agent_runtime::turn_completion::{
+    ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
+    resolve_turn_completion,
+};
 use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_batch_allowed};
+use crate::turn_control_tools::is_prepare_final_tool_name;
+pub(crate) use crate::turn_text_heuristics::{
+    should_finalize_on_text_only_response, termination_reason_for_text_only_finalize,
+};
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
-
-/// Whether assistant text with no tool calls should end the loop (vs. continue for tool use).
-pub(crate) fn should_finalize_on_text_only_response(
-    has_selected_tool: bool,
-    invocations_len: usize,
-    rounds_executed: usize,
-    max_tool_rounds: usize,
-) -> bool {
-    if has_selected_tool {
-        return false;
-    }
-    if invocations_len > 0 {
-        return true;
-    }
-    rounds_executed >= max_tool_rounds
-}
 
 #[derive(Clone)]
 pub struct MedousaToolLoopPipeline {
@@ -112,9 +104,16 @@ impl MedousaToolLoopPipeline {
         prior_messages: Vec<ChatMessage>,
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
         max_tool_rounds: usize,
+        completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
     ) -> Result<ToolLoopExecutionResponse> {
-        self.execute_internal(request, prior_messages, chunk_tx, max_tool_rounds)
-            .await
+        self.execute_internal(
+            request,
+            prior_messages,
+            chunk_tx,
+            max_tool_rounds,
+            completion_gate,
+        )
+        .await
     }
 
     async fn execute_with_defaults(
@@ -123,7 +122,7 @@ impl MedousaToolLoopPipeline {
         prior_messages: Vec<ChatMessage>,
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
     ) -> Result<ToolLoopExecutionResponse> {
-        self.execute_internal(request, prior_messages, chunk_tx, DEFAULT_MAX_TOOL_ROUNDS)
+        self.execute_internal(request, prior_messages, chunk_tx, DEFAULT_MAX_TOOL_ROUNDS, None)
             .await
     }
 
@@ -133,6 +132,7 @@ impl MedousaToolLoopPipeline {
         prior_messages: Vec<ChatMessage>,
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
         max_tool_rounds: usize,
+        mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
     ) -> Result<ToolLoopExecutionResponse> {
         let ToolLoopExecutionRequest {
             user_prompt,
@@ -177,6 +177,9 @@ impl MedousaToolLoopPipeline {
         let mut should_use_legacy_fallback = false;
         let mut fallback_draft_text: Option<String> = None;
         let mut rounds_executed = 0usize;
+        let mut pending_final_answer = false;
+        let mut last_streamed_draft: Option<String> = None;
+        let streaming_enabled = chunk_tx.is_some();
 
         if !tools.is_empty() {
             for _ in 0..max_tool_rounds {
@@ -241,36 +244,107 @@ impl MedousaToolLoopPipeline {
                     }
 
                     if let Some(text) = maybe_text {
-                        if !should_finalize_on_text_only_response(
+                        let heuristic_would_finalize = should_finalize_on_text_only_response(
                             has_selected_tool,
                             invocations.len(),
+                            &text,
+                            pending_final_answer,
                             rounds_executed,
                             max_tool_rounds,
-                        ) {
-                            messages.push(ChatMessage::assistant(text));
-                            continue;
+                        );
+
+                        if heuristic_would_finalize {
+                            if let Some(gate) = completion_gate.as_mut() {
+                                let docket = build_turn_completion_docket(
+                                    shared_inputs.user_prompt.as_ref(),
+                                    &text,
+                                    &invocations,
+                                    pending_final_answer,
+                                    rounds_executed,
+                                    max_tool_rounds,
+                                    true,
+                                    last_streamed_draft.as_deref(),
+                                );
+                                let sink = gate.sink.clone();
+                                let orchestration = gate.orchestration.as_deref_mut();
+                                let budget = gate.budget;
+                                let verdict = resolve_turn_completion(
+                                    &self.prompt_pipeline,
+                                    &docket,
+                                    sink.as_ref(),
+                                    orchestration,
+                                    budget,
+                                )
+                                .await;
+
+                                if verdict.decision == TurnCompletionDecision::Continue {
+                                    gate.reset_scratch(streaming_enabled).await;
+                                    last_streamed_draft = Some(text);
+                                    continue;
+                                }
+
+                                let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                                    tool_name: shared_inputs.selected_tool_name().to_string(),
+                                    tool_input: (*shared_inputs.tool_input).clone(),
+                                    tool_output: Value::Null,
+                                });
+
+                                return Ok(ToolLoopExecutionResponse {
+                                    text,
+                                    metadata: shared_inputs.context_clone(),
+                                    tool_name: last.tool_name,
+                                    tool_output: last.tool_output,
+                                    tool_invocations: invocations,
+                                    rounds_executed,
+                                    termination_reason: format!(
+                                        "gatekeeper_{}",
+                                        verdict.source
+                                    ),
+                                });
+                            }
+
+                            let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                                tool_name: shared_inputs.selected_tool_name().to_string(),
+                                tool_input: (*shared_inputs.tool_input).clone(),
+                                tool_output: Value::Null,
+                            });
+
+                            let termination_reason = termination_reason_for_text_only_finalize(
+                                pending_final_answer,
+                                rounds_executed,
+                                max_tool_rounds,
+                            )
+                            .to_string();
+
+                            return Ok(ToolLoopExecutionResponse {
+                                text,
+                                metadata: shared_inputs.context_clone(),
+                                tool_name: last.tool_name,
+                                tool_output: last.tool_output,
+                                tool_invocations: invocations,
+                                rounds_executed,
+                                termination_reason,
+                            });
                         }
 
-                        let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                            tool_name: shared_inputs.selected_tool_name().to_string(),
-                            tool_input: (*shared_inputs.tool_input).clone(),
-                            tool_output: Value::Null,
-                        });
-
-                        return Ok(ToolLoopExecutionResponse {
-                            text,
-                            metadata: shared_inputs.context_clone(),
-                            tool_name: last.tool_name,
-                            tool_output: last.tool_output,
-                            tool_invocations: invocations,
-                            rounds_executed,
-                            termination_reason: "model_completed_no_tool_calls".to_string(),
-                        });
+                        if let Some(gate) = completion_gate.as_ref() {
+                            gate.reset_scratch(streaming_enabled).await;
+                        }
+                        last_streamed_draft = Some(text);
+                        continue;
                     }
 
                     return Err(StasisError::PortFailure(
                         "chat response was empty after tool loop".to_string(),
                     ));
+                }
+
+                if pending_final_answer
+                    && tool_calls
+                        .iter()
+                        .any(|call| !is_prepare_final_tool_name(&call.fn_name))
+                {
+                    pending_final_answer = false;
                 }
 
                 messages.push(ChatMessage::from(tool_calls.clone()));
@@ -281,6 +355,8 @@ impl MedousaToolLoopPipeline {
                     .collect();
 
                 let use_parallel = parallel_tool_batch_allowed(&batch, &parallel_settings).is_ok();
+
+                let mut prepare_final_in_batch = false;
 
                 if use_parallel && tool_calls.len() > 1 {
                     let mut join_set = tokio::task::JoinSet::new();
@@ -306,6 +382,9 @@ impl MedousaToolLoopPipeline {
                             call.call_id,
                             tool_output_text,
                         )));
+                        if is_prepare_final_tool_name(&call.fn_name) {
+                            prepare_final_in_batch = true;
+                        }
                         invocations.push(ToolInvocation {
                             tool_name: call.fn_name,
                             tool_input: call.fn_arguments,
@@ -319,6 +398,10 @@ impl MedousaToolLoopPipeline {
                             .invoke_tool(&call.fn_name, call.fn_arguments.clone())
                             .await?;
 
+                        if is_prepare_final_tool_name(&call.fn_name) {
+                            prepare_final_in_batch = true;
+                        }
+
                         let tool_output_text = tool_output.to_string();
                         messages.push(ChatMessage::from(ToolResponse::new(
                             call.call_id,
@@ -330,6 +413,10 @@ impl MedousaToolLoopPipeline {
                             tool_output,
                         });
                     }
+                }
+
+                if prepare_final_in_batch {
+                    pending_final_answer = true;
                 }
             }
 
@@ -422,21 +509,115 @@ fn build_fallback_synthesis_prompt(
 
 #[cfg(test)]
 mod tests {
-    use super::should_finalize_on_text_only_response;
+    use super::{should_finalize_on_text_only_response, termination_reason_for_text_only_finalize};
+    use crate::turn_text_heuristics::{
+        looks_like_interim_status, looks_like_substantive_final_answer,
+    };
 
     #[test]
-    fn interim_status_continues_agent_loop() {
-        assert!(!should_finalize_on_text_only_response(false, 0, 1, 10));
+    fn interim_status_before_first_tool_continues() {
+        assert!(looks_like_interim_status("Let me check that for you."));
+        assert!(!should_finalize_on_text_only_response(
+            false,
+            0,
+            "Let me check that for you.",
+            false,
+            1,
+            10
+        ));
     }
 
     #[test]
-    fn final_answer_after_tools() {
-        assert!(should_finalize_on_text_only_response(false, 2, 3, 10));
+    fn interim_status_between_tools_continues() {
+        assert!(looks_like_interim_status("Stored."));
+        assert!(!should_finalize_on_text_only_response(
+            false, 3, "Stored.", false, 4, 10
+        ));
     }
 
     #[test]
-    fn text_only_on_last_round_finalizes() {
-        assert!(should_finalize_on_text_only_response(false, 0, 10, 10));
+    fn substantive_answer_after_tools_finalizes() {
+        let answer = "Your memory profile shows stability at 0.95 and three recent nodes about \
+                      the ingester roadmap. I stored the update in Locus.";
+        assert!(looks_like_substantive_final_answer(answer));
+        assert!(should_finalize_on_text_only_response(
+            false, 2, answer, false, 3, 10
+        ));
+    }
+
+    #[test]
+    fn celebratory_preamble_with_let_me_does_not_finalize_after_tools() {
+        let preamble = "Yesss! Let's do this — I'll pull up the current context, check what's \
+                          resonating in memory, and calibrate to a focused AVEC posture. Boom — \
+                          focused preset pulled. Let me lock it in.";
+        assert!(looks_like_interim_status(preamble));
+        assert!(!looks_like_substantive_final_answer(preamble));
+        assert!(!should_finalize_on_text_only_response(
+            false, 2, preamble, false, 3, 10
+        ));
+    }
+
+    #[test]
+    fn prepare_final_flag_finalizes_on_next_text() {
+        assert!(should_finalize_on_text_only_response(
+            false,
+            1,
+            "Here is your answer.",
+            true,
+            2,
+            10
+        ));
+        assert!(!should_finalize_on_text_only_response(
+            false, 1, "Stored.", false, 2, 10
+        ));
+    }
+
+    #[test]
+    fn termination_reason_reflects_finalize_path() {
+        assert_eq!(
+            termination_reason_for_text_only_finalize(true, 2, 10),
+            "prepare_final_then_text"
+        );
+        assert_eq!(
+            termination_reason_for_text_only_finalize(false, 10, 10),
+            "max_rounds_fuse"
+        );
+        assert_eq!(
+            termination_reason_for_text_only_finalize(false, 3, 10),
+            "heuristic_substantive"
+        );
+    }
+
+    #[test]
+    fn round_budget_is_safety_fuse_only() {
+        assert!(should_finalize_on_text_only_response(
+            false,
+            2,
+            "Let me check.",
+            false,
+            10,
+            10
+        ));
+        assert!(!should_finalize_on_text_only_response(
+            false,
+            2,
+            "Let me check.",
+            false,
+            3,
+            10
+        ));
+    }
+
+    #[test]
+    fn before_tools_never_finalizes_on_text_even_on_last_round() {
+        assert!(!should_finalize_on_text_only_response(
+            false,
+            0,
+            "Let me check.",
+            false,
+            10,
+            10
+        ));
     }
 }
 

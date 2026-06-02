@@ -9,6 +9,8 @@ pub mod artifact_extraction;
 pub mod artifact_store;
 pub mod channel_session_store;
 pub mod turn_continuation;
+pub mod turn_control_tools;
+pub mod turn_text_heuristics;
 pub mod context_pack;
 pub mod capability_catalog;
 pub mod mcp_daemon_handlers;

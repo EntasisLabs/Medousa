@@ -15,6 +15,7 @@ pub mod settings;
 pub mod stream_sink;
 pub mod system_prompt;
 pub mod turn_budget;
+pub mod turn_completion;
 pub mod turn_orchestrator;
 pub mod turn_services;
 pub mod types;
@@ -46,8 +47,13 @@ pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 pub use system_prompt::DEFAULT_SYSTEM_PROMPT;
 pub use turn_budget::{
     TurnBudget, TurnOrchestrationState, emit_budget_deny, emit_orchestration_summary,
-    try_consume_classifier_budget, try_consume_continuation_budget, try_consume_prompt_only_budget,
-    try_consume_retry_budget, try_consume_tool_loop_budget, turn_budget_for_lane,
+    try_consume_classifier_budget, try_consume_continuation_budget, try_consume_gatekeeper_budget,
+    try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
+    turn_budget_for_lane,
+};
+pub use turn_completion::{
+    ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
+    resolve_turn_completion,
 };
 pub use turn_orchestrator::{
     IntentClassification, LocalTurnExecutionParams, PreparedTurnPrompt, PrepareTurnPromptParams,

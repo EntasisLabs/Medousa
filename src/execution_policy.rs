@@ -195,7 +195,9 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition.mcp.discover"
         | "cognition_capability_search"
         | "cognition.capability.search"
-        | "cognition_grapheme_modules_search" => StepExecutionClass::ReadOnly,
+        | "cognition_grapheme_modules_search"
+        | "cognition_turn_prepare_final"
+        | "cognition.turn.prepare_final" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {
             StepExecutionClass::ReadOnly
         }
