@@ -27,6 +27,7 @@ Start here for product-level usage:
 10. [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md)
 11. [component-mcp-gateway.md](component-mcp-gateway.md)
 12. [dlq-replay-turn-continuation-plan.md](dlq-replay-turn-continuation-plan.md)
+13. [recurring-delivery-roadmap.md](recurring-delivery-roadmap.md)
 
 ## Primary Code Anchors
 

@@ -45,11 +45,28 @@ impl LaneSafetyActionClass {
 pub fn lane_allows_action(lane: EngineExecutionLane, action: LaneSafetyActionClass) -> bool {
     match action {
         LaneSafetyActionClass::InteractiveIngress => lane == EngineExecutionLane::Interactive,
-        LaneSafetyActionClass::RecurringRegistration => lane == EngineExecutionLane::Scheduled,
+        LaneSafetyActionClass::RecurringRegistration => {
+            matches!(lane, EngineExecutionLane::Scheduled | EngineExecutionLane::Interactive)
+                && !(lane == EngineExecutionLane::Interactive
+                    && block_recurring_registration_on_interactive_lane())
+        }
         LaneSafetyActionClass::HeartbeatNotificationDispatch => {
             lane == EngineExecutionLane::Scheduled || lane == EngineExecutionLane::Heartbeat
         }
     }
+}
+
+/// Opt-out for hardened deployments. Default: interactive chat (Telegram, TUI, etc.) may
+/// register cron/recurring jobs so requests like "remind me every day at 5pm" work.
+pub fn block_recurring_registration_on_interactive_lane() -> bool {
+    std::env::var("MEDOUSA_LANE_SAFETY_BLOCK_RECURRING_ON_INTERACTIVE")
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
 }
 
 pub fn lane_accepts_policy_profile(lane: EngineExecutionLane, profile: &str) -> bool {
@@ -122,24 +139,25 @@ pub struct LaneExecutionBudget {
 pub fn lane_execution_budget(lane: EngineExecutionLane) -> LaneExecutionBudget {
     match lane {
         EngineExecutionLane::Interactive => LaneExecutionBudget {
-            max_llm_calls_total: 2,
-            max_tool_loop_calls: 1,
+            // Classifier + tool loop + continuation/retry need separate budget slots.
+            max_llm_calls_total: 20,
+            max_tool_loop_calls: 10,
             max_prompt_only_calls: 1,
             max_classifier_calls: 1,
             max_retries: 1,
             max_continuations: 1,
         },
         EngineExecutionLane::Scheduled => LaneExecutionBudget {
-            max_llm_calls_total: 3,
-            max_tool_loop_calls: 2,
+            max_llm_calls_total: 15,
+            max_tool_loop_calls: 10,
             max_prompt_only_calls: 1,
             max_classifier_calls: 0,
             max_retries: 1,
             max_continuations: 1,
         },
         EngineExecutionLane::Heartbeat => LaneExecutionBudget {
-            max_llm_calls_total: 2,
-            max_tool_loop_calls: 1,
+            max_llm_calls_total: 5,
+            max_tool_loop_calls: 5,
             max_prompt_only_calls: 1,
             max_classifier_calls: 0,
             max_retries: 0,
@@ -430,12 +448,12 @@ mod tests {
     }
 
     #[test]
-    fn lane_safety_matrix_rejects_recurring_registration_on_interactive_lane() {
+    fn lane_safety_matrix_allows_recurring_registration_on_interactive_lane() {
         let result = validate_lane_action(
             EngineExecutionLane::Interactive,
             LaneSafetyActionClass::RecurringRegistration,
         );
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[test]

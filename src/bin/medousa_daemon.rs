@@ -369,7 +369,7 @@ async fn main() -> Result<()> {
         .await
         .map(|tools| tools.len())
         .unwrap_or(0);
-    let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::default();
+    let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
 
     let state = AppState {
         platform: platform.clone(),
@@ -1145,6 +1145,10 @@ async fn register_recurring_prompt(
         return Err((StatusCode::BAD_REQUEST, "cron_expr is required".to_string()));
     }
 
+    let timezone = request.timezone.as_deref().unwrap_or("UTC");
+    medousa::recurring_delivery::validate_recurring_cron(&request.cron_expr, timezone)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+
     enforce_lane_safety(
         EngineExecutionLane::Scheduled,
         LaneSafetyActionClass::RecurringRegistration,
@@ -1153,7 +1157,7 @@ async fn register_recurring_prompt(
 
     let now = Utc::now();
     let queue = request.queue.unwrap_or_else(|| "default".to_string());
-    let timezone = request.timezone.unwrap_or_else(|| "UTC".to_string());
+    let timezone = timezone.to_string();
     let recurring_id = request
         .id
         .unwrap_or_else(|| format!("medousa-recurring-{}", Uuid::new_v4().simple()));
@@ -1190,6 +1194,18 @@ async fn register_recurring_prompt(
     definition.next_run_at = definition
         .compute_next_run_at(now)
         .map_err(internal_error)?;
+
+    let delivery_input = serde_json::json!({ "delivery": request.delivery });
+    medousa::recurring_delivery::persist_recurring_delivery_binding(
+        &recurring_id,
+        &delivery_input,
+        medousa::recurring_delivery::DeliveryResolveContext {
+            ambient: None,
+            fallback_session_id: format!("recurring-{recurring_id}"),
+        },
+    )
+    .await
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     let sdk = RuntimeSdk::new(state.composition().clone());
     sdk.register_recurring(definition.clone())
@@ -1760,7 +1776,7 @@ async fn resolve_session_runtime_config(
         .await
         .get(session_id)
         .cloned()
-        .unwrap_or_default()
+        .unwrap_or_else(|| state.default_runtime_config.clone())
 }
 
 async fn apply_session_model_config(
@@ -1898,12 +1914,15 @@ async fn deliver_outbox_webhook(
     }
 
     let started = std::time::Instant::now();
-    let target = state
-        .channel_deliveries
-        .read()
+    let target = {
+        let per_job = state.channel_deliveries.read().await;
+        medousa::recurring_delivery::resolve_delivery_target_for_job(
+            state.composition(),
+            &payload.job_id,
+            &per_job,
+        )
         .await
-        .get(&payload.job_id)
-        .cloned();
+    };
 
     match payload.event_type.as_str() {
         "job_succeeded" => {
@@ -3211,7 +3230,7 @@ fn build_operator_first_run_guide(
         .unwrap_or_else(|| "disabled".to_string());
 
     format!(
-        "medousa-daemon first-run guide:\n  1) health: cargo run -p medousa --bin medousa_cli -- daemon-health --daemon-url {daemon_url}\n  2) heartbeat: cargo run -p medousa --bin medousa_cli -- daemon-heartbeat-status --daemon-url {daemon_url}\n  3) report flow: cargo run -p medousa --bin medousa_cli -- daemon-report \"Summarize runtime posture with citations\" --daemon-url {daemon_url} --poll-timeout-ms 30000\n  safety defaults: interactive_profile={} scheduled_profile={} heartbeat_min_significance={:.2} heartbeat_quiet_hours={}\n  lane safety: interactive ingress accepts interactive profiles; recurring registration accepts scheduled profiles",
+        "medousa-daemon first-run guide:\n  1) health: cargo run -p medousa --bin medousa_cli -- daemon-health --daemon-url {daemon_url}\n  2) heartbeat: cargo run -p medousa --bin medousa_cli -- daemon-heartbeat-status --daemon-url {daemon_url}\n  3) report flow: cargo run -p medousa --bin medousa_cli -- daemon-report \"Summarize runtime posture with citations\" --daemon-url {daemon_url} --poll-timeout-ms 30000\n  safety defaults: interactive_profile={} scheduled_profile={} heartbeat_min_significance={:.2} heartbeat_quiet_hours={}\n  lane safety: interactive ingress accepts interactive profiles; recurring registration allowed on interactive and scheduled lanes (set MEDOUSA_LANE_SAFETY_BLOCK_RECURRING_ON_INTERACTIVE=true to restrict chat scheduling)",
         default_policy_profile_for_lane(EngineExecutionLane::Interactive),
         default_policy_profile_for_lane(EngineExecutionLane::Scheduled),
         heartbeat_policy.min_significance,
@@ -4054,16 +4073,13 @@ mod tests {
     }
 
     #[test]
-    fn lane_safety_rejects_recurring_registration_on_interactive_lane() {
-        let err = enforce_lane_safety(
+    fn lane_safety_allows_recurring_registration_on_interactive_lane() {
+        let result = enforce_lane_safety(
             EngineExecutionLane::Interactive,
             LaneSafetyActionClass::RecurringRegistration,
             Some("interactive"),
-        )
-        .expect_err("recurring registration should be blocked on interactive lane");
-
-        assert_eq!(err.0, StatusCode::FORBIDDEN);
-        assert!(err.1.contains("action=recurring_registration"));
+        );
+        assert!(result.is_ok());
     }
 
     #[test]

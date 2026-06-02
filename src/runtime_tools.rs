@@ -19,7 +19,11 @@ use stasis::sdk::runtime_sdk::{RuntimeSdk, RuntimeStatsSnapshot};
 use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
+use crate::channel_delivery::ChannelDeliveryTarget;
 use crate::events::TuiEvent;
+use crate::recurring_delivery::{
+    DeliveryResolveContext, persist_recurring_delivery_binding, validate_recurring_cron,
+};
 use crate::tools::validate_grapheme_source_for_schedule;
 use crate::turn_continuation::{
     ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
@@ -33,6 +37,28 @@ use crate::workflow::{
     validate_workflow_request, workflow_job_type_for_strategy,
 };
 use crate::workflow_plan::{WorkflowPlanRequest, plan_workflow_from_goal};
+
+const CRON_EXPR_SCHEMA_HINT: &str =
+    "7-field cron: sec min hour day-of-month month day-of-week year (e.g. every 4h: 0 0 */4 * * * *)";
+
+async fn bind_recurring_delivery_from_input(
+    recurring_id: &str,
+    cron_expr: &str,
+    timezone: &str,
+    input: &Value,
+    ambient: Option<&ChannelDeliveryTarget>,
+) -> stasis::prelude::Result<Option<ChannelDeliveryTarget>> {
+    validate_recurring_cron(cron_expr, timezone)?;
+    persist_recurring_delivery_binding(
+        recurring_id,
+        input,
+        DeliveryResolveContext {
+            ambient,
+            fallback_session_id: format!("recurring-{recurring_id}"),
+        },
+    )
+    .await
+}
 
 fn job_state_label(state: &JobState) -> &'static str {
     match state {
@@ -429,14 +455,15 @@ impl StasisTool for CognitionRuntimeRecurringRegisterTool {
                     "type": "string",
                     "description": "Optional explicit payload template (overrides source)"
                 },
-                "cron_expr": { "type": "string", "description": "Cron expression" },
+                "cron_expr": { "type": "string", "description": CRON_EXPR_SCHEMA_HINT },
                 "timezone": { "type": "string", "description": "IANA timezone", "default": "UTC" },
                 "queue": { "type": "string", "description": "Runtime queue", "default": "default" },
                 "recurring_id": { "type": "string", "description": "Optional recurring id" },
                 "jitter_seconds": { "type": "integer", "default": 0 },
                 "max_attempts": { "type": "integer", "default": 1 },
                 "enabled": { "type": "boolean", "default": true },
-                "start_immediately": { "type": "boolean", "default": false }
+                "start_immediately": { "type": "boolean", "default": false },
+                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone()
             },
             "required": ["cron_expr"]
         }))
@@ -547,6 +574,16 @@ impl StasisTool for CognitionRuntimeRecurringRegisterTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
+        let delivery_bound = bind_recurring_delivery_from_input(
+            &recurring_id,
+            cron_expr,
+            timezone,
+            &input,
+            None,
+        )
+        .await?
+        .is_some();
+
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 
         let _ = self
@@ -564,7 +601,8 @@ impl StasisTool for CognitionRuntimeRecurringRegisterTool {
             "cron_expr": cron_expr,
             "timezone": timezone,
             "next_run_at_utc": definition.next_run_at.to_rfc3339(),
-            "enabled": enabled
+            "enabled": enabled,
+            "delivery_bound": delivery_bound
         }))
     }
 }
@@ -1048,13 +1086,14 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
                 "on_failure": { "type": "string", "enum": ["stop", "continue"], "default": "stop" },
                 "note": { "type": "string" },
                 "queue": { "type": "string", "default": "default" },
-                "cron_expr": { "type": "string", "description": "Cron expression" },
+                "cron_expr": { "type": "string", "description": CRON_EXPR_SCHEMA_HINT },
                 "timezone": { "type": "string", "default": "UTC" },
                 "recurring_id": { "type": "string" },
                 "jitter_seconds": { "type": "integer", "default": 0 },
                 "max_attempts": { "type": "integer", "default": 1 },
                 "enabled": { "type": "boolean", "default": true },
-                "start_immediately": { "type": "boolean", "default": false }
+                "start_immediately": { "type": "boolean", "default": false },
+                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone()
             },
             "required": ["steps", "cron_expr"]
         }))
@@ -1136,6 +1175,23 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
+        let ambient = self
+            .turn_scope
+            .read()
+            .await
+            .as_ref()
+            .and_then(|scope| scope.delivery_target.as_ref())
+            .map(ChannelDeliveryTarget::from);
+        let delivery_bound = bind_recurring_delivery_from_input(
+            &recurring_id,
+            cron_expr,
+            timezone,
+            &input,
+            ambient.as_ref(),
+        )
+        .await?
+        .is_some();
+
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
 
         let mut materialized_job_id = None;
@@ -1204,6 +1260,7 @@ impl StasisTool for CognitionRuntimeWorkflowScheduleTool {
             "timezone": timezone,
             "next_run_at_utc": definition.next_run_at.to_rfc3339(),
             "lane": "scheduled",
+            "delivery_bound": delivery_bound,
             "start_immediately": start_immediately,
             "materialized_job_id": materialized_job_id,
             "continuation": materialized_job_id.as_ref().and_then(|job_id| {

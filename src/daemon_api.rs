@@ -171,6 +171,8 @@ pub struct RegisterRecurringPromptRequest {
     pub max_attempts: Option<u32>,
     pub policy_profile: Option<String>,
     pub model_hint: Option<String>,
+    /// Optional channel push target for each successful materialized run.
+    pub delivery: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

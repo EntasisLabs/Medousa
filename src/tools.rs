@@ -38,6 +38,9 @@ use crate::process_once;
 use crate::tui::runtime_services::{
     build_tool_loop_pipeline_for_target, build_tui_runtime_services,
 };
+use crate::recurring_delivery::{
+    DeliveryResolveContext, persist_recurring_delivery_binding, validate_recurring_cron,
+};
 use crate::turn_continuation::{
     self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
     wire_turn_child_job,
@@ -1379,14 +1382,15 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             "type": "object",
             "properties": {
                 "source": { "type": "string", "description": "Complete Grapheme source" },
-                "cron_expr": { "type": "string", "description": "Cron expression" },
+                "cron_expr": { "type": "string", "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)" },
                 "timezone": { "type": "string", "description": "IANA timezone", "default": "UTC" },
                 "queue": { "type": "string", "description": "Runtime queue", "default": "default" },
                 "id": { "type": "string", "description": "Optional recurring id" },
                 "jitter_seconds": { "type": "integer", "description": "Jitter seconds", "default": 0 },
                 "max_attempts": { "type": "integer", "description": "Max attempts per materialized job", "default": 1 },
                 "enabled": { "type": "boolean", "description": "Enabled schedule", "default": true },
-                "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false }
+                "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false },
+                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone()
             },
             "required": ["source", "cron_expr"]
         }))
@@ -1479,6 +1483,18 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
+        validate_recurring_cron(cron_expr, timezone)?;
+        let delivery_bound = persist_recurring_delivery_binding(
+            &recurring_id,
+            &input,
+            DeliveryResolveContext {
+                ambient: None,
+                fallback_session_id: format!("recurring-{recurring_id}"),
+            },
+        )
+        .await?
+        .is_some();
+
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
             RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await?,
@@ -1501,6 +1517,7 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             "enabled": enabled,
             "start_immediately": start_immediately,
             "status": "registered",
+            "delivery_bound": delivery_bound,
             "validation": validation
         }))
     }
@@ -1533,7 +1550,7 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
         Some(json!({
             "type": "object",
             "properties": {
-                "cron_expr": { "type": "string", "description": "Cron expression" },
+                "cron_expr": { "type": "string", "description": "7-field cron: sec min hour day-of-month month day-of-week year (e.g. 0 0 */4 * * * *)" },
                 "timezone": { "type": "string", "description": "IANA timezone", "default": "UTC" },
                 "queue": { "type": "string", "description": "Runtime queue", "default": "default" },
                 "id": { "type": "string", "description": "Optional recurring id" },
@@ -1541,7 +1558,8 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
                 "max_attempts": { "type": "integer", "description": "Max attempts per materialized job", "default": 1 },
                 "enabled": { "type": "boolean", "description": "Enabled schedule", "default": true },
                 "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false },
-                "source": { "type": "string", "description": "Optional source override; if omitted, uses last remembered source" }
+                "source": { "type": "string", "description": "Optional source override; if omitted, uses last remembered source" },
+                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone()
             },
             "required": ["cron_expr"]
         }))
@@ -1636,6 +1654,18 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             definition.next_run_at = definition.compute_next_run_at(now)?;
         }
 
+        validate_recurring_cron(cron_expr, timezone)?;
+        let delivery_bound = persist_recurring_delivery_binding(
+            &recurring_id,
+            &input,
+            DeliveryResolveContext {
+                ambient: None,
+                fallback_session_id: format!("recurring-{recurring_id}"),
+            },
+        )
+        .await?
+        .is_some();
+
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
             RuntimeComposition::Surreal(rt) => rt.register_recurring(definition).await?,
@@ -1659,6 +1689,7 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             "start_immediately": start_immediately,
             "used_remembered_source": input.get("source").is_none(),
             "status": "registered",
+            "delivery_bound": delivery_bound,
             "validation": validation
         }))
     }
@@ -2857,7 +2888,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn interactive_registry_blocks_recurring_registration_tools() {
+    async fn interactive_registry_allows_recurring_registration_tools() {
         let inner: Arc<dyn ToolRegistry> = Arc::new(PassthroughToolRegistry);
         let registry = PolicyAwareToolRegistry::new(inner, Vec::new(), EngineExecutionLane::Interactive);
 
@@ -2869,16 +2900,10 @@ mod tests {
                     "cron_expr": "*/5 * * * *"
                 }),
             )
-            .await;
+            .await
+            .expect("interactive lane should allow recurring registration by default");
 
-        let message = match result {
-            Err(StasisError::PortFailure(message)) => message,
-            Err(other) => panic!("unexpected error variant: {other}"),
-            Ok(value) => panic!("expected lane safety violation, got success: {value}"),
-        };
-
-        assert!(message.contains("lane safety violation"));
-        assert!(message.contains("action=recurring_registration"));
+        assert_eq!(result["status"], "ok");
     }
 
     #[tokio::test]

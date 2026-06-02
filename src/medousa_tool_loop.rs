@@ -166,28 +166,49 @@ impl MedousaToolLoopPipeline {
             for _ in 0..max_tool_rounds {
                 rounds_executed += 1;
                 let chat_request = ChatRequest::new(messages.clone()).with_tools(tools.clone());
-                let completion = match chunk_tx {
+                let mut response = match chunk_tx {
                     Some(tx) => {
                         self.prompt_pipeline
                             .complete_chat_stream(
-                                chat_request,
+                                chat_request.clone(),
                                 shared_inputs.context_clone(),
                                 Some(tx),
                             )
                             .await?
+                            .response
                     }
                     None => {
                         self.prompt_pipeline
-                            .complete_chat(chat_request, shared_inputs.context_clone())
+                            .complete_chat(chat_request.clone(), shared_inputs.context_clone())
                             .await?
+                            .response
                     }
                 };
-                let response = completion.response;
-                let maybe_text = response
+                let mut maybe_text = response
                     .first_text()
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty());
-                let tool_calls = response.clone().into_tool_calls();
+                let mut tool_calls = response.clone().into_tool_calls();
+
+                // Some providers stream assistant text but omit tool_calls from the stream
+                // capture; retry once without streaming before treating text as final.
+                if tool_calls.is_empty()
+                    && invocations.is_empty()
+                    && !has_selected_tool
+                    && chunk_tx.is_some()
+                    && maybe_text.is_some()
+                {
+                    response = self
+                        .prompt_pipeline
+                        .complete_chat(chat_request, shared_inputs.context_clone())
+                        .await?
+                        .response;
+                    maybe_text = response
+                        .first_text()
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty());
+                    tool_calls = response.clone().into_tool_calls();
+                }
 
                 if tool_calls.is_empty() {
                     if invocations.is_empty() && has_selected_tool {

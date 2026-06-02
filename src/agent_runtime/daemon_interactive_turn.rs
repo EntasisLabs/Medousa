@@ -167,6 +167,7 @@ pub async fn run_agent_turn(
     sink: SharedAgentStreamSink,
     continuation_scope: Option<TurnContinuationScope>,
 ) {
+    let previous_scope = agent_rt.turn_scope.read().await.clone();
     if let Some(scope) = continuation_scope.clone() {
         *agent_rt.turn_scope.write().await = Some(scope);
     }
@@ -197,7 +198,7 @@ pub async fn run_agent_turn(
             .await;
     }
 
-    *agent_rt.turn_scope.write().await = None;
+    *agent_rt.turn_scope.write().await = previous_scope;
 }
 
 async fn run_agent_turn_inner(

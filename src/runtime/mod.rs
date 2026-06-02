@@ -1,6 +1,7 @@
 pub mod locus_surreal_client;
 pub mod memory_bundle;
 pub mod platform;
+pub mod stasis_surreal_schema;
 pub mod stasis_wire;
 pub mod tui_platform;
 

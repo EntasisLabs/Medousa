@@ -1,5 +1,78 @@
 use crate::daemon_api::InteractiveTurnRequest;
+use crate::session::TuiDefaults;
 use crate::tui::settings::RuntimeSettings;
+
+fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaults: &TuiDefaults) {
+    if let Some(value) = defaults
+        .theme_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        settings.theme_id = value.to_string();
+    }
+    if let Some(value) = defaults
+        .env_overrides
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        settings.env_overrides = value.to_string();
+    }
+    if let Some(modules) = defaults.allowed_modules.as_ref() {
+        settings.allowed_modules = modules.join(",");
+    }
+    if let Some(value) = defaults
+        .tool_call_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        settings.tool_call_mode = value.to_string();
+    }
+    if let Some(value) = defaults.max_tool_rounds {
+        settings.max_tool_rounds = value.to_string();
+    }
+    if let Some(value) = defaults.thinking_capture {
+        settings.thinking_capture = value.to_string();
+    }
+    if let Some(value) = defaults.thinking_max_lines {
+        settings.thinking_max_lines = value.to_string();
+    }
+    if let Some(value) = defaults.activation_direct_answer_max_prompt_chars {
+        settings.activation_direct_answer_max_prompt_chars = value.to_string();
+    }
+    if let Some(value) = defaults.activation_long_session_turn_threshold {
+        settings.activation_long_session_turn_threshold = value.to_string();
+    }
+    if let Some(value) = defaults.activation_long_session_max_prompt_chars {
+        settings.activation_long_session_max_prompt_chars = value.to_string();
+    }
+    if let Some(value) = defaults.slice_hot_window_turns {
+        settings.slice_hot_window_turns = value.to_string();
+    }
+    if let Some(value) = defaults.slice_cold_window_turns {
+        settings.slice_cold_window_turns = value.to_string();
+    }
+    if let Some(value) = defaults.retry_runtime_max_retries {
+        settings.retry_runtime_max_retries = value.to_string();
+    }
+    if let Some(value) = defaults.retry_runtime_max_rounds {
+        settings.retry_runtime_max_rounds = value.to_string();
+    }
+    if let Some(value) = defaults.verifier_min_citation_coverage {
+        settings.verifier_min_citation_coverage = format!("{value:.2}");
+    }
+    if let Some(value) = defaults.verifier_min_avg_support_strength {
+        settings.verifier_min_avg_support_strength = format!("{value:.2}");
+    }
+    if let Some(value) = defaults.verifier_min_supported_claim_ratio {
+        settings.verifier_min_supported_claim_ratio = format!("{value:.2}");
+    }
+    if let Some(value) = defaults.verifier_min_claim_support_strength {
+        settings.verifier_min_claim_support_strength = format!("{value:.2}");
+    }
+}
 
 /// Default runtime settings for daemon-hosted agent turns.
 pub fn default_daemon_runtime_settings(
@@ -42,9 +115,12 @@ pub fn runtime_settings_for_interactive_turn(
 ) -> RuntimeSettings {
     let provider = crate::resolve_llm_provider(Some(request.provider.trim()));
     let model = crate::resolve_llm_model(Some(request.model.trim()));
-    let base_url = crate::resolve_llm_base_url(Some(&provider), None)
-        .unwrap_or_default();
+    let base_url = crate::resolve_llm_base_url(Some(&provider), None).unwrap_or_default();
     let mut settings = default_daemon_runtime_settings(backend, &provider, &model, &base_url);
+    apply_tui_defaults_to_runtime_settings(
+        &mut settings,
+        &crate::session::load_tui_defaults(),
+    );
     settings.provider = provider;
     settings.model = model;
     settings.base_url = base_url;

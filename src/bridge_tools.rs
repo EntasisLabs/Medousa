@@ -239,7 +239,9 @@ query CapabilityInvoke {{
                 r#"import core from "grapheme/core"
 query CapabilityInvoke {{
   set {{ url: "{escaped_url}" }}
-  |> http.fetch(url: $current.url) {{ status body }}
+  |> http.get(url: $current.url)
+  |> html.to_md(html: $current.body)
+  |> core.echo(message: $current.text)
 }}"#
             )
         }

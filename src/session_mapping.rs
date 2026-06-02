@@ -34,13 +34,30 @@ pub struct IngestSessionRuntimeConfig {
     pub response_depth_mode: String,
 }
 
+impl IngestSessionRuntimeConfig {
+    /// Load channel ingest defaults from wizard/TUI saved settings (`tui_defaults.json`).
+    pub fn from_saved_defaults() -> Self {
+        let defaults = crate::session::load_tui_defaults();
+        let product = crate::load_product_config();
+        let response_depth_mode = defaults
+            .response_depth_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(product.tui.response_depth_mode.as_str())
+            .to_string();
+
+        Self {
+            draft_provider: crate::resolve_llm_provider(defaults.provider.as_deref()),
+            draft_model: crate::resolve_llm_model(defaults.model.as_deref()),
+            response_depth_mode,
+        }
+    }
+}
+
 impl Default for IngestSessionRuntimeConfig {
     fn default() -> Self {
-        Self {
-            draft_provider: crate::resolve_llm_provider(None),
-            draft_model: crate::resolve_llm_model(None),
-            response_depth_mode: "standard".to_string(),
-        }
+        Self::from_saved_defaults()
     }
 }
 
