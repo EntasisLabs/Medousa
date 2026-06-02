@@ -1051,7 +1051,7 @@ impl WizardState {
         };
         let start_whatsapp = configure_whatsapp && self.start_whatsapp;
         let configure_mcp_gateway = self.configure_mcp_gateway;
-        let start_mcp_gateway = configure_mcp_gateway && self.start_mcp_gateway;
+        let start_mcp_gateway = self.start_mcp_gateway;
 
         if (start_discord
             || start_telegram

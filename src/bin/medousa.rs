@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{self, IsTerminal};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -53,6 +53,7 @@ fn main() -> Result<()> {
 
     match args[0].as_str() {
         "onboard" | "setup" | "init" => run_onboard(&args[1..]),
+        "start" => run_start(&args[1..]),
         "tui" => run_tui(&args[1..]),
         "daemon" => run_daemon(&args[1..]),
         "discord" => run_discord(&args[1..]),
@@ -451,7 +452,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
     }
 
     if selected.configure_mcp_gateway {
-        match install_default_mcp_gateway_config() {
+        match medousa::install_starter_gateway_config_if_missing() {
             Ok(path) => {
                 println!(
                     "{}",
@@ -469,6 +470,23 @@ fn run_onboard(args: &[String]) -> Result<()> {
 
     if selected.start_mcp_gateway {
         let mcp_bind = medousa::DEFAULT_MCP_GATEWAY_BIND;
+        if !medousa::mcp_gateway::gateway_config_path().exists() {
+            match medousa::install_starter_gateway_config_if_missing() {
+                Ok(path) => println!(
+                    "{}",
+                    format!(
+                        "[ok] MCP gateway config created at {} (required for start)",
+                        path.display()
+                    )
+                    .green()
+                ),
+                Err(error) => println!(
+                    "{}",
+                    format!("[warn] MCP gateway config missing and install failed: {error:#}")
+                        .yellow()
+                ),
+            }
+        }
         if is_bind_reachable(mcp_bind) {
             println!(
                 "{}",
@@ -477,7 +495,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             );
         } else {
             start_mcp_gateway_background()?;
-            if wait_for_bind_reachable(mcp_bind, Duration::from_secs(4)) {
+            if wait_for_bind_reachable(mcp_bind, Duration::from_secs(8)) {
                 println!(
                     "{}",
                     format!(
@@ -1091,7 +1109,7 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         println!(
             "{}",
             format!(
-                "[warn] Daemon is up but MCP gateway is not reachable at {mcp_gateway_url}. cognition.mcp.* tools will fail until medousa_mcp_gateway is running."
+                "[warn] Daemon is up but MCP gateway is not reachable at {mcp_gateway_url}. Run: medousa start mcp-gateway (see docs/mcp-gateway-setup.md)"
             )
             .yellow()
         );
@@ -1123,7 +1141,7 @@ fn run_doctor(_args: &[String]) -> Result<()> {
             if health.registered_servers == 0 {
                 println!(
                     "{}",
-                    "[hint] No MCP servers registered. Run medousa setup to install mcp-gateway.toml or add [[servers]] entries."
+                    "[hint] No MCP servers registered. See docs/mcp-gateway-setup.md or run: medousa setup / medousa start mcp-gateway"
                         .blue()
                 );
             }
@@ -1516,36 +1534,18 @@ fn ensure_daemon_running(backend: &str, bind: &str) -> Result<()> {
 
 fn start_daemon_background(backend: &str, bind: &str) -> Result<()> {
     let daemon = resolve_component_command("medousa_daemon")?;
-    let log_path = daemon_log_path();
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create daemon log directory {}", parent.display()))?;
-    }
-
-    let log_file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .with_context(|| format!("failed to open daemon log file {}", log_path.display()))?;
-    let log_file_err = log_file
-        .try_clone()
-        .context("failed to clone daemon log handle")?;
-
+    let log = medousa::service_launch::BackgroundLog::new(daemon_log_path());
     let mut command = Command::new(&daemon.program);
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(bind);
     apply_daemon_env(&load_product_config());
-    command.stdout(Stdio::from(log_file));
-    command.stderr(Stdio::from(log_file_err));
-
-    let child = command
-        .spawn()
+    let pid = medousa::service_launch::spawn_command_background(command, &log)
         .with_context(|| format!("failed to spawn medousa_daemon using {}", daemon.program))?;
     println!(
         "daemon launch requested pid={} log={}",
-        child.id(),
-        log_path.display()
+        pid,
+        log.path.display()
     );
     Ok(())
 }
@@ -1624,20 +1624,7 @@ fn start_adapter_background(
     label: &str,
 ) -> Result<()> {
     let adapter = resolve_component_command(binary_name)?;
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {label} log directory {}", parent.display()))?;
-    }
-
-    let log_file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .with_context(|| format!("failed to open {label} log file {}", log_path.display()))?;
-    let log_file_err = log_file
-        .try_clone()
-        .with_context(|| format!("failed to clone {label} log handle"))?;
-
+    let log = medousa::service_launch::BackgroundLog::new(log_path);
     let mut command = Command::new(&adapter.program);
     command.args(&adapter.pre_args);
     command.arg("--daemon-url").arg(daemon_url);
@@ -1645,17 +1632,13 @@ fn start_adapter_background(
         command.arg("--token").arg(token);
     }
     command.args(extra_args);
-    command.stdout(Stdio::from(log_file));
-    command.stderr(Stdio::from(log_file_err));
-
-    let child = command
-        .spawn()
+    let pid = medousa::service_launch::spawn_command_background(command, &log)
         .with_context(|| format!("failed to spawn {binary_name} using {}", adapter.program))?;
     println!(
         "{} launch requested pid={} log={}",
         label,
-        child.id(),
-        log_path.display()
+        pid,
+        log.path.display()
     );
     Ok(())
 }
@@ -1804,97 +1787,188 @@ fn mcp_gateway_log_path() -> PathBuf {
     medousa_data_dir().join("logs").join("mcp-gateway.log")
 }
 
-const DEFAULT_MCP_GATEWAY_EXAMPLE_TOML: &str = r#"# Medousa MCP Client gateway — starter config
-# Docs: docs/internal/mcp-client-gateway-design.md
-
-[gateway]
-bind = "127.0.0.1:7420"
-daemon_policy_url = "http://127.0.0.1:7419/v1/mcp/policy/evaluate"
-use_mock_fallback = true
-
-# Optional auth (set matching env vars on daemon + gateway):
-# MEDOUSA_MCP_GATEWAY_TOKEN, MEDOUSA_MCP_GATEWAY_ADMIN_TOKEN, MEDOUSA_MCP_POLICY_TOKEN
-# MEDOUSA_MCP_TURN_TOKEN_SECRET — required for cognition.mcp.invoke turn tokens
-
-[[servers]]
-id = "notion"
-title = "Notion MCP"
-enabled = true
-transport = "stdio"
-use_mock = true
-allowed_lanes = ["interactive", "scheduled"]
-allowed_effect_classes = ["external_read", "external_write", "external_side_effect"]
-
-[[servers]]
-id = "gmail"
-title = "Gmail MCP"
-enabled = true
-transport = "stdio"
-use_mock = true
-allowed_lanes = ["interactive", "scheduled"]
-allowed_effect_classes = ["external_read", "external_write", "external_side_effect"]
-"#;
-
-fn install_default_mcp_gateway_config() -> Result<PathBuf> {
-    let path = medousa::mcp_gateway::gateway_config_path();
-    if path.exists() {
-        return Ok(path);
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create MCP gateway config directory {}",
-                parent.display()
-            )
-        })?;
-    }
-    fs::write(&path, DEFAULT_MCP_GATEWAY_EXAMPLE_TOML).with_context(|| {
-        format!(
-            "failed to write MCP gateway config {}",
-            path.display()
-        )
-    })?;
-    Ok(path)
-}
-
 fn start_mcp_gateway_background() -> Result<()> {
+    let _ = medousa::install_starter_gateway_config_if_missing();
     let gateway = resolve_component_command("medousa_mcp_gateway")?;
-    let log_path = mcp_gateway_log_path();
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create MCP gateway log directory {}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let log_file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .with_context(|| format!("failed to open MCP gateway log file {}", log_path.display()))?;
-    let log_file_err = log_file
-        .try_clone()
-        .context("failed to clone MCP gateway log handle")?;
-
+    let log = medousa::service_launch::BackgroundLog::new(mcp_gateway_log_path());
     let mut command = Command::new(&gateway.program);
     command.args(&gateway.pre_args);
-    command.stdout(Stdio::from(log_file));
-    command.stderr(Stdio::from(log_file_err));
-
-    let child = command.spawn().with_context(|| {
-        format!(
-            "failed to spawn medousa_mcp_gateway using {}",
-            gateway.program
-        )
-    })?;
+    let pid = medousa::service_launch::spawn_command_background(command, &log)
+        .with_context(|| {
+            format!(
+                "failed to spawn medousa_mcp_gateway using {}",
+                gateway.program
+            )
+        })?;
     println!(
         "mcp gateway launch requested pid={} log={}",
-        child.id(),
-        log_path.display()
+        pid,
+        log.path.display()
     );
     Ok(())
+}
+
+fn run_start(args: &[String]) -> Result<()> {
+    if has_flag(args, "--help") || has_flag(args, "-h") {
+        print_start_help();
+        return Ok(());
+    }
+
+    let service = args
+        .first()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("missing service name. run 'medousa start --help'"))?;
+
+    let profile = load_onboard_profile();
+    let product_config = load_product_config();
+    let daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| profile.daemon_url.clone())
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+    let daemon_bind = resolve_daemon_bind(args, &profile, &product_config);
+    let backend = find_arg_value(args, "--backend")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| profile.daemon_backend.clone())
+        .or(load_tui_defaults().backend)
+        .unwrap_or_else(|| "in-memory".to_string());
+
+    match service.as_str() {
+        "daemon" => start_daemon_service(&backend, &daemon_bind, &daemon_url),
+        "mcp-gateway" | "mcp_gateway" | "mcp" => start_mcp_gateway_service(),
+        "discord" => start_discord_service(&daemon_url),
+        "telegram" => start_telegram_service(&daemon_url),
+        "slack" => start_slack_service(&daemon_url),
+        "whatsapp" => start_whatsapp_service(&daemon_url, &product_config),
+        "all" => {
+            start_daemon_service(&backend, &daemon_bind, &daemon_url)?;
+            start_mcp_gateway_service()?;
+            start_discord_service(&daemon_url).ok();
+            start_telegram_service(&daemon_url).ok();
+            start_slack_service(&daemon_url).ok();
+            start_whatsapp_service(&daemon_url, &product_config).ok();
+            Ok(())
+        }
+        other => Err(anyhow!(
+            "unknown service '{other}'. try: daemon, mcp-gateway, discord, telegram, slack, whatsapp, all"
+        )),
+    }
+}
+
+fn start_daemon_service(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
+    if is_bind_reachable(bind) {
+        println!(
+            "{}",
+            format!("[ok] Daemon already running at {daemon_url}").green()
+        );
+        return Ok(());
+    }
+    ensure_daemon_running(backend, bind)?;
+    println!(
+        "{}",
+        format!("[ok] Daemon running at {daemon_url}").green()
+    );
+    Ok(())
+}
+
+fn start_mcp_gateway_service() -> Result<()> {
+    let mcp_bind = medousa::DEFAULT_MCP_GATEWAY_BIND;
+    if is_bind_reachable(mcp_bind) {
+        println!(
+            "{}",
+            format!(
+                "[ok] MCP gateway already running at {}",
+                medousa::DEFAULT_MCP_GATEWAY_URL
+            )
+            .green()
+        );
+        return Ok(());
+    }
+    start_mcp_gateway_background()?;
+    if wait_for_bind_reachable(mcp_bind, Duration::from_secs(10)) {
+        println!(
+            "{}",
+            format!(
+                "[ok] MCP gateway running at {}",
+                medousa::DEFAULT_MCP_GATEWAY_URL
+            )
+            .green()
+        );
+    } else {
+        println!(
+            "{}",
+            format!(
+                "[warn] MCP gateway started but not reachable yet. Check {}",
+                mcp_gateway_log_path().display()
+            )
+            .yellow()
+        );
+    }
+    Ok(())
+}
+
+fn start_discord_service(daemon_url: &str) -> Result<()> {
+    let token = load_discord_bot_token()
+        .ok_or_else(|| anyhow!("discord token missing — run medousa setup"))?;
+    start_discord_background(daemon_url, &token)?;
+    println!("{}", "[ok] Discord adapter started in background.".green());
+    Ok(())
+}
+
+fn start_telegram_service(daemon_url: &str) -> Result<()> {
+    let token = load_telegram_bot_token()
+        .ok_or_else(|| anyhow!("telegram token missing — run medousa setup"))?;
+    start_telegram_background(daemon_url, &token)?;
+    println!("{}", "[ok] Telegram adapter started in background.".green());
+    Ok(())
+}
+
+fn start_slack_service(daemon_url: &str) -> Result<()> {
+    let bot = load_slack_bot_token()
+        .ok_or_else(|| anyhow!("slack bot token missing — run medousa setup"))?;
+    let app = load_slack_app_token()
+        .ok_or_else(|| anyhow!("slack app token missing — run medousa setup"))?;
+    start_slack_background(daemon_url, &bot, &app)?;
+    println!("{}", "[ok] Slack adapter started in background.".green());
+    Ok(())
+}
+
+fn start_whatsapp_service(daemon_url: &str, product_config: &ProductConfig) -> Result<()> {
+    start_whatsapp_background(
+        daemon_url,
+        &product_config.whatsapp.deliver_bind,
+        None,
+    )?;
+    println!("{}", "[ok] WhatsApp adapter started in background.".green());
+    Ok(())
+}
+
+fn print_start_help() {
+    println!("medousa start — launch Medousa services in the background");
+    println!();
+    println!("USAGE:");
+    println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--daemon-url <url>]");
+    println!();
+    println!("SERVICES:");
+    println!("  daemon        Background medousa_daemon (engine)");
+    println!("  mcp-gateway   Background medousa_mcp_gateway (MCP broker)");
+    println!("  discord       Background Discord adapter (needs bot token)");
+    println!("  telegram      Background Telegram adapter (needs bot token)");
+    println!("  slack         Background Slack adapter (needs bot + app tokens)");
+    println!("  whatsapp      Background WhatsApp adapter");
+    println!("  all           daemon + mcp-gateway + any configured adapters");
+    println!();
+    println!("Logs: ~/.local/share/medousa/logs/<service>.log");
+    println!("MCP config: ~/.config/medousa/mcp-gateway.toml (see docs/mcp-gateway-setup.md)");
+    println!();
+    println!("EXAMPLES:");
+    println!("  medousa start daemon --backend surreal-mem");
+    println!("  medousa start mcp-gateway");
+    println!("  medousa start all");
 }
 
 fn discord_log_path() -> PathBuf {
@@ -1946,8 +2020,9 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("  medousa onboard|setup|init [--yes] [--advanced] [--provider <name>] [--model <name>] [--base-url <url>] [--api-key <key>] [--backend <name>] [--daemon-url <url>] [--no-daemon] [--no-tui]");
+    println!("  medousa start <service>   Background daemon, mcp-gateway, adapters (see: medousa start --help)");
     println!("  medousa tui [--daemon-url <url>] [--no-daemon] [-- <medousa_tui args>]");
-    println!("  medousa daemon [--backend <name>] [--bind <host:port>] [-- <medousa_daemon args>]");
+    println!("  medousa daemon [--backend <name>] [--bind <host:port>] [-- <medousa_daemon args>]  (foreground)");
     println!("  medousa discord [--daemon-url <url>] [--token <token>] [-- <medousa_discord args>]");
     println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
     println!("    Telegram allowlist is configured in medousa setup (product_config.json).");
@@ -1960,6 +2035,7 @@ fn print_help() {
     println!("EXAMPLES:");
     println!("  medousa onboard");
     println!("  medousa setup");
+    println!("  medousa start daemon && medousa start mcp-gateway");
     println!("  medousa onboard --yes --provider ollama --model llama3.2 --no-daemon");
     println!("  medousa tui");
     println!("  medousa discord");

@@ -272,7 +272,8 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from("Start MCP gateway in background?"));
             lines.push(Line::from(""));
             lines.push(toggle_line("Start medousa_mcp_gateway", state.start_mcp_gateway));
-            lines.push(Line::from("Gateway listens on 127.0.0.1:7420 by default."));
+            lines.push(Line::from("Works even if you skipped config install (uses existing or starter file)."));
+            lines.push(Line::from("Gateway listens on 127.0.0.1:7420 — see docs/mcp-gateway-setup.md"));
             lines.push(Line::from(""));
         }
         WizardStep::LaunchChat => {

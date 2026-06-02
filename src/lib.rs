@@ -38,6 +38,7 @@ pub mod interactive_turn_runtime;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
 pub mod session;
+pub mod service_launch;
 pub mod session_mapping;
 pub mod session_store;
 pub mod settings_guard;
@@ -120,6 +121,9 @@ pub use agent_runtime::{
     build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
 };
 pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
+pub use mcp_gateway::{
+    gateway_config_path, install_starter_gateway_config_if_missing, STARTER_MCP_GATEWAY_TOML,
+};
 pub use runtime::{
     MedousaPlatformRuntime, PlatformBuildConfig, TuiPlatformBuildConfig, TuiPlatformMode,
     build_daemon_platform, build_medousa_platform, build_tui_platform, is_daemon_bind_reachable,

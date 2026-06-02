@@ -4263,6 +4263,7 @@ dependencies = [
  "hmac 0.12.1",
  "image",
  "keyring",
+ "libc",
  "locus-core-rs",
  "once_cell",
  "ratatui",

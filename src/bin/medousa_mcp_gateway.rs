@@ -22,6 +22,10 @@ fn print_help() {
     println!();
     println!("Config file:");
     println!("  ~/.config/medousa/mcp-gateway.toml");
+    println!("Guide:");
+    println!("  docs/mcp-gateway-setup.md");
+    println!("Start:");
+    println!("  medousa start mcp-gateway");
     println!();
     println!("Environment:");
     println!("  MEDOUSA_MCP_GATEWAY_BIND           default 127.0.0.1:7420");

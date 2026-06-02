@@ -67,6 +67,8 @@ Daemon syncs MCP bindings via `GET /v1/mcp/catalog`. See [capability-catalog-des
 ## Configuration
 
 - Gateway: `~/.config/medousa/mcp-gateway.toml` — server registry, transports, lane allowlists
+- Setup guide: [docs/mcp-gateway-setup.md](../docs/mcp-gateway-setup.md)
+- Background start: `medousa start mcp-gateway`
 - Env: `MEDOUSA_MCP_GATEWAY_URL`, `MEDOUSA_MCP_GATEWAY_TOKEN`, `MEDOUSA_MCP_GATEWAY_ADMIN_TOKEN`
 - Daemon: `MEDOUSA_MCP_POLICY_TOKEN` for gateway callback auth
 

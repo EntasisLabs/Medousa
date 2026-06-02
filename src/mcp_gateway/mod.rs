@@ -6,6 +6,7 @@ mod config;
 mod policy_client;
 mod registry;
 mod server_config;
+mod starter_config;
 mod stdio_client;
 
 pub use auth::{verify_admin_bearer, verify_gateway_bearer, verify_policy_bearer};
@@ -15,6 +16,7 @@ pub use config::{
 };
 pub use registry::ServerRegistry;
 pub use server_config::{McpGatewayFullConfig, gateway_config_path};
+pub use starter_config::{STARTER_MCP_GATEWAY_TOML, install_starter_gateway_config_if_missing};
 
 use std::net::SocketAddr;
 use std::sync::Arc;
