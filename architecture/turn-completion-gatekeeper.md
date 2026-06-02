@@ -11,6 +11,7 @@ Symmetric to the **input intent classifier**: a small completion pass decides wh
 3. **`cognition_turn_prepare_final`** — model requests curtain; gatekeeper may veto if receipts fail.
 4. **Gatekeeper model** (budgeted) — JSON `end_turn` | `continue` on triggers (stutter, ritual missing, prepare_final, fuse).
 5. **TUI scratch reset** — `AgentScratchReset` clears in-flight bubble before next round (in-place replace).
+6. **Phase 0 turn ledger** — on `continue`, inject `[MEDOUSA_TURN_CONTROL]` into tool-loop `messages` and append JSONL events (see [turn-ledger-phase0.md](turn-ledger-phase0.md)).
 
 ## Wiring
 

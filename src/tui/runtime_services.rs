@@ -136,7 +136,7 @@ pub(crate) async fn assemble_tui_runtime(
     );
 
     let workflow_registry = workflow::shared_workflow_registry();
-    let tool_registry = InMemoryToolRegistry::default();
+    let mut tool_registry = InMemoryToolRegistry::default();
     let turn_scope = Arc::new(RwLock::new(None::<TurnContinuationScope>));
     let compaction_target = GraphemeCompactionModelTarget {
         provider: resolved_provider.clone(),
@@ -213,6 +213,14 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionUtilityTimeNowTool)?;
     tool_registry.register_tool(CognitionUtilityDayOfWeekTool)?;
     tool_registry.register_tool(CognitionUtilityUuidTool)?;
+    let worker_scheduler = Arc::new(crate::agent_runtime::turn_worker::TurnWorkerScheduler::new(
+        crate::agent_runtime::turn_worker::turn_worker_store(),
+    ));
+    crate::agent_runtime::turn_worker_tools::register_turn_worker_tools(
+        &mut tool_registry,
+        worker_scheduler.clone(),
+    )?;
+
     tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
     tool_registry.register_tool(ToolNameAlias::new(
         COGNITION_TURN_PREPARE_FINAL_DOTTED,
@@ -357,5 +365,6 @@ pub(crate) async fn assemble_tui_runtime(
         memory_reader,
         memory_writer,
         turn_scope,
+        worker_scheduler,
     })
 }

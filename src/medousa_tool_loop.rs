@@ -18,7 +18,13 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::agent_runtime::turn_completion::{
     ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
-    resolve_turn_completion,
+    collect_tool_names, resolve_turn_completion,
+};
+use crate::agent_runtime::turn_ledger::{
+    TurnLoopDiscipline, developer_message_for_gatekeeper_continue,
+    developer_message_for_heuristic_interim_continue, ledger_tool_names, persist_ledger_record,
+    push_turn_control_message, record_finalized, record_from_gatekeeper_continue,
+    record_stuck, record_tool_round, stuck_turn_user_message,
 };
 use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_batch_allowed};
 use crate::turn_control_tools::is_prepare_final_tool_name;
@@ -180,6 +186,7 @@ impl MedousaToolLoopPipeline {
         let mut pending_final_answer = false;
         let mut last_streamed_draft: Option<String> = None;
         let streaming_enabled = chunk_tx.is_some();
+        let mut discipline = TurnLoopDiscipline::default();
 
         if !tools.is_empty() {
             for _ in 0..max_tool_rounds {
@@ -278,10 +285,45 @@ impl MedousaToolLoopPipeline {
                                 .await;
 
                                 if verdict.decision == TurnCompletionDecision::Continue {
+                                    let tools = ledger_tool_names(&invocations);
+                                    let record = record_from_gatekeeper_continue(
+                                        gate.stream_turn_id,
+                                        &verdict,
+                                        rounds_executed,
+                                        &tools,
+                                    );
+                                    persist_ledger_record(
+                                        gate.session_id.as_deref(),
+                                        &record,
+                                    );
+                                    push_turn_control_message(
+                                        &mut messages,
+                                        &developer_message_for_gatekeeper_continue(&verdict),
+                                    );
+                                    if discipline.on_text_only_continue(invocations.len()) {
+                                        return finish_stuck_turn(
+                                            &shared_inputs,
+                                            invocations,
+                                            rounds_executed,
+                                            gate,
+                                        )
+                                        .await;
+                                    }
                                     gate.reset_scratch(streaming_enabled).await;
                                     last_streamed_draft = Some(text);
                                     continue;
                                 }
+
+                                let tools = collect_tool_names(&invocations);
+                                persist_ledger_record(
+                                    gate.session_id.as_deref(),
+                                    &record_finalized(
+                                        gate.stream_turn_id,
+                                        "gatekeeper_finalize",
+                                        rounds_executed,
+                                        &tools,
+                                    ),
+                                );
 
                                 let last = invocations.last().cloned().unwrap_or(ToolInvocation {
                                     tool_name: shared_inputs.selected_tool_name().to_string(),
@@ -316,6 +358,19 @@ impl MedousaToolLoopPipeline {
                             )
                             .to_string();
 
+                            if let Some(gate) = completion_gate.as_ref() {
+                                let tools = collect_tool_names(&invocations);
+                                persist_ledger_record(
+                                    gate.session_id.as_deref(),
+                                    &record_finalized(
+                                        gate.stream_turn_id,
+                                        &termination_reason,
+                                        rounds_executed,
+                                        &tools,
+                                    ),
+                                );
+                            }
+
                             return Ok(ToolLoopExecutionResponse {
                                 text,
                                 metadata: shared_inputs.context_clone(),
@@ -329,6 +384,26 @@ impl MedousaToolLoopPipeline {
 
                         if let Some(gate) = completion_gate.as_ref() {
                             gate.reset_scratch(streaming_enabled).await;
+                        }
+                        push_turn_control_message(
+                            &mut messages,
+                            developer_message_for_heuristic_interim_continue(),
+                        );
+                        if discipline.on_text_only_continue(invocations.len()) {
+                            if let Some(gate) = completion_gate.as_ref() {
+                                return finish_stuck_turn(
+                                    &shared_inputs,
+                                    invocations,
+                                    rounds_executed,
+                                    gate,
+                                )
+                                .await;
+                            }
+                            return finish_stuck_turn_response(
+                                &shared_inputs,
+                                invocations,
+                                rounds_executed,
+                            );
                         }
                         last_streamed_draft = Some(text);
                         continue;
@@ -357,6 +432,10 @@ impl MedousaToolLoopPipeline {
                 let use_parallel = parallel_tool_batch_allowed(&batch, &parallel_settings).is_ok();
 
                 let mut prepare_final_in_batch = false;
+                let round_tool_names: Vec<String> = tool_calls
+                    .iter()
+                    .map(|call| call.fn_name.clone())
+                    .collect();
 
                 if use_parallel && tool_calls.len() > 1 {
                     let mut join_set = tokio::task::JoinSet::new();
@@ -417,6 +496,53 @@ impl MedousaToolLoopPipeline {
 
                 if prepare_final_in_batch {
                     pending_final_answer = true;
+                }
+
+                discipline.on_tool_round();
+                if let Some(gate) = completion_gate.as_ref() {
+                    persist_ledger_record(
+                        gate.session_id.as_deref(),
+                        &record_tool_round(
+                            gate.stream_turn_id,
+                            rounds_executed,
+                            &round_tool_names,
+                        ),
+                    );
+                }
+
+                if let Some((work_id, ack)) =
+                    crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
+                        &invocations,
+                    )
+                {
+                    if let Some(gate) = completion_gate.as_ref() {
+                        persist_ledger_record(
+                            gate.session_id.as_deref(),
+                            &crate::agent_runtime::turn_ledger::TurnLedgerRecord {
+                                timestamp: chrono::Utc::now(),
+                                stream_turn_id: gate.stream_turn_id,
+                                kind: crate::agent_runtime::turn_ledger::TurnLedgerEventKind::WorkDelegated,
+                                detail: format!("host_turn_ended work_id={work_id}"),
+                                tools_invoked: ledger_tool_names(&invocations),
+                                missing_tools: Vec::new(),
+                                rounds_executed,
+                            },
+                        );
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: "cognition_spawn_turn_worker".to_string(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text: ack,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: "worker_spawned".to_string(),
+                    });
                 }
             }
 
@@ -483,6 +609,48 @@ impl MedousaToolLoopPipeline {
             termination_reason: "legacy_fallback_no_model_tool_call".to_string(),
         })
     }
+}
+
+async fn finish_stuck_turn(
+    shared_inputs: &ToolLoopSharedInputs,
+    invocations: Vec<ToolInvocation>,
+    rounds_executed: usize,
+    gate: &ToolLoopCompletionGate<'_>,
+) -> Result<ToolLoopExecutionResponse> {
+    let tools = ledger_tool_names(&invocations);
+    persist_ledger_record(
+        gate.session_id.as_deref(),
+        &record_stuck(gate.stream_turn_id, rounds_executed, &tools),
+    );
+    if let Some(sink) = gate.sink.as_ref() {
+        sink.notice(format!(
+            "◈ turn loop stuck: {} text-only continues without new tools",
+            crate::agent_runtime::turn_ledger::MAX_TEXT_ONLY_STUCK_CONTINUES
+        ))
+        .await;
+    }
+    finish_stuck_turn_response(shared_inputs, invocations, rounds_executed)
+}
+
+fn finish_stuck_turn_response(
+    shared_inputs: &ToolLoopSharedInputs,
+    invocations: Vec<ToolInvocation>,
+    rounds_executed: usize,
+) -> Result<ToolLoopExecutionResponse> {
+    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+        tool_name: shared_inputs.selected_tool_name().to_string(),
+        tool_input: (*shared_inputs.tool_input).clone(),
+        tool_output: Value::Null,
+    });
+    Ok(ToolLoopExecutionResponse {
+        text: stuck_turn_user_message(crate::agent_runtime::turn_ledger::MAX_TEXT_ONLY_STUCK_CONTINUES),
+        metadata: shared_inputs.context_clone(),
+        tool_name: last.tool_name,
+        tool_output: last.tool_output,
+        tool_invocations: invocations,
+        rounds_executed,
+        termination_reason: "stuck_text_only_continue".to_string(),
+    })
 }
 
 fn build_fallback_synthesis_prompt(

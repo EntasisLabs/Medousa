@@ -2,7 +2,7 @@
 
 ## Status
 
-**Planning only** — no implementation in this document. Intended successor shape for interactive agent turns across all comms surfaces.
+**Phase 0** — [turn-ledger-phase0.md](turn-ledger-phase0.md). **Phase 1** — [turn-worker-phase1.md](turn-worker-phase1.md). Phases 2+ below remain planning.
 
 ## Thesis
 
@@ -183,19 +183,22 @@ Host system prompt (sketch): *You are the bus. Delegate heavy work. Do not claim
 
 ## Phased implementation plan
 
-### Phase 0 — Loop discipline (monolithic path; bus prep)
+### Phase 0 — Loop discipline (monolithic path; bus prep) ✅
 
-Before full workers, close the “model doesn’t know” gap on the **existing** single loop (daemon-wide):
+Implemented in `turn_ledger.rs` + tool loop wiring ([turn-ledger-phase0.md](turn-ledger-phase0.md)).
 
-1. **Structured turn ledger** in session: `tool_round` | `gatekeeper_continue` | `receipt_missing` | `finalized` — inject one **developer/system** message when gatekeeper continues (“calibrate not run; do not repeat AVEC table”).
-2. **Stuck detector**: N text-only continues with no new tool names → terminal error with clear user message (not silent max rounds).
-3. **Receipt-first host rules** — extend checklist beyond calibrate as needed (align with [turn-completion-gatekeeper.md](turn-completion-gatekeeper.md)).
+1. **Structured turn ledger** — JSONL per session; kinds `tool_round`, `gatekeeper_continue`, `receipt_missing`, `finalized`, `stuck`.
+2. **`[MEDOUSA_TURN_CONTROL]` system messages** injected on continue so the model sees gatekeeper/heuristic reasons.
+3. **Stuck detector** — 3 text-only continues without new tools → user-visible stop (`stuck_text_only_continue`).
+4. **Receipt checklist** — AVEC + pull/preset requires moods + calibrate before end.
 
 Deliverable: same adapters, fewer runaway turns, ledger schema stable for Phase 1.
 
-### Phase 1 — In-process worker profile (sub-agent v1)
+### Phase 1 — In-process worker profile (sub-agent v1) ✅
 
-All logic in **daemon agent runtime** (`agent_runtime/`, `medousa_tool_loop.rs`, new `turn_worker` module):
+Implemented — see [turn-worker-phase1.md](turn-worker-phase1.md). Summary:
+
+All logic in **daemon agent runtime** (`agent_runtime/`, `medousa_tool_loop.rs`, `turn_worker` module):
 
 | Piece | Host | Worker |
 |-------|------|--------|

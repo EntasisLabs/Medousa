@@ -416,9 +416,15 @@ pub(crate) async fn start_prompt_run(
     let continuation_recall_readiness = prepared.recall_readiness;
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
     let turn_scope = tui_rt.turn_scope.clone();
+    let worker_scheduler = tui_rt.worker_scheduler.clone();
+    let tool_registry = tui_rt.tool_registry.clone();
     let session_id = state.session_id.clone();
+    let backend = state.settings.backend.clone();
     let provider = state.settings.provider.clone();
     let model = state.settings.model.clone();
+    let base_url = (!state.settings.base_url.trim().is_empty())
+        .then(|| state.settings.base_url.clone());
+    let response_depth_mode = state.response_depth_mode.clone();
     let handle = tokio::spawn(async move {
         let previous_scope = turn_scope.read().await.clone();
         *turn_scope.write().await = Some(TurnContinuationScope {
@@ -426,8 +432,8 @@ pub(crate) async fn start_prompt_run(
             session_id: session_id.clone(),
             original_prompt: original_prompt_for_continuation.clone(),
             delivery_target: None,
-            provider,
-            model,
+            provider: provider.clone(),
+            model: model.clone(),
             response_depth_mode: continuation_response_depth_mode.clone(),
         });
 
@@ -435,6 +441,15 @@ pub(crate) async fn start_prompt_run(
             sink,
             LocalTurnExecutionParams {
                 turn_id,
+                session_id,
+                backend,
+                provider,
+                model,
+                base_url,
+                response_depth_mode,
+                worker_scheduler,
+                tool_registry,
+                turn_scope: turn_scope.clone(),
                 activation,
                 pipeline,
                 no_tools_pipeline,

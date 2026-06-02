@@ -2633,6 +2633,7 @@ pub struct TuiRuntime {
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
     pub turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }
 
 impl TuiRuntime {

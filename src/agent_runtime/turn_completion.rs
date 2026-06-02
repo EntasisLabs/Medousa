@@ -15,6 +15,7 @@ use crate::turn_text_heuristics::looks_like_interim_status;
 /// Host context for completion gatekeeper calls from the tool loop.
 pub struct ToolLoopCompletionGate<'a> {
     pub stream_turn_id: u64,
+    pub session_id: Option<String>,
     pub sink: Option<SharedAgentStreamSink>,
     pub orchestration: Option<&'a mut TurnOrchestrationState>,
     pub budget: Option<&'a TurnBudget>,
@@ -83,7 +84,23 @@ pub fn missing_ritual_tools_for_avec(user_prompt: &str, invocations: &[ToolInvoc
         return Vec::new();
     }
 
+    let lower = user_prompt.to_ascii_lowercase();
     let mut missing = Vec::new();
+
+    if lower.contains("pull") || lower.contains("preset") {
+        if !tool_was_invoked(
+            invocations,
+            &[
+                "cognition_memory_moods",
+                "memory_moods",
+                "cognition_memory_context",
+                "memory_context",
+            ],
+        ) {
+            missing.push("cognition_memory_moods".to_string());
+        }
+    }
+
     if !tool_was_invoked(
         invocations,
         &["cognition_memory_calibrate", "memory_calibrate", "calibrate"],
@@ -381,6 +398,17 @@ mod tests {
         }];
         let missing = missing_ritual_tools_for_avec("pull focused AVEC and calibrate", &invocations);
         assert!(missing.iter().any(|t| t.contains("calibrate")));
+    }
+
+    #[test]
+    fn ritual_detects_missing_moods_on_pull() {
+        let invocations = vec![ToolInvocation {
+            tool_name: "cognition_memory_calibrate".to_string(),
+            tool_input: Value::Null,
+            tool_output: Value::Null,
+        }];
+        let missing = missing_ritual_tools_for_avec("pull focused AVEC preset", &invocations);
+        assert!(missing.iter().any(|t| t.contains("moods")));
     }
 
     #[test]

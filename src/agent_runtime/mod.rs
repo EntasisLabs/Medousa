@@ -16,7 +16,10 @@ pub mod stream_sink;
 pub mod system_prompt;
 pub mod turn_budget;
 pub mod turn_completion;
+pub mod turn_ledger;
 pub mod turn_orchestrator;
+pub mod turn_worker;
+pub mod turn_worker_tools;
 pub mod turn_services;
 pub mod types;
 
@@ -54,6 +57,12 @@ pub use turn_budget::{
 pub use turn_completion::{
     ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
     resolve_turn_completion,
+};
+pub use turn_ledger::{
+    TurnLedgerEventKind, TurnLedgerRecord, TurnLoopDiscipline, MAX_TEXT_ONLY_STUCK_CONTINUES,
+    append_turn_ledger_record, developer_message_for_gatekeeper_continue,
+    developer_message_for_heuristic_interim_continue, persist_ledger_record,
+    push_turn_control_message, stuck_turn_user_message,
 };
 pub use turn_orchestrator::{
     IntentClassification, LocalTurnExecutionParams, PreparedTurnPrompt, PrepareTurnPromptParams,

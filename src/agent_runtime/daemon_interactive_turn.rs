@@ -290,6 +290,7 @@ async fn run_agent_turn_inner(
 
     let resolved_prompt = truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
     let assembled = turn_orchestrator::assemble_local_turn(AssembleLocalTurnParams {
+        session_id: &session_id,
         settings: &settings,
         conversation: &conversation,
         prompt: &prompt,

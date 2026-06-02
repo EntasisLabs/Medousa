@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use genai::chat::{ChatMessage, ChatRequest};
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
@@ -31,6 +33,11 @@ use super::turn_budget::{
     turn_budget_for_lane, TurnOrchestrationState,
 };
 use super::turn_completion::ToolLoopCompletionGate;
+use super::turn_worker::{
+    ActiveWorkerBusSession, WorkerRuntimeContext, host_bus_mode_enabled,
+    pipeline_for_turn_profile, system_prompt_for_host_bus,
+};
+use crate::turn_continuation::StoredDeliveryTarget;
 use super::turn_services::{
     self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
     TurnActivationDecision,
@@ -135,6 +142,15 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
 
 pub struct LocalTurnExecutionParams {
     pub turn_id: u64,
+    pub session_id: String,
+    pub backend: String,
+    pub provider: String,
+    pub model: String,
+    pub base_url: Option<String>,
+    pub response_depth_mode: String,
+    pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+    pub tool_registry: Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
+    pub turn_scope: Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
     pub activation: TurnActivationDecision,
     pub pipeline: MedousaToolLoopPipeline,
     pub no_tools_pipeline: PromptExecutionPipeline,
@@ -151,6 +167,7 @@ pub struct LocalTurnExecutionParams {
 }
 
 pub struct AssembleLocalTurnParams<'a> {
+    pub session_id: &'a str,
     pub settings: &'a RuntimeSettings,
     pub conversation: &'a [ConversationTurn],
     pub prompt: &'a str,
@@ -250,6 +267,16 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     AssembledLocalTurn {
         execution: LocalTurnExecutionParams {
             turn_id: params.turn_id,
+            session_id: params.session_id.to_string(),
+            backend: params.settings.backend.clone(),
+            provider: params.settings.provider.clone(),
+            model: params.settings.model.clone(),
+            base_url: (!params.settings.base_url.trim().is_empty())
+                .then(|| params.settings.base_url.clone()),
+            response_depth_mode: params.response_depth_mode.to_string(),
+            worker_scheduler: params.tui_rt.worker_scheduler.clone(),
+            tool_registry: params.tui_rt.tool_registry.clone(),
+            turn_scope: params.tui_rt.turn_scope.clone(),
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
             no_tools_pipeline: turn_services::build_prompt_pipeline_for_turn(
@@ -455,8 +482,17 @@ pub async fn emit_tool_payload_events(
 pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
     let LocalTurnExecutionParams {
         turn_id,
+        session_id,
+        backend,
+        provider,
+        model,
+        base_url,
+        response_depth_mode,
+        worker_scheduler,
+        tool_registry,
+        turn_scope,
         mut activation,
-        pipeline,
+        pipeline: default_pipeline,
         no_tools_pipeline,
         prior_messages,
         prompt_for_request,
@@ -469,6 +505,49 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         continuation_recall_readiness,
         prompt_preview,
     } = params;
+
+    let host_bus = host_bus_mode_enabled();
+    worker_scheduler
+        .set_runtime_context(WorkerRuntimeContext {
+            tool_registry: tool_registry.clone(),
+            provider: provider.clone(),
+            model: model.clone(),
+            base_url: base_url.clone(),
+        })
+        .await;
+
+    let scope_snapshot = turn_scope.read().await.clone();
+    worker_scheduler
+        .set_bus_session(ActiveWorkerBusSession {
+            sink: sink.clone(),
+            stream_turn_id: turn_id,
+            session_id: session_id.clone(),
+            backend: backend.clone(),
+            parent_user_prompt: original_prompt.clone(),
+            provider: provider.clone(),
+            model: model.clone(),
+            response_depth_mode: response_depth_mode.clone(),
+            parent_turn_correlation_id: scope_snapshot
+                .as_ref()
+                .map(|scope| scope.turn_correlation_id.clone()),
+            delivery_target: scope_snapshot
+                .as_ref()
+                .and_then(|scope| scope.delivery_target.as_ref())
+                .map(StoredDeliveryTarget::from),
+        })
+        .await;
+
+    let pipeline = if host_bus {
+        pipeline_for_turn_profile(
+            tool_registry.clone(),
+            &provider,
+            &model,
+            base_url.as_deref(),
+            true,
+        )
+    } else {
+        default_pipeline
+    };
 
     let turn_budget = turn_budget_for_lane(EngineExecutionLane::Interactive);
     let mut orchestration_state = TurnOrchestrationState {
@@ -534,7 +613,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
     if activation.enforce_no_tools {
         let mut messages = Vec::with_capacity(prior_messages.len() + 2);
-        messages.push(ChatMessage::system(DEFAULT_SYSTEM_PROMPT.to_string()));
+        messages.push(ChatMessage::system(system_prompt_for_host_bus(
+            DEFAULT_SYSTEM_PROMPT,
+            host_bus,
+        )));
         messages.extend(prior_messages);
         messages.push(ChatMessage::user(prompt_for_request));
 
@@ -586,7 +668,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
     let request = ToolLoopExecutionRequest {
         user_prompt: prompt_for_request,
-        system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
+        system_prompt: Some(system_prompt_for_host_bus(DEFAULT_SYSTEM_PROMPT, host_bus)),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
         tool_input: Value::Null,
@@ -603,9 +685,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         return;
     }
     orchestration_state.final_mode = "tool_loop".to_string();
+    let ledger_session_id = (!session_id.trim().is_empty()).then(|| session_id.clone());
     let first_attempt = {
         let mut completion_gate = ToolLoopCompletionGate {
             stream_turn_id: turn_id,
+            session_id: ledger_session_id.clone(),
             sink: Some(sink.clone()),
             orchestration: Some(&mut orchestration_state),
             budget: Some(&turn_budget),
@@ -683,6 +767,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         let continuation_result = {
                             let mut continuation_gate = ToolLoopCompletionGate {
                                 stream_turn_id: turn_id,
+                                session_id: ledger_session_id.clone(),
                                 sink: Some(sink.clone()),
                                 orchestration: Some(&mut orchestration_state),
                                 budget: Some(&turn_budget),
@@ -766,6 +851,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     let retry_result = {
                         let mut retry_gate = ToolLoopCompletionGate {
                             stream_turn_id: turn_id,
+                            session_id: ledger_session_id.clone(),
                             sink: Some(sink.clone()),
                             orchestration: Some(&mut orchestration_state),
                             budget: Some(&turn_budget),
@@ -814,4 +900,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             }
         }
     }
+
+    worker_scheduler.clear_bus_session().await;
 }

@@ -140,6 +140,10 @@ async fn build_platform_inner(
     sync_mcp_catalog(&agent).await;
 
     let agent = Arc::new(agent);
+    agent
+        .worker_scheduler
+        .attach_runtime(agent.clone())
+        .await;
     recurring_agent_turn::register_recurring_agent_turn_handler(
         agent.runtime.as_ref(),
         agent.clone(),
