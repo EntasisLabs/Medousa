@@ -1,5 +1,12 @@
 use crate::settings_guard::{invalid_module_ids, parse_allowed_modules};
 
+/// Minimum tool-loop / retry round counts (operator settings).
+pub const OPERATOR_ROUND_LIMIT_MIN: usize = 1;
+/// Hard in-process safety ceiling for tool-loop rounds (memory/API), not usage policing.
+pub const OPERATOR_ROUND_LIMIT_MAX: usize = 4096;
+pub const OPERATOR_RETRY_LIMIT_MIN: usize = 0;
+pub const OPERATOR_RETRY_LIMIT_MAX: usize = 256;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeSettings {
     pub backend: String,
@@ -107,65 +114,65 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
     validate_usize_range(
         "retry runtime max retries",
         &settings.retry_runtime_max_retries,
-        0,
-        5,
+        OPERATOR_RETRY_LIMIT_MIN,
+        OPERATOR_RETRY_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "retry runtime max rounds",
         &settings.retry_runtime_max_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "max tool rounds",
         &settings.max_tool_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "host bus max tool rounds",
         &settings.host_bus_max_tool_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_host_turn_bus_mode(&settings.host_turn_bus_mode, &mut errors);
     validate_usize_range(
         "activation tool-intent max rounds",
         &settings.activation_tool_intent_max_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "activation short-turn max rounds",
         &settings.activation_short_turn_max_tool_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "continuation max tool rounds",
         &settings.continuation_max_tool_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "max text-only stuck continues",
         &settings.max_text_only_stuck_continues,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
         "classifier restricted max rounds",
         &settings.classifier_restricted_max_tool_rounds,
-        1,
-        100,
+        OPERATOR_ROUND_LIMIT_MIN,
+        OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
 

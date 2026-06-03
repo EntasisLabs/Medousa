@@ -77,6 +77,12 @@ All caps below are in **Settings → Runtime** (saved to `tui_defaults.json`). E
 | Classifier Restricted Max Rounds | 1 | Low-confidence / conversational classifier paths |
 | Retry Runtime Max Rounds | 10 | Retries after runtime `PortFailure` |
 
+Operator round/retry settings clamp to **1–4096** rounds and **0–256** retries (in-process safety ceilings in `tui/settings.rs`, not usage policing).
+
+### Runtime failure explanation (no tools)
+
+When the tool loop still ends in `PortFailure` (max rounds, empty response, retry exhausted, etc.), `execute_local_turn` runs one **prompt-only** follow-up: the model sees `[MEDOUSA_TURN_RUNTIME]` + the error + the original user message and must write a clear user-facing explanation (or ask for missing details). That text is delivered via `agent_response`, not raw `agent_error`.
+
 ### Prompt policy (`[MEDOUSA_TOOL_POLICY]`)
 
 Interactive tool-loop turns append `append_tool_loop_policy` to the user prompt (orchestrator + TUI + workers): `max_tool_rounds=N` and instructions to answer on the last round (or `cognition_turn_prepare_final` before it). Stuck / user-visible stop messages use the **configured** `max_tool_rounds`, not a hardcoded “3 tries”.

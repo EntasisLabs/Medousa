@@ -13,7 +13,10 @@ use crate::engine_context::{EngineExecutionLane, RecallReadiness};
 use crate::session::ConversationTurn;
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
-use crate::tui::settings::{RuntimeSettings, parse_usize_with_bounds};
+use crate::tui::settings::{
+    RuntimeSettings, OPERATOR_RETRY_LIMIT_MAX, OPERATOR_RETRY_LIMIT_MIN, OPERATOR_ROUND_LIMIT_MAX,
+    OPERATOR_ROUND_LIMIT_MIN, parse_usize_with_bounds,
+};
 
 use super::continuation::{
     build_continuation_prior_messages, build_continuation_prompt, collect_tool_names,
@@ -30,7 +33,7 @@ use super::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use super::turn_budget::{
     emit_orchestration_summary, try_consume_classifier_budget, try_consume_continuation_budget,
     try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
-    turn_budget_for_lane, TurnOrchestrationState,
+    turn_budget_for_lane, TurnBudget, TurnOrchestrationState,
 };
 use super::turn_completion::ToolLoopCompletionGate;
 use super::turn_ledger::append_tool_loop_policy;
@@ -303,14 +306,14 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             retry_max_retries: parse_usize_with_bounds(
                 &params.settings.retry_runtime_max_retries,
                 DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
-                0,
-                5,
+                OPERATOR_RETRY_LIMIT_MIN,
+                OPERATOR_RETRY_LIMIT_MAX,
             ),
             retry_max_rounds: parse_usize_with_bounds(
                 &params.settings.retry_runtime_max_rounds,
                 DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-                1,
-                100,
+                OPERATOR_ROUND_LIMIT_MIN,
+                OPERATOR_ROUND_LIMIT_MAX,
             ),
             continuation_response_depth_mode: params.response_depth_mode.to_string(),
             continuation_stage_route: params.final_route.cloned(),
@@ -441,6 +444,95 @@ pub fn apply_intent_classifier_override(
         },
         _ => base,
     }
+}
+
+fn build_tool_loop_failure_explanation_prompt(original_prompt: &str, runtime_error: &str) -> String {
+    format!(
+        "[MEDOUSA_TURN_RUNTIME]\n\
+         The interactive tool loop ended without a complete user-facing answer.\n\n\
+         RUNTIME_ERROR:\n{runtime_error}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{original_prompt}\n\n\
+         Write one clear user-facing message: explain what happened in plain language, what was \
+         attempted if you can infer it from the error, and what the user can try next (retry, \
+         clarify, adjust settings, simpler request, or ask them for specific missing details). \
+         Do not invent tool results or claim success you did not achieve. \
+         This is a final explanation pass only — do not call tools."
+    )
+}
+
+fn fallback_failure_explanation_text(runtime_error: &str) -> String {
+    format!(
+        "I couldn't finish that turn cleanly. Technical detail: {}. \
+         You can retry, simplify the request, or share any missing context (session id, paths, etc.).",
+        truncate_text_for_budget(runtime_error, 800)
+    )
+}
+
+async fn deliver_tool_loop_failure_explanation(
+    sink: &SharedAgentStreamSink,
+    turn_id: u64,
+    no_tools_pipeline: &PromptExecutionPipeline,
+    chunk_tx: &tokio::sync::mpsc::UnboundedSender<StreamDelta>,
+    original_prompt: &str,
+    runtime_error: &str,
+    prior_messages: Vec<ChatMessage>,
+    host_bus: bool,
+    suggested_intent: Option<&str>,
+    orchestration_state: &mut TurnOrchestrationState,
+    turn_budget: &TurnBudget,
+) {
+    let _ = try_consume_prompt_only_budget(sink, orchestration_state, turn_budget).await;
+    orchestration_state.final_mode = "tool_loop_failure_explanation".to_string();
+
+    sink.notice(
+        "◈ fallback_mode=runtime_failure_explanation retry_count=0 (no tools)".to_string(),
+    )
+    .await;
+
+    let explanation_prompt = truncate_text_for_budget(
+        &build_tool_loop_failure_explanation_prompt(original_prompt, runtime_error),
+        MAX_REQUEST_PROMPT_CHARS,
+    );
+
+    let mut messages = Vec::with_capacity(prior_messages.len() + 2);
+    messages.push(ChatMessage::system(system_prompt_for_host_profile(
+        DEFAULT_SYSTEM_PROMPT,
+        host_bus,
+        suggested_intent,
+    )));
+    messages.extend(prior_messages);
+    messages.push(ChatMessage::user(explanation_prompt));
+
+    sink.tool_invoked(
+        "llm.chat".to_string(),
+        "runtime failure explanation (no tools)".to_string(),
+    )
+    .await;
+
+    let final_text = match no_tools_pipeline
+        .complete_chat_stream(
+            ChatRequest::new(messages),
+            PromptExecutionContext::default(),
+            Some(chunk_tx),
+        )
+        .await
+    {
+        Ok(completion) => completion
+            .response
+            .into_first_text()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| fallback_failure_explanation_text(runtime_error)),
+        Err(err) => {
+            sink.notice(format!(
+                "⚠ runtime failure explanation LLM failed: {err}; using fallback text"
+            ))
+            .await;
+            fallback_failure_explanation_text(runtime_error)
+        }
+    };
+
+    sink.agent_response(turn_id, final_text, Vec::new()).await;
 }
 
 pub fn retryable_runtime_reason(err_text: &str) -> Option<&'static str> {
@@ -948,20 +1040,42 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         }
                     }
                 }
-                sink.agent_error(
+                orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
+                deliver_tool_loop_failure_explanation(
+                    &sink,
                     turn_id,
-                    format!("{} (retry exhausted: {})", reason, last_err),
+                    &no_tools_pipeline,
+                    &chunk_tx,
+                    &original_prompt,
+                    &format!("{reason} (retry exhausted: {last_err})"),
+                    prior_messages.clone(),
+                    host_bus,
+                    suggested_intent,
+                    &mut orchestration_state,
+                    &turn_budget,
                 )
                 .await;
-                orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             } else {
                 sink.notice(
                     "◈ retry_policy retry_count=0 retry_reason=not_runtime".to_string(),
                 )
                 .await;
-                sink.agent_error(turn_id, err_text).await;
                 orchestration_state.final_mode = "tool_loop_error_non_retryable".to_string();
+                deliver_tool_loop_failure_explanation(
+                    &sink,
+                    turn_id,
+                    &no_tools_pipeline,
+                    &chunk_tx,
+                    &original_prompt,
+                    &err_text,
+                    prior_messages.clone(),
+                    host_bus,
+                    suggested_intent,
+                    &mut orchestration_state,
+                    &turn_budget,
+                )
+                .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
         }

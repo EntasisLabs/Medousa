@@ -266,15 +266,18 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
     let cold_turns =
         parse_usize_with_bounds(&state.settings_draft.slice_cold_window_turns, 24, 4, 128)
             .max(hot_turns);
-    let retry_max =
-        parse_usize_with_bounds(&state.settings_draft.retry_runtime_max_retries, 1, 0, 5);
-    let retry_rounds =
-        parse_usize_with_bounds(
-            &state.settings_draft.retry_runtime_max_rounds,
-            medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-            1,
-            100,
-        );
+    let retry_max = parse_usize_with_bounds(
+        &state.settings_draft.retry_runtime_max_retries,
+        1,
+        medousa::agent_runtime::RETRY_LIMIT_MIN,
+        medousa::agent_runtime::RETRY_LIMIT_MAX,
+    );
+    let retry_rounds = parse_usize_with_bounds(
+        &state.settings_draft.retry_runtime_max_rounds,
+        medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
+    );
     let policy_mode = policy_mode_label(
         direct_chars,
         long_turns,
@@ -868,15 +871,22 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 cycle_tool_call_mode(&state.settings_draft.tool_call_mode, forward);
         }
         7 => {
-            let current =
-                parse_usize_with_bounds(&state.settings_draft.max_tool_rounds, 10, 1, 100);
-            let step = if current < 20 { 1 } else { 5 };
+            let current = parse_usize_with_bounds(
+                &state.settings_draft.max_tool_rounds,
+                10,
+                medousa::agent_runtime::ROUND_LIMIT_MIN,
+                medousa::agent_runtime::ROUND_LIMIT_MAX,
+            );
+            let step = if current < 20 { 1 } else if current < 200 { 5 } else { 25 };
             let next = if forward {
                 current.saturating_add(step)
             } else {
                 current.saturating_sub(step)
             }
-            .clamp(1, 100);
+            .clamp(
+                medousa::agent_runtime::ROUND_LIMIT_MIN,
+                medousa::agent_runtime::ROUND_LIMIT_MAX,
+            );
             state.settings_draft.max_tool_rounds = next.to_string();
         }
         8 => {
@@ -982,30 +992,40 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             state.settings_draft.slice_cold_window_turns = next.to_string();
         }
         15 => {
-            let current =
-                parse_usize_with_bounds(&state.settings_draft.retry_runtime_max_retries, 1, 0, 5);
+            let current = parse_usize_with_bounds(
+                &state.settings_draft.retry_runtime_max_retries,
+                1,
+                medousa::agent_runtime::RETRY_LIMIT_MIN,
+                medousa::agent_runtime::RETRY_LIMIT_MAX,
+            );
             let next = if forward {
                 current.saturating_add(1)
             } else {
                 current.saturating_sub(1)
             }
-            .clamp(0, 5);
+            .clamp(
+                medousa::agent_runtime::RETRY_LIMIT_MIN,
+                medousa::agent_runtime::RETRY_LIMIT_MAX,
+            );
             state.settings_draft.retry_runtime_max_retries = next.to_string();
         }
         16 => {
-            let current =
-                parse_usize_with_bounds(
-            &state.settings_draft.retry_runtime_max_rounds,
-            medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-            1,
-            10,
-        );
+            let current = parse_usize_with_bounds(
+                &state.settings_draft.retry_runtime_max_rounds,
+                medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+                medousa::agent_runtime::ROUND_LIMIT_MIN,
+                medousa::agent_runtime::ROUND_LIMIT_MAX,
+            );
+            let step = if current < 20 { 1 } else if current < 200 { 5 } else { 25 };
             let next = if forward {
-                current.saturating_add(1)
+                current.saturating_add(step)
             } else {
-                current.saturating_sub(1)
+                current.saturating_sub(step)
             }
-            .clamp(1, 100);
+            .clamp(
+                medousa::agent_runtime::ROUND_LIMIT_MIN,
+                medousa::agent_runtime::ROUND_LIMIT_MAX,
+            );
             state.settings_draft.retry_runtime_max_rounds = next.to_string();
         }
         17 => adjust_round_setting(
@@ -1233,14 +1253,22 @@ fn routing_editor_role(state: &TuiState) -> &'static str {
 }
 
 fn adjust_round_setting(field: &mut String, default_value: usize, forward: bool) {
-    let current = parse_usize_with_bounds(field, default_value, 1, 100);
-    let step = if current < 20 { 1 } else { 5 };
+    let current = parse_usize_with_bounds(
+        field,
+        default_value,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
+    );
+    let step = if current < 20 { 1 } else if current < 200 { 5 } else { 25 };
     let next = if forward {
         current.saturating_add(step)
     } else {
         current.saturating_sub(step)
     }
-    .clamp(1, 100);
+    .clamp(
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
+    );
     *field = next.to_string();
 }
 

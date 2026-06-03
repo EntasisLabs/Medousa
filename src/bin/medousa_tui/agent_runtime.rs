@@ -414,14 +414,14 @@ pub(crate) async fn start_prompt_run(
     let retry_max_retries = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
         DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
-        0,
-        5,
+        medousa::agent_runtime::RETRY_LIMIT_MIN,
+        medousa::agent_runtime::RETRY_LIMIT_MAX,
     );
     let retry_max_rounds = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_rounds,
         DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let no_tools_pipeline =
         turn_services::build_prompt_pipeline_for_turn(final_route.as_ref(), &state.settings);
@@ -515,14 +515,14 @@ async fn attempt_daemon_interactive_turn(
         max_tool_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.max_tool_rounds,
             10,
-            1,
-            50,
+            medousa::agent_runtime::ROUND_LIMIT_MIN,
+            medousa::agent_runtime::ROUND_LIMIT_MAX,
         )),
         retry_runtime_max_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.retry_runtime_max_rounds,
             medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-            1,
-            10,
+            medousa::agent_runtime::ROUND_LIMIT_MIN,
+            medousa::agent_runtime::ROUND_LIMIT_MAX,
         )),
     };
 

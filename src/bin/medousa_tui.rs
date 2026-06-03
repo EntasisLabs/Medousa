@@ -350,8 +350,8 @@ async fn main() -> Result<()> {
     let resolved_max_tool_rounds = resolve_usize_arg(
         max_tool_rounds,
         defaults.max_tool_rounds.unwrap_or(10),
-        1,
-        50,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_thinking_capture =
         resolve_bool_arg(thinking_capture, defaults.thinking_capture.unwrap_or(true));
@@ -390,23 +390,27 @@ async fn main() -> Result<()> {
     let resolved_slice_cold_window_turns =
         resolve_usize_arg(None, defaults.slice_cold_window_turns.unwrap_or(24), 4, 128)
             .max(resolved_slice_hot_window_turns);
-    let resolved_retry_runtime_max_retries =
-        resolve_usize_arg(None, defaults.retry_runtime_max_retries.unwrap_or(1), 0, 5);
+    let resolved_retry_runtime_max_retries = resolve_usize_arg(
+        None,
+        defaults.retry_runtime_max_retries.unwrap_or(1),
+        medousa::agent_runtime::RETRY_LIMIT_MIN,
+        medousa::agent_runtime::RETRY_LIMIT_MAX,
+    );
     let resolved_retry_runtime_max_rounds = resolve_usize_arg(
         None,
         defaults
             .retry_runtime_max_rounds
             .unwrap_or(medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_host_bus_max_tool_rounds = resolve_usize_arg(
         None,
         defaults
             .host_bus_max_tool_rounds
             .unwrap_or(medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_host_turn_bus_mode = defaults
         .host_turn_bus_mode
@@ -420,40 +424,40 @@ async fn main() -> Result<()> {
         defaults
             .activation_tool_intent_max_rounds
             .unwrap_or(medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_activation_short_turn_max_tool_rounds = resolve_usize_arg(
         None,
         defaults.activation_short_turn_max_tool_rounds.unwrap_or(
             medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
         ),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_continuation_max_tool_rounds = resolve_usize_arg(
         None,
         defaults
             .continuation_max_tool_rounds
             .unwrap_or(medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_max_text_only_stuck_continues = resolve_usize_arg(
         None,
         defaults
             .max_text_only_stuck_continues
             .unwrap_or(medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_classifier_restricted_max_tool_rounds = resolve_usize_arg(
         None,
         defaults.classifier_restricted_max_tool_rounds.unwrap_or(
             medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
         ),
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let resolved_verifier_min_citation_coverage = resolve_f32_arg(
         None,

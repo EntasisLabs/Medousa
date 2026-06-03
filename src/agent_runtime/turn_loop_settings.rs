@@ -4,8 +4,10 @@ use crate::tui::settings::{RuntimeSettings, parse_usize_with_bounds};
 
 use super::turn_worker::HostBusEnvMode;
 
-pub const ROUND_LIMIT_MIN: usize = 1;
-pub const ROUND_LIMIT_MAX: usize = 100;
+pub use crate::tui::settings::{
+    OPERATOR_RETRY_LIMIT_MAX as RETRY_LIMIT_MAX, OPERATOR_RETRY_LIMIT_MIN as RETRY_LIMIT_MIN,
+    OPERATOR_ROUND_LIMIT_MAX as ROUND_LIMIT_MAX, OPERATOR_ROUND_LIMIT_MIN as ROUND_LIMIT_MIN,
+};
 
 pub const DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS: usize = 8;
 pub const DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS: usize = 12;

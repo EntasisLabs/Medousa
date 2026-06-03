@@ -407,14 +407,14 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
     defaults.max_tool_rounds = Some(parse_usize_with_bounds(
         &state.settings.max_tool_rounds,
         10,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.host_bus_max_tool_rounds = Some(parse_usize_with_bounds(
         &state.settings.host_bus_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.host_turn_bus_mode = {
         let mode = state.settings.host_turn_bus_mode.trim();
@@ -427,32 +427,32 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
     defaults.activation_tool_intent_max_rounds = Some(parse_usize_with_bounds(
         &state.settings.activation_tool_intent_max_rounds,
         medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.activation_short_turn_max_tool_rounds = Some(parse_usize_with_bounds(
         &state.settings.activation_short_turn_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.continuation_max_tool_rounds = Some(parse_usize_with_bounds(
         &state.settings.continuation_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.max_text_only_stuck_continues = Some(parse_usize_with_bounds(
         &state.settings.max_text_only_stuck_continues,
         medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.classifier_restricted_max_tool_rounds = Some(parse_usize_with_bounds(
         &state.settings.classifier_restricted_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.thinking_capture = Some(parse_bool_with_default(
         &state.settings.thinking_capture,
@@ -497,14 +497,14 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
     defaults.retry_runtime_max_retries = Some(parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
         1,
-        0,
-        5,
+        medousa::agent_runtime::RETRY_LIMIT_MIN,
+        medousa::agent_runtime::RETRY_LIMIT_MAX,
     ));
     defaults.retry_runtime_max_rounds = Some(parse_usize_with_bounds(
         &state.settings.retry_runtime_max_rounds,
         medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     ));
     defaults.verifier_min_citation_coverage = Some(parse_f32_with_bounds(
         &state.settings.verifier_min_citation_coverage,

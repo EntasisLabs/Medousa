@@ -52,8 +52,12 @@ pub(crate) async fn apply_settings(
     let theme_id = super::resolve_theme_id_name(Some(state.settings_draft.theme_id.trim()));
     let tool_call_mode =
         super::resolve_tool_call_mode_name(Some(state.settings_draft.tool_call_mode.trim()));
-    let max_tool_rounds =
-        super::parse_usize_with_bounds(&state.settings_draft.max_tool_rounds, 10, 1, 100);
+    let max_tool_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.max_tool_rounds,
+        10,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
+    );
     let thinking_capture =
         super::parse_bool_with_default(&state.settings_draft.thinking_capture, true);
     let thinking_max_lines =
@@ -85,51 +89,54 @@ pub(crate) async fn apply_settings(
     let slice_cold_window_turns =
         super::parse_usize_with_bounds(&state.settings_draft.slice_cold_window_turns, 24, 4, 128)
             .max(slice_hot_window_turns);
-    let retry_runtime_max_retries =
-        super::parse_usize_with_bounds(&state.settings_draft.retry_runtime_max_retries, 1, 0, 5);
-    let retry_runtime_max_rounds =
-        super::parse_usize_with_bounds(
-            &state.settings_draft.retry_runtime_max_rounds,
-            medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-            1,
-            100,
-        );
+    let retry_runtime_max_retries = super::parse_usize_with_bounds(
+        &state.settings_draft.retry_runtime_max_retries,
+        1,
+        medousa::agent_runtime::RETRY_LIMIT_MIN,
+        medousa::agent_runtime::RETRY_LIMIT_MAX,
+    );
+    let retry_runtime_max_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.retry_runtime_max_rounds,
+        medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
+    );
     let host_bus_max_tool_rounds = super::parse_usize_with_bounds(
         &state.settings_draft.host_bus_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let host_turn_bus_mode = state.settings_draft.host_turn_bus_mode.trim().to_string();
     let activation_tool_intent_max_rounds = super::parse_usize_with_bounds(
         &state.settings_draft.activation_tool_intent_max_rounds,
         medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let activation_short_turn_max_tool_rounds = super::parse_usize_with_bounds(
         &state.settings_draft.activation_short_turn_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let continuation_max_tool_rounds = super::parse_usize_with_bounds(
         &state.settings_draft.continuation_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let max_text_only_stuck_continues = super::parse_usize_with_bounds(
         &state.settings_draft.max_text_only_stuck_continues,
         medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let classifier_restricted_max_tool_rounds = super::parse_usize_with_bounds(
         &state.settings_draft.classifier_restricted_max_tool_rounds,
         medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
-        1,
-        100,
+        medousa::agent_runtime::ROUND_LIMIT_MIN,
+        medousa::agent_runtime::ROUND_LIMIT_MAX,
     );
     let verifier_min_citation_coverage = super::parse_f32_with_bounds(
         &state.settings_draft.verifier_min_citation_coverage,
