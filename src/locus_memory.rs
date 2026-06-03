@@ -191,6 +191,21 @@ pub fn validate_limit(limit: usize, field: &str) -> Result<usize, String> {
     }
 }
 
+/// `session_id` for `cognition_memory_recall`: JSON `null` or omitted → global (no default session).
+/// A non-empty string scopes to that session.
+pub fn recall_session_id_for_context(input: &serde_json::Value) -> serde_json::Value {
+    match input.get("session_id") {
+        Some(value) if value.is_null() => serde_json::Value::Null,
+        Some(value) => value
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| serde_json::Value::String(s.to_string()))
+            .unwrap_or(serde_json::Value::Null),
+        None => serde_json::Value::Null,
+    }
+}
+
 pub fn normalize_context_keywords(keywords: Option<&[String]>) -> Vec<String> {
     keywords
         .unwrap_or(&[])
@@ -255,5 +270,19 @@ mod tests {
             Some(ParseProfile::StrictTypedIr)
         );
         assert_eq!(parse_ingest_profile("tolerant"), Some(ParseProfile::Tolerant));
+    }
+
+    #[test]
+    fn recall_session_id_null_or_omitted_is_global() {
+        assert!(recall_session_id_for_context(&serde_json::json!({})).is_null());
+        assert!(recall_session_id_for_context(&serde_json::json!({ "session_id": null })).is_null());
+    }
+
+    #[test]
+    fn recall_session_id_string_is_preserved() {
+        assert_eq!(
+            recall_session_id_for_context(&serde_json::json!({ "session_id": "abc-123" })),
+            serde_json::json!("abc-123")
+        );
     }
 }

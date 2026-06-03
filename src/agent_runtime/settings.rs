@@ -2,6 +2,11 @@ use crate::daemon_api::InteractiveTurnRequest;
 use crate::session::TuiDefaults;
 use crate::tui::settings::RuntimeSettings;
 
+use super::turn_loop_settings::apply_turn_loop_field_defaults;
+use super::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS;
+
+const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
+
 fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaults: &TuiDefaults) {
     if let Some(value) = defaults
         .theme_id
@@ -30,9 +35,10 @@ fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaul
     {
         settings.tool_call_mode = value.to_string();
     }
-    if let Some(value) = defaults.max_tool_rounds {
-        settings.max_tool_rounds = value.to_string();
-    }
+    settings.max_tool_rounds = defaults
+        .max_tool_rounds
+        .unwrap_or(DEFAULT_MAX_TOOL_ROUNDS)
+        .to_string();
     if let Some(value) = defaults.thinking_capture {
         settings.thinking_capture = value.to_string();
     }
@@ -57,9 +63,37 @@ fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaul
     if let Some(value) = defaults.retry_runtime_max_retries {
         settings.retry_runtime_max_retries = value.to_string();
     }
-    if let Some(value) = defaults.retry_runtime_max_rounds {
-        settings.retry_runtime_max_rounds = value.to_string();
+    settings.retry_runtime_max_rounds = defaults
+        .retry_runtime_max_rounds
+        .unwrap_or(DEFAULT_RETRY_RUNTIME_MAX_ROUNDS)
+        .to_string();
+    if let Some(value) = defaults.host_bus_max_tool_rounds {
+        settings.host_bus_max_tool_rounds = value.to_string();
     }
+    if let Some(value) = defaults
+        .host_turn_bus_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        settings.host_turn_bus_mode = value.to_string();
+    }
+    if let Some(value) = defaults.activation_tool_intent_max_rounds {
+        settings.activation_tool_intent_max_rounds = value.to_string();
+    }
+    if let Some(value) = defaults.activation_short_turn_max_tool_rounds {
+        settings.activation_short_turn_max_tool_rounds = value.to_string();
+    }
+    if let Some(value) = defaults.continuation_max_tool_rounds {
+        settings.continuation_max_tool_rounds = value.to_string();
+    }
+    if let Some(value) = defaults.max_text_only_stuck_continues {
+        settings.max_text_only_stuck_continues = value.to_string();
+    }
+    if let Some(value) = defaults.classifier_restricted_max_tool_rounds {
+        settings.classifier_restricted_max_tool_rounds = value.to_string();
+    }
+    apply_turn_loop_field_defaults(settings);
     if let Some(value) = defaults.verifier_min_citation_coverage {
         settings.verifier_min_citation_coverage = format!("{value:.2}");
     }
@@ -92,6 +126,20 @@ pub fn default_daemon_runtime_settings(
         allowed_modules: String::new(),
         tool_call_mode: "auto".to_string(),
         max_tool_rounds: "10".to_string(),
+        host_bus_max_tool_rounds: super::turn_loop_settings::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS
+            .to_string(),
+        host_turn_bus_mode: super::turn_loop_settings::default_host_turn_bus_mode_label()
+            .to_string(),
+        activation_tool_intent_max_rounds:
+            super::turn_loop_settings::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS.to_string(),
+        activation_short_turn_max_tool_rounds:
+            super::turn_loop_settings::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS.to_string(),
+        continuation_max_tool_rounds:
+            super::turn_loop_settings::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS.to_string(),
+        max_text_only_stuck_continues:
+            super::turn_loop_settings::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES.to_string(),
+        classifier_restricted_max_tool_rounds:
+            super::turn_loop_settings::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS.to_string(),
         thinking_capture: "true".to_string(),
         thinking_max_lines: "300".to_string(),
         activation_direct_answer_max_prompt_chars: "320".to_string(),
@@ -130,5 +178,6 @@ pub fn runtime_settings_for_interactive_turn(
     if let Some(value) = request.retry_runtime_max_rounds {
         settings.retry_runtime_max_rounds = value.to_string();
     }
+    apply_turn_loop_field_defaults(&mut settings);
     settings
 }

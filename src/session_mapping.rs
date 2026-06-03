@@ -418,8 +418,12 @@ pub fn build_interactive_turn_request_for_ingest(
         provider: provider.to_string(),
         model: model.to_string(),
         stage_routing: StageRoutingMatrix::default_for(provider, model),
-        max_tool_rounds: defaults.max_tool_rounds,
-        retry_runtime_max_rounds: defaults.retry_runtime_max_rounds,
+        max_tool_rounds: Some(defaults.max_tool_rounds.unwrap_or(10)),
+        retry_runtime_max_rounds: Some(
+            defaults
+                .retry_runtime_max_rounds
+                .unwrap_or(crate::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
+        ),
     }
 }
 

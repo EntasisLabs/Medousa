@@ -370,56 +370,43 @@ pub fn parse_backend(value: Option<&str>) -> RuntimeBackend {
     let database = surreal_config::resolve_surreal_database(&surreal);
 
     if raw.eq_ignore_ascii_case("surreal-mem") {
-        return RuntimeBackend::SurrealMem {
-            namespace,
-            database,
-        };
+        return surreal_config::apply_surreal_auth_to_backend(
+            RuntimeBackend::surreal_mem(namespace, database),
+            &surreal,
+        );
     }
 
     if raw.eq_ignore_ascii_case("surreal-kv") || raw.starts_with("surreal-kv:") {
-        let mut backend = parse_surreal_kv_backend(raw);
-        if let RuntimeBackend::SurrealKv {
-            namespace: ref mut ns,
-            database: ref mut db,
-            ..
-        } = backend
-        {
-            *ns = namespace;
-            *db = database;
-        }
-        return backend;
+        let path = parse_surreal_kv_path(raw);
+        return surreal_config::apply_surreal_auth_to_backend(
+            RuntimeBackend::surreal_kv(path, namespace, database),
+            &surreal,
+        );
     }
 
     if raw.starts_with("surreal-ws:") {
-        return RuntimeBackend::SurrealWs {
-            endpoint: surreal_config::resolve_surreal_ws_endpoint(raw, &surreal),
-            namespace,
-            database,
-        };
+        let endpoint = surreal_config::resolve_surreal_ws_endpoint(raw, &surreal);
+        let (endpoint, url_auth) = surreal_config::split_endpoint_userinfo(&endpoint);
+        let backend = RuntimeBackend::surreal_ws(endpoint, namespace, database);
+        if let Some(auth) = surreal_config::resolve_surreal_auth(&surreal).or(url_auth) {
+            return backend.with_surreal_auth(auth);
+        }
+        return backend;
     }
 
     RuntimeBackend::InMemory
 }
 
-fn parse_surreal_kv_backend(raw: &str) -> RuntimeBackend {
-    let explicit_path = raw
-        .strip_prefix("surreal-kv:")
+fn parse_surreal_kv_path(raw: &str) -> String {
+    raw.strip_prefix("surreal-kv:")
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
-
-    let path = explicit_path
+        .map(ToString::to_string)
         .or_else(|| std::env::var("MEDOUSA_SURREALKV_PATH").ok())
         .or_else(|| std::env::var("STASIS_SURREALKV_PATH").ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(default_surrealkv_path);
-
-    RuntimeBackend::SurrealKv {
-        path,
-        namespace: DEFAULT_SURREAL_NAMESPACE.to_string(),
-        database: DEFAULT_SURREAL_DATABASE.to_string(),
-    }
+        .unwrap_or_else(default_surrealkv_path)
 }
 
 fn default_surrealkv_path() -> String {

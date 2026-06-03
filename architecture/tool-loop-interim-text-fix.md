@@ -51,6 +51,46 @@ If the model calls other tools after `prepare_final`, the flag is cleared (still
 
 Interim status may stream via `content_chunk` (TUI / SSE). It must **not** be pushed as `ChatMessage::assistant(...)` when continuing the loop — that pollutes the thread and causes self-dialogue on the next API call.
 
+### Turn-loop awareness (AX)
+
+Each model round starts with a compact `[MEDOUSA_TURN_CONTROL]` system line (`TurnLoopAwareness` in `turn_ledger.rs`):
+
+- **Tool rounds remaining** in this turn (`max_tool_rounds - rounds_executed`).
+- **User-visible responses sent** this turn (interim scratch streamed to TUI/SSE), with the **first 100 characters** of the last reply as a preview.
+- On the **last** round, an explicit warning that tools-only on that round ends the turn without a final reply.
+
+Gatekeeper / heuristic continue messages prepend the same budget block so the model knows where it is without re-injecting full interim text into the transcript.
+
+### TUI-configurable limits (`TurnLoopSettings`)
+
+All caps below are in **Settings → Runtime** (saved to `tui_defaults.json`). Each turn logs `◈ turn_loop_limits …` with the resolved values.
+
+| Setting | Default | What it caps |
+|---------|---------|----------------|
+| Max Tool Rounds | 10 | Base budget before activation/host bus |
+| Host Bus Max Tool Rounds | 8 | Orchestrator slim-host cap when bus is active |
+| Host Turn Bus Mode | auto | `auto` / `force` / `off` (env `MEDOUSA_TURN_HOST_BUS` still overrides) |
+| Activation Tool-Intent Max Rounds | 12 | Heuristic when prompt looks tool-heavy |
+| Activation Short-Turn Max Rounds | 1 | Short direct-answer / long-session turns |
+| Continuation Max Tool Rounds | 4 | Post-turn continuation synthesis loop |
+| Max Text-Only Stuck Continues | 10 | Interim replies without new tools |
+| Classifier Restricted Max Rounds | 1 | Low-confidence / conversational classifier paths |
+| Retry Runtime Max Rounds | 10 | Retries after runtime `PortFailure` |
+
+### Prompt policy (`[MEDOUSA_TOOL_POLICY]`)
+
+Interactive tool-loop turns append `append_tool_loop_policy` to the user prompt (orchestrator + TUI + workers): `max_tool_rounds=N` and instructions to answer on the last round (or `cognition_turn_prepare_final` before it). Stuck / user-visible stop messages use the **configured** `max_tool_rounds`, not a hardcoded “3 tries”.
+
+### Recoverable tool errors (host bus + tool loop)
+
+When `ToolRegistry::invoke_tool` returns `PortFailure` (disallowed tool on host profile, MCP/Grapheme errors, validation, etc.), `MedousaToolLoopPipeline` no longer aborts the turn. It injects a tool receipt:
+
+```json
+{ "ok": false, "error": "...", "recoverable": true, "hint": "..." }
+```
+
+The model sees the failure on the next round and can adjust, retry once, or spawn a worker — matching `[MEDOUSA_HOST_BUS]` / worker Grapheme playbooks. Loop-level failures (max rounds, strict mode with no tool call, empty model response) still surface as `PortFailure` and follow retry policy where applicable.
+
 ### Heuristics
 
 **`looks_like_interim_status`** — work-in-progress phrases **anywhere** in the text (“let me”, “i'll”, “lock it in”, “calibrating”, …), short acks, or ≤6 words.

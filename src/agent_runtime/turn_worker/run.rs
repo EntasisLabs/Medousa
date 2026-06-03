@@ -10,6 +10,8 @@ use tokio::sync::RwLock;
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::agent_runtime::turn_completion::ToolLoopCompletionGate;
+use crate::agent_runtime::turn_ledger::append_tool_loop_policy;
+use crate::agent_runtime::turn_loop_settings::TurnLoopSettings;
 use crate::agent_runtime::turn_ledger::{TurnLedgerEventKind, TurnLedgerRecord, persist_ledger_record};
 use crate::agent_runtime::turn_services;
 use crate::agent_runtime::{
@@ -253,6 +255,7 @@ pub async fn run_worker_turn(
     );
 
     let settings = worker_settings_from_record(&record);
+    let turn_loop_settings = TurnLoopSettings::from_runtime_settings(&settings);
     let worker_rounds = TurnWorkerIntent::parse(&record.intent)
         .map(max_worker_tool_rounds)
         .unwrap_or(10);
@@ -260,14 +263,17 @@ pub async fn run_worker_turn(
         &record.task_prompt,
         turn_services::parse_tool_call_mode(&settings.tool_call_mode),
         worker_rounds,
+        turn_loop_settings.activation_tool_intent_max_rounds,
+        turn_loop_settings.activation_short_turn_max_tool_rounds,
         0,
         256,
         32,
         256,
     );
 
+    let worker_max_rounds = activation.max_tool_rounds.max(1);
     let request = ToolLoopExecutionRequest {
-        user_prompt: record.task_prompt.clone(),
+        user_prompt: append_tool_loop_policy(&record.task_prompt, worker_max_rounds),
         system_prompt: Some(worker_system_prompt(
             &record.session_id,
             TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
@@ -284,6 +290,8 @@ pub async fn run_worker_turn(
         sink: Some(sink.clone()),
         orchestration: None,
         budget: None,
+        max_tool_rounds: worker_max_rounds,
+        max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
     };
 
     let result = worker_pipeline
@@ -291,7 +299,7 @@ pub async fn run_worker_turn(
             request,
             Vec::new(),
             None,
-            activation.max_tool_rounds,
+            worker_max_rounds,
             Some(&mut completion_gate),
         )
         .await;

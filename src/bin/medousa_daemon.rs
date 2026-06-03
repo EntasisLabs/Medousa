@@ -46,8 +46,8 @@ use medousa::daemon_api::{
 };
 use medousa::session_mapping;
 use medousa::{
-    PlatformBuildConfig, build_daemon_platform, channel_delivery, parse_backend,
-    remove_surrealkv_lock,
+    PlatformBuildConfig, apply_daemon_env, build_daemon_platform, channel_delivery,
+    load_product_config, parse_backend, remove_surrealkv_lock,
 };
 use medousa::agent_runtime::stream_sink::AgentStreamSink;
 use async_trait::async_trait;
@@ -254,6 +254,7 @@ async fn main() -> Result<()> {
     let backend_name = find_arg_value(&args, "--backend")
         .unwrap_or("in-memory")
         .to_string();
+    apply_daemon_env(&load_product_config());
     let backend = parse_backend(Some(&backend_name));
     let provider = find_arg_value(&args, "--provider");
     let model = find_arg_value(&args, "--model");

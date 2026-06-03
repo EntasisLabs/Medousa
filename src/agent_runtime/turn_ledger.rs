@@ -15,8 +15,33 @@ use super::turn_completion::TurnCompletionVerdict;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
-/// Max consecutive text-only loop rounds without new tool invocations before we stop.
+/// Default when no host gate passes a configured tool-round budget (tests, bare loops).
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
+
+/// Interim text-only continue limit follows the operator's tool-round budget.
+pub fn resolve_max_text_only_stuck_continues(max_tool_rounds: usize) -> usize {
+    max_tool_rounds.max(1)
+}
+
+/// `[MEDOUSA_TOOL_POLICY]` block appended to interactive prompts that run the tool loop.
+pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
+    let max_tool_rounds = max_tool_rounds.max(1);
+    format!(
+        "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
+         mode=tool_loop\n\
+         max_tool_rounds={max_tool_rounds}\n\
+         instruction=This turn has at most {max_tool_rounds} model rounds (tool calls and/or user-visible replies). \
+         When tool_rounds_remaining is 1, deliver the substantive user-facing answer on that round \
+         (or call cognition_turn_prepare_final on the prior round, then answer on the last round). \
+         If you spend the final round on tools only, the runtime ends the turn without a final reply. \
+         Short status-only text without tools counts toward the text-only continue limit. \
+         Tool failures return ok=false JSON in the tool receipt — recover in-loop (adjust, retry once, or delegate); do not stop the turn on one failed tool. \
+         After tool work is done: cognition_turn_prepare_final once, then one complete answer without more tools."
+    )
+}
+
+/// Preview length for the last user-visible assistant reply injected into the tool loop.
+pub const USER_RESPONSE_PREVIEW_MAX_CHARS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,13 +70,86 @@ pub struct TurnLedgerRecord {
     pub rounds_executed: usize,
 }
 
+/// Tracks tool-round budget and user-visible interim replies without bloating the transcript.
 #[derive(Debug, Clone, Default)]
+pub struct TurnLoopAwareness {
+    user_responses_sent: usize,
+    last_response_preview: Option<String>,
+}
+
+impl TurnLoopAwareness {
+    pub fn record_user_response(&mut self, text: &str) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.user_responses_sent = self.user_responses_sent.saturating_add(1);
+        self.last_response_preview =
+            Some(truncate_user_response_preview(trimmed, USER_RESPONSE_PREVIEW_MAX_CHARS));
+    }
+
+    pub fn loop_budget_message(&self, tool_rounds_remaining: usize) -> String {
+        let mut lines = vec![format!(
+            "Tool rounds remaining in this turn: {tool_rounds_remaining}."
+        )];
+        if self.user_responses_sent == 0 {
+            lines.push(
+                "User-visible responses sent this turn: 0 (interim scratch only; not in transcript)."
+                    .to_string(),
+            );
+        } else {
+            let preview = self
+                .last_response_preview
+                .as_deref()
+                .unwrap_or("(empty)");
+            lines.push(format!(
+                "User-visible responses sent this turn: {}. Last response (preview): {preview}",
+                self.user_responses_sent
+            ));
+        }
+        if tool_rounds_remaining <= 1 {
+            lines.push(
+                "LAST tool round: send the user-facing answer now (or you should have called \
+                 cognition_turn_prepare_final earlier). Runtime will cut off if this round is tools-only."
+                    .to_string(),
+            );
+        }
+        lines.join("\n")
+    }
+
+    pub fn wrap_control_body(&self, tool_rounds_remaining: usize, body: &str) -> String {
+        let budget = self.loop_budget_message(tool_rounds_remaining);
+        let trimmed = body.trim();
+        if trimmed.is_empty() {
+            budget
+        } else {
+            format!("{budget}\n\n{trimmed}")
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct TurnLoopDiscipline {
+    max_text_only_stuck_continues: usize,
     text_only_continues_without_new_tools: usize,
     invocations_at_last_text_continue: usize,
 }
 
+impl Default for TurnLoopDiscipline {
+    fn default() -> Self {
+        Self::with_max_text_only_stuck_continues(MAX_TEXT_ONLY_STUCK_CONTINUES)
+    }
+}
+
 impl TurnLoopDiscipline {
+    pub fn with_max_text_only_stuck_continues(limit: usize) -> Self {
+        Self {
+            max_text_only_stuck_continues: limit.max(1),
+            text_only_continues_without_new_tools: 0,
+            invocations_at_last_text_continue: 0,
+        }
+    }
+
     pub fn on_tool_round(&mut self) {
         self.text_only_continues_without_new_tools = 0;
     }
@@ -65,7 +163,7 @@ impl TurnLoopDiscipline {
             self.text_only_continues_without_new_tools = 1;
             self.invocations_at_last_text_continue = invocations_len;
         }
-        self.text_only_continues_without_new_tools >= MAX_TEXT_ONLY_STUCK_CONTINUES
+        self.text_only_continues_without_new_tools >= self.max_text_only_stuck_continues
     }
 }
 
@@ -148,11 +246,16 @@ pub fn developer_message_for_heuristic_interim_continue() -> &'static str {
      Call the tools needed to complete the user request. Do not resend the same summary or AVEC table."
 }
 
-pub fn stuck_turn_user_message(rounds_without_new_tools: usize) -> String {
+pub fn stuck_turn_user_message(
+    text_only_limit: usize,
+    max_tool_rounds: usize,
+    rounds_executed: usize,
+) -> String {
     format!(
-        "I hit a loop limit ({rounds_without_new_tools} text-only replies without running new tools). \
-         The turn stopped so we don't burn the tool-round budget. \
-         Say which step you want next (e.g. run calibrate, pull moods, or give a shorter final answer)."
+        "I hit the turn loop limit: {text_only_limit} consecutive user-visible replies without \
+         running new tools (configured tool-round budget: {max_tool_rounds}; used {rounds_executed} \
+         model round(s) this turn). Say which step you want next (e.g. run calibrate, pull moods, \
+         call cognition_turn_prepare_final then a shorter final answer, or raise max_tool_rounds)."
     )
 }
 
@@ -215,13 +318,14 @@ pub fn record_stuck(
     stream_turn_id: u64,
     rounds_executed: usize,
     tools_invoked: &[String],
+    text_only_limit: usize,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
         timestamp: Utc::now(),
         stream_turn_id,
         kind: TurnLedgerEventKind::Stuck,
         detail: format!(
-            "text_only_continue_without_new_tools>={MAX_TEXT_ONLY_STUCK_CONTINUES}"
+            "text_only_continue_without_new_tools>={text_only_limit}"
         ),
         tools_invoked: tools_invoked.to_vec(),
         missing_tools: Vec::new(),
@@ -233,6 +337,20 @@ pub fn persist_ledger_record(session_id: Option<&str>, record: &TurnLedgerRecord
     if let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) {
         append_turn_ledger_record(session_id, record);
     }
+}
+
+/// First `max_chars` of assistant text, collapsed to one line for turn-control hints.
+pub fn truncate_user_response_preview(text: &str, max_chars: usize) -> String {
+    let collapsed: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= max_chars {
+        return collapsed;
+    }
+    let mut out = String::new();
+    for ch in collapsed.chars().take(max_chars) {
+        out.push(ch);
+    }
+    out.push('…');
+    out
 }
 
 pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
@@ -249,7 +367,7 @@ mod tests {
 
     #[test]
     fn discipline_trips_after_three_stuck_continues() {
-        let mut d = TurnLoopDiscipline::default();
+        let mut d = TurnLoopDiscipline::with_max_text_only_stuck_continues(3);
         assert!(!d.on_text_only_continue(2));
         assert!(!d.on_text_only_continue(2));
         assert!(d.on_text_only_continue(2));
@@ -257,7 +375,7 @@ mod tests {
 
     #[test]
     fn discipline_resets_after_tool_round() {
-        let mut d = TurnLoopDiscipline::default();
+        let mut d = TurnLoopDiscipline::with_max_text_only_stuck_continues(3);
         assert!(!d.on_text_only_continue(1));
         assert!(!d.on_text_only_continue(1));
         d.on_tool_round();
@@ -266,10 +384,51 @@ mod tests {
 
     #[test]
     fn discipline_new_tools_reset_counter() {
-        let mut d = TurnLoopDiscipline::default();
+        let mut d = TurnLoopDiscipline::with_max_text_only_stuck_continues(3);
         assert!(!d.on_text_only_continue(1));
         assert!(!d.on_text_only_continue(1));
         assert!(!d.on_text_only_continue(3));
+    }
+
+    #[test]
+    fn truncate_preview_collapses_whitespace_and_caps_length() {
+        let long = "word ".repeat(40);
+        let preview = truncate_user_response_preview(&long, 20);
+        assert!(preview.chars().count() <= 21);
+        assert!(preview.ends_with('…'));
+        assert!(!preview.contains('\n'));
+    }
+
+    #[test]
+    fn resolve_stuck_limit_matches_tool_round_budget() {
+        assert_eq!(resolve_max_text_only_stuck_continues(10), 10);
+        assert_eq!(resolve_max_text_only_stuck_continues(0), 1);
+    }
+
+    #[test]
+    fn tool_loop_policy_includes_configured_rounds() {
+        let p = append_tool_loop_policy("hello", 12);
+        assert!(p.contains("max_tool_rounds=12"));
+        assert!(p.contains("tool_rounds_remaining is 1"));
+    }
+
+    #[test]
+    fn stuck_user_message_uses_configured_limits() {
+        let msg = stuck_turn_user_message(10, 10, 7);
+        assert!(msg.contains("10"));
+        assert!(msg.contains("configured tool-round budget: 10"));
+        assert!(msg.contains("used 7"));
+    }
+
+    #[test]
+    fn awareness_message_includes_budget_and_last_response() {
+        let mut a = TurnLoopAwareness::default();
+        a.record_user_response("Let me pull memory and calibrate AVEC for you.");
+        let msg = a.loop_budget_message(7);
+        assert!(msg.contains("Tool rounds remaining"));
+        assert!(msg.contains('7'));
+        assert!(msg.contains("User-visible responses sent this turn: 1"));
+        assert!(msg.contains("Let me pull memory"));
     }
 
     #[test]

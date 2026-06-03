@@ -53,7 +53,7 @@ pub(crate) async fn apply_settings(
     let tool_call_mode =
         super::resolve_tool_call_mode_name(Some(state.settings_draft.tool_call_mode.trim()));
     let max_tool_rounds =
-        super::parse_usize_with_bounds(&state.settings_draft.max_tool_rounds, 10, 1, 50);
+        super::parse_usize_with_bounds(&state.settings_draft.max_tool_rounds, 10, 1, 100);
     let thinking_capture =
         super::parse_bool_with_default(&state.settings_draft.thinking_capture, true);
     let thinking_max_lines =
@@ -88,7 +88,49 @@ pub(crate) async fn apply_settings(
     let retry_runtime_max_retries =
         super::parse_usize_with_bounds(&state.settings_draft.retry_runtime_max_retries, 1, 0, 5);
     let retry_runtime_max_rounds =
-        super::parse_usize_with_bounds(&state.settings_draft.retry_runtime_max_rounds, 3, 1, 10);
+        super::parse_usize_with_bounds(
+            &state.settings_draft.retry_runtime_max_rounds,
+            medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
+            1,
+            100,
+        );
+    let host_bus_max_tool_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.host_bus_max_tool_rounds,
+        medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
+        1,
+        100,
+    );
+    let host_turn_bus_mode = state.settings_draft.host_turn_bus_mode.trim().to_string();
+    let activation_tool_intent_max_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.activation_tool_intent_max_rounds,
+        medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS,
+        1,
+        100,
+    );
+    let activation_short_turn_max_tool_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.activation_short_turn_max_tool_rounds,
+        medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
+        1,
+        100,
+    );
+    let continuation_max_tool_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.continuation_max_tool_rounds,
+        medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS,
+        1,
+        100,
+    );
+    let max_text_only_stuck_continues = super::parse_usize_with_bounds(
+        &state.settings_draft.max_text_only_stuck_continues,
+        medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES,
+        1,
+        100,
+    );
+    let classifier_restricted_max_tool_rounds = super::parse_usize_with_bounds(
+        &state.settings_draft.classifier_restricted_max_tool_rounds,
+        medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
+        1,
+        100,
+    );
     let verifier_min_citation_coverage = super::parse_f32_with_bounds(
         &state.settings_draft.verifier_min_citation_coverage,
         0.60,
@@ -151,6 +193,13 @@ pub(crate) async fn apply_settings(
         slice_cold_window_turns,
         retry_runtime_max_retries,
         retry_runtime_max_rounds,
+        host_bus_max_tool_rounds,
+        host_turn_bus_mode,
+        activation_tool_intent_max_rounds,
+        activation_short_turn_max_tool_rounds,
+        continuation_max_tool_rounds,
+        max_text_only_stuck_continues,
+        classifier_restricted_max_tool_rounds,
         verifier_min_citation_coverage,
         verifier_min_avg_support_strength,
         verifier_min_supported_claim_ratio,
@@ -273,6 +322,19 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             state.settings.retry_runtime_max_retries =
                 snapshot.retry_runtime_max_retries.to_string();
             state.settings.retry_runtime_max_rounds = snapshot.retry_runtime_max_rounds.to_string();
+            state.settings.host_bus_max_tool_rounds =
+                snapshot.host_bus_max_tool_rounds.to_string();
+            state.settings.host_turn_bus_mode = snapshot.host_turn_bus_mode.clone();
+            state.settings.activation_tool_intent_max_rounds =
+                snapshot.activation_tool_intent_max_rounds.to_string();
+            state.settings.activation_short_turn_max_tool_rounds =
+                snapshot.activation_short_turn_max_tool_rounds.to_string();
+            state.settings.continuation_max_tool_rounds =
+                snapshot.continuation_max_tool_rounds.to_string();
+            state.settings.max_text_only_stuck_continues =
+                snapshot.max_text_only_stuck_continues.to_string();
+            state.settings.classifier_restricted_max_tool_rounds =
+                snapshot.classifier_restricted_max_tool_rounds.to_string();
             state.settings.verifier_min_citation_coverage =
                 format!("{:.2}", snapshot.verifier_min_citation_coverage);
             state.settings.verifier_min_avg_support_strength =
@@ -324,6 +386,16 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             defaults.slice_cold_window_turns = Some(snapshot.slice_cold_window_turns);
             defaults.retry_runtime_max_retries = Some(snapshot.retry_runtime_max_retries);
             defaults.retry_runtime_max_rounds = Some(snapshot.retry_runtime_max_rounds);
+            defaults.host_bus_max_tool_rounds = Some(snapshot.host_bus_max_tool_rounds);
+            defaults.host_turn_bus_mode = Some(snapshot.host_turn_bus_mode.clone());
+            defaults.activation_tool_intent_max_rounds =
+                Some(snapshot.activation_tool_intent_max_rounds);
+            defaults.activation_short_turn_max_tool_rounds =
+                Some(snapshot.activation_short_turn_max_tool_rounds);
+            defaults.continuation_max_tool_rounds = Some(snapshot.continuation_max_tool_rounds);
+            defaults.max_text_only_stuck_continues = Some(snapshot.max_text_only_stuck_continues);
+            defaults.classifier_restricted_max_tool_rounds =
+                Some(snapshot.classifier_restricted_max_tool_rounds);
             defaults.verifier_min_citation_coverage =
                 Some(snapshot.verifier_min_citation_coverage);
             defaults.verifier_min_avg_support_strength =

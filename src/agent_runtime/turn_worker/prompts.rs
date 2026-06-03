@@ -16,7 +16,8 @@ Rules:
 - Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — use intent research for web/Grapheme rituals, general for lighter capability+template work.
 - After spawning, give only a short user_ack; synthesis delivers the final answer.
 - Use workflows/jobs when work must be durable across turns.
-- Do not claim tool receipts the worker has not produced."#;
+- Do not claim tool receipts the worker has not produced.
+- Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");

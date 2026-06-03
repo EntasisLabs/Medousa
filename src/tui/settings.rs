@@ -12,6 +12,13 @@ pub struct RuntimeSettings {
     pub allowed_modules: String,
     pub tool_call_mode: String,
     pub max_tool_rounds: String,
+    pub host_bus_max_tool_rounds: String,
+    pub host_turn_bus_mode: String,
+    pub activation_tool_intent_max_rounds: String,
+    pub activation_short_turn_max_tool_rounds: String,
+    pub continuation_max_tool_rounds: String,
+    pub max_text_only_stuck_continues: String,
+    pub classifier_restricted_max_tool_rounds: String,
     pub thinking_capture: String,
     pub thinking_max_lines: String,
     pub activation_direct_answer_max_prompt_chars: String,
@@ -108,7 +115,57 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
         "retry runtime max rounds",
         &settings.retry_runtime_max_rounds,
         1,
-        10,
+        100,
+        &mut errors,
+    );
+    validate_usize_range(
+        "max tool rounds",
+        &settings.max_tool_rounds,
+        1,
+        100,
+        &mut errors,
+    );
+    validate_usize_range(
+        "host bus max tool rounds",
+        &settings.host_bus_max_tool_rounds,
+        1,
+        100,
+        &mut errors,
+    );
+    validate_host_turn_bus_mode(&settings.host_turn_bus_mode, &mut errors);
+    validate_usize_range(
+        "activation tool-intent max rounds",
+        &settings.activation_tool_intent_max_rounds,
+        1,
+        100,
+        &mut errors,
+    );
+    validate_usize_range(
+        "activation short-turn max rounds",
+        &settings.activation_short_turn_max_tool_rounds,
+        1,
+        100,
+        &mut errors,
+    );
+    validate_usize_range(
+        "continuation max tool rounds",
+        &settings.continuation_max_tool_rounds,
+        1,
+        100,
+        &mut errors,
+    );
+    validate_usize_range(
+        "max text-only stuck continues",
+        &settings.max_text_only_stuck_continues,
+        1,
+        100,
+        &mut errors,
+    );
+    validate_usize_range(
+        "classifier restricted max rounds",
+        &settings.classifier_restricted_max_tool_rounds,
+        1,
+        100,
         &mut errors,
     );
 
@@ -135,6 +192,13 @@ fn validate_unit_interval(name: &str, value: &str, errors: &mut Vec<String>) {
     };
     if !(0.0..=1.0).contains(&parsed) {
         errors.push(format!("{name} must be in [0.0, 1.0]"));
+    }
+}
+
+fn validate_host_turn_bus_mode(value: &str, errors: &mut Vec<String>) {
+    let mode = value.trim().to_ascii_lowercase();
+    if !matches!(mode.as_str(), "auto" | "force" | "off") {
+        errors.push("host turn bus mode must be auto, force, or off".to_string());
     }
 }
 
@@ -242,6 +306,11 @@ pub fn resolve_tool_call_mode_name(value: Option<&str>) -> String {
 
 pub fn cycle_tool_call_mode(current: &str, forward: bool) -> String {
     let choices = ["auto", "strict"];
+    cycle_choice(current, &choices, forward)
+}
+
+pub fn cycle_host_turn_bus_mode(current: &str, forward: bool) -> String {
+    let choices = ["auto", "force", "off"];
     cycle_choice(current, &choices, forward)
 }
 
@@ -357,6 +426,13 @@ mod tests {
             allowed_modules: "bad id".to_string(),
             tool_call_mode: "auto".to_string(),
             max_tool_rounds: "10".to_string(),
+            host_bus_max_tool_rounds: "8".to_string(),
+            host_turn_bus_mode: "auto".to_string(),
+            activation_tool_intent_max_rounds: "12".to_string(),
+            activation_short_turn_max_tool_rounds: "1".to_string(),
+            continuation_max_tool_rounds: "4".to_string(),
+            max_text_only_stuck_continues: "10".to_string(),
+            classifier_restricted_max_tool_rounds: "1".to_string(),
             thinking_capture: "true".to_string(),
             thinking_max_lines: "300".to_string(),
             activation_direct_answer_max_prompt_chars: "320".to_string(),

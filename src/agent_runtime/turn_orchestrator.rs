@@ -33,6 +33,8 @@ use super::turn_budget::{
     turn_budget_for_lane, TurnOrchestrationState,
 };
 use super::turn_completion::ToolLoopCompletionGate;
+use super::turn_ledger::append_tool_loop_policy;
+use super::turn_loop_settings::TurnLoopSettings;
 use super::turn_worker::{
     ActiveWorkerBusSession, WorkerRuntimeContext, apply_host_profile_to_activation,
     host_route_notice, pipeline_for_turn_profile, resolve_host_turn_profile,
@@ -60,7 +62,6 @@ pub const DEFAULT_ACTIVATION_LONG_SESSION_TURN_THRESHOLD: usize = 28;
 pub const DEFAULT_ACTIVATION_LONG_SESSION_PROMPT_CHARS: usize = 420;
 pub const DEFAULT_RETRY_RUNTIME_MAX_RETRIES: usize = 1;
 pub const DEFAULT_RETRY_RUNTIME_MAX_ROUNDS: usize = 10;
-const CONTINUATION_MAX_ROUNDS: usize = 4;
 const INTENT_CLASSIFIER_MAX_PROMPT_CHARS: usize = 900;
 const INTENT_CLASSIFIER_MAX_CONTEXT_TURNS: usize = 4;
 const INTENT_CLASSIFIER_MAX_CONTEXT_CHARS: usize = 1400;
@@ -165,6 +166,7 @@ pub struct LocalTurnExecutionParams {
     pub continuation_stage_route: Option<StageRoute>,
     pub continuation_recall_readiness: RecallReadiness,
     pub prompt_preview: String,
+    pub turn_loop_settings: TurnLoopSettings,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -190,12 +192,13 @@ pub struct AssembledLocalTurn {
 
 pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLocalTurn {
     let configured_tool_call_mode = turn_services::parse_tool_call_mode(&params.settings.tool_call_mode);
-    let configured_max_tool_rounds =
-        parse_usize_with_bounds(&params.settings.max_tool_rounds, 10, 1, 50);
+    let turn_loop_settings = TurnLoopSettings::from_runtime_settings(params.settings);
     let activation = turn_services::decide_turn_activation(
         params.prompt,
         configured_tool_call_mode,
-        configured_max_tool_rounds,
+        turn_loop_settings.configured_max_tool_rounds,
+        turn_loop_settings.activation_tool_intent_max_rounds,
+        turn_loop_settings.activation_short_turn_max_tool_rounds,
         params.conversation.len(),
         parse_usize_with_bounds(
             &params.settings.activation_direct_answer_max_prompt_chars,
@@ -256,7 +259,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             params.resolved_prompt
         )
     } else {
-        params.resolved_prompt.clone()
+        append_tool_loop_policy(&params.resolved_prompt, activation.max_tool_rounds)
     };
 
     let pipeline_selection = turn_services::select_pipeline_for_turn(
@@ -307,12 +310,13 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
                 &params.settings.retry_runtime_max_rounds,
                 DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
                 1,
-                10,
+                100,
             ),
             continuation_response_depth_mode: params.response_depth_mode.to_string(),
             continuation_stage_route: params.final_route.cloned(),
             continuation_recall_readiness: params.prepared.recall_readiness,
             prompt_preview: params.resolved_prompt.chars().take(48).collect(),
+            turn_loop_settings,
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -388,12 +392,14 @@ pub async fn classify_turn_intent_with_model(
 pub fn apply_intent_classifier_override(
     base: TurnActivationDecision,
     classification: &IntentClassification,
+    classifier_restricted_max_tool_rounds: usize,
 ) -> TurnActivationDecision {
+    let restricted = classifier_restricted_max_tool_rounds.max(1);
     if classification.confidence < INTENT_CLASSIFIER_CONFIDENCE_LOW {
         return TurnActivationDecision {
             turn_class: "a",
             tool_call_mode: ToolCallMode::Strict,
-            max_tool_rounds: 1,
+            max_tool_rounds: restricted,
             enforce_no_tools: true,
             reason: "classifier_low_confidence_bias_no_tools",
         };
@@ -406,7 +412,7 @@ pub fn apply_intent_classifier_override(
             TurnActivationDecision {
                 turn_class: "a",
                 tool_call_mode: ToolCallMode::Strict,
-                max_tool_rounds: 1,
+                max_tool_rounds: restricted,
                 enforce_no_tools: true,
                 reason: "classifier_conversational",
             }
@@ -414,7 +420,7 @@ pub fn apply_intent_classifier_override(
         "clarify" => TurnActivationDecision {
             turn_class: "a",
             tool_call_mode: ToolCallMode::Strict,
-            max_tool_rounds: 1,
+            max_tool_rounds: restricted,
             enforce_no_tools: true,
             reason: "classifier_clarify",
         },
@@ -505,10 +511,27 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         continuation_stage_route,
         continuation_recall_readiness,
         prompt_preview,
+        turn_loop_settings,
     } = params;
 
-    let host_profile = resolve_host_turn_profile(&original_prompt, activation.max_tool_rounds);
+    sink.notice(format!(
+        "◈ turn_loop_limits {}",
+        turn_loop_settings.operator_summary()
+    ))
+    .await;
+
+    let host_profile = resolve_host_turn_profile(
+        &original_prompt,
+        activation.max_tool_rounds,
+        turn_loop_settings.effective_host_bus_max_tool_rounds(),
+        turn_loop_settings.effective_host_bus_env_mode(),
+    );
     activation = apply_host_profile_to_activation(activation, &host_profile);
+    sink.notice(format!(
+        "◈ activation effective rounds={} (after host bus; configured_max={})",
+        activation.max_tool_rounds, turn_loop_settings.configured_max_tool_rounds
+    ))
+    .await;
     let host_bus = host_profile.host_bus_active;
     let suggested_intent = host_profile
         .route
@@ -579,7 +602,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 ))
                 .await;
 
-                activation = apply_intent_classifier_override(activation, &classification);
+                activation = apply_intent_classifier_override(
+                    activation,
+                    &classification,
+                    turn_loop_settings.classifier_restricted_max_tool_rounds,
+                );
                 sink.notice(format!(
                     "◈ activation final class={} mode={} rounds={} no_tools={} reason={}",
                     activation.turn_class,
@@ -701,19 +728,22 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     orchestration_state.final_mode = "tool_loop".to_string();
     let ledger_session_id = (!session_id.trim().is_empty()).then(|| session_id.clone());
     let first_attempt = {
+        let loop_max_rounds = activation.max_tool_rounds.max(1);
         let mut completion_gate = ToolLoopCompletionGate {
             stream_turn_id: turn_id,
             session_id: ledger_session_id.clone(),
             sink: Some(sink.clone()),
             orchestration: Some(&mut orchestration_state),
             budget: Some(&turn_budget),
+            max_tool_rounds: loop_max_rounds,
+            max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
         };
         pipeline
             .execute_with_stream_prior_messages_max_rounds(
                 request.clone(),
                 prior_messages.clone(),
                 Some(&chunk_tx),
-                activation.max_tool_rounds,
+                loop_max_rounds,
                 Some(&mut completion_gate),
             )
             .await
@@ -786,19 +816,26 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         orchestration_state.final_mode = "tool_loop_with_continuation".to_string();
 
                         let continuation_result = {
+                            let continuation_max_rounds = activation
+                                .max_tool_rounds
+                                .min(turn_loop_settings.continuation_max_tool_rounds)
+                                .max(1);
                             let mut continuation_gate = ToolLoopCompletionGate {
                                 stream_turn_id: turn_id,
                                 session_id: ledger_session_id.clone(),
                                 sink: Some(sink.clone()),
                                 orchestration: Some(&mut orchestration_state),
                                 budget: Some(&turn_budget),
+                                max_tool_rounds: continuation_max_rounds,
+                                max_text_only_stuck_continues: turn_loop_settings
+                                    .max_text_only_stuck_continues,
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
                                     continuation_request,
                                     continuation_prior_messages,
                                     Some(&chunk_tx),
-                                    activation.max_tool_rounds.min(CONTINUATION_MAX_ROUNDS).max(1),
+                                    continuation_max_rounds,
                                     Some(&mut continuation_gate),
                                 )
                                 .await
@@ -881,6 +918,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             sink: Some(sink.clone()),
                             orchestration: Some(&mut orchestration_state),
                             budget: Some(&turn_budget),
+                            max_tool_rounds: retry_rounds,
+                            max_text_only_stuck_continues: turn_loop_settings
+                                .max_text_only_stuck_continues,
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(

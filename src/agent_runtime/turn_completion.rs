@@ -19,6 +19,33 @@ pub struct ToolLoopCompletionGate<'a> {
     pub sink: Option<SharedAgentStreamSink>,
     pub orchestration: Option<&'a mut TurnOrchestrationState>,
     pub budget: Option<&'a TurnBudget>,
+    /// Configured model-round budget for this tool-loop execution.
+    pub max_tool_rounds: usize,
+    /// Consecutive text-only continues without new tools before the turn stops.
+    pub max_text_only_stuck_continues: usize,
+}
+
+impl ToolLoopCompletionGate<'_> {
+    pub fn new_for_execution(
+        stream_turn_id: u64,
+        session_id: Option<String>,
+        sink: Option<SharedAgentStreamSink>,
+        max_tool_rounds: usize,
+    ) -> Self {
+        let max_tool_rounds = max_tool_rounds.max(1);
+        Self {
+            stream_turn_id,
+            session_id,
+            sink,
+            orchestration: None,
+            budget: None,
+            max_tool_rounds,
+            max_text_only_stuck_continues:
+                crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
+                    max_tool_rounds,
+                ),
+        }
+    }
 }
 
 impl ToolLoopCompletionGate<'_> {

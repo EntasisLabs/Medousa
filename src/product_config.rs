@@ -411,7 +411,19 @@ pub fn apply_surreal_env(config: &ProductConfig) {
 pub fn apply_surreal_env_from_fields(surreal: &SurrealProductConfig) {
     set_or_remove_env("MEDOUSA_SURREAL_ENDPOINT", surreal.endpoint.as_deref());
     set_or_remove_env("MEDOUSA_SURREAL_USERNAME", surreal.username.as_deref());
-    set_or_remove_env("MEDOUSA_SURREAL_PASSWORD", surreal.password.as_deref());
+    let stored_password = crate::session::load_surreal_password();
+    let password = surreal
+        .password
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            stored_password
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        });
+    set_or_remove_env("MEDOUSA_SURREAL_PASSWORD", password);
     set_or_remove_env("MEDOUSA_SURREAL_NAMESPACE", surreal.namespace.as_deref());
     set_or_remove_env("MEDOUSA_SURREAL_DATABASE", surreal.database.as_deref());
 }

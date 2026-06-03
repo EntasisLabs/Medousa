@@ -21,7 +21,7 @@ use crate::agent_runtime::turn_completion::{
     collect_tool_names, resolve_turn_completion,
 };
 use crate::agent_runtime::turn_ledger::{
-    TurnLoopDiscipline, developer_message_for_gatekeeper_continue,
+    TurnLoopAwareness, TurnLoopDiscipline, developer_message_for_gatekeeper_continue,
     developer_message_for_heuristic_interim_continue, ledger_tool_names, persist_ledger_record,
     push_turn_control_message, record_finalized, record_from_gatekeeper_continue,
     record_stuck, record_tool_round, stuck_turn_user_message,
@@ -186,11 +186,27 @@ impl MedousaToolLoopPipeline {
         let mut pending_final_answer = false;
         let mut last_streamed_draft: Option<String> = None;
         let streaming_enabled = chunk_tx.is_some();
-        let mut discipline = TurnLoopDiscipline::default();
+        let max_text_only_stuck = completion_gate
+            .as_ref()
+            .map(|gate| gate.max_text_only_stuck_continues)
+            .unwrap_or_else(|| {
+                crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
+                    max_tool_rounds,
+                )
+            });
+        let mut discipline =
+            TurnLoopDiscipline::with_max_text_only_stuck_continues(max_text_only_stuck);
+        let mut loop_awareness = TurnLoopAwareness::default();
 
         if !tools.is_empty() {
             for _ in 0..max_tool_rounds {
                 rounds_executed += 1;
+                let tool_rounds_remaining =
+                    max_tool_rounds.saturating_sub(rounds_executed);
+                push_turn_control_message(
+                    &mut messages,
+                    &loop_awareness.loop_budget_message(tool_rounds_remaining),
+                );
                 let chat_request = ChatRequest::new(messages.clone()).with_tools(tools.clone());
                 let mut response = match chunk_tx {
                     Some(tx) => {
@@ -296,9 +312,15 @@ impl MedousaToolLoopPipeline {
                                         gate.session_id.as_deref(),
                                         &record,
                                     );
+                                    loop_awareness.record_user_response(&text);
                                     push_turn_control_message(
                                         &mut messages,
-                                        &developer_message_for_gatekeeper_continue(&verdict),
+                                        &loop_awareness.wrap_control_body(
+                                            tool_rounds_remaining,
+                                            &developer_message_for_gatekeeper_continue(
+                                                &verdict,
+                                            ),
+                                        ),
                                     );
                                     if discipline.on_text_only_continue(invocations.len()) {
                                         return finish_stuck_turn(
@@ -385,9 +407,13 @@ impl MedousaToolLoopPipeline {
                         if let Some(gate) = completion_gate.as_ref() {
                             gate.reset_scratch(streaming_enabled).await;
                         }
+                        loop_awareness.record_user_response(&text);
                         push_turn_control_message(
                             &mut messages,
-                            developer_message_for_heuristic_interim_continue(),
+                            &loop_awareness.wrap_control_body(
+                                tool_rounds_remaining,
+                                developer_message_for_heuristic_interim_continue(),
+                            ),
                         );
                         if discipline.on_text_only_continue(invocations.len()) {
                             if let Some(gate) = completion_gate.as_ref() {
@@ -399,10 +425,20 @@ impl MedousaToolLoopPipeline {
                                 )
                                 .await;
                             }
+                            let text_only_limit = completion_gate
+                                .as_ref()
+                                .map(|g| g.max_text_only_stuck_continues)
+                                .unwrap_or_else(|| {
+                                    crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
+                                        max_tool_rounds,
+                                    )
+                                });
                             return finish_stuck_turn_response(
                                 &shared_inputs,
                                 invocations,
                                 rounds_executed,
+                                text_only_limit,
+                                max_tool_rounds,
                             );
                         }
                         last_streamed_draft = Some(text);
@@ -450,12 +486,21 @@ impl MedousaToolLoopPipeline {
                     }
 
                     while let Some(joined) = join_set.join_next().await {
-                        let (call, output) = joined.map_err(|error| {
-                            StasisError::PortFailure(format!(
-                                "parallel tool batch join failed: {error}"
-                            ))
-                        })?;
-                        let tool_output = output?;
+                        let (call, output) = match joined {
+                            Ok(pair) => pair,
+                            Err(error) => {
+                                if let Some(gate) = completion_gate.as_ref() {
+                                    if let Some(sink) = gate.sink.as_ref() {
+                                        sink.notice(format!(
+                                            "◈ parallel_tool_join_failed: {error}"
+                                        ))
+                                        .await;
+                                    }
+                                }
+                                continue;
+                            }
+                        };
+                        let tool_output = tool_output_from_invoke(output);
                         let tool_output_text = tool_output.to_string();
                         messages.push(ChatMessage::from(ToolResponse::new(
                             call.call_id,
@@ -472,10 +517,11 @@ impl MedousaToolLoopPipeline {
                     }
                 } else {
                     for call in tool_calls {
-                        let tool_output = self
-                            .tool_registry
-                            .invoke_tool(&call.fn_name, call.fn_arguments.clone())
-                            .await?;
+                        let tool_output = tool_output_from_invoke(
+                            self.tool_registry
+                                .invoke_tool(&call.fn_name, call.fn_arguments.clone())
+                                .await,
+                        );
 
                         if is_prepare_final_tool_name(&call.fn_name) {
                             prepare_final_in_batch = true;
@@ -570,13 +616,14 @@ impl MedousaToolLoopPipeline {
             }
             self.prompt_pipeline.execute(first_request).await?.text
         };
-        let tool_output = self
-            .tool_registry
-            .invoke_tool(
-                shared_inputs.selected_tool_name(),
-                (*shared_inputs.tool_input).clone(),
-            )
-            .await?;
+        let tool_output = tool_output_from_invoke(
+            self.tool_registry
+                .invoke_tool(
+                    shared_inputs.selected_tool_name(),
+                    (*shared_inputs.tool_input).clone(),
+                )
+                .await,
+        );
 
         let synthesis_prompt = build_fallback_synthesis_prompt(
             &shared_inputs.user_prompt,
@@ -620,22 +667,35 @@ async fn finish_stuck_turn(
     let tools = ledger_tool_names(&invocations);
     persist_ledger_record(
         gate.session_id.as_deref(),
-        &record_stuck(gate.stream_turn_id, rounds_executed, &tools),
+        &record_stuck(
+            gate.stream_turn_id,
+            rounds_executed,
+            &tools,
+            gate.max_text_only_stuck_continues,
+        ),
     );
     if let Some(sink) = gate.sink.as_ref() {
         sink.notice(format!(
-            "◈ turn loop stuck: {} text-only continues without new tools",
-            crate::agent_runtime::turn_ledger::MAX_TEXT_ONLY_STUCK_CONTINUES
+            "◈ turn loop stuck: {} text-only continues without new tools (max_tool_rounds={})",
+            gate.max_text_only_stuck_continues, gate.max_tool_rounds
         ))
         .await;
     }
-    finish_stuck_turn_response(shared_inputs, invocations, rounds_executed)
+    finish_stuck_turn_response(
+        shared_inputs,
+        invocations,
+        rounds_executed,
+        gate.max_text_only_stuck_continues,
+        gate.max_tool_rounds,
+    )
 }
 
 fn finish_stuck_turn_response(
     shared_inputs: &ToolLoopSharedInputs,
     invocations: Vec<ToolInvocation>,
     rounds_executed: usize,
+    text_only_limit: usize,
+    max_tool_rounds: usize,
 ) -> Result<ToolLoopExecutionResponse> {
     let last = invocations.last().cloned().unwrap_or(ToolInvocation {
         tool_name: shared_inputs.selected_tool_name().to_string(),
@@ -643,13 +703,30 @@ fn finish_stuck_turn_response(
         tool_output: Value::Null,
     });
     Ok(ToolLoopExecutionResponse {
-        text: stuck_turn_user_message(crate::agent_runtime::turn_ledger::MAX_TEXT_ONLY_STUCK_CONTINUES),
+        text: stuck_turn_user_message(text_only_limit, max_tool_rounds, rounds_executed),
         metadata: shared_inputs.context_clone(),
         tool_name: last.tool_name,
         tool_output: last.tool_output,
         tool_invocations: invocations,
         rounds_executed,
         termination_reason: "stuck_text_only_continue".to_string(),
+    })
+}
+
+/// Map tool-registry failures into JSON receipts so the model can recover in-loop.
+fn tool_output_from_invoke(result: Result<Value>) -> Value {
+    match result {
+        Ok(value) => value,
+        Err(err) => recoverable_tool_error_value(&err.to_string()),
+    }
+}
+
+fn recoverable_tool_error_value(message: &str) -> Value {
+    serde_json::json!({
+        "ok": false,
+        "error": message,
+        "recoverable": true,
+        "hint": "Read the error, fix arguments or choose another allowed tool, retry once if policy allows; delegate via cognition_spawn_turn_worker when the host profile blocks direct execution."
     })
 }
 
@@ -677,10 +754,34 @@ fn build_fallback_synthesis_prompt(
 
 #[cfg(test)]
 mod tests {
-    use super::{should_finalize_on_text_only_response, termination_reason_for_text_only_finalize};
+    use super::{
+        recoverable_tool_error_value, should_finalize_on_text_only_response,
+        termination_reason_for_text_only_finalize, tool_output_from_invoke,
+    };
+    use stasis::domain::errors::StasisError;
     use crate::turn_text_heuristics::{
         looks_like_interim_status, looks_like_substantive_final_answer,
     };
+
+    #[test]
+    fn tool_invoke_failure_becomes_recoverable_receipt() {
+        let out = tool_output_from_invoke(Err(StasisError::PortFailure(
+            "tool not allowed in this turn profile: cognition_mcp_invoke".to_string(),
+        )));
+        assert_eq!(out["ok"], false);
+        assert_eq!(out["recoverable"], true);
+        assert!(out["error"]
+            .as_str()
+            .unwrap()
+            .contains("cognition_mcp_invoke"));
+    }
+
+    #[test]
+    fn recoverable_tool_error_has_hint() {
+        let out = recoverable_tool_error_value("boom");
+        assert_eq!(out["error"], "boom");
+        assert!(out["hint"].as_str().unwrap().contains("spawn_turn_worker"));
+    }
 
     #[test]
     fn interim_status_before_first_tool_continues() {

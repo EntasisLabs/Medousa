@@ -204,6 +204,8 @@ pub fn decide_turn_activation(
     prompt: &str,
     configured_mode: ToolCallMode,
     configured_rounds: usize,
+    tool_intent_max_rounds: usize,
+    short_turn_max_rounds: usize,
     turn_count: usize,
     direct_answer_max_prompt_chars: usize,
     long_session_turn_threshold: usize,
@@ -216,11 +218,14 @@ pub fn decide_turn_activation(
     let tool_intent = contains_tool_intent(&prompt_lower);
     let direct_answer_intent = contains_direct_answer_intent(&prompt_lower);
 
+    let tool_intent_cap = tool_intent_max_rounds.max(2);
+    let short_cap = short_turn_max_rounds.max(1);
+
     if tool_intent {
         return TurnActivationDecision {
             turn_class: "c",
             tool_call_mode: ToolCallMode::Auto,
-            max_tool_rounds: configured_rounds.min(12).max(2),
+            max_tool_rounds: configured_rounds.min(tool_intent_cap).max(2),
             enforce_no_tools: false,
             reason: "tool_intent_detected",
         };
@@ -230,7 +235,7 @@ pub fn decide_turn_activation(
         return TurnActivationDecision {
             turn_class: "a",
             tool_call_mode: ToolCallMode::Strict,
-            max_tool_rounds: 1,
+            max_tool_rounds: short_cap,
             enforce_no_tools: true,
             reason: "direct_answer_short_prompt",
         };
@@ -240,7 +245,7 @@ pub fn decide_turn_activation(
         return TurnActivationDecision {
             turn_class: "b",
             tool_call_mode: ToolCallMode::Strict,
-            max_tool_rounds: 1,
+            max_tool_rounds: short_cap,
             enforce_no_tools: true,
             reason: "long_session_short_turn",
         };
@@ -471,6 +476,8 @@ mod tests {
             "Explain what this config means",
             ToolCallMode::Auto,
             10,
+            12,
+            1,
             4,
             320,
             28,
@@ -485,7 +492,9 @@ mod tests {
         let policy = decide_turn_activation(
             "Search latest runtime failures and verify evidence",
             ToolCallMode::Strict,
-            3,
+            30,
+            12,
+            1,
             8,
             320,
             28,
@@ -501,6 +510,8 @@ mod tests {
             "yoo can you pull a focused AVEC and calibrate to it?",
             ToolCallMode::Auto,
             10,
+            12,
+            1,
             40,
             320,
             28,
@@ -517,6 +528,8 @@ mod tests {
             "Explain what this config means",
             ToolCallMode::Auto,
             10,
+            12,
+            1,
             4,
             320,
             28,

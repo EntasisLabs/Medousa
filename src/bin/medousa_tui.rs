@@ -28,7 +28,7 @@ use medousa::{
     resolve_daemon_url, resolve_llm_base_url, resolve_llm_model,
     resolve_llm_provider, resolve_tui_platform_mode,
     session::{
-        ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary, TuiDefaults,
+        ApiKeyStorageBackend, ConversationTurn, SessionHistorySummary,
         detect_tui_api_key_storage_backend, load_history, load_last_session_id, load_tui_api_key,
         load_tui_defaults, save_last_session_id, save_tui_api_key, save_tui_defaults,
     },
@@ -37,7 +37,8 @@ use medousa::{
     tui::allowlist_preview::analyze_allowlist_preview,
     tui::editor_buffer::TextBuffer,
     tui::settings::{
-        RuntimeSettings, cycle_backend, cycle_tool_call_mode, env_overrides_validation_errors,
+        RuntimeSettings, cycle_backend, cycle_host_turn_bus_mode, cycle_tool_call_mode,
+        env_overrides_validation_errors,
         parse_bool_with_default, parse_env_overrides, parse_f32_with_bounds,
         parse_usize_with_bounds, resolve_backend_name, resolve_bool_arg, resolve_f32_arg,
         resolve_theme_id_name, resolve_tool_call_mode_name, resolve_usize_arg,
@@ -267,6 +268,13 @@ struct SettingsApplySnapshot {
     slice_cold_window_turns: usize,
     retry_runtime_max_retries: usize,
     retry_runtime_max_rounds: usize,
+    host_bus_max_tool_rounds: usize,
+    host_turn_bus_mode: String,
+    activation_tool_intent_max_rounds: usize,
+    activation_short_turn_max_tool_rounds: usize,
+    continuation_max_tool_rounds: usize,
+    max_text_only_stuck_continues: usize,
+    classifier_restricted_max_tool_rounds: usize,
     verifier_min_citation_coverage: f32,
     verifier_min_avg_support_strength: f32,
     verifier_min_supported_claim_ratio: f32,
@@ -384,8 +392,69 @@ async fn main() -> Result<()> {
             .max(resolved_slice_hot_window_turns);
     let resolved_retry_runtime_max_retries =
         resolve_usize_arg(None, defaults.retry_runtime_max_retries.unwrap_or(1), 0, 5);
-    let resolved_retry_runtime_max_rounds =
-        resolve_usize_arg(None, defaults.retry_runtime_max_rounds.unwrap_or(3), 1, 10);
+    let resolved_retry_runtime_max_rounds = resolve_usize_arg(
+        None,
+        defaults
+            .retry_runtime_max_rounds
+            .unwrap_or(medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
+        1,
+        100,
+    );
+    let resolved_host_bus_max_tool_rounds = resolve_usize_arg(
+        None,
+        defaults
+            .host_bus_max_tool_rounds
+            .unwrap_or(medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS),
+        1,
+        100,
+    );
+    let resolved_host_turn_bus_mode = defaults
+        .host_turn_bus_mode
+        .clone()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| {
+            medousa::agent_runtime::default_host_turn_bus_mode_label().to_string()
+        });
+    let resolved_activation_tool_intent_max_rounds = resolve_usize_arg(
+        None,
+        defaults
+            .activation_tool_intent_max_rounds
+            .unwrap_or(medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS),
+        1,
+        100,
+    );
+    let resolved_activation_short_turn_max_tool_rounds = resolve_usize_arg(
+        None,
+        defaults.activation_short_turn_max_tool_rounds.unwrap_or(
+            medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
+        ),
+        1,
+        100,
+    );
+    let resolved_continuation_max_tool_rounds = resolve_usize_arg(
+        None,
+        defaults
+            .continuation_max_tool_rounds
+            .unwrap_or(medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS),
+        1,
+        100,
+    );
+    let resolved_max_text_only_stuck_continues = resolve_usize_arg(
+        None,
+        defaults
+            .max_text_only_stuck_continues
+            .unwrap_or(medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES),
+        1,
+        100,
+    );
+    let resolved_classifier_restricted_max_tool_rounds = resolve_usize_arg(
+        None,
+        defaults.classifier_restricted_max_tool_rounds.unwrap_or(
+            medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
+        ),
+        1,
+        100,
+    );
     let resolved_verifier_min_citation_coverage = resolve_f32_arg(
         None,
         defaults.verifier_min_citation_coverage.unwrap_or(0.60),
@@ -512,6 +581,15 @@ async fn main() -> Result<()> {
         slice_cold_window_turns: resolved_slice_cold_window_turns.to_string(),
         retry_runtime_max_retries: resolved_retry_runtime_max_retries.to_string(),
         retry_runtime_max_rounds: resolved_retry_runtime_max_rounds.to_string(),
+        host_bus_max_tool_rounds: resolved_host_bus_max_tool_rounds.to_string(),
+        host_turn_bus_mode: resolved_host_turn_bus_mode,
+        activation_tool_intent_max_rounds: resolved_activation_tool_intent_max_rounds.to_string(),
+        activation_short_turn_max_tool_rounds: resolved_activation_short_turn_max_tool_rounds
+            .to_string(),
+        continuation_max_tool_rounds: resolved_continuation_max_tool_rounds.to_string(),
+        max_text_only_stuck_continues: resolved_max_text_only_stuck_continues.to_string(),
+        classifier_restricted_max_tool_rounds: resolved_classifier_restricted_max_tool_rounds
+            .to_string(),
         verifier_min_citation_coverage: format!("{:.2}", resolved_verifier_min_citation_coverage),
         verifier_min_avg_support_strength: format!(
             "{:.2}",
@@ -1158,6 +1236,13 @@ mod tests {
             allowed_modules: "http.fetch".to_string(),
             tool_call_mode: "auto".to_string(),
             max_tool_rounds: "10".to_string(),
+            host_bus_max_tool_rounds: "8".to_string(),
+            host_turn_bus_mode: "auto".to_string(),
+            activation_tool_intent_max_rounds: "12".to_string(),
+            activation_short_turn_max_tool_rounds: "1".to_string(),
+            continuation_max_tool_rounds: "4".to_string(),
+            max_text_only_stuck_continues: "10".to_string(),
+            classifier_restricted_max_tool_rounds: "1".to_string(),
             thinking_capture: "true".to_string(),
             thinking_max_lines: "300".to_string(),
             activation_direct_answer_max_prompt_chars: "320".to_string(),
@@ -1166,7 +1251,7 @@ mod tests {
             slice_hot_window_turns: "8".to_string(),
             slice_cold_window_turns: "24".to_string(),
             retry_runtime_max_retries: "1".to_string(),
-            retry_runtime_max_rounds: "3".to_string(),
+            retry_runtime_max_rounds: "10".to_string(),
             verifier_min_citation_coverage: "0.60".to_string(),
             verifier_min_avg_support_strength: "0.70".to_string(),
             verifier_min_supported_claim_ratio: "0.60".to_string(),

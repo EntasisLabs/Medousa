@@ -317,12 +317,14 @@ pub(crate) async fn start_prompt_run(
     let tx = event_tx.clone();
     let prompt_preview: String = resolved_prompt.chars().take(48).collect();
     let configured_tool_call_mode = turn_services::parse_tool_call_mode(&state.settings.tool_call_mode);
-    let configured_max_tool_rounds =
-        medousa::tui::settings::parse_usize_with_bounds(&state.settings.max_tool_rounds, 10, 1, 50);
+    let turn_loop_settings =
+        medousa::agent_runtime::TurnLoopSettings::from_runtime_settings(&state.settings);
     let activation = turn_services::decide_turn_activation(
         &prompt,
         configured_tool_call_mode,
-        configured_max_tool_rounds,
+        turn_loop_settings.configured_max_tool_rounds,
+        turn_loop_settings.activation_tool_intent_max_rounds,
+        turn_loop_settings.activation_short_turn_max_tool_rounds,
         state.conversation.len(),
         medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.activation_direct_answer_max_prompt_chars,
@@ -370,6 +372,13 @@ pub(crate) async fn start_prompt_run(
     super::push_obs(
         state,
         format!(
+            "◈ turn_loop_limits {}",
+            turn_loop_settings.operator_summary()
+        ),
+    );
+    super::push_obs(
+        state,
+        format!(
             "◈ activation heuristic class={} mode={} rounds={} no_tools={} reason={}",
             activation.turn_class,
             match activation.tool_call_mode {
@@ -397,7 +406,10 @@ pub(crate) async fn start_prompt_run(
             "{resolved_prompt}\n\n[MEDOUSA_TOOL_POLICY]\nmode=no_tools\ninstruction=Do not call tools for this turn unless the user explicitly requests external lookup, execution, or fresh evidence. Answer directly from current context."
         )
     } else {
-        resolved_prompt
+        medousa::agent_runtime::turn_ledger::append_tool_loop_policy(
+            &resolved_prompt,
+            activation.max_tool_rounds,
+        )
     };
     let retry_max_retries = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
@@ -409,7 +421,7 @@ pub(crate) async fn start_prompt_run(
         &state.settings.retry_runtime_max_rounds,
         DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
         1,
-        10,
+        100,
     );
     let no_tools_pipeline =
         turn_services::build_prompt_pipeline_for_turn(final_route.as_ref(), &state.settings);
@@ -476,6 +488,7 @@ pub(crate) async fn start_prompt_run(
                 continuation_stage_route,
                 continuation_recall_readiness,
                 prompt_preview,
+                turn_loop_settings,
             },
         )
         .await;

@@ -172,13 +172,18 @@ pub fn resolve_host_bus_active(env_mode: HostBusEnvMode, _route: &HostTurnRoute)
     }
 }
 
-pub fn resolve_host_turn_profile(prompt: &str, configured_max_tool_rounds: usize) -> HostTurnProfile {
-    let env_mode = host_bus_env_mode();
+pub fn resolve_host_turn_profile(
+    prompt: &str,
+    configured_max_tool_rounds: usize,
+    host_bus_max_tool_rounds: usize,
+    host_bus_env_mode: HostBusEnvMode,
+) -> HostTurnProfile {
+    let env_mode = host_bus_env_mode;
     let route = classify_host_turn_route_heuristic(prompt);
     let host_bus_active = resolve_host_bus_active(env_mode, &route);
     let host_max_tool_rounds = if host_bus_active {
         configured_max_tool_rounds
-            .min(host_bus_max_tool_rounds_cap())
+            .min(host_bus_max_tool_rounds.max(1))
             .max(1)
     } else {
         configured_max_tool_rounds
@@ -219,8 +224,8 @@ pub fn host_route_notice(profile: &HostTurnProfile) -> String {
         HostTurnRoute::Delegate { reason, .. } => reason,
     };
     format!(
-        "◈ host_route route={route} intent={intent} host_bus={} env={:?} reason={reason}",
-        profile.host_bus_active, profile.env_mode
+        "◈ host_route route={route} intent={intent} host_bus={} host_max_rounds={} env={:?} reason={reason}",
+        profile.host_bus_active, profile.host_max_tool_rounds, profile.env_mode
     )
 }
 
@@ -254,9 +259,10 @@ mod tests {
 
     #[test]
     fn auto_enables_orchestrator_tools_by_default() {
-        let profile = resolve_host_turn_profile("hello there", 10);
+        let profile = resolve_host_turn_profile("hello there", 10, 8, HostBusEnvMode::Auto);
         assert!(profile.host_bus_active);
-        let profile = resolve_host_turn_profile("calibrate my focused avec", 10);
+        let profile =
+            resolve_host_turn_profile("calibrate my focused avec", 10, 8, HostBusEnvMode::Auto);
         assert!(profile.host_bus_active);
         assert!(matches!(
             profile.route,

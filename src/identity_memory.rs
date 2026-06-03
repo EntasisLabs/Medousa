@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use chrono::Utc;
-use stasis::application::runtime::runtime_factory::RuntimeFactory;
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
@@ -83,7 +82,7 @@ pub async fn build_seeded_identity_memory_store_for_runtime(
 async fn build_seeded_surreal_identity_memory_store(
     backend: &RuntimeBackend,
 ) -> Result<Arc<dyn IdentityMemoryStore>> {
-    let runtime = RuntimeFactory::build(backend.clone()).await?;
+    let runtime = stasis::prelude::RuntimeFactory::build(backend.clone()).await?;
     let RuntimeComposition::Surreal(rt) = runtime else {
         return build_seeded_identity_memory_store();
     };

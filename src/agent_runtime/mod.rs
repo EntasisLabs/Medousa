@@ -17,6 +17,7 @@ pub mod system_prompt;
 pub mod turn_budget;
 pub mod turn_completion;
 pub mod turn_ledger;
+pub mod turn_loop_settings;
 pub mod turn_orchestrator;
 pub mod turn_worker;
 pub mod turn_worker_tools;
@@ -58,11 +59,20 @@ pub use turn_completion::{
     ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
     resolve_turn_completion,
 };
+pub use turn_loop_settings::{
+    TurnLoopSettings, apply_turn_loop_field_defaults, default_host_turn_bus_mode_label,
+    parse_host_turn_bus_mode,
+    DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
+    DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS, DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
+    DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS, DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
+    DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES, ROUND_LIMIT_MAX, ROUND_LIMIT_MIN,
+};
 pub use turn_ledger::{
-    TurnLedgerEventKind, TurnLedgerRecord, TurnLoopDiscipline, MAX_TEXT_ONLY_STUCK_CONTINUES,
+    TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness, TurnLoopDiscipline,
+    MAX_TEXT_ONLY_STUCK_CONTINUES, USER_RESPONSE_PREVIEW_MAX_CHARS, append_tool_loop_policy,
     append_turn_ledger_record, developer_message_for_gatekeeper_continue,
     developer_message_for_heuristic_interim_continue, persist_ledger_record,
-    push_turn_control_message, stuck_turn_user_message,
+    push_turn_control_message, resolve_max_text_only_stuck_continues, stuck_turn_user_message,
 };
 pub use turn_worker::{
     HostTurnProfile, HostTurnRoute, classify_host_turn_route_heuristic, host_bus_env_mode,

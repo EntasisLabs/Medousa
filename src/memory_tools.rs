@@ -20,7 +20,8 @@ use tokio::sync::mpsc;
 use crate::events::TuiEvent;
 use crate::locus_memory::{
     CANONICAL_STTP_SCHEMA_EXAMPLE, filter_nodes_by_context_keywords,
-    ingest_profile_name, normalize_context_keywords, normalize_tiers, resolve_locus_ingest_profile,
+    ingest_profile_name, normalize_context_keywords, normalize_tiers, recall_session_id_for_context,
+    resolve_locus_ingest_profile,
     schema_first_guidance, sttp_node_to_json, store_failure_payload, validate_limit, avec_to_json,
 };
 
@@ -681,7 +682,8 @@ impl StasisTool for CognitionMemoryRecallTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context \
-             with explicit AVEC when possible. Maps query to context_keywords with default AVEC posture.",
+             with explicit AVEC when possible. Maps query to context_keywords with default AVEC posture. \
+             Pass session_id to scope to one session, or null to search across all sessions (no implicit default session).",
         )
     }
 
@@ -690,6 +692,7 @@ impl StasisTool for CognitionMemoryRecallTool {
             "type": "object",
             "properties": {
                 "query": { "type": "string" },
+                "session_id": { "type": ["string", "null"] },
                 "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
             },
             "required": ["query"]
@@ -712,6 +715,7 @@ impl StasisTool for CognitionMemoryRecallTool {
             "autonomy": a,
             "context_keywords": [query],
             "limit": limit,
+            "session_id": recall_session_id_for_context(&input),
         });
         self.context_tool.invoke(wrapped).await
     }

@@ -24,7 +24,7 @@ The model sees why the turn did not end (missing calibrate, stutter, status-only
 
 ### 3. Stuck detector
 
-- After **3** consecutive text-only continues **without new tool invocations**, the loop stops with `termination_reason=stuck_text_only_continue` and a clear user-facing message (not silent max-round exhaustion).
+- After **max_tool_rounds** consecutive text-only continues **without new tool invocations** (same budget as configured tool rounds), the loop stops with `termination_reason=stuck_text_only_continue` and a user-facing message citing that limit (not a hardcoded “3”).
 - Constant: `MAX_TEXT_ONLY_STUCK_CONTINUES` in `turn_ledger.rs`
 - Observability: `◈ turn loop stuck: …` notice when a stream sink is present
 

@@ -1,7 +1,8 @@
-//! SurrealDB connection settings (endpoint credentials, namespace, database).
+//! SurrealDB connection settings (endpoint, namespace, database, optional auth).
 
 use crate::product_config::ProductConfig;
 use crate::session::TuiDefaults;
+use stasis::prelude::{RuntimeBackend, SurrealAuth};
 
 const DEFAULT_NAMESPACE: &str = "medousa";
 const DEFAULT_DATABASE: &str = "runtime";
@@ -110,7 +111,33 @@ pub fn resolve_surreal_database(settings: &SurrealConnectionSettings) -> String 
         .unwrap_or_else(|| DEFAULT_DATABASE.to_string())
 }
 
-/// Strip `surreal-ws:` prefix and apply saved credentials when the URL has no userinfo.
+/// Root/database credentials for Stasis `RuntimeBackend::with_surreal_auth`.
+pub fn resolve_surreal_auth(settings: &SurrealConnectionSettings) -> Option<SurrealAuth> {
+    let username = settings
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let password = settings
+        .password
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    Some(SurrealAuth::new(username, password))
+}
+
+/// Attach resolved Surreal auth to any surreal-backed runtime backend.
+pub fn apply_surreal_auth_to_backend(
+    backend: RuntimeBackend,
+    settings: &SurrealConnectionSettings,
+) -> RuntimeBackend {
+    match resolve_surreal_auth(settings) {
+        Some(auth) => backend.with_surreal_auth(auth),
+        None => backend,
+    }
+}
+
+/// Strip `surreal-ws:` prefix; credentials are passed via `SurrealAuth`, not the URL.
 pub fn resolve_surreal_ws_endpoint(raw_backend: &str, settings: &SurrealConnectionSettings) -> String {
     let endpoint = raw_backend
         .strip_prefix("surreal-ws:")
@@ -127,30 +154,22 @@ pub fn resolve_surreal_ws_endpoint(raw_backend: &str, settings: &SurrealConnecti
         })
         .unwrap_or_else(|| "ws://127.0.0.1:8000/rpc".to_string());
 
-    apply_credentials_to_endpoint(
-        &endpoint,
-        settings.username.as_deref(),
-        settings.password.as_deref(),
-    )
+    strip_endpoint_userinfo(&endpoint).0
 }
 
-pub fn apply_credentials_to_endpoint(
-    endpoint: &str,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> String {
+/// Split `ws://user:pass@host/...` into a credential-free endpoint and optional auth.
+pub fn split_endpoint_userinfo(endpoint: &str) -> (String, Option<SurrealAuth>) {
+    let (clean, user, pass) = strip_endpoint_userinfo(endpoint);
+    match (user, pass) {
+        (Some(username), Some(password)) => (clean, Some(SurrealAuth::new(username, password))),
+        _ => (clean, None),
+    }
+}
+
+fn strip_endpoint_userinfo(endpoint: &str) -> (String, Option<String>, Option<String>) {
     let endpoint = endpoint.trim();
     if endpoint.is_empty() {
-        return "ws://127.0.0.1:8000/rpc".to_string();
-    }
-    if endpoint.contains('@') {
-        return endpoint.to_string();
-    }
-
-    let user = username.map(str::trim).filter(|value| !value.is_empty());
-    let pass = password.map(str::trim).filter(|value| !value.is_empty());
-    if user.is_none() && pass.is_none() {
-        return endpoint.to_string();
+        return ("ws://127.0.0.1:8000/rpc".to_string(), None, None);
     }
 
     let (scheme, rest) = if let Some(rest) = endpoint.strip_prefix("wss://") {
@@ -158,35 +177,50 @@ pub fn apply_credentials_to_endpoint(
     } else if let Some(rest) = endpoint.strip_prefix("ws://") {
         ("ws://", rest)
     } else {
-        return endpoint.to_string();
+        return (endpoint.to_string(), None, None);
     };
 
-    let auth = match (user, pass) {
-        (Some(user), Some(pass)) => {
-            format!(
-                "{}:{}@",
-                encode_userinfo_component(user),
-                encode_userinfo_component(pass)
-            )
-        }
-        (Some(user), None) => format!("{}@", encode_userinfo_component(user)),
-        _ => return endpoint.to_string(),
+    let Some((auth, host_rest)) = rest.split_once('@') else {
+        return (endpoint.to_string(), None, None);
     };
 
-    format!("{scheme}{auth}{rest}")
+    let (username, password) = auth
+        .split_once(':')
+        .map(|(user, pass)| (decode_userinfo_component(user), decode_userinfo_component(pass)))
+        .unwrap_or_else(|| (decode_userinfo_component(auth), String::new()));
+
+    let username = (!username.is_empty()).then_some(username);
+    let password = (!password.is_empty()).then_some(password);
+    (
+        format!("{scheme}{host_rest}"),
+        username,
+        password,
+    )
 }
 
-fn encode_userinfo_component(value: &str) -> String {
+fn decode_userinfo_component(value: &str) -> String {
     let mut out = String::new();
-    for ch in value.chars() {
-        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~') {
-            out.push(ch);
-        } else {
-            let mut buf = [0u8; 4];
-            let encoded = ch.encode_utf8(&mut buf);
-            for byte in encoded.bytes() {
-                out.push_str(&format!("%{:02X}", byte));
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            let hi = chars.next();
+            let lo = chars.next();
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                let hex = format!("{hi}{lo}");
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    out.push(byte as char);
+                    continue;
+                }
             }
+            out.push('%');
+            if let Some(hi) = hi {
+                out.push(hi);
+            }
+            if let Some(lo) = lo {
+                out.push(lo);
+            }
+        } else {
+            out.push(ch);
         }
     }
     out
@@ -197,22 +231,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn injects_credentials_into_ws_endpoint() {
-        let out = apply_credentials_to_endpoint(
-            "ws://127.0.0.1:8000/rpc",
-            Some("root"),
-            Some("s3cret"),
-        );
-        assert_eq!(out, "ws://root:s3cret@127.0.0.1:8000/rpc");
+    fn resolve_auth_requires_username_and_password() {
+        let settings = SurrealConnectionSettings {
+            username: Some("root".to_string()),
+            password: Some("secret".to_string()),
+            ..SurrealConnectionSettings::default()
+        };
+        let auth = resolve_surreal_auth(&settings).expect("auth");
+        assert_eq!(auth.username, "root");
+        assert_eq!(auth.password, "secret");
     }
 
     #[test]
-    fn leaves_endpoint_with_existing_auth_unchanged() {
-        let out = apply_credentials_to_endpoint(
-            "ws://root:pass@127.0.0.1:8000/rpc",
-            Some("other"),
-            Some("ignored"),
-        );
-        assert_eq!(out, "ws://root:pass@127.0.0.1:8000/rpc");
+    fn strips_userinfo_from_ws_endpoint() {
+        let (endpoint, auth) =
+            split_endpoint_userinfo("ws://root:pass@127.0.0.1:8000/rpc");
+        assert_eq!(endpoint, "ws://127.0.0.1:8000/rpc");
+        let auth = auth.expect("auth");
+        assert_eq!(auth.username, "root");
+        assert_eq!(auth.password, "pass");
+    }
+
+    #[test]
+    fn resolve_ws_endpoint_does_not_embed_credentials() {
+        let settings = SurrealConnectionSettings {
+            endpoint: Some("ws://127.0.0.1:8000/rpc".to_string()),
+            username: Some("root".to_string()),
+            password: Some("s3cret".to_string()),
+            ..SurrealConnectionSettings::default()
+        };
+        let out = resolve_surreal_ws_endpoint("surreal-ws:", &settings);
+        assert_eq!(out, "ws://127.0.0.1:8000/rpc");
     }
 }
