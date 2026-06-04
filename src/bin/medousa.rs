@@ -213,6 +213,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             configure_mcp_gateway: true,
             start_mcp_gateway: true,
             tui_response_depth_mode: product_config.tui.response_depth_mode.clone(),
+            stasis_otel_enabled: defaults.stasis_otel_enabled.unwrap_or(false),
             surreal_endpoint: defaults
                 .surreal_endpoint
                 .clone()
@@ -303,6 +304,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
                 &product_config.telegram.heartbeat_chat_ids,
             ),
             initial_tui_response_depth: product_config.tui.response_depth_mode.clone(),
+            initial_stasis_otel_enabled: defaults.stasis_otel_enabled.unwrap_or(false),
             initial_provider,
             initial_model,
             initial_base_url,
@@ -401,6 +403,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
     save_product_config(&product_config)?;
     apply_adapter_env(&product_config);
     defaults.response_depth_mode = Some(selected.tui_response_depth_mode.clone());
+    defaults.stasis_otel_enabled = Some(selected.stasis_otel_enabled);
 
     if (selected.launch_tui
         || selected.start_discord
@@ -444,6 +447,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
     };
     defaults.surreal_password = None;
     save_tui_defaults(&defaults);
+    medousa::runtime::stasis_otel::apply_stasis_otel_user_preference(selected.stasis_otel_enabled);
 
     if selected.surreal_password.trim().is_empty() {
         save_surreal_password(None);

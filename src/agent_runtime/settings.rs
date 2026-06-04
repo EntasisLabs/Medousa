@@ -42,6 +42,9 @@ fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaul
     if let Some(value) = defaults.thinking_capture {
         settings.thinking_capture = value.to_string();
     }
+    if let Some(value) = defaults.stasis_otel_enabled {
+        settings.stasis_otel_enabled = value.to_string();
+    }
     if let Some(value) = defaults.thinking_max_lines {
         settings.thinking_max_lines = value.to_string();
     }
@@ -141,6 +144,7 @@ pub fn default_daemon_runtime_settings(
         classifier_restricted_max_tool_rounds:
             super::turn_loop_settings::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS.to_string(),
         thinking_capture: "true".to_string(),
+        stasis_otel_enabled: "false".to_string(),
         thinking_max_lines: "300".to_string(),
         activation_direct_answer_max_prompt_chars: "320".to_string(),
         activation_long_session_turn_threshold: "28".to_string(),

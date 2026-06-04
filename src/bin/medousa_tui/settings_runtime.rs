@@ -60,6 +60,9 @@ pub(crate) async fn apply_settings(
     );
     let thinking_capture =
         super::parse_bool_with_default(&state.settings_draft.thinking_capture, true);
+    let stasis_otel_enabled =
+        super::parse_bool_with_default(&state.settings_draft.stasis_otel_enabled, false);
+    medousa::runtime::stasis_otel::apply_stasis_otel_user_preference(stasis_otel_enabled);
     let thinking_max_lines =
         super::parse_usize_with_bounds(&state.settings_draft.thinking_max_lines, 300, 50, 5000);
     let activation_direct_answer_max_prompt_chars = super::parse_usize_with_bounds(
@@ -192,6 +195,7 @@ pub(crate) async fn apply_settings(
         tool_call_mode,
         max_tool_rounds,
         thinking_capture,
+        stasis_otel_enabled,
         thinking_max_lines,
         activation_direct_answer_max_prompt_chars,
         activation_long_session_turn_threshold,
@@ -315,6 +319,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             state.settings.tool_call_mode = snapshot.tool_call_mode.clone();
             state.settings.max_tool_rounds = snapshot.max_tool_rounds.to_string();
             state.settings.thinking_capture = snapshot.thinking_capture.to_string();
+            state.settings.stasis_otel_enabled = snapshot.stasis_otel_enabled.to_string();
             state.settings.thinking_max_lines = snapshot.thinking_max_lines.to_string();
             state.settings.activation_direct_answer_max_prompt_chars = snapshot
                 .activation_direct_answer_max_prompt_chars
@@ -382,6 +387,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             defaults.tool_call_mode = Some(snapshot.tool_call_mode);
             defaults.max_tool_rounds = Some(snapshot.max_tool_rounds);
             defaults.thinking_capture = Some(snapshot.thinking_capture);
+            defaults.stasis_otel_enabled = Some(snapshot.stasis_otel_enabled);
             defaults.thinking_max_lines = Some(snapshot.thinking_max_lines);
             defaults.activation_direct_answer_max_prompt_chars =
                 Some(snapshot.activation_direct_answer_max_prompt_chars);
@@ -427,6 +433,11 @@ pub(crate) async fn finalize_settings_apply_if_ready(
                     pending.changed_env_count
                 ),
             );
+            if let Some(summary) = medousa::runtime::stasis_otel::stasis_otel_obs_summary() {
+                super::push_obs(state, summary);
+            } else if !snapshot.stasis_otel_enabled {
+                super::push_obs(state, "stasis OpenTelemetry off (Settings → Runtime)".to_string());
+            }
         }
         Ok(Err(err)) => {
             super::push_obs(

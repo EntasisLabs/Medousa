@@ -97,6 +97,7 @@ async fn build_platform_inner(
     config: PlatformBuildConfig,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
+    crate::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     crate::ensure_runtime_backend_prerequisites(&backend)?;
 
     let wire_config = DaemonStasisWireConfig {

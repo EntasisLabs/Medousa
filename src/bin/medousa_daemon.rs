@@ -255,6 +255,7 @@ async fn main() -> Result<()> {
         .unwrap_or("in-memory")
         .to_string();
     apply_daemon_env(&load_product_config());
+    medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     let backend = parse_backend(Some(&backend_name));
     let provider = find_arg_value(&args, "--provider");
     let model = find_arg_value(&args, "--model");

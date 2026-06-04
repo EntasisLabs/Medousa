@@ -46,6 +46,8 @@ pub struct TuiDefaults {
     pub max_text_only_stuck_continues: Option<usize>,
     pub classifier_restricted_max_tool_rounds: Option<usize>,
     pub thinking_capture: Option<bool>,
+    #[serde(default)]
+    pub stasis_otel_enabled: Option<bool>,
     pub thinking_max_lines: Option<usize>,
     pub activation_direct_answer_max_prompt_chars: Option<usize>,
     pub activation_long_session_turn_threshold: Option<usize>,

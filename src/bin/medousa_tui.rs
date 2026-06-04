@@ -260,6 +260,7 @@ struct SettingsApplySnapshot {
     tool_call_mode: String,
     max_tool_rounds: usize,
     thinking_capture: bool,
+    stasis_otel_enabled: bool,
     thinking_max_lines: usize,
     activation_direct_answer_max_prompt_chars: usize,
     activation_long_session_turn_threshold: usize,
@@ -328,6 +329,7 @@ async fn main() -> Result<()> {
     if let Some(raw) = defaults.env_overrides.as_deref() {
         apply_env_overrides(raw);
     }
+    medousa::runtime::stasis_otel::apply_stasis_otel_from_defaults(&defaults);
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print_help();
@@ -355,6 +357,8 @@ async fn main() -> Result<()> {
     );
     let resolved_thinking_capture =
         resolve_bool_arg(thinking_capture, defaults.thinking_capture.unwrap_or(true));
+    let resolved_stasis_otel_enabled =
+        resolve_bool_arg(None, defaults.stasis_otel_enabled.unwrap_or(false));
     let resolved_thinking_max_lines = resolve_usize_arg(
         thinking_max_lines,
         defaults.thinking_max_lines.unwrap_or(300),
@@ -574,6 +578,7 @@ async fn main() -> Result<()> {
         tool_call_mode: resolved_tool_call_mode.clone(),
         max_tool_rounds: resolved_max_tool_rounds.to_string(),
         thinking_capture: resolved_thinking_capture.to_string(),
+        stasis_otel_enabled: resolved_stasis_otel_enabled.to_string(),
         thinking_max_lines: resolved_thinking_max_lines.to_string(),
         activation_direct_answer_max_prompt_chars:
             resolved_activation_direct_answer_max_prompt_chars.to_string(),
@@ -1248,6 +1253,7 @@ mod tests {
             max_text_only_stuck_continues: "10".to_string(),
             classifier_restricted_max_tool_rounds: "1".to_string(),
             thinking_capture: "true".to_string(),
+            stasis_otel_enabled: "false".to_string(),
             thinking_max_lines: "300".to_string(),
             activation_direct_answer_max_prompt_chars: "320".to_string(),
             activation_long_session_turn_threshold: "28".to_string(),

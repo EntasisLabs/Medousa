@@ -268,6 +268,7 @@ pub async fn build_runtime_with_identity_store(
     explicit_base_url: Option<&str>,
     identity_memory_store: Option<Arc<dyn IdentityMemoryStore>>,
 ) -> Result<RuntimeComposition> {
+    runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     ensure_runtime_backend_prerequisites(&backend)?;
 
     let provider = resolve_llm_provider(explicit_provider);
@@ -291,6 +292,7 @@ pub async fn build_runtime_with_identity_store(
     }
 
     builder = workflow::attach_workflow_handler(builder, prompt_pipeline, workflow_registry);
+    builder = runtime::stasis_otel::attach_otel_to_builder(builder)?;
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
 
@@ -306,6 +308,7 @@ pub async fn build_daemon_runtime(
     identity_memory_store: Option<Arc<dyn IdentityMemoryStore>>,
     deliver_webhook_url: &str,
 ) -> Result<RuntimeComposition> {
+    runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     ensure_runtime_backend_prerequisites(&backend)?;
 
     let provider = resolve_llm_provider(explicit_provider);
@@ -347,6 +350,7 @@ pub async fn build_daemon_runtime(
     }
 
     builder = workflow::attach_workflow_handler(builder, prompt_pipeline, workflow_registry);
+    builder = runtime::stasis_otel::attach_otel_to_builder(builder)?;
 
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
 

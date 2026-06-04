@@ -2,11 +2,11 @@ use super::*;
 
 const SETTINGS_SECTIONS: [(&str, usize, usize); 6] = [
     ("Model", 0, 5),
-    ("Runtime", 6, 23),
-    ("Verifier", 24, 27),
-    ("Safety", 28, 31),
-    ("Routing", 32, 39),
-    ("Session", 40, 43),
+    ("Runtime", 6, 24),
+    ("Verifier", 25, 28),
+    ("Safety", 29, 32),
+    ("Routing", 33, 40),
+    ("Session", 41, 44),
 ];
 
 pub(crate) async fn handle_settings_key_event(
@@ -77,7 +77,7 @@ pub(crate) async fn handle_settings_key_event(
         KeyCode::Char('+') | KeyCode::Char('=') => {
             if matches!(
                 state.settings_selected,
-                7..=23 | 24..=27
+                7..=24 | 25..=28
             ) {
                 quick_adjust_setting(state, true);
             }
@@ -85,7 +85,7 @@ pub(crate) async fn handle_settings_key_event(
         KeyCode::Char('-') => {
             if matches!(
                 state.settings_selected,
-                7..=23 | 24..=27
+                7..=24 | 25..=28
             ) {
                 quick_adjust_setting(state, false);
             }
@@ -99,28 +99,28 @@ pub(crate) async fn handle_settings_key_event(
             state.settings_selected = state.settings_selected.saturating_add(1).min(end);
         }
         KeyCode::Enter => match state.settings_selected {
-            1..=5 | 33 | 34 => {
+            1..=5 | 34 | 35 => {
                 state.settings_editing = true;
             }
             0 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22
-            | 23 | 24..=27 | 32 | 36 | 37 | 38 | 39 => {
+            | 23 | 24 | 25..=28 | 33 | 37 | 38 | 39 | 40 => {
                 quick_adjust_setting(state, true);
             }
-            28 => {
+            29 => {
                 state.mode = UiMode::RuntimeEnv;
                 state.runtime_env_editing = true;
             }
-            29 => {
+            30 => {
                 emit_settings_validation_summary(state);
             }
-            30 => {
+            31 => {
                 state.settings_draft.api_key.clear();
                 push_obs(
                     state,
                     "✓ API key will be cleared when changes are applied".to_string(),
                 );
             }
-            31 => {
+            32 => {
                 let key = state.settings_draft.api_key.trim().to_string();
                 if key.is_empty() {
                     push_obs(state, "⚠ enter an API key before updating".to_string());
@@ -131,17 +131,17 @@ pub(crate) async fn handle_settings_key_event(
                     push_obs(state, "✓ API key updated".to_string());
                 }
             }
-            35 => {
+            36 => {
                 sync_all_route_targets_to_global(state);
             }
-            40 => {
+            41 => {
                 state.settings_draft = state.settings.clone();
                 state.stage_routing_draft = state.stage_routing.clone();
                 state.routing_editor_role_idx = 0;
                 state.settings_editing = false;
                 push_obs(state, "✓ changes reverted".to_string());
             }
-            41 => {
+            42 => {
                 super::apply_settings(state, tui_rt, event_tx).await;
                 state.mode = UiMode::Chat;
             }
@@ -336,6 +336,10 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
             state.settings_draft.thinking_capture
         ),
         format!(
+            "Stasis OpenTelemetry: {}  [toggle]",
+            state.settings_draft.stasis_otel_enabled
+        ),
+        format!(
             "Thinking Max Lines: {}  [number]",
             state.settings_draft.thinking_max_lines
         ),
@@ -505,7 +509,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         let mut style = row_style_for_settings_index(idx, idx == state.settings_selected);
         if idx == state.settings_selected
             && state.settings_editing
-            && matches!(idx, 1..=5 | 33 | 34)
+            && matches!(idx, 1..=5 | 34 | 35)
         {
             style = style.add_modifier(Modifier::UNDERLINED);
         }
@@ -894,6 +898,10 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             state.settings_draft.thinking_capture = (!value).to_string();
         }
         9 => {
+            let value = parse_bool_with_default(&state.settings_draft.stasis_otel_enabled, false);
+            state.settings_draft.stasis_otel_enabled = (!value).to_string();
+        }
+        10 => {
             let current =
                 parse_usize_with_bounds(&state.settings_draft.thinking_max_lines, 300, 50, 5000);
             let step = if current < 500 { 50 } else { 100 };
@@ -905,7 +913,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .clamp(50, 5000);
             state.settings_draft.thinking_max_lines = next.to_string();
         }
-        10 => {
+        11 => {
             let current = parse_usize_with_bounds(
                 &state
                     .settings_draft
@@ -925,7 +933,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 .settings_draft
                 .activation_direct_answer_max_prompt_chars = next.to_string();
         }
-        11 => {
+        12 => {
             let current = parse_usize_with_bounds(
                 &state.settings_draft.activation_long_session_turn_threshold,
                 28,
@@ -941,7 +949,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .clamp(8, 500);
             state.settings_draft.activation_long_session_turn_threshold = next.to_string();
         }
-        12 => {
+        13 => {
             let current = parse_usize_with_bounds(
                 &state
                     .settings_draft
@@ -961,7 +969,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 .settings_draft
                 .activation_long_session_max_prompt_chars = next.to_string();
         }
-        13 => {
+        14 => {
             let current =
                 parse_usize_with_bounds(&state.settings_draft.slice_hot_window_turns, 8, 2, 32);
             let next = if forward {
@@ -977,7 +985,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 state.settings_draft.slice_cold_window_turns = next.to_string();
             }
         }
-        14 => {
+        15 => {
             let hot =
                 parse_usize_with_bounds(&state.settings_draft.slice_hot_window_turns, 8, 2, 32);
             let current =
@@ -991,7 +999,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .max(hot);
             state.settings_draft.slice_cold_window_turns = next.to_string();
         }
-        15 => {
+        16 => {
             let current = parse_usize_with_bounds(
                 &state.settings_draft.retry_runtime_max_retries,
                 1,
@@ -1009,7 +1017,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             );
             state.settings_draft.retry_runtime_max_retries = next.to_string();
         }
-        16 => {
+        17 => {
             let current = parse_usize_with_bounds(
                 &state.settings_draft.retry_runtime_max_rounds,
                 medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
@@ -1028,43 +1036,43 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             );
             state.settings_draft.retry_runtime_max_rounds = next.to_string();
         }
-        17 => adjust_round_setting(
+        18 => adjust_round_setting(
             &mut state.settings_draft.host_bus_max_tool_rounds,
             medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
             forward,
         ),
-        18 => {
+        19 => {
             state.settings_draft.host_turn_bus_mode = cycle_host_turn_bus_mode(
                 &state.settings_draft.host_turn_bus_mode,
                 forward,
             );
         }
-        19 => adjust_round_setting(
+        20 => adjust_round_setting(
             &mut state.settings_draft.activation_tool_intent_max_rounds,
             medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS,
             forward,
         ),
-        20 => adjust_round_setting(
+        21 => adjust_round_setting(
             &mut state.settings_draft.activation_short_turn_max_tool_rounds,
             medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
             forward,
         ),
-        21 => adjust_round_setting(
+        22 => adjust_round_setting(
             &mut state.settings_draft.continuation_max_tool_rounds,
             medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS,
             forward,
         ),
-        22 => adjust_round_setting(
+        23 => adjust_round_setting(
             &mut state.settings_draft.max_text_only_stuck_continues,
             medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES,
             forward,
         ),
-        23 => adjust_round_setting(
+        24 => adjust_round_setting(
             &mut state.settings_draft.classifier_restricted_max_tool_rounds,
             medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
             forward,
         ),
-        24 => {
+        25 => {
             let current = parse_f32_with_bounds(
                 &state.settings_draft.verifier_min_citation_coverage,
                 0.60,
@@ -1080,7 +1088,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .clamp(0.0, 1.0);
             state.settings_draft.verifier_min_citation_coverage = format!("{next:.2}");
         }
-        25 => {
+        26 => {
             let current = parse_f32_with_bounds(
                 &state.settings_draft.verifier_min_avg_support_strength,
                 0.70,
@@ -1096,7 +1104,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .clamp(0.0, 1.0);
             state.settings_draft.verifier_min_avg_support_strength = format!("{next:.2}");
         }
-        26 => {
+        27 => {
             let current = parse_f32_with_bounds(
                 &state.settings_draft.verifier_min_supported_claim_ratio,
                 0.60,
@@ -1112,7 +1120,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .clamp(0.0, 1.0);
             state.settings_draft.verifier_min_supported_claim_ratio = format!("{next:.2}");
         }
-        27 => {
+        28 => {
             let current = parse_f32_with_bounds(
                 &state.settings_draft.verifier_min_claim_support_strength,
                 0.65,
@@ -1128,7 +1136,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
             .clamp(0.0, 1.0);
             state.settings_draft.verifier_min_claim_support_strength = format!("{next:.2}");
         }
-        32 => {
+        33 => {
             let roles = medousa::stage_routing::StageRoutingMatrix::roles();
             if roles.is_empty() {
                 return;
@@ -1141,7 +1149,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 state.routing_editor_role_idx - 1
             };
         }
-        36 => {
+        37 => {
             let role = routing_editor_role(state).to_string();
             if let Some(route) = state.stage_routing_draft.get_mut(&role) {
                 let presets = route_target_presets();
@@ -1160,7 +1168,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 }
             }
         }
-        37 => {
+        38 => {
             let role = routing_editor_role(state).to_string();
             if let Some(route) = state.stage_routing_draft.get_mut(&role) {
                 let options = ["balanced", "strict", "analytical", "fast"];
@@ -1178,7 +1186,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 route.policy_profile = options[next].to_string();
             }
         }
-        38 => {
+        39 => {
             let role = routing_editor_role(state).to_string();
             if let Some(route) = state.stage_routing_draft.get_mut(&role) {
                 let options = vec![
@@ -1200,7 +1208,7 @@ fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
                 route.fallback_chain = options[next].clone();
             }
         }
-        39 => {
+        40 => {
             let role = routing_editor_role(state).to_string();
             let defaults = medousa::stage_routing::StageRoutingMatrix::default_for(
                 &state.settings_draft.provider,
@@ -1293,33 +1301,34 @@ fn selected_settings_field_mut(state: &mut TuiState) -> &mut String {
         6 => &mut state.settings_draft.tool_call_mode,
         7 => &mut state.settings_draft.max_tool_rounds,
         8 => &mut state.settings_draft.thinking_capture,
-        9 => &mut state.settings_draft.thinking_max_lines,
-        10 => {
+        9 => &mut state.settings_draft.stasis_otel_enabled,
+        10 => &mut state.settings_draft.thinking_max_lines,
+        11 => {
             &mut state
                 .settings_draft
                 .activation_direct_answer_max_prompt_chars
         }
-        11 => &mut state.settings_draft.activation_long_session_turn_threshold,
-        12 => {
+        12 => &mut state.settings_draft.activation_long_session_turn_threshold,
+        13 => {
             &mut state
                 .settings_draft
                 .activation_long_session_max_prompt_chars
         }
-        13 => &mut state.settings_draft.slice_hot_window_turns,
-        14 => &mut state.settings_draft.slice_cold_window_turns,
-        15 => &mut state.settings_draft.retry_runtime_max_retries,
-        16 => &mut state.settings_draft.retry_runtime_max_rounds,
-        17 => &mut state.settings_draft.host_bus_max_tool_rounds,
-        18 => &mut state.settings_draft.host_turn_bus_mode,
-        19 => &mut state.settings_draft.activation_tool_intent_max_rounds,
-        20 => &mut state.settings_draft.activation_short_turn_max_tool_rounds,
-        21 => &mut state.settings_draft.continuation_max_tool_rounds,
-        22 => &mut state.settings_draft.max_text_only_stuck_continues,
-        23 => &mut state.settings_draft.classifier_restricted_max_tool_rounds,
-        24 => &mut state.settings_draft.verifier_min_citation_coverage,
-        25 => &mut state.settings_draft.verifier_min_avg_support_strength,
-        26 => &mut state.settings_draft.verifier_min_supported_claim_ratio,
-        27 => &mut state.settings_draft.verifier_min_claim_support_strength,
+        14 => &mut state.settings_draft.slice_hot_window_turns,
+        15 => &mut state.settings_draft.slice_cold_window_turns,
+        16 => &mut state.settings_draft.retry_runtime_max_retries,
+        17 => &mut state.settings_draft.retry_runtime_max_rounds,
+        18 => &mut state.settings_draft.host_bus_max_tool_rounds,
+        19 => &mut state.settings_draft.host_turn_bus_mode,
+        20 => &mut state.settings_draft.activation_tool_intent_max_rounds,
+        21 => &mut state.settings_draft.activation_short_turn_max_tool_rounds,
+        22 => &mut state.settings_draft.continuation_max_tool_rounds,
+        23 => &mut state.settings_draft.max_text_only_stuck_continues,
+        24 => &mut state.settings_draft.classifier_restricted_max_tool_rounds,
+        25 => &mut state.settings_draft.verifier_min_citation_coverage,
+        26 => &mut state.settings_draft.verifier_min_avg_support_strength,
+        27 => &mut state.settings_draft.verifier_min_supported_claim_ratio,
+        28 => &mut state.settings_draft.verifier_min_claim_support_strength,
         _ => &mut state.settings_draft.base_url,
     }
 }
@@ -1328,8 +1337,8 @@ fn selected_route_field_mut(state: &mut TuiState) -> Option<&mut String> {
     let role = routing_editor_role(state).to_string();
     let route = state.stage_routing_draft.get_mut(&role)?;
     match state.settings_selected {
-        33 => Some(&mut route.provider),
-        34 => Some(&mut route.model),
+        34 => Some(&mut route.provider),
+        35 => Some(&mut route.model),
         _ => None,
     }
 }
@@ -1376,18 +1385,18 @@ fn row_style_for_settings_index(idx: usize, selected: bool) -> Style {
             .add_modifier(Modifier::BOLD)
     } else {
         match idx {
-            29 => Style::default().fg(Color::Cyan),
-            41 => Style::default().fg(Color::Green),
-            42 => Style::default().fg(Color::LightRed),
-            43 => Style::default().fg(Color::Cyan),
-            30 => Style::default().fg(Color::LightYellow),
-            31 => Style::default().fg(Color::LightMagenta),
-            32 => Style::default().fg(Color::LightCyan),
+            30 => Style::default().fg(Color::Cyan),
+            42 => Style::default().fg(Color::Green),
+            43 => Style::default().fg(Color::LightRed),
+            44 => Style::default().fg(Color::Cyan),
+            31 => Style::default().fg(Color::LightYellow),
+            32 => Style::default().fg(Color::LightMagenta),
+            33 => Style::default().fg(Color::LightCyan),
             _ => Style::default().fg(Color::White),
         }
     };
 
-    if idx >= 32 {
+    if idx >= 33 {
         base.add_modifier(Modifier::BOLD)
     } else {
         base
@@ -1397,7 +1406,7 @@ fn row_style_for_settings_index(idx: usize, selected: bool) -> Style {
 fn section_help_text(active_section: usize) -> &'static str {
     match active_section {
         0 => " Provider, model, connection, API key, and module access.",
-        1 => " Runtime behavior, tool limits, and thinking capture.",
+        1 => " Runtime behavior, tool limits, thinking capture, and optional Stasis OTEL.",
         2 => " Verification thresholds for confidence and evidence gating.",
         3 => " Review configuration and key-related safety actions.",
         4 => " Stage routing role, manual provider/model, presets, policy, fallback, and reset.",

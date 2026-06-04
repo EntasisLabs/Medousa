@@ -115,6 +115,7 @@ pub(crate) enum WizardStep {
     WhatsAppAllowUserIds,
     LaunchWhatsApp,
     TuiResponseDepth,
+    StasisOtel,
     Confirm,
 }
 
@@ -139,6 +140,7 @@ pub(crate) struct WizardBootstrap {
     pub(crate) initial_telegram_heartbeat_nudges: bool,
     pub(crate) initial_telegram_heartbeat_chat_ids: String,
     pub(crate) initial_tui_response_depth: String,
+    pub(crate) initial_stasis_otel_enabled: bool,
     pub(crate) initial_provider: String,
     pub(crate) initial_model: String,
     pub(crate) initial_base_url: Option<String>,
@@ -196,6 +198,7 @@ pub(crate) struct WizardOutput {
     pub(crate) telegram_heartbeat_nudges_enabled: bool,
     pub(crate) telegram_heartbeat_chat_ids: Option<String>,
     pub(crate) tui_response_depth_mode: String,
+    pub(crate) stasis_otel_enabled: bool,
     pub(crate) surreal_endpoint: String,
     pub(crate) surreal_username: String,
     pub(crate) surreal_password: String,
@@ -247,6 +250,7 @@ pub(crate) struct WizardState {
     pub(crate) telegram_heartbeat_nudges_enabled: bool,
     pub(crate) telegram_heartbeat_chat_ids: String,
     pub(crate) tui_response_depth_mode: String,
+    pub(crate) stasis_otel_enabled: bool,
     pub(crate) surreal_username: String,
     pub(crate) surreal_password: String,
     pub(crate) surreal_namespace: String,
@@ -349,6 +353,7 @@ impl WizardState {
             telegram_heartbeat_nudges_enabled: bootstrap.initial_telegram_heartbeat_nudges,
             telegram_heartbeat_chat_ids: bootstrap.initial_telegram_heartbeat_chat_ids.clone(),
             tui_response_depth_mode: bootstrap.initial_tui_response_depth.clone(),
+            stasis_otel_enabled: bootstrap.initial_stasis_otel_enabled,
             surreal_username: bootstrap.initial_surreal_username.clone(),
             surreal_password: bootstrap.initial_surreal_password.clone(),
             surreal_namespace: if bootstrap.initial_surreal_namespace.trim().is_empty() {
@@ -410,6 +415,7 @@ impl WizardState {
             WizardStep::WhatsAppAllowUserIds => "WhatsApp Allowlist",
             WizardStep::LaunchWhatsApp => "Start WhatsApp",
             WizardStep::TuiResponseDepth => "Response Depth",
+            WizardStep::StasisOtel => "OpenTelemetry",
             WizardStep::Confirm => "Confirm",
         }
     }
@@ -497,6 +503,7 @@ impl WizardState {
         }
 
         flow.push(WizardStep::TuiResponseDepth);
+        flow.push(WizardStep::StasisOtel);
         flow.push(WizardStep::Confirm);
         flow
     }
@@ -902,6 +909,13 @@ impl WizardState {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
                 _ => {}
             },
+            WizardStep::StasisOtel => match key.code {
+                KeyCode::Enter | KeyCode::Right => self.move_next(),
+                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
+                    self.stasis_otel_enabled = !self.stasis_otel_enabled;
+                }
+                _ => {}
+            },
             WizardStep::Confirm => {
                 if matches!(key.code, KeyCode::Enter | KeyCode::Right) {
                     return WizardTransition::Finished(self.build_output());
@@ -1200,6 +1214,7 @@ impl WizardState {
             configure_mcp_gateway,
             start_mcp_gateway,
             tui_response_depth_mode: self.tui_response_depth_mode.clone(),
+            stasis_otel_enabled: self.stasis_otel_enabled,
             surreal_endpoint: match &self.backend_choice {
                 BackendChoice::SurrealWs { endpoint } => endpoint.clone(),
                 _ => String::new(),

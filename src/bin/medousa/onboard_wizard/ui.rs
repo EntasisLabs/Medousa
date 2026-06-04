@@ -515,6 +515,25 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 "thorough reasoning and context",
             ));
         }
+        WizardStep::StasisOtel => {
+            lines.push(Line::from("Export Stasis runtime traces to OpenTelemetry?"));
+            lines.push(Line::from(""));
+            lines.push(toggle_line(
+                "Enable Stasis OpenTelemetry",
+                state.stasis_otel_enabled,
+            ));
+            lines.push(Line::from("Off by default — no collector required."));
+            lines.push(Line::from(
+                "When on: set OTEL_EXPORTER_OTLP_ENDPOINT (default http://localhost:4317)",
+            ));
+            lines.push(Line::from(
+                "Optional: STASIS_OTEL_SERVICE_NAME or OTEL_SERVICE_NAME (e.g. medousa)",
+            ));
+            lines.push(Line::from(
+                "Also configurable later in chat Settings → Runtime.",
+            ));
+            lines.push(Line::from(""));
+        }
         WizardStep::Confirm => {
             lines.push(Line::from("Review setup choices:"));
             lines.push(Line::from(""));
@@ -684,6 +703,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 "Response depth",
                 state.tui_response_depth_mode.as_str(),
             ));
+            lines.push(summary_line(
+                "Stasis OpenTelemetry",
+                if state.stasis_otel_enabled { "on" } else { "off" },
+            ));
             lines.push(Line::from(""));
             lines.push(Line::from("Press Enter to apply and finish."));
         }
@@ -714,7 +737,8 @@ fn footer_text(state: &WizardState) -> Text<'static> {
         WizardStep::Provider | WizardStep::Backend | WizardStep::TuiResponseDepth => {
             lines.push(Line::from("↑↓ to change selection."));
         }
-        WizardStep::LaunchDaemon
+        WizardStep::StasisOtel
+        | WizardStep::LaunchDaemon
         | WizardStep::LaunchChat
         | WizardStep::McpGateway
         | WizardStep::LaunchMcpGateway

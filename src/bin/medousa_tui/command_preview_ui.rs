@@ -458,6 +458,10 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
         &state.settings.thinking_capture,
         true,
     ));
+    defaults.stasis_otel_enabled = Some(parse_bool_with_default(
+        &state.settings.stasis_otel_enabled,
+        false,
+    ));
     defaults.thinking_max_lines = Some(parse_usize_with_bounds(
         &state.settings.thinking_max_lines,
         300,

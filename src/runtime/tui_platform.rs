@@ -79,6 +79,7 @@ pub async fn build_tui_platform(
     config: TuiPlatformBuildConfig,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> Result<TuiRuntime> {
+    crate::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     let (backend, mode) = resolve_tui_platform_mode(&config);
 
     if mode == TuiPlatformMode::ClientStub

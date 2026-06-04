@@ -29,6 +29,7 @@ use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 
 use crate::channel_delivery;
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
+use crate::runtime::stasis_otel::attach_otel_to_builder;
 use crate::workflow;
 
 struct MockWebSearchTool;
@@ -127,6 +128,7 @@ async fn build_in_memory_daemon_composition(
     }
 
     builder = workflow::attach_workflow_handler(builder, prompt_pipeline, workflow_registry);
+    builder = attach_otel_to_builder(builder)?;
     let runtime = builder.with_tool(MockWebSearchTool)?.build().await?;
 
     channel_delivery::seed_internal_outbox_endpoint_for_runtime(
@@ -186,7 +188,7 @@ async fn build_in_memory_local_composition(
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
 
-    let runtime = workflow::attach_workflow_handler(
+    let builder = workflow::attach_workflow_handler(
         StasisRuntimeBuilder::new(config.backend.clone())
             .with_chat_client(chat_client)
             .with_memory_context_reader(memory.memory_reader.clone())
@@ -196,9 +198,8 @@ async fn build_in_memory_local_composition(
             .with_locus_memory(),
         prompt_pipeline,
         workflow_registry,
-    )
-    .build()
-    .await?;
+    );
+    let runtime = attach_otel_to_builder(builder)?.build().await?;
 
     Ok(runtime)
 }
