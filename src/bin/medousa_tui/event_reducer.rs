@@ -2,6 +2,9 @@ use chrono::Utc;
 use serde_json::{Value, json};
 
 use medousa::events::TuiEvent;
+use medousa::turn_text_heuristics::{
+    looks_like_interim_status, looks_like_substantive_final_answer,
+};
 
 use super::{ConversationTurn, JobHistoryEntry, TuiState};
 
@@ -115,7 +118,8 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             if let Some(idx) = state.active_agent_stream_turn {
                 let mut persisted_turn: Option<ConversationTurn> = None;
                 if let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.content = merge_streamed_and_final_body(&turn.content, &final_text);
+                    turn.content =
+                        resolve_agent_turn_content(&turn.content, &final_text, terminal);
                     turn.tool_names = tool_names.clone();
                     turn.answer_state = answer_state.clone();
                     turn.timestamp = Utc::now();
@@ -363,6 +367,32 @@ fn trim_hash(hash: &str) -> &str {
     &hash[..MAX]
 }
 
+/// Mid-turn `AgentResponse` (e.g. worker ack) replaces the draft; terminal merges or drops interim pile.
+fn resolve_agent_turn_content(streamed_body: &str, final_body: &str, terminal: bool) -> String {
+    if !terminal {
+        return final_body.to_string();
+    }
+
+    let streamed_trimmed = streamed_body.trim();
+    let final_trimmed = final_body.trim();
+
+    if final_trimmed.is_empty() {
+        return streamed_body.to_string();
+    }
+    if streamed_trimmed.is_empty() {
+        return final_body.to_string();
+    }
+
+    if looks_like_substantive_final_answer(final_trimmed)
+        && (looks_like_interim_status(streamed_trimmed)
+            || !looks_like_substantive_final_answer(streamed_trimmed))
+    {
+        return final_body.to_string();
+    }
+
+    merge_streamed_and_final_body(streamed_body, final_body)
+}
+
 fn merge_streamed_and_final_body(streamed_body: &str, final_body: &str) -> String {
     let streamed_trimmed = streamed_body.trim();
     let final_trimmed = final_body.trim();
@@ -389,6 +419,28 @@ fn merge_streamed_and_final_body(streamed_body: &str, final_body: &str) -> Strin
     }
 
     format!("{streamed_body}\n\n[final synthesis]\n{final_body}")
+}
+
+#[cfg(test)]
+mod resolve_content_tests {
+    use super::resolve_agent_turn_content;
+
+    #[test]
+    fn terminal_drops_interim_stream_pile_for_substantive_final() {
+        let streamed = "Let me dig into memory for you.Looks like we found some hits!";
+        let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true);
+        assert_eq!(merged, final_answer);
+        assert!(!merged.contains("Let me dig"));
+    }
+
+    #[test]
+    fn non_terminal_replaces_draft() {
+        let streamed = "Let me check that for you.";
+        let ack = "Delegated to background worker — I'll synthesize when done.";
+        let out = resolve_agent_turn_content(streamed, ack, false);
+        assert_eq!(out, ack);
+    }
 }
 
 fn suffix_prefix_overlap(left: &str, right: &str) -> usize {

@@ -659,6 +659,12 @@ async fn dispatch_daemon_stream_event(
     event_tx: &mpsc::Sender<TuiEvent>,
 ) -> std::result::Result<bool, String> {
     match payload.event_type.as_str() {
+        "scratch_reset" => {
+            event_tx
+                .send(TuiEvent::AgentScratchReset { turn_id })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
         "content_delta" => {
             if let Some(delta) = payload.content_delta {
                 event_tx

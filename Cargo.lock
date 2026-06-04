@@ -293,7 +293,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acb1161c6b64d1c3d83108213c2a2533a342ac225aabd0bda218278c2ddb00c0"
 dependencies = [
- "nom",
+ "nom 7.1.3",
 ]
 
 [[package]]
@@ -1364,7 +1364,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f8c3e73077b4b4a6ab1ea5047c37c57aee77657bc8ecd6f29b0af082d0b0c07"
 dependencies = [
  "chrono",
- "nom",
+ "nom 7.1.3",
  "once_cell",
 ]
 
@@ -2071,6 +2071,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "email-encoding"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9298e6504d9b9e780ed3f7dfd43a61be8cd0e09eb07f7706a945b0072b6670b6"
+dependencies = [
+ "base64 0.22.1",
+ "memchr",
+]
+
+[[package]]
+name = "email_address"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2206,7 +2222,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74fef4569247a5f429d9156b9d0a2599914385dd189c539334c625d8099d90ab"
 dependencies = [
  "futures-core",
- "nom",
+ "nom 7.1.3",
  "pin-project-lite",
 ]
 
@@ -2799,9 +2815,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-compiler"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b35727e76c045e5ba82e5756756036a34aa718654272afcaebb0964ddcafb59c"
+checksum = "bc86f66ae16487d56f44ca6a863f7a08b38675de7149f705b98b0abedc01b2cf"
 dependencies = [
  "grapheme-artifact",
  "grapheme-signatures",
@@ -2814,9 +2830,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-lsp"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fc384a61d0c3d58b2d4e9b18ec7d3aa121d639544864035426e20d27b2ec90a"
+checksum = "774031fd076decde2f147b3cbaecd03836766c06643b2a52719c428331b71418"
 dependencies = [
  "grapheme-compiler",
  "grapheme-signatures",
@@ -2826,9 +2842,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-runtime"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c13ff3beb5034a150457d50a068e0fdfac67e83bc66b4c27c14074f25bf21081"
+checksum = "e47bbd984bc8383faffbb0e1e17894d6f1b3ef8b2eb6de21d948e7cb78366cdc"
 dependencies = [
  "grapheme-artifact",
  "grapheme-signatures",
@@ -2841,9 +2857,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-sdk"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f1611cfc0e080429d048616ae8efadf984b7b731f04ae6e25652288337342f3"
+checksum = "4d127e7ad4b16db0b1806bd4cc14720d4a80a0619941b7d03fc85269765d4990"
 dependencies = [
  "grapheme-artifact",
  "grapheme-compiler",
@@ -2858,19 +2874,20 @@ dependencies = [
 
 [[package]]
 name = "grapheme-signatures"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6829e4c0c7dfcd7f529fa5a9a31f5085a8a55a83e5529c0a1dbdcd1d9e9fe645"
+checksum = "ab5e37ebd5a0bd415fda8faa16ec557f0acfce9dab97162e6f6733222f4f4a68"
 
 [[package]]
 name = "grapheme-stdlib"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4db0d6f6a0a6c71b2b1a30ab96f8aefe9faaeb3f638a3985ad9b1d51f2aec69e"
+checksum = "2d7b2f189cf54b05e2115db12a9195ef3cdc9ea2cdbb7c6f297b63f665a30fae"
 dependencies = [
  "csv",
  "ehttp",
  "html-to-markdown-rs",
+ "lettre",
  "serde_json",
  "serde_yaml",
  "sqlx",
@@ -3936,6 +3953,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
+name = "lettre"
+version = "0.11.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0da65617f6cb926332d039cb578aad56178da86e128db6a1b09f4c94fa5b3349"
+dependencies = [
+ "base64 0.22.1",
+ "email-encoding",
+ "email_address",
+ "fastrand 2.4.1",
+ "httpdate",
+ "idna",
+ "mime",
+ "nom 8.0.0",
+ "percent-encoding",
+ "quoted_printable",
+ "rustls 0.23.40",
+ "socket2 0.6.3",
+ "tokio",
+ "url",
+ "webpki-roots 1.0.7",
+]
+
+[[package]]
 name = "levenshtein"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4500,6 +4540,15 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "nom"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -5579,6 +5628,12 @@ checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "quoted_printable"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "478e0585659a122aa407eb7e3c0e1fa51b1d8a870038bd29f0cf4a8551eea972"
 
 [[package]]
 name = "r-efi"
@@ -7548,9 +7603,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.2.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5350a13d60951c0068be386c5de3ab80031969af841ecaedbcb9aa65ad5c1093"
+checksum = "341fcdba3e0a7a4f9fe957a74a7622f74dc89a8b7d077732ca195a01648df7e3"
 dependencies = [
  "anyhow",
  "askama",
@@ -7560,6 +7615,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "cron",
+ "dotenvy",
  "futures-util",
  "genai",
  "grapheme-compiler",
@@ -8186,7 +8242,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4ea810f0692f9f51b382fff5893887bb4580f5fa246fde546e0b13e7fcee662"
 dependencies = [
  "fnv",
- "nom",
+ "nom 7.1.3",
  "phf 0.11.3",
  "phf_codegen 0.11.3",
 ]

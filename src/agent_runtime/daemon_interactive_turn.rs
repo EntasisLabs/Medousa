@@ -139,6 +139,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         );
     }
 
+    async fn scratch_reset(&self, _turn_id: u64) {
+        publish(
+            &self.stream_tx,
+            interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id),
+        );
+    }
+
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         publish(
             &self.stream_tx,

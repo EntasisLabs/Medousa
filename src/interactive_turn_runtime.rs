@@ -150,6 +150,11 @@ pub fn error_stream_event(turn_id: &str, message: &str) -> Result<InteractiveTur
     Ok(event)
 }
 
+/// Clear in-flight assistant draft in the TUI before the next model round (tool-loop interim).
+pub fn scratch_reset_stream_event(turn_id: &str) -> Result<InteractiveTurnStreamEvent> {
+    build_event(turn_id, "scratch_reset", "streaming", "assistant scratch cleared")
+}
+
 fn build_event(
     turn_id: &str,
     event_type: &str,
