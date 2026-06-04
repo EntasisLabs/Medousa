@@ -60,6 +60,29 @@ impl stasis::application::orchestration::tool_registry::StasisTool for MockWebSe
     }
 }
 
+fn surreal_backend_connect_label(backend: &RuntimeBackend) -> Option<String> {
+    match backend {
+        RuntimeBackend::SurrealWs { endpoint, namespace, database, .. } => {
+            let endpoint = endpoint.trim();
+            let display = if endpoint.starts_with("ws://") || endpoint.starts_with("wss://") {
+                endpoint.to_string()
+            } else {
+                format!("ws://{endpoint}")
+            };
+            Some(format!(
+                "SurrealDB {display} (ns={namespace}, db={database})"
+            ))
+        }
+        RuntimeBackend::SurrealKv { path, namespace, database, .. } => Some(format!(
+            "SurrealKV {path} (ns={namespace}, db={database})"
+        )),
+        RuntimeBackend::SurrealMem { namespace, database, .. } => Some(format!(
+            "Surreal mem:// (ns={namespace}, db={database})"
+        )),
+        _ => None,
+    }
+}
+
 pub struct DaemonStasisWireConfig<'a> {
     pub backend: RuntimeBackend,
     pub provider: Option<&'a str>,
@@ -82,8 +105,13 @@ pub async fn build_daemon_stasis_composition(
         RuntimeBackend::SurrealKv { .. }
         | RuntimeBackend::SurrealWs { .. }
         | RuntimeBackend::SurrealMem { .. } => {
+            if let Some(label) = surreal_backend_connect_label(&config.backend) {
+                eprintln!("medousa-daemon: connecting to {label}…");
+            }
             let shell = RuntimeFactory::build(config.backend.clone()).await?;
+            eprintln!("medousa-daemon: surreal runtime connected, initializing memory adapters…");
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
+            eprintln!("medousa-daemon: wiring job handlers and delivery…");
             let composition = wire_existing_daemon_composition(shell, &config, &memory).await?;
             Ok((composition, memory))
         }

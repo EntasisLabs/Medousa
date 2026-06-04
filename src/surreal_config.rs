@@ -138,23 +138,69 @@ pub fn apply_surreal_auth_to_backend(
 }
 
 /// Strip `surreal-ws:` prefix; credentials are passed via `SurrealAuth`, not the URL.
+///
+/// `product_config.json` / `MEDOUSA_SURREAL_ENDPOINT` (via [`resolve_surreal_connection_settings`])
+/// wins over a URL embedded in `--backend` or `onboard_profile.daemon_backend`, so stale profile
+/// values cannot override a corrected Surreal endpoint.
 pub fn resolve_surreal_ws_endpoint(raw_backend: &str, settings: &SurrealConnectionSettings) -> String {
+    if let Some(endpoint) = settings
+        .endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return strip_endpoint_userinfo(endpoint).0;
+    }
+
     let endpoint = raw_backend
         .strip_prefix("surreal-ws:")
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-        .or_else(|| {
-            settings
-                .endpoint
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToString::to_string)
-        })
         .unwrap_or_else(|| "ws://127.0.0.1:8000/rpc".to_string());
 
     strip_endpoint_userinfo(&endpoint).0
+}
+
+/// Backend string passed to `medousa_daemon --backend` (CLI override, then product surreal endpoint).
+pub fn resolve_daemon_launch_backend(
+    cli_backend: Option<&str>,
+    profile_daemon_backend: Option<&str>,
+    product: &ProductConfig,
+    defaults: &TuiDefaults,
+) -> String {
+    if let Some(backend) = cli_backend.map(str::trim).filter(|value| !value.is_empty()) {
+        return backend.to_string();
+    }
+
+    let settings = resolve_surreal_connection_settings(product, defaults);
+    if let Some(endpoint) = settings.endpoint.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        return format!("surreal-ws:{endpoint}");
+    }
+
+    if let Some(backend) = profile_daemon_backend.map(str::trim).filter(|value| !value.is_empty()) {
+        return backend.to_string();
+    }
+
+    defaults
+        .backend
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "in-memory".to_string())
+}
+
+/// Keep `onboard_profile.daemon_backend` aligned with the canonical surreal endpoint.
+pub fn sync_profile_daemon_backend(
+    profile_daemon_backend: &mut Option<String>,
+    product: &ProductConfig,
+    defaults: &TuiDefaults,
+) {
+    let settings = resolve_surreal_connection_settings(product, defaults);
+    if let Some(endpoint) = settings.endpoint.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        *profile_daemon_backend = Some(format!("surreal-ws:{endpoint}"));
+    }
 }
 
 /// Split `ws://user:pass@host/...` into a credential-free endpoint and optional auth.
@@ -262,5 +308,15 @@ mod tests {
         };
         let out = resolve_surreal_ws_endpoint("surreal-ws:", &settings);
         assert_eq!(out, "ws://127.0.0.1:8000/rpc");
+    }
+
+    #[test]
+    fn product_endpoint_overrides_stale_backend_url() {
+        let settings = SurrealConnectionSettings {
+            endpoint: Some("ws://10.12.0.13:9096/rpc".to_string()),
+            ..SurrealConnectionSettings::default()
+        };
+        let out = resolve_surreal_ws_endpoint("surreal-ws:ws://10.12.0.11:906/rpc", &settings);
+        assert_eq!(out, "ws://10.12.0.13:9096/rpc");
     }
 }

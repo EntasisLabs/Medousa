@@ -69,6 +69,8 @@ mod markdown_cache;
 mod perf;
 #[path = "medousa_tui/settings_runtime.rs"]
 mod settings_runtime;
+#[path = "medousa_tui/settings_rows.rs"]
+mod settings_rows;
 #[path = "medousa_tui/settings_ui.rs"]
 mod settings_ui;
 #[path = "medousa_tui/slash_command_services.rs"]

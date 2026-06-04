@@ -244,7 +244,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             .join("runtime.surrealkv")
             .to_string_lossy()
             .to_string();
-        let initial_surreal_endpoint = defaults
+        let _initial_surreal_endpoint = defaults
             .surreal_endpoint
             .clone()
             .or_else(|| product_config.surreal.endpoint.clone())
@@ -501,29 +501,40 @@ fn run_onboard(args: &[String]) -> Result<()> {
     }
 
     profile.daemon_url = Some(selected.daemon_url.clone());
-    profile.daemon_backend = Some(selected.backend.clone());
+    medousa::sync_profile_daemon_backend(&mut profile.daemon_backend, &product_config, &defaults);
     save_onboard_profile(&profile)?;
 
     println!("{}", "[ok] Saved defaults, product config, and startup profile.".green());
 
+    let daemon_launch_backend = medousa::resolve_daemon_launch_backend(
+        None,
+        profile.daemon_backend.as_deref(),
+        &product_config,
+        &defaults,
+    );
+
     if selected.start_daemon {
-        if is_bind_reachable(&daemon_bind) {
+        if daemon_http_healthy(&selected.daemon_url) {
+            print_daemon_ready_messages(&selected.daemon_url, true);
+        } else if is_bind_reachable(&daemon_bind) {
             println!(
                 "{}",
-                format!("[ok] Daemon already running at {}", selected.daemon_url).green()
+                "[warn] Port is open but the daemon API is not healthy (dashboard and delivery will not work)."
+                    .yellow()
+            );
+            println!(
+                "{}",
+                "       Restart with: medousa start daemon-restart".blue()
             );
         } else {
-            ensure_daemon_running(&selected.backend, &daemon_bind)?;
-            if wait_for_bind_reachable(&daemon_bind, Duration::from_secs(4)) {
-                println!(
-                    "{}",
-                    format!("[ok] Daemon started at {}", selected.daemon_url).green()
-                );
+            ensure_daemon_running(&daemon_launch_backend, &daemon_bind, &selected.daemon_url)?;
+            if wait_for_daemon_healthy(&selected.daemon_url, Duration::from_secs(20)) {
+                print_daemon_ready_messages(&selected.daemon_url, false);
             } else {
                 println!(
                     "{}",
                     format!(
-                        "[warn] Daemon start requested, but it is not reachable yet. Check {}",
+                        "[warn] Daemon start requested, but /health did not respond in time. Check {}",
                         daemon_log_path().display()
                     )
                     .yellow()
@@ -690,20 +701,21 @@ fn run_tui(args: &[String]) -> Result<()> {
         .map(ToString::to_string)
         .or_else(|| profile.daemon_url.clone())
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
-    let backend = profile
-        .daemon_backend
-        .clone()
-        .or(defaults.backend)
-        .unwrap_or_else(|| "in-memory".to_string());
+    let backend = medousa::resolve_daemon_launch_backend(
+        find_arg_value(args, "--backend"),
+        profile.daemon_backend.as_deref(),
+        &product_config,
+        &defaults,
+    );
 
-    let daemon_already_running = is_bind_reachable(&daemon_bind);
+    let daemon_already_healthy = daemon_http_healthy(&daemon_url);
 
-    if !has_flag(args, "--no-daemon") && !daemon_already_running {
-        ensure_daemon_running(&backend, &daemon_bind)?;
+    if !has_flag(args, "--no-daemon") && !daemon_already_healthy {
+        ensure_daemon_running(&backend, &daemon_bind, &daemon_url)?;
     }
 
     // When the daemon owns persistence, the TUI uses in-memory locally and talks to the daemon API.
-    let daemon_hosts_persistence = is_bind_reachable(&daemon_bind);
+    let daemon_hosts_persistence = daemon_http_healthy(&daemon_url);
     if daemon_hosts_persistence {
         launch_tui_process(&daemon_url, args, Some("in-memory"))
     } else {
@@ -716,13 +728,12 @@ fn run_daemon(args: &[String]) -> Result<()> {
     let defaults = load_tui_defaults();
     let product_config = load_product_config();
     let bind = resolve_daemon_bind(args, &profile, &product_config);
-    let backend = find_arg_value(args, "--backend")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| profile.daemon_backend.clone())
-        .or(defaults.backend)
-        .unwrap_or_else(|| "in-memory".to_string());
+    let backend = medousa::resolve_daemon_launch_backend(
+        find_arg_value(args, "--backend"),
+        profile.daemon_backend.as_deref(),
+        &product_config,
+        &defaults,
+    );
 
     let mut passthrough = drop_flag_value_pair(args, "--backend");
     passthrough = drop_flag_value_pair(&passthrough, "--bind");
@@ -1003,7 +1014,8 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         .clone()
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
     let daemon_bind = resolve_daemon_bind(&[], &profile, &product_config);
-    let daemon_reachable = is_bind_reachable(&daemon_bind);
+    let daemon_tcp_reachable = is_bind_reachable(&daemon_bind);
+    let daemon_http = probe_daemon_http(&daemon_url);
 
     println!("medousa doctor");
     let backend_name = profile
@@ -1013,22 +1025,74 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         .unwrap_or_else(|| "in-memory".to_string());
     println!(
         "provider={} model={} base_url={} backend={}",
-        defaults.provider.unwrap_or_else(|| "(unset)".to_string()),
-        defaults.model.unwrap_or_else(|| "(unset)".to_string()),
-        defaults.base_url.unwrap_or_else(|| "(unset)".to_string()),
+        defaults
+            .provider
+            .as_deref()
+            .unwrap_or("(unset)"),
+        defaults.model.as_deref().unwrap_or("(unset)"),
+        defaults.base_url.as_deref().unwrap_or("(unset)"),
         backend_name,
     );
-    println!("daemon_url={} bind={} reachable={}", daemon_url, daemon_bind, daemon_reachable);
+    let launch_backend = medousa::resolve_daemon_launch_backend(
+        None,
+        profile.daemon_backend.as_deref(),
+        &product_config,
+        &defaults,
+    );
+    let surreal_settings =
+        medousa::resolve_surreal_connection_settings(&product_config, &defaults);
+    println!(
+        "daemon_url={} bind={} tcp_reachable={} http_health={}",
+        daemon_url, daemon_bind, daemon_tcp_reachable, daemon_http.label
+    );
+    println!("daemon_launch_backend={launch_backend}");
+    println!("{}", medousa::runtime::stasis_otel::stasis_otel_status_line());
+    println!(
+        "daemon_otel_note=surreal-ws daemon path does not attach OTLP today; hang is usually Surreal connect or schema bootstrap (watch stderr for medousa-daemon: connecting… lines)"
+    );
+    if let Some(endpoint) = surreal_settings.endpoint.as_deref() {
+        println!("surreal_endpoint_effective={endpoint}");
+    }
+    if let Some(endpoint) = product_config.surreal.endpoint.as_deref() {
+        println!("surreal_endpoint_product_config={endpoint}");
+    }
+    if profile.daemon_backend.as_deref() != Some(launch_backend.as_str()) {
+        if let Some(stale) = profile.daemon_backend.as_deref() {
+            println!("surreal_endpoint_onboard_profile_stale={stale}");
+        }
+    }
+    for (label, key) in [
+        ("env", "MEDOUSA_SURREAL_ENDPOINT"),
+        ("env", "STASIS_SURREAL_ENDPOINT"),
+    ] {
+        if let Ok(value) = env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                println!("{label}_{key}={trimmed}");
+            }
+        }
+    }
+    if !daemon_http.detail.is_empty() {
+        println!("daemon_http_detail={}", daemon_http.detail);
+    }
     let backend = parse_backend(Some(&backend_name));
     let daemon_process_running = is_medousa_daemon_process_running();
     println!("daemon_process_running={}", daemon_process_running);
+    if daemon_tcp_reachable && !daemon_http.healthy {
+        println!(
+            "daemon_recovery=Run: medousa start daemon-restart  (stops wedged medousa_daemon and starts a fresh one)"
+        );
+        println!("dashboard_url={} (available when http_health=ok)", daemon_dashboard_url(&daemon_url));
+    } else if daemon_http.healthy {
+        println!("dashboard_url={}", daemon_dashboard_url(&daemon_url));
+    }
     if let Some(lock_path) = surrealkv_lock_path(&backend) {
         println!(
             "surrealkv_lock={} exists={}",
             lock_path.display(),
             lock_path.exists()
         );
-        if lock_path.exists() && !daemon_process_running && !daemon_reachable {
+        if lock_path.exists() && !daemon_process_running && !daemon_tcp_reachable {
             println!(
                 "surrealkv_lock_hint=stale lock with no daemon — run: rm {}",
                 lock_path.display()
@@ -1188,7 +1252,7 @@ fn run_doctor(_args: &[String]) -> Result<()> {
             "open"
         }
     );
-    if daemon_reachable && !mcp_gateway_reachable {
+    if daemon_http.healthy && !mcp_gateway_reachable {
         println!(
             "{}",
             format!(
@@ -1229,7 +1293,7 @@ fn run_doctor(_args: &[String]) -> Result<()> {
                 );
             }
         }
-        if daemon_reachable {
+        if daemon_http.healthy {
             if let Ok(capabilities) = fetch_capabilities(&daemon_url) {
                 println!(
                     "capability_catalog_count={}",
@@ -1245,7 +1309,7 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         );
     }
 
-    if daemon_reachable {
+    if daemon_http.healthy {
         if let Ok(health) = fetch_daemon_health(&daemon_url) {
             println!(
                 "agent_runtime_version={} tool_registry_count={} last_agent_turn_latency_ms={:?} last_agent_turn_at={:?}",
@@ -1289,8 +1353,12 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         }
     }
 
-    if !daemon_reachable {
-        println!("next: medousa setup or medousa tui");
+    if !daemon_http.healthy {
+        if daemon_tcp_reachable {
+            println!("next: medousa start daemon-restart");
+        } else {
+            println!("next: medousa start daemon  (or medousa setup)");
+        }
     }
 
     let heartbeat_agent_turn = medousa::agent_runtime::heartbeat_agent_turn_enabled();
@@ -1568,6 +1636,137 @@ fn daemon_bind_from_url(url: &str) -> Option<String> {
     }
 }
 
+struct DaemonHttpProbe {
+    healthy: bool,
+    label: &'static str,
+    detail: String,
+}
+
+fn daemon_dashboard_url(daemon_url: &str) -> String {
+    format!("{}/dashboard", daemon_url.trim_end_matches('/'))
+}
+
+fn daemon_http_healthy(daemon_url: &str) -> bool {
+    probe_daemon_http(daemon_url).healthy
+}
+
+fn probe_daemon_http(daemon_url: &str) -> DaemonHttpProbe {
+    let daemon_url = daemon_url.trim_end_matches('/');
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(client) => client,
+        Err(err) => {
+            return DaemonHttpProbe {
+                healthy: false,
+                label: "client_error",
+                detail: err.to_string(),
+            };
+        }
+    };
+    match client.get(format!("{daemon_url}/health")).send() {
+        Ok(response) if response.status().is_success() => DaemonHttpProbe {
+            healthy: true,
+            label: "ok",
+            detail: String::new(),
+        },
+        Ok(response) => DaemonHttpProbe {
+            healthy: false,
+            label: "http_error",
+            detail: format!("GET /health returned {}", response.status()),
+        },
+        Err(err) if err.is_timeout() => DaemonHttpProbe {
+            healthy: false,
+            label: "timeout",
+            detail: "GET /health timed out (daemon likely wedged on Surreal or startup)".to_string(),
+        },
+        Err(err) => DaemonHttpProbe {
+            healthy: false,
+            label: "unreachable",
+            detail: err.to_string(),
+        },
+    }
+}
+
+fn print_daemon_ready_messages(daemon_url: &str, already_running: bool) {
+    if already_running {
+        println!(
+            "{}",
+            format!("[ok] Daemon healthy at {daemon_url}").green()
+        );
+    } else {
+        println!(
+            "{}",
+            format!("[ok] Daemon started at {daemon_url}").green()
+        );
+    }
+    println!(
+        "{}",
+        format!(
+            "[ok] Stasis dashboard at {}",
+            daemon_dashboard_url(daemon_url)
+        )
+        .green()
+    );
+}
+
+fn wait_for_daemon_healthy(daemon_url: &str, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if daemon_http_healthy(daemon_url) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    false
+}
+
+#[cfg(unix)]
+fn stop_medousa_daemon_process() {
+    let _ = Command::new("pkill")
+        .args(["-x", "medousa_daemon"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    thread::sleep(Duration::from_millis(400));
+}
+
+#[cfg(not(unix))]
+fn stop_medousa_daemon_process() {}
+
+fn wait_for_bind_closed(bind: &str, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if !is_bind_reachable(bind) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(120));
+    }
+    false
+}
+
+fn restart_daemon_service(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
+    println!("{}", "[info] Stopping medousa_daemon…".yellow());
+    stop_medousa_daemon_process();
+    if is_bind_reachable(bind) && !wait_for_bind_closed(bind, Duration::from_secs(8)) {
+        return Err(anyhow!(
+            "port {bind} still in use after stop — check {}",
+            daemon_log_path().display()
+        ));
+    }
+    ensure_daemon_running(backend, bind, daemon_url)?;
+    if wait_for_daemon_healthy(daemon_url, Duration::from_secs(30)) {
+        print_daemon_ready_messages(daemon_url, false);
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "medousa_daemon restarted but /health is not ready — check {}",
+            daemon_log_path().display()
+        ))
+    }
+}
+
 fn is_bind_reachable(bind: &str) -> bool {
     if let Ok(mut addrs) = bind.to_socket_addrs()
         && let Some(addr) = addrs.next()
@@ -1605,17 +1804,27 @@ fn is_medousa_daemon_process_running() -> bool {
     }
 }
 
-fn ensure_daemon_running(backend: &str, bind: &str) -> Result<()> {
-    if is_bind_reachable(bind) {
+fn ensure_daemon_running(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
+    if daemon_http_healthy(daemon_url) {
         return Ok(());
+    }
+
+    if is_bind_reachable(bind) {
+        return Err(anyhow!(
+            "port {bind} is open but {daemon_url}/health is not responding. \
+             The daemon is wedged or the wrong process owns the port. \
+             Run: medousa start daemon-restart"
+        ));
     }
 
     if is_medousa_daemon_process_running() {
         if wait_for_bind_reachable(bind, Duration::from_secs(15)) {
-            return Ok(());
+            if daemon_http_healthy(daemon_url) {
+                return Ok(());
+            }
         }
         return Err(anyhow!(
-            "medousa_daemon is running but not reachable at {bind} — check {}",
+            "medousa_daemon is running but not healthy at {daemon_url} — check {}",
             daemon_log_path().display()
         ));
     }
@@ -1647,7 +1856,14 @@ fn start_daemon_background(backend: &str, bind: &str) -> Result<()> {
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(bind);
-    apply_daemon_env(&load_product_config());
+    let product_config = load_product_config();
+    apply_daemon_env(&product_config);
+    medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
+    println!(
+        "{}",
+        format!("[info] medousa_daemon --backend {backend} --bind {bind}").blue()
+    );
+    println!("{}", medousa::runtime::stasis_otel::stasis_otel_status_line());
     let pid = medousa::service_launch::spawn_command_background(command, &log)
         .with_context(|| format!("failed to spawn medousa_daemon using {}", daemon.program))?;
     println!(
@@ -1937,16 +2153,19 @@ fn run_start(args: &[String]) -> Result<()> {
         .or_else(|| profile.daemon_url.clone())
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
     let daemon_bind = resolve_daemon_bind(args, &profile, &product_config);
-    let backend = find_arg_value(args, "--backend")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| profile.daemon_backend.clone())
-        .or(load_tui_defaults().backend)
-        .unwrap_or_else(|| "in-memory".to_string());
+    let defaults = load_tui_defaults();
+    let backend = medousa::resolve_daemon_launch_backend(
+        find_arg_value(args, "--backend"),
+        profile.daemon_backend.as_deref(),
+        &product_config,
+        &defaults,
+    );
 
     match service.as_str() {
         "daemon" => start_daemon_service(&backend, &daemon_bind, &daemon_url),
+        "daemon-restart" | "restart-daemon" => {
+            restart_daemon_service(&backend, &daemon_bind, &daemon_url)
+        }
         "mcp-gateway" | "mcp_gateway" | "mcp" => start_mcp_gateway_service(),
         "discord" => start_discord_service(&daemon_url),
         "telegram" => start_telegram_service(&daemon_url),
@@ -1968,18 +2187,23 @@ fn run_start(args: &[String]) -> Result<()> {
 }
 
 fn start_daemon_service(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
-    if is_bind_reachable(bind) {
-        println!(
-            "{}",
-            format!("[ok] Daemon already running at {daemon_url}").green()
-        );
+    if daemon_http_healthy(daemon_url) {
+        print_daemon_ready_messages(daemon_url, true);
         return Ok(());
     }
-    ensure_daemon_running(backend, bind)?;
-    println!(
-        "{}",
-        format!("[ok] Daemon running at {daemon_url}").green()
-    );
+    ensure_daemon_running(backend, bind, daemon_url)?;
+    if wait_for_daemon_healthy(daemon_url, Duration::from_secs(30)) {
+        print_daemon_ready_messages(daemon_url, false);
+    } else {
+        println!(
+            "{}",
+            format!(
+                "[warn] Daemon process started but /health not ready — try: medousa start daemon-restart (log: {})",
+                daemon_log_path().display()
+            )
+            .yellow()
+        );
+    }
     Ok(())
 }
 
@@ -2063,6 +2287,7 @@ fn print_start_help() {
     println!();
     println!("SERVICES:");
     println!("  daemon        Background medousa_daemon (engine)");
+    println!("  daemon-restart  Stop wedged daemon and start fresh (same as restart-daemon)");
     println!("  mcp-gateway   Background medousa_mcp_gateway (MCP broker)");
     println!("  discord       Background Discord adapter (needs bot token)");
     println!("  telegram      Background Telegram adapter (needs bot token)");

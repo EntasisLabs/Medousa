@@ -119,6 +119,9 @@ pub use product_config::{
     parse_u64_csv, parse_i64_csv, format_u64_csv, format_i64_csv, SurrealProductConfig,
     migrate_from_onboard_profile,
 };
+pub use surreal_config::{
+    resolve_daemon_launch_backend, resolve_surreal_connection_settings, sync_profile_daemon_backend,
+};
 pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
 pub use adapter_ingest::{
     AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,

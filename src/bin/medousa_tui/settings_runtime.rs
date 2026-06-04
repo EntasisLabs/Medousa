@@ -42,7 +42,7 @@ pub(crate) async fn apply_settings(
         super::push_obs(
             state,
             format!(
-                "⚠ settings rejected: invalid allowed module ids ({invalid_list}). use dotted ids like websearch.search"
+                "⚠ fix tool names first ({invalid_list}) — use dotted names like websearch.search"
             ),
         );
         return;
@@ -269,7 +269,7 @@ pub(crate) async fn apply_settings(
     });
     super::push_obs(
         state,
-        format!("↻ settings apply queued (request #{request_id})"),
+        format!("↻ saving your settings (request #{request_id})…"),
     );
 }
 
@@ -429,14 +429,17 @@ pub(crate) async fn finalize_settings_apply_if_ready(
             super::push_obs(
                 state,
                 format!(
-                    "✓ settings applied (request #{request_id}, sensitive values redacted, {} env override(s) active)",
+                    "✓ saved (request #{request_id}); secrets hidden in logs; {} custom env line(s) active",
                     pending.changed_env_count
                 ),
             );
             if let Some(summary) = medousa::runtime::stasis_otel::stasis_otel_obs_summary() {
                 super::push_obs(state, summary);
             } else if !snapshot.stasis_otel_enabled {
-                super::push_obs(state, "stasis OpenTelemetry off (Settings → Runtime)".to_string());
+                super::push_obs(
+                    state,
+                    "Diagnostic traces off (Settings → Diagnostics)".to_string(),
+                );
             }
         }
         Ok(Err(err)) => {

@@ -112,10 +112,12 @@ async fn build_platform_inner(
         .await
         .context("failed to build stasis daemon composition")?;
 
+    eprintln!("medousa-daemon: ensuring Stasis runtime schema…");
     ensure_stasis_runtime_schema(&composition)
         .await
         .context("failed to ensure Stasis SurrealDB runtime tables")?;
 
+    eprintln!("medousa-daemon: initializing session and delivery stores…");
     session_store::init_session_store_with_runtime(&composition).await;
     session_meta_store::init_session_meta_store_with_runtime(&composition).await;
     channel_session_store::init_channel_session_store_with_runtime(&composition).await;
@@ -124,6 +126,7 @@ async fn build_platform_inner(
     turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
     recurring_delivery::init_recurring_delivery_store_with_runtime(&composition).await;
 
+    eprintln!("medousa-daemon: assembling agent runtime…");
     let agent = assemble_tui_runtime(
         Arc::new(composition),
         memory.identity_store.clone(),

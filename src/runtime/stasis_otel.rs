@@ -3,6 +3,7 @@
 //! Stasis treats an unset `STASIS_OTEL_ENABLED` as enabled; Medousa defaults to off and
 //! sets the variable explicitly so runtime behavior matches the settings toggle.
 
+use stasis::infrastructure::telemetry::OpenTelemetryTelemetry;
 use stasis::prelude::StasisRuntimeBuilder;
 
 use crate::session::{self, TuiDefaults};
@@ -32,13 +33,35 @@ pub fn apply_stasis_otel_from_defaults(defaults: &TuiDefaults) {
 }
 
 /// Attach OTLP telemetry to a Stasis builder when the master switch is on.
+///
+/// Fail-open: a missing OTLP collector must not block chat or daemon startup.
 pub fn attach_otel_to_builder(builder: StasisRuntimeBuilder) -> anyhow::Result<StasisRuntimeBuilder> {
     if !stasis_otel_enabled() {
         return Ok(builder);
     }
-    builder
-        .with_otel_from_env()
-        .map_err(|err| anyhow::anyhow!("{err}"))
+    eprintln!("medousa: initializing OpenTelemetry (STASIS_OTEL_ENABLED=true)…");
+    match OpenTelemetryTelemetry::from_env() {
+        Ok(telemetry) => {
+            eprintln!("medousa: OpenTelemetry attached");
+            Ok(builder.with_runtime_telemetry(telemetry))
+        }
+        Err(err) => {
+            eprintln!(
+                "medousa: [warn] OpenTelemetry init failed ({err}); continuing without OTLP export"
+            );
+            Ok(builder)
+        }
+    }
+}
+
+/// Human-readable OTEL state for doctor / logs.
+pub fn stasis_otel_status_line() -> String {
+    let enabled = stasis_otel_enabled();
+    let raw = std::env::var(ENV_STASIS_OTEL_ENABLED).unwrap_or_else(|_| "(unset)".to_string());
+    let tui = session::load_tui_defaults().stasis_otel_enabled;
+    format!(
+        "stasis_otel_enabled={enabled} STASIS_OTEL_ENABLED={raw} tui_defaults.stasis_otel_enabled={tui:?}"
+    )
 }
 
 fn stasis_otel_enabled() -> bool {
@@ -64,7 +87,7 @@ pub fn stasis_otel_obs_summary() -> Option<String> {
         })
         .unwrap_or_else(|| "medousa".to_string());
     Some(format!(
-        "stasis OpenTelemetry on (service={service}, endpoint={endpoint}) — restart daemon if it was already running"
+        "Diagnostic traces on (name={service}, collector={endpoint}) — restart the background service if it was already running"
     ))
 }
 

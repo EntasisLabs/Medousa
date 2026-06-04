@@ -11,3 +11,6 @@ SELECT session_id, count() AS n FROM temporal_node WHERE session_id = '977234af4
 SELECT count() FROM temporal_node WHERE session_id = 'tui-channel-first-live';
 SELECT count() FROM temporal_node WHERE session_id = '977234af4a644625ab457a56b7475a9d';
 SELECT count() FROM temporal_node;
+exit
+close
+INFO FOR DB

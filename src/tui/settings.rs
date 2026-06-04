@@ -48,7 +48,7 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
     let invalid_modules = invalid_module_ids(&allowed_modules);
     if !invalid_modules.is_empty() {
         errors.push(format!(
-            "invalid allowed module ids: {}",
+            "unrecognized tool names: {}",
             invalid_modules.join(", ")
         ));
     }
@@ -57,84 +57,84 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
     errors.extend(env_errors);
 
     validate_unit_interval(
-        "verifier min citation coverage",
+        "source coverage",
         &settings.verifier_min_citation_coverage,
         &mut errors,
     );
     validate_unit_interval(
-        "verifier min avg support strength",
+        "average source strength",
         &settings.verifier_min_avg_support_strength,
         &mut errors,
     );
     validate_unit_interval(
-        "verifier min supported claim ratio",
+        "share of claims backed up",
         &settings.verifier_min_supported_claim_ratio,
         &mut errors,
     );
     validate_unit_interval(
-        "verifier min claim support strength",
+        "strength per claim",
         &settings.verifier_min_claim_support_strength,
         &mut errors,
     );
 
     validate_usize_range(
-        "activation direct-answer max prompt chars",
+        "short question size limit",
         &settings.activation_direct_answer_max_prompt_chars,
         64,
         4000,
         &mut errors,
     );
     validate_usize_range(
-        "activation long-session turn threshold",
+        "long chat starts after (turns)",
         &settings.activation_long_session_turn_threshold,
         8,
         500,
         &mut errors,
     );
     validate_usize_range(
-        "activation long-session max prompt chars",
+        "long chat size limit",
         &settings.activation_long_session_max_prompt_chars,
         64,
         4000,
         &mut errors,
     );
     validate_usize_range(
-        "slice hot-window turns",
+        "recent messages kept",
         &settings.slice_hot_window_turns,
         2,
         32,
         &mut errors,
     );
     validate_usize_range(
-        "slice cold-window turns",
+        "older messages summarized",
         &settings.slice_cold_window_turns,
         4,
         128,
         &mut errors,
     );
     validate_usize_range(
-        "retry runtime max retries",
+        "retry whole turn on error",
         &settings.retry_runtime_max_retries,
         OPERATOR_RETRY_LIMIT_MIN,
         OPERATOR_RETRY_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "retry runtime max rounds",
+        "retry tool steps on error",
         &settings.retry_runtime_max_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "max tool rounds",
+        "tool steps per reply",
         &settings.max_tool_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "host bus max tool rounds",
+        "tool steps (full mode)",
         &settings.host_bus_max_tool_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
@@ -142,35 +142,35 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
     );
     validate_host_turn_bus_mode(&settings.host_turn_bus_mode, &mut errors);
     validate_usize_range(
-        "activation tool-intent max rounds",
+        "extra tool steps (big tasks)",
         &settings.activation_tool_intent_max_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "activation short-turn max rounds",
+        "tool steps (quick questions)",
         &settings.activation_short_turn_max_tool_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "continuation max tool rounds",
+        "extra steps when wrapping up",
         &settings.continuation_max_tool_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "max text-only stuck continues",
+        "retries when stuck (no tools)",
         &settings.max_text_only_stuck_continues,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
         &mut errors,
     );
     validate_usize_range(
-        "classifier restricted max rounds",
+        "tool steps (simple requests)",
         &settings.classifier_restricted_max_tool_rounds,
         OPERATOR_ROUND_LIMIT_MIN,
         OPERATOR_ROUND_LIMIT_MAX,
@@ -185,7 +185,9 @@ pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
         .ok();
     if let (Some(hot), Some(cold)) = (hot, cold) {
         if cold < hot {
-            errors.push("slice cold-window turns must be >= hot-window turns".to_string());
+            errors.push(
+                "summarized history must be at least as long as recent history".to_string(),
+            );
         }
     }
 
@@ -206,7 +208,7 @@ fn validate_unit_interval(name: &str, value: &str, errors: &mut Vec<String>) {
 fn validate_host_turn_bus_mode(value: &str, errors: &mut Vec<String>) {
     let mode = value.trim().to_ascii_lowercase();
     if !matches!(mode.as_str(), "auto" | "force" | "off") {
-        errors.push("host turn bus mode must be auto, force, or off".to_string());
+        errors.push("tool routing must be auto, force, or off".to_string());
     }
 }
 
@@ -280,6 +282,9 @@ pub fn resolve_backend_name(value: Option<&str>) -> String {
         return "surreal-mem".to_string();
     }
     if raw.eq_ignore_ascii_case("surreal-kv") || raw.starts_with("surreal-kv:") {
+        return raw.to_string();
+    }
+    if raw.eq_ignore_ascii_case("surreal-ws") || raw.starts_with("surreal-ws:") {
         return raw.to_string();
     }
 

@@ -91,32 +91,42 @@ pub(crate) enum WizardStep {
     BackendSurrealDatabase,
     DaemonUrl,
     DaemonBind,
-    LaunchDaemon,
-    McpGateway,
-    LaunchMcpGateway,
-    LaunchChat,
-    Discord,
+    BackgroundServices,
+    ChannelsHub,
     DiscordToken,
     DiscordPrefix,
     DiscordHeartbeat,
-    LaunchDiscord,
-    Telegram,
     TelegramToken,
     TelegramAllowUserIds,
     TelegramHeartbeat,
-    LaunchTelegram,
-    Slack,
     SlackBotToken,
     SlackAppToken,
     SlackAllowUserIds,
-    LaunchSlack,
-    WhatsApp,
     WhatsAppDeliverBind,
     WhatsAppAllowUserIds,
-    LaunchWhatsApp,
     TuiResponseDepth,
-    StasisOtel,
     Confirm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChannelOption {
+    Discord,
+    Telegram,
+    Slack,
+    WhatsApp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BackgroundServiceOption {
+    StartDaemon,
+    McpConfig,
+    StartMcp,
+    LaunchChat,
+    StasisOtel,
+    StartDiscord,
+    StartTelegram,
+    StartSlack,
+    StartWhatsapp,
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +265,8 @@ pub(crate) struct WizardState {
     pub(crate) surreal_password: String,
     pub(crate) surreal_namespace: String,
     pub(crate) surreal_database: String,
+    pub(crate) channels_hub_focus: usize,
+    pub(crate) background_services_focus: usize,
     pub(crate) status_message: Option<String>,
 }
 
@@ -366,12 +378,177 @@ impl WizardState {
             } else {
                 bootstrap.initial_surreal_database.clone()
             },
+            channels_hub_focus: 0,
+            background_services_focus: 0,
             status_message: None,
             bootstrap,
         };
 
         state.apply_provider_defaults(false);
         state
+    }
+
+    pub(crate) fn channel_options() -> [ChannelOption; 4] {
+        [
+            ChannelOption::Discord,
+            ChannelOption::Telegram,
+            ChannelOption::Slack,
+            ChannelOption::WhatsApp,
+        ]
+    }
+
+    pub(crate) fn channel_configured(&self, option: ChannelOption) -> bool {
+        match option {
+            ChannelOption::Discord => self.configure_discord,
+            ChannelOption::Telegram => self.configure_telegram,
+            ChannelOption::Slack => self.configure_slack,
+            ChannelOption::WhatsApp => self.configure_whatsapp,
+        }
+    }
+
+    fn set_channel_configured(&mut self, option: ChannelOption, enabled: bool) {
+        match option {
+            ChannelOption::Discord => {
+                self.configure_discord = enabled;
+                if !enabled {
+                    self.start_discord = false;
+                }
+            }
+            ChannelOption::Telegram => {
+                self.configure_telegram = enabled;
+                if !enabled {
+                    self.start_telegram = false;
+                }
+            }
+            ChannelOption::Slack => {
+                self.configure_slack = enabled;
+                if !enabled {
+                    self.start_slack = false;
+                }
+            }
+            ChannelOption::WhatsApp => {
+                self.configure_whatsapp = enabled;
+                if !enabled {
+                    self.start_whatsapp = false;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn cycle_channels_hub(&mut self, delta: i32) {
+        let options = Self::channel_options();
+        let len = options.len() as i32;
+        let current = self.channels_hub_focus as i32;
+        let next = (current + delta).rem_euclid(len) as usize;
+        self.channels_hub_focus = next;
+    }
+
+    pub(crate) fn toggle_channels_hub_selection(&mut self) {
+        let options = Self::channel_options();
+        let option = options[self.channels_hub_focus.min(options.len().saturating_sub(1))];
+        let enabled = !self.channel_configured(option);
+        self.set_channel_configured(option, enabled);
+    }
+
+    pub(crate) fn background_service_options(&self) -> Vec<BackgroundServiceOption> {
+        let mut items = Vec::new();
+        if !self.bootstrap.force_daemon && !self.bootstrap.force_no_daemon {
+            items.push(BackgroundServiceOption::StartDaemon);
+            items.push(BackgroundServiceOption::McpConfig);
+            items.push(BackgroundServiceOption::StartMcp);
+        }
+        if !self.bootstrap.force_tui && !self.bootstrap.force_no_tui {
+            items.push(BackgroundServiceOption::LaunchChat);
+        }
+        items.push(BackgroundServiceOption::StasisOtel);
+        if self.configure_discord {
+            items.push(BackgroundServiceOption::StartDiscord);
+        }
+        if self.configure_telegram {
+            items.push(BackgroundServiceOption::StartTelegram);
+        }
+        if self.configure_slack {
+            items.push(BackgroundServiceOption::StartSlack);
+        }
+        if self.configure_whatsapp {
+            items.push(BackgroundServiceOption::StartWhatsapp);
+        }
+        items
+    }
+
+    pub(crate) fn background_service_enabled(&self, option: BackgroundServiceOption) -> bool {
+        match option {
+            BackgroundServiceOption::StartDaemon => self.start_daemon,
+            BackgroundServiceOption::McpConfig => self.configure_mcp_gateway,
+            BackgroundServiceOption::StartMcp => self.start_mcp_gateway,
+            BackgroundServiceOption::LaunchChat => self.launch_tui,
+            BackgroundServiceOption::StasisOtel => self.stasis_otel_enabled,
+            BackgroundServiceOption::StartDiscord => self.start_discord,
+            BackgroundServiceOption::StartTelegram => self.start_telegram,
+            BackgroundServiceOption::StartSlack => self.start_slack,
+            BackgroundServiceOption::StartWhatsapp => self.start_whatsapp,
+        }
+    }
+
+    fn set_background_service_enabled(&mut self, option: BackgroundServiceOption, enabled: bool) {
+        match option {
+            BackgroundServiceOption::StartDaemon => self.start_daemon = enabled,
+            BackgroundServiceOption::McpConfig => self.configure_mcp_gateway = enabled,
+            BackgroundServiceOption::StartMcp => self.start_mcp_gateway = enabled,
+            BackgroundServiceOption::LaunchChat => self.launch_tui = enabled,
+            BackgroundServiceOption::StasisOtel => self.stasis_otel_enabled = enabled,
+            BackgroundServiceOption::StartDiscord => self.start_discord = enabled,
+            BackgroundServiceOption::StartTelegram => self.start_telegram = enabled,
+            BackgroundServiceOption::StartSlack => self.start_slack = enabled,
+            BackgroundServiceOption::StartWhatsapp => self.start_whatsapp = enabled,
+        }
+    }
+
+    pub(crate) fn cycle_background_services(&mut self, delta: i32) {
+        let options = self.background_service_options();
+        if options.is_empty() {
+            return;
+        }
+        let len = options.len() as i32;
+        let current = self.background_services_focus as i32;
+        let next = (current + delta).rem_euclid(len) as usize;
+        self.background_services_focus = next;
+    }
+
+    pub(crate) fn channel_option_label(option: ChannelOption) -> &'static str {
+        match option {
+            ChannelOption::Discord => "Discord",
+            ChannelOption::Telegram => "Telegram",
+            ChannelOption::Slack => "Slack",
+            ChannelOption::WhatsApp => "WhatsApp",
+        }
+    }
+
+    pub(crate) fn background_service_label(option: BackgroundServiceOption) -> &'static str {
+        match option {
+            BackgroundServiceOption::StartDaemon => "Start medousa daemon",
+            BackgroundServiceOption::McpConfig => "Write MCP gateway config",
+            BackgroundServiceOption::StartMcp => "Start MCP gateway",
+            BackgroundServiceOption::LaunchChat => "Launch chat after setup",
+            BackgroundServiceOption::StasisOtel => "Enable Stasis OpenTelemetry",
+            BackgroundServiceOption::StartDiscord => "Start Discord adapter",
+            BackgroundServiceOption::StartTelegram => "Start Telegram adapter",
+            BackgroundServiceOption::StartSlack => "Start Slack adapter",
+            BackgroundServiceOption::StartWhatsapp => "Start WhatsApp adapter",
+        }
+    }
+
+    pub(crate) fn toggle_background_service_selection(&mut self) {
+        let options = self.background_service_options();
+        if options.is_empty() {
+            return;
+        }
+        let idx = self
+            .background_services_focus
+            .min(options.len().saturating_sub(1));
+        let option = options[idx];
+        let enabled = !self.background_service_enabled(option);
+        self.set_background_service_enabled(option, enabled);
     }
 
     pub(crate) fn step_title(&self) -> &'static str {
@@ -391,31 +568,20 @@ impl WizardState {
             WizardStep::BackendSurrealDatabase => "Surreal Database",
             WizardStep::DaemonUrl => "Runtime URL",
             WizardStep::DaemonBind => "Runtime Bind",
-            WizardStep::LaunchDaemon => "Background Runtime",
-            WizardStep::McpGateway => "MCP Gateway Config",
-            WizardStep::LaunchMcpGateway => "Start MCP Gateway",
-            WizardStep::LaunchChat => "Launch Chat",
-            WizardStep::Discord => "Discord Adapter",
+            WizardStep::BackgroundServices => "Background Services",
+            WizardStep::ChannelsHub => "Channel Adapters",
             WizardStep::DiscordToken => "Discord Token",
             WizardStep::DiscordPrefix => "Discord Prefix",
             WizardStep::DiscordHeartbeat => "Discord Heartbeat",
-            WizardStep::LaunchDiscord => "Start Discord",
-            WizardStep::Telegram => "Telegram Adapter",
             WizardStep::TelegramToken => "Telegram Token",
             WizardStep::TelegramAllowUserIds => "Telegram Allowlist",
             WizardStep::TelegramHeartbeat => "Telegram Heartbeat",
-            WizardStep::LaunchTelegram => "Start Telegram",
-            WizardStep::Slack => "Slack Adapter",
             WizardStep::SlackBotToken => "Slack Bot Token",
             WizardStep::SlackAppToken => "Slack App Token",
             WizardStep::SlackAllowUserIds => "Slack Allowlist",
-            WizardStep::LaunchSlack => "Start Slack",
-            WizardStep::WhatsApp => "WhatsApp Adapter",
             WizardStep::WhatsAppDeliverBind => "WhatsApp Deliver Bind",
             WizardStep::WhatsAppAllowUserIds => "WhatsApp Allowlist",
-            WizardStep::LaunchWhatsApp => "Start WhatsApp",
             WizardStep::TuiResponseDepth => "Response Depth",
-            WizardStep::StasisOtel => "OpenTelemetry",
             WizardStep::Confirm => "Confirm",
         }
     }
@@ -460,50 +626,36 @@ impl WizardState {
         }
 
         flow.push(WizardStep::DaemonBind);
+        flow.push(WizardStep::ChannelsHub);
 
-        if !self.bootstrap.force_daemon && !self.bootstrap.force_no_daemon {
-            flow.push(WizardStep::LaunchDaemon);
-            flow.push(WizardStep::McpGateway);
-            flow.push(WizardStep::LaunchMcpGateway);
-        }
-
-        if !self.bootstrap.force_tui && !self.bootstrap.force_no_tui {
-            flow.push(WizardStep::LaunchChat);
-        }
-
-        flow.push(WizardStep::Discord);
         if self.configure_discord {
             flow.push(WizardStep::DiscordToken);
             flow.push(WizardStep::DiscordPrefix);
             flow.push(WizardStep::DiscordHeartbeat);
-            flow.push(WizardStep::LaunchDiscord);
         }
 
-        flow.push(WizardStep::Telegram);
         if self.configure_telegram {
             flow.push(WizardStep::TelegramToken);
             flow.push(WizardStep::TelegramAllowUserIds);
             flow.push(WizardStep::TelegramHeartbeat);
-            flow.push(WizardStep::LaunchTelegram);
         }
 
-        flow.push(WizardStep::Slack);
         if self.configure_slack {
             flow.push(WizardStep::SlackBotToken);
             flow.push(WizardStep::SlackAppToken);
             flow.push(WizardStep::SlackAllowUserIds);
-            flow.push(WizardStep::LaunchSlack);
         }
 
-        flow.push(WizardStep::WhatsApp);
         if self.configure_whatsapp {
             flow.push(WizardStep::WhatsAppDeliverBind);
             flow.push(WizardStep::WhatsAppAllowUserIds);
-            flow.push(WizardStep::LaunchWhatsApp);
+        }
+
+        if !self.background_service_options().is_empty() {
+            flow.push(WizardStep::BackgroundServices);
         }
 
         flow.push(WizardStep::TuiResponseDepth);
-        flow.push(WizardStep::StasisOtel);
         flow.push(WizardStep::Confirm);
         flow
     }
@@ -691,39 +843,18 @@ impl WizardState {
                     edit_text_field(&mut self.daemon_bind, key);
                 }
             }
-            WizardStep::LaunchDaemon => match key.code {
+            WizardStep::BackgroundServices => match key.code {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.start_daemon = !self.start_daemon;
-                }
+                KeyCode::Up => self.cycle_background_services(-1),
+                KeyCode::Down => self.cycle_background_services(1),
+                KeyCode::Char(' ') => self.toggle_background_service_selection(),
                 _ => {}
             },
-            WizardStep::McpGateway => match key.code {
+            WizardStep::ChannelsHub => match key.code {
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.configure_mcp_gateway = !self.configure_mcp_gateway;
-                }
-                _ => {}
-            },
-            WizardStep::LaunchMcpGateway => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.start_mcp_gateway = !self.start_mcp_gateway;
-                }
-                _ => {}
-            },
-            WizardStep::LaunchChat => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.launch_tui = !self.launch_tui;
-                }
-                _ => {}
-            },
-            WizardStep::Discord => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.configure_discord = !self.configure_discord;
-                }
+                KeyCode::Up => self.cycle_channels_hub(-1),
+                KeyCode::Down => self.cycle_channels_hub(1),
+                KeyCode::Char(' ') => self.toggle_channels_hub_selection(),
                 _ => {}
             },
             WizardStep::DiscordToken => {
@@ -759,20 +890,6 @@ impl WizardState {
                 }
                 KeyCode::Left => {}
                 _ => edit_text_field(&mut self.discord_heartbeat_channel_ids, key),
-            },
-            WizardStep::LaunchDiscord => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.start_discord = !self.start_discord;
-                }
-                _ => {}
-            },
-            WizardStep::Telegram => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.configure_telegram = !self.configure_telegram;
-                }
-                _ => {}
             },
             WizardStep::TelegramToken => {
                 if key.code == KeyCode::Enter {
@@ -810,20 +927,6 @@ impl WizardState {
                 KeyCode::Left => {}
                 _ => edit_text_field(&mut self.telegram_heartbeat_chat_ids, key),
             },
-            WizardStep::LaunchTelegram => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.start_telegram = !self.start_telegram;
-                }
-                _ => {}
-            },
-            WizardStep::Slack => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.configure_slack = !self.configure_slack;
-                }
-                _ => {}
-            },
             WizardStep::SlackBotToken => {
                 if key.code == KeyCode::Enter {
                     self.slack_bot_token = self.slack_bot_token.trim().to_string();
@@ -860,20 +963,6 @@ impl WizardState {
                     edit_text_field(&mut self.slack_allow_user_ids, key);
                 }
             }
-            WizardStep::LaunchSlack => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.start_slack = !self.start_slack;
-                }
-                _ => {}
-            },
-            WizardStep::WhatsApp => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.configure_whatsapp = !self.configure_whatsapp;
-                }
-                _ => {}
-            },
             WizardStep::WhatsAppDeliverBind => {
                 if key.code == KeyCode::Enter {
                     if self.whatsapp_deliver_bind.trim().is_empty() {
@@ -896,24 +985,10 @@ impl WizardState {
                     edit_text_field(&mut self.whatsapp_allow_user_ids, key);
                 }
             }
-            WizardStep::LaunchWhatsApp => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.start_whatsapp = !self.start_whatsapp;
-                }
-                _ => {}
-            },
             WizardStep::TuiResponseDepth => match key.code {
                 KeyCode::Up => self.cycle_response_depth(-1),
                 KeyCode::Down => self.cycle_response_depth(1),
                 KeyCode::Enter | KeyCode::Right => self.move_next(),
-                _ => {}
-            },
-            WizardStep::StasisOtel => match key.code {
-                KeyCode::Enter | KeyCode::Right => self.move_next(),
-                KeyCode::Char(' ') | KeyCode::Up | KeyCode::Down => {
-                    self.stasis_otel_enabled = !self.stasis_otel_enabled;
-                }
                 _ => {}
             },
             WizardStep::Confirm => {

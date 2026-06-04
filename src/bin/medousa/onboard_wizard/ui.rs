@@ -8,7 +8,9 @@ use ratatui::{
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 
 
-use super::model::{BackendChoice, ProviderChoice, WizardState, WizardStep};
+use super::model::{
+    BackendChoice, BackgroundServiceOption, ChannelOption, ProviderChoice, WizardState, WizardStep,
+};
 
 pub(crate) fn render(
     frame: &mut Frame,
@@ -275,52 +277,67 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(input_line("Bind", &state.daemon_bind));
             lines.push(Line::from("Example: 127.0.0.1:7419"));
         }
-        WizardStep::LaunchDaemon => {
-            lines.push(Line::from("Start runtime in background?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Start daemon", state.start_daemon));
-            lines.push(Line::from(""));
-        }
-        WizardStep::McpGateway => {
-            lines.push(Line::from("Install MCP gateway config?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line(
-                "Write ~/.config/medousa/mcp-gateway.toml",
-                state.configure_mcp_gateway,
-            ));
-            lines.push(Line::from(if state.bootstrap.existing_mcp_gateway_config {
-                "Existing config detected — skip to keep current file."
-            } else {
-                "Creates a starter config with mock MCP servers."
-            }));
+        WizardStep::ChannelsHub => {
             lines.push(Line::from(
-                "Optional env: MEDOUSA_MCP_POLICY_TOKEN, MEDOUSA_MCP_TURN_TOKEN_SECRET",
+                "Select channel adapters to configure (leave all off to skip):",
             ));
             lines.push(Line::from(""));
+            for (idx, option) in WizardState::channel_options().iter().enumerate() {
+                let focused = idx == state.channels_hub_focus;
+                let enabled = state.channel_configured(*option);
+                let label = format!(
+                    "{} {}",
+                    WizardState::channel_option_label(*option),
+                    if enabled { "[on]" } else { "[off]" }
+                );
+                lines.push(option_line(
+                    focused,
+                    &label,
+                    if state.bootstrap.existing_discord_token
+                        && *option == ChannelOption::Discord
+                    {
+                        "stored token available"
+                    } else if state.bootstrap.existing_telegram_token
+                        && *option == ChannelOption::Telegram
+                    {
+                        "stored token available"
+                    } else if state.bootstrap.existing_slack_bot_token
+                        && state.bootstrap.existing_slack_app_token
+                        && *option == ChannelOption::Slack
+                    {
+                        "stored tokens available"
+                    } else {
+                        "optional"
+                    },
+                ));
+                if focused {
+                    lines.push(Line::from("  ↑ focused — Space toggles"));
+                }
+            }
+            lines.push(Line::from(""));
         }
-        WizardStep::LaunchMcpGateway => {
-            lines.push(Line::from("Start MCP gateway in background?"));
+        WizardStep::BackgroundServices => {
+            lines.push(Line::from("Start background services after setup:"));
             lines.push(Line::from(""));
-            lines.push(toggle_line("Start medousa_mcp_gateway", state.start_mcp_gateway));
-            lines.push(Line::from("Works even if you skipped config install (uses existing or starter file)."));
-            lines.push(Line::from("Gateway listens on 127.0.0.1:7420 — see docs/mcp-gateway-setup.md"));
-            lines.push(Line::from(""));
-        }
-        WizardStep::LaunchChat => {
-            lines.push(Line::from("Open chat after setup?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Launch chat", state.launch_tui));
-            lines.push(Line::from(""));
-        }
-        WizardStep::Discord => {
-            lines.push(Line::from("Configure Discord?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Configure Discord", state.configure_discord));
-            lines.push(Line::from(if state.bootstrap.existing_discord_token {
-                "Stored token detected."
-            } else {
-                "No token stored."
-            }));
+            let options = state.background_service_options();
+            for (idx, option) in options.iter().enumerate() {
+                let enabled = state.background_service_enabled(*option);
+                let label = WizardState::background_service_label(*option);
+                lines.push(toggle_line(label, enabled));
+                if idx == state.background_services_focus {
+                    lines.push(Line::from("  ↑ focused"));
+                }
+                if *option == BackgroundServiceOption::McpConfig
+                    && state.bootstrap.existing_mcp_gateway_config
+                {
+                    lines.push(Line::from("    existing MCP config detected"));
+                }
+                if *option == BackgroundServiceOption::StasisOtel {
+                    lines.push(Line::from(
+                        "    OTEL_EXPORTER_OTLP_ENDPOINT (default localhost:4317)",
+                    ));
+                }
+            }
             lines.push(Line::from(""));
         }
         WizardStep::DiscordToken => {
@@ -356,23 +373,6 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 },
             ));
             lines.push(Line::from("Comma-separated channel ids. Space toggles nudges."));
-        }
-        WizardStep::LaunchDiscord => {
-            lines.push(Line::from("Start Discord in background?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Start Discord", state.start_discord));
-            lines.push(Line::from(""));
-        }
-        WizardStep::Telegram => {
-            lines.push(Line::from("Configure Telegram?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Configure Telegram", state.configure_telegram));
-            lines.push(Line::from(if state.bootstrap.existing_telegram_token {
-                "Stored token detected."
-            } else {
-                "No token stored."
-            }));
-            lines.push(Line::from(""));
         }
         WizardStep::TelegramToken => {
             lines.push(Line::from("Add Telegram bot token:"));
@@ -411,28 +411,6 @@ fn body_text(state: &WizardState) -> Text<'static> {
             ));
             lines.push(Line::from("Comma-separated chat ids. Space toggles nudges."));
         }
-        WizardStep::LaunchTelegram => {
-            lines.push(Line::from("Start Telegram in background?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Start Telegram", state.start_telegram));
-            lines.push(Line::from(""));
-        }
-        WizardStep::Slack => {
-            lines.push(Line::from("Configure Slack (Socket Mode)?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Configure Slack", state.configure_slack));
-            lines.push(Line::from(
-                "Requires xoxb- bot token and xapp- app token with connections:write.",
-            ));
-            lines.push(Line::from(if state.bootstrap.existing_slack_bot_token
-                && state.bootstrap.existing_slack_app_token
-            {
-                "Stored Slack tokens detected."
-            } else {
-                "No Slack tokens stored."
-            }));
-            lines.push(Line::from(""));
-        }
         WizardStep::SlackBotToken => {
             lines.push(Line::from("Slack bot token (xoxb-…):"));
             lines.push(Line::from(""));
@@ -459,22 +437,6 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(input_line("Allowed user ids", &state.slack_allow_user_ids));
             lines.push(Line::from("Comma-separated Slack user ids (U…). Blank = all users."));
         }
-        WizardStep::LaunchSlack => {
-            lines.push(Line::from("Start Slack adapter in background?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Start Slack", state.start_slack));
-            lines.push(Line::from(""));
-        }
-        WizardStep::WhatsApp => {
-            lines.push(Line::from("Configure WhatsApp (whatsapp-rust)?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Configure WhatsApp", state.configure_whatsapp));
-            lines.push(Line::from(
-                "Unofficial WhatsApp Web client — review Meta ToS. First run shows QR pairing.",
-            ));
-            lines.push(Line::from("Session persists in ~/.local/share/medousa/whatsapp/session.db"));
-            lines.push(Line::from(""));
-        }
         WizardStep::WhatsAppDeliverBind => {
             lines.push(Line::from("Local deliver endpoint bind (daemon outbox push):"));
             lines.push(Line::from(""));
@@ -488,13 +450,6 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from(
                 "Comma-separated JIDs or suffixes. Blank = all senders.",
             ));
-        }
-        WizardStep::LaunchWhatsApp => {
-            lines.push(Line::from("Start WhatsApp adapter in background?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line("Start WhatsApp", state.start_whatsapp));
-            lines.push(Line::from("Scan QR in terminal log if first pairing."));
-            lines.push(Line::from(""));
         }
         WizardStep::TuiResponseDepth => {
             lines.push(Line::from("Default response depth for chat:"));
@@ -515,28 +470,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 "thorough reasoning and context",
             ));
         }
-        WizardStep::StasisOtel => {
-            lines.push(Line::from("Export Stasis runtime traces to OpenTelemetry?"));
-            lines.push(Line::from(""));
-            lines.push(toggle_line(
-                "Enable Stasis OpenTelemetry",
-                state.stasis_otel_enabled,
-            ));
-            lines.push(Line::from("Off by default — no collector required."));
-            lines.push(Line::from(
-                "When on: set OTEL_EXPORTER_OTLP_ENDPOINT (default http://localhost:4317)",
-            ));
-            lines.push(Line::from(
-                "Optional: STASIS_OTEL_SERVICE_NAME or OTEL_SERVICE_NAME (e.g. medousa)",
-            ));
-            lines.push(Line::from(
-                "Also configurable later in chat Settings → Runtime.",
-            ));
-            lines.push(Line::from(""));
-        }
         WizardStep::Confirm => {
             lines.push(Line::from("Review setup choices:"));
             lines.push(Line::from(""));
+            lines.push(section_heading("Model"));
             lines.push(summary_line("Provider", &state.provider_id()));
             lines.push(summary_line("Model", &state.model));
             lines.push(summary_line(
@@ -555,6 +492,7 @@ fn body_text(state: &WizardState) -> Text<'static> {
                     "(configured)"
                 },
             ));
+            lines.push(section_heading("Runtime"));
             lines.push(summary_line("Backend", &state.backend_choice.as_backend_id()));
             if state.bootstrap.advanced_mode {
                 lines.push(summary_line("Daemon URL", &state.daemon_url));
@@ -587,6 +525,11 @@ fn body_text(state: &WizardState) -> Text<'static> {
                 "Launch chat",
                 if state.launch_tui { "yes" } else { "no" },
             ));
+            lines.push(summary_line(
+                "Stasis OpenTelemetry",
+                if state.stasis_otel_enabled { "on" } else { "off" },
+            ));
+            lines.push(section_heading("Channels"));
             lines.push(summary_line(
                 "Discord setup",
                 if state.configure_discord { "yes" } else { "no" },
@@ -699,13 +642,10 @@ fn body_text(state: &WizardState) -> Text<'static> {
                     "no"
                 },
             ));
+            lines.push(section_heading("Chat"));
             lines.push(summary_line(
                 "Response depth",
                 state.tui_response_depth_mode.as_str(),
-            ));
-            lines.push(summary_line(
-                "Stasis OpenTelemetry",
-                if state.stasis_otel_enabled { "on" } else { "off" },
             ));
             lines.push(Line::from(""));
             lines.push(Line::from("Press Enter to apply and finish."));
@@ -734,25 +674,16 @@ fn footer_text(state: &WizardState) -> Text<'static> {
     ])];
 
     match state.step {
-        WizardStep::Provider | WizardStep::Backend | WizardStep::TuiResponseDepth => {
-            lines.push(Line::from("↑↓ to change selection."));
+        WizardStep::Provider
+        | WizardStep::Backend
+        | WizardStep::TuiResponseDepth
+        | WizardStep::ChannelsHub => {
+            lines.push(Line::from("↑↓ to change selection. Space toggles."));
         }
-        WizardStep::StasisOtel
-        | WizardStep::LaunchDaemon
-        | WizardStep::LaunchChat
-        | WizardStep::McpGateway
-        | WizardStep::LaunchMcpGateway
-        | WizardStep::Discord
-        | WizardStep::LaunchDiscord
-        | WizardStep::Telegram
-        | WizardStep::LaunchTelegram
-        | WizardStep::Slack
-        | WizardStep::LaunchSlack
-        | WizardStep::WhatsApp
-        | WizardStep::LaunchWhatsApp
+        WizardStep::BackgroundServices
         | WizardStep::DiscordHeartbeat
         | WizardStep::TelegramHeartbeat => {
-            lines.push(Line::from("Space to toggle. Type channel/chat ids when enabled."));
+            lines.push(Line::from("↑↓ to move focus. Space toggles."));
         }
         WizardStep::ApiKey
         | WizardStep::DiscordToken
@@ -826,6 +757,15 @@ fn toggle_line(label: &str, enabled: bool) -> Line<'static> {
         ),
         Span::raw(format!(" {}", label)),
     ])
+}
+
+fn section_heading(title: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        title.to_string(),
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+    ))
 }
 
 fn summary_line(label: &str, value: &str) -> Line<'static> {

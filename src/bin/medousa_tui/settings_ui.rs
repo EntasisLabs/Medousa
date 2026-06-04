@@ -1,13 +1,10 @@
 use super::*;
 
-const SETTINGS_SECTIONS: [(&str, usize, usize); 6] = [
-    ("Model", 0, 5),
-    ("Runtime", 6, 24),
-    ("Verifier", 25, 28),
-    ("Safety", 29, 32),
-    ("Routing", 33, 40),
-    ("Session", 41, 44),
-];
+use settings_rows::{
+    is_float_row, is_numeric_row, is_routing_edit_row, is_toggle_row,
+    selected_settings_field_mut as draft_field_for_row, settings_row_id,
+    quick_adjust_setting as quick_adjust_row, SETTINGS_TABS,
+};
 
 pub(crate) async fn handle_settings_key_event(
     code: KeyCode,
@@ -25,16 +22,20 @@ pub(crate) async fn handle_settings_key_event(
             KeyCode::Backspace => {
                 if let Some(target) = selected_route_field_mut(state) {
                     target.pop();
-                } else {
-                    let target = selected_settings_field_mut(state);
+                } else if let Some(target) = draft_field_for_row(
+                    state,
+                    settings_row_id(state.settings_selected),
+                ) {
                     target.pop();
                 }
             }
             KeyCode::Char(c) => {
                 if let Some(target) = selected_route_field_mut(state) {
                     target.push(c);
-                } else {
-                    let target = selected_settings_field_mut(state);
+                } else if let Some(target) = draft_field_for_row(
+                    state,
+                    settings_row_id(state.settings_selected),
+                ) {
                     target.push(c);
                 }
             }
@@ -75,18 +76,14 @@ pub(crate) async fn handle_settings_key_event(
             quick_adjust_setting(state, false);
         }
         KeyCode::Char('+') | KeyCode::Char('=') => {
-            if matches!(
-                state.settings_selected,
-                7..=24 | 25..=28
-            ) {
+            let row = settings_row_id(state.settings_selected);
+            if is_numeric_row(row) || is_float_row(row) {
                 quick_adjust_setting(state, true);
             }
         }
         KeyCode::Char('-') => {
-            if matches!(
-                state.settings_selected,
-                7..=24 | 25..=28
-            ) {
+            let row = settings_row_id(state.settings_selected);
+            if is_numeric_row(row) || is_float_row(row) {
                 quick_adjust_setting(state, false);
             }
         }
@@ -98,64 +95,82 @@ pub(crate) async fn handle_settings_key_event(
             let (_, end) = active_tab_bounds(state);
             state.settings_selected = state.settings_selected.saturating_add(1).min(end);
         }
-        KeyCode::Enter => match state.settings_selected {
-            1..=5 | 34 | 35 => {
-                state.settings_editing = true;
-            }
-            0 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22
-            | 23 | 24 | 25..=28 | 33 | 37 | 38 | 39 | 40 => {
-                quick_adjust_setting(state, true);
-            }
-            29 => {
-                state.mode = UiMode::RuntimeEnv;
-                state.runtime_env_editing = true;
-            }
-            30 => {
-                emit_settings_validation_summary(state);
-            }
-            31 => {
-                state.settings_draft.api_key.clear();
-                push_obs(
-                    state,
-                    "✓ API key will be cleared when changes are applied".to_string(),
-                );
-            }
-            32 => {
-                let key = state.settings_draft.api_key.trim().to_string();
-                if key.is_empty() {
-                    push_obs(state, "⚠ enter an API key before updating".to_string());
-                } else {
-                    save_tui_api_key(Some(&key));
-                    state.settings.api_key = key.clone();
-                    state.settings_draft.api_key = key;
-                    push_obs(state, "✓ API key updated".to_string());
+        KeyCode::Enter => {
+            use settings_rows::SettingsRowId;
+            match settings_row_id(state.settings_selected) {
+                SettingsRowId::Provider
+                | SettingsRowId::Model
+                | SettingsRowId::BaseUrl
+                | SettingsRowId::ApiKey
+                | SettingsRowId::AllowedModules
+                | SettingsRowId::RouteProvider
+                | SettingsRowId::RouteModel => {
+                    state.settings_editing = true;
                 }
+                row if is_toggle_row(row)
+                    || is_numeric_row(row)
+                    || is_float_row(row)
+                    || matches!(
+                        row,
+                        SettingsRowId::RouteRole
+                            | SettingsRowId::RouteTargetPreset
+                            | SettingsRowId::RoutePolicyProfile
+                            | SettingsRowId::RouteFallbackChain
+                            | SettingsRowId::ResetSelectedRoute
+                    ) => {
+                    quick_adjust_setting(state, true);
+                }
+                SettingsRowId::EnvOverrides => {
+                    state.mode = UiMode::RuntimeEnv;
+                    state.runtime_env_editing = true;
+                }
+                SettingsRowId::ReviewConfiguration => {
+                    emit_settings_validation_summary(state);
+                }
+                SettingsRowId::ClearApiKey => {
+                    state.settings_draft.api_key.clear();
+                    push_obs(
+                        state,
+                        "✓ API key will be removed when you save".to_string(),
+                    );
+                }
+                SettingsRowId::UpdateApiKey => {
+                    let key = state.settings_draft.api_key.trim().to_string();
+                    if key.is_empty() {
+                        push_obs(state, "⚠ enter an API key before updating".to_string());
+                    } else {
+                        save_tui_api_key(Some(&key));
+                        state.settings.api_key = key.clone();
+                        state.settings_draft.api_key = key;
+                        push_obs(state, "✓ API key updated".to_string());
+                    }
+                }
+                SettingsRowId::SetAllRouteTargets => {
+                    sync_all_route_targets_to_global(state);
+                }
+                SettingsRowId::RevertChanges => {
+                    state.settings_draft = state.settings.clone();
+                    state.stage_routing_draft = state.stage_routing.clone();
+                    state.routing_editor_role_idx = 0;
+                    state.settings_editing = false;
+                    push_obs(state, "✓ changes discarded".to_string());
+                }
+                SettingsRowId::ApplyChanges => {
+                    super::apply_settings(state, tui_rt, event_tx).await;
+                    state.mode = UiMode::Chat;
+                }
+                SettingsRowId::Cancel => {
+                    state.settings_draft = state.settings.clone();
+                    state.stage_routing_draft = state.stage_routing.clone();
+                    state.routing_editor_role_idx = 0;
+                    state.mode = UiMode::Chat;
+                }
+                SettingsRowId::ThemeMenu => {
+                    open_theme_menu(state, UiMode::Settings);
+                }
+                _ => {}
             }
-            36 => {
-                sync_all_route_targets_to_global(state);
-            }
-            41 => {
-                state.settings_draft = state.settings.clone();
-                state.stage_routing_draft = state.stage_routing.clone();
-                state.routing_editor_role_idx = 0;
-                state.settings_editing = false;
-                push_obs(state, "✓ changes reverted".to_string());
-            }
-            42 => {
-                super::apply_settings(state, tui_rt, event_tx).await;
-                state.mode = UiMode::Chat;
-            }
-            42 => {
-                state.settings_draft = state.settings.clone();
-                state.stage_routing_draft = state.stage_routing.clone();
-                state.routing_editor_role_idx = 0;
-                state.mode = UiMode::Chat;
-            }
-            43 => {
-                open_theme_menu(state, UiMode::Settings);
-            }
-            _ => {}
-        },
+        }
         _ => {}
     }
 
@@ -172,14 +187,14 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         state.settings_draft != state.settings || state.stage_routing_draft != state.stage_routing;
     let validation_errors = settings_validation_errors(&state.settings_draft);
     let change_label = if has_pending_changes {
-        "Pending"
+        "Unsaved"
     } else {
-        "Applied"
+        "Up to date"
     };
     let validation_label = if validation_errors.is_empty() {
-        "Ready"
+        "Looks good"
     } else {
-        "Needs review"
+        "Fix issues first"
     };
     lines.push(Line::from(vec![
         Span::styled(
@@ -192,7 +207,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         ),
         Span::styled("|", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!(" Validation: {validation_label} "),
+            format!(" Check: {validation_label} "),
             Style::default().fg(if validation_errors.is_empty() {
                 Color::Green
             } else {
@@ -220,7 +235,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
     lines.push(Line::from(""));
 
     let active_section = active_settings_tab_index(state);
-    let section_nav = SETTINGS_SECTIONS
+    let section_nav = SETTINGS_TABS
         .iter()
         .enumerate()
         .map(|(idx, (name, _, _))| {
@@ -298,129 +313,129 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
 
     let rows = vec![
         format!(
-            "Runtime backend: {}  [toggle]",
+            "Where your data lives: {}  [toggle]",
             state.settings_draft.backend
         ),
-        format!("Provider: {}  [edit]", state.settings_draft.provider),
-        format!("Model: {}  [edit]", state.settings_draft.model),
+        format!("AI provider: {}  [edit]", state.settings_draft.provider),
+        format!("AI model: {}  [edit]", state.settings_draft.model),
         format!(
-            "Base URL: {}  [edit]",
+            "Custom server address: {}  [edit]",
             if state.settings_draft.base_url.is_empty() {
-                "(auto)".to_string()
+                "(automatic)".to_string()
             } else {
                 state.settings_draft.base_url.clone()
             }
         ),
         format!(
-            "API Key: {}  [edit, secret]",
+            "API key: {}  [edit, secret]",
             mask_secret_value(&state.settings_draft.api_key)
         ),
         format!(
-            "Allowed modules: {}  [edit]",
+            "Tools the AI may use: {}  [edit]",
             if state.settings_draft.allowed_modules.trim().is_empty() {
-                "(all)".to_string()
+                "(all tools)".to_string()
             } else {
                 state.settings_draft.allowed_modules.clone()
             }
         ),
         format!(
-            "Tool calls: {}  [toggle]",
+            "When the AI uses tools: {}  [toggle]",
             state.settings_draft.tool_call_mode
         ),
         format!(
-            "Max Tool Rounds: {}  [number]",
+            "Tool steps per reply: {}  [number]",
             state.settings_draft.max_tool_rounds
         ),
         format!(
-            "Thinking Capture: {}  [toggle]",
-            state.settings_draft.thinking_capture
+            "Tool steps (full mode): {}  [number]",
+            state.settings_draft.host_bus_max_tool_rounds
         ),
         format!(
-            "Stasis OpenTelemetry: {}  [toggle]",
-            state.settings_draft.stasis_otel_enabled
+            "How tools are routed: {}  [toggle]",
+            state.settings_draft.host_turn_bus_mode
         ),
         format!(
-            "Thinking Max Lines: {}  [number]",
-            state.settings_draft.thinking_max_lines
+            "Extra tool steps (big tasks): {}  [number]",
+            state.settings_draft.activation_tool_intent_max_rounds
         ),
         format!(
-            "Activation Direct Prompt Max Chars: {}  [number]",
+            "Tool steps (quick questions): {}  [number]",
+            state.settings_draft.activation_short_turn_max_tool_rounds
+        ),
+        format!(
+            "Extra steps when wrapping up: {}  [number]",
+            state.settings_draft.continuation_max_tool_rounds
+        ),
+        format!(
+            "Retries when stuck (no tools): {}  [number]",
+            state.settings_draft.max_text_only_stuck_continues
+        ),
+        format!(
+            "Tool steps (simple requests): {}  [number]",
+            state.settings_draft.classifier_restricted_max_tool_rounds
+        ),
+        format!(
+            "Short question size limit: {}  [number]",
             state
                 .settings_draft
                 .activation_direct_answer_max_prompt_chars
         ),
         format!(
-            "Activation Long Session Turn Threshold: {}  [number]",
+            "Long chat starts after (turns): {}  [number]",
             state.settings_draft.activation_long_session_turn_threshold
         ),
         format!(
-            "Activation Long Session Prompt Max Chars: {}  [number]",
+            "Long chat size limit: {}  [number]",
             state
                 .settings_draft
                 .activation_long_session_max_prompt_chars
         ),
         format!(
-            "Slice Hot Window Turns: {}  [number]",
+            "Recent messages kept nearby: {}  [number]",
             state.settings_draft.slice_hot_window_turns
         ),
         format!(
-            "Slice Cold Window Turns: {}  [number]",
+            "Older messages summarized: {}  [number]",
             state.settings_draft.slice_cold_window_turns
         ),
         format!(
-            "Retry Runtime Max Retries: {}  [number]",
+            "Show AI reasoning in Obs: {}  [toggle]",
+            state.settings_draft.thinking_capture
+        ),
+        format!(
+            "Send traces to monitoring: {}  [toggle]",
+            state.settings_draft.stasis_otel_enabled
+        ),
+        format!(
+            "Max reasoning lines shown: {}  [number]",
+            state.settings_draft.thinking_max_lines
+        ),
+        format!(
+            "Retry whole turn on error: {}  [number]",
             state.settings_draft.retry_runtime_max_retries
         ),
         format!(
-            "Retry Runtime Max Rounds: {}  [number]",
+            "Retry tool steps on error: {}  [number]",
             state.settings_draft.retry_runtime_max_rounds
         ),
         format!(
-            "Host Bus Max Tool Rounds: {}  [number]",
-            state.settings_draft.host_bus_max_tool_rounds
-        ),
-        format!(
-            "Host Turn Bus Mode: {}  [toggle]",
-            state.settings_draft.host_turn_bus_mode
-        ),
-        format!(
-            "Activation Tool-Intent Max Rounds: {}  [number]",
-            state.settings_draft.activation_tool_intent_max_rounds
-        ),
-        format!(
-            "Activation Short-Turn Max Rounds: {}  [number]",
-            state.settings_draft.activation_short_turn_max_tool_rounds
-        ),
-        format!(
-            "Continuation Max Tool Rounds: {}  [number]",
-            state.settings_draft.continuation_max_tool_rounds
-        ),
-        format!(
-            "Max Text-Only Stuck Continues: {}  [number]",
-            state.settings_draft.max_text_only_stuck_continues
-        ),
-        format!(
-            "Classifier Restricted Max Rounds: {}  [number]",
-            state.settings_draft.classifier_restricted_max_tool_rounds
-        ),
-        format!(
-            "Verifier Min Citation Coverage: {}  [number]",
+            "Sources must cover claims: {}  [number]",
             state.settings_draft.verifier_min_citation_coverage
         ),
         format!(
-            "Verifier Min Avg Support Strength: {}  [number]",
+            "Average source strength: {}  [number]",
             state.settings_draft.verifier_min_avg_support_strength
         ),
         format!(
-            "Verifier Min Supported Claim Ratio: {}  [number]",
+            "Share of claims backed up: {}  [number]",
             state.settings_draft.verifier_min_supported_claim_ratio
         ),
         format!(
-            "Verifier Min Claim Support Strength: {}  [number]",
+            "Strength per claim: {}  [number]",
             state.settings_draft.verifier_min_claim_support_strength
         ),
         format!(
-            "Environment variables: {} line(s)  [open]",
+            "Custom environment (advanced): {} line(s)  [open]",
             state
                 .settings_draft
                 .env_overrides
@@ -431,48 +446,50 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                 })
                 .count()
         ),
-        "Review configuration  [action]".to_string(),
-        "Clear API key  [action]".to_string(),
-        "Update API key  [action]".to_string(),
-        format!("Route Role: {}  [cycle]", selected_role),
-        format!("Route Provider: {}  [edit]", selected_route.provider),
-        format!("Route Model: {}  [edit]", selected_route.model),
+        "Check for problems  [action]".to_string(),
+        "Remove saved API key  [action]".to_string(),
+        "Save API key now  [action]".to_string(),
+        format!("Task type: {}  [cycle]", selected_role),
+        format!("Specialist provider: {}  [edit]", selected_route.provider),
+        format!("Specialist model: {}  [edit]", selected_route.model),
         format!(
-            "Set All Route Targets: {}:{}  [action]",
+            "Use main AI for all tasks: {}:{}  [action]",
             state.settings_draft.provider.trim(),
             state.settings_draft.model.trim()
         ),
         format!(
-            "Route Target Preset: {}:{}  [cycle presets]",
+            "Quick specialist preset: {}:{}  [cycle presets]",
             selected_route.provider, selected_route.model
         ),
         format!(
-            "Route Policy Profile: {}  [cycle]",
+            "Specialist style: {}  [cycle]",
             selected_route.policy_profile
         ),
         format!(
-            "Route Fallback Chain: {}  [cycle]",
+            "Backup specialists: {}  [cycle]",
             selected_route.fallback_chain.join(",")
         ),
-        "Reset Selected Route to Defaults  [action]".to_string(),
-        "Revert changes  [action]".to_string(),
-        "Apply changes  [action]".to_string(),
-        "Cancel  [action]".to_string(),
+        "Reset this task type  [action]".to_string(),
+        "Discard changes  [action]".to_string(),
+        "Save and reload  [action]".to_string(),
+        "Close without saving  [action]".to_string(),
         format!(
-            "Theme menu: {}  [open]",
+            "Appearance: {}  [open]",
             ui_theme_display_name(&state.settings.theme_id)
         ),
     ];
 
     let (start, end) = active_tab_bounds(state);
-    let (tab_title, _, _) = SETTINGS_SECTIONS[active_section];
+    let (tab_title, _, _) = SETTINGS_TABS[active_section];
     let tab_subtitle = match active_section {
-        0 => "Provider, model, and access",
-        1 => "Tool behavior and turn policy",
-        2 => "Evidence confidence thresholds",
-        3 => "Secrets and safety checks",
-        4 => "Role targets and fallback",
-        _ => "Commit or discard your draft",
+        0 => "Who answers, and which tools it may use",
+        1 => "How hard the AI works with tools each turn",
+        2 => "How much conversation it remembers",
+        3 => "What you see while it thinks",
+        4 => "How strictly answers are fact-checked",
+        5 => "Keys, environment, and safety checks",
+        6 => "Different AIs for different kinds of work",
+        _ => "Save, discard, or change appearance",
     };
     lines.push(Line::from(Span::styled(
         format!(" {tab_title} "),
@@ -509,7 +526,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         let mut style = row_style_for_settings_index(idx, idx == state.settings_selected);
         if idx == state.settings_selected
             && state.settings_editing
-            && matches!(idx, 1..=5 | 34 | 35)
+            && (matches!(idx, 1..=5) || is_routing_edit_row(settings_row_id(idx)))
         {
             style = style.add_modifier(Modifier::UNDERLINED);
         }
@@ -562,18 +579,18 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
 
     let mut rail: Vec<Line> = Vec::new();
     rail.push(Line::from(Span::styled(
-        " Quick View ",
+        " At a glance ",
         Style::default()
             .fg(ui_accent_primary())
             .add_modifier(Modifier::BOLD),
     )));
     rail.push(Line::from(""));
     rail.push(Line::from(vec![
-        Span::styled("Assistant Style: ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Working style: ", Style::default().fg(Color::DarkGray)),
         Span::styled(policy_mode.0, Style::default().fg(policy_mode.1)),
     ]));
     rail.push(Line::from(vec![
-        Span::styled("Context Load: ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Memory load: ", Style::default().fg(Color::DarkGray)),
         Span::styled(pressure.0, Style::default().fg(pressure.1)),
     ]));
     rail.push(Line::from(vec![
@@ -588,7 +605,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
     match active_section {
         0 => {
             rail.push(Line::from(Span::styled(
-                "Model",
+                "Setup",
                 Style::default().fg(Color::Cyan),
             )));
             rail.push(Line::from(format!(
@@ -597,9 +614,9 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
             )));
             rail.push(Line::from(format!("Model: {}", state.settings_draft.model)));
             rail.push(Line::from(format!(
-                "Base URL: {}",
+                "Server: {}",
                 if state.settings_draft.base_url.trim().is_empty() {
-                    "Auto".to_string()
+                    "Automatic".to_string()
                 } else {
                     "Custom".to_string()
                 }
@@ -609,72 +626,105 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                 if state.settings_draft.api_key.trim().is_empty() {
                     "Not set"
                 } else {
-                    "Configured"
+                    "Saved"
                 }
             )));
         }
         1 => {
             rail.push(Line::from(Span::styled(
-                "Activation",
+                "Tools",
                 Style::default().fg(Color::Cyan),
             )));
             rail.push(Line::from(format!(
-                "Direct answer under {} chars",
-                direct_chars
+                "Tool mode: {}",
+                state.settings_draft.tool_call_mode
             )));
             rail.push(Line::from(format!(
-                "Long-session trigger after {} turns",
-                long_turns
+                "Steps per reply: {}",
+                state.settings_draft.max_tool_rounds
             )));
             rail.push(Line::from(format!(
-                "Long-session prompt under {} chars",
-                long_chars
-            )));
-            rail.push(Line::from(""));
-            rail.push(Line::from(Span::styled(
-                "Window + Retry",
-                Style::default().fg(Color::Cyan),
+                "Full-mode steps: {}",
+                state.settings_draft.host_bus_max_tool_rounds
             )));
             rail.push(Line::from(format!(
-                "History window: {} hot / {} cold",
-                hot_turns, cold_turns
+                "Routing: {}",
+                state.settings_draft.host_turn_bus_mode
             )));
-            rail.push(Line::from(format!("Runtime retries: {} max", retry_max)));
-            rail.push(Line::from(format!("Retry rounds: {}", retry_rounds)));
         }
         2 => {
             rail.push(Line::from(Span::styled(
-                "Verifier",
+                "Memory",
                 Style::default().fg(Color::Cyan),
             )));
             rail.push(Line::from(format!(
-                "Citation coverage: {}",
-                state.settings_draft.verifier_min_citation_coverage
+                "Short questions up to {} chars",
+                direct_chars
             )));
             rail.push(Line::from(format!(
-                "Avg support: {}",
-                state.settings_draft.verifier_min_avg_support_strength
+                "Long chat after {} turns",
+                long_turns
             )));
             rail.push(Line::from(format!(
-                "Supported claims: {}",
-                state.settings_draft.verifier_min_supported_claim_ratio
+                "Long chat up to {} chars",
+                long_chars
             )));
             rail.push(Line::from(format!(
-                "Claim support floor: {}",
-                state.settings_draft.verifier_min_claim_support_strength
+                "Keep {} recent / {} summarized turns",
+                hot_turns, cold_turns
             )));
         }
         3 => {
             rail.push(Line::from(Span::styled(
-                "Safety",
+                "Diagnostics",
                 Style::default().fg(Color::Cyan),
             )));
             rail.push(Line::from(format!(
-                "Validation issues: {}",
+                "Show reasoning: {}",
+                state.settings_draft.thinking_capture
+            )));
+            rail.push(Line::from(format!(
+                "Send traces: {}",
+                state.settings_draft.stasis_otel_enabled
+            )));
+            rail.push(Line::from(format!(
+                "Reasoning lines: {}",
+                state.settings_draft.thinking_max_lines
+            )));
+        }
+        4 => {
+            rail.push(Line::from(Span::styled(
+                "Quality",
+                Style::default().fg(Color::Cyan),
+            )));
+            rail.push(Line::from(format!(
+                "Turn retries: {}",
+                retry_max
+            )));
+            rail.push(Line::from(format!(
+                "Tool retries: {}",
+                retry_rounds
+            )));
+            rail.push(Line::from(format!(
+                "Source coverage: {}",
+                state.settings_draft.verifier_min_citation_coverage
+            )));
+            rail.push(Line::from(format!(
+                "Claims backed: {}",
+                state.settings_draft.verifier_min_supported_claim_ratio
+            )));
+        }
+        5 => {
+            rail.push(Line::from(Span::styled(
+                "Secrets",
+                Style::default().fg(Color::Cyan),
+            )));
+            rail.push(Line::from(format!(
+                "Issues to fix: {}",
                 validation_errors.len()
             )));
             rail.push(Line::from(format!(
-                "Env lines: {}",
+                "Custom env lines: {}",
                 state
                     .settings_draft
                     .env_overrides
@@ -685,38 +735,38 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                     })
                     .count()
             )));
-            rail.push(Line::from("Use Review before Apply."));
+            rail.push(Line::from("Run “Check for problems” before saving."));
         }
-        4 => {
+        6 => {
             rail.push(Line::from(Span::styled(
-                "Routing",
+                "Specialists",
                 Style::default().fg(Color::Cyan),
             )));
-            rail.push(Line::from(format!("Role: {}", selected_role)));
+            rail.push(Line::from(format!("Task: {}", selected_role)));
             rail.push(Line::from(format!(
-                "Target: {}:{}",
+                "Uses: {}:{}",
                 selected_route.provider, selected_route.model
             )));
             rail.push(Line::from(format!(
-                "Policy profile: {}",
+                "Style: {}",
                 selected_route.policy_profile
             )));
             rail.push(Line::from(format!(
-                "Fallback: {}",
-                selected_route.fallback_chain.join(" -> ")
+                "Backups: {}",
+                selected_route.fallback_chain.join(" → ")
             )));
         }
         _ => {
             rail.push(Line::from(Span::styled(
-                "Session",
+                "Save",
                 Style::default().fg(Color::Cyan),
             )));
             rail.push(Line::from(format!(
-                "Draft changes: {}",
+                "Unsaved changes: {}",
                 if has_pending_changes { "Yes" } else { "No" }
             )));
-            rail.push(Line::from("Revert resets this draft."));
-            rail.push(Line::from("Apply writes runtime + defaults."));
+            rail.push(Line::from("Discard — drop this draft."));
+            rail.push(Line::from("Save and reload — makes it live."));
             rail.push(Line::from(format!(
                 "Theme: {}",
                 ui_theme_display_name(&state.settings.theme_id)
@@ -729,7 +779,7 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         "Tip",
         Style::default().fg(Color::DarkGray),
     )));
-    rail.push(Line::from("Tune one setting, then run."));
+    rail.push(Line::from("Change one thing, try a turn, repeat."));
 
     let rail_text = Text::from(rail);
     let rail_visual_lines = visual_line_count(&rail_text, right_area.width.saturating_sub(1));
@@ -842,7 +892,7 @@ pub(crate) fn render_runtime_env_overlay(frame: &mut ratatui::Frame, state: &Tui
     let panel = Paragraph::new(Text::from(lines))
         .block(
             Block::default()
-                .title(" Environment ")
+                .title(" Custom environment ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(ui_accent_primary()))
                 .style(Style::default().bg(ui_modal_bg())),
@@ -855,375 +905,20 @@ pub(crate) fn render_runtime_env_overlay(frame: &mut ratatui::Frame, state: &Tui
 pub(crate) fn emit_settings_validation_summary(state: &mut TuiState) -> bool {
     let errors = settings_validation_errors(&state.settings_draft);
     if errors.is_empty() {
-        push_obs(state, "✓ configuration ready".to_string());
+        push_obs(state, "✓ ready to save — nothing blocking you".to_string());
         true
     } else {
         for error in errors {
-            push_obs(state, format!("⚠ configuration: {error}"));
+            push_obs(state, format!("⚠ before saving: {error}"));
         }
         false
     }
 }
 
 fn quick_adjust_setting(state: &mut TuiState, forward: bool) {
-    match state.settings_selected {
-        0 => {
-            state.settings_draft.backend = cycle_backend(&state.settings_draft.backend, forward);
-        }
-        6 => {
-            state.settings_draft.tool_call_mode =
-                cycle_tool_call_mode(&state.settings_draft.tool_call_mode, forward);
-        }
-        7 => {
-            let current = parse_usize_with_bounds(
-                &state.settings_draft.max_tool_rounds,
-                10,
-                medousa::agent_runtime::ROUND_LIMIT_MIN,
-                medousa::agent_runtime::ROUND_LIMIT_MAX,
-            );
-            let step = if current < 20 { 1 } else if current < 200 { 5 } else { 25 };
-            let next = if forward {
-                current.saturating_add(step)
-            } else {
-                current.saturating_sub(step)
-            }
-            .clamp(
-                medousa::agent_runtime::ROUND_LIMIT_MIN,
-                medousa::agent_runtime::ROUND_LIMIT_MAX,
-            );
-            state.settings_draft.max_tool_rounds = next.to_string();
-        }
-        8 => {
-            let value = parse_bool_with_default(&state.settings_draft.thinking_capture, true);
-            state.settings_draft.thinking_capture = (!value).to_string();
-        }
-        9 => {
-            let value = parse_bool_with_default(&state.settings_draft.stasis_otel_enabled, false);
-            state.settings_draft.stasis_otel_enabled = (!value).to_string();
-        }
-        10 => {
-            let current =
-                parse_usize_with_bounds(&state.settings_draft.thinking_max_lines, 300, 50, 5000);
-            let step = if current < 500 { 50 } else { 100 };
-            let next = if forward {
-                current.saturating_add(step)
-            } else {
-                current.saturating_sub(step)
-            }
-            .clamp(50, 5000);
-            state.settings_draft.thinking_max_lines = next.to_string();
-        }
-        11 => {
-            let current = parse_usize_with_bounds(
-                &state
-                    .settings_draft
-                    .activation_direct_answer_max_prompt_chars,
-                320,
-                64,
-                4000,
-            );
-            let step = if current < 1000 { 32 } else { 128 };
-            let next = if forward {
-                current.saturating_add(step)
-            } else {
-                current.saturating_sub(step)
-            }
-            .clamp(64, 4000);
-            state
-                .settings_draft
-                .activation_direct_answer_max_prompt_chars = next.to_string();
-        }
-        12 => {
-            let current = parse_usize_with_bounds(
-                &state.settings_draft.activation_long_session_turn_threshold,
-                28,
-                8,
-                500,
-            );
-            let step = if current < 100 { 1 } else { 10 };
-            let next = if forward {
-                current.saturating_add(step)
-            } else {
-                current.saturating_sub(step)
-            }
-            .clamp(8, 500);
-            state.settings_draft.activation_long_session_turn_threshold = next.to_string();
-        }
-        13 => {
-            let current = parse_usize_with_bounds(
-                &state
-                    .settings_draft
-                    .activation_long_session_max_prompt_chars,
-                420,
-                64,
-                4000,
-            );
-            let step = if current < 1000 { 32 } else { 128 };
-            let next = if forward {
-                current.saturating_add(step)
-            } else {
-                current.saturating_sub(step)
-            }
-            .clamp(64, 4000);
-            state
-                .settings_draft
-                .activation_long_session_max_prompt_chars = next.to_string();
-        }
-        14 => {
-            let current =
-                parse_usize_with_bounds(&state.settings_draft.slice_hot_window_turns, 8, 2, 32);
-            let next = if forward {
-                current.saturating_add(1)
-            } else {
-                current.saturating_sub(1)
-            }
-            .clamp(2, 32);
-            state.settings_draft.slice_hot_window_turns = next.to_string();
-            let cold =
-                parse_usize_with_bounds(&state.settings_draft.slice_cold_window_turns, 24, 4, 128);
-            if cold < next {
-                state.settings_draft.slice_cold_window_turns = next.to_string();
-            }
-        }
-        15 => {
-            let hot =
-                parse_usize_with_bounds(&state.settings_draft.slice_hot_window_turns, 8, 2, 32);
-            let current =
-                parse_usize_with_bounds(&state.settings_draft.slice_cold_window_turns, 24, 4, 128);
-            let next = if forward {
-                current.saturating_add(1)
-            } else {
-                current.saturating_sub(1)
-            }
-            .clamp(4, 128)
-            .max(hot);
-            state.settings_draft.slice_cold_window_turns = next.to_string();
-        }
-        16 => {
-            let current = parse_usize_with_bounds(
-                &state.settings_draft.retry_runtime_max_retries,
-                1,
-                medousa::agent_runtime::RETRY_LIMIT_MIN,
-                medousa::agent_runtime::RETRY_LIMIT_MAX,
-            );
-            let next = if forward {
-                current.saturating_add(1)
-            } else {
-                current.saturating_sub(1)
-            }
-            .clamp(
-                medousa::agent_runtime::RETRY_LIMIT_MIN,
-                medousa::agent_runtime::RETRY_LIMIT_MAX,
-            );
-            state.settings_draft.retry_runtime_max_retries = next.to_string();
-        }
-        17 => {
-            let current = parse_usize_with_bounds(
-                &state.settings_draft.retry_runtime_max_rounds,
-                medousa::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS,
-                medousa::agent_runtime::ROUND_LIMIT_MIN,
-                medousa::agent_runtime::ROUND_LIMIT_MAX,
-            );
-            let step = if current < 20 { 1 } else if current < 200 { 5 } else { 25 };
-            let next = if forward {
-                current.saturating_add(step)
-            } else {
-                current.saturating_sub(step)
-            }
-            .clamp(
-                medousa::agent_runtime::ROUND_LIMIT_MIN,
-                medousa::agent_runtime::ROUND_LIMIT_MAX,
-            );
-            state.settings_draft.retry_runtime_max_rounds = next.to_string();
-        }
-        18 => adjust_round_setting(
-            &mut state.settings_draft.host_bus_max_tool_rounds,
-            medousa::agent_runtime::DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
-            forward,
-        ),
-        19 => {
-            state.settings_draft.host_turn_bus_mode = cycle_host_turn_bus_mode(
-                &state.settings_draft.host_turn_bus_mode,
-                forward,
-            );
-        }
-        20 => adjust_round_setting(
-            &mut state.settings_draft.activation_tool_intent_max_rounds,
-            medousa::agent_runtime::DEFAULT_ACTIVATION_TOOL_INTENT_MAX_ROUNDS,
-            forward,
-        ),
-        21 => adjust_round_setting(
-            &mut state.settings_draft.activation_short_turn_max_tool_rounds,
-            medousa::agent_runtime::DEFAULT_ACTIVATION_SHORT_TURN_MAX_TOOL_ROUNDS,
-            forward,
-        ),
-        22 => adjust_round_setting(
-            &mut state.settings_draft.continuation_max_tool_rounds,
-            medousa::agent_runtime::DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS,
-            forward,
-        ),
-        23 => adjust_round_setting(
-            &mut state.settings_draft.max_text_only_stuck_continues,
-            medousa::agent_runtime::DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES,
-            forward,
-        ),
-        24 => adjust_round_setting(
-            &mut state.settings_draft.classifier_restricted_max_tool_rounds,
-            medousa::agent_runtime::DEFAULT_CLASSIFIER_RESTRICTED_MAX_TOOL_ROUNDS,
-            forward,
-        ),
-        25 => {
-            let current = parse_f32_with_bounds(
-                &state.settings_draft.verifier_min_citation_coverage,
-                0.60,
-                0.0,
-                1.0,
-            );
-            let step = 0.05;
-            let next = if forward {
-                current + step
-            } else {
-                current - step
-            }
-            .clamp(0.0, 1.0);
-            state.settings_draft.verifier_min_citation_coverage = format!("{next:.2}");
-        }
-        26 => {
-            let current = parse_f32_with_bounds(
-                &state.settings_draft.verifier_min_avg_support_strength,
-                0.70,
-                0.0,
-                1.0,
-            );
-            let step = 0.05;
-            let next = if forward {
-                current + step
-            } else {
-                current - step
-            }
-            .clamp(0.0, 1.0);
-            state.settings_draft.verifier_min_avg_support_strength = format!("{next:.2}");
-        }
-        27 => {
-            let current = parse_f32_with_bounds(
-                &state.settings_draft.verifier_min_supported_claim_ratio,
-                0.60,
-                0.0,
-                1.0,
-            );
-            let step = 0.05;
-            let next = if forward {
-                current + step
-            } else {
-                current - step
-            }
-            .clamp(0.0, 1.0);
-            state.settings_draft.verifier_min_supported_claim_ratio = format!("{next:.2}");
-        }
-        28 => {
-            let current = parse_f32_with_bounds(
-                &state.settings_draft.verifier_min_claim_support_strength,
-                0.65,
-                0.0,
-                1.0,
-            );
-            let step = 0.05;
-            let next = if forward {
-                current + step
-            } else {
-                current - step
-            }
-            .clamp(0.0, 1.0);
-            state.settings_draft.verifier_min_claim_support_strength = format!("{next:.2}");
-        }
-        33 => {
-            let roles = medousa::stage_routing::StageRoutingMatrix::roles();
-            if roles.is_empty() {
-                return;
-            }
-            state.routing_editor_role_idx = if forward {
-                (state.routing_editor_role_idx + 1) % roles.len()
-            } else if state.routing_editor_role_idx == 0 {
-                roles.len() - 1
-            } else {
-                state.routing_editor_role_idx - 1
-            };
-        }
-        37 => {
-            let role = routing_editor_role(state).to_string();
-            if let Some(route) = state.stage_routing_draft.get_mut(&role) {
-                let presets = route_target_presets();
-                let current = format!("{}:{}", route.provider, route.model);
-                let idx = presets.iter().position(|v| *v == current).unwrap_or(0);
-                let next = if forward {
-                    (idx + 1) % presets.len()
-                } else if idx == 0 {
-                    presets.len() - 1
-                } else {
-                    idx - 1
-                };
-                if let Some((provider, model)) = presets[next].split_once(':') {
-                    route.provider = provider.to_string();
-                    route.model = model.to_string();
-                }
-            }
-        }
-        38 => {
-            let role = routing_editor_role(state).to_string();
-            if let Some(route) = state.stage_routing_draft.get_mut(&role) {
-                let options = ["balanced", "strict", "analytical", "fast"];
-                let idx = options
-                    .iter()
-                    .position(|v| v.eq_ignore_ascii_case(route.policy_profile.as_str()))
-                    .unwrap_or(0);
-                let next = if forward {
-                    (idx + 1) % options.len()
-                } else if idx == 0 {
-                    options.len() - 1
-                } else {
-                    idx - 1
-                };
-                route.policy_profile = options[next].to_string();
-            }
-        }
-        39 => {
-            let role = routing_editor_role(state).to_string();
-            if let Some(route) = state.stage_routing_draft.get_mut(&role) {
-                let options = vec![
-                    vec![role.clone(), "safe-default".to_string()],
-                    vec!["safe-default".to_string()],
-                    vec![role, "balanced".to_string(), "safe-default".to_string()],
-                ];
-                let idx = options
-                    .iter()
-                    .position(|v| *v == route.fallback_chain)
-                    .unwrap_or(0);
-                let next = if forward {
-                    (idx + 1) % options.len()
-                } else if idx == 0 {
-                    options.len() - 1
-                } else {
-                    idx - 1
-                };
-                route.fallback_chain = options[next].clone();
-            }
-        }
-        40 => {
-            let role = routing_editor_role(state).to_string();
-            let defaults = medousa::stage_routing::StageRoutingMatrix::default_for(
-                &state.settings_draft.provider,
-                &state.settings_draft.model,
-            );
-            if let (Some(current), Some(default_route)) = (
-                state.stage_routing_draft.get_mut(&role),
-                defaults.get(&role),
-            ) {
-                *current = default_route.clone();
-            }
-        }
-        _ => {}
-    }
+    quick_adjust_row(state, settings_row_id(state.settings_selected), forward);
 }
+
 
 fn sync_all_route_targets_to_global(state: &mut TuiState) {
     let provider = state.settings_draft.provider.trim();
@@ -1231,7 +926,7 @@ fn sync_all_route_targets_to_global(state: &mut TuiState) {
     if provider.is_empty() || model.is_empty() {
         push_obs(
             state,
-            "⚠ cannot sync route targets: Provider and Model must be set".to_string(),
+            "⚠ set your main AI provider and model first".to_string(),
         );
         return;
     }
@@ -1246,13 +941,13 @@ fn sync_all_route_targets_to_global(state: &mut TuiState) {
     push_obs(
         state,
         format!(
-            "✓ route targets synced to {}:{} for all stages",
+            "✓ all task types now use {}:{}",
             provider, model
         ),
     );
 }
 
-fn routing_editor_role(state: &TuiState) -> &'static str {
+pub(crate) fn routing_editor_role(state: &TuiState) -> &'static str {
     let roles = medousa::stage_routing::StageRoutingMatrix::roles();
     roles
         .get(state.routing_editor_role_idx % roles.len())
@@ -1260,27 +955,7 @@ fn routing_editor_role(state: &TuiState) -> &'static str {
         .unwrap_or("final_response")
 }
 
-fn adjust_round_setting(field: &mut String, default_value: usize, forward: bool) {
-    let current = parse_usize_with_bounds(
-        field,
-        default_value,
-        medousa::agent_runtime::ROUND_LIMIT_MIN,
-        medousa::agent_runtime::ROUND_LIMIT_MAX,
-    );
-    let step = if current < 20 { 1 } else if current < 200 { 5 } else { 25 };
-    let next = if forward {
-        current.saturating_add(step)
-    } else {
-        current.saturating_sub(step)
-    }
-    .clamp(
-        medousa::agent_runtime::ROUND_LIMIT_MIN,
-        medousa::agent_runtime::ROUND_LIMIT_MAX,
-    );
-    *field = next.to_string();
-}
-
-fn route_target_presets() -> [&'static str; 5] {
+pub(crate) fn route_target_presets() -> [&'static str; 5] {
     [
         "openai:gpt-4o-mini",
         "anthropic:claude-3-7-sonnet-latest",
@@ -1290,55 +965,13 @@ fn route_target_presets() -> [&'static str; 5] {
     ]
 }
 
-fn selected_settings_field_mut(state: &mut TuiState) -> &mut String {
-    match state.settings_selected {
-        0 => &mut state.settings_draft.backend,
-        1 => &mut state.settings_draft.provider,
-        2 => &mut state.settings_draft.model,
-        3 => &mut state.settings_draft.base_url,
-        4 => &mut state.settings_draft.api_key,
-        5 => &mut state.settings_draft.allowed_modules,
-        6 => &mut state.settings_draft.tool_call_mode,
-        7 => &mut state.settings_draft.max_tool_rounds,
-        8 => &mut state.settings_draft.thinking_capture,
-        9 => &mut state.settings_draft.stasis_otel_enabled,
-        10 => &mut state.settings_draft.thinking_max_lines,
-        11 => {
-            &mut state
-                .settings_draft
-                .activation_direct_answer_max_prompt_chars
-        }
-        12 => &mut state.settings_draft.activation_long_session_turn_threshold,
-        13 => {
-            &mut state
-                .settings_draft
-                .activation_long_session_max_prompt_chars
-        }
-        14 => &mut state.settings_draft.slice_hot_window_turns,
-        15 => &mut state.settings_draft.slice_cold_window_turns,
-        16 => &mut state.settings_draft.retry_runtime_max_retries,
-        17 => &mut state.settings_draft.retry_runtime_max_rounds,
-        18 => &mut state.settings_draft.host_bus_max_tool_rounds,
-        19 => &mut state.settings_draft.host_turn_bus_mode,
-        20 => &mut state.settings_draft.activation_tool_intent_max_rounds,
-        21 => &mut state.settings_draft.activation_short_turn_max_tool_rounds,
-        22 => &mut state.settings_draft.continuation_max_tool_rounds,
-        23 => &mut state.settings_draft.max_text_only_stuck_continues,
-        24 => &mut state.settings_draft.classifier_restricted_max_tool_rounds,
-        25 => &mut state.settings_draft.verifier_min_citation_coverage,
-        26 => &mut state.settings_draft.verifier_min_avg_support_strength,
-        27 => &mut state.settings_draft.verifier_min_supported_claim_ratio,
-        28 => &mut state.settings_draft.verifier_min_claim_support_strength,
-        _ => &mut state.settings_draft.base_url,
-    }
-}
-
 fn selected_route_field_mut(state: &mut TuiState) -> Option<&mut String> {
+    use settings_rows::SettingsRowId;
     let role = routing_editor_role(state).to_string();
     let route = state.stage_routing_draft.get_mut(&role)?;
-    match state.settings_selected {
-        34 => Some(&mut route.provider),
-        35 => Some(&mut route.model),
+    match settings_row_id(state.settings_selected) {
+        SettingsRowId::RouteProvider => Some(&mut route.provider),
+        SettingsRowId::RouteModel => Some(&mut route.model),
         _ => None,
     }
 }
@@ -1346,15 +979,15 @@ fn selected_route_field_mut(state: &mut TuiState) -> Option<&mut String> {
 fn switch_settings_tab(state: &mut TuiState, forward: bool) {
     let current = active_settings_tab_index(state);
     let next = if forward {
-        (current + 1) % SETTINGS_SECTIONS.len()
+        (current + 1) % SETTINGS_TABS.len()
     } else if current == 0 {
-        SETTINGS_SECTIONS.len() - 1
+        SETTINGS_TABS.len() - 1
     } else {
         current - 1
     };
 
     state.settings_tab = next;
-    let (_, start, _) = SETTINGS_SECTIONS[next];
+    let (_, start, _) = SETTINGS_TABS[next];
     state.settings_selected = start;
     state.settings_editing = false;
     state.settings_scroll = 0;
@@ -1364,12 +997,12 @@ fn switch_settings_tab(state: &mut TuiState, forward: bool) {
 fn active_settings_tab_index(state: &TuiState) -> usize {
     state
         .settings_tab
-        .min(SETTINGS_SECTIONS.len().saturating_sub(1))
+        .min(SETTINGS_TABS.len().saturating_sub(1))
 }
 
 fn active_tab_bounds(state: &TuiState) -> (usize, usize) {
     let tab = active_settings_tab_index(state);
-    let (_, start, end) = SETTINGS_SECTIONS[tab];
+    let (_, start, end) = SETTINGS_TABS[tab];
     (start, end)
 }
 
@@ -1379,24 +1012,48 @@ fn clamp_selected_to_active_tab(state: &mut TuiState) {
 }
 
 fn row_style_for_settings_index(idx: usize, selected: bool) -> Style {
+    use settings_rows::SettingsRowId;
     let base = if selected {
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     } else {
-        match idx {
-            30 => Style::default().fg(Color::Cyan),
-            42 => Style::default().fg(Color::Green),
-            43 => Style::default().fg(Color::LightRed),
-            44 => Style::default().fg(Color::Cyan),
-            31 => Style::default().fg(Color::LightYellow),
-            32 => Style::default().fg(Color::LightMagenta),
-            33 => Style::default().fg(Color::LightCyan),
+        match settings_row_id(idx) {
+            SettingsRowId::EnvOverrides => Style::default().fg(Color::Cyan),
+            SettingsRowId::ApplyChanges => Style::default().fg(Color::Green),
+            SettingsRowId::Cancel => Style::default().fg(Color::LightRed),
+            SettingsRowId::ThemeMenu => Style::default().fg(Color::Cyan),
+            SettingsRowId::ReviewConfiguration => Style::default().fg(Color::LightYellow),
+            SettingsRowId::ClearApiKey | SettingsRowId::UpdateApiKey => {
+                Style::default().fg(Color::LightMagenta)
+            }
+            SettingsRowId::RouteRole
+            | SettingsRowId::RouteProvider
+            | SettingsRowId::RouteModel
+            | SettingsRowId::SetAllRouteTargets
+            | SettingsRowId::RouteTargetPreset
+            | SettingsRowId::RoutePolicyProfile
+            | SettingsRowId::RouteFallbackChain
+            | SettingsRowId::ResetSelectedRoute => Style::default().fg(Color::LightCyan),
             _ => Style::default().fg(Color::White),
         }
     };
 
-    if idx >= 33 {
+    if matches!(
+        settings_row_id(idx),
+        SettingsRowId::RouteRole
+            | SettingsRowId::RouteProvider
+            | SettingsRowId::RouteModel
+            | SettingsRowId::SetAllRouteTargets
+            | SettingsRowId::RouteTargetPreset
+            | SettingsRowId::RoutePolicyProfile
+            | SettingsRowId::RouteFallbackChain
+            | SettingsRowId::ResetSelectedRoute
+            | SettingsRowId::RevertChanges
+            | SettingsRowId::ApplyChanges
+            | SettingsRowId::Cancel
+            | SettingsRowId::ThemeMenu
+    ) {
         base.add_modifier(Modifier::BOLD)
     } else {
         base
@@ -1405,12 +1062,14 @@ fn row_style_for_settings_index(idx: usize, selected: bool) -> Style {
 
 fn section_help_text(active_section: usize) -> &'static str {
     match active_section {
-        0 => " Provider, model, connection, API key, and module access.",
-        1 => " Runtime behavior, tool limits, thinking capture, and optional Stasis OTEL.",
-        2 => " Verification thresholds for confidence and evidence gating.",
-        3 => " Review configuration and key-related safety actions.",
-        4 => " Stage routing role, manual provider/model, presets, policy, fallback, and reset.",
-        _ => " Revert, apply, close, or open the theme picker.",
+        0 => " Pick your AI, where data is stored, and which tools are allowed.",
+        1 => " Control tool use per reply — great for speed vs thoroughness.",
+        2 => " Tune memory: short chats, long chats, recent vs summarized history.",
+        3 => " Optional: watch reasoning in Obs, or send traces to your monitor.",
+        4 => " How picky the assistant is about sources and evidence.",
+        5 => " API keys, custom env vars, and a quick sanity check.",
+        6 => " Route task types to specialist models with backups.",
+        _ => " Save when ready, or discard and keep what you had.",
     }
 }
 
