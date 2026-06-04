@@ -37,6 +37,7 @@ use super::turn_budget::{
 };
 use super::turn_completion::ToolLoopCompletionGate;
 use super::turn_ledger::append_tool_loop_policy;
+use super::turn_context::TurnScratchpad;
 use super::turn_loop_settings::TurnLoopSettings;
 use super::turn_worker::{
     ActiveWorkerBusSession, WorkerRuntimeContext, apply_host_profile_to_activation,
@@ -446,12 +447,24 @@ pub fn apply_intent_classifier_override(
     }
 }
 
-fn build_tool_loop_failure_explanation_prompt(original_prompt: &str, runtime_error: &str) -> String {
+fn build_tool_loop_failure_explanation_prompt(
+    original_prompt: &str,
+    runtime_error: &str,
+    scratch: Option<&TurnScratchpad>,
+) -> String {
+    let scratch_block = scratch
+        .map(|s| {
+            format!(
+                "\n\nTURN_SCRATCHPAD (tool-loop working memory, no raw tool transcript):\n{}",
+                s.format_control_body(0)
+            )
+        })
+        .unwrap_or_default();
     format!(
         "[MEDOUSA_TURN_RUNTIME]\n\
          The interactive tool loop ended without a complete user-facing answer.\n\n\
          RUNTIME_ERROR:\n{runtime_error}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{original_prompt}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{original_prompt}{scratch_block}\n\n\
          Write one clear user-facing message: explain what happened in plain language, what was \
          attempted if you can infer it from the error, and what the user can try next (retry, \
          clarify, adjust settings, simpler request, or ask them for specific missing details). \
@@ -476,6 +489,7 @@ async fn deliver_tool_loop_failure_explanation(
     original_prompt: &str,
     runtime_error: &str,
     prior_messages: Vec<ChatMessage>,
+    scratch: Option<&TurnScratchpad>,
     host_bus: bool,
     suggested_intent: Option<&str>,
     orchestration_state: &mut TurnOrchestrationState,
@@ -490,7 +504,7 @@ async fn deliver_tool_loop_failure_explanation(
     .await;
 
     let explanation_prompt = truncate_text_for_budget(
-        &build_tool_loop_failure_explanation_prompt(original_prompt, runtime_error),
+        &build_tool_loop_failure_explanation_prompt(original_prompt, runtime_error, scratch),
         MAX_REQUEST_PROMPT_CHARS,
     );
 
@@ -641,6 +655,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .await;
 
     let scope_snapshot = turn_scope.read().await.clone();
+    let host_handoff_slot = Arc::new(tokio::sync::RwLock::new(None));
     worker_scheduler
         .set_bus_session(ActiveWorkerBusSession {
             sink: sink.clone(),
@@ -658,6 +673,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .as_ref()
                 .and_then(|scope| scope.delivery_target.as_ref())
                 .map(StoredDeliveryTarget::from),
+            host_handoff_slot: host_handoff_slot.clone(),
         })
         .await;
 
@@ -819,6 +835,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     }
     orchestration_state.final_mode = "tool_loop".to_string();
     let ledger_session_id = (!session_id.trim().is_empty()).then(|| session_id.clone());
+    let parent_turn_correlation_id = scope_snapshot
+        .as_ref()
+        .map(|scope| scope.turn_correlation_id.clone());
+    let mut last_tool_scratch: Option<TurnScratchpad> = None;
     let first_attempt = {
         let loop_max_rounds = activation.max_tool_rounds.max(1);
         let mut completion_gate = ToolLoopCompletionGate {
@@ -829,6 +849,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             budget: Some(&turn_budget),
             max_tool_rounds: loop_max_rounds,
             max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
+            scratch_out: Some(&mut last_tool_scratch),
+            host_handoff_slot: Some(host_handoff_slot.clone()),
+            parent_turn_correlation_id: parent_turn_correlation_id.clone(),
+            initial_worker_scratch: None,
+            handoff_parent_user_prompt: Some(original_prompt.clone()),
         };
         pipeline
             .execute_with_stream_prior_messages_max_rounds(
@@ -921,6 +946,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 max_tool_rounds: continuation_max_rounds,
                                 max_text_only_stuck_continues: turn_loop_settings
                                     .max_text_only_stuck_continues,
+                                scratch_out: Some(&mut last_tool_scratch),
+                                host_handoff_slot: Some(host_handoff_slot.clone()),
+                                parent_turn_correlation_id: parent_turn_correlation_id.clone(),
+                                initial_worker_scratch: None,
+                                handoff_parent_user_prompt: Some(original_prompt.clone()),
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -958,6 +988,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 }
             }
 
+            if let Some(footer) = TurnScratchpad::summarize_for_user_footer(&combined_invocations) {
+                final_text.push_str(&footer);
+            }
             let tool_names = collect_tool_names(&combined_invocations);
             sink.tool_invoked(
                 "llm.chat".to_string(),
@@ -1013,6 +1046,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             max_tool_rounds: retry_rounds,
                             max_text_only_stuck_continues: turn_loop_settings
                                 .max_text_only_stuck_continues,
+                            scratch_out: Some(&mut last_tool_scratch),
+                            host_handoff_slot: Some(host_handoff_slot.clone()),
+                            parent_turn_correlation_id: parent_turn_correlation_id.clone(),
+                            initial_worker_scratch: None,
+                            handoff_parent_user_prompt: Some(original_prompt.clone()),
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(
@@ -1049,6 +1087,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     &original_prompt,
                     &format!("{reason} (retry exhausted: {last_err})"),
                     prior_messages.clone(),
+                    last_tool_scratch.as_ref(),
                     host_bus,
                     suggested_intent,
                     &mut orchestration_state,
@@ -1070,6 +1109,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     &original_prompt,
                     &err_text,
                     prior_messages.clone(),
+                    last_tool_scratch.as_ref(),
                     host_bus,
                     suggested_intent,
                     &mut orchestration_state,

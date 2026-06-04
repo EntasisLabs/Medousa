@@ -4,6 +4,8 @@
 
 **Phase 0** — [turn-ledger-phase0.md](turn-ledger-phase0.md). **Phase 1** — [turn-worker-phase1.md](turn-worker-phase1.md). **Phase 2** — [turn-worker-phase2.md](turn-worker-phase2.md). Phases 3+ below remain planning.
 
+**Context / scratchpad track (planned):** [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md) — tiered pools for user vs tool lanes, worker handoff, classification ROI before Locus prompt versioning.
+
 ## Thesis
 
 The **interface agent should be a bus, not a kitchen that also cooks every dish.**

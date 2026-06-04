@@ -20,6 +20,8 @@ On continue (gatekeeper or interim heuristic), the tool loop appends a **system*
 …guidance…
 ```
 
+Phase 1–2 adds **`[MEDOUSA_SCRATCH]`** (goal, phase, step, tool digests, open_gaps) in the **tool lane only** — see [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md). Ledger records may include a `scratch` JSON snapshot on `tool_round` / gatekeeper events.
+
 The model sees why the turn did not end (missing calibrate, stutter, status-only text, etc.). Interim assistant text is still **not** appended to `messages` (see [tool-loop-interim-text-fix.md](tool-loop-interim-text-fix.md)).
 
 ### 3. Stuck detector

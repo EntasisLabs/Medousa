@@ -22,7 +22,8 @@ use crate::locus_memory::{
     CANONICAL_STTP_SCHEMA_EXAMPLE, filter_nodes_by_context_keywords,
     ingest_profile_name, normalize_context_keywords, normalize_tiers, recall_session_id_for_context,
     resolve_locus_ingest_profile,
-    schema_first_guidance, sttp_node_to_json, store_failure_payload, validate_limit, avec_to_json,
+    memory_node_to_json, schema_first_guidance, sttp_node_to_json, store_failure_payload,
+    validate_limit, avec_to_json,
 };
 
 const DEFAULT_RECALL_AVEC: (f32, f32, f32, f32) = (0.82, 0.31, 0.88, 0.74);
@@ -510,6 +511,7 @@ impl StasisTool for CognitionMemoryContextTool {
 
         Ok(json!({
             "retrieved": response.retrieved,
+            "nodes": response.nodes.iter().map(memory_node_to_json).collect::<Vec<_>>(),
             "retrieval_path": response.retrieval_path,
             "fallback_triggered": response.fallback_triggered,
             "fallback_reason": response.fallback_reason,

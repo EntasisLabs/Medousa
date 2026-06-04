@@ -10,6 +10,9 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use super::prompt_prep::truncate_text_for_budget;
 use super::stream_sink::SharedAgentStreamSink;
 use super::turn_budget::{TurnBudget, TurnOrchestrationState, try_consume_gatekeeper_budget};
+use std::sync::Arc;
+
+use super::turn_context::{TurnScratchpad, WorkerHandoffCapsule};
 use crate::turn_text_heuristics::looks_like_interim_status;
 
 /// Host context for completion gatekeeper calls from the tool loop.
@@ -23,6 +26,15 @@ pub struct ToolLoopCompletionGate<'a> {
     pub max_tool_rounds: usize,
     /// Consecutive text-only continues without new tools before the turn stops.
     pub max_text_only_stuck_continues: usize,
+    /// Latest scratchpad snapshot from the tool loop (for failure explanation / debugging).
+    pub scratch_out: Option<&'a mut Option<TurnScratchpad>>,
+    /// Shared slot updated each host tool round; consumed at worker spawn.
+    pub host_handoff_slot: Option<Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>>,
+    pub parent_turn_correlation_id: Option<String>,
+    /// Seeds worker tool-loop scratch from host handoff (Tier C).
+    pub initial_worker_scratch: Option<TurnScratchpad>,
+    /// Raw user message for handoff (without tool-policy appendix).
+    pub handoff_parent_user_prompt: Option<String>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -44,6 +56,11 @@ impl ToolLoopCompletionGate<'_> {
                 crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
                     max_tool_rounds,
                 ),
+            scratch_out: None,
+            host_handoff_slot: None,
+            parent_turn_correlation_id: None,
+            initial_worker_scratch: None,
+            handoff_parent_user_prompt: None,
         }
     }
 }

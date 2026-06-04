@@ -10,7 +10,9 @@ use locus_core_rs::{
 use serde_json::{Value, json};
 use stasis::domain::errors::Result as StasisResult;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
-use stasis::ports::outbound::memory::memory_models::{MemoryStoreRequest, MemoryStoreResponse};
+use stasis::ports::outbound::memory::memory_models::{
+    MemoryAvecState, MemoryNode, MemoryStoreRequest, MemoryStoreResponse,
+};
 
 pub const CANONICAL_STTP_SCHEMA_EXAMPLE: &str = r#"Canonical STTP node example (call cognition_memory_schema for this text):
 
@@ -180,6 +182,37 @@ pub fn sttp_node_to_json(node: &locus_core_rs::SttpNode) -> Value {
         "sync_key": node.sync_key,
         "user_avec": avec_to_json(node.user_avec),
         "model_avec": avec_to_json(node.model_avec),
+    })
+}
+
+/// JSON for nodes returned by Stasis `MemoryRecallResponse` / `MemoryFindResponse` (0.2.3+).
+pub fn memory_node_to_json(node: &MemoryNode) -> Value {
+    json!({
+        "raw": node.raw,
+        "session_id": node.session_id,
+        "tier": node.tier,
+        "timestamp": node.timestamp.to_rfc3339(),
+        "context_summary": node.context_summary,
+        "compression_depth": node.compression_depth,
+        "parent_node_id": node.parent_node_id,
+        "sync_key": node.sync_key,
+        "psi": node.psi,
+        "rho": node.rho,
+        "kappa": node.kappa,
+        "user_avec": memory_avec_to_json(node.user_avec),
+        "model_avec": memory_avec_to_json(node.model_avec),
+        "compression_avec": node.compression_avec.map(memory_avec_to_json),
+        "updated_at": node.updated_at.to_rfc3339(),
+    })
+}
+
+pub fn memory_avec_to_json(avec: MemoryAvecState) -> Value {
+    json!({
+        "stability": avec.stability,
+        "friction": avec.friction,
+        "logic": avec.logic,
+        "autonomy": avec.autonomy,
+        "psi": avec.stability + avec.friction + avec.logic + avec.autonomy,
     })
 }
 

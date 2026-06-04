@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use super::turn_completion::TurnCompletionVerdict;
+use super::turn_context::TurnScratchpad;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
@@ -30,13 +31,11 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
         "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
-         instruction=This turn has at most {max_tool_rounds} model rounds (tool calls and/or user-visible replies). \
-         When tool_rounds_remaining is 1, deliver the substantive user-facing answer on that round \
-         (or call cognition_turn_prepare_final on the prior round, then answer on the last round). \
-         If you spend the final round on tools only, the runtime ends the turn without a final reply. \
-         Short status-only text without tools counts toward the text-only continue limit. \
-         Tool failures return ok=false JSON in the tool receipt — recover in-loop (adjust, retry once, or delegate); do not stop the turn on one failed tool. \
-         After tool work is done: cognition_turn_prepare_final once, then one complete answer without more tools."
+         environment=Up to {max_tool_rounds} model rounds per turn (tool calls and/or assistant text). \
+         Tool call results stay in the tool transcript until the turn ends. \
+         Tool failures appear as JSON receipts (ok=false when applicable). \
+         cognition_turn_prepare_final is available to mark the next text-only message as the intended final reply. \
+         Text-only replies classified as interim are streamed to the user but not appended to the tool transcript."
     )
 }
 
@@ -68,6 +67,8 @@ pub struct TurnLedgerRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing_tools: Vec<String>,
     pub rounds_executed: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch: Option<TurnScratchpad>,
 }
 
 /// Tracks tool-round budget and user-visible interim replies without bloating the transcript.
@@ -108,11 +109,10 @@ impl TurnLoopAwareness {
             ));
         }
         if tool_rounds_remaining <= 1 {
-            lines.push(
-                "LAST tool round: send the user-facing answer now (or you should have called \
-                 cognition_turn_prepare_final earlier). Runtime will cut off if this round is tools-only."
-                    .to_string(),
-            );
+            lines.push(format!(
+                "Final model round in this turn budget (tool_rounds_remaining={tool_rounds_remaining}). \
+                 A tools-only round here ends the turn without a separate final text delivery."
+            ));
         }
         lines.join("\n")
     }
@@ -216,34 +216,26 @@ pub fn push_turn_control_message(messages: &mut Vec<ChatMessage>, body: &str) {
 pub fn developer_message_for_gatekeeper_continue(verdict: &TurnCompletionVerdict) -> String {
     if !verdict.missing_tools.is_empty() {
         return format!(
-            "Turn not complete. Required tool receipt(s) missing: {}. \
-             Do not repeat prior status tables or summaries. Call the missing tool(s) next, \
-             then cognition_turn_prepare_final before your final user-facing answer.",
+            "Receipt gap (not yet in this turn tool transcript): {}.",
             verdict.missing_tools.join(", ")
         );
     }
 
     match verdict.source {
         "receipt_checklist" if verdict.reason.contains("prepare_final") => {
-            "prepare_final was signaled but your draft still looks in-progress. \
-             Finish remaining tool work or deliver a true final answer — not another status preamble."
+            "State: cognition_turn_prepare_final was invoked; last draft still matched interim \
+             heuristics (not published as final)."
                 .to_string()
         }
         "receipt_checklist" => verdict.reason.clone(),
-        "gatekeeper_model" => format!(
-            "Completion gatekeeper: continue this turn. {}",
-            verdict.reason
-        ),
-        _ => format!(
-            "Continue this turn with tool calls as needed. {}",
-            verdict.reason
-        ),
+        "gatekeeper_model" => format!("Completion gatekeeper (continue): {}", verdict.reason),
+        _ => verdict.reason.clone(),
     }
 }
 
 pub fn developer_message_for_heuristic_interim_continue() -> &'static str {
-    "Your last message was status-only or in-progress narration, not a final answer. \
-     Call the tools needed to complete the user request. Do not resend the same summary or AVEC table."
+    "Loop note: last assistant message matched interim heuristics; it was streamed to the user \
+     but not appended to the tool transcript. Prior tool receipts in context are unchanged."
 }
 
 pub fn stuck_turn_user_message(
@@ -264,6 +256,7 @@ pub fn record_from_gatekeeper_continue(
     verdict: &TurnCompletionVerdict,
     rounds_executed: usize,
     tools_invoked: &[String],
+    scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
     let kind = if !verdict.missing_tools.is_empty() {
         TurnLedgerEventKind::ReceiptMissing
@@ -278,6 +271,7 @@ pub fn record_from_gatekeeper_continue(
         tools_invoked: tools_invoked.to_vec(),
         missing_tools: verdict.missing_tools.clone(),
         rounds_executed,
+        scratch: Some(scratch.clone()),
     }
 }
 
@@ -285,6 +279,7 @@ pub fn record_tool_round(
     stream_turn_id: u64,
     rounds_executed: usize,
     tool_names: &[String],
+    scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
         timestamp: Utc::now(),
@@ -294,6 +289,7 @@ pub fn record_tool_round(
         tools_invoked: tool_names.to_vec(),
         missing_tools: Vec::new(),
         rounds_executed,
+        scratch: Some(scratch.clone()),
     }
 }
 
@@ -311,6 +307,7 @@ pub fn record_finalized(
         tools_invoked: tools_invoked.to_vec(),
         missing_tools: Vec::new(),
         rounds_executed,
+        scratch: None,
     }
 }
 
@@ -330,6 +327,7 @@ pub fn record_stuck(
         tools_invoked: tools_invoked.to_vec(),
         missing_tools: Vec::new(),
         rounds_executed,
+        scratch: None,
     }
 }
 
@@ -409,7 +407,7 @@ mod tests {
     fn tool_loop_policy_includes_configured_rounds() {
         let p = append_tool_loop_policy("hello", 12);
         assert!(p.contains("max_tool_rounds=12"));
-        assert!(p.contains("tool_rounds_remaining is 1"));
+        assert!(p.contains("environment="));
     }
 
     #[test]
@@ -441,6 +439,6 @@ mod tests {
             missing_tools: vec!["cognition_memory_calibrate".to_string()],
         });
         assert!(msg.contains("cognition_memory_calibrate"));
-        assert!(msg.contains("Do not repeat"));
+        assert!(msg.contains("Receipt gap"));
     }
 }

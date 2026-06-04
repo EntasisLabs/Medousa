@@ -30,7 +30,12 @@ use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use super::policy::{TurnWorkerIntent, allowed_tool_names_for_intent, max_worker_tool_rounds};
-use super::prompts::{synthesis_user_prompt, worker_failure_user_prompt, worker_system_prompt};
+use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
+
+use super::prompts::{
+    synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
+    worker_system_prompt,
+};
 use super::registry::{AllowlistToolRegistry, WorkerSessionToolRegistry};
 use super::store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore};
 
@@ -47,6 +52,7 @@ pub struct ActiveWorkerBusSession {
     pub response_depth_mode: String,
     pub parent_turn_correlation_id: Option<String>,
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
+    pub host_handoff_slot: Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
 }
 
 /// Tooling snapshot for background workers (no `Arc<TuiRuntime>` required).
@@ -138,6 +144,30 @@ impl TurnWorkerScheduler {
 
         let work_id = format!("work-{}", uuid::Uuid::new_v4());
         let now = Utc::now();
+        let mut handoff = bus
+            .host_handoff_slot
+            .write()
+            .await
+            .take()
+            .unwrap_or_else(|| {
+            WorkerHandoffCapsule::from_host_context(
+                &bus.session_id,
+                bus.stream_turn_id,
+                parent_turn_correlation_id.clone(),
+                parent_user_prompt
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(bus.parent_user_prompt.as_str()),
+                &crate::agent_runtime::turn_context::TurnScratchpad::from_user_prompt(task),
+            )
+            });
+        handoff.apply_spawn(intent.as_str(), task, &work_id);
+        let handoff_summary = handoff.handoff_summary();
+        let scratch_digest = handoff.scratch_digest_hash.clone();
+        let parent_corr_log = handoff
+            .parent_turn_correlation_id
+            .clone()
+            .unwrap_or_else(|| "-".to_string());
+
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
             session_id: bus.session_id.clone(),
@@ -159,6 +189,8 @@ impl TurnWorkerScheduler {
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
                 .or_else(|| Some(bus.parent_user_prompt.clone())),
+            handoff_capsule: Some(handoff),
+            worker_scratch: None,
             created_at: now,
             updated_at: now,
         };
@@ -168,7 +200,10 @@ impl TurnWorkerScheduler {
             &bus.session_id,
             bus.stream_turn_id,
             TurnLedgerEventKind::WorkDelegated,
-            format!("work_id={work_id} intent={}", intent.as_str()),
+            format!(
+                "work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr_log} scratch_digest={scratch_digest}",
+                intent = intent.as_str(),
+            ),
         );
 
         bus.sink
@@ -194,6 +229,8 @@ impl TurnWorkerScheduler {
             "intent": intent.as_str(),
             "status": "pending",
             "user_ack": user_ack,
+            "handoff_summary": handoff_summary,
+            "scratch_digest": scratch_digest,
             "message": "Worker started in background; host turn may end with user_ack.",
         }))
     }
@@ -219,6 +256,7 @@ fn ledger_bus_event(session_id: &str, stream_turn_id: u64, kind: TurnLedgerEvent
         tools_invoked: Vec::new(),
         missing_tools: Vec::new(),
         rounds_executed: 0,
+        scratch: None,
     };
     persist_ledger_record(Some(session_id), &record);
 }
@@ -272,8 +310,19 @@ pub async fn run_worker_turn(
     );
 
     let worker_max_rounds = activation.max_tool_rounds.max(1);
+    let tool_loop_policy = append_tool_loop_policy(&record.task_prompt, worker_max_rounds);
+    let initial_worker_scratch = record
+        .handoff_capsule
+        .as_ref()
+        .map(|c| c.initial_worker_scratch());
+    let user_prompt = record
+        .handoff_capsule
+        .as_ref()
+        .map(|c| c.worker_tier_user_prompt(&tool_loop_policy))
+        .unwrap_or(tool_loop_policy.clone());
+
     let request = ToolLoopExecutionRequest {
-        user_prompt: append_tool_loop_policy(&record.task_prompt, worker_max_rounds),
+        user_prompt,
         system_prompt: Some(worker_system_prompt(
             &record.session_id,
             TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
@@ -284,6 +333,7 @@ pub async fn run_worker_turn(
         tool_call_mode: activation.tool_call_mode,
     };
 
+    let mut worker_scratch: Option<crate::agent_runtime::turn_context::TurnScratchpad> = None;
     let mut completion_gate = ToolLoopCompletionGate {
         stream_turn_id,
         session_id: Some(record.session_id.clone()),
@@ -292,6 +342,11 @@ pub async fn run_worker_turn(
         budget: None,
         max_tool_rounds: worker_max_rounds,
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
+        scratch_out: Some(&mut worker_scratch),
+        host_handoff_slot: None,
+        parent_turn_correlation_id: record.parent_turn_correlation_id.clone(),
+        initial_worker_scratch,
+        handoff_parent_user_prompt: record.parent_user_prompt.clone(),
     };
 
     let result = worker_pipeline
@@ -316,6 +371,7 @@ pub async fn run_worker_turn(
                 r.result_text = Some(response.text.clone());
                 r.tool_names = tool_names;
                 r.termination_reason = Some(response.termination_reason.clone());
+                r.worker_scratch = worker_scratch.clone();
             });
             ledger_bus_event(
                 &record.session_id,
@@ -434,14 +490,34 @@ async fn run_synthesis_turn(
         .clone()
         .unwrap_or_else(|| "(worker produced no text)".to_string());
 
-    let synthesis_prompt = synthesis_user_prompt(
-        &parent_prompt,
-        &record.task_prompt,
-        &record.work_id,
-        &record.intent,
-        &worker_result,
-        &record.tool_names,
-    );
+    let worker_tools_summary = if record.tool_names.is_empty() {
+        "(none)".to_string()
+    } else {
+        record
+            .tool_names
+            .iter()
+            .map(|name| format!("- {name}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let synthesis_prompt = if let Some(capsule) = record.handoff_capsule.as_ref() {
+        synthesis_user_prompt_with_handoff(
+            capsule,
+            record.worker_scratch.as_ref(),
+            &worker_result,
+            &record.tool_names,
+            &worker_tools_summary,
+        )
+    } else {
+        synthesis_user_prompt(
+            &parent_prompt,
+            &record.task_prompt,
+            &record.work_id,
+            &record.intent,
+            &worker_result,
+            &record.tool_names,
+        )
+    };
 
     sink.notice(format!(
         "◈ work_synthesis work_id={} delivering final answer",

@@ -17,7 +17,8 @@ Rules:
 - After spawning, give only a short user_ack; synthesis delivers the final answer.
 - Use workflows/jobs when work must be durable across turns.
 - Do not claim tool receipts the worker has not produced.
-- Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn."#;
+- Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn.
+- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests, open gaps) — do not repeat the full parent chat; complete the task in the worker thread."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -137,6 +138,48 @@ pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_
         out.push_str(&host_route_appendix(Some(intent)));
     }
     out
+}
+
+pub fn synthesis_user_prompt_with_handoff(
+    handoff: &crate::agent_runtime::turn_context::WorkerHandoffCapsule,
+    worker_scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
+    worker_result: &str,
+    tool_names: &[String],
+    worker_tools_summary: &str,
+) -> String {
+    let tools = if tool_names.is_empty() {
+        "(none)".to_string()
+    } else {
+        tool_names.join(", ")
+    };
+    let scratch_block = worker_scratch
+        .map(|s| {
+            format!(
+                "\n\nWORKER_SCRATCHPAD (end of worker tool loop):\n{}",
+                s.format_control_body(0)
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        "Synthesize a single user-facing reply for the host bus. Use the worker handoff and \
+         worker tool summary — not the full parent chat transcript.\n\n\
+         WORK_ID: (see handoff)\n\
+         WORKER_INTENT: {}\n\
+         HOST_SCRATCH_DIGEST: {}\n\n\
+         ORIGINAL_USER_MESSAGE:\n{}\n\n\
+         WORKER_TASK:\n{}\n\n\
+         HOST_TOOL_DIGESTS:\n{}\n\n\
+         WORKER_TOOLS:\n{tools}\n\n\
+         WORKER_TOOL_SUMMARY:\n{worker_tools_summary}{scratch_block}\n\n\
+         WORKER_RESULT:\n{worker_result}\n\n\
+         Produce the final answer for the user. Include outcomes and receipts from the worker. \
+         Do not mention internal worker IDs unless helpful for debugging.",
+        handoff.intent,
+        handoff.scratch_digest_hash,
+        handoff.parent_user_prompt,
+        handoff.task_prompt,
+        handoff.host_tool_digests.join("\n"),
+    )
 }
 
 pub fn synthesis_user_prompt(

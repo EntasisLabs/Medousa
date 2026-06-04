@@ -20,6 +20,10 @@ use crate::agent_runtime::turn_completion::{
     ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
     collect_tool_names, resolve_turn_completion,
 };
+use crate::agent_runtime::turn_context::{
+    HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
+    push_turn_scratch_message_with_budget, tool_output_ok,
+};
 use crate::agent_runtime::turn_ledger::{
     TurnLoopAwareness, TurnLoopDiscipline, developer_message_for_gatekeeper_continue,
     developer_message_for_heuristic_interim_continue, ledger_tool_names, persist_ledger_record,
@@ -161,12 +165,15 @@ impl MedousaToolLoopPipeline {
         let has_selected_tool = !shared_inputs.selected_tool_name().trim().is_empty();
         let parallel_settings = load_parallel_execution_settings();
 
-        let mut messages = Vec::with_capacity(2 + prior_messages.len());
-        if let Some(system_prompt) = shared_inputs.system_prompt.as_ref() {
-            messages.push(ChatMessage::system(system_prompt.to_string()));
+        let mut turn_ctx = HostTurnContext::new(
+            prior_messages,
+            shared_inputs.user_prompt.to_string(),
+        );
+        if let Some(gate) = completion_gate.as_ref() {
+            if let Some(seed) = gate.initial_worker_scratch.as_ref() {
+                turn_ctx.scratchpad = seed.clone();
+            }
         }
-        messages.extend(prior_messages);
-        messages.push(ChatMessage::user(shared_inputs.user_prompt.to_string()));
 
         let mut tools = self.tool_registry.list_tools().await?;
         if has_selected_tool {
@@ -203,11 +210,20 @@ impl MedousaToolLoopPipeline {
                 rounds_executed += 1;
                 let tool_rounds_remaining =
                     max_tool_rounds.saturating_sub(rounds_executed);
+                turn_ctx.scratchpad.on_tool_round_start(rounds_executed);
                 push_turn_control_message(
-                    &mut messages,
+                    &mut turn_ctx.tool_lane.messages,
                     &loop_awareness.loop_budget_message(tool_rounds_remaining),
                 );
-                let chat_request = ChatRequest::new(messages.clone()).with_tools(tools.clone());
+                push_turn_scratch_message_with_budget(
+                    &mut turn_ctx.tool_lane.messages,
+                    &turn_ctx.scratchpad,
+                    tool_rounds_remaining,
+                );
+                sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                let messages = turn_ctx
+                    .build_model_messages(shared_inputs.system_prompt.as_deref());
+                let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
                 let mut response = match chunk_tx {
                     Some(tx) => {
                         self.prompt_pipeline
@@ -302,25 +318,37 @@ impl MedousaToolLoopPipeline {
 
                                 if verdict.decision == TurnCompletionDecision::Continue {
                                     let tools = ledger_tool_names(&invocations);
+                                    turn_ctx
+                                        .scratchpad
+                                        .set_open_gaps(&verdict.missing_tools);
                                     let record = record_from_gatekeeper_continue(
                                         gate.stream_turn_id,
                                         &verdict,
                                         rounds_executed,
                                         &tools,
+                                        &turn_ctx.scratchpad,
                                     );
                                     persist_ledger_record(
                                         gate.session_id.as_deref(),
                                         &record,
                                     );
+                                    if let Some(slot) = gate.scratch_out.as_mut() {
+                                        **slot = Some(turn_ctx.scratchpad.clone());
+                                    }
                                     loop_awareness.record_user_response(&text);
                                     push_turn_control_message(
-                                        &mut messages,
+                                        &mut turn_ctx.tool_lane.messages,
                                         &loop_awareness.wrap_control_body(
                                             tool_rounds_remaining,
                                             &developer_message_for_gatekeeper_continue(
                                                 &verdict,
                                             ),
                                         ),
+                                    );
+                                    push_turn_scratch_message_with_budget(
+                                        &mut turn_ctx.tool_lane.messages,
+                                        &turn_ctx.scratchpad,
+                                        tool_rounds_remaining,
                                     );
                                     if discipline.on_text_only_continue(invocations.len()) {
                                         return finish_stuck_turn(
@@ -409,11 +437,20 @@ impl MedousaToolLoopPipeline {
                         }
                         loop_awareness.record_user_response(&text);
                         push_turn_control_message(
-                            &mut messages,
+                            &mut turn_ctx.tool_lane.messages,
                             &loop_awareness.wrap_control_body(
                                 tool_rounds_remaining,
                                 developer_message_for_heuristic_interim_continue(),
                             ),
+                        );
+                        push_turn_scratch_message_with_budget(
+                            &mut turn_ctx.tool_lane.messages,
+                            &turn_ctx.scratchpad,
+                            tool_rounds_remaining,
+                        );
+                        sync_scratch_snapshot(
+                            completion_gate.as_deref_mut(),
+                            &turn_ctx.scratchpad,
                         );
                         if discipline.on_text_only_continue(invocations.len()) {
                             if let Some(gate) = completion_gate.as_ref() {
@@ -458,8 +495,9 @@ impl MedousaToolLoopPipeline {
                     pending_final_answer = false;
                 }
 
-                messages.push(ChatMessage::from(tool_calls.clone()));
+                turn_ctx.tool_lane.messages.push(ChatMessage::from(tool_calls.clone()));
 
+                let invocations_before = invocations.len();
                 let batch: Vec<(String, Value)> = tool_calls
                     .iter()
                     .map(|call| (call.fn_name.clone(), call.fn_arguments.clone()))
@@ -502,7 +540,7 @@ impl MedousaToolLoopPipeline {
                         };
                         let tool_output = tool_output_from_invoke(output);
                         let tool_output_text = tool_output.to_string();
-                        messages.push(ChatMessage::from(ToolResponse::new(
+                        turn_ctx.tool_lane.messages.push(ChatMessage::from(ToolResponse::new(
                             call.call_id,
                             tool_output_text,
                         )));
@@ -528,7 +566,7 @@ impl MedousaToolLoopPipeline {
                         }
 
                         let tool_output_text = tool_output.to_string();
-                        messages.push(ChatMessage::from(ToolResponse::new(
+                        turn_ctx.tool_lane.messages.push(ChatMessage::from(ToolResponse::new(
                             call.call_id,
                             tool_output_text,
                         )));
@@ -540,8 +578,32 @@ impl MedousaToolLoopPipeline {
                     }
                 }
 
+                let round_results: Vec<(String, bool)> = invocations[invocations_before..]
+                    .iter()
+                    .map(|inv| (inv.tool_name.clone(), tool_output_ok(&inv.tool_output)))
+                    .collect();
+                turn_ctx.scratchpad.record_round_digest(&round_results);
+                sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                if let Some(gate) = completion_gate.as_ref() {
+                    let parent_for_handoff = gate
+                        .handoff_parent_user_prompt
+                        .as_deref()
+                        .unwrap_or(shared_inputs.user_prompt.as_ref());
+                    publish_host_handoff_snapshot(
+                        gate.session_id.as_deref(),
+                        gate.stream_turn_id,
+                        gate.parent_turn_correlation_id.clone(),
+                        parent_for_handoff,
+                        &turn_ctx.scratchpad,
+                        gate.host_handoff_slot.as_ref(),
+                    )
+                    .await;
+                }
+
                 if prepare_final_in_batch {
                     pending_final_answer = true;
+                    turn_ctx.scratchpad.phase =
+                        crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
                 }
 
                 discipline.on_tool_round();
@@ -552,6 +614,7 @@ impl MedousaToolLoopPipeline {
                             gate.stream_turn_id,
                             rounds_executed,
                             &round_tool_names,
+                            &turn_ctx.scratchpad,
                         ),
                     );
                 }
@@ -561,17 +624,33 @@ impl MedousaToolLoopPipeline {
                         &invocations,
                     )
                 {
+                    let intent = invocations
+                        .iter()
+                        .find(|i| i.tool_name == "cognition_spawn_turn_worker")
+                        .and_then(|i| i.tool_input.get("intent"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("general");
+                    turn_ctx.scratchpad.set_delegate(&work_id, intent);
+                    sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
                     if let Some(gate) = completion_gate.as_ref() {
+                        let parent_corr = gate
+                            .parent_turn_correlation_id
+                            .as_deref()
+                            .unwrap_or("-");
+                        let digest = turn_ctx.scratchpad.digest_hash();
                         persist_ledger_record(
                             gate.session_id.as_deref(),
                             &crate::agent_runtime::turn_ledger::TurnLedgerRecord {
                                 timestamp: chrono::Utc::now(),
                                 stream_turn_id: gate.stream_turn_id,
                                 kind: crate::agent_runtime::turn_ledger::TurnLedgerEventKind::WorkDelegated,
-                                detail: format!("host_turn_ended work_id={work_id}"),
+                                detail: format!(
+                                    "host_turn_ended work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
+                                ),
                                 tools_invoked: ledger_tool_names(&invocations),
                                 missing_tools: Vec::new(),
                                 rounds_executed,
+                                scratch: Some(turn_ctx.scratchpad.clone()),
                             },
                         );
                     }
@@ -718,6 +797,17 @@ fn tool_output_from_invoke(result: Result<Value>) -> Value {
     match result {
         Ok(value) => value,
         Err(err) => recoverable_tool_error_value(&err.to_string()),
+    }
+}
+
+fn sync_scratch_snapshot(
+    gate: Option<&mut ToolLoopCompletionGate<'_>>,
+    scratch: &TurnScratchpad,
+) {
+    if let Some(gate) = gate {
+        if let Some(slot) = gate.scratch_out.as_mut() {
+            **slot = Some(scratch.clone());
+        }
     }
 }
 

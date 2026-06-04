@@ -29,10 +29,9 @@ impl StasisTool for CognitionTurnPrepareFinalTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Mark that your next message will be the final user-facing reply for this turn. \
-             Call once after you have finished tool work (memory, MCP, jobs, etc.). \
-             Do not use for short status lines; keep using tools while still working. \
-             After calling, send one complete answer on the next turn without further tool calls.",
+            "Signal that your next text-only message is intended as the user-facing final for this turn. \
+             Optional after tool receipts are in context. \
+             The following text-only message is treated as final when substantive.",
         )
     }
 

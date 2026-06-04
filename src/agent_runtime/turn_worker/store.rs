@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
+use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::turn_continuation::StoredDeliveryTarget;
 
 static STORE: Lazy<RwLock<Arc<TurnWorkerStore>>> =
@@ -44,6 +45,10 @@ pub struct TurnWorkRecord {
     pub response_depth_mode: String,
     pub delivery_target: Option<StoredDeliveryTarget>,
     pub parent_user_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff_capsule: Option<WorkerHandoffCapsule>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_scratch: Option<crate::agent_runtime::turn_context::TurnScratchpad>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -16,6 +16,7 @@ pub mod stream_sink;
 pub mod system_prompt;
 pub mod turn_budget;
 pub mod turn_completion;
+pub mod turn_context;
 pub mod turn_ledger;
 pub mod turn_loop_settings;
 pub mod turn_orchestrator;
@@ -67,6 +68,13 @@ pub use turn_loop_settings::{
     DEFAULT_CONTINUATION_MAX_TOOL_ROUNDS, DEFAULT_HOST_BUS_MAX_TOOL_ROUNDS,
     DEFAULT_MAX_TEXT_ONLY_STUCK_CONTINUES, RETRY_LIMIT_MAX, RETRY_LIMIT_MIN, ROUND_LIMIT_MAX,
     ROUND_LIMIT_MIN,
+};
+pub use turn_context::{
+    HostTurnContext, ToolLaneState, TurnScratchPhase, TurnScratchpad, WorkerHandoffCapsule,
+    publish_host_handoff_snapshot, push_turn_scratch_message,
+    push_turn_scratch_message_with_budget,
+    scratch_digest_hash, tool_output_ok, tool_results_from_invocations, SCRATCH_PREFIX,
+    WORKER_HANDOFF_PREFIX,
 };
 pub use turn_ledger::{
     TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness, TurnLoopDiscipline,
