@@ -31,6 +31,9 @@ use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use super::policy::{TurnWorkerIntent, allowed_tool_names_for_intent, max_worker_tool_rounds};
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
+use crate::agent_runtime::worker_continuity::{
+    InProcessDelegationRecord, record_in_process_delegation,
+};
 
 use super::prompts::{
     synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
@@ -53,6 +56,9 @@ pub struct ActiveWorkerBusSession {
     pub parent_turn_correlation_id: Option<String>,
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
     pub host_handoff_slot: Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
+    pub host_continuity_bundle: Option<crate::agent_runtime::worker_continuity::HostContinuityBundle>,
+    /// Operator `max_tool_rounds` from the delegating host turn (not a separate worker cap).
+    pub configured_max_tool_rounds: usize,
 }
 
 /// Tooling snapshot for background workers (no `Arc<TuiRuntime>` required).
@@ -160,8 +166,12 @@ impl TurnWorkerScheduler {
                 &crate::agent_runtime::turn_context::TurnScratchpad::from_user_prompt(task),
                 None,
                 None,
+                bus.host_continuity_bundle.clone(),
             )
             });
+        if handoff.host_continuity.is_none() {
+            handoff.host_continuity = bus.host_continuity_bundle.clone();
+        }
         handoff.apply_spawn(intent.as_str(), task, &work_id);
         let handoff_summary = handoff.handoff_summary();
         let scratch_digest = handoff.scratch_digest_hash.clone();
@@ -169,6 +179,12 @@ impl TurnWorkerScheduler {
             .parent_turn_correlation_id
             .clone()
             .unwrap_or_else(|| "-".to_string());
+        let continuity_summary = handoff
+            .host_continuity
+            .as_ref()
+            .map(|bundle| bundle.log_summary())
+            .unwrap_or_else(|| "none".to_string());
+        let delegation_parent_turn = handoff.parent_turn_correlation_id.clone();
 
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
@@ -185,6 +201,7 @@ impl TurnWorkerScheduler {
             provider: bus.provider.clone(),
             model: bus.model.clone(),
             response_depth_mode: bus.response_depth_mode.clone(),
+            max_tool_rounds: bus.configured_max_tool_rounds.max(1),
             delivery_target,
             parent_user_prompt: parent_user_prompt
                 .map(str::trim)
@@ -208,10 +225,27 @@ impl TurnWorkerScheduler {
             ),
         );
 
+        record_in_process_delegation(&InProcessDelegationRecord {
+            work_id: work_id.clone(),
+            session_id: bus.session_id.clone(),
+            intent: intent.as_str().to_string(),
+            parent_turn_correlation_id: delegation_parent_turn,
+            parent_stream_turn_id: bus.stream_turn_id,
+            sequential: true,
+            continuity_summary: continuity_summary.clone(),
+            spawned_at: now,
+        });
+
         bus.sink
             .notice(format!(
-                "◈ work_delegated work_id={work_id} intent={}",
+                "◈ work_delegated work_id={work_id} intent={} continuity={continuity_summary}",
                 intent.as_str()
+            ))
+            .await;
+        bus.sink
+            .notice(format!(
+                "◈ worker_delegation work_id={work_id} intent={intent} sequential=true continuity={continuity_summary}",
+                intent = intent.as_str(),
             ))
             .await;
 
@@ -296,27 +330,26 @@ pub async fn run_worker_turn(
 
     let settings = worker_settings_from_record(&record);
     let turn_loop_settings = TurnLoopSettings::from_runtime_settings(&settings);
-    let worker_rounds = TurnWorkerIntent::parse(&record.intent)
-        .map(max_worker_tool_rounds)
-        .unwrap_or(10);
-    let activation = turn_services::decide_turn_activation(
-        &record.task_prompt,
-        turn_services::parse_tool_call_mode(&settings.tool_call_mode),
-        worker_rounds,
-        turn_loop_settings.activation_tool_intent_max_rounds,
-        turn_loop_settings.activation_short_turn_max_tool_rounds,
-        0,
-        256,
-        32,
-        256,
-    );
-
-    let worker_max_rounds = activation.max_tool_rounds.max(1);
+    let intent_floor = max_worker_tool_rounds(intent);
+    let worker_max_rounds = record.max_tool_rounds.max(intent_floor).max(1);
+    let tool_call_mode = turn_services::parse_tool_call_mode(&settings.tool_call_mode);
+    sink.notice(format!(
+        "◈ work_round_budget work_id={work_id} max_tool_rounds={worker_max_rounds} host_config={} intent_floor={intent_floor}",
+        record.max_tool_rounds,
+    ))
+    .await;
     let tool_loop_policy = append_tool_loop_policy(&record.task_prompt, worker_max_rounds);
-    let initial_worker_scratch = record
-        .handoff_capsule
-        .as_ref()
-        .map(|c| c.initial_worker_scratch());
+    let initial_worker_scratch = record.handoff_capsule.as_ref().map(|c| {
+        let mut scratch = c.initial_worker_scratch();
+        if matches!(
+            intent,
+            TurnWorkerIntent::Research | TurnWorkerIntent::General
+        ) {
+            // Host-lane receipt gaps (e.g. calibrate) must not block workshop finalize.
+            scratch.open_gaps.clear();
+        }
+        scratch
+    });
     let user_prompt = record
         .handoff_capsule
         .as_ref()
@@ -332,7 +365,7 @@ pub async fn run_worker_turn(
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
         tool_input: Value::Null,
-        tool_call_mode: activation.tool_call_mode,
+        tool_call_mode,
     };
 
     let mut worker_scratch: Option<crate::agent_runtime::turn_context::TurnScratchpad> = None;
@@ -357,6 +390,14 @@ pub async fn run_worker_turn(
             .handoff_capsule
             .as_ref()
             .and_then(|cap| cap.model_avec.map(Into::into)),
+        handoff_continuity_bundle: record
+            .handoff_capsule
+            .as_ref()
+            .and_then(|cap| cap.host_continuity.clone()),
+        skip_avec_ritual_check: matches!(
+            intent,
+            TurnWorkerIntent::Research | TurnWorkerIntent::General
+        ),
     };
 
     let result = worker_pipeline
@@ -595,7 +636,7 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         retry_runtime_max_rounds: None,
     };
     let mut settings = runtime_settings_for_interactive_turn("worker", &request);
-    settings.max_tool_rounds = "12".to_string();
+    settings.max_tool_rounds = record.max_tool_rounds.max(1).to_string();
     settings
 }
 

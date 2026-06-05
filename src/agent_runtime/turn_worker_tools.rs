@@ -63,9 +63,10 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Delegate heavy work to a background turn worker (memory rituals, multi-tool tasks). \
+            "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). \
              Returns immediately; the worker runs tools with a focused policy, then a synthesis pass \
-             delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general.",
+             delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. \
+             Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
         )
     }
 
@@ -75,11 +76,11 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
             "properties": {
                 "intent": {
                     "type": "string",
-                    "description": "Worker profile: memory.avec_calibrate | memory.context | general"
+                    "description": "Worker profile: memory.avec_calibrate | memory.context | research | general"
                 },
                 "task": {
                     "type": "string",
-                    "description": "Full task prompt for the worker (what to accomplish with tools)"
+                    "description": "Focused task for the worker: capability id, module.op, URLs, and constraints. Include what the host already resolved so the worker does not rediscover."
                 },
                 "user_ack": {
                     "type": "string",

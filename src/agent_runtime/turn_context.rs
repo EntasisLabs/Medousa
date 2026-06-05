@@ -81,21 +81,46 @@ impl TurnScratchpad {
     pub fn record_round_digest(&mut self, tool_results: &[(String, bool)]) {
         let tools: Vec<String> = tool_results
             .iter()
-            .map(|(name, ok)| {
-                if *ok {
-                    format!("{name}:ok")
-                } else {
-                    format!("{name}:fail")
-                }
+            .map(|(name, ok)| format_tool_digest_entry(name, *ok, None))
+            .collect();
+        self.apply_round_digest(&tool_results.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>(), &tools);
+    }
+
+    /// Record a tool round with compact receipt hints so workers inherit host evidence.
+    pub fn record_round_digest_from_invocations(&mut self, invocations: &[ToolInvocation]) {
+        let tool_results: Vec<(String, bool)> = invocations
+            .iter()
+            .map(|inv| (inv.tool_name.clone(), tool_output_ok(&inv.tool_output)))
+            .collect();
+        let tools: Vec<String> = invocations
+            .iter()
+            .map(|inv| {
+                let ok = tool_output_ok(&inv.tool_output);
+                let hint = compact_tool_receipt_hint(&inv.tool_name, &inv.tool_output);
+                format_tool_digest_entry(&inv.tool_name, ok, hint.as_deref())
             })
             .collect();
-        self.last_tools = tool_results.iter().map(|(n, _)| n.clone()).collect();
-        if let Some((name, false)) = tool_results.iter().find(|(_, ok)| !*ok) {
+        let names: Vec<String> = tool_results.iter().map(|(n, _)| n.clone()).collect();
+        self.apply_round_digest(&names, &tools);
+    }
+
+    fn apply_round_digest(&mut self, tool_names: &[String], digest_entries: &[String]) {
+        self.last_tools = tool_names.to_vec();
+        if let Some(name) = tool_names
+            .iter()
+            .zip(digest_entries.iter())
+            .find(|(_, entry)| entry.contains(":fail"))
+            .map(|(name, _)| name.clone())
+        {
             self.last_error = Some(format!("{name} returned ok=false"));
         } else {
             self.last_error = None;
         }
-        let digest = format!("round={} tools=[{}]", self.step, tools.join(", "));
+        let digest = format!(
+            "round={} tools=[{}]",
+            self.step,
+            digest_entries.join(", ")
+        );
         self.round_digests.push(digest);
         const MAX_DIGESTS: usize = 12;
         if self.round_digests.len() > MAX_DIGESTS {
@@ -178,6 +203,8 @@ pub struct WorkerHandoffCapsule {
     pub vibe_signature: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_avec: Option<HandoffModelAvec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
 }
 
 impl WorkerHandoffCapsule {
@@ -189,6 +216,7 @@ impl WorkerHandoffCapsule {
         scratch: &TurnScratchpad,
         vibe_signature: Option<String>,
         model_avec: Option<MemoryAvecState>,
+        host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
     ) -> Self {
         let model_avec = model_avec.map(Into::into);
         const MAX_HOST_DIGESTS: usize = 6;
@@ -214,6 +242,7 @@ impl WorkerHandoffCapsule {
             constraints: default_worker_constraints(),
             vibe_signature,
             model_avec,
+            host_continuity,
         }
     }
 
@@ -244,8 +273,13 @@ impl WorkerHandoffCapsule {
         scratch
     }
 
-    /// Tier C user-lane body: handoff + tool policy (no parent chat history).
+    /// Tier C user-lane body: continuity + handoff + tool policy.
     pub fn worker_tier_user_prompt(&self, tool_loop_policy: &str) -> String {
+        let continuity_prefix = self
+            .host_continuity
+            .as_ref()
+            .map(|bundle| format!("{}\n\n", bundle.format_user_block()))
+            .unwrap_or_default();
         let digests = if self.host_tool_digests.is_empty() {
             "(none yet)".to_string()
         } else {
@@ -276,7 +310,7 @@ impl WorkerHandoffCapsule {
             })
             .unwrap_or_else(|| "(none)".to_string());
         format!(
-            "{WORKER_HANDOFF_PREFIX}\n\
+            "{continuity_prefix}{WORKER_HANDOFF_PREFIX}\n\
              session_id={}\n\
              parent_stream_turn_id={}\n\
              parent_turn_correlation_id={parent_corr}\n\
@@ -399,6 +433,7 @@ pub async fn publish_host_handoff_snapshot(
     handoff_slot: Option<&std::sync::Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>>,
     vibe_signature: Option<String>,
     model_avec: Option<MemoryAvecState>,
+    host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
 ) {
     if parent_user_prompt.trim().is_empty() {
         return;
@@ -417,6 +452,7 @@ pub async fn publish_host_handoff_snapshot(
         scratch,
         vibe_signature,
         model_avec,
+        host_continuity,
     );
     *slot.write().await = Some(capsule);
 }
@@ -430,10 +466,92 @@ pub fn tool_results_from_invocations(invocations: &[ToolInvocation]) -> Vec<(Str
 
 fn default_worker_constraints() -> Vec<String> {
     vec![
+        "Complete WORKER_TASK only — host already orchestrated; do not redo its discovery".to_string(),
+        "Read HOST_TOOL_DIGESTS before capability_search, resolve, or grapheme modules search".to_string(),
         "Use session_id on all cognition_memory_* tools".to_string(),
         "Ground final worker text in tool receipts; do not invent results".to_string(),
-        "Call cognition_turn_prepare_final once before final prose".to_string(),
+        "Call cognition_turn_prepare_final once before final prose; end early when task is done".to_string(),
     ]
+}
+
+fn format_tool_digest_entry(name: &str, ok: bool, hint: Option<&str>) -> String {
+    let status = if ok { "ok" } else { "fail" };
+    match hint.filter(|value| !value.trim().is_empty()) {
+        Some(hint) => format!("{name}:{status} ({hint})"),
+        None => format!("{name}:{status}"),
+    }
+}
+
+/// One-line receipt hint for host→worker handoff digests.
+pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<String> {
+    if matches!(output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+        return output
+            .get("error")
+            .or_else(|| output.get("message"))
+            .and_then(|value| value.as_str())
+            .map(|text| truncate_field(text, 96));
+    }
+
+    let normalized = tool_name.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "cognition_capability_resolve" | "cognition.capability.resolve" => output
+            .get("recommended")
+            .and_then(|value| value.get("reference"))
+            .and_then(|value| value.as_str())
+            .or_else(|| output.get("capability").and_then(|value| value.as_str()))
+            .map(|reference| format!("recommended={reference}")),
+        "cognition_capability_search" | "cognition.capability.search" => output
+            .get("matches")
+            .and_then(|value| value.as_array())
+            .and_then(|matches| matches.first())
+            .and_then(|entry| entry.get("capability"))
+            .and_then(|value| value.as_str())
+            .map(|capability| format!("top={capability}")),
+        "cognition_memory_context" => output
+            .get("status")
+            .and_then(|value| value.as_str())
+            .map(|status| format!("status={status}")),
+        "cognition_memory_recall" => output
+            .get("hits")
+            .or_else(|| output.get("snippets"))
+            .and_then(|value| value.as_array())
+            .map(|hits| format!("hits={}", hits.len())),
+        "cognition_capability_invoke" | "cognition.capability.invoke" => output
+            .get("binding")
+            .and_then(|value| value.get("reference"))
+            .and_then(|value| value.as_str())
+            .or_else(|| output.get("capability").and_then(|value| value.as_str()))
+            .map(|reference| format!("binding={reference}")),
+        "cognition_spawn_turn_worker" => output
+            .get("intent")
+            .and_then(|value| value.as_str())
+            .map(|intent| format!("intent={intent}")),
+        _ if normalized.contains("grapheme_modules") => output
+            .get("stdout")
+            .and_then(|value| value.as_str())
+            .and_then(extract_grapheme_module_ids_from_stdout)
+            .map(|modules| format!("modules={modules}")),
+        _ => None,
+    }
+}
+
+fn extract_grapheme_module_ids_from_stdout(stdout: &str) -> Option<String> {
+    let mut modules = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("module_id:") {
+            let id = rest.trim();
+            if !id.is_empty() {
+                modules.push(id.to_string());
+            }
+        }
+    }
+    if modules.is_empty() {
+        return None;
+    }
+    modules.sort();
+    modules.dedup();
+    Some(truncate_field(&modules.join(","), 96))
 }
 
 pub fn scratch_digest_hash(scratch: &TurnScratchpad) -> String {
@@ -513,6 +631,7 @@ mod tests {
             &host,
             Some("focused calibration energy".to_string()),
             None,
+            None,
         );
         cap.apply_spawn("memory.avec_calibrate", "run full calibrate ritual", "work-1");
         let worker = cap.initial_worker_scratch();
@@ -527,5 +646,33 @@ mod tests {
         assert!(!tool_output_ok(&json!({"ok": false, "error": "x"})));
         assert!(tool_output_ok(&json!({"ok": true})));
         assert!(tool_output_ok(&json!({"data": 1})));
+    }
+
+    #[test]
+    fn digest_includes_capability_resolve_hint() {
+        use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+
+        let mut scratch = TurnScratchpad::default();
+        scratch.on_tool_round_start(1);
+        scratch.record_round_digest_from_invocations(&[ToolInvocation {
+            tool_name: "cognition_capability_resolve".to_string(),
+            tool_input: json!({}),
+            tool_output: json!({
+                "capability": "web_research",
+                "recommended": { "reference": "web.duckduckgo" }
+            }),
+        }]);
+        assert!(scratch.round_digests[0].contains("recommended=web.duckduckgo"));
+    }
+
+    #[test]
+    fn compact_hint_surfaces_capability_search_top_match() {
+        let hint = compact_tool_receipt_hint(
+            "cognition_capability_search",
+            &json!({
+                "matches": [{ "capability": "web_research", "score": 90 }]
+            }),
+        );
+        assert_eq!(hint.as_deref(), Some("top=web_research"));
     }
 }

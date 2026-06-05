@@ -33,12 +33,12 @@ impl TurnWorkerIntent {
     }
 }
 
-/// Worker tool-loop round budget per intent (Phase 2).
+/// Minimum worker tool-loop rounds per intent when host config is lower (fallback floor).
 pub fn max_worker_tool_rounds(intent: TurnWorkerIntent) -> usize {
     match intent {
         TurnWorkerIntent::MemoryAvecCalibrate => 12,
         TurnWorkerIntent::MemoryContext => 10,
-        TurnWorkerIntent::Research => 14,
+        TurnWorkerIntent::Research => 10,
         TurnWorkerIntent::General => 10,
     }
 }
@@ -94,6 +94,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
             push(
                 &mut names,
                 &[
+                    "cognition_memory_context",
+                    "cognition_memory_recall",
                     "cognition_capability_invoke",
                     "cognition_capability_search",
                     "cognition_capability_resolve",
@@ -260,11 +262,12 @@ mod tests {
     #[test]
     fn research_intent_includes_grapheme_discovery_tools() {
         let names = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
+        assert!(names.contains("cognition_memory_context"));
         assert!(names.contains("cognition_grapheme_modules"));
-        assert!(names.contains("cognition_grapheme_examples"));
         assert!(names.contains("cognition_grapheme_run"));
         assert!(names.contains("cognition_grapheme_template_run"));
         assert!(names.contains("cognition_capability_invoke"));
+        assert!(!names.contains("cognition_memory_calibrate"));
     }
 
     #[test]

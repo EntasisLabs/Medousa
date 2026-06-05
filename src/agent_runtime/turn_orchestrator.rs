@@ -95,6 +95,7 @@ pub struct PreparedTurnPrompt {
     pub compiler_output: crate::engine_context::ContextCompilerOutput,
     pub handoff_vibe_signature: String,
     pub handoff_model_avec: MemoryAvecState,
+    pub ambient_appendix: String,
 }
 
 pub struct PrepareTurnPromptParams<'a> {
@@ -145,14 +146,15 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         recall_readiness,
     );
     resolved_prompt = compiler_output.compiled_prompt.clone();
-    resolved_prompt = super::ambient_context::append_ambient_context(
-        &resolved_prompt,
+    let ambient_block = super::ambient_context::build_ambient_context(
         super::ambient_context::AmbientContextInput {
             session_id: params.session_id,
             surface: params.surface,
             channel_policy: Some(&channel_policy),
         },
     );
+    let ambient_appendix = ambient_block.appendix.clone();
+    resolved_prompt = format!("{resolved_prompt}\n\n{}", ambient_block.appendix);
 
     let handoff_model_avec = super::vibe_signature::default_handoff_model_avec();
     let handoff_vibe_signature = super::vibe_signature::derive_vibe_signature(
@@ -172,6 +174,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         compiler_output,
         handoff_vibe_signature,
         handoff_model_avec,
+        ambient_appendix,
     }
 }
 
@@ -202,6 +205,7 @@ pub struct LocalTurnExecutionParams {
     pub turn_loop_settings: TurnLoopSettings,
     pub handoff_vibe_signature: String,
     pub handoff_model_avec: MemoryAvecState,
+    pub host_continuity_bundle: Option<super::worker_continuity::HostContinuityBundle>,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -354,6 +358,11 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             turn_loop_settings,
             handoff_vibe_signature: params.prepared.handoff_vibe_signature.clone(),
             handoff_model_avec: params.prepared.handoff_model_avec,
+            host_continuity_bundle: Some(super::worker_continuity::build_host_continuity_bundle(
+                params.prepared,
+                params.conversation,
+                None,
+            )),
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -653,6 +662,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         turn_loop_settings,
         handoff_vibe_signature,
         handoff_model_avec,
+        mut host_continuity_bundle,
     } = params;
 
     sink.notice(format!(
@@ -690,6 +700,17 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .await;
 
     let scope_snapshot = turn_scope.read().await.clone();
+    if let Some(bundle) = host_continuity_bundle.as_mut() {
+        bundle.parent_turn_correlation_id = scope_snapshot
+            .as_ref()
+            .map(|scope| scope.turn_correlation_id.clone());
+        sink.notice(format!(
+            "◈ worker_continuity {}",
+            bundle.log_summary()
+        ))
+        .await;
+    }
+    let handoff_continuity_bundle = host_continuity_bundle.clone();
     let host_handoff_slot = Arc::new(tokio::sync::RwLock::new(None));
     worker_scheduler
         .set_bus_session(ActiveWorkerBusSession {
@@ -709,6 +730,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .and_then(|scope| scope.delivery_target.as_ref())
                 .map(StoredDeliveryTarget::from),
             host_handoff_slot: host_handoff_slot.clone(),
+            host_continuity_bundle,
+            configured_max_tool_rounds: turn_loop_settings.configured_max_tool_rounds,
         })
         .await;
 
@@ -900,6 +923,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             handoff_parent_user_prompt: Some(original_prompt.clone()),
             handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
             handoff_model_avec: Some(handoff_model_avec),
+            handoff_continuity_bundle: handoff_continuity_bundle.clone(),
+            skip_avec_ritual_check: false,
         };
         pipeline
             .execute_with_stream_prior_messages_max_rounds(
@@ -999,6 +1024,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 handoff_parent_user_prompt: Some(original_prompt.clone()),
                                 handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                                 handoff_model_avec: Some(handoff_model_avec),
+                                handoff_continuity_bundle: handoff_continuity_bundle.clone(),
+                                skip_avec_ritual_check: false,
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -1110,6 +1137,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             handoff_parent_user_prompt: Some(original_prompt.clone()),
                             handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                             handoff_model_avec: Some(handoff_model_avec),
+                            handoff_continuity_bundle: handoff_continuity_bundle.clone(),
+                            skip_avec_ritual_check: false,
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(

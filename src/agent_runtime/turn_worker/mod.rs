@@ -9,9 +9,10 @@ mod store;
 
 pub use policy::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, max_worker_tool_rounds,
+    tool_allowed,
 };
 pub use prompts::{
-    HOST_BUS_TURN_APPENDIX, WORKER_SYSTEM_PROMPT, system_prompt_for_host_profile,
+    HOST_BUS_TURN_APPENDIX, WORKER_SYSTEM_APPENDIX, system_prompt_for_host_profile,
     worker_system_prompt,
 };
 pub use registry::{AllowlistToolRegistry, WorkerSessionToolRegistry, inject_worker_session_id};

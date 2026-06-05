@@ -27,6 +27,7 @@ pub mod turn_worker_tools;
 pub mod turn_services;
 pub mod types;
 pub mod vibe_signature;
+pub mod worker_continuity;
 
 pub use ambient_context::{
     append_ambient_context, build_ambient_context, operator_zoned_now, resolve_operator_timezone,

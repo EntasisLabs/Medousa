@@ -465,6 +465,13 @@ pub(crate) async fn start_prompt_run(
     let continuation_recall_readiness = prepared.recall_readiness;
     let handoff_vibe_signature = prepared.handoff_vibe_signature.clone();
     let handoff_model_avec = prepared.handoff_model_avec;
+    let host_continuity_bundle = Some(
+        medousa::agent_runtime::worker_continuity::build_host_continuity_bundle(
+            &prepared,
+            &state.conversation,
+            None,
+        ),
+    );
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
     let turn_scope = tui_rt.turn_scope.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
@@ -517,6 +524,7 @@ pub(crate) async fn start_prompt_run(
                 turn_loop_settings,
                 handoff_vibe_signature,
                 handoff_model_avec,
+                host_continuity_bundle,
             },
         )
         .await;

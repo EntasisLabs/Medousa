@@ -71,9 +71,8 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::agent_runtime::turn_worker::policy::{
-        allowed_tool_names_for_intent, host_bus_tool_names, tool_allowed,
-        TurnWorkerIntent,
+    use crate::agent_runtime::turn_worker::{
+        TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, tool_allowed,
     };
     use crate::tool_aliases::sanitize_tool_advertised_name;
 

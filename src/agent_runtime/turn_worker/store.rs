@@ -27,6 +27,10 @@ pub enum TurnWorkStatus {
     Cancelled,
 }
 
+fn default_worker_max_tool_rounds() -> usize {
+    10
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnWorkRecord {
     pub work_id: String,
@@ -43,6 +47,9 @@ pub struct TurnWorkRecord {
     pub provider: String,
     pub model: String,
     pub response_depth_mode: String,
+    /// Tool-round budget snapshotted from the host turn's operator settings at spawn.
+    #[serde(default = "default_worker_max_tool_rounds")]
+    pub max_tool_rounds: usize,
     pub delivery_target: Option<StoredDeliveryTarget>,
     pub parent_user_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

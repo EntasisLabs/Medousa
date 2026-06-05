@@ -303,6 +303,7 @@ impl MedousaToolLoopPipeline {
                                     max_tool_rounds,
                                     true,
                                     last_streamed_draft.as_deref(),
+                                    gate.skip_avec_ritual_check,
                                 );
                                 let sink = gate.sink.clone();
                                 let orchestration = gate.orchestration.as_deref_mut();
@@ -578,11 +579,10 @@ impl MedousaToolLoopPipeline {
                     }
                 }
 
-                let round_results: Vec<(String, bool)> = invocations[invocations_before..]
-                    .iter()
-                    .map(|inv| (inv.tool_name.clone(), tool_output_ok(&inv.tool_output)))
-                    .collect();
-                turn_ctx.scratchpad.record_round_digest(&round_results);
+                let round_invocations = &invocations[invocations_before..];
+                turn_ctx
+                    .scratchpad
+                    .record_round_digest_from_invocations(round_invocations);
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
                 if let Some(gate) = completion_gate.as_ref() {
                     let parent_for_handoff = gate
@@ -598,6 +598,7 @@ impl MedousaToolLoopPipeline {
                         gate.host_handoff_slot.as_ref(),
                         gate.handoff_vibe_signature.clone(),
                         gate.handoff_model_avec,
+                        gate.handoff_continuity_bundle.clone(),
                     )
                     .await;
                 }

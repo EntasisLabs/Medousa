@@ -13,6 +13,7 @@ use super::turn_budget::{TurnBudget, TurnOrchestrationState, try_consume_gatekee
 use std::sync::Arc;
 
 use super::turn_context::{TurnScratchpad, WorkerHandoffCapsule};
+use super::worker_continuity::HostContinuityBundle;
 use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 use crate::turn_text_heuristics::looks_like_interim_status;
 
@@ -38,6 +39,9 @@ pub struct ToolLoopCompletionGate<'a> {
     pub handoff_parent_user_prompt: Option<String>,
     pub handoff_vibe_signature: Option<String>,
     pub handoff_model_avec: Option<MemoryAvecState>,
+    pub handoff_continuity_bundle: Option<HostContinuityBundle>,
+    /// Workshop lane (research/general worker): skip host memory AVEC ritual receipt checks.
+    pub skip_avec_ritual_check: bool,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -66,6 +70,8 @@ impl ToolLoopCompletionGate<'_> {
             handoff_parent_user_prompt: None,
             handoff_vibe_signature: None,
             handoff_model_avec: None,
+            handoff_continuity_bundle: None,
+            skip_avec_ritual_check: false,
         }
     }
 }
@@ -111,11 +117,46 @@ pub struct TurnCompletionDocket {
     pub tools_invoked: Vec<String>,
     pub missing_ritual_tools: Vec<String>,
     pub stutter_detected: bool,
+    /// Workshop worker (research/general): host receipt + interim finalize rules do not apply.
+    pub workshop_lane: bool,
+}
+
+/// Lines that carry continuity metadata (model_avec, vibe) — not operator calibrate intent.
+fn is_avec_ritual_metadata_line(line: &str) -> bool {
+    let t = line.trim().to_ascii_lowercase();
+    t.starts_with("model_avec=")
+        || t.starts_with("user_avec=")
+        || t.starts_with("vibe_signature=")
+        || t.contains("compression_avec:")
+}
+
+fn prompt_text_for_avec_ritual_scan(prompt: &str) -> String {
+    prompt
+        .lines()
+        .filter(|line| !is_avec_ritual_metadata_line(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// True when `avec` appears as its own token (e.g. "pull AVEC"), not inside `model_avec`.
+fn contains_standalone_avec_token(text: &str) -> bool {
+    text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|token| token.eq_ignore_ascii_case("avec"))
 }
 
 pub fn user_prompt_has_avec_ritual_intent(prompt: &str) -> bool {
-    let lower = prompt.to_ascii_lowercase();
-    ["calibrat", "avec", "mood", "focused", "focus"]
+    let scanned = prompt_text_for_avec_ritual_scan(prompt);
+    let lower = scanned.to_ascii_lowercase();
+    if ["calibrat", "mood"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+    {
+        return true;
+    }
+    if contains_standalone_avec_token(&lower) {
+        return true;
+    }
+    ["focused", "focus"]
         .iter()
         .any(|needle| lower.contains(needle))
 }
@@ -200,8 +241,13 @@ pub fn build_turn_completion_docket(
     max_tool_rounds: usize,
     heuristic_would_finalize: bool,
     previous_draft: Option<&str>,
+    skip_avec_ritual_check: bool,
 ) -> TurnCompletionDocket {
-    let missing_ritual_tools = missing_ritual_tools_for_avec(user_prompt, invocations);
+    let missing_ritual_tools = if skip_avec_ritual_check {
+        Vec::new()
+    } else {
+        missing_ritual_tools_for_avec(user_prompt, invocations)
+    };
     let stutter_detected = previous_draft
         .filter(|prev| drafts_look_similar(prev, draft_text))
         .is_some();
@@ -216,10 +262,19 @@ pub fn build_turn_completion_docket(
         tools_invoked: collect_tool_names(invocations),
         missing_ritual_tools,
         stutter_detected,
+        workshop_lane: skip_avec_ritual_check,
     }
 }
 
+/// After `prepare_final`, workshop workers deliver an internal result for synthesis — not operator interim chat.
+pub fn workshop_lane_finalize_allowed(docket: &TurnCompletionDocket) -> bool {
+    docket.workshop_lane && docket.pending_final_answer && !docket.draft_text.trim().is_empty()
+}
+
 pub fn should_invoke_completion_gatekeeper(docket: &TurnCompletionDocket) -> bool {
+    if workshop_lane_finalize_allowed(docket) {
+        return false;
+    }
     if docket.pending_final_answer {
         return true;
     }
@@ -238,6 +293,9 @@ pub fn should_invoke_completion_gatekeeper(docket: &TurnCompletionDocket) -> boo
 }
 
 pub fn receipt_checklist_verdict(docket: &TurnCompletionDocket) -> Option<TurnCompletionVerdict> {
+    if docket.workshop_lane {
+        return None;
+    }
     if !docket.missing_ritual_tools.is_empty() {
         return Some(TurnCompletionVerdict {
             decision: TurnCompletionDecision::Continue,
@@ -362,6 +420,18 @@ pub async fn resolve_turn_completion(
     orchestration: Option<&mut TurnOrchestrationState>,
     budget: Option<&TurnBudget>,
 ) -> TurnCompletionVerdict {
+    if workshop_lane_finalize_allowed(docket) {
+        let verdict = TurnCompletionVerdict {
+            decision: TurnCompletionDecision::EndTurn,
+            confidence: 1.0,
+            reason: "workshop_lane prepare_final delivery (synthesis-bound)".to_string(),
+            source: "workshop_lane",
+            missing_tools: Vec::new(),
+        };
+        emit_gatekeeper_notice(sink, &verdict).await;
+        return verdict;
+    }
+
     if let Some(verdict) = receipt_checklist_verdict(docket) {
         emit_gatekeeper_notice(sink, &verdict).await;
         return verdict;
@@ -406,8 +476,10 @@ pub async fn resolve_turn_completion(
     }
 
     TurnCompletionVerdict {
-        decision: if docket.heuristic_would_finalize
-            && !looks_like_interim_status(&docket.draft_text)
+        decision: if (docket.workshop_lane && docket.pending_final_answer
+            && !docket.draft_text.trim().is_empty())
+            || (docket.heuristic_would_finalize
+                && !looks_like_interim_status(&docket.draft_text))
         {
             TurnCompletionDecision::EndTurn
         } else {
@@ -459,6 +531,39 @@ mod tests {
         }];
         let missing = missing_ritual_tools_for_avec("pull focused AVEC preset", &invocations);
         assert!(missing.iter().any(|t| t.contains("moods")));
+    }
+
+    #[test]
+    fn workshop_lane_allows_finalize_after_prepare_final_with_interim_phrasing() {
+        let docket = TurnCompletionDocket {
+            user_prompt: "WORKER_TASK".to_string(),
+            draft_text: "searching tavily — here are raw results:\n- title one".to_string(),
+            pending_final_answer: true,
+            rounds_executed: 10,
+            max_tool_rounds: 30,
+            heuristic_would_finalize: true,
+            tools_invoked: vec!["cognition_turn_prepare_final".to_string()],
+            missing_ritual_tools: Vec::new(),
+            stutter_detected: false,
+            workshop_lane: true,
+        };
+        assert!(workshop_lane_finalize_allowed(&docket));
+        assert!(receipt_checklist_verdict(&docket).is_none());
+        assert!(!should_invoke_completion_gatekeeper(&docket));
+    }
+
+    #[test]
+    fn continuity_model_avec_does_not_trigger_ritual() {
+        let invocations = vec![ToolInvocation {
+            tool_name: "cognition_grapheme_run".to_string(),
+            tool_input: Value::Null,
+            tool_output: Value::Null,
+        }];
+        let prompt = "[HOST_CONTINUITY]\nmodel_avec=stability=0.89 friction=0.25 logic=0.94 autonomy=0.82\n\
+             WORKER_TASK:\nRun Tavily search for fun agentic projects";
+        assert!(!user_prompt_has_avec_ritual_intent(prompt));
+        let missing = missing_ritual_tools_for_avec(prompt, &invocations);
+        assert!(missing.is_empty());
     }
 
     #[test]
