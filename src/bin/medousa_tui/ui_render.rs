@@ -835,6 +835,7 @@ fn build_conversation_text(
                     "verified" => ("verified", Color::Green),
                     "provisional" => ("provisional", Color::Yellow),
                     "needs_input" => ("asking", Color::Cyan),
+                    "final_pending" => ("wrapping up", Color::Magenta),
                     _ => (answer_state, Color::Gray),
                 };
                 lines.push(Line::from(vec![

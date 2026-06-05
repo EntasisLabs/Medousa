@@ -13,6 +13,7 @@ use super::turn_budget::{TurnBudget, TurnOrchestrationState, try_consume_gatekee
 use std::sync::Arc;
 
 use super::turn_context::{TurnScratchpad, WorkerHandoffCapsule};
+use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 use crate::turn_text_heuristics::looks_like_interim_status;
 
 /// Host context for completion gatekeeper calls from the tool loop.
@@ -35,6 +36,8 @@ pub struct ToolLoopCompletionGate<'a> {
     pub initial_worker_scratch: Option<TurnScratchpad>,
     /// Raw user message for handoff (without tool-policy appendix).
     pub handoff_parent_user_prompt: Option<String>,
+    pub handoff_vibe_signature: Option<String>,
+    pub handoff_model_avec: Option<MemoryAvecState>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -61,6 +64,8 @@ impl ToolLoopCompletionGate<'_> {
             parent_turn_correlation_id: None,
             initial_worker_scratch: None,
             handoff_parent_user_prompt: None,
+            handoff_vibe_signature: None,
+            handoff_model_avec: None,
         }
     }
 }

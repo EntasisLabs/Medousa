@@ -145,6 +145,17 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
+    async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        publish(
+            &self.stream_tx,
+            interactive_turn_runtime::final_pending_stream_event_with_tools(
+                &self.turn_id,
+                &text,
+                tool_names,
+            ),
+        );
+    }
+
     async fn agent_error(&self, _turn_id: u64, message: String) {
         publish(
             &self.stream_tx,
@@ -413,6 +424,10 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         *self.outcome.write().await = Some(TurnOutcome::Success);
         self.inner.agent_needs_input(turn_id, text, tool_names).await;
+    }
+
+    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        self.inner.agent_final_pending(turn_id, text, tool_names).await;
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {

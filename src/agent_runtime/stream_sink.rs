@@ -14,6 +14,10 @@ pub trait AgentStreamSink: Send + Sync {
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.agent_response(turn_id, text, tool_names).await;
     }
+    /// Non-terminal signal after `cognition_turn_prepare_final` — still working on the final answer.
+    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        let _ = (turn_id, text, tool_names);
+    }
     /// Short host acknowledgement while a background turn worker runs (non-terminal delivery).
     async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.agent_response(turn_id, text, tool_names).await;

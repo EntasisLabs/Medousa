@@ -206,6 +206,32 @@ pub fn memory_node_to_json(node: &MemoryNode) -> Value {
     })
 }
 
+/// Inject `vibe_signature(.97)` into the STTP content layer when absent.
+pub fn enrich_sttp_node_with_vibe_signature(raw_node: &str, vibe_signature: &str) -> String {
+    let vibe = vibe_signature.trim();
+    if vibe.is_empty() || raw_node.contains("vibe_signature") {
+        return raw_node.to_string();
+    }
+
+    let escaped: String = vibe
+        .chars()
+        .map(|ch| if ch == '"' { '\'' } else { ch })
+        .collect();
+
+    if let Some(marker) = raw_node.find("◈⟨") {
+        if let Some(open) = raw_node[marker..].find('{') {
+            let insert_at = marker + open + 1;
+            let mut out = String::with_capacity(raw_node.len() + escaped.len() + 32);
+            out.push_str(&raw_node[..insert_at]);
+            out.push_str(&format!(" vibe_signature(.97): \"{escaped}\", "));
+            out.push_str(&raw_node[insert_at..]);
+            return out;
+        }
+    }
+
+    raw_node.to_string()
+}
+
 pub fn memory_avec_to_json(avec: MemoryAvecState) -> Value {
     json!({
         "stability": avec.stability,

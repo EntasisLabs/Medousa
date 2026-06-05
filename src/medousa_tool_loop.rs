@@ -596,6 +596,8 @@ impl MedousaToolLoopPipeline {
                         parent_for_handoff,
                         &turn_ctx.scratchpad,
                         gate.host_handoff_slot.as_ref(),
+                        gate.handoff_vibe_signature.clone(),
+                        gate.handoff_model_avec,
                     )
                     .await;
                 }
@@ -604,6 +606,16 @@ impl MedousaToolLoopPipeline {
                     pending_final_answer = true;
                     turn_ctx.scratchpad.phase =
                         crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
+                    if let Some(gate) = completion_gate.as_ref() {
+                        if let Some(sink) = gate.sink.as_ref() {
+                            sink.agent_final_pending(
+                                gate.stream_turn_id,
+                                "Still gathering — preparing your answer…".to_string(),
+                                round_tool_names.clone(),
+                            )
+                            .await;
+                        }
+                    }
                 }
 
                 discipline.on_tool_round();

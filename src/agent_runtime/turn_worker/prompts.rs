@@ -47,8 +47,8 @@ pub const WORKER_GRAPHEME_APPENDIX: &str = r#"
 Grapheme is GraphQL-style query syntax with Elixir-like piping. Scripts fail when you invent syntax — always copy from discovered examples first.
 
 Execution order (do not skip):
-1) Classify: live/current facts need a runtime script (web/http/websearch modules) or cognition_capability_invoke — not modules search alone.
-2) Prefer cognition_capability_invoke when the task maps to a catalog capability (web, fetch, docs); read the receipt.
+1) Classify: live/current facts need a runtime script (web.<provider>, http, websearch) or cognition_capability_invoke — not modules search alone.
+2) Prefer cognition_capability_invoke when the task maps to a catalog capability (web_research, fetch, docs); resolve picks web.<provider> before websearch when available. Read the receipt.
 3) Preset workflows (prefer before hand-authoring source): cognition_grapheme_template_run with template research_report | http_poll | csv_digest and params (topic/query, url).
 4) Before writing any custom script: discover modules and examples (minimum one example; two when the task is novel):
    a) cognition_grapheme_modules with query matching intent (e.g. web, http)
@@ -66,7 +66,7 @@ query WorkerRun {
 }
 
 Few-shot attempt pattern:
-- Attempt A: smallest script from example (echo or single websearch call) to validate syntax.
+- Attempt A: smallest script from example (echo, web.providers probe, or single web.<provider> call) to validate syntax.
 - Attempt B (only if A failed): adjusted script using ops/signatures from modules_ops output.
 
 Never treat cognition_grapheme_modules output as final evidence for real-world facts. Never write a long script before any discovery tool call."#;

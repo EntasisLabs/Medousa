@@ -299,8 +299,14 @@ pub fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> Str
             .join("\n")
     };
 
+    let miss_guidance = if status == "miss" {
+        "\nmiss_fallback_policy=Do not stop at status=miss — try cognition_capability_invoke, cognition_grapheme_run, or reason explicitly from the current request before saying you lack memory.\n"
+    } else {
+        ""
+    };
+
     format!(
-        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}\nrecall_snippets:\n{}",
+        "{prompt}\n\n[MEDOUSA_MEMORY_RECALL]\nstatus={status}\nretrieved={}\nretrieval_path={}\nfallback_triggered={}\nfallback_reason={}\nnode_sync_keys={}\nrecall_snippets:\n{}{miss_guidance}",
         recall.retrieved,
         recall.retrieval_path.as_deref().unwrap_or("none"),
         recall.fallback_triggered,

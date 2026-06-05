@@ -144,6 +144,23 @@ pub fn final_stream_event_with_tools_terminal(
     Ok(event)
 }
 
+pub fn final_pending_stream_event_with_tools(
+    turn_id: &str,
+    status_text: &str,
+    tool_names: Vec<String>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event(
+        turn_id,
+        "final_pending",
+        "wrapping_up",
+        "Medousa is preparing your final answer",
+    )?;
+    event.final_text = Some(status_text.to_string());
+    event.tool_names = Some(tool_names);
+    event.terminal = false;
+    Ok(event)
+}
+
 pub fn needs_input_stream_event_with_tools(
     turn_id: &str,
     question_text: &str,

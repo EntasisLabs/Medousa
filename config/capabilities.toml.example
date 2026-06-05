@@ -1,0 +1,69 @@
+# Medousa capability manifest overlay
+#
+# Copy to: ~/.config/medousa/capabilities.toml
+#   mkdir -p ~/.config/medousa
+#   cp config/capabilities.toml.example ~/.config/medousa/capabilities.toml
+#
+# Loaded at daemon/TUI startup and merged with the embedded seed in
+# src/capability_catalog.rs. Entries with the same `id` replace the built-in
+# definition; new ids are appended.
+#
+# Priority: lower number = preferred default in cognition_capability_resolve /
+# cognition_capability_invoke (when try_fallbacks walks bindings).
+#
+# Grapheme module ops must exist in your installed `grapheme` CLI — run:
+#   grapheme modules search web --yaml
+#   grapheme modules ops web --yaml
+# to see providers (duckduckgo, google, tavily, …) on your machine.
+
+[[capabilities]]
+id = "web_research"
+title = "Research the public web"
+description = "Provider-native web search via the `web` module. Use web.providers / web.capabilities to discover configured providers, then web.<provider> for retrieval. websearch.* is a higher-level facade for multi-step research pipelines."
+aliases = ["web search", "look up online", "search the web", "internet search"]
+keywords = ["web", "internet", "news", "articles", "search", "tavily", "provider", "duckduckgo"]
+
+[[capabilities.bindings.grapheme]]
+module_op = "web.providers"
+priority = 5
+
+[[capabilities.bindings.grapheme]]
+module_op = "web.capabilities"
+priority = 8
+
+[[capabilities.bindings.grapheme]]
+module_op = "web.duckduckgo"
+priority = 10
+
+[[capabilities.bindings.grapheme]]
+module_op = "web.google"
+priority = 15
+
+# Add providers your Grapheme install exposes (check: grapheme modules info web --yaml)
+# [[capabilities.bindings.grapheme]]
+# module_op = "web.tavily"
+# priority = 12
+
+# websearch facade — use for research_report / research_materials pipelines, not simple lookup
+[[capabilities.bindings.grapheme]]
+module_op = "websearch.search"
+priority = 30
+
+[[capabilities.bindings.grapheme]]
+module_op = "websearch.research_materials"
+priority = 35
+
+[[capabilities.bindings.grapheme]]
+module_op = "websearch.research_report"
+priority = 40
+
+# Example: add a custom capability (appended; does not replace a built-in id)
+# [[capabilities]]
+# id = "team_runbook_search"
+# title = "Search internal runbooks"
+# aliases = ["runbook", "playbook"]
+# keywords = ["runbook", "oncall", "internal"]
+#
+# [[capabilities.bindings.grapheme]]
+# module_op = "docs.search"
+# priority = 10

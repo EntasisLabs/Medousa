@@ -89,6 +89,17 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
+    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        let _ = self
+            .tx
+            .send(TuiEvent::AgentFinalPending {
+                turn_id,
+                text,
+                tool_names,
+            })
+            .await;
+    }
+
     async fn agent_error(&self, turn_id: u64, message: String) {
         let _ = self
             .tx
@@ -452,6 +463,8 @@ pub(crate) async fn start_prompt_run(
     let continuation_response_depth_mode = state.response_depth_mode.clone();
     let continuation_stage_route = final_route.clone();
     let continuation_recall_readiness = prepared.recall_readiness;
+    let handoff_vibe_signature = prepared.handoff_vibe_signature.clone();
+    let handoff_model_avec = prepared.handoff_model_avec;
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
     let turn_scope = tui_rt.turn_scope.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
@@ -502,6 +515,8 @@ pub(crate) async fn start_prompt_run(
                 continuation_recall_readiness,
                 prompt_preview,
                 turn_loop_settings,
+                handoff_vibe_signature,
+                handoff_model_avec,
             },
         )
         .await;
@@ -709,6 +724,27 @@ async fn dispatch_daemon_stream_event(
             let tool_names = payload.tool_names.unwrap_or_default();
             event_tx
                 .send(TuiEvent::AgentNeedsInput {
+                    turn_id,
+                    text,
+                    tool_names,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        "final_pending" => {
+            let text = payload
+                .final_text
+                .or_else(|| {
+                    if payload.message.trim().is_empty() {
+                        None
+                    } else {
+                        Some(payload.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| "Still gathering your answer…".to_string());
+            let tool_names = payload.tool_names.unwrap_or_default();
+            event_tx
+                .send(TuiEvent::AgentFinalPending {
                     turn_id,
                     text,
                     tool_names,

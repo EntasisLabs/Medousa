@@ -181,6 +181,16 @@ fn select_binding_for_invoke(
     Ok((primary, available))
 }
 
+fn grapheme_source_for_web_provider_search(op: &str, escaped_query: &str) -> String {
+    format!(
+        r#"import core from "grapheme/core"
+query CapabilityInvoke {{
+  set {{ query: "{escaped_query}" }}
+  |> web.{op}(query: $current.query) {{ results {{ title url snippet }} }}
+}}"#
+    )
+}
+
 pub fn grapheme_source_for_binding(
     binding: &CapabilityBinding,
     tool_input: &Value,
@@ -201,6 +211,46 @@ pub fn grapheme_source_for_binding(
     let escaped = escape_grapheme_literal(query);
 
     let source = match binding.reference.as_str() {
+        "web.providers" => {
+            r#"import core from "grapheme/core"
+query CapabilityInvoke {
+  web.providers() { count providers { id } }
+}"#
+            .to_string()
+        }
+        "web.capabilities" => {
+            let provider = tool_input
+                .get("provider")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            match provider {
+                Some(provider) => {
+                    let escaped_provider = escape_grapheme_literal(provider);
+                    format!(
+                        r#"import core from "grapheme/core"
+query CapabilityInvoke {{
+  web.capabilities(provider: "{escaped_provider}") {{ available_providers provider }}
+}}"#
+                    )
+                }
+                None => {
+                    r#"import core from "grapheme/core"
+query CapabilityInvoke {
+  web.capabilities() { available_providers provider }
+}"#
+                    .to_string()
+                }
+            }
+        }
+        "web.duckduckgo" | "web.google" | "web.xaviv" => grapheme_source_for_web_provider_search(
+            binding
+                .reference
+                .rsplit_once('.')
+                .map(|(_, op)| op)
+                .unwrap_or("duckduckgo"),
+            &escaped,
+        ),
         "websearch.research_materials" => format!(
             r#"import core from "grapheme/core"
 query CapabilityInvoke {{
@@ -250,6 +300,10 @@ query CapabilityInvoke {{
                 "cognition_capability_invoke: smtp.send requires explicit input.source".to_string(),
             ));
         }
+        other if other.starts_with("web.") => grapheme_source_for_web_provider_search(
+            other.strip_prefix("web.").unwrap_or("duckduckgo"),
+            &escaped,
+        ),
         other => {
             return Err(StasisError::PortFailure(format!(
                 "cognition_capability_invoke: no auto grapheme source for binding '{other}'; provide input.source"
@@ -833,6 +887,15 @@ mod tests {
             .expect("source");
         assert!(source.contains("websearch.search"));
         assert!(source.contains("medousa"));
+    }
+
+    #[test]
+    fn grapheme_source_for_web_provider_binding() {
+        let binding = CapabilityBinding::grapheme("web.duckduckgo", 10, true);
+        let source = grapheme_source_for_binding(&binding, &json!({ "query": "phoenix events" }))
+            .expect("source");
+        assert!(source.contains("web.duckduckgo"));
+        assert!(source.contains("phoenix events"));
     }
 
     #[test]

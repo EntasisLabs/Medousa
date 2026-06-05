@@ -6,6 +6,9 @@ use genai::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
+
+use super::vibe_signature::HandoffModelAvec;
 
 pub const SCRATCH_PREFIX: &str = "[MEDOUSA_SCRATCH]";
 pub const WORKER_HANDOFF_PREFIX: &str = "[MEDOUSA_WORKER_HANDOFF]";
@@ -171,6 +174,10 @@ pub struct WorkerHandoffCapsule {
     pub scratch_digest_hash: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vibe_signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_avec: Option<HandoffModelAvec>,
 }
 
 impl WorkerHandoffCapsule {
@@ -180,7 +187,10 @@ impl WorkerHandoffCapsule {
         parent_turn_correlation_id: Option<String>,
         parent_user_prompt: &str,
         scratch: &TurnScratchpad,
+        vibe_signature: Option<String>,
+        model_avec: Option<MemoryAvecState>,
     ) -> Self {
+        let model_avec = model_avec.map(Into::into);
         const MAX_HOST_DIGESTS: usize = 6;
         let host_tool_digests: Vec<String> = scratch
             .round_digests
@@ -202,6 +212,8 @@ impl WorkerHandoffCapsule {
             host_scratch,
             host_tool_digests,
             constraints: default_worker_constraints(),
+            vibe_signature,
+            model_avec,
         }
     }
 
@@ -249,6 +261,20 @@ impl WorkerHandoffCapsule {
             .parent_turn_correlation_id
             .as_deref()
             .unwrap_or("(none)");
+        let vibe = self
+            .vibe_signature
+            .as_deref()
+            .unwrap_or("(none)");
+        let avec_line = self
+            .model_avec
+            .as_ref()
+            .map(|avec| {
+                format!(
+                    "stability={:.2} friction={:.2} logic={:.2} autonomy={:.2}",
+                    avec.stability, avec.friction, avec.logic, avec.autonomy
+                )
+            })
+            .unwrap_or_else(|| "(none)".to_string());
         format!(
             "{WORKER_HANDOFF_PREFIX}\n\
              session_id={}\n\
@@ -256,6 +282,8 @@ impl WorkerHandoffCapsule {
              parent_turn_correlation_id={parent_corr}\n\
              intent={}\n\
              host_scratch_digest={}\n\
+             vibe_signature={vibe}\n\
+             model_avec={avec_line}\n\
              constraints={constraints}\n\n\
              HOST_GOAL:\n{host_goal}\n\n\
              HOST_TOOL_DIGESTS (recent host tool rounds, compact):\n{digests}\n\n\
@@ -369,6 +397,8 @@ pub async fn publish_host_handoff_snapshot(
     parent_user_prompt: &str,
     scratch: &TurnScratchpad,
     handoff_slot: Option<&std::sync::Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>>,
+    vibe_signature: Option<String>,
+    model_avec: Option<MemoryAvecState>,
 ) {
     if parent_user_prompt.trim().is_empty() {
         return;
@@ -385,6 +415,8 @@ pub async fn publish_host_handoff_snapshot(
         parent_turn_correlation_id,
         parent_user_prompt,
         scratch,
+        vibe_signature,
+        model_avec,
     );
     *slot.write().await = Some(capsule);
 }
@@ -479,6 +511,8 @@ mod tests {
             Some("corr-abc".to_string()),
             "user asked calibrate",
             &host,
+            Some("focused calibration energy".to_string()),
+            None,
         );
         cap.apply_spawn("memory.avec_calibrate", "run full calibrate ritual", "work-1");
         let worker = cap.initial_worker_scratch();

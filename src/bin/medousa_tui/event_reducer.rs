@@ -70,6 +70,48 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 super::push_thinking(state, delta);
             }
         }
+        TuiEvent::AgentFinalPending {
+            turn_id,
+            text,
+            tool_names,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
+            if !state.received_native_reasoning {
+                for chunk in thinking_chunks {
+                    super::push_thinking(state, chunk);
+                }
+            }
+            state.in_thinking_tag = false;
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+
+            if let Some(idx) = state.active_agent_stream_turn {
+                if let Some(turn) = state.conversation.get_mut(idx) {
+                    turn.content = resolve_agent_turn_content(&turn.content, &visible_text, false);
+                    turn.tool_names = tool_names.clone();
+                    turn.answer_state = Some("final_pending".to_string());
+                    turn.timestamp = Utc::now();
+                }
+            } else {
+                let turn = ConversationTurn {
+                    role: "agent".to_string(),
+                    content: visible_text,
+                    timestamp: Utc::now(),
+                    tool_names: tool_names.clone(),
+                    answer_state: Some("final_pending".to_string()),
+                };
+                state.conversation.push(turn);
+                state.active_agent_stream_turn =
+                    Some(state.conversation.len().saturating_sub(1));
+            }
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
         TuiEvent::AgentNeedsInput {
             turn_id,
             text,

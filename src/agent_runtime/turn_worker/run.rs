@@ -158,6 +158,8 @@ impl TurnWorkerScheduler {
                     .filter(|s| !s.is_empty())
                     .unwrap_or(bus.parent_user_prompt.as_str()),
                 &crate::agent_runtime::turn_context::TurnScratchpad::from_user_prompt(task),
+                None,
+                None,
             )
             });
         handoff.apply_spawn(intent.as_str(), task, &work_id);
@@ -347,6 +349,14 @@ pub async fn run_worker_turn(
         parent_turn_correlation_id: record.parent_turn_correlation_id.clone(),
         initial_worker_scratch,
         handoff_parent_user_prompt: record.parent_user_prompt.clone(),
+        handoff_vibe_signature: record
+            .handoff_capsule
+            .as_ref()
+            .and_then(|cap| cap.vibe_signature.clone()),
+        handoff_model_avec: record
+            .handoff_capsule
+            .as_ref()
+            .and_then(|cap| cap.model_avec.map(Into::into)),
     };
 
     let result = worker_pipeline

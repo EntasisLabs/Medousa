@@ -194,11 +194,28 @@ impl StasisTool for CognitionMemoryStoreTool {
 
         emit_invoked(&self.event_tx, self.name(), &session_id).await;
 
+        let vibe_signature = input
+            .get("vibe_signature")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                crate::agent_runtime::derive_vibe_signature(
+                    &session_id,
+                    None,
+                    None,
+                    &crate::agent_runtime::default_handoff_model_avec(),
+                )
+            });
+        let raw_node =
+            crate::locus_memory::enrich_sttp_node_with_vibe_signature(node, &vibe_signature);
+
         let response = self
             .writer
             .store_context(&MemoryStoreRequest {
                 session_id,
-                raw_node: node.to_string(),
+                raw_node,
             })
             .await?;
 

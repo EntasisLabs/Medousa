@@ -36,6 +36,12 @@ pub enum TuiEvent {
         text: String,
         tool_names: Vec<String>,
     },
+    /// Non-terminal: `prepare_final` fired — still composing the user-facing answer.
+    AgentFinalPending {
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+    },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },
     /// Replace in-flight assistant scratch text (new model round / gatekeeper continue).

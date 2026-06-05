@@ -10,6 +10,7 @@ use stasis::application::orchestration::tool_loop_pipeline::{ToolCallMode, ToolI
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::engine_context::{EngineExecutionLane, RecallReadiness};
+use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 use crate::session::ConversationTurn;
 use crate::daemon_api::TurnSurfaceContext;
 use crate::stage_routing::StageRoute;
@@ -92,6 +93,8 @@ pub struct PreparedTurnPrompt {
     pub identity_probe: IdentityContextProbe,
     pub recall_readiness: RecallReadiness,
     pub compiler_output: crate::engine_context::ContextCompilerOutput,
+    pub handoff_vibe_signature: String,
+    pub handoff_model_avec: MemoryAvecState,
 }
 
 pub struct PrepareTurnPromptParams<'a> {
@@ -151,6 +154,14 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         },
     );
 
+    let handoff_model_avec = super::vibe_signature::default_handoff_model_avec();
+    let handoff_vibe_signature = super::vibe_signature::derive_vibe_signature(
+        params.session_id,
+        params.surface,
+        Some(&channel_policy),
+        &handoff_model_avec,
+    );
+
     PreparedTurnPrompt {
         resolved_prompt,
         pack_note,
@@ -159,6 +170,8 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         identity_probe,
         recall_readiness,
         compiler_output,
+        handoff_vibe_signature,
+        handoff_model_avec,
     }
 }
 
@@ -187,6 +200,8 @@ pub struct LocalTurnExecutionParams {
     pub continuation_recall_readiness: RecallReadiness,
     pub prompt_preview: String,
     pub turn_loop_settings: TurnLoopSettings,
+    pub handoff_vibe_signature: String,
+    pub handoff_model_avec: MemoryAvecState,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -337,6 +352,8 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             continuation_recall_readiness: params.prepared.recall_readiness,
             prompt_preview: params.resolved_prompt.chars().take(48).collect(),
             turn_loop_settings,
+            handoff_vibe_signature: params.prepared.handoff_vibe_signature.clone(),
+            handoff_model_avec: params.prepared.handoff_model_avec,
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -634,6 +651,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         continuation_recall_readiness,
         prompt_preview,
         turn_loop_settings,
+        handoff_vibe_signature,
+        handoff_model_avec,
     } = params;
 
     sink.notice(format!(
@@ -879,6 +898,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             parent_turn_correlation_id: parent_turn_correlation_id.clone(),
             initial_worker_scratch: None,
             handoff_parent_user_prompt: Some(original_prompt.clone()),
+            handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
+            handoff_model_avec: Some(handoff_model_avec),
         };
         pipeline
             .execute_with_stream_prior_messages_max_rounds(
@@ -976,6 +997,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 parent_turn_correlation_id: parent_turn_correlation_id.clone(),
                                 initial_worker_scratch: None,
                                 handoff_parent_user_prompt: Some(original_prompt.clone()),
+                                handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
+                                handoff_model_avec: Some(handoff_model_avec),
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -1085,6 +1108,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             parent_turn_correlation_id: parent_turn_correlation_id.clone(),
                             initial_worker_scratch: None,
                             handoff_parent_user_prompt: Some(original_prompt.clone()),
+                            handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
+                            handoff_model_avec: Some(handoff_model_avec),
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(

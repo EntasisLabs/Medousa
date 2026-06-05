@@ -9,6 +9,7 @@ use crate::daemon_api::InteractiveTurnStreamEvent;
 pub struct IngestStreamResult {
     pub final_text: Option<String>,
     pub needs_input: bool,
+    pub final_pending: bool,
     pub error: Option<String>,
 }
 
@@ -79,6 +80,15 @@ pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<
                         }
                     });
                     return Ok(result);
+                }
+                "final_pending" => {
+                    result.final_pending = true;
+                    if let Some(delta) = payload
+                        .final_text
+                        .filter(|value| !value.trim().is_empty())
+                    {
+                        result.final_text = Some(delta);
+                    }
                 }
                 "final" => {
                     result.final_text = payload.final_text.or_else(|| {

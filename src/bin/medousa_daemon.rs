@@ -2717,6 +2717,21 @@ impl AgentStreamSink for IngestAgentStreamSink {
         );
     }
 
+    async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+            return;
+        }
+
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::final_pending_stream_event_with_tools(
+                &self.stream_id,
+                &text,
+                tool_names,
+            ),
+        );
+    }
+
     async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         if self.cancelled_streams.read().await.contains(&self.stream_id) {
             publish_interactive_turn_event(

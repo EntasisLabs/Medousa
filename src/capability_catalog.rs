@@ -514,6 +514,7 @@ pub fn capabilities_manifest_path() -> PathBuf {
 
 /// Load embedded seed merged with optional `~/.config/medousa/capabilities.toml`.
 /// File entries override same-id capabilities and append new ones.
+/// Example overlay: `config/capabilities.toml.example` in the repo (copy to config dir).
 pub fn load_capability_manifest() -> (CapabilityManifest, bool) {
     let mut manifest = embedded_capability_manifest();
     let path = capabilities_manifest_path();
@@ -605,23 +606,47 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
             CapabilityManifestEntry {
                 id: "web_research".to_string(),
                 title: "Research the public web".to_string(),
-                description: None,
+                description: Some(
+                    "Provider-native retrieval via web.<provider>; websearch.* for multi-step research pipelines.".to_string(),
+                ),
                 aliases: vec!["web search".to_string(), "look up online".to_string()],
                 keywords: vec![
                     "web".to_string(),
                     "internet".to_string(),
                     "news".to_string(),
                     "articles".to_string(),
+                    "provider".to_string(),
+                    "tavily".to_string(),
                 ],
                 bindings: CapabilityManifestBindings {
                     grapheme: vec![
                         GraphemeCapabilityBindingSpec {
-                            module_op: "websearch.search".to_string(),
+                            module_op: "web.providers".to_string(),
+                            priority: 5,
+                        },
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "web.capabilities".to_string(),
+                            priority: 8,
+                        },
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "web.duckduckgo".to_string(),
                             priority: 10,
                         },
                         GraphemeCapabilityBindingSpec {
+                            module_op: "web.google".to_string(),
+                            priority: 15,
+                        },
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "websearch.search".to_string(),
+                            priority: 30,
+                        },
+                        GraphemeCapabilityBindingSpec {
+                            module_op: "websearch.research_materials".to_string(),
+                            priority: 35,
+                        },
+                        GraphemeCapabilityBindingSpec {
                             module_op: "websearch.research_report".to_string(),
-                            priority: 20,
+                            priority: 40,
                         },
                     ],
                     mcp: vec![],

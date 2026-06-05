@@ -26,6 +26,7 @@ pub mod turn_worker;
 pub mod turn_worker_tools;
 pub mod turn_services;
 pub mod types;
+pub mod vibe_signature;
 
 pub use ambient_context::{
     append_ambient_context, build_ambient_context, operator_zoned_now, resolve_operator_timezone,
@@ -88,6 +89,7 @@ pub use turn_context::{
     scratch_digest_hash, tool_output_ok, tool_results_from_invocations, SCRATCH_PREFIX,
     WORKER_HANDOFF_PREFIX,
 };
+pub use vibe_signature::{default_handoff_model_avec, derive_vibe_signature};
 pub use turn_ledger::{
     TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness, TurnLoopDiscipline,
     MAX_TEXT_ONLY_STUCK_CONTINUES, USER_RESPONSE_PREVIEW_MAX_CHARS, append_tool_loop_policy,
