@@ -834,6 +834,7 @@ fn build_conversation_text(
                 let (label, color) = match answer_state {
                     "verified" => ("verified", Color::Green),
                     "provisional" => ("provisional", Color::Yellow),
+                    "needs_input" => ("asking", Color::Cyan),
                     _ => (answer_state, Color::Gray),
                 };
                 lines.push(Line::from(vec![

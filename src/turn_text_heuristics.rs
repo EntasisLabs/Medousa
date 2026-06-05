@@ -139,3 +139,23 @@ pub fn termination_reason_for_text_only_finalize(
         "heuristic_substantive"
     }
 }
+
+/// True when assistant text is a direct clarifying question for the operator.
+pub fn looks_like_clarifying_question(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || !trimmed.ends_with('?') {
+        return false;
+    }
+    if looks_like_interim_status(text) {
+        return false;
+    }
+    let word_count = trimmed.split_whitespace().count();
+    if word_count > 120 {
+        return false;
+    }
+    let question_marks = trimmed.chars().filter(|ch| *ch == '?').count();
+    if question_marks > 3 {
+        return false;
+    }
+    true
+}

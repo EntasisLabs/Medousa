@@ -30,6 +30,12 @@ pub enum TuiEvent {
         /// When false, the turn stays open (host worker ack); a later terminal response completes it.
         terminal: bool,
     },
+    /// Medousa is asking the operator a clarifying question (terminal, distinct from a full answer).
+    AgentNeedsInput {
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+    },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },
     /// Replace in-flight assistant scratch text (new model round / gatekeeper continue).

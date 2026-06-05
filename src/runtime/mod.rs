@@ -4,6 +4,7 @@ pub mod platform;
 pub mod stasis_otel;
 pub mod stasis_surreal_schema;
 pub mod stasis_wire;
+pub mod surreal_startup;
 pub mod tui_platform;
 
 pub use platform::{MedousaPlatformRuntime, PlatformBuildConfig, build_daemon_platform, build_medousa_platform};

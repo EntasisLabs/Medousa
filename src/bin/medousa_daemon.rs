@@ -2450,6 +2450,7 @@ async fn spawn_continuation_agent_turn(
         &record.provider,
         &record.model,
         &record.response_depth_mode,
+        None,
     );
     interactive_request.persist_user_turn = false;
 
@@ -2578,6 +2579,7 @@ async fn spawn_daemon_api_agent_turn_with_scope(
         &provider,
         &model,
         &response_depth_mode,
+        None,
     );
 
     let agent_runtime = state.platform.agent_handle();
@@ -2711,6 +2713,74 @@ impl AgentStreamSink for IngestAgentStreamSink {
             medousa::interactive_turn_runtime::reasoning_delta_stream_event(
                 &self.stream_id,
                 &delta,
+            ),
+        );
+    }
+
+    async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+            publish_interactive_turn_event(
+                &self.stream_tx,
+                medousa::interactive_turn_runtime::error_stream_event(
+                    &self.stream_id,
+                    "ingest turn cancelled by /stop",
+                ),
+            );
+            return;
+        }
+
+        medousa::session::append_turn(
+            &self.session_id,
+            &medousa::session::ConversationTurn {
+                role: "assistant".to_string(),
+                content: text.clone(),
+                timestamp: Utc::now(),
+                tool_names: tool_names.clone(),
+                answer_state: Some("needs_input".to_string()),
+            },
+        );
+
+        let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
+        if let Err(err) = channel_delivery::dispatch_channel_message(
+            &self.dispatch_client,
+            &self.delivery_target,
+            &text,
+        )
+        .await
+        {
+            eprintln!(
+                "ingest agent turn channel dispatch failed job_id={} channel={}: {err:#}",
+                self.job_id, self.delivery_target.channel
+            );
+            mark_job_delivery_success(
+                &self.job_id,
+                latency_ms,
+                Some(err.to_string()),
+                &self.delivery_records,
+                &self.last_delivery_at,
+                &self.last_delivery_latency_ms,
+            )
+            .await;
+        } else {
+            mark_job_delivery_success(
+                &self.job_id,
+                latency_ms,
+                None,
+                &self.delivery_records,
+                &self.last_delivery_at,
+                &self.last_delivery_latency_ms,
+            )
+            .await;
+        }
+
+        self.channel_deliveries.write().await.remove(&self.job_id);
+
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::needs_input_stream_event_with_tools(
+                &self.stream_id,
+                &text,
+                tool_names,
             ),
         );
     }
@@ -2872,6 +2942,7 @@ async fn start_ingest_ask_stream(
         &runtime_config.draft_provider,
         &runtime_config.draft_model,
         &runtime_config.response_depth_mode,
+        Some(request),
     );
 
     let stream_id = format!("ingest-{}", Uuid::new_v4().simple());

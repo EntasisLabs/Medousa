@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn host_context_splits_lanes() {
-        let ctx = HostTurnContext::new(
+        let mut ctx = HostTurnContext::new(
             vec![ChatMessage::user("prior")],
             "current ask".to_string(),
         );

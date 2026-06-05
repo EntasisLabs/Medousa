@@ -11,6 +11,7 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::engine_context::{EngineExecutionLane, RecallReadiness};
 use crate::session::ConversationTurn;
+use crate::daemon_api::TurnSurfaceContext;
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
 use crate::tui::settings::{
@@ -25,7 +26,8 @@ use super::continuation::{
 use super::prompt_prep::{
     CheapRecallProbe, IdentityContextProbe, append_identity_context_hint,
     append_memory_recall_hint, cheap_memory_recall_probe, compile_interactive_context_prompt,
-    derive_recall_readiness, identity_context_probe, resolve_prompt_with_context_pack,
+    channel_policy_probe, derive_recall_readiness, identity_context_probe,
+    resolve_prompt_with_context_pack,
     truncate_text_for_budget, verifier_policy_from_settings_and_route, MAX_REQUEST_PROMPT_CHARS,
 };
 use super::stream_sink::SharedAgentStreamSink;
@@ -100,6 +102,7 @@ pub struct PrepareTurnPromptParams<'a> {
     pub verifier_route: Option<&'a StageRoute>,
     pub final_route: Option<&'a StageRoute>,
     pub response_depth_mode: &'a str,
+    pub surface: Option<&'a TurnSurfaceContext>,
     pub tui_rt: &'a TuiRuntime,
 }
 
@@ -118,6 +121,11 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     let identity_probe =
         identity_context_probe(params.tui_rt, params.final_route.map(|route| route.policy_profile.as_str()))
             .await;
+    let channel_policy = channel_policy_probe(
+        params.tui_rt,
+        params.final_route.map(|route| route.policy_profile.as_str()),
+    )
+    .await;
 
     resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
@@ -134,6 +142,14 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         recall_readiness,
     );
     resolved_prompt = compiler_output.compiled_prompt.clone();
+    resolved_prompt = super::ambient_context::append_ambient_context(
+        &resolved_prompt,
+        super::ambient_context::AmbientContextInput {
+            session_id: params.session_id,
+            surface: params.surface,
+            channel_policy: Some(&channel_policy),
+        },
+    );
 
     PreparedTurnPrompt {
         resolved_prompt,
@@ -342,7 +358,7 @@ pub async fn classify_turn_intent_with_model(
         truncate_text_for_budget(recent_context, INTENT_CLASSIFIER_MAX_CONTEXT_CHARS);
     let messages = vec![
         ChatMessage::system(
-            "You are an intent router. Classify intent for tool routing using CURRENT_USER_MESSAGE plus RECENT_CONTEXT. RECENT_CONTEXT is only local grounding for short follow-ups (acknowledgements, confirmations, pivots); do not treat old unresolved tasks as active unless CURRENT_USER_MESSAGE explicitly re-requests them. Return strict JSON only with fields: intent, confidence, reason. intent must be one of: conversational, tool_required, clarify, mixed.".to_string(),
+            "You are an intent router. Classify intent for tool routing using CURRENT_USER_MESSAGE plus RECENT_CONTEXT. RECENT_CONTEXT is only local grounding for short follow-ups (acknowledgements, confirmations, pivots); do not treat old unresolved tasks as active unless CURRENT_USER_MESSAGE explicitly re-requests them. Return strict JSON only with fields: intent, confidence, reason. intent must be one of: conversational, tool_required, clarify, mixed. Use clarify when the operator should get one direct question back instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
         ),
         ChatMessage::user(format!(
             "RECENT_CONTEXT:\n{}\n\nCURRENT_USER_MESSAGE:\n{}\n\nClassify whether this turn should use tools now.",
@@ -800,7 +816,16 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         "I do not have enough information to answer confidently without tools for this turn."
                             .to_string()
                     });
-                sink.agent_response(turn_id, final_text, Vec::new()).await;
+                super::turn_delivery::deliver_agent_turn_outcome(
+                    &sink,
+                    turn_id,
+                    final_text,
+                    Vec::new(),
+                    super::turn_delivery::AgentTurnDeliveryHint {
+                        activation_reason: activation.reason,
+                    },
+                )
+                .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
             Err(err) => {
@@ -1000,7 +1025,16 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 ),
             )
             .await;
-            sink.agent_response(turn_id, final_text, tool_names).await;
+            super::turn_delivery::deliver_agent_turn_outcome(
+                &sink,
+                turn_id,
+                final_text,
+                tool_names,
+                super::turn_delivery::AgentTurnDeliveryHint {
+                    activation_reason: activation.reason,
+                },
+            )
+            .await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
         }
         Err(err) => {
@@ -1068,7 +1102,16 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         Ok(response) => {
                             emit_tool_payload_events(&sink, &response.tool_invocations).await;
                             let tool_names = collect_tool_names(&response.tool_invocations);
-                            sink.agent_response(turn_id, response.text, tool_names).await;
+                            super::turn_delivery::deliver_agent_turn_outcome(
+                                &sink,
+                                turn_id,
+                                response.text,
+                                tool_names,
+                                super::turn_delivery::AgentTurnDeliveryHint {
+                                    activation_reason: activation.reason,
+                                },
+                            )
+                            .await;
                             orchestration_state.final_mode = "tool_loop_retry_success".to_string();
                             emit_orchestration_summary(&sink, &orchestration_state).await;
                             return;

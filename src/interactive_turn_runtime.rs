@@ -144,6 +144,23 @@ pub fn final_stream_event_with_tools_terminal(
     Ok(event)
 }
 
+pub fn needs_input_stream_event_with_tools(
+    turn_id: &str,
+    question_text: &str,
+    tool_names: Vec<String>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event(
+        turn_id,
+        "needs_input",
+        "awaiting_operator",
+        "Medousa is asking for clarification",
+    )?;
+    event.final_text = Some(question_text.to_string());
+    event.tool_names = Some(tool_names);
+    event.terminal = true;
+    Ok(event)
+}
+
 pub fn error_stream_event(turn_id: &str, message: &str) -> Result<InteractiveTurnStreamEvent> {
     let mut event = build_event(turn_id, "error", "failed", message)?;
     event.terminal = true;

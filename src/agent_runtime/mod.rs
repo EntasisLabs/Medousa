@@ -6,7 +6,9 @@
 /// Version label exposed in daemon `/health` and doctor diagnostics.
 pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 
+pub mod ambient_context;
 pub mod daemon_interactive_turn;
+pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod continuation;
 pub mod prompt_prep;
@@ -25,14 +27,24 @@ pub mod turn_worker_tools;
 pub mod turn_services;
 pub mod types;
 
+pub use ambient_context::{
+    append_ambient_context, build_ambient_context, operator_zoned_now, resolve_operator_timezone,
+    resolve_operator_timezone_label, AmbientContextBlock, AmbientContextInput,
+    ChannelAmbientPolicy,
+};
+pub use turn_delivery::{
+    classify_agent_turn_delivery, deliver_agent_turn_outcome, AgentTurnDeliveryHint,
+    AgentTurnDeliveryKind,
+};
 pub use continuation::{
     build_continuation_prior_messages, build_continuation_prompt, collect_tool_names,
     should_run_continuation,
 };
 pub use prompt_prep::{
     CheapRecallProbe, ContextPackQuality, IdentityContextProbe, RecallSnippet,
-    append_identity_context_hint, append_memory_recall_hint, cheap_memory_recall_probe,
-    compile_interactive_context_prompt, derive_recall_readiness, identity_context_probe,
+    append_identity_context_hint, append_memory_recall_hint, channel_policy_probe,
+    cheap_memory_recall_probe, compile_interactive_context_prompt, derive_recall_readiness,
+    identity_context_probe,
     resolve_prompt_with_context_pack, truncate_text_for_budget, verifier_policy_from_settings_and_route,
     MAX_REQUEST_PROMPT_CHARS,
 };

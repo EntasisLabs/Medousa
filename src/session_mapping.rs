@@ -1,4 +1,6 @@
-use crate::daemon_api::{IngestAttachment, IngestRequest, InteractiveTurnRequest};
+use crate::daemon_api::{
+    IngestAttachment, IngestRequest, InteractiveTurnRequest, TurnSurfaceContext,
+};
 use crate::session::load_history;
 use crate::stage_routing::StageRoutingMatrix;
 
@@ -408,8 +410,22 @@ pub fn build_interactive_turn_request_for_ingest(
     provider: &str,
     model: &str,
     response_depth_mode: &str,
+    ingest: Option<&IngestRequest>,
 ) -> InteractiveTurnRequest {
     let defaults = crate::session::load_tui_defaults();
+    let surface = ingest.map(|request| {
+        TurnSurfaceContext::from_ingest(
+            &request.channel,
+            &request.channel_id,
+            &request.user_id,
+        )
+    }).or_else(|| {
+        Some(TurnSurfaceContext {
+            channel_surface: Some("api".to_string()),
+            channel_id: None,
+            user_id: None,
+        })
+    });
     InteractiveTurnRequest {
         session_id: session_id.to_string(),
         prompt,
@@ -418,6 +434,7 @@ pub fn build_interactive_turn_request_for_ingest(
         provider: provider.to_string(),
         model: model.to_string(),
         stage_routing: StageRoutingMatrix::default_for(provider, model),
+        surface,
         max_tool_rounds: Some(defaults.max_tool_rounds.unwrap_or(10)),
         retry_runtime_max_rounds: Some(
             defaults

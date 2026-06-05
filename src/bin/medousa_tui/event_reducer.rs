@@ -70,6 +70,61 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 super::push_thinking(state, delta);
             }
         }
+        TuiEvent::AgentNeedsInput {
+            turn_id,
+            text,
+            tool_names,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            state.is_processing = false;
+            state.active_request_task = None;
+            state.open_stream_turn_id = None;
+            let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
+            if !state.received_native_reasoning {
+                for chunk in thinking_chunks {
+                    super::push_thinking(state, chunk);
+                }
+            }
+            state.in_thinking_tag = false;
+            state.received_native_reasoning = false;
+            super::flush_thinking_buffer(state);
+
+            let final_text = visible_text;
+            if let Some(idx) = state.active_agent_stream_turn {
+                let mut persisted_turn: Option<ConversationTurn> = None;
+                if let Some(turn) = state.conversation.get_mut(idx) {
+                    turn.content = resolve_agent_turn_content(&turn.content, &final_text, true);
+                    turn.tool_names = tool_names.clone();
+                    turn.answer_state = Some("needs_input".to_string());
+                    turn.timestamp = Utc::now();
+                    persisted_turn = Some(turn.clone());
+                }
+                state.active_agent_stream_turn = None;
+                if let Some(turn) = persisted_turn {
+                    let session_id = state.session_id.clone();
+                    super::history_services::append_turn_daemon_first(state, &session_id, &turn)
+                        .await;
+                }
+            } else {
+                let turn = ConversationTurn {
+                    role: "agent".to_string(),
+                    content: final_text,
+                    timestamp: Utc::now(),
+                    tool_names: tool_names.clone(),
+                    answer_state: Some("needs_input".to_string()),
+                };
+                let session_id = state.session_id.clone();
+                super::history_services::append_turn_daemon_first(state, &session_id, &turn)
+                    .await;
+                state.conversation.push(turn);
+            }
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
         TuiEvent::AgentResponse {
             turn_id,
             text,

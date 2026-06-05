@@ -162,6 +162,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             provider,
             model,
             stage_routing,
+            surface: None,
             max_tool_rounds: None,
             retry_runtime_max_rounds: None,
         };

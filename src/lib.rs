@@ -86,6 +86,7 @@ pub use daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, ContinuationStatusResponse,
     TurnContinuationLineageResponse, ReplayAndResumeResponse,
     InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    TurnSurfaceContext,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
     JobReportResponse, RegisterRecurringPromptRequest, JobResultResponse,
     RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,

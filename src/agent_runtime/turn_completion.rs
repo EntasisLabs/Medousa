@@ -283,7 +283,8 @@ pub async fn classify_turn_completion_with_gatekeeper(
              Return strict JSON only: {\"decision\":\"end_turn\"|\"continue\",\"confidence\":0-1,\"reason\":\"...\"}. \
              CONTINUE if ritual tools are missing, draft repeats prior content without new receipts, \
              or text promises work not yet done (e.g. \"let me calibrate\" without calibrate receipt). \
-             END when the draft fully answers the user request with no pending work."
+             END when the draft fully answers the user request with no pending work, OR when the draft \
+             is a concise clarifying question that should go to the user instead of more tool rounds."
                 .to_string(),
         ),
         ChatMessage::user(format!(

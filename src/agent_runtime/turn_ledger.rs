@@ -35,7 +35,10 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          Tool call results stay in the tool transcript until the turn ends. \
          Tool failures appear as JSON receipts (ok=false when applicable). \
          cognition_turn_prepare_final is available to mark the next text-only message as the intended final reply. \
-         Text-only replies classified as interim are streamed to the user but not appended to the tool transcript."
+         Text-only replies classified as interim are streamed to the user but not appended to the tool transcript. \
+         You do NOT need to use all {max_tool_rounds} rounds. End early when you have enough evidence, when one \
+         clarifying question is better than more tools, or when the request should pivot (say so plainly). \
+         Prefer one sharp operator-style question over spinning tools on vague intent."
     )
 }
 
@@ -114,6 +117,11 @@ impl TurnLoopAwareness {
                  A tools-only round here ends the turn without a separate final text delivery."
             ));
         }
+        lines.push(
+            "Early exit allowed: if you can answer now, call cognition_turn_prepare_final then reply. \
+             If intent is unclear, ask one concise clarifying question instead of using remaining rounds."
+                .to_string(),
+        );
         lines.join("\n")
     }
 
@@ -408,6 +416,14 @@ mod tests {
         let p = append_tool_loop_policy("hello", 12);
         assert!(p.contains("max_tool_rounds=12"));
         assert!(p.contains("environment="));
+        assert!(p.contains("do NOT need to use all"));
+    }
+
+    #[test]
+    fn awareness_message_includes_early_exit_hint() {
+        let a = TurnLoopAwareness::default();
+        let msg = a.loop_budget_message(5);
+        assert!(msg.contains("Early exit allowed"));
     }
 
     #[test]

@@ -30,6 +30,7 @@ use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 use crate::channel_delivery;
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
 use crate::runtime::stasis_otel::attach_otel_to_builder;
+use crate::runtime::surreal_startup::timed_step;
 use crate::workflow;
 
 struct MockWebSearchTool;
@@ -106,9 +107,17 @@ pub async fn build_daemon_stasis_composition(
         | RuntimeBackend::SurrealWs { .. }
         | RuntimeBackend::SurrealMem { .. } => {
             if let Some(label) = surreal_backend_connect_label(&config.backend) {
-                eprintln!("medousa-daemon: connecting to {label}…");
+                eprintln!(
+                    "medousa-daemon: connecting to {label} (pid={})…",
+                    std::process::id()
+                );
             }
-            let shell = RuntimeFactory::build(config.backend.clone()).await?;
+            let shell = timed_step("RuntimeFactory::build (connect + identity schema)", || async {
+                RuntimeFactory::build(config.backend.clone())
+                    .await
+                    .map_err(|err| anyhow::anyhow!("{err}"))
+            })
+            .await?;
             eprintln!("medousa-daemon: surreal runtime connected, initializing memory adapters…");
             let memory = MemoryAdapterBundle::from_runtime_shell(&shell).await?;
             eprintln!("medousa-daemon: wiring job handlers and delivery…");

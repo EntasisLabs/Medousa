@@ -4,11 +4,14 @@ use locus_core_rs::NodeQuery;
 use stasis::application::runtime::identity_context_compiler::load_identity_context_summary;
 use stasis::prelude::MemoryRecallRequest;
 
+use stasis::ports::outbound::memory::identity_memory_models::GetIdentityContextRequest;
+
+use crate::agent_runtime::ambient_context::ChannelAmbientPolicy;
 use crate::engine_context::{
     ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
     default_policy_profile_for_lane,
 };
-use crate::identity_memory::resolve_identity_user_id;
+use crate::identity_memory::{resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id};
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
 use crate::tui::settings::{RuntimeSettings, parse_f32_with_bounds};
@@ -157,6 +160,35 @@ pub async fn cheap_memory_recall_probe(
             error: Some(err.to_string()),
             ..Default::default()
         },
+    }
+}
+
+pub async fn channel_policy_probe(
+    tui_rt: &TuiRuntime,
+    policy_profile: Option<&str>,
+) -> ChannelAmbientPolicy {
+    let effective_policy_profile = policy_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
+
+    let request = GetIdentityContextRequest {
+        user_id: resolve_identity_user_id(None),
+        persona_id: resolve_identity_persona_id(),
+        channel_id: resolve_identity_channel_id(effective_policy_profile),
+        relationship_limit: 4,
+    };
+
+    match tui_rt
+        .identity_memory_store
+        .get_identity_context(&request)
+        .await
+    {
+        Ok(context) => ChannelAmbientPolicy {
+            proactive_allowed: context.channel.as_ref().map(|channel| channel.proactive_allowed),
+            identity_channel_type: context.channel.as_ref().map(|channel| channel.channel_type.clone()),
+        },
+        Err(_) => ChannelAmbientPolicy::default(),
     }
 }
 

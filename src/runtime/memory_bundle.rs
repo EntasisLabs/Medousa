@@ -18,6 +18,7 @@ use stasis::prelude_ext::LocusNodeStoreFactory;
 use crate::identity_memory;
 use crate::locus_memory::{MedousaLocusContextWriter, resolve_locus_ingest_profile};
 use crate::runtime::locus_surreal_client::StasisSurrealDbClient;
+use crate::runtime::surreal_startup::{timed_step, verify_surreal_responsive};
 
 fn parse_env_flag(key: &str) -> Option<bool> {
     std::env::var(key).ok().map(|value| {
@@ -88,9 +89,17 @@ impl MemoryAdapterBundle {
         const LOCUS_INIT_TIMEOUT: Duration = Duration::from_secs(180);
         const IDENTITY_INIT_TIMEOUT: Duration = Duration::from_secs(120);
 
+        verify_surreal_responsive(&db)
+            .await
+            .context("surreal connection not responsive before memory adapters")?;
+
         let client = StasisSurrealDbClient::new(db.clone());
         let node_store = Arc::new(SurrealDbNodeStore::new(client));
-        if should_skip_locus_init_on_existing_graph(&db).await {
+        let skip_locus = timed_step("locus table probe", || async {
+            Ok(should_skip_locus_init_on_existing_graph(&db).await)
+        })
+        .await?;
+        if skip_locus {
             eprintln!(
                 "medousa-daemon: skipping Locus initialize_async (graph tables already present — avoids temporal_node/calibration backfill scan; set MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 to override)"
             );
@@ -111,17 +120,14 @@ impl MemoryAdapterBundle {
         }
 
         let locus_store: Arc<dyn NodeStore> = node_store;
-        eprintln!("medousa-daemon: seeding identity memory on Surreal…");
         let identity_store = timeout(
             IDENTITY_INIT_TIMEOUT,
-            identity_memory::build_seeded_identity_memory_store_for_runtime(
-                &RuntimeFactory::from_db(db),
-            ),
+            identity_memory::build_seeded_identity_memory_store_for_db(db),
         )
         .await
         .map_err(|_| {
             anyhow::anyhow!(
-                "identity memory init timed out after {}s",
+                "identity memory init timed out after {}s — see last `surreal step` / `identity upsert` line for the wedged query",
                 IDENTITY_INIT_TIMEOUT.as_secs()
             )
         })?

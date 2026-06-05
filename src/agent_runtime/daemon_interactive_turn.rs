@@ -121,6 +121,30 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
+    async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        let assistant_turn = ConversationTurn {
+            role: "assistant".to_string(),
+            content: text.clone(),
+            timestamp: Utc::now(),
+            tool_names: tool_names.clone(),
+            answer_state: Some("needs_input".to_string()),
+        };
+        append_turn(&self.session_id, &assistant_turn);
+
+        publish(
+            &self.stream_tx,
+            interactive_turn_runtime::needs_input_stream_event_with_tools(
+                &self.turn_id,
+                &text,
+                tool_names,
+            ),
+        );
+
+        if let Some(delivery) = &self.delivery {
+            delivery.mark_complete(None).await;
+        }
+    }
+
     async fn agent_error(&self, _turn_id: u64, message: String) {
         publish(
             &self.stream_tx,
@@ -280,6 +304,7 @@ async fn run_agent_turn_inner(
         verifier_route: verifier_route.as_ref(),
         final_route: final_route.as_ref(),
         response_depth_mode: &request.response_depth_mode,
+        surface: request.surface.as_ref(),
         tui_rt: agent_rt,
     })
     .await;
@@ -383,6 +408,11 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         *self.outcome.write().await = Some(TurnOutcome::Success);
         self.inner.agent_response(turn_id, text, tool_names).await;
+    }
+
+    async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        *self.outcome.write().await = Some(TurnOutcome::Success);
+        self.inner.agent_needs_input(turn_id, text, tool_names).await;
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {

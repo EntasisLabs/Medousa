@@ -68,8 +68,20 @@ pub fn build_heartbeat_turn_prompt(snapshot: &HeartbeatRuntimeSnapshot) -> Strin
             .to_string()
     });
 
+    let heartbeat_surface = crate::daemon_api::TurnSurfaceContext {
+        channel_surface: Some("heartbeat".to_string()),
+        channel_id: None,
+        user_id: None,
+    };
+    let ambient = super::ambient_context::build_ambient_context(super::ambient_context::AmbientContextInput {
+        session_id: "heartbeat",
+        surface: Some(&heartbeat_surface),
+        channel_policy: None,
+    });
+
     format!(
         "You are running a scheduled heartbeat check for the Medousa operator.\n\n\
+         {}\n\n\
          ## HEARTBEAT policy\n{policy_doc}\n\n\
          ## Runtime signals (now)\n\
          significance={:.2}\n\
@@ -82,6 +94,7 @@ pub fn build_heartbeat_turn_prompt(snapshot: &HeartbeatRuntimeSnapshot) -> Strin
          published_events={}\n\n\
          Write a brief proactive status message for the operator. \
          Use read-only tools only if you need fresh queue stats.",
+        ambient.appendix,
         snapshot.significance,
         snapshot.reason,
         snapshot.failed_jobs,
@@ -146,6 +159,7 @@ pub async fn run_heartbeat_agent_turn(
         provider,
         model,
         response_depth_mode,
+        None,
     );
     request.persist_user_turn = false;
     request.stage_routing = StageRoutingMatrix::default_for(provider, model);

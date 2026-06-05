@@ -10,6 +10,10 @@ pub trait AgentStreamSink: Send + Sync {
     async fn content_chunk(&self, turn_id: u64, delta: String);
     async fn reasoning_chunk(&self, turn_id: u64, delta: String);
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>);
+    /// Terminal turn where Medousa needs operator input (clarifying question / pivot).
+    async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        self.agent_response(turn_id, text, tool_names).await;
+    }
     /// Short host acknowledgement while a background turn worker runs (non-terminal delivery).
     async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.agent_response(turn_id, text, tool_names).await;

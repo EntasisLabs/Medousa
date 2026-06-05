@@ -8,6 +8,7 @@ use crate::daemon_api::InteractiveTurnStreamEvent;
 #[derive(Debug, Clone, Default)]
 pub struct IngestStreamResult {
     pub final_text: Option<String>,
+    pub needs_input: bool,
     pub error: Option<String>,
 }
 
@@ -67,6 +68,17 @@ pub async fn consume_ingest_stream(client: &Client, stream_url: &str) -> Result<
                             .get_or_insert_with(String::new);
                         entry.push_str(&delta);
                     }
+                }
+                "needs_input" => {
+                    result.needs_input = true;
+                    result.final_text = payload.final_text.or_else(|| {
+                        if payload.message.trim().is_empty() {
+                            None
+                        } else {
+                            Some(payload.message)
+                        }
+                    });
+                    return Ok(result);
                 }
                 "final" => {
                     result.final_text = payload.final_text.or_else(|| {

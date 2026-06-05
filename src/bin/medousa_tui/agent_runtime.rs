@@ -78,6 +78,17 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
+    async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        let _ = self
+            .tx
+            .send(TuiEvent::AgentNeedsInput {
+                turn_id,
+                text,
+                tool_names,
+            })
+            .await;
+    }
+
     async fn agent_error(&self, turn_id: u64, message: String) {
         let _ = self
             .tx
@@ -244,6 +255,7 @@ pub(crate) async fn start_prompt_run(
         );
     }
 
+    let tui_surface = medousa::TurnSurfaceContext::tui();
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &state.session_id,
         prompt: &prompt,
@@ -252,6 +264,7 @@ pub(crate) async fn start_prompt_run(
         verifier_route: verifier_route.as_ref(),
         final_route: final_route.as_ref(),
         response_depth_mode: &state.response_depth_mode,
+        surface: Some(&tui_surface),
         tui_rt,
     })
     .await;
@@ -512,6 +525,7 @@ async fn attempt_daemon_interactive_turn(
         provider: state.settings.provider.clone(),
         model: state.settings.model.clone(),
         stage_routing: state.stage_routing.clone(),
+        surface: Some(medousa::TurnSurfaceContext::tui()),
         max_tool_rounds: Some(medousa::tui::settings::parse_usize_with_bounds(
             &state.settings.max_tool_rounds,
             10,
@@ -680,6 +694,27 @@ async fn dispatch_daemon_stream_event(
                     .await
                     .map_err(|err| err.to_string())?;
             }
+        }
+        "needs_input" => {
+            let text = payload
+                .final_text
+                .or_else(|| {
+                    if payload.message.trim().is_empty() {
+                        None
+                    } else {
+                        Some(payload.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| "(empty clarification request)".to_string());
+            let tool_names = payload.tool_names.unwrap_or_default();
+            event_tx
+                .send(TuiEvent::AgentNeedsInput {
+                    turn_id,
+                    text,
+                    tool_names,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
         }
         "final" => {
             let text = payload

@@ -41,6 +41,7 @@ path = "src/bin/medousa_mcp_gateway.rs"
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync"] }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }

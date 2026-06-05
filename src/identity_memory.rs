@@ -1,7 +1,12 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result;
 use chrono::Utc;
+use serde::Deserialize;
+use surrealdb::Surreal;
+use surrealdb::engine::any::Any;
+use surrealdb_types::SurrealValue;
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
@@ -14,6 +19,7 @@ use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
 
 use crate::engine_context::{EngineExecutionLane, default_policy_profile_for_lane};
 use crate::identity_store_ext::{wrap_in_memory, wrap_surreal};
+use crate::runtime::surreal_startup::timed_step;
 
 const DEFAULT_PERSONA_ID: &str = "persona:default";
 const DEFAULT_USER_ID: &str = "user:default";
@@ -63,17 +69,104 @@ pub async fn build_identity_memory_store_for_backend(
     }
 }
 
+fn parse_env_flag(key: &str) -> Option<bool> {
+    std::env::var(key).ok().map(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+#[derive(Debug, Deserialize, SurrealValue)]
+struct IdentityPersonaRow {
+    persona_id: String,
+}
+
+/// True when `identity_persona` exists (daemon restart on populated DB).
+pub async fn surreal_identity_table_exists(db: &Surreal<Any>) -> bool {
+    db.query("INFO FOR TABLE identity_persona").await.is_ok()
+}
+
+/// True when default persona row is already present — safe to skip startup seed.
+pub async fn surreal_identity_baseline_ready(db: &Surreal<Any>) -> bool {
+    if !surreal_identity_table_exists(db).await {
+        return false;
+    }
+
+    let persona_id = resolve_identity_persona_id();
+    let Ok(mut response) = db
+        .query("SELECT persona_id FROM identity_persona WHERE persona_id = $persona_id LIMIT 1")
+        .bind(("persona_id", persona_id))
+        .await
+    else {
+        return false;
+    };
+
+    let rows: Vec<IdentityPersonaRow> = response.take(0).unwrap_or_default();
+    !rows.is_empty()
+}
+
+async fn identity_baseline_needs_seed(db: &Surreal<Any>) -> Result<bool> {
+    if parse_env_flag("MEDOUSA_FORCE_IDENTITY_INIT_ON_DAEMON") == Some(true) {
+        return Ok(true);
+    }
+    let ready = timed_step("identity baseline probe", || async {
+        Ok(surreal_identity_baseline_ready(db).await)
+    })
+    .await?;
+    Ok(!ready)
+}
+
+async fn timed_identity_upsert<F, Fut>(
+    label: &str,
+    upsert: F,
+) -> std::result::Result<(), StasisError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = std::result::Result<(), StasisError>>,
+{
+    let started = Instant::now();
+    eprintln!("medousa-daemon: identity upsert start label={label}");
+    let result = upsert().await;
+    match &result {
+        Ok(()) => eprintln!(
+            "medousa-daemon: identity upsert ok label={label} elapsed_ms={}",
+            started.elapsed().as_millis()
+        ),
+        Err(err) => eprintln!(
+            "medousa-daemon: identity upsert err label={label} elapsed_ms={} err={err}",
+            started.elapsed().as_millis()
+        ),
+    }
+    result
+}
+
+/// Build identity store on an already-connected Surreal handle.
+///
+/// `RuntimeFactory::connect_surreal_any` already ran `ensure_schema_for_db` — do not repeat
+/// ~90 DEFINE round-trips here (duplicate schema bootstrap can wedge on remote DDL locks).
+pub async fn build_seeded_identity_memory_store_for_db(
+    db: Surreal<Any>,
+) -> Result<Arc<dyn IdentityMemoryStore>> {
+    let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
+    if identity_baseline_needs_seed(&db).await? {
+        eprintln!("medousa-daemon: seeding identity baseline (idempotent upserts)…");
+        seed_baseline_surreal_identity_store(store.as_ref()).await?;
+        eprintln!("medousa-daemon: identity baseline seed complete");
+    } else {
+        eprintln!("medousa-daemon: identity baseline already present — seed no-op");
+    }
+    Ok(wrap_surreal(store, db))
+}
+
 /// Build a seeded identity store from an already-open runtime (no second SurrealKV connection).
 pub async fn build_seeded_identity_memory_store_for_runtime(
     runtime: &RuntimeComposition,
 ) -> Result<Arc<dyn IdentityMemoryStore>> {
     match runtime {
         RuntimeComposition::Surreal(rt) => {
-            let db = rt.job_store.db();
-            let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
-            store.ensure_schema().await?;
-            seed_baseline_surreal_identity_store(store.as_ref()).await?;
-            Ok(wrap_surreal(store, db))
+            build_seeded_identity_memory_store_for_db(rt.job_store.db()).await
         }
         _ => build_seeded_identity_memory_store(),
     }
@@ -87,11 +180,7 @@ async fn build_seeded_surreal_identity_memory_store(
         return build_seeded_identity_memory_store();
     };
 
-    let db = rt.job_store.db();
-    let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
-    store.ensure_schema().await?;
-    seed_baseline_surreal_identity_store(store.as_ref()).await?;
-    Ok(wrap_surreal(store, db))
+    build_seeded_identity_memory_store_for_db(rt.job_store.db()).await
 }
 
 async fn seed_baseline_surreal_identity_store(
@@ -110,53 +199,58 @@ async fn seed_baseline_surreal_identity_store(
     let heartbeat_channel_id = resolve_identity_channel_id(Some(heartbeat_policy));
     let default_channel_id = resolve_identity_channel_id(None);
 
-    store
-        .upsert_persona(PersonaEntity {
+    timed_identity_upsert("persona", || store.upsert_persona(PersonaEntity {
             persona_id: persona_id.clone(),
             display_name: resolve_non_empty_env("MEDOUSA_IDENTITY_PERSONA_NAME")
                 .unwrap_or_else(|| DEFAULT_PERSONA_DISPLAY_NAME.to_string()),
             status: "active".to_string(),
             version: 1,
             updated_at: now,
-        })
-        .await?;
+        }))
+    .await?;
 
-    store
-        .upsert_user(UserEntity {
+    timed_identity_upsert("user", || store.upsert_user(UserEntity {
             user_id: user_id.clone(),
             timezone: resolve_identity_timezone(),
             language_variant: resolve_non_empty_env("MEDOUSA_IDENTITY_USER_LANGUAGE"),
             status: "active".to_string(),
             version: 1,
             updated_at: now,
-        })
-        .await?;
+        }))
+    .await?;
 
-    store
-        .upsert_policy(default_policy(interactive_policy, 2, 0.03, now))
-        .await?;
-    store
-        .upsert_policy(default_policy(scheduled_policy, 2, 0.02, now))
-        .await?;
-    store
-        .upsert_policy(default_policy(heartbeat_policy, 1, 0.01, now))
-        .await?;
+    timed_identity_upsert("policy:interactive", || {
+        store.upsert_policy(default_policy(interactive_policy, 2, 0.03, now))
+    })
+    .await?;
+    timed_identity_upsert("policy:scheduled", || {
+        store.upsert_policy(default_policy(scheduled_policy, 2, 0.02, now))
+    })
+    .await?;
+    timed_identity_upsert("policy:heartbeat", || {
+        store.upsert_policy(default_policy(heartbeat_policy, 1, 0.01, now))
+    })
+    .await?;
 
-    store
-        .upsert_channel(default_channel(&default_channel_id, "cli", true, now))
-        .await?;
-    store
-        .upsert_channel(default_channel(&interactive_channel_id, "tui", true, now))
-        .await?;
-    store
-        .upsert_channel(default_channel(&scheduled_channel_id, "api", true, now))
-        .await?;
-    store
-        .upsert_channel(default_channel(&heartbeat_channel_id, "api", true, now))
-        .await?;
+    timed_identity_upsert("channel:default", || {
+        store.upsert_channel(default_channel(&default_channel_id, "cli", true, now))
+    })
+    .await?;
+    timed_identity_upsert("channel:interactive", || {
+        store.upsert_channel(default_channel(&interactive_channel_id, "tui", true, now))
+    })
+    .await?;
+    timed_identity_upsert("channel:scheduled", || {
+        store.upsert_channel(default_channel(&scheduled_channel_id, "api", true, now))
+    })
+    .await?;
+    timed_identity_upsert("channel:heartbeat", || {
+        store.upsert_channel(default_channel(&heartbeat_channel_id, "api", true, now))
+    })
+    .await?;
 
-    store
-        .upsert_relationship(default_relationship(
+    timed_identity_upsert("relationship:persona_user", || {
+        store.upsert_relationship(default_relationship(
             &format!("rel:{}:{}", stable_id_segment(&persona_id), stable_id_segment(&user_id)),
             entity_ref("PersonaEntity", &persona_id),
             entity_ref("UserEntity", &user_id),
@@ -182,10 +276,11 @@ async fn seed_baseline_surreal_identity_store(
             },
             now,
         ))
-        .await?;
+    })
+    .await?;
 
-    store
-        .upsert_relationship(default_relationship(
+    timed_identity_upsert("relationship:user_interactive", || {
+        store.upsert_relationship(default_relationship(
             &format!(
                 "rel:{}:{}",
                 stable_id_segment(&user_id),
@@ -202,10 +297,11 @@ async fn seed_baseline_surreal_identity_store(
             },
             now,
         ))
-        .await?;
+    })
+    .await?;
 
-    store
-        .upsert_relationship(default_relationship(
+    timed_identity_upsert("relationship:user_scheduled", || {
+        store.upsert_relationship(default_relationship(
             &format!(
                 "rel:{}:{}",
                 stable_id_segment(&user_id),
@@ -222,10 +318,11 @@ async fn seed_baseline_surreal_identity_store(
             },
             now,
         ))
-        .await?;
+    })
+    .await?;
 
-    store
-        .upsert_relationship(default_relationship(
+    timed_identity_upsert("relationship:user_heartbeat", || {
+        store.upsert_relationship(default_relationship(
             &format!(
                 "rel:{}:{}",
                 stable_id_segment(&user_id),
@@ -242,7 +339,8 @@ async fn seed_baseline_surreal_identity_store(
             },
             now,
         ))
-        .await?;
+    })
+    .await?;
 
     Ok(())
 }

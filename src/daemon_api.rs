@@ -377,6 +377,35 @@ pub struct RuntimeConfigCommandResponse {
     pub should_persist_depth_defaults: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TurnSurfaceContext {
+    /// Adapter surface: telegram, discord, slack, cli, tui, api.
+    #[serde(default)]
+    pub channel_surface: Option<String>,
+    #[serde(default)]
+    pub channel_id: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
+}
+
+impl TurnSurfaceContext {
+    pub fn from_ingest(channel: &str, channel_id: &str, user_id: &str) -> Self {
+        Self {
+            channel_surface: Some(channel.trim().to_string()),
+            channel_id: Some(channel_id.trim().to_string()),
+            user_id: Some(user_id.trim().to_string()),
+        }
+    }
+
+    pub fn tui() -> Self {
+        Self {
+            channel_surface: Some("tui".to_string()),
+            channel_id: None,
+            user_id: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractiveTurnRequest {
     pub session_id: String,
@@ -386,6 +415,9 @@ pub struct InteractiveTurnRequest {
     pub provider: String,
     pub model: String,
     pub stage_routing: StageRoutingMatrix,
+    /// Channel adapter context for ambient prompting (ingest/TUI surfaces).
+    #[serde(default)]
+    pub surface: Option<TurnSurfaceContext>,
     /// When set, overrides `tui_defaults.json` for this turn (TUI live settings).
     #[serde(default)]
     pub max_tool_rounds: Option<usize>,

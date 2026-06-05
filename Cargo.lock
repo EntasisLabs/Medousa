@@ -4296,6 +4296,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "chrono-tz",
  "crossterm 0.28.1",
  "dirs",
  "futures-util",
