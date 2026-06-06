@@ -24,6 +24,8 @@ pub mod mcp_turn_token;
 pub mod mcp_policy;
 pub mod daemon_api;
 pub mod daemon_handlers;
+pub mod workspace;
+pub mod workspace_handlers;
 pub mod engine_context;
 pub mod events;
 pub mod execution_policy;

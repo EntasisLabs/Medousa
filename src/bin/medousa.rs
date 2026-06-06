@@ -69,6 +69,7 @@ fn main() -> Result<()> {
         "manuscript-install" => run_manuscript_install(&args[1..]),
         "skill-import" => run_skill_import(&args[1..]),
         "openshell-probe" => run_openshell_probe(&args[1..]),
+        "workspace" => run_workspace(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -2708,6 +2709,103 @@ fn save_onboard_profile(profile: &OnboardProfile) -> Result<()> {
     Ok(())
 }
 
+fn run_workspace(args: &[String]) -> Result<()> {
+    let sub = args.first().map(String::as_str).unwrap_or("snapshot");
+    let daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::to_string)
+        .or_else(|| std::env::var("MEDOUSA_DAEMON_URL").ok())
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+    let daemon_url = daemon_url.trim_end_matches('/').to_string();
+
+    if !daemon_http_healthy(&daemon_url) {
+        return Err(anyhow!(
+            "daemon not healthy at {daemon_url} — run: medousa start daemon"
+        ));
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .context("failed to build HTTP client")?;
+
+    let path = match sub {
+        "cards" => {
+            let mut query = Vec::new();
+            if let Some(limit) = find_arg_value(args, "--limit") {
+                query.push(format!("limit={limit}"));
+            }
+            if has_flag(args, "--include-terminal") {
+                query.push("include_terminal=true".to_string());
+            }
+            if let Some(session) = find_arg_value(args, "--session") {
+                query.push(format!("session_id={session}"));
+            }
+            if let Some(column) = find_arg_value(args, "--column") {
+                query.push(format!("column={column}"));
+            }
+            let suffix = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", query.join("&"))
+            };
+            format!("/v1/workspace/cards{suffix}")
+        }
+        "feed" => {
+            let mut query = Vec::new();
+            if let Some(limit) = find_arg_value(args, "--limit") {
+                query.push(format!("limit={limit}"));
+            }
+            if let Some(since) = find_arg_value(args, "--since-id") {
+                query.push(format!("since_id={since}"));
+            }
+            if let Some(card) = find_arg_value(args, "--card") {
+                query.push(format!("card_id={card}"));
+            }
+            let suffix = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", query.join("&"))
+            };
+            format!("/v1/workspace/feed{suffix}")
+        }
+        "card" => {
+            let card_id = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa workspace card <card-id>"))?;
+            format!("/v1/workspace/cards/{card_id}")
+        }
+        "snapshot" | _ => {
+            let mut query = Vec::new();
+            if let Some(limit) = find_arg_value(args, "--feed-tail") {
+                query.push(format!("feed_tail_limit={limit}"));
+            }
+            let suffix = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", query.join("&"))
+            };
+            format!("/v1/workspace/snapshot{suffix}")
+        }
+    };
+
+    let url = format!("{daemon_url}{path}");
+    let response = client
+        .get(&url)
+        .send()
+        .with_context(|| format!("GET {url} failed"))?;
+    let status = response.status();
+    let body = response.text().context("failed to read workspace response")?;
+    if !status.is_success() {
+        return Err(anyhow!("workspace request failed ({status}): {body}"));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).context("workspace response was not valid JSON")?;
+    println!("{}", serde_json::to_string_pretty(&parsed)?);
+    Ok(())
+}
+
 fn print_help() {
     println!("Medousa launcher");
     println!();
@@ -2731,6 +2829,7 @@ fn print_help() {
     println!("  medousa skill-import <path> [--project] [--force] [--extends <id>|--no-extends]");
     println!("  medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]");
     println!("  medousa openshell-probe [<manuscript-id>] [--script scripts/echo.sh] [--from medousa-openshell-sandbox:local] [--policy skill-sandbox] [--skip-grapheme]");
+    println!("  medousa workspace [snapshot|cards|feed|card <id>] [--daemon-url <url>] [--limit N] [--include-terminal] [--column backlog|in_flight|wrapping_up|done|blocked]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

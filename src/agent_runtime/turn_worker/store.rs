@@ -89,6 +89,28 @@ impl TurnWorkerStore {
             .collect()
     }
 
+    pub fn list_all(&self, limit: usize) -> Vec<TurnWorkRecord> {
+        let mut records = self
+            .records
+            .read()
+            .expect("turn worker records")
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        records.truncate(limit);
+        records
+    }
+
+    pub fn list_all_unbounded(&self) -> Vec<TurnWorkRecord> {
+        self.records
+            .read()
+            .expect("turn worker records")
+            .values()
+            .cloned()
+            .collect()
+    }
+
     pub fn update<F>(&self, work_id: &str, update: F) -> Option<TurnWorkRecord>
     where
         F: FnOnce(&mut TurnWorkRecord),

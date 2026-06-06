@@ -490,7 +490,31 @@ async fn main() -> Result<()> {
             identity_service: state.identity_service.clone(),
         });
 
-    let app = app.merge(capability_router).merge(policy_router);
+    let workspace_router = Router::new()
+        .route(
+            "/v1/workspace/cards",
+            get(medousa::workspace_handlers::list_workspace_cards),
+        )
+        .route(
+            "/v1/workspace/cards/{card_id}",
+            get(medousa::workspace_handlers::get_workspace_card),
+        )
+        .route(
+            "/v1/workspace/feed",
+            get(medousa::workspace_handlers::list_workspace_feed),
+        )
+        .route(
+            "/v1/workspace/snapshot",
+            get(medousa::workspace_handlers::get_workspace_snapshot),
+        )
+        .with_state(medousa::workspace_handlers::WorkspaceHandlerState {
+            composition: Arc::new(state.composition().clone()),
+        });
+
+    let app = app
+        .merge(capability_router)
+        .merge(policy_router)
+        .merge(workspace_router);
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),

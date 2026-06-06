@@ -569,3 +569,168 @@ pub struct ReplayAndResumeResponse {
     pub agent_turn_resumed: bool,
     pub message: String,
 }
+
+// ── Workspace (Medousa Home — Phase W1) ─────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkBoardColumn {
+    Backlog,
+    InFlight,
+    WrappingUp,
+    Done,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkCardId(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkCard {
+    pub id: WorkCardId,
+    pub column: WorkBoardColumn,
+    pub title: String,
+    pub status_label: String,
+    pub created_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkCardKind {
+    StasisJob,
+    TurnWorker,
+    InteractiveTurn,
+    RecurringTick,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct WorkCardAssociations {
+    #[serde(default)]
+    pub vault_paths: Vec<String>,
+    #[serde(default)]
+    pub artifact_ids: Vec<String>,
+    #[serde(default)]
+    pub locus_node_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkCardDetail {
+    pub card: WorkCard,
+    pub kind: WorkCardKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manuscript_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_ack: Option<String>,
+    #[serde(default)]
+    pub wrapping_up_reasons: Vec<String>,
+    pub terminal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_excerpt: Option<String>,
+    #[serde(default)]
+    pub associations: WorkCardAssociations,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceEventKind {
+    JobEnqueued,
+    JobStarted,
+    JobSucceeded,
+    JobFailed,
+    WorkDelegated,
+    WorkCompleted,
+    WorkWrappingUp,
+    WorkUnblocked,
+    TurnAccepted,
+    TurnCompleted,
+    AgentReplied,
+    VaultNoteCreated,
+    VaultNoteUpdated,
+    IdentityRemembered,
+    LocusBridgeWritten,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceEventActor {
+    System,
+    Agent,
+    Operator,
+    Scheduler,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceEventRef {
+    pub ref_type: String,
+    pub ref_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceEvent {
+    pub id: String,
+    pub timestamp_utc: DateTime<Utc>,
+    pub kind: WorkspaceEventKind,
+    pub actor: WorkspaceEventActor,
+    pub summary: String,
+    #[serde(default)]
+    pub refs: Vec<WorkspaceEventRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceSnapshot {
+    pub workspace_revision: u64,
+    pub server_time_utc: DateTime<Utc>,
+    pub cards: Vec<WorkCard>,
+    pub counts_by_column: std::collections::HashMap<String, u32>,
+    pub feed_tail: Vec<WorkspaceEvent>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceCardsQuery {
+    pub session_id: Option<String>,
+    pub column: Option<String>,
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_terminal: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceCardsResponse {
+    pub workspace_revision: u64,
+    pub cards: Vec<WorkCard>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceFeedQuery {
+    pub since_id: Option<String>,
+    pub since_revision: Option<u64>,
+    pub limit: Option<usize>,
+    pub card_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceFeedResponse {
+    pub workspace_revision: u64,
+    pub events: Vec<WorkspaceEvent>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceSnapshotQuery {
+    pub since_revision: Option<u64>,
+    pub feed_tail_limit: Option<usize>,
+}
