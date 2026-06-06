@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionPipeline;
 use stasis::application::runtime::agent_session_job_handler::AgentSessionJobHandler;
 use stasis::application::runtime::agent_turn_job_handler::AgentTurnJobHandler;
@@ -296,7 +297,11 @@ async fn wire_local_stasis_composition(
                 workflow_registry.clone(),
                 prompt_pipeline.clone(),
             )?;
-            Ok(RuntimeComposition::InMemory(rt))
+            let composition = RuntimeComposition::InMemory(rt);
+            crate::openshell_sandbox_run::register_openshell_sandbox_run_handler(&composition)
+                .await
+                .context("register openshell sandbox run handler")?;
+            Ok(composition)
         }
         RuntimeComposition::Surreal(rt) => {
             let thread_store = RuntimeFactory::resolve_thread_store(
@@ -324,7 +329,11 @@ async fn wire_local_stasis_composition(
                 workflow_registry.clone(),
                 prompt_pipeline.clone(),
             )?;
-            Ok(RuntimeComposition::Surreal(rt))
+            let composition = RuntimeComposition::Surreal(rt);
+            crate::openshell_sandbox_run::register_openshell_sandbox_run_handler(&composition)
+                .await
+                .context("register openshell sandbox run handler")?;
+            Ok(composition)
         }
     }
 }
@@ -406,7 +415,11 @@ async fn wire_existing_daemon_composition(
                 workflow_registry.clone(),
                 prompt_pipeline.clone(),
             )?;
-            Ok(RuntimeComposition::InMemory(rt))
+            let composition = RuntimeComposition::InMemory(rt);
+            crate::openshell_sandbox_run::register_openshell_sandbox_run_handler(&composition)
+                .await
+                .context("register openshell sandbox run handler")?;
+            Ok(composition)
         }
         RuntimeComposition::Surreal(rt) => {
             let thread_store = RuntimeFactory::resolve_thread_store(
@@ -450,6 +463,9 @@ async fn wire_existing_daemon_composition(
                 prompt_pipeline.clone(),
             )?;
             let composition = RuntimeComposition::Surreal(rt);
+            crate::openshell_sandbox_run::register_openshell_sandbox_run_handler(&composition)
+                .await
+                .context("register openshell sandbox run handler")?;
             channel_delivery::seed_internal_outbox_endpoint_for_runtime(
                 &composition,
                 None,

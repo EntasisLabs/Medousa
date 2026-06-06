@@ -1366,6 +1366,79 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         }
     }
 
+    let _ = medousa::install_starter_openshell_policies_if_missing();
+    let openshell = medousa::collect_openshell_doctor_report();
+    println!(
+        "openshell_gateway_url={} tcp_reachable={} readyz={} cli={} active_gateway={}",
+        openshell.gateway_url,
+        openshell.gateway_reachable,
+        openshell.readyz_ok,
+        if openshell.cli_installed {
+            openshell
+                .cli_version
+                .as_deref()
+                .unwrap_or("installed")
+        } else {
+            "missing"
+        },
+        openshell
+            .active_gateway_name
+            .as_deref()
+            .unwrap_or("(unset)")
+    );
+    println!(
+        "openshell_gateway_bin={} sandbox_bin={} podman_socket={} podman_active={}",
+        openshell
+            .gateway_binary
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "(not found)".to_string()),
+        openshell
+            .sandbox_binary
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "(not found)".to_string()),
+        openshell.podman_socket.display(),
+        openshell.podman_socket_active
+    );
+    println!(
+        "openshell_policies_dir={} policy_count={}",
+        openshell.policy_templates_dir.display(),
+        openshell.policy_template_count
+    );
+    if !openshell.cli_installed {
+        println!(
+            "{}",
+            "[hint] Install OpenShell CLI: uv tool install openshell — see docs/openshell-handoff-setup.md"
+                .blue()
+        );
+    } else if !openshell.gateway_reachable {
+        println!(
+            "{}",
+            "[warn] OpenShell gateway is not reachable. Start: openshell-gateway --disable-tls --port 8080 --bind-address 127.0.0.1 --drivers docker (or podman). See docs/openshell-handoff-setup.md"
+                .yellow()
+        );
+    } else if !openshell.readyz_ok {
+        println!(
+            "{}",
+            "[warn] OpenShell gateway TCP is open but /readyz failed — gateway may still be starting or compute driver is wedged."
+                .yellow()
+        );
+    } else if !openshell.podman_socket_active {
+        println!(
+            "{}",
+            "[hint] Podman user socket inactive — use --drivers docker if Docker is available, or enable podman.socket."
+                .blue()
+        );
+    }
+    if openshell.policy_template_count == 0 {
+        println!(
+            "{}",
+            "[hint] No OpenShell policy templates in ~/.config/medousa/openshell-policies/ — copy from config/openshell-policies/ or re-run doctor."
+                .blue()
+        );
+    }
+
     let heartbeat_agent_turn = medousa::agent_runtime::heartbeat_agent_turn_enabled();
     println!(
         "heartbeat_agent_turn={}",
@@ -1565,6 +1638,20 @@ fn run_manuscript_validate(args: &[String]) -> Result<()> {
     println!("source={}", context.source_path.display());
     if let Some(intent) = context.worker_intent.as_deref() {
         println!("worker_intent={intent}");
+    }
+    if context.openshell_enabled {
+        println!(
+            "openshell=enabled policy_template={} sandbox_from={} allow_scheduled={}",
+            context
+                .openshell_policy_template
+                .as_deref()
+                .unwrap_or("(unset)"),
+            context
+                .openshell_sandbox_from
+                .as_deref()
+                .unwrap_or("base"),
+            context.openshell_allow_scheduled
+        );
     }
     Ok(())
 }

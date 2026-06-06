@@ -194,6 +194,12 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
     ))?;
     crate::manuscript_tools::register_manuscript_tools(&mut tool_registry)?;
+    crate::openshell_tools::register_openshell_tools(
+        &mut tool_registry,
+        runtime.clone(),
+        event_tx.clone(),
+        turn_scope.clone(),
+    )?;
 
     tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
     tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;

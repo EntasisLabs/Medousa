@@ -15,6 +15,9 @@ pub mod context_pack;
 pub mod capability_catalog;
 pub mod mcp_daemon_handlers;
 pub mod mcp_gateway;
+pub mod openshell_handoff;
+pub mod openshell_sandbox_run;
+pub mod openshell_tools;
 pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
 pub mod mcp_turn_token;
@@ -140,6 +143,14 @@ pub use agent_runtime::{
 pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
 pub use mcp_gateway::{
     gateway_config_path, install_starter_gateway_config_if_missing, STARTER_MCP_GATEWAY_TOML,
+};
+pub use openshell_handoff::{
+    collect_openshell_doctor_report, install_starter_openshell_policies_if_missing,
+    resolve_openshell_gateway_url, DEFAULT_OPENSHELL_GATEWAY_URL, ENV_OPENSHELL_GATEWAY_URL,
+};
+pub use openshell_sandbox_run::{
+    register_openshell_sandbox_run_handler, OpenshellSandboxRunPayload,
+    OPENSHELL_SANDBOX_RUN_JOB_TYPE,
 };
 pub use runtime::{
     MedousaPlatformRuntime, PlatformBuildConfig, TuiPlatformBuildConfig, TuiPlatformMode,

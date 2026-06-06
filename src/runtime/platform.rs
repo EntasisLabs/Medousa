@@ -12,6 +12,7 @@ use crate::artifact_store;
 use crate::channel_session_store;
 use crate::turn_continuation;
 use crate::recurring_agent_turn;
+use crate::openshell_sandbox_run;
 use crate::recurring_delivery;
 use crate::session_meta_store;
 use crate::session_store;
@@ -157,6 +158,9 @@ async fn build_platform_inner(
     )
     .await
     .context("failed to register recurring agent-turn job handler")?;
+    openshell_sandbox_run::register_openshell_sandbox_run_handler(agent.runtime.as_ref())
+        .await
+        .context("failed to register openshell sandbox run job handler")?;
 
     Ok(Arc::new(MedousaPlatformRuntime { agent }))
 }

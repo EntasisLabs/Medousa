@@ -1,0 +1,23 @@
+# Medousa starter — read-only HTTPS for research sandboxes (OpenShell network policy).
+# Copy to ~/.config/medousa/openshell-policies/ or run medousa doctor (installs if missing).
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  https_get:
+    name: https-readonly
+    endpoints:
+      - host: "**"
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }

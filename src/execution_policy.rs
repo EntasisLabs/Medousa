@@ -182,7 +182,9 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_runtime_recurring_register"
         | "cognition_mcp_promote_to_job"
         | "cognition_grapheme_promote_to_job"
-        | "cognition_job_enqueue" => StepExecutionClass::Mutating,
+        | "cognition_job_enqueue"
+        | "cognition_openshell_sandbox_run" => StepExecutionClass::Mutating,
+        "cognition_openshell_status" => StepExecutionClass::ReadOnly,
         "cognition_memory_recall"
         | "cognition_memory_context"
         | "cognition_memory_list"

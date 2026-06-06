@@ -1,0 +1,19 @@
+apiVersion: medousa.dev/v1
+kind: IdentityManuscript
+metadata:
+  id: openshell-researcher
+  name: OpenShell Researcher
+  description: Research worker with OpenShell sandbox handoff for scripts and skills
+  extends: base-researcher
+spec:
+  worker:
+    intent: research
+    max_tool_rounds: 10
+  openshell:
+    enabled: true
+    policy_template: research-readonly
+    sandbox_from: base
+  tools:
+    allow:
+      - cognition_openshell_status
+      - cognition_openshell_sandbox_run

@@ -861,6 +861,10 @@ mod tests {
             delivery_on_complete: None,
             schedule_cron: None,
             schedule_execution_mode: None,
+            openshell_enabled: false,
+            openshell_policy_template: None,
+            openshell_sandbox_from: None,
+            openshell_allow_scheduled: false,
             extends_from: None,
             source_path: std::path::PathBuf::from("morning-brief.yaml"),
         };

@@ -57,6 +57,8 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_capability_invoke",
     "cognition_mcp_promote_to_job",
     "cognition_grapheme_template_run",
+    "cognition_openshell_status",
+    "cognition_openshell_sandbox_run",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.

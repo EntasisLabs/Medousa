@@ -304,7 +304,7 @@ impl StasisTool for CognitionJobEnqueueTool {
              Valid job_type values: workflow.grapheme.run, workflow.grapheme.echo, \
              workflow.stasis.orchestration.sequential, workflow.stasis.orchestration.concurrent, \
              workflow.stasis.orchestration.handoff, workflow.stasis.agent_session, \
-             workflow.stasis.prompt.",
+             workflow.stasis.prompt, openshell.sandbox.run.",
         )
     }
 

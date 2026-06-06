@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::turn_worker::TurnWorkerIntent;
 use crate::cognitive_identity::DigestCompileOptions;
+use crate::openshell_sandbox_run::resolve_policy_template_path;
+use crate::openshell_tools::is_openshell_cognition_tool;
 
 pub const MANUSCRIPT_API_VERSION: &str = "medousa.dev/v1";
 pub const MANUSCRIPT_KIND: &str = "IdentityManuscript";
@@ -49,6 +51,8 @@ pub struct ManuscriptSpec {
     pub delivery: ManuscriptDeliverySpec,
     #[serde(default)]
     pub schedule: ManuscriptScheduleSpec,
+    #[serde(default)]
+    pub openshell: ManuscriptOpenshellSpec,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -123,6 +127,18 @@ pub struct ManuscriptScheduleSpec {
     pub execution_mode: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ManuscriptOpenshellSpec {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub policy_template: Option<String>,
+    #[serde(default)]
+    pub sandbox_from: Option<String>,
+    #[serde(default)]
+    pub allow_scheduled: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct ManuscriptContext {
     pub id: String,
@@ -143,6 +159,10 @@ pub struct ManuscriptContext {
     pub delivery_on_complete: Option<String>,
     pub schedule_cron: Option<String>,
     pub schedule_execution_mode: Option<String>,
+    pub openshell_enabled: bool,
+    pub openshell_policy_template: Option<String>,
+    pub openshell_sandbox_from: Option<String>,
+    pub openshell_allow_scheduled: bool,
     pub extends_from: Option<String>,
     pub source_path: PathBuf,
 }
@@ -171,6 +191,9 @@ pub fn scheduled_tool_allowlist_for_manuscript(manuscript: &ManuscriptContext) -
     let universe = scheduled_lane_tool_universe();
     let mut allow = HashSet::new();
     for tool in &manuscript.tools_allow {
+        if is_openshell_cognition_tool(tool) && !manuscript.openshell_allow_scheduled {
+            continue;
+        }
         if tool_allowed(tool, &universe) {
             allow.insert(tool.to_string());
         }
@@ -193,6 +216,16 @@ pub fn validate_manuscript_for_scheduled_lane(manuscript: &ManuscriptContext) ->
         .any(|tool| tool.contains("identity_remember"))
     {
         bail!("cognition_identity_remember is not allowed on scheduled manuscript lane");
+    }
+    if manuscript
+        .tools_allow
+        .iter()
+        .any(|tool| is_openshell_cognition_tool(tool))
+        && !manuscript.openshell_allow_scheduled
+    {
+        bail!(
+            "openshell tools are denied on scheduled lane unless spec.openshell.allow_scheduled=true"
+        );
     }
 
     let allow = scheduled_tool_allowlist_for_manuscript(manuscript);
@@ -375,6 +408,7 @@ fn merge_manuscript_layers(
             locus: merge_locus_spec(&base.spec.locus, &child.spec.locus),
             delivery: merge_delivery_spec(&base.spec.delivery, &child.spec.delivery),
             schedule: merge_schedule_spec(&base.spec.schedule, &child.spec.schedule),
+            openshell: merge_openshell_spec(&base.spec.openshell, &child.spec.openshell),
         },
     }
 }
@@ -465,6 +499,24 @@ fn merge_schedule_spec(
     }
 }
 
+fn merge_openshell_spec(
+    base: &ManuscriptOpenshellSpec,
+    child: &ManuscriptOpenshellSpec,
+) -> ManuscriptOpenshellSpec {
+    ManuscriptOpenshellSpec {
+        enabled: child.enabled || base.enabled,
+        policy_template: child
+            .policy_template
+            .clone()
+            .or_else(|| base.policy_template.clone()),
+        sandbox_from: child
+            .sandbox_from
+            .clone()
+            .or_else(|| base.sandbox_from.clone()),
+        allow_scheduled: child.allow_scheduled || base.allow_scheduled,
+    }
+}
+
 fn merge_string_lists(base: &[String], child: &[String]) -> Vec<String> {
     let mut merged = base.to_vec();
     for value in child {
@@ -530,6 +582,46 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         })?;
     }
 
+    validate_openshell_spec(&file.spec.openshell, &file.spec.tools.allow)?;
+
+    Ok(())
+}
+
+fn validate_openshell_spec(openshell: &ManuscriptOpenshellSpec, tools_allow: &[String]) -> Result<()> {
+    let openshell_tools: Vec<_> = tools_allow
+        .iter()
+        .filter(|tool| is_openshell_cognition_tool(tool))
+        .collect();
+
+    if openshell.enabled {
+        let template = openshell
+            .policy_template
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                anyhow::Error::msg(
+                    "spec.openshell.policy_template is required when spec.openshell.enabled=true",
+                )
+            })?;
+        if resolve_policy_template_path(template).is_none() {
+            bail!(
+                "spec.openshell.policy_template '{template}' not found under ~/.config/medousa/openshell-policies/"
+            );
+        }
+        if openshell_tools.is_empty() {
+            bail!(
+                "spec.openshell.enabled=true requires at least one cognition_openshell_* tool in spec.tools.allow"
+            );
+        }
+    }
+
+    if !openshell_tools.is_empty() && !openshell.enabled {
+        bail!(
+            "spec.tools.allow lists openshell tools but spec.openshell.enabled is not true"
+        );
+    }
+
     Ok(())
 }
 
@@ -576,6 +668,10 @@ pub fn build_manuscript_context_from_file(
         delivery_on_complete: file.spec.delivery.on_complete.clone(),
         schedule_cron: file.spec.schedule.cron.clone(),
         schedule_execution_mode: file.spec.schedule.execution_mode.clone(),
+        openshell_enabled: file.spec.openshell.enabled,
+        openshell_policy_template: file.spec.openshell.policy_template.clone(),
+        openshell_sandbox_from: file.spec.openshell.sandbox_from.clone(),
+        openshell_allow_scheduled: file.spec.openshell.allow_scheduled,
         extends_from: file
             .metadata
             .extends
@@ -605,6 +701,12 @@ pub fn manuscript_catalog_entry(manuscript: &ManuscriptContext) -> serde_json::V
         "delivery_on_complete": manuscript.delivery_on_complete,
         "schedule_cron": manuscript.schedule_cron,
         "schedule_execution_mode": manuscript.schedule_execution_mode,
+        "openshell": {
+            "enabled": manuscript.openshell_enabled,
+            "policy_template": manuscript.openshell_policy_template,
+            "sandbox_from": manuscript.openshell_sandbox_from,
+            "allow_scheduled": manuscript.openshell_allow_scheduled,
+        },
         "source_path": manuscript.source_path.display().to_string(),
     })
 }
@@ -820,6 +922,16 @@ pub fn format_manuscript_prompt_block(manuscript: &ManuscriptContext) -> String 
     if let Some(task) = manuscript.task_template.as_deref().filter(|v| !v.is_empty()) {
         lines.push("task_template:".to_string());
         lines.push(task.trim().to_string());
+    }
+    if manuscript.openshell_enabled {
+        lines.push("openshell=enabled".to_string());
+        if let Some(template) = manuscript
+            .openshell_policy_template
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(format!("openshell_policy_template={template}"));
+        }
     }
     lines.join("\n")
 }
@@ -1043,6 +1155,10 @@ spec:
             delivery_on_complete: None,
             schedule_cron: None,
             schedule_execution_mode: None,
+            openshell_enabled: false,
+            openshell_policy_template: None,
+            openshell_sandbox_from: None,
+            openshell_allow_scheduled: false,
             extends_from: None,
             source_path: PathBuf::from("morning-brief.yaml"),
         };
@@ -1076,8 +1192,46 @@ spec:
             delivery_on_complete: None,
             schedule_cron: None,
             schedule_execution_mode: None,
+            openshell_enabled: false,
+            openshell_policy_template: None,
+            openshell_sandbox_from: None,
+            openshell_allow_scheduled: false,
             extends_from: None,
             source_path: PathBuf::from("empty.yaml"),
+        };
+        assert!(validate_manuscript_for_scheduled_lane(&manuscript).is_err());
+    }
+
+    #[test]
+    fn scheduled_lane_rejects_openshell_tools_by_default() {
+        let manuscript = ManuscriptContext {
+            id: "openshell-brief".to_string(),
+            name: "OpenShell Brief".to_string(),
+            description: None,
+            display_name: None,
+            voice_appendix: None,
+            system_appendix: None,
+            task_template: Some("Run sandbox task.".to_string()),
+            pinned_preferences: Vec::new(),
+            pinned_contact_ids: Vec::new(),
+            recall_hints: Vec::new(),
+            worker_intent: Some("research".to_string()),
+            max_tool_rounds: None,
+            tools_allow: vec![
+                "cognition_identity_recall".to_string(),
+                "cognition_openshell_sandbox_run".to_string(),
+            ],
+            locus_session_id: None,
+            delivery_mode: None,
+            delivery_on_complete: None,
+            schedule_cron: None,
+            schedule_execution_mode: None,
+            openshell_enabled: true,
+            openshell_policy_template: Some("research-readonly".to_string()),
+            openshell_sandbox_from: Some("base".to_string()),
+            openshell_allow_scheduled: false,
+            extends_from: None,
+            source_path: PathBuf::from("openshell-brief.yaml"),
         };
         assert!(validate_manuscript_for_scheduled_lane(&manuscript).is_err());
     }

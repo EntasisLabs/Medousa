@@ -112,6 +112,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_grapheme_examples",
                     "cognition_grapheme_run",
                     "cognition_grapheme_cli_run",
+                    "cognition_openshell_status",
+                    "cognition_openshell_sandbox_run",
                 ],
             );
         }
@@ -293,6 +295,8 @@ mod tests {
         assert!(!names.contains("cognition_memory_calibrate"));
         assert!(names.contains("cognition_identity_recall"));
         assert!(!names.contains("cognition_identity_remember"));
+        assert!(names.contains("cognition_openshell_status"));
+        assert!(names.contains("cognition_openshell_sandbox_run"));
     }
 
     #[test]
