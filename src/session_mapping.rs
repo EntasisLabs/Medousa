@@ -8,7 +8,10 @@ use crate::stage_routing::StageRoutingMatrix;
 #[derive(Debug, Clone, PartialEq)]
 pub enum IngestAction {
     Reply,
-    EnqueueAsk { prompt: String },
+    EnqueueAsk {
+        prompt: String,
+        manuscript_id: Option<String>,
+    },
     CancelActiveJob,
     Regenerate,
     ListHistory,
@@ -88,8 +91,11 @@ enum IngestCommand {
     Name { label: Option<String> },
     Health,
     Heartbeat,
+    Brief { args: String },
     Ask { prompt: String },
 }
+
+pub const DEFAULT_INGEST_BRIEF_MANUSCRIPT_ID: &str = "morning-brief";
 
 fn split_slash_command(text: &str) -> Option<(String, String)> {
     let trimmed = text.trim();
@@ -159,6 +165,7 @@ fn parse_ingest_command(text: &str) -> IngestCommand {
         },
         "/health" => IngestCommand::Health,
         "/heartbeat" => IngestCommand::Heartbeat,
+        "/brief" => IngestCommand::Brief { args },
         "/ask" => {
             if args.is_empty() {
                 IngestCommand::Help
@@ -232,6 +239,7 @@ pub fn process_ingest(
                 "/regen - Regenerate the last response",
                 "/health - Daemon health check",
                 "/heartbeat - Daemon heartbeat status",
+                "/brief - Run the morning-brief manuscript (optional extra instructions)",
                 "",
                 "Plain text messages are treated as asks.",
             ]
@@ -369,6 +377,30 @@ pub fn process_ingest(
             action: IngestAction::QueryHeartbeat,
         },
 
+        IngestCommand::Brief { args } => {
+            let is_new = existing_session_id.is_none();
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let prompt = resolve_brief_ingest_prompt(&args);
+            let merged_prompt = merge_attachments_into_prompt(&prompt, &request.attachments);
+            let session_prefix = session_id[..8.min(session_id.len())].to_string();
+
+            IngestOutcome {
+                session_id,
+                is_new_session: is_new,
+                reply: format!(
+                    "queued morning brief for session {} ({}:{})",
+                    session_prefix,
+                    request.channel,
+                    request.channel_id
+                ),
+                action: IngestAction::EnqueueAsk {
+                    prompt: merged_prompt,
+                    manuscript_id: Some(DEFAULT_INGEST_BRIEF_MANUSCRIPT_ID.to_string()),
+                },
+            }
+        }
+
         IngestCommand::Ask { prompt } => {
             let is_new = existing_session_id.is_none();
             let session_id = existing_session_id
@@ -387,6 +419,7 @@ pub fn process_ingest(
                 ),
                 action: IngestAction::EnqueueAsk {
                     prompt: merged_prompt,
+                    manuscript_id: None,
                 },
             }
         }
@@ -403,6 +436,28 @@ pub fn last_user_prompt_for_regen(session_id: &str) -> Option<String> {
         .filter(|content| !content.trim().is_empty())
 }
 
+fn resolve_brief_ingest_prompt(args: &str) -> String {
+    let trimmed = args.trim();
+    match crate::identity_manuscript::build_manuscript_context(DEFAULT_INGEST_BRIEF_MANUSCRIPT_ID) {
+        Ok(context) => crate::identity_manuscript::render_manuscript_task_prompt(
+            &context,
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            },
+        )
+        .unwrap_or_else(|_| trimmed.to_string()),
+        Err(_) => {
+            if trimmed.is_empty() {
+                "Produce today's morning brief.".to_string()
+            } else {
+                trimmed.to_string()
+            }
+        }
+    }
+}
+
 /// Build an interactive turn request for centralized ingest (agent runtime path).
 pub fn build_interactive_turn_request_for_ingest(
     session_id: &str,
@@ -411,6 +466,7 @@ pub fn build_interactive_turn_request_for_ingest(
     model: &str,
     response_depth_mode: &str,
     ingest: Option<&IngestRequest>,
+    manuscript_id: Option<String>,
 ) -> InteractiveTurnRequest {
     let defaults = crate::session::load_tui_defaults();
     let surface = ingest.map(|request| {
@@ -441,7 +497,7 @@ pub fn build_interactive_turn_request_for_ingest(
                 .retry_runtime_max_rounds
                 .unwrap_or(crate::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
         ),
-        manuscript_id: None,
+        manuscript_id,
         scheduled_tool_allowlist: None,
     }
 }
@@ -539,6 +595,41 @@ mod tests {
         };
         let outcome = process_ingest(&request, "key", Some("session-1".to_string()));
         assert_eq!(outcome.action, IngestAction::CancelActiveJob);
+    }
+
+    #[test]
+    fn test_parse_brief_command() {
+        assert_eq!(
+            parse_ingest_command("/brief"),
+            IngestCommand::Brief {
+                args: String::new()
+            }
+        );
+        assert_eq!(
+            parse_ingest_command("/brief focus on calendar"),
+            IngestCommand::Brief {
+                args: "focus on calendar".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_process_ingest_brief_queues_manuscript() {
+        let request = IngestRequest {
+            channel: "telegram".to_string(),
+            user_id: "telegram:user:1".to_string(),
+            channel_id: "telegram:chat:2".to_string(),
+            text: "/brief".to_string(),
+            attachments: Vec::new(),
+        };
+        let outcome = process_ingest(&request, "key", None);
+        match outcome.action {
+            IngestAction::EnqueueAsk {
+                manuscript_id: Some(id),
+                ..
+            } => assert_eq!(id, DEFAULT_INGEST_BRIEF_MANUSCRIPT_ID),
+            other => panic!("expected brief enqueue, got {other:?}"),
+        }
     }
 
     #[test]

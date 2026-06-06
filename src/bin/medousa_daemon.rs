@@ -1737,12 +1737,16 @@ async fn ingest_handler(
 
     match outcome.action {
         session_mapping::IngestAction::Reply => {}
-        session_mapping::IngestAction::EnqueueAsk { prompt } => {
+        session_mapping::IngestAction::EnqueueAsk {
+            prompt,
+            manuscript_id,
+        } => {
             let stream = start_ingest_ask_stream(
                 &state,
                 &mapping_key,
                 &outcome.session_id,
                 prompt,
+                manuscript_id,
                 &request,
             )
             .await?;
@@ -1774,6 +1778,7 @@ async fn ingest_handler(
                 &mapping_key,
                 &outcome.session_id,
                 prompt,
+                None,
                 &request,
             )
             .await?;
@@ -2523,6 +2528,7 @@ async fn spawn_continuation_agent_turn(
         &record.model,
         &record.response_depth_mode,
         None,
+        None,
     );
     interactive_request.persist_user_turn = false;
 
@@ -2651,6 +2657,7 @@ async fn spawn_daemon_api_agent_turn_with_scope(
         &provider,
         &model,
         &response_depth_mode,
+        None,
         None,
     );
 
@@ -3012,6 +3019,7 @@ async fn start_ingest_ask_stream(
     mapping_key: &str,
     session_id: &str,
     prompt: String,
+    manuscript_id: Option<String>,
     request: &IngestRequest,
 ) -> Result<IngestAskStream, (StatusCode, String)> {
     let runtime_config = resolve_session_runtime_config(state, session_id).await;
@@ -3030,6 +3038,7 @@ async fn start_ingest_ask_stream(
         &runtime_config.draft_model,
         &runtime_config.response_depth_mode,
         Some(request),
+        manuscript_id,
     );
 
     let stream_id = format!("ingest-{}", Uuid::new_v4().simple());

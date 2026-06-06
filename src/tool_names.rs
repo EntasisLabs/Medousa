@@ -17,6 +17,8 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_identity_commit",
     "cognition_identity_recall",
     "cognition_identity_remember",
+    "cognition_manuscript_list",
+    "cognition_manuscript_resolve",
     "cognition_memory_schema",
     "cognition_memory_moods",
     "cognition_memory_calibrate",

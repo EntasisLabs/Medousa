@@ -29,29 +29,31 @@ These are the things Medousa does out of the box:
 
 | You need to... | So you... |
 |---|---|
-| Remember where you left off | Ask Medousa. It keeps session history and who you are across days. |
-| Get answers you can trust | For live facts it goes out, gathers sources, and shows the verification trail. No flat strings. |
-| Automate something that matters | Set a recurring prompt — or a whole workflow. The engine runs it. The result waits for you. |
-| Connect your other tools | Point it at the services you already use. It finds what they can do and asks before it acts. |
-| Reach it from anywhere | Connect Discord, Telegram, Slack, or WhatsApp. Message from your phone or your work chat. |
-| Get checked in on | Enable proactive check-ins. Medousa reaches out on a rhythm you choose — with reasoning, not a dumb ping. |
-| Run it fully offline | Use the Ollama provider with a local model. No network required. |
-| Check if everything is healthy | Run `medousa doctor`. It tests the model, the daemon, and your bridges in one pass. |
-| Start over on a fresh machine | Run `medousa setup`. The wizard walks through provider, model, backend, channels, and daemon start in one flow. |
+| Remember where you left off | Ask Medousa. It keeps your history — and who you are — across days. |
+| Stop re-introducing yourself | Tell it once. Your preferences, your people, your rhythms. It builds a picture of you that gets sharper over time. |
+| Wear a different hat on command | Switch to a **specialty** — morning brief, deep research, memory ritual — without rewriting the same instructions every morning. |
+| Get answers you can trust | For live facts it goes out, gathers sources, and shows you the trail. No flat strings. |
+| Automate what actually matters | Schedule a check-in, a report, or a full working session. Medousa runs it while you sleep. The answer finds you. |
+| Hand off the heavy lifting | Send the big job to the background. One clear answer comes back — not a pile of half-finished threads. |
+| Plug in what you already use | Connect the tools and services you rely on. Medousa learns what they can do — and asks before it acts. |
+| Reach it from anywhere | Discord, Telegram, Slack, WhatsApp. Text `/brief` on Telegram and your morning summary starts. |
+| Get checked in on | Turn on proactive nudges. Medousa reaches out on a rhythm you choose — with reasoning, not noise. |
+| Run it fully offline | Point it at a local model. Your machine. Your rules. No network required. |
+| Know it's healthy | Run `medousa doctor`. One pass. Model, engine, bridges — checked. |
+| Start fresh on a new machine | Run `medousa setup`. About sixty seconds. You're back. |
 
 
 ## Powered by Stasis, Locus, and Resonantia
 
 The reliability is not hand-waved. Medousa is built on the same infrastructure family as **[Resonantia](https://resonantia.me)** — not a chat wrapper pretending to be durable.
 
-**[Stasis](https://github.com/EntasisLabs/stasis)** — the durable job runtime underneath. When you send a message, schedule a check-in, or enqueue a workflow, Stasis turns it into real infrastructure: persisted jobs, lease-based execution, retries with backoff, a dead-letter queue you can replay, and an outbox that delivers finished work back to your channels. Survive a restart, a dropped connection, or a laptop sleep — the work waits, resumes, and finishes.
+**[Stasis](https://github.com/EntasisLabs/stasis)** — the engine underneath. When you send something, schedule something, or ask for something later, Stasis makes it real work — saved, retried, finished, delivered back to you. Your laptop sleeps. The network drops. The app restarts. The work does not vanish.
 
-**[Locus](https://github.com/EntasisLabs/locus)** — the memory layer. What matters compresses into STTP temporal nodes: self-sufficient records with provenance, a cognitive fingerprint at the moment of creation, and confidence-weighted meaning. Medousa writes them, recalls them across turns, and stops treating every conversation like a blank page.
+**[Locus](https://github.com/EntasisLabs/locus)** — the memory layer. What matters becomes structured, timestamped, retrievable memory — not a scrollback dump. Medousa writes it, recalls it across turns, and stops treating every conversation like day one.
 
-**[Resonantia](https://resonantia.me)** — the sibling application on the same Spatio-Temporal Transfer Protocol. Where Medousa is the workspace that runs, remembers, and verifies on your machine, Resonantia is the terrain you navigate: sessions as waves, moments as collapses, resonance as geometry — your mind, made visible. Same protocol. Different surface. If you want to see what this memory looks like when it becomes a map, start there.
+**[Resonantia](https://resonantia.me)** — the sibling on the same protocol. Where Medousa is the workspace that runs and remembers on your machine, Resonantia is the terrain you navigate — your mind, made visible. Same foundation. Different surface. If you want to *see* what this memory looks like when it becomes a map, start there.
 
-Medousa is the brain: agent loop, tools, channels, verification. Stasis makes work finish. Locus makes memory stick. Resonantia shows what that memory can become when it is made navigable.
-
+Medousa is the brain. Stasis makes work finish. Locus makes memory stick. Resonantia shows what that memory can become.
 
 
 ## Install and run
@@ -97,21 +99,44 @@ medousa setup
 
 ## The commands
 
-Everything is controlled through the `medousa` binary:
+Everything runs through one binary:
 
 ```
-medousa setup            Configure provider, model, backend, and channels in one pass
-medousa tui              Open the chat workspace (starts daemon automatically)
-medousa daemon           Start the background engine explicitly
-medousa discord          Connect the Discord bridge
-medousa telegram         Connect the Telegram bridge
-medousa slack            Connect the Slack bridge
-medousa whatsapp         Connect the WhatsApp bridge
-medousa doctor           Run diagnostics on the full stack
-medousa identity-export  Export persona and policy as markdown files
+medousa setup              Configure provider, model, backend, and channels
+medousa start <service>    Start the engine, gateway, or a channel bridge
+medousa tui                Open the workspace (starts the engine for you)
+medousa daemon             Start the background engine
+medousa discord            Connect Discord
+medousa telegram           Connect Telegram
+medousa slack              Connect Slack
+medousa whatsapp           Connect WhatsApp
+medousa doctor             Health check — everything that matters
+
+medousa identity-export    Export who Medousa knows you to be
+medousa identity-remember  Teach it a fact, from the terminal
+medousa manuscript-list    See your installed specialties
+medousa manuscript-validate <id>
+medousa manuscript-install <path> [--project]
 ```
 
-Each command has its own flags. Run `medousa <command> --help` for details.
+Run `medousa <command> --help` for the rest.
+
+### From your phone or chat
+
+Same engine, same rules:
+
+| Say this | Get this |
+|---|---|
+| `/new` | A fresh start |
+| `/brief` | Your morning brief — add a note after if you want |
+| `/ask …` | A direct question |
+| `/regen` | Try the last answer again |
+| `/stop` | Cancel what's running |
+| `/history` | Pick up an older conversation |
+| `/model`, `/depth`, `/name` | Tune how it responds |
+| `/health`, `/heartbeat` | Is everything alive? |
+
+Or just type. No slash required.
 
 ## The workspace
 
@@ -123,7 +148,7 @@ It is fast. It connects to the background engine automatically. If the engine is
 
 You are not watching Medousa when it works. That is the point.
 
-When you send a message or schedule a check-in, Medousa converts it into a unit of work that cannot be lost — backed by Stasis job persistence, not an in-memory queue. If your laptop goes to sleep, if the network drops, if the daemon restarts — that work waits. It retries. It picks up at the exact step that was interrupted, not from the beginning.
+When you send a message or schedule a check-in, Medousa turns it into work that cannot be lost. If your laptop goes to sleep, if the network drops, if the daemon restarts — that work waits. It retries. It picks up where it left off.
 
 You never have to wonder whether something finished. If Medousa accepted it, it ran.
 
@@ -137,56 +162,75 @@ You do not have to trust the script. You only have to trust the seal.
 
 ## What makes it remember
 
-Medousa does not treat every conversation as a blank page. It builds a picture of how you work — not just what you say, but how you approach things. The questions you ask. The patterns you repeat. The context you keep coming back to.
+Most assistants amnesia every time you open them. Medousa doesn't.
 
-When you return after a week away, Medousa does not ask "who are you?" It picks up where you left off. Not by scrolling through chat logs. By understanding what was relevant, what was resolved, and what was still in motion.
+It remembers **what happened** — the texture of your weeks, compressed and searchable.
 
-Want to edit that picture by hand? Export it as markdown. Change it. Bring it back.
+It remembers **who you are** — how you take your coffee, who Mario is, what you care about this quarter. The essentials surface at the start of every turn. Ask for more when you need it.
+
+You can export that picture as markdown. Edit it. Hand it back. Or teach Medousa one fact at a time from the terminal.
 
 This is not a gimmick. It is the entire point.
 
+## Specialties
+
+Some jobs deserve their own voice.
+
+A **manuscript** is a specialty pack — morning brief, research deep-dive, memory ritual — with its own tone, its own boundaries, its own schedule if you want one. Install one. Name it. Run it from the workspace, delegate it to the background, or schedule it to land in Telegram every morning.
+
+Shipped with the repo: **morning-brief**. One command on Telegram. Your day, summarized.
+
+Power users can extend a base specialty, attach a longer prose file, and install copies under `~/.config/medousa/manuscripts/`. The machinery stays invisible. The experience doesn't.
 
 
-## Storage
+## Where everything lives
 
-By default, Medousa keeps data in your local data directory:
+Your data stays on your machine:
 
 | What | Where |
 |---|---|
-| Runtime database (SurrealKV) | `~/.local/share/medousa/runtime.surrealkv` |
-| Product configuration | `~/.local/share/medousa/product_config.json` |
-| Onboarding profile | `~/.local/share/medousa/onboard_profile.json` |
-| Daemon log | `~/.local/share/medousa/logs/daemon.log` |
-| Discord log | `~/.local/share/medousa/logs/discord.log` |
-| Telegram log | `~/.local/share/medousa/logs/telegram.log` |
-| Slack log | `~/.local/share/medousa/logs/slack.log` |
-| WhatsApp log | `~/.local/share/medousa/logs/whatsapp.log` |
-| WhatsApp session | `~/.local/share/medousa/whatsapp/session.db` |
+| The database | `~/.local/share/medousa/runtime.surrealkv` |
+| Your settings | `~/.local/share/medousa/product_config.json` |
+| Workspace preferences | `~/.local/share/medousa/tui_defaults.json` |
+| Conversation history | `~/.local/share/medousa/history/` |
+| Keys and tokens | `~/.local/share/medousa/secrets/` |
+| Tool & service bindings | `~/.config/medousa/capabilities.toml` |
+| Connected app servers | `~/.config/medousa/mcp-gateway.toml` |
+| Your specialties | `~/.config/medousa/manuscripts/` |
+| Logs | `~/.local/share/medousa/logs/` |
 
-You can override the database path with the `--backend` flag or the `MEDOUSA_SURREALKV_PATH` environment variable.
+**Settings** (`product_config.json`) — who can message you on each channel, heartbeat rhythms, how hard the engine works. Written by setup; yours to tune.
+
+**Workspace prefs** (`tui_defaults.json`) — model, depth, how many tool rounds. The settings panel keeps this current.
+
+**Capabilities** (`capabilities.toml`) — optional. Map what you mean ("check my calendar") to what runs, without touching code.
+
+**Gateway** (`mcp-gateway.toml`) — optional. Which external app servers Medousa can talk to locally. Details in [docs/mcp-gateway-setup.md](docs/mcp-gateway-setup.md).
+
+Override the database path with `--backend` or `MEDOUSA_SURREALKV_PATH`.
 
 ## Providers
 
-Medousa supports 25+ LLM providers via [genai](https://github.com/jeremychone/rust-genai). You can switch at setup time or later in the TUI settings:
+Medousa supports 25+ LLM providers via [genai](https://github.com/jeremychone/rust-genai). Switch at setup or in the workspace:
 
 - **OpenAI** (default) — `gpt-4o-mini`
 - **Ollama** (local) — `llama3.2`, auto-detected on `127.0.0.1:11434`
-- **Custom** — any provider supported by genai
+- **Custom** — any provider genai supports
 
-Set the `MEDOUSA_LLM_PROVIDER`, `MEDOUSA_LLM_MODEL`, and `MEDOUSA_LLM_BASE_URL` environment variables to configure without the wizard.
+Or set `MEDOUSA_LLM_PROVIDER`, `MEDOUSA_LLM_MODEL`, and `MEDOUSA_LLM_BASE_URL` and skip the wizard.
 
 ## Environment
 
 | Variable | Purpose |
 |---|---|
-| `MEDOUSA_LLM_PROVIDER` | Provider name (openai, ollama, custom) |
-| `MEDOUSA_LLM_MODEL` | Model identifier |
-| `MEDOUSA_LLM_BASE_URL` | Base URL for the provider API |
-| `MEDOUSA_SURREALKV_PATH` | Path for the SurrealKV database file |
-| `MEDOUSA_SURREAL_NAMESPACE` | SurrealDB namespace (default: medousa) |
-| `MEDOUSA_SURREAL_DATABASE` | SurrealDB database (default: runtime) |
+| `MEDOUSA_LLM_PROVIDER` | Provider name |
+| `MEDOUSA_LLM_MODEL` | Model |
+| `MEDOUSA_LLM_BASE_URL` | API base URL |
+| `MEDOUSA_SURREALKV_PATH` | Database file |
+| `MEDOUSA_DAEMON_URL` | Engine URL for bridges and workspace |
+| `MEDOUSA_MCP_GATEWAY_URL` | Local gateway (default `http://127.0.0.1:7420`) |
 
-Provider-specific base URLs can also be set with `MEDOUSA_<PROVIDER>_BASE_URL` or `STASIS_<PROVIDER>_BASE_URL`. For Ollama, `OLLAMA_HOST` is honoured automatically.
+Provider-specific URLs: `MEDOUSA_<PROVIDER>_BASE_URL` or `STASIS_<PROVIDER>_BASE_URL`. Ollama honours `OLLAMA_HOST`.
 
 ---
 

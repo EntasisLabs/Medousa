@@ -27,6 +27,8 @@ pub struct ManuscriptMetadata {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub extends: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -55,6 +57,8 @@ pub struct ManuscriptPersonaSpec {
     pub display_name: Option<String>,
     #[serde(default)]
     pub voice_appendix: Option<String>,
+    #[serde(default)]
+    pub soul_md: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -139,6 +143,7 @@ pub struct ManuscriptContext {
     pub delivery_on_complete: Option<String>,
     pub schedule_cron: Option<String>,
     pub schedule_execution_mode: Option<String>,
+    pub extends_from: Option<String>,
     pub source_path: PathBuf,
 }
 
@@ -298,6 +303,178 @@ pub fn load_manuscript(id: &str) -> Result<(IdentityManuscriptFile, PathBuf)> {
     Ok((file, path))
 }
 
+pub fn load_manuscript_merged(id: &str) -> Result<(IdentityManuscriptFile, PathBuf)> {
+    let path = resolve_manuscript_path(id)?;
+    let file = load_manuscript_file(&path)?;
+    let merged = merge_manuscript_inheritance(&file, &path)?;
+    Ok((merged, path))
+}
+
+fn merge_manuscript_inheritance(
+    file: &IdentityManuscriptFile,
+    _path: &Path,
+) -> Result<IdentityManuscriptFile> {
+    let Some(base_id) = file
+        .metadata
+        .extends
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(file.clone());
+    };
+
+    if base_id == file.metadata.id {
+        bail!("manuscript cannot extend itself");
+    }
+
+    let (base_file, base_path) = load_manuscript(base_id)
+        .with_context(|| format!("resolve base manuscript '{base_id}' for extends"))?;
+    validate_extends_chain(base_id, &base_path)?;
+
+    let merged_base = merge_manuscript_inheritance(&base_file, &base_path)?;
+    Ok(merge_manuscript_layers(merged_base, file.clone()))
+}
+
+fn validate_extends_chain(base_id: &str, base_path: &Path) -> Result<()> {
+    let mut visited = HashSet::from([base_path.to_path_buf()]);
+    let mut current = load_manuscript_file(base_path)?;
+    while let Some(parent_id) = current
+        .metadata
+        .extends
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if parent_id == base_id {
+            bail!("manuscript extends cycle detected at '{parent_id}'");
+        }
+        let parent_path = resolve_manuscript_path(parent_id)?;
+        if !visited.insert(parent_path.clone()) {
+            bail!("manuscript extends cycle detected at '{parent_id}'");
+        }
+        current = load_manuscript_file(&parent_path)?;
+    }
+    Ok(())
+}
+
+fn merge_manuscript_layers(
+    base: IdentityManuscriptFile,
+    child: IdentityManuscriptFile,
+) -> IdentityManuscriptFile {
+    IdentityManuscriptFile {
+        api_version: child.api_version,
+        kind: child.kind,
+        metadata: child.metadata,
+        spec: ManuscriptSpec {
+            persona: merge_persona_spec(&base.spec.persona, &child.spec.persona),
+            prompts: merge_prompts_spec(&base.spec.prompts, &child.spec.prompts),
+            identity: merge_identity_spec(&base.spec.identity, &child.spec.identity),
+            worker: merge_worker_spec(&base.spec.worker, &child.spec.worker),
+            tools: merge_tools_spec(&base.spec.tools, &child.spec.tools),
+            locus: merge_locus_spec(&base.spec.locus, &child.spec.locus),
+            delivery: merge_delivery_spec(&base.spec.delivery, &child.spec.delivery),
+            schedule: merge_schedule_spec(&base.spec.schedule, &child.spec.schedule),
+        },
+    }
+}
+
+fn merge_persona_spec(
+    base: &ManuscriptPersonaSpec,
+    child: &ManuscriptPersonaSpec,
+) -> ManuscriptPersonaSpec {
+    ManuscriptPersonaSpec {
+        display_name: child
+            .display_name
+            .clone()
+            .or_else(|| base.display_name.clone()),
+        voice_appendix: child.voice_appendix.clone().or_else(|| base.voice_appendix.clone()),
+        soul_md: child.soul_md.clone().or_else(|| base.soul_md.clone()),
+    }
+}
+
+fn merge_prompts_spec(
+    base: &ManuscriptPromptsSpec,
+    child: &ManuscriptPromptsSpec,
+) -> ManuscriptPromptsSpec {
+    ManuscriptPromptsSpec {
+        system_appendix_sttp: child
+            .system_appendix_sttp
+            .clone()
+            .or_else(|| base.system_appendix_sttp.clone()),
+        task_template: child.task_template.clone().or_else(|| base.task_template.clone()),
+    }
+}
+
+fn merge_identity_spec(
+    base: &ManuscriptIdentitySpec,
+    child: &ManuscriptIdentitySpec,
+) -> ManuscriptIdentitySpec {
+    ManuscriptIdentitySpec {
+        pins: ManuscriptIdentityPins {
+            preferences: merge_string_lists(&base.pins.preferences, &child.pins.preferences),
+            contacts: merge_string_lists(&base.pins.contacts, &child.pins.contacts),
+        },
+        recall_hints: merge_string_lists(&base.recall_hints, &child.recall_hints),
+    }
+}
+
+fn merge_worker_spec(base: &ManuscriptWorkerSpec, child: &ManuscriptWorkerSpec) -> ManuscriptWorkerSpec {
+    ManuscriptWorkerSpec {
+        intent: child.intent.clone().or_else(|| base.intent.clone()),
+        max_tool_rounds: child.max_tool_rounds.or(base.max_tool_rounds),
+        override_sttp: child.override_sttp || base.override_sttp,
+    }
+}
+
+fn merge_tools_spec(base: &ManuscriptToolsSpec, child: &ManuscriptToolsSpec) -> ManuscriptToolsSpec {
+    ManuscriptToolsSpec {
+        allow: merge_string_lists(&base.allow, &child.allow),
+    }
+}
+
+fn merge_locus_spec(base: &ManuscriptLocusSpec, child: &ManuscriptLocusSpec) -> ManuscriptLocusSpec {
+    ManuscriptLocusSpec {
+        session_id: child
+            .session_id
+            .clone()
+            .or_else(|| base.session_id.clone()),
+    }
+}
+
+fn merge_delivery_spec(
+    base: &ManuscriptDeliverySpec,
+    child: &ManuscriptDeliverySpec,
+) -> ManuscriptDeliverySpec {
+    ManuscriptDeliverySpec {
+        mode: child.mode.clone().or_else(|| base.mode.clone()),
+        on_complete: child.on_complete.clone().or_else(|| base.on_complete.clone()),
+    }
+}
+
+fn merge_schedule_spec(
+    base: &ManuscriptScheduleSpec,
+    child: &ManuscriptScheduleSpec,
+) -> ManuscriptScheduleSpec {
+    ManuscriptScheduleSpec {
+        cron: child.cron.clone().or_else(|| base.cron.clone()),
+        execution_mode: child
+            .execution_mode
+            .clone()
+            .or_else(|| base.execution_mode.clone()),
+    }
+}
+
+fn merge_string_lists(base: &[String], child: &[String]) -> Vec<String> {
+    let mut merged = base.to_vec();
+    for value in child {
+        if !merged.iter().any(|existing| existing == value) {
+            merged.push(value.clone());
+        }
+    }
+    merged
+}
+
 pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result<()> {
     if file.api_version != MANUSCRIPT_API_VERSION {
         bail!(
@@ -343,12 +520,29 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         }
     }
 
+    if let Some(base_id) = file.metadata.extends.as_deref().map(str::trim).filter(|v| !v.is_empty())
+    {
+        if base_id == file.metadata.id {
+            bail!("metadata.extends cannot reference the manuscript's own id");
+        }
+        resolve_manuscript_path(base_id).with_context(|| {
+            format!("metadata.extends base manuscript '{base_id}' not found")
+        })?;
+    }
+
     Ok(())
 }
 
 pub fn build_manuscript_context(id: &str) -> Result<ManuscriptContext> {
-    let (file, path) = load_manuscript(id)?;
+    let (file, path) = load_manuscript_merged(id)?;
     validate_manuscript(&file, &path)?;
+    build_manuscript_context_from_file(&file, &path)
+}
+
+pub fn build_manuscript_context_from_file(
+    file: &IdentityManuscriptFile,
+    path: &Path,
+) -> Result<ManuscriptContext> {
     let base_dir = path
         .parent()
         .map(Path::to_path_buf)
@@ -361,13 +555,14 @@ pub fn build_manuscript_context(id: &str) -> Result<ManuscriptContext> {
         .as_deref()
         .map(|raw| resolve_prompt_field(&base_dir, raw))
         .transpose()?;
+    let voice_appendix = resolve_voice_appendix(&base_dir, &file.spec.persona)?;
 
     Ok(ManuscriptContext {
         id: file.metadata.id.clone(),
         name: file.metadata.name.clone(),
         description: file.metadata.description.clone(),
         display_name: file.spec.persona.display_name.clone(),
-        voice_appendix: file.spec.persona.voice_appendix.clone(),
+        voice_appendix,
         system_appendix,
         task_template: file.spec.prompts.task_template.clone(),
         pinned_preferences: file.spec.identity.pins.preferences.clone(),
@@ -381,8 +576,91 @@ pub fn build_manuscript_context(id: &str) -> Result<ManuscriptContext> {
         delivery_on_complete: file.spec.delivery.on_complete.clone(),
         schedule_cron: file.spec.schedule.cron.clone(),
         schedule_execution_mode: file.spec.schedule.execution_mode.clone(),
-        source_path: path,
+        extends_from: file
+            .metadata
+            .extends
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        source_path: path.to_path_buf(),
     })
+}
+
+pub fn manuscript_catalog_entry(manuscript: &ManuscriptContext) -> serde_json::Value {
+    serde_json::json!({
+        "id": manuscript.id,
+        "name": manuscript.name,
+        "description": manuscript.description,
+        "extends_from": manuscript.extends_from,
+        "display_name": manuscript.display_name,
+        "worker_intent": manuscript.worker_intent,
+        "max_tool_rounds": manuscript.max_tool_rounds,
+        "tools_allow": manuscript.tools_allow,
+        "pinned_preferences": manuscript.pinned_preferences,
+        "pinned_contacts": manuscript.pinned_contact_ids,
+        "recall_hints": manuscript.recall_hints,
+        "locus_session_id": manuscript.locus_session_id,
+        "delivery_mode": manuscript.delivery_mode,
+        "delivery_on_complete": manuscript.delivery_on_complete,
+        "schedule_cron": manuscript.schedule_cron,
+        "schedule_execution_mode": manuscript.schedule_execution_mode,
+        "source_path": manuscript.source_path.display().to_string(),
+    })
+}
+
+pub fn install_manuscript(source: &Path, scope: ManuscriptScope) -> Result<PathBuf> {
+    let file = load_manuscript_file(source)?;
+    validate_manuscript(&file, source)?;
+
+    let target_dir = match scope {
+        ManuscriptScope::Project => project_manuscripts_dir(),
+        ManuscriptScope::User => user_manuscripts_dir(),
+    };
+    std::fs::create_dir_all(&target_dir)
+        .with_context(|| format!("create manuscript dir {}", target_dir.display()))?;
+
+    let stem = file.metadata.id.trim();
+    let target = target_dir.join(format!("{stem}.yaml"));
+    if target.exists() {
+        bail!(
+            "manuscript '{}' already installed at {}",
+            stem,
+            target.display()
+        );
+    }
+
+    let bytes = std::fs::read(source)
+        .with_context(|| format!("read manuscript source {}", source.display()))?;
+    std::fs::write(&target, bytes)
+        .with_context(|| format!("write manuscript {}", target.display()))?;
+    Ok(target)
+}
+
+fn resolve_voice_appendix(base_dir: &Path, persona: &ManuscriptPersonaSpec) -> Result<Option<String>> {
+    let inline = persona
+        .voice_appendix
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    let soul = persona
+        .soul_md
+        .as_deref()
+        .map(|raw| resolve_prompt_field(base_dir, raw))
+        .transpose()?
+        .filter(|value| !value.trim().is_empty());
+
+    match (inline, soul) {
+        (Some(mut voice), Some(soul_text)) => {
+            voice.push_str("\n\n");
+            voice.push_str(soul_text.trim());
+            Ok(Some(voice))
+        }
+        (Some(voice), None) => Ok(Some(voice)),
+        (None, Some(soul_text)) => Ok(Some(soul_text.trim().to_string())),
+        (None, None) => Ok(None),
+    }
 }
 
 pub fn list_manuscripts() -> Result<Vec<ManuscriptListing>> {
@@ -635,40 +913,109 @@ spec:
         let _ = fs::remove_dir_all(&dir);
     }
 
-    fn build_manuscript_context_from_file(
-        file: &IdentityManuscriptFile,
-        path: &Path,
-    ) -> Result<ManuscriptContext> {
-        validate_manuscript(file, path)?;
-        let base_dir = path.parent().unwrap_or(path).to_path_buf();
-        let system_appendix = file
-            .spec
-            .prompts
-            .system_appendix_sttp
-            .as_deref()
-            .map(|raw| resolve_prompt_field(&base_dir, raw))
-            .transpose()?;
-        Ok(ManuscriptContext {
-            id: file.metadata.id.clone(),
-            name: file.metadata.name.clone(),
-            description: file.metadata.description.clone(),
-            display_name: file.spec.persona.display_name.clone(),
-            voice_appendix: file.spec.persona.voice_appendix.clone(),
-            system_appendix,
-            task_template: file.spec.prompts.task_template.clone(),
-            pinned_preferences: file.spec.identity.pins.preferences.clone(),
-            pinned_contact_ids: file.spec.identity.pins.contacts.clone(),
-            recall_hints: file.spec.identity.recall_hints.clone(),
-            worker_intent: file.spec.worker.intent.clone(),
-            max_tool_rounds: file.spec.worker.max_tool_rounds,
-            tools_allow: file.spec.tools.allow.clone(),
-            locus_session_id: file.spec.locus.session_id.clone(),
-            delivery_mode: file.spec.delivery.mode.clone(),
-            delivery_on_complete: file.spec.delivery.on_complete.clone(),
-            schedule_cron: file.spec.schedule.cron.clone(),
-            schedule_execution_mode: file.spec.schedule.execution_mode.clone(),
-            source_path: path.to_path_buf(),
-        })
+    #[test]
+    fn extends_merges_tools_and_identity_pins() {
+        let base = IdentityManuscriptFile {
+            api_version: MANUSCRIPT_API_VERSION.to_string(),
+            kind: MANUSCRIPT_KIND.to_string(),
+            metadata: ManuscriptMetadata {
+                id: "base-researcher".to_string(),
+                name: "Base Researcher".to_string(),
+                description: None,
+                extends: None,
+            },
+            spec: ManuscriptSpec {
+                tools: ManuscriptToolsSpec {
+                    allow: vec![
+                        "cognition_memory_context".to_string(),
+                        "cognition_identity_recall".to_string(),
+                    ],
+                },
+                identity: ManuscriptIdentitySpec {
+                    pins: ManuscriptIdentityPins {
+                        preferences: vec!["timezone".to_string()],
+                        contacts: Vec::new(),
+                    },
+                    recall_hints: vec!["research".to_string()],
+                },
+                ..Default::default()
+            },
+        };
+        let child = IdentityManuscriptFile {
+            api_version: MANUSCRIPT_API_VERSION.to_string(),
+            kind: MANUSCRIPT_KIND.to_string(),
+            metadata: ManuscriptMetadata {
+                id: "morning-brief".to_string(),
+                name: "Morning Brief".to_string(),
+                description: None,
+                extends: Some("base-researcher".to_string()),
+            },
+            spec: ManuscriptSpec {
+                tools: ManuscriptToolsSpec {
+                    allow: vec!["cognition_capability_invoke".to_string()],
+                },
+                identity: ManuscriptIdentitySpec {
+                    pins: ManuscriptIdentityPins {
+                        preferences: vec!["beverage".to_string()],
+                        contacts: Vec::new(),
+                    },
+                    recall_hints: vec!["priorities".to_string()],
+                },
+                ..Default::default()
+            },
+        };
+
+        let merged = merge_manuscript_layers(base, child);
+        assert_eq!(
+            merged.spec.tools.allow,
+            vec![
+                "cognition_memory_context".to_string(),
+                "cognition_identity_recall".to_string(),
+                "cognition_capability_invoke".to_string(),
+            ]
+        );
+        assert_eq!(
+            merged.spec.identity.pins.preferences,
+            vec!["timezone".to_string(), "beverage".to_string()]
+        );
+        assert_eq!(
+            merged.spec.identity.recall_hints,
+            vec!["research".to_string(), "priorities".to_string()]
+        );
+    }
+
+    #[test]
+    fn soul_md_file_appends_to_voice_appendix() {
+        let dir = std::env::temp_dir().join(format!(
+            "medousa-manuscript-soul-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("dir");
+        fs::write(dir.join("brief-soul.md"), "Long soul prose for brief.").expect("write soul");
+        let path = dir.join("brief.yaml");
+        fs::write(
+            &path,
+            r#"apiVersion: medousa.dev/v1
+kind: IdentityManuscript
+metadata:
+  id: brief
+  name: Brief
+spec:
+  persona:
+    voice_appendix: Short voice.
+    soul_md: ./brief-soul.md
+"#,
+        )
+        .expect("write yaml");
+
+        let file = load_manuscript_file(&path).expect("load");
+        let context = build_manuscript_context_from_file(&file, &path).expect("context");
+        assert!(context
+            .voice_appendix
+            .as_ref()
+            .is_some_and(|voice| voice.contains("Short voice.") && voice.contains("Long soul prose")));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -696,6 +1043,7 @@ spec:
             delivery_on_complete: None,
             schedule_cron: None,
             schedule_execution_mode: None,
+            extends_from: None,
             source_path: PathBuf::from("morning-brief.yaml"),
         };
 
@@ -728,6 +1076,7 @@ spec:
             delivery_on_complete: None,
             schedule_cron: None,
             schedule_execution_mode: None,
+            extends_from: None,
             source_path: PathBuf::from("empty.yaml"),
         };
         assert!(validate_manuscript_for_scheduled_lane(&manuscript).is_err());

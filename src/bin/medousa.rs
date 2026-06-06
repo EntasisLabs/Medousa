@@ -66,6 +66,7 @@ fn main() -> Result<()> {
         "identity-remember" => run_identity_remember(&args[1..]),
         "manuscript-list" => run_manuscript_list(),
         "manuscript-validate" => run_manuscript_validate(&args[1..]),
+        "manuscript-install" => run_manuscript_install(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -1530,6 +1531,27 @@ fn run_manuscript_list() -> Result<()> {
     Ok(())
 }
 
+fn run_manuscript_install(args: &[String]) -> Result<()> {
+    let source = args
+        .first()
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| anyhow!("usage: medousa manuscript-install <path-to.yaml> [--project]"))?;
+    let scope = if has_flag(args, "--project") {
+        medousa::identity_manuscript::ManuscriptScope::Project
+    } else {
+        medousa::identity_manuscript::ManuscriptScope::User
+    };
+    let installed = medousa::identity_manuscript::install_manuscript(&source, scope)?;
+    let file = medousa::identity_manuscript::load_manuscript_file(&installed)?;
+    let context = medousa::identity_manuscript::build_manuscript_context(&file.metadata.id)?;
+    println!(
+        "manuscript installed id={} path={}",
+        context.id,
+        installed.display()
+    );
+    Ok(())
+}
+
 fn run_manuscript_validate(args: &[String]) -> Result<()> {
     let id = args
         .first()
@@ -2489,6 +2511,7 @@ fn print_help() {
     println!("  medousa identity-remember --kind <preference|person|note> --subject <key|name> --statement <text> [--source user_direct] [--attributes a,b]");
     println!("  medousa manuscript-list");
     println!("  medousa manuscript-validate <id>");
+    println!("  medousa manuscript-install <path-to.yaml> [--project]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

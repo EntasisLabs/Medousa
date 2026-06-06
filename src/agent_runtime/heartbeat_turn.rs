@@ -160,6 +160,7 @@ pub async fn run_heartbeat_agent_turn(
         model,
         response_depth_mode,
         None,
+        None,
     );
     request.persist_user_turn = false;
     request.stage_routing = StageRoutingMatrix::default_for(provider, model);

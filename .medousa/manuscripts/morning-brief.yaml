@@ -4,6 +4,7 @@ metadata:
   id: morning-brief
   name: Morning Brief
   description: Daily operator summary with calendar and priorities
+  extends: base-researcher
 spec:
   persona:
     display_name: Medousa — Morning Brief

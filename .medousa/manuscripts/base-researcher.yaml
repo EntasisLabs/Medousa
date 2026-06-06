@@ -1,0 +1,21 @@
+apiVersion: medousa.dev/v1
+kind: IdentityManuscript
+metadata:
+  id: base-researcher
+  name: Base Researcher
+  description: Shared research worker tool surface and recall defaults
+spec:
+  worker:
+    intent: research
+    max_tool_rounds: 10
+  tools:
+    allow:
+      - cognition_identity_recall
+      - cognition_memory_context
+      - cognition_memory_recall
+      - cognition_capability_invoke
+      - cognition_capability_search
+      - cognition_grapheme_modules
+      - cognition_grapheme_template_run
+  identity:
+    recall_hints: [research, evidence]

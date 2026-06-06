@@ -181,6 +181,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_identity_commit",
             "cognition_identity_recall",
             "cognition_identity_remember",
+            "cognition_manuscript_list",
+            "cognition_manuscript_resolve",
         ],
     );
 

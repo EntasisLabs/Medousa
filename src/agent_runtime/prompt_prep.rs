@@ -861,6 +861,7 @@ mod tests {
             delivery_on_complete: None,
             schedule_cron: None,
             schedule_execution_mode: None,
+            extends_from: None,
             source_path: std::path::PathBuf::from("morning-brief.yaml"),
         };
         let hint = append_manuscript_hint("Plan my day", Some(&manuscript));
