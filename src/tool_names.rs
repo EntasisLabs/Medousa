@@ -15,6 +15,7 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_identity_context",
     "cognition_identity_propose",
     "cognition_identity_commit",
+    "cognition_identity_recall",
     "cognition_identity_remember",
     "cognition_memory_schema",
     "cognition_memory_moods",
@@ -126,8 +127,10 @@ mod tests {
         assert!(!tool_allowed("cognition_grapheme_run", &host));
         assert!(!tool_allowed("cognition_capability_invoke", &host));
         assert!(!tool_allowed("cognition_grapheme_template_run", &host));
+        assert!(tool_allowed("cognition_identity_recall", &host));
         assert!(tool_allowed("cognition_identity_remember", &host));
         let research = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
+        assert!(tool_allowed("cognition_identity_recall", &research));
         assert!(!tool_allowed("cognition_identity_remember", &research));
     }
 

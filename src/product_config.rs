@@ -165,6 +165,12 @@ pub struct IdentityProductConfig {
     pub model_inferred_auto_commit_fields: Vec<String>,
     #[serde(default = "default_identity_bridge_to_locus")]
     pub bridge_to_locus: bool,
+    #[serde(default = "default_digest_max_preferences")]
+    pub digest_max_preferences: usize,
+    #[serde(default = "default_digest_max_people")]
+    pub digest_max_people: usize,
+    #[serde(default = "default_digest_pinned_preferences")]
+    pub digest_pinned_preferences: Vec<String>,
 }
 
 impl Default for IdentityProductConfig {
@@ -174,6 +180,9 @@ impl Default for IdentityProductConfig {
             auto_commit_min_confidence: default_identity_auto_commit_min_confidence(),
             model_inferred_auto_commit_fields: default_identity_model_inferred_auto_commit_fields(),
             bridge_to_locus: default_identity_bridge_to_locus(),
+            digest_max_preferences: default_digest_max_preferences(),
+            digest_max_people: default_digest_max_people(),
+            digest_pinned_preferences: default_digest_pinned_preferences(),
         }
     }
 }
@@ -202,6 +211,18 @@ fn default_identity_model_inferred_auto_commit_fields() -> Vec<String> {
 
 fn default_identity_bridge_to_locus() -> bool {
     true
+}
+
+fn default_digest_max_preferences() -> usize {
+    5
+}
+
+fn default_digest_max_people() -> usize {
+    5
+}
+
+fn default_digest_pinned_preferences() -> Vec<String> {
+    vec!["timezone".to_string(), "beverage".to_string()]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

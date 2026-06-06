@@ -9,8 +9,9 @@ use crate::engine_context::{
     default_policy_profile_for_lane,
 };
 use crate::cognitive_identity::{
-    compile_relational_memory_digest, cognitive_identity_diagnostics,
-    load_cognitive_identity_snapshot, DEFAULT_RELATIONAL_DIGEST_BUDGET,
+    DigestCompileOptions, cognitive_identity_diagnostics_with_stats,
+    compile_relational_memory_digest_with_options, load_cognitive_identity_snapshot,
+    DEFAULT_RELATIONAL_DIGEST_BUDGET,
 };
 use crate::identity_memory::{
     policy_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
@@ -199,6 +200,7 @@ pub async fn channel_policy_probe(
 pub async fn identity_context_probe(
     tui_rt: &TuiRuntime,
     policy_profile: Option<&str>,
+    query_hints: Option<&str>,
 ) -> IdentityContextProbe {
     let effective_policy_profile = policy_profile
         .map(str::trim)
@@ -213,9 +215,12 @@ pub async fn identity_context_probe(
         8,
     )
     .await;
-    let digest = compile_relational_memory_digest(&snapshot, DEFAULT_RELATIONAL_DIGEST_BUDGET);
-    let diagnostics = cognitive_identity_diagnostics(&snapshot);
-    let summary = Some(format!("{digest}\n{diagnostics}"));
+    let options = DigestCompileOptions::from_product_config(DEFAULT_RELATIONAL_DIGEST_BUDGET)
+        .with_query_hints(query_hints.unwrap_or_default());
+    let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
+    let diagnostics =
+        cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
+    let summary = Some(format!("{}\n{diagnostics}", ranked.text));
     let error = snapshot.error;
 
     IdentityContextProbe {

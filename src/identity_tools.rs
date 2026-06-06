@@ -20,6 +20,9 @@ use crate::identity_memory::{
 };
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 
+use crate::cognitive_identity::{
+    load_cognitive_identity_snapshot, recall_identity_facts,
+};
 use crate::cognitive_identity_writer::{
     CognitiveFactKind, CognitiveIdentityWriter, attributes_map_to_tags,
     maybe_store_identity_sttp_bridge,
@@ -271,6 +274,99 @@ impl StasisTool for CognitionIdentityProposeTool {
 
         Ok(serde_json::to_value(response).map_err(|e| {
             StasisError::PortFailure(format!("cognition_identity_propose encode: {e}"))
+        })?)
+    }
+}
+
+// ── cognition_identity_recall ─────────────────────────────────────────────────
+
+pub struct CognitionIdentityRecallTool {
+    store: Arc<MedousaIdentityMemoryStore>,
+    default_user_id: String,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionIdentityRecallTool {
+    pub fn new(
+        store: Arc<MedousaIdentityMemoryStore>,
+        default_user_id: String,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            store,
+            default_user_id,
+            event_tx,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionIdentityRecallTool {
+    fn name(&self) -> &'static str {
+        "cognition_identity_recall"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Search durable identity memory (preferences, people, notes) by keyword. Use when the turn-start digest lacks detail.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": { "type": "string" },
+                "fact_kind": {
+                    "type": "string",
+                    "enum": ["preference", "person", "note", "any"],
+                    "description": "Optional filter; defaults to any"
+                },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
+                "user_id": { "type": "string" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let query = input
+            .get("query")
+            .and_then(Value::as_str)
+            .ok_or_else(|| StasisError::PortFailure("query is required".to_string()))?;
+        let fact_kind = input.get("fact_kind").and_then(Value::as_str);
+        let limit = input
+            .get("limit")
+            .and_then(Value::as_u64)
+            .unwrap_or(8)
+            .clamp(1, 20) as usize;
+        let user_id = optional_str(input.get("user_id").and_then(Value::as_str))
+            .unwrap_or_else(|| self.default_user_id.clone());
+
+        emit_invoked(&self.event_tx, self.name(), query).await;
+
+        let store_dyn = self.store.clone()
+            as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>;
+        let snapshot = load_cognitive_identity_snapshot(
+            Some(&store_dyn),
+            &user_id,
+            Some("interactive"),
+            32,
+        )
+        .await;
+
+        if let Some(err) = snapshot.error {
+            return Ok(json!({
+                "query": query,
+                "hits": [],
+                "total_candidates": 0,
+                "error": err,
+            }));
+        }
+
+        let result = recall_identity_facts(&snapshot, query, fact_kind, limit);
+        Ok(serde_json::to_value(result).map_err(|e| {
+            StasisError::PortFailure(format!("cognition_identity_recall encode: {e}"))
         })?)
     }
 }
@@ -654,6 +750,48 @@ mod remember_tests {
     use stasis::application::orchestration::tool_registry::StasisTool;
     use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
     use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn recall_tool_finds_remembered_preference_and_person() {
+        let store = build_seeded_medousa_identity_store().expect("store");
+        let user_id = resolve_identity_user_id(None);
+        let (event_tx, _rx) = mpsc::channel(4);
+        let remember = CognitionIdentityRememberTool::new(store.clone(), None, user_id.clone(), event_tx.clone());
+        remember
+            .invoke(json!({
+                "fact_kind": "preference",
+                "subject": "beverage",
+                "statement": "matcha",
+                "source": "user_direct"
+            }))
+            .await
+            .expect("remember pref");
+        remember
+            .invoke(json!({
+                "fact_kind": "person",
+                "subject": "Mario",
+                "statement": "Mario is an engineer at Google",
+                "attributes": { "role": "engineer" },
+                "source": "user_direct"
+            }))
+            .await
+            .expect("remember person");
+
+        let recall = CognitionIdentityRecallTool::new(store, user_id, event_tx);
+        let result = recall
+            .invoke(json!({ "query": "Mario", "limit": 5 }))
+            .await
+            .expect("recall");
+        let hits = result.get("hits").and_then(Value::as_array).expect("hits");
+        assert!(!hits.is_empty());
+
+        let pref = recall
+            .invoke(json!({ "query": "matcha", "fact_kind": "preference" }))
+            .await
+            .expect("pref recall");
+        let pref_hits = pref.get("hits").and_then(Value::as_array).expect("hits");
+        assert!(!pref_hits.is_empty());
+    }
 
     #[tokio::test]
     async fn remember_tool_writes_preference_and_person_into_digest() {

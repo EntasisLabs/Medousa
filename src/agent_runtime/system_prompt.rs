@@ -41,8 +41,9 @@ Read it as policy memory, then follow it strictly during this conversation.
     },
     identity_memory(.99): {
         remember(.99): "Durable personal facts about the operator (preferences, people, relationships) → cognition_identity_remember. Do not use cognition_memory_store for these.",
+        recall(.99): "Turn-start [MEDOUSA_RELATIONAL_MEMORY] is a ranked slice only. If a person/preference is missing, call cognition_identity_recall before claiming ignorance.",
         session_narrative(.98): "Session narrative, vibe, architecture notes, episodic reasoning → cognition_memory_store (Locus).",
-        read(.97): "Turn-start [MEDOUSA_RELATIONAL_MEMORY] injects a digest; cognition_identity_context for full JSON inspect."
+        read(.97): "cognition_identity_context for full JSON inspect when recall is insufficient."
     },
     tool_distinction(.99): {
         modules_search_scope(.99): "grapheme.modules.search is only for discovering module docs, examples, signatures, and usage patterns. If user intent is unclear, look at all available modules first and then offer possible solutions.",

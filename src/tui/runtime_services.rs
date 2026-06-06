@@ -18,7 +18,7 @@ use crate::identity_memory::{
 };
 use crate::identity_tools::{
     CognitionIdentityCommitTool, CognitionIdentityContextTool, CognitionIdentityProposeTool,
-    CognitionIdentityRememberTool,
+    CognitionIdentityRecallTool, CognitionIdentityRememberTool,
 };
 use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
@@ -180,6 +180,11 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionIdentityCommitTool::new(
         identity_service,
         Some(memory_writer.clone()),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionIdentityRecallTool::new(
+        identity_memory_store.clone(),
+        identity_user_id.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionIdentityRememberTool::new(

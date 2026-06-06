@@ -122,9 +122,12 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
 
     let recall_probe =
         cheap_memory_recall_probe(params.tui_rt, params.session_id, params.prompt).await;
-    let identity_probe =
-        identity_context_probe(params.tui_rt, params.final_route.map(|route| route.policy_profile.as_str()))
-            .await;
+    let identity_probe = identity_context_probe(
+        params.tui_rt,
+        params.final_route.map(|route| route.policy_profile.as_str()),
+        Some(params.prompt),
+    )
+    .await;
     let channel_policy = channel_policy_probe(
         params.tui_rt,
         params.final_route.map(|route| route.policy_profile.as_str()),
