@@ -9,13 +9,14 @@ use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, GetIdentityContextRequest, ProposeEntityUpdateRequest,
+    CommitEntityUpdateRequest, IdentityContextMode, ProposeEntityUpdateRequest,
 };
 use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::identity_memory::{
-    resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
+    build_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
+    resolve_identity_user_id,
 };
 use crate::identity_write_policy::{
     evaluate_identity_commit, load_identity_product_config, parse_identity_entity_type,
@@ -36,6 +37,22 @@ fn optional_str(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
+}
+
+fn parse_identity_context_mode(raw: Option<&str>) -> StasisResult<IdentityContextMode> {
+    match raw
+        .unwrap_or("cognitive")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "full" => Ok(IdentityContextMode::Full),
+        "policy" => Ok(IdentityContextMode::Policy),
+        "cognitive" => Ok(IdentityContextMode::Cognitive),
+        other => Err(StasisError::PortFailure(format!(
+            "unsupported identity context mode '{other}', expected full|policy|cognitive"
+        ))),
+    }
 }
 
 fn parse_utc_optional(value: Option<&str>, field: &str) -> Result<Option<DateTime<Utc>>, String> {
@@ -94,7 +111,12 @@ impl StasisTool for CognitionIdentityContextTool {
                 "user_id": { "type": "string", "description": "Override identity user id" },
                 "persona_id": { "type": "string", "description": "Override persona id" },
                 "channel_id": { "type": "string", "description": "Override channel id" },
-                "relationship_limit": { "type": "integer", "minimum": 1, "maximum": 64 }
+                "relationship_limit": { "type": "integer", "minimum": 1, "maximum": 64 },
+                "mode": {
+                    "type": "string",
+                    "enum": ["full", "policy", "cognitive"],
+                    "description": "Identity context slice (default: cognitive)"
+                }
             }
         }))
     }
@@ -113,15 +135,17 @@ impl StasisTool for CognitionIdentityContextTool {
             .map(|n| n as usize)
             .unwrap_or(8)
             .clamp(1, 64);
+        let mode = parse_identity_context_mode(input.get("mode").and_then(Value::as_str))?;
 
         let response = self
             .service
-            .get_identity_context(&GetIdentityContextRequest {
+            .get_identity_context(&build_identity_context_request(
                 user_id,
                 persona_id,
                 channel_id,
                 relationship_limit,
-            })
+                mode,
+            ))
             .await?;
 
         Ok(serde_json::to_value(response).map_err(|e| {
@@ -162,7 +186,7 @@ impl StasisTool for CognitionIdentityProposeTool {
             "properties": {
                 "entity_type": {
                     "type": "string",
-                    "description": "persona | user | relationship | channel | policy"
+                    "description": "persona | user | contact | relationship | channel | policy"
                 },
                 "entity_id": { "type": "string" },
                 "patch": { "type": "object", "description": "Flat or nested JSON patch object" },

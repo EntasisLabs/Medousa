@@ -602,6 +602,7 @@ async fn fetch_identity_context(
         policy_profile: find_arg_value(args, "--policy-profile").map(ToString::to_string),
         relationship_limit: find_arg_value(args, "--relationship-limit")
             .and_then(|raw| raw.parse::<usize>().ok()),
+        mode: find_arg_value(args, "--mode").map(ToString::to_string),
     };
 
     let response = client
@@ -1017,6 +1018,7 @@ fn parse_identity_entity_type(raw: &str) -> Result<IdentityEntityType> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "persona" | "persona_entity" | "personaentity" => Ok(IdentityEntityType::PersonaEntity),
         "user" | "user_entity" | "userentity" => Ok(IdentityEntityType::UserEntity),
+        "contact" | "contact_entity" | "contactentity" => Ok(IdentityEntityType::ContactEntity),
         "channel" | "channel_profile" | "channel_profile_entity" | "channelprofileentity" => {
             Ok(IdentityEntityType::ChannelProfileEntity)
         }
@@ -1055,6 +1057,7 @@ fn identity_entity_type_token(entity_type: &IdentityEntityType) -> &'static str 
     match entity_type {
         IdentityEntityType::PersonaEntity => "persona",
         IdentityEntityType::UserEntity => "user",
+        IdentityEntityType::ContactEntity => "contact",
         IdentityEntityType::ChannelProfileEntity => "channel",
         IdentityEntityType::PolicyProfileEntity => "policy",
         IdentityEntityType::RelationshipEntity => "relationship",
@@ -1206,7 +1209,7 @@ fn print_identity_context_summary(payload: &GetIdentityContextResponse) {
             println!(
                 "  - id={} kind={} status={:?} trust={:.2} confidence={:.2} source={}:{} target={}:{}",
                 relationship.relationship_id,
-                relationship.relationship_kind,
+                relationship.relationship_kind.as_str(),
                 &relationship.status,
                 relationship.trust_level,
                 relationship.confidence,

@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use stasis::ports::outbound::memory::identity_memory_models::GetIdentityContextRequest;
+use stasis::ports::outbound::memory::identity_memory_models::IdentityContextMode;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 
 pub fn identity_markdown_export_dir() -> PathBuf {
@@ -30,12 +30,15 @@ pub async fn export_identity_markdown(
         .unwrap_or_else(|| crate::identity_memory::resolve_identity_user_id(None));
 
     let context = store
-        .get_identity_context(&GetIdentityContextRequest {
-            user_id: user_id.clone(),
-            persona_id: crate::identity_memory::resolve_identity_persona_id(),
-            channel_id: crate::identity_memory::resolve_identity_channel_id(None),
-            relationship_limit: 8,
-        })
+        .get_identity_context(
+            &crate::identity_memory::build_identity_context_request(
+                user_id.clone(),
+                crate::identity_memory::resolve_identity_persona_id(),
+                crate::identity_memory::resolve_identity_channel_id(None),
+                8,
+                IdentityContextMode::Cognitive,
+            ),
+        )
         .await
         .context("load identity context for markdown export")?;
 

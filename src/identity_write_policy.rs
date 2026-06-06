@@ -122,6 +122,7 @@ pub fn parse_identity_entity_type(raw: &str) -> Result<IdentityEntityType, Strin
     match raw.trim().to_ascii_lowercase().as_str() {
         "persona" | "persona_entity" | "personaentity" => Ok(IdentityEntityType::PersonaEntity),
         "user" | "user_entity" | "userentity" => Ok(IdentityEntityType::UserEntity),
+        "contact" | "contact_entity" | "contactentity" => Ok(IdentityEntityType::ContactEntity),
         "channel" | "channel_profile" | "channel_profile_entity" | "channelprofileentity" => {
             Ok(IdentityEntityType::ChannelProfileEntity)
         }

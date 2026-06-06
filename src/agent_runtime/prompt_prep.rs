@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 
 use locus_core_rs::NodeQuery;
-use stasis::application::runtime::identity_context_compiler::load_identity_context_summary;
 use stasis::prelude::MemoryRecallRequest;
-
-use stasis::ports::outbound::memory::identity_memory_models::GetIdentityContextRequest;
 
 use crate::agent_runtime::ambient_context::ChannelAmbientPolicy;
 use crate::engine_context::{
     ContextCompilerInput, EngineExecutionLane, RecallReadiness, compile_context_prompt,
     default_policy_profile_for_lane,
 };
-use crate::identity_memory::{resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id};
+use crate::cognitive_identity::{
+    compile_relational_memory_digest, cognitive_identity_diagnostics,
+    load_cognitive_identity_snapshot, DEFAULT_RELATIONAL_DIGEST_BUDGET,
+};
+use crate::identity_memory::{
+    policy_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
+    resolve_identity_user_id,
+};
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
 use crate::tui::settings::{RuntimeSettings, parse_f32_with_bounds};
@@ -172,12 +176,12 @@ pub async fn channel_policy_probe(
         .filter(|value| !value.is_empty())
         .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
 
-    let request = GetIdentityContextRequest {
-        user_id: resolve_identity_user_id(None),
-        persona_id: resolve_identity_persona_id(),
-        channel_id: resolve_identity_channel_id(effective_policy_profile),
-        relationship_limit: 4,
-    };
+    let request = policy_identity_context_request(
+        resolve_identity_user_id(None),
+        resolve_identity_persona_id(),
+        resolve_identity_channel_id(effective_policy_profile),
+        4,
+    );
 
     match tui_rt
         .identity_memory_store
@@ -202,12 +206,17 @@ pub async fn identity_context_probe(
         .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
     let identity_user_id = resolve_identity_user_id(None);
 
-    let (summary, error) = load_identity_context_summary(
+    let snapshot = load_cognitive_identity_snapshot(
         Some(&tui_rt.identity_memory_store),
         &identity_user_id,
         effective_policy_profile,
+        8,
     )
     .await;
+    let digest = compile_relational_memory_digest(&snapshot, DEFAULT_RELATIONAL_DIGEST_BUDGET);
+    let diagnostics = cognitive_identity_diagnostics(&snapshot);
+    let summary = Some(format!("{digest}\n{diagnostics}"));
+    let error = snapshot.error;
 
     IdentityContextProbe {
         attempted: true,
@@ -796,13 +805,15 @@ mod tests {
             "Explain this",
             &IdentityContextProbe {
                 attempted: true,
-                summary: Some("persona_present=true relationships=3 policies=2".to_string()),
+                summary: Some(
+                    "[MEDOUSA_RELATIONAL_MEMORY]\nstatus=ready\npreferences: beverage=matcha\nmode=cognitive contacts=0 preferences=1 relationships=0".to_string(),
+                ),
                 error: None,
             },
         );
 
         assert!(hint.contains("[MEDOUSA_IDENTITY_CONTEXT]"));
         assert!(hint.contains("status=ready"));
-        assert!(hint.contains("persona_present=true"));
+        assert!(hint.contains("beverage=matcha"));
     }
 }

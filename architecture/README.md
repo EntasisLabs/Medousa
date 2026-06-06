@@ -37,6 +37,7 @@ Start here for product-level usage:
 20. [turn-worker-phase2.md](turn-worker-phase2.md) — Phase 2 host routing + auto slim host
 21. [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md) — **Planned:** tiered context pools (user / host tool / worker), scratchpad, lane classification; Locus prompt git last
 22. [worker-continuity-plan.md](worker-continuity-plan.md) — worker = same Medousa, workshop hat; continuity bundle + curated STTP (Phase A–E)
+23. [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md) — **Planned:** identity store as relational memory (preferences, contacts, cognitive mode, remember tool); Stasis 0.4.0; Phases 0–5
 
 ## Primary Code Anchors
 

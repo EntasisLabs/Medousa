@@ -1,7 +1,7 @@
-//! Medousa extension for Stasis identity store: Persona/User commit (AX-4b).
+//! Medousa extension for Stasis identity store: Persona/User/Contact commit overlay.
 //!
-//! Stasis 0.2.0 implements relationship commit only; this wrapper delegates relationship
-//! commits to the inner store and applies persona/user commits locally.
+//! Stasis 0.4.0 implements relationship commit natively; this wrapper delegates those commits
+//! to the inner store and applies persona/user/contact commits locally.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -14,10 +14,10 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode,
+    CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode, ContactEntity,
     EntityUpdateProposalRecord, GetIdentityContextRequest, GetIdentityContextResponse,
-    IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse,
-    PersonaEntity, ProposalState, ProposeEntityUpdateRequest, ProposeEntityUpdateResponse,
+    IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse, PersonaEntity,
+    ProposalState, ProposeEntityUpdateRequest, ProposeEntityUpdateResponse,
     RollbackEntityVersionRequest, RollbackEntityVersionResponse, UpdateSource, UpdateTier,
     UserEntity,
 };
@@ -26,9 +26,15 @@ use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
 
+use crate::identity_memory::{
+    full_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
+    resolve_identity_user_id,
+};
+
 const PROPOSAL_TABLE: &str = "identity_entity_update_proposal";
 const PERSONA_TABLE: &str = "identity_persona";
 const USER_TABLE: &str = "identity_user";
+const CONTACT_TABLE: &str = "identity_contact";
 
 pub fn wrap_in_memory(store: Arc<InMemoryIdentityMemoryStore>) -> Arc<dyn IdentityMemoryStore> {
     Arc::new(MedousaIdentityMemoryStore {
@@ -128,7 +134,21 @@ fn apply_user_patch(user: &mut UserEntity, patch: &Value) -> StasisResult<()> {
         StasisError::PortFailure("identity patch must be an object".to_string())
     })?;
     for (path, value) in map {
+        if let Some(key) = path.strip_prefix("preferences.") {
+            user.preferences.insert(key.to_string(), value.clone());
+            continue;
+        }
         match path.as_str() {
+            "preferences" => {
+                let Some(obj) = value.as_object() else {
+                    return Err(StasisError::PortFailure(
+                        "preferences must be an object".to_string(),
+                    ));
+                };
+                for (key, pref_value) in obj {
+                    user.preferences.insert(key.clone(), pref_value.clone());
+                }
+            }
             "timezone" => {
                 user.timezone = value.as_str().ok_or_else(|| {
                     StasisError::PortFailure("timezone must be a string".to_string())
@@ -151,6 +171,50 @@ fn apply_user_patch(user: &mut UserEntity, patch: &Value) -> StasisResult<()> {
     }
     user.version = user.version.saturating_add(1);
     user.updated_at = Utc::now();
+    Ok(())
+}
+
+fn parse_string_array(value: &Value, field: &str) -> StasisResult<Vec<String>> {
+    let Some(items) = value.as_array() else {
+        return Err(StasisError::PortFailure(format!("{field} must be an array")));
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        out.push(item.as_str().ok_or_else(|| {
+            StasisError::PortFailure(format!("{field} entries must be strings"))
+        })?.to_string());
+    }
+    Ok(out)
+}
+
+fn apply_contact_patch(contact: &mut ContactEntity, patch: &Value) -> StasisResult<()> {
+    let map = patch.as_object().ok_or_else(|| {
+        StasisError::PortFailure("identity patch must be an object".to_string())
+    })?;
+    for (path, value) in map {
+        match path.as_str() {
+            "display_name" => {
+                contact.display_name = value.as_str().ok_or_else(|| {
+                    StasisError::PortFailure("display_name must be a string".to_string())
+                })?.to_string();
+            }
+            "aliases" => {
+                contact.aliases = parse_string_array(value, "aliases")?;
+            }
+            "status" => {
+                contact.status = value.as_str().ok_or_else(|| {
+                    StasisError::PortFailure("status must be a string".to_string())
+                })?.to_string();
+            }
+            other => {
+                return Err(StasisError::PortFailure(format!(
+                    "unsupported contact patch field: {other}"
+                )));
+            }
+        }
+    }
+    contact.version = contact.version.saturating_add(1);
+    contact.updated_at = Utc::now();
     Ok(())
 }
 
@@ -186,7 +250,7 @@ impl MedousaIdentityMemoryStore {
         cache.lock().ok()?.get(proposal_id).cloned()
     }
 
-    async fn commit_persona_user(
+    async fn commit_overlay_entity(
         &self,
         request: &CommitEntityUpdateRequest,
         proposal: CachedProposal,
@@ -224,12 +288,12 @@ impl MedousaIdentityMemoryStore {
                 match proposal.entity_type {
                     IdentityEntityType::PersonaEntity => {
                         let ctx = store
-                            .get_identity_context(&GetIdentityContextRequest {
-                                user_id: "user:default".to_string(),
-                                persona_id: proposal.entity_id.clone(),
-                                channel_id: "channel:default".to_string(),
-                                relationship_limit: 1,
-                            })
+                            .get_identity_context(&full_identity_context_request(
+                                resolve_identity_user_id(None),
+                                proposal.entity_id.clone(),
+                                resolve_identity_channel_id(None),
+                                1,
+                            ))
                             .await?;
                         let mut persona = ctx.persona.ok_or_else(|| {
                             StasisError::PortFailure("target persona not found".to_string())
@@ -264,12 +328,12 @@ impl MedousaIdentityMemoryStore {
                     }
                     IdentityEntityType::UserEntity => {
                         let ctx = store
-                            .get_identity_context(&GetIdentityContextRequest {
-                                user_id: proposal.entity_id.clone(),
-                                persona_id: "persona:default".to_string(),
-                                channel_id: "channel:default".to_string(),
-                                relationship_limit: 1,
-                            })
+                            .get_identity_context(&full_identity_context_request(
+                                proposal.entity_id.clone(),
+                                resolve_identity_persona_id(),
+                                resolve_identity_channel_id(None),
+                                1,
+                            ))
                             .await?;
                         let mut user = ctx.user.ok_or_else(|| {
                             StasisError::PortFailure("target user not found".to_string())
@@ -302,6 +366,50 @@ impl MedousaIdentityMemoryStore {
                             ..Default::default()
                         })
                     }
+                    IdentityEntityType::ContactEntity => {
+                        let ctx = store
+                            .get_identity_context(&full_identity_context_request(
+                                resolve_identity_user_id(None),
+                                resolve_identity_persona_id(),
+                                resolve_identity_channel_id(None),
+                                64,
+                            ))
+                            .await?;
+                        let mut contact = ctx
+                            .contacts
+                            .into_iter()
+                            .find(|contact| contact.contact_id == proposal.entity_id)
+                            .ok_or_else(|| {
+                                StasisError::PortFailure("target contact not found".to_string())
+                            })?;
+                        if contact.version != request.expected_version {
+                            return Ok(CommitEntityUpdateResponse {
+                                committed: false,
+                                code: Some(CommitOutcomeCode::StaleState),
+                                entity_type: Some(IdentityEntityType::ContactEntity),
+                                entity_id: Some(contact.contact_id.clone()),
+                                rationale: Some(format!(
+                                    "stale_state expected_version={} current_version={}",
+                                    request.expected_version, contact.version
+                                )),
+                                ..Default::default()
+                            });
+                        }
+                        apply_contact_patch(&mut contact, &proposal.patch)?;
+                        let new_version = contact.version;
+                        store.upsert_contact(contact)?;
+                        if let Ok(mut set) = committed_proposals.lock() {
+                            set.insert(request.proposal_id.clone());
+                        }
+                        Ok(CommitEntityUpdateResponse {
+                            committed: true,
+                            code: Some(CommitOutcomeCode::Ok),
+                            entity_type: Some(IdentityEntityType::ContactEntity),
+                            entity_id: Some(proposal.entity_id),
+                            new_version: Some(new_version),
+                            ..Default::default()
+                        })
+                    }
                     _ => Ok(CommitEntityUpdateResponse {
                         committed: false,
                         code: Some(CommitOutcomeCode::InvalidPatch),
@@ -315,7 +423,7 @@ impl MedousaIdentityMemoryStore {
                 }
             }
             Backing::Surreal { store, db, .. } => {
-                surreal_commit_persona_user(store, db, request, proposal).await
+                surreal_commit_overlay_entity(store, db, request, proposal).await
             }
         }
     }
@@ -347,6 +455,8 @@ struct UserRow {
     user_id: String,
     timezone: String,
     language_variant: Option<String>,
+    #[serde(default)]
+    preferences: std::collections::BTreeMap<String, Value>,
     status: String,
     version: i32,
     updated_at: chrono::DateTime<Utc>,
@@ -358,6 +468,31 @@ impl From<UserEntity> for UserRow {
             user_id: value.user_id,
             timezone: value.timezone,
             language_variant: value.language_variant,
+            preferences: value.preferences,
+            status: value.status,
+            version: value.version,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, SurrealValue)]
+struct ContactRow {
+    contact_id: String,
+    display_name: String,
+    #[serde(default)]
+    aliases: Vec<String>,
+    status: String,
+    version: i32,
+    updated_at: chrono::DateTime<Utc>,
+}
+
+impl From<ContactEntity> for ContactRow {
+    fn from(value: ContactEntity) -> Self {
+        Self {
+            contact_id: value.contact_id,
+            display_name: value.display_name,
+            aliases: value.aliases,
             status: value.status,
             version: value.version,
             updated_at: value.updated_at,
@@ -388,6 +523,7 @@ fn parse_identity_entity_type(value: &str) -> StasisResult<IdentityEntityType> {
     match value {
         "persona_entity" => Ok(IdentityEntityType::PersonaEntity),
         "user_entity" => Ok(IdentityEntityType::UserEntity),
+        "contact_entity" => Ok(IdentityEntityType::ContactEntity),
         "channel_profile_entity" => Ok(IdentityEntityType::ChannelProfileEntity),
         "policy_profile_entity" => Ok(IdentityEntityType::PolicyProfileEntity),
         "relationship_entity" => Ok(IdentityEntityType::RelationshipEntity),
@@ -468,6 +604,7 @@ impl From<EntityUpdateProposalRecord> for ProposalRow {
             entity_type: match value.entity_type {
                 IdentityEntityType::PersonaEntity => "persona_entity",
                 IdentityEntityType::UserEntity => "user_entity",
+                IdentityEntityType::ContactEntity => "contact_entity",
                 IdentityEntityType::ChannelProfileEntity => "channel_profile_entity",
                 IdentityEntityType::PolicyProfileEntity => "policy_profile_entity",
                 IdentityEntityType::RelationshipEntity => "relationship_entity",
@@ -518,7 +655,7 @@ async fn load_surreal_proposal(
     proposal_row.map(EntityUpdateProposalRecord::try_from).transpose()
 }
 
-async fn surreal_commit_persona_user(
+async fn surreal_commit_overlay_entity(
     store: &SurrealIdentityMemoryStore,
     db: &Surreal<Any>,
     request: &CommitEntityUpdateRequest,
@@ -678,6 +815,7 @@ async fn surreal_commit_persona_user(
                 user_id: user_row.user_id,
                 timezone: user_row.timezone,
                 language_variant: user_row.language_variant,
+                preferences: user_row.preferences,
                 status: user_row.status,
                 version: user_row.version,
                 updated_at: user_row.updated_at,
@@ -736,6 +874,91 @@ async fn surreal_commit_persona_user(
                 committed: true,
                 code: Some(CommitOutcomeCode::Ok),
                 entity_type: Some(IdentityEntityType::UserEntity),
+                entity_id: Some(cached.entity_id),
+                new_version: Some(new_version),
+                ..Default::default()
+            })
+        }
+        IdentityEntityType::ContactEntity => {
+            let mut contact_resp = db
+                .query("SELECT * FROM type::record($table, $id)")
+                .bind(("table", CONTACT_TABLE))
+                .bind(("id", proposal.entity_id.clone()))
+                .await
+                .map_err(|e| port_err("load contact for proposal", e))?;
+            let contact_row: Option<ContactRow> = contact_resp
+                .take(0)
+                .map_err(|e| port_err("decode contact for proposal", e))?;
+            let Some(contact_row) = contact_row else {
+                return Ok(CommitEntityUpdateResponse {
+                    committed: false,
+                    code: Some(CommitOutcomeCode::NotFound),
+                    rationale: Some("target contact not found".to_string()),
+                    ..Default::default()
+                });
+            };
+            let mut contact = ContactEntity {
+                contact_id: contact_row.contact_id,
+                display_name: contact_row.display_name,
+                aliases: contact_row.aliases,
+                status: contact_row.status,
+                version: contact_row.version,
+                updated_at: contact_row.updated_at,
+            };
+            if contact.version != request.expected_version {
+                proposal.state = ProposalState::Rejected;
+                proposal.updated_at = Utc::now();
+                db.query("UPSERT type::record($table, $id) CONTENT $data")
+                    .bind(("table", PROPOSAL_TABLE))
+                    .bind(("id", proposal.proposal_id.clone()))
+                    .bind(("data", ProposalRow::from(proposal)))
+                    .await
+                    .map_err(|e| port_err("mark stale proposal", e))?;
+                return Ok(CommitEntityUpdateResponse {
+                    committed: false,
+                    code: Some(CommitOutcomeCode::StaleState),
+                    entity_type: Some(IdentityEntityType::ContactEntity),
+                    entity_id: Some(contact.contact_id),
+                    rationale: Some(format!(
+                        "stale_state expected_version={} current_version={}",
+                        request.expected_version, contact.version
+                    )),
+                    ..Default::default()
+                });
+            }
+            if let Err(err) = apply_contact_patch(&mut contact, &patch) {
+                proposal.state = ProposalState::Rejected;
+                proposal.updated_at = Utc::now();
+                db.query("UPSERT type::record($table, $id) CONTENT $data")
+                    .bind(("table", PROPOSAL_TABLE))
+                    .bind(("id", proposal.proposal_id.clone()))
+                    .bind(("data", ProposalRow::from(proposal)))
+                    .await
+                    .map_err(|e| port_err("reject invalid proposal", e))?;
+                return Ok(CommitEntityUpdateResponse {
+                    committed: false,
+                    code: Some(CommitOutcomeCode::PolicyDenied),
+                    entity_type: Some(IdentityEntityType::ContactEntity),
+                    entity_id: Some(contact.contact_id),
+                    rationale: Some(err.to_string()),
+                    ..Default::default()
+                });
+            }
+            let new_version = contact.version;
+            store.upsert_contact(contact).await?;
+            proposal.state = ProposalState::Committed;
+            proposal.approver = request.approver.clone();
+            proposal.updated_at = Utc::now();
+            db.query("UPSERT type::record($table, $id) CONTENT $data")
+                .bind(("table", PROPOSAL_TABLE))
+                .bind(("id", proposal.proposal_id.clone()))
+                .bind(("data", ProposalRow::from(proposal)))
+                .await
+                .map_err(|e| port_err("mark proposal committed", e))?;
+            Ok(CommitEntityUpdateResponse {
+                committed: true,
+                code: Some(CommitOutcomeCode::Ok),
+                entity_type: Some(IdentityEntityType::ContactEntity),
                 entity_id: Some(cached.entity_id),
                 new_version: Some(new_version),
                 ..Default::default()
@@ -808,9 +1031,9 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
         };
 
         match proposal.entity_type {
-            IdentityEntityType::PersonaEntity | IdentityEntityType::UserEntity => {
-                self.commit_persona_user(request, proposal).await
-            }
+            IdentityEntityType::PersonaEntity
+            | IdentityEntityType::UserEntity
+            | IdentityEntityType::ContactEntity => self.commit_overlay_entity(request, proposal).await,
             _ => Ok(inner),
         }
     }
@@ -885,12 +1108,12 @@ mod tests {
         assert!(commit.committed, "{commit:?}");
 
         let ctx = wrapped
-            .get_identity_context(&GetIdentityContextRequest {
-                user_id: "user:default".to_string(),
-                persona_id: "persona:test".to_string(),
-                channel_id: "channel:default".to_string(),
-                relationship_limit: 1,
-            })
+            .get_identity_context(&full_identity_context_request(
+                "user:default",
+                "persona:test",
+                "channel:default",
+                1,
+            ))
             .await
             .expect("context");
         assert_eq!(

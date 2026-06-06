@@ -28,7 +28,9 @@ use medousa::engine_context::{
 use medousa::verifier::{VerificationPolicy, verify_context_pack};
 use medousa::verification_store::persist_verification;
 use medousa::identity_memory::{
-    resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
+    build_identity_context_request, full_identity_context_request,
+    parse_identity_context_mode_label, resolve_identity_channel_id, resolve_identity_persona_id,
+    resolve_identity_user_id,
 };
 use medousa::daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, DEFAULT_DAEMON_BIND,
@@ -63,8 +65,8 @@ use stasis::application::runtime::identity_context_compiler::prepend_identity_sn
 use stasis::application::orchestration::runtime_job_payloads::PromptJobPayload;
 use stasis::application::orchestration::runtime_workflow_job_builder::RuntimeWorkflowJobBuilder;
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextRequest,
-    GetIdentityContextResponse, ListEntityHistoryRequest, ListEntityHistoryResponse,
+    CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
+    ListEntityHistoryRequest, ListEntityHistoryResponse,
     ProposeEntityUpdateRequest, ProposeEntityUpdateResponse, RollbackEntityVersionRequest,
     RollbackEntityVersionResponse,
 };
@@ -1489,12 +1491,12 @@ async fn resolve_identity_context_for_request(
 
     let response = state
         .identity_service
-        .get_identity_context(&GetIdentityContextRequest {
-            user_id: user_id.clone(),
+        .get_identity_context(&full_identity_context_request(
+            user_id.clone(),
             persona_id,
             channel_id,
-            relationship_limit: relationship_limit.clamp(1, 64),
-        })
+            relationship_limit.clamp(1, 64),
+        ))
         .await
         .map_err(internal_error)?;
 
@@ -1515,12 +1517,19 @@ fn summarize_identity_context(context: &GetIdentityContextResponse) -> String {
         .iter()
         .filter(|relationship| relationship.transition_receipt_id.is_some())
         .count();
+    let preference_count = context
+        .user
+        .as_ref()
+        .map(|user| user.preferences.len())
+        .unwrap_or(0);
 
     format!(
-        "persona_present={} user_present={} channel_present={} relationships={} policies={} depth={} continuity_links={} continuity_receipts={}",
+        "persona_present={} user_present={} channel_present={} contacts={} preferences={} relationships={} policies={} depth={} continuity_links={} continuity_receipts={}",
         context.persona.is_some(),
         context.user.is_some(),
         context.channel.is_some(),
+        context.contacts.len(),
+        preference_count,
         context.relationships.len(),
         context.policy_profiles.len(),
         context.graph_depth_used,
@@ -1547,15 +1556,17 @@ async fn identity_get_context(
     let channel_id = normalize_optional_text(request.channel_id.as_deref())
         .unwrap_or_else(|| resolve_identity_channel_id(request.policy_profile.as_deref()));
     let relationship_limit = request.relationship_limit.unwrap_or(8).clamp(1, 64);
+    let mode = parse_identity_context_mode_label(request.mode.as_deref());
 
     let response = state
         .identity_service
-        .get_identity_context(&GetIdentityContextRequest {
+        .get_identity_context(&build_identity_context_request(
             user_id,
             persona_id,
             channel_id,
             relationship_limit,
-        })
+            mode,
+        ))
         .await
         .map_err(internal_error)?;
 

@@ -27,6 +27,7 @@ pub mod execution_policy;
 pub mod medousa_tool_loop;
 pub mod grapheme_sttp_compaction;
 pub mod identity_markdown;
+pub mod cognitive_identity;
 pub mod identity_memory;
 pub mod identity_store_ext;
 pub mod identity_tools;

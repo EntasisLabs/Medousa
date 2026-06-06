@@ -1,11 +1,9 @@
 //! Daemon-side MCP invoke policy evaluation.
 
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
-use stasis::ports::outbound::memory::identity_memory_models::{
-    AutonomyScope, GetIdentityContextRequest,
-};
+use stasis::ports::outbound::memory::identity_memory_models::AutonomyScope;
 
-use crate::identity_memory::resolve_identity_persona_id;
+use crate::identity_memory::{policy_identity_context_request, resolve_identity_persona_id};
 use crate::mcp_gateway_api::{
     McpEffectClass, McpPolicyDecision, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse,
     McpTurnLane,
@@ -27,12 +25,12 @@ pub async fn evaluate_mcp_policy_with_identity(
     }
     let action = effect_to_action_class(request.effect_class);
     let context = match identity_service
-        .get_identity_context(&GetIdentityContextRequest {
-            user_id: request.turn_context.user_id.clone(),
-            persona_id: resolve_identity_persona_id(),
-            channel_id: request.turn_context.channel_id.clone(),
-            relationship_limit: 16,
-        })
+        .get_identity_context(&policy_identity_context_request(
+            request.turn_context.user_id.clone(),
+            resolve_identity_persona_id(),
+            request.turn_context.channel_id.clone(),
+            16,
+        ))
         .await
     {
         Ok(context) => context,

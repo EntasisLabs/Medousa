@@ -77,6 +77,8 @@ pub struct IdentityContextRequest {
     pub channel_id: Option<String>,
     pub policy_profile: Option<String>,
     pub relationship_limit: Option<usize>,
+    /// `full` | `policy` | `cognitive` (default: full for operator inspect)
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

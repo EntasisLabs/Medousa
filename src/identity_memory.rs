@@ -10,9 +10,9 @@ use surrealdb_types::SurrealValue;
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
-    AutonomyScope, ChannelProfileEntity, EntityRef, EscalationPolicy, InterruptionPolicy,
-    PersonaEntity, PolicyProfileEntity, RelationshipEntity, RelationshipStatus, UpdateSource,
-    UserEntity,
+    AutonomyScope, ChannelProfileEntity, EntityRef, EscalationPolicy, GetIdentityContextRequest,
+    IdentityContextMode, InterruptionPolicy, PersonaEntity, PolicyProfileEntity,
+    RelationshipEntity, RelationshipKind, RelationshipStatus, UpdateSource, UserEntity,
 };
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::{RuntimeBackend, RuntimeComposition, StasisError};
@@ -25,6 +25,67 @@ const DEFAULT_PERSONA_ID: &str = "persona:default";
 const DEFAULT_USER_ID: &str = "user:default";
 const DEFAULT_CHANNEL_ID: &str = "channel:default";
 const DEFAULT_PERSONA_DISPLAY_NAME: &str = "Medousa";
+
+pub use crate::cognitive_identity::build_identity_context_request;
+
+pub fn policy_identity_context_request(
+    user_id: impl Into<String>,
+    persona_id: impl Into<String>,
+    channel_id: impl Into<String>,
+    relationship_limit: usize,
+) -> GetIdentityContextRequest {
+    build_identity_context_request(
+        user_id,
+        persona_id,
+        channel_id,
+        relationship_limit,
+        IdentityContextMode::Policy,
+    )
+}
+
+pub fn cognitive_identity_context_request(
+    user_id: impl Into<String>,
+    persona_id: impl Into<String>,
+    channel_id: impl Into<String>,
+    relationship_limit: usize,
+) -> GetIdentityContextRequest {
+    build_identity_context_request(
+        user_id,
+        persona_id,
+        channel_id,
+        relationship_limit,
+        IdentityContextMode::Cognitive,
+    )
+}
+
+pub fn full_identity_context_request(
+    user_id: impl Into<String>,
+    persona_id: impl Into<String>,
+    channel_id: impl Into<String>,
+    relationship_limit: usize,
+) -> GetIdentityContextRequest {
+    build_identity_context_request(
+        user_id,
+        persona_id,
+        channel_id,
+        relationship_limit,
+        IdentityContextMode::Full,
+    )
+}
+
+pub fn parse_identity_context_mode_label(raw: Option<&str>) -> IdentityContextMode {
+    match raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("policy") => IdentityContextMode::Policy,
+        Some("cognitive") => IdentityContextMode::Cognitive,
+        Some("full") => IdentityContextMode::Full,
+        _ => IdentityContextMode::Full,
+    }
+}
 
 pub fn resolve_identity_persona_id() -> String {
     resolve_non_empty_env("MEDOUSA_IDENTITY_PERSONA_ID")
@@ -213,6 +274,7 @@ async fn seed_baseline_surreal_identity_store(
             user_id: user_id.clone(),
             timezone: resolve_identity_timezone(),
             language_variant: resolve_non_empty_env("MEDOUSA_IDENTITY_USER_LANGUAGE"),
+            preferences: Default::default(),
             status: "active".to_string(),
             version: 1,
             updated_at: now,
@@ -254,7 +316,7 @@ async fn seed_baseline_surreal_identity_store(
             &format!("rel:{}:{}", stable_id_segment(&persona_id), stable_id_segment(&user_id)),
             entity_ref("PersonaEntity", &persona_id),
             entity_ref("UserEntity", &user_id),
-            "assistant_user",
+            RelationshipKind::AssistantUser,
             Some(interactive_policy.to_string()),
             AutonomyScope {
                 allow: vec![
@@ -288,7 +350,7 @@ async fn seed_baseline_surreal_identity_store(
             ),
             entity_ref("UserEntity", &user_id),
             entity_ref("ChannelProfileEntity", &interactive_channel_id),
-            "user_channel",
+            RelationshipKind::UserChannel,
             Some(interactive_policy.to_string()),
             AutonomyScope {
                 allow: vec!["interactive_reply".to_string()],
@@ -309,7 +371,7 @@ async fn seed_baseline_surreal_identity_store(
             ),
             entity_ref("UserEntity", &user_id),
             entity_ref("ChannelProfileEntity", &scheduled_channel_id),
-            "user_channel",
+            RelationshipKind::UserChannel,
             Some(scheduled_policy.to_string()),
             AutonomyScope {
                 allow: vec!["scheduled_report".to_string(), "scheduled_monitor".to_string()],
@@ -330,7 +392,7 @@ async fn seed_baseline_surreal_identity_store(
             ),
             entity_ref("UserEntity", &user_id),
             entity_ref("ChannelProfileEntity", &heartbeat_channel_id),
-            "user_channel",
+            RelationshipKind::UserChannel,
             Some(heartbeat_policy.to_string()),
             AutonomyScope {
                 allow: vec!["heartbeat_notify".to_string()],
@@ -372,6 +434,7 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         user_id: user_id.clone(),
         timezone: resolve_identity_timezone(),
         language_variant: resolve_non_empty_env("MEDOUSA_IDENTITY_USER_LANGUAGE"),
+        preferences: Default::default(),
         status: "active".to_string(),
         version: 1,
         updated_at: now,
@@ -390,7 +453,7 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         &format!("rel:{}:{}", stable_id_segment(&persona_id), stable_id_segment(&user_id)),
         entity_ref("PersonaEntity", &persona_id),
         entity_ref("UserEntity", &user_id),
-        "assistant_user",
+        RelationshipKind::AssistantUser,
         Some(interactive_policy.to_string()),
         AutonomyScope {
             allow: vec![
@@ -421,7 +484,7 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         ),
         entity_ref("UserEntity", &user_id),
         entity_ref("ChannelProfileEntity", &interactive_channel_id),
-        "user_channel",
+        RelationshipKind::UserChannel,
         Some(interactive_policy.to_string()),
         AutonomyScope {
             allow: vec!["interactive_reply".to_string()],
@@ -439,7 +502,7 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         ),
         entity_ref("UserEntity", &user_id),
         entity_ref("ChannelProfileEntity", &scheduled_channel_id),
-        "user_channel",
+        RelationshipKind::UserChannel,
         Some(scheduled_policy.to_string()),
         AutonomyScope {
             allow: vec!["scheduled_report".to_string(), "scheduled_monitor".to_string()],
@@ -457,7 +520,7 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         ),
         entity_ref("UserEntity", &user_id),
         entity_ref("ChannelProfileEntity", &heartbeat_channel_id),
-        "user_channel",
+        RelationshipKind::UserChannel,
         Some(heartbeat_policy.to_string()),
         AutonomyScope {
             allow: vec!["heartbeat_notify".to_string()],
@@ -523,7 +586,7 @@ fn default_relationship(
     relationship_id: &str,
     source_entity_ref: EntityRef,
     target_entity_ref: EntityRef,
-    relationship_kind: &str,
+    relationship_kind: RelationshipKind,
     approval_profile_id: Option<String>,
     autonomy_scope: AutonomyScope,
     now: chrono::DateTime<Utc>,
@@ -532,7 +595,7 @@ fn default_relationship(
         relationship_id: relationship_id.to_string(),
         source_entity_ref,
         target_entity_ref,
-        relationship_kind: relationship_kind.to_string(),
+        relationship_kind,
         status: RelationshipStatus::Active,
         trust_level: 0.78,
         confidence: 0.86,
@@ -584,11 +647,9 @@ fn trimmed_non_empty(value: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use stasis::ports::outbound::memory::identity_memory_models::GetIdentityContextRequest;
-
     use super::{
-        build_seeded_identity_memory_store, resolve_identity_channel_id,
-        resolve_identity_persona_id, resolve_identity_user_id,
+        build_seeded_identity_memory_store, full_identity_context_request,
+        resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
     };
 
     #[tokio::test]
@@ -597,12 +658,12 @@ mod tests {
         let interactive_channel = resolve_identity_channel_id(Some("interactive"));
 
         let context = store
-            .get_identity_context(&GetIdentityContextRequest {
-                user_id: resolve_identity_user_id(None),
-                persona_id: resolve_identity_persona_id(),
-                channel_id: interactive_channel,
-                relationship_limit: 8,
-            })
+            .get_identity_context(&full_identity_context_request(
+                resolve_identity_user_id(None),
+                resolve_identity_persona_id(),
+                interactive_channel,
+                8,
+            ))
             .await
             .expect("identity context should resolve");
 

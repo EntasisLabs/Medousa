@@ -5545,7 +5545,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7707,9 +7707,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "341fcdba3e0a7a4f9fe957a74a7622f74dc89a8b7d077732ca195a01648df7e3"
+checksum = "ac0f0aa71b7a95c7343dd02ed0d2294b9d5d4823129eba60cdf3fb34221ed992"
 dependencies = [
  "anyhow",
  "askama",
