@@ -39,6 +39,7 @@ Start here for product-level usage:
 22. [worker-continuity-plan.md](worker-continuity-plan.md) — worker = same Medousa, workshop hat; continuity bundle + curated STTP (Phase A–E)
 23. [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md) — identity store as relational memory (preferences, contacts, cognitive mode, remember tool); Stasis 0.4.0; Phases 0–5
 24. [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) — **Planned:** relevance-ranked digest, `cognition_identity_recall`, YAML identity manuscripts (workers + cron + delivery); revises Phase 4 sequencing
+25. [medousa-home-plan.md](medousa-home-plan.md) — **Design:** daemon-first Medousa Home (workspace feed + Kanban cards from Stasis, vault notes, deferred Tauri); API contracts W1–V3 before any UI
 
 ## Primary Code Anchors
 
