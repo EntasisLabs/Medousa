@@ -734,3 +734,50 @@ pub struct WorkspaceSnapshotQuery {
     pub since_revision: Option<u64>,
     pub feed_tail_limit: Option<usize>,
 }
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceStreamQuery {
+    pub since_revision: Option<u64>,
+    pub session_id: Option<String>,
+    pub feed_tail_limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceStreamEvent {
+    pub workspace_revision: u64,
+    pub stream_event_type: String,
+    pub emitted_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<WorkCard>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_event: Option<WorkspaceEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counts: Option<std::collections::HashMap<String, u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<WorkspaceSnapshot>,
+}
+
+/// Frozen workspace HTTP contract version (Phase W3 gate).
+pub const WORKSPACE_API_VERSION: &str = "workspace-v1";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceLinkVaultRequest {
+    pub vault_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceCardActionResponse {
+    pub workspace_revision: u64,
+    pub card_id: String,
+    pub action: String,
+    pub ok: bool,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replayed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_succeeded: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub associations: Option<WorkCardAssociations>,
+}

@@ -139,6 +139,9 @@ medousa workspace cards --limit 20
 medousa workspace feed --limit 50
 medousa workspace snapshot
 medousa workspace stream    # SSE: card + feed events, carries revision
+medousa workspace cancel <card-id>
+medousa workspace retry <card-id>
+medousa workspace link-vault <card-id> --path journal/2026-05-30.md
 medousa vault list
 medousa vault read weekly-review.md
 medousa vault write weekly-review.md --stdin
@@ -454,11 +457,32 @@ POST /v1/workspace/cards/{card_id}/link-vault
 
 **Stability gate W3 (Workspace API frozen):**
 
-- [ ] OpenAPI-style section in this doc matches implemented routes
+- [x] OpenAPI-style section in this doc matches implemented routes (see **Workspace API v1** below)
 - [ ] Integration test: ingest `/skill` → card appears → job completes → card → Done
 - [ ] No breaking changes for 2 weeks of daily dogfood OR explicit version bump `Accept-Version: workspace-v1`
 
 **Only after W3:** UI work may begin (Tauri milestone M0).
+
+#### Workspace API v1 (frozen contract)
+
+Version header (optional): `Accept-Version: workspace-v1` (`WORKSPACE_API_VERSION` in `daemon_api.rs`).
+
+| Method | Route | Body | Response |
+|--------|-------|------|----------|
+| `GET` | `/v1/workspace/cards` | — | `WorkspaceCardsResponse` |
+| `GET` | `/v1/workspace/cards/{id}` | — | `WorkCardDetail` |
+| `POST` | `/v1/workspace/cards/{id}/cancel` | — | `WorkspaceCardActionResponse` |
+| `POST` | `/v1/workspace/cards/{id}/retry` | — | `WorkspaceCardActionResponse` |
+| `POST` | `/v1/workspace/cards/{id}/link-vault` | `{ "vault_path": "journal/…" }` | `WorkspaceCardActionResponse` |
+| `GET` | `/v1/workspace/feed` | — | `WorkspaceFeedResponse` |
+| `GET` | `/v1/workspace/snapshot` | — | `WorkspaceSnapshot` |
+| `GET` | `/v1/workspace/stream` | SSE | `WorkspaceStreamEvent` frames |
+
+**Cancel** resolves `card_id` → `work_id` (`cognition_turn_worker_cancel`) or `job_id` (`cognition_runtime_jobs_cancel` — enqueued/leased only).
+
+**Retry** resolves `card_id` → `job_id` → `replay_dead_letter_job` + worker tick (same semantics as `POST /v1/jobs/{job_id}/replay-and-resume`).
+
+**Link-vault** writes `workspace/associations.json` + appends `VaultNoteUpdated` feed event (vault CRUD deferred to Phase V).
 
 ---
 
@@ -793,6 +817,7 @@ Phase M0+ Tauri (only after both freeze gates)
 |------|------|
 | Job listing | `src/runtime_tools.rs` |
 | Turn work records | `src/agent_runtime/turn_worker/store.rs` |
+| Card actions (W3) | `src/workspace/actions.rs` |
 | Daemon routes | `src/bin/medousa_daemon.rs` |
 | API types | `src/daemon_api.rs` |
 | OpenShell job cards | `src/openshell_sandbox_run.rs` |
@@ -807,3 +832,6 @@ Phase M0+ Tauri (only after both freeze gates)
 |------|--------|
 | 2026-05-30 | Initial daemon-first design — workspace + vault + deferred UI |
 | 2026-05-30 | Review pass: thin `WorkCard` vs `WorkCardDetail`; first-class `WorkspaceEvent` feed; `workspace_revision`; ranked vault search; WrappingUp substates; ontology + anti-bucket guardrails |
+| 2026-05-30 | **W1 shipped:** `GET /v1/workspace/cards|feed|snapshot`, thin/detail split, CLI `medousa workspace` |
+| 2026-05-30 | **W2 shipped:** `GET /v1/workspace/stream` SSE (`snapshot`, `card_upserted`, `card_removed`, `feed_appended`, `column_counts`, `heartbeat`); CLI `medousa workspace stream` |
+| 2026-05-30 | **W3 shipped:** `POST /v1/workspace/cards/{id}/cancel|retry|link-vault`; CLI `medousa workspace cancel|retry|link-vault`; API freeze doc (`workspace-v1`) |

@@ -185,6 +185,19 @@ impl WorkspaceStore {
         feed[start..].to_vec()
     }
 
+    pub fn feed_len(&self) -> usize {
+        self.feed.lock().expect("feed").len()
+    }
+
+    pub fn feed_events_from(&self, index: usize) -> Vec<WorkspaceEvent> {
+        let feed = self.feed.lock().expect("feed");
+        if index >= feed.len() {
+            Vec::new()
+        } else {
+            feed[index..].to_vec()
+        }
+    }
+
     pub fn card_states_snapshot(&self) -> HashMap<String, WorkBoardColumn> {
         self.card_states
             .read()

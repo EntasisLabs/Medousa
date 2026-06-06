@@ -2728,7 +2728,35 @@ fn run_workspace(args: &[String]) -> Result<()> {
         .build()
         .context("failed to build HTTP client")?;
 
-    let path = match sub {
+    let (method, path, body) = match sub {
+        "cancel" => {
+            let card_id = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa workspace cancel <card-id>"))?;
+            ("POST".to_string(), format!("/v1/workspace/cards/{card_id}/cancel"), None)
+        }
+        "retry" => {
+            let card_id = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa workspace retry <card-id>"))?;
+            ("POST".to_string(), format!("/v1/workspace/cards/{card_id}/retry"), None)
+        }
+        "link-vault" => {
+            let card_id = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa workspace link-vault <card-id> --path <vault-path>"))?;
+            let vault_path = find_arg_value(args, "--path")
+                .ok_or_else(|| anyhow!("usage: medousa workspace link-vault <card-id> --path <vault-path>"))?;
+            let payload = serde_json::json!({ "vault_path": vault_path });
+            (
+                "POST".to_string(),
+                format!("/v1/workspace/cards/{card_id}/link-vault"),
+                Some(payload.to_string()),
+            )
+        }
         "cards" => {
             let mut query = Vec::new();
             if let Some(limit) = find_arg_value(args, "--limit") {
@@ -2748,7 +2776,11 @@ fn run_workspace(args: &[String]) -> Result<()> {
             } else {
                 format!("?{}", query.join("&"))
             };
-            format!("/v1/workspace/cards{suffix}")
+            (
+                "GET".to_string(),
+                format!("/v1/workspace/cards{suffix}"),
+                None,
+            )
         }
         "feed" => {
             let mut query = Vec::new();
@@ -2766,14 +2798,25 @@ fn run_workspace(args: &[String]) -> Result<()> {
             } else {
                 format!("?{}", query.join("&"))
             };
-            format!("/v1/workspace/feed{suffix}")
+            (
+                "GET".to_string(),
+                format!("/v1/workspace/feed{suffix}"),
+                None,
+            )
         }
         "card" => {
             let card_id = args
                 .get(1)
                 .filter(|value| !value.starts_with("--"))
                 .ok_or_else(|| anyhow!("usage: medousa workspace card <card-id>"))?;
-            format!("/v1/workspace/cards/{card_id}")
+            (
+                "GET".to_string(),
+                format!("/v1/workspace/cards/{card_id}"),
+                None,
+            )
+        }
+        "stream" => {
+            return run_workspace_stream(&daemon_url, args);
         }
         "snapshot" | _ => {
             let mut query = Vec::new();
@@ -2785,15 +2828,31 @@ fn run_workspace(args: &[String]) -> Result<()> {
             } else {
                 format!("?{}", query.join("&"))
             };
-            format!("/v1/workspace/snapshot{suffix}")
+            (
+                "GET".to_string(),
+                format!("/v1/workspace/snapshot{suffix}"),
+                None,
+            )
         }
     };
 
     let url = format!("{daemon_url}{path}");
-    let response = client
-        .get(&url)
-        .send()
-        .with_context(|| format!("GET {url} failed"))?;
+    let response = if method == "POST" {
+        let mut request = client.post(&url);
+        if let Some(payload) = body {
+            request = request
+                .header("content-type", "application/json")
+                .body(payload);
+        }
+        request
+            .send()
+            .with_context(|| format!("POST {url} failed"))?
+    } else {
+        client
+            .get(&url)
+            .send()
+            .with_context(|| format!("GET {url} failed"))?
+    };
     let status = response.status();
     let body = response.text().context("failed to read workspace response")?;
     if !status.is_success() {
@@ -2804,6 +2863,78 @@ fn run_workspace(args: &[String]) -> Result<()> {
         serde_json::from_str(&body).context("workspace response was not valid JSON")?;
     println!("{}", serde_json::to_string_pretty(&parsed)?);
     Ok(())
+}
+
+fn run_workspace_stream(daemon_url: &str, args: &[String]) -> Result<()> {
+    let mut query = Vec::new();
+    if let Some(revision) = find_arg_value(args, "--since-revision") {
+        query.push(format!("since_revision={revision}"));
+    }
+    if let Some(session) = find_arg_value(args, "--session") {
+        query.push(format!("session_id={session}"));
+    }
+    if let Some(limit) = find_arg_value(args, "--feed-tail") {
+        query.push(format!("feed_tail_limit={limit}"));
+    }
+    let suffix = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", query.join("&"))
+    };
+    let url = format!("{daemon_url}/v1/workspace/stream{suffix}");
+    let max_events = find_arg_value(args, "--max-events")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .context("failed to build HTTP client")?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .with_context(|| format!("GET {url} failed"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().unwrap_or_default();
+        return Err(anyhow!("workspace stream failed ({status}): {body}"));
+    }
+
+    let mut buf = String::new();
+    let mut event_count = 0usize;
+    for chunk in response.bytes() {
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(idx) = buf.find("\n\n") {
+            let frame = buf[..idx].to_string();
+            buf = buf[idx + 2..].to_string();
+            let Some(data) = parse_workspace_sse_data(&frame) else {
+                continue;
+            };
+            println!("{data}");
+            event_count += 1;
+            if max_events > 0 && event_count >= max_events {
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_workspace_sse_data(frame: &str) -> Option<String> {
+    let mut data_lines = Vec::new();
+    for line in frame.lines() {
+        if let Some(rest) = line.strip_prefix("data:") {
+            data_lines.push(rest.trim_start());
+        }
+    }
+    if data_lines.is_empty() {
+        return None;
+    }
+    let joined = data_lines.join("\n");
+    let parsed: serde_json::Value = serde_json::from_str(&joined).ok()?;
+    serde_json::to_string_pretty(&parsed).ok()
 }
 
 fn print_help() {
@@ -2829,7 +2960,7 @@ fn print_help() {
     println!("  medousa skill-import <path> [--project] [--force] [--extends <id>|--no-extends]");
     println!("  medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]");
     println!("  medousa openshell-probe [<manuscript-id>] [--script scripts/echo.sh] [--from medousa-openshell-sandbox:local] [--policy skill-sandbox] [--skip-grapheme]");
-    println!("  medousa workspace [snapshot|cards|feed|card <id>] [--daemon-url <url>] [--limit N] [--include-terminal] [--column backlog|in_flight|wrapping_up|done|blocked]");
+    println!("  medousa workspace [snapshot|cards|feed|stream|card <id>|cancel <id>|retry <id>|link-vault <id> --path <vault-path>] [--daemon-url <url>] [--limit N] [--include-terminal] [--column backlog|in_flight|wrapping_up|done|blocked] [--since-revision N] [--max-events N]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

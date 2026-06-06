@@ -69,6 +69,24 @@ pub fn event_for_column_transition(
     })
 }
 
+pub fn event_for_vault_link(card_id: &str, vault_path: &str) -> Option<WorkspaceEvent> {
+    let mut refs = Vec::new();
+    append_card_ref(&mut refs, card_id);
+    refs.push(WorkspaceEventRef {
+        ref_type: "vault_path".to_string(),
+        ref_id: vault_path.to_string(),
+    });
+
+    Some(WorkspaceEvent {
+        id: new_event_id(),
+        timestamp_utc: Utc::now(),
+        kind: WorkspaceEventKind::VaultNoteUpdated,
+        actor: WorkspaceEventActor::Operator,
+        summary: format!("Linked vault note {vault_path}"),
+        refs,
+    })
+}
+
 pub fn filter_events_by_card<'a>(
     events: &'a [WorkspaceEvent],
     card_id: &str,

@@ -500,6 +500,18 @@ async fn main() -> Result<()> {
             get(medousa::workspace_handlers::get_workspace_card),
         )
         .route(
+            "/v1/workspace/cards/{card_id}/cancel",
+            post(medousa::workspace_handlers::cancel_workspace_card),
+        )
+        .route(
+            "/v1/workspace/cards/{card_id}/retry",
+            post(medousa::workspace_handlers::retry_workspace_card),
+        )
+        .route(
+            "/v1/workspace/cards/{card_id}/link-vault",
+            post(medousa::workspace_handlers::link_workspace_card_vault),
+        )
+        .route(
             "/v1/workspace/feed",
             get(medousa::workspace_handlers::list_workspace_feed),
         )
@@ -507,8 +519,13 @@ async fn main() -> Result<()> {
             "/v1/workspace/snapshot",
             get(medousa::workspace_handlers::get_workspace_snapshot),
         )
+        .route(
+            "/v1/workspace/stream",
+            get(medousa::workspace_handlers::workspace_stream),
+        )
         .with_state(medousa::workspace_handlers::WorkspaceHandlerState {
             composition: Arc::new(state.composition().clone()),
+            worker_id: state.worker_id.clone(),
         });
 
     let app = app
