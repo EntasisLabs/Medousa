@@ -365,8 +365,9 @@ mod tests {
             .expect("relationship");
 
         let store = wrap_in_memory(inner);
+        let store_dyn = store as Arc<dyn IdentityMemoryStore>;
         let snapshot = load_cognitive_identity_snapshot(
-            Some(&store),
+            Some(&store_dyn),
             "user:default",
             Some("interactive"),
             8,

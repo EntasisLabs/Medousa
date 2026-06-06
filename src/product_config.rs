@@ -163,6 +163,8 @@ pub struct IdentityProductConfig {
     pub auto_commit_min_confidence: f32,
     #[serde(default = "default_identity_model_inferred_auto_commit_fields")]
     pub model_inferred_auto_commit_fields: Vec<String>,
+    #[serde(default = "default_identity_bridge_to_locus")]
+    pub bridge_to_locus: bool,
 }
 
 impl Default for IdentityProductConfig {
@@ -171,6 +173,7 @@ impl Default for IdentityProductConfig {
             enabled: default_identity_enabled(),
             auto_commit_min_confidence: default_identity_auto_commit_min_confidence(),
             model_inferred_auto_commit_fields: default_identity_model_inferred_auto_commit_fields(),
+            bridge_to_locus: default_identity_bridge_to_locus(),
         }
     }
 }
@@ -188,9 +191,17 @@ fn default_identity_model_inferred_auto_commit_fields() -> Vec<String> {
         "display_name".to_string(),
         "timezone".to_string(),
         "language_variant".to_string(),
+        "preferences.*".to_string(),
+        "policy_tags".to_string(),
+        "last_transition_reason".to_string(),
+        "aliases".to_string(),
         "recency_score".to_string(),
         "confidence".to_string(),
     ]
+}
+
+fn default_identity_bridge_to_locus() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

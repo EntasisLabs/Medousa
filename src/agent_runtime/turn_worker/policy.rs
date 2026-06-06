@@ -175,6 +175,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_identity_context",
             "cognition_identity_propose",
             "cognition_identity_commit",
+            "cognition_identity_remember",
         ],
     );
 
@@ -268,6 +269,7 @@ mod tests {
         assert!(names.contains("cognition_grapheme_template_run"));
         assert!(names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_memory_calibrate"));
+        assert!(!names.contains("cognition_identity_remember"));
     }
 
     #[test]
@@ -275,6 +277,7 @@ mod tests {
         let names = host_bus_tool_names();
         assert!(names.contains("cognition_memory_calibrate"));
         assert!(names.contains("cognition_identity_propose"));
+        assert!(names.contains("cognition_identity_remember"));
         assert!(names.contains("cognition_job_enqueue"));
         assert!(names.contains("cognition_spawn_turn_worker"));
         assert!(names.contains("cognition_capability_search"));

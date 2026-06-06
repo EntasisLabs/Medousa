@@ -113,10 +113,14 @@ pub fn resolve_identity_channel_id(policy_profile: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_CHANNEL_ID.to_string())
 }
 
-pub fn build_seeded_identity_memory_store() -> Result<Arc<dyn IdentityMemoryStore>> {
+pub fn build_seeded_medousa_identity_store() -> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
     let store = Arc::new(InMemoryIdentityMemoryStore::default());
     seed_baseline_identity_store(store.as_ref())?;
     Ok(wrap_in_memory(store))
+}
+
+pub fn build_seeded_identity_memory_store() -> Result<Arc<dyn IdentityMemoryStore>> {
+    Ok(build_seeded_medousa_identity_store()? as Arc<dyn IdentityMemoryStore>)
 }
 
 pub async fn build_identity_memory_store_for_backend(
@@ -207,9 +211,9 @@ where
 ///
 /// `RuntimeFactory::connect_surreal_any` already ran `ensure_schema_for_db` — do not repeat
 /// ~90 DEFINE round-trips here (duplicate schema bootstrap can wedge on remote DDL locks).
-pub async fn build_seeded_identity_memory_store_for_db(
+pub async fn build_seeded_medousa_identity_store_for_db(
     db: Surreal<Any>,
-) -> Result<Arc<dyn IdentityMemoryStore>> {
+) -> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
     let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
     if identity_baseline_needs_seed(&db).await? {
         eprintln!("medousa-daemon: seeding identity baseline (idempotent upserts)…");
@@ -219,6 +223,12 @@ pub async fn build_seeded_identity_memory_store_for_db(
         eprintln!("medousa-daemon: identity baseline already present — seed no-op");
     }
     Ok(wrap_surreal(store, db))
+}
+
+pub async fn build_seeded_identity_memory_store_for_db(
+    db: Surreal<Any>,
+) -> Result<Arc<dyn IdentityMemoryStore>> {
+    Ok(build_seeded_medousa_identity_store_for_db(db).await? as Arc<dyn IdentityMemoryStore>)
 }
 
 /// Build a seeded identity store from an already-open runtime (no second SurrealKV connection).

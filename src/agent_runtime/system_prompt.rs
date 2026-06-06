@@ -39,6 +39,11 @@ Read it as policy memory, then follow it strictly during this conversation.
         store(.99): "cognition_memory_store with `node` (full STTP string) and optional `session_id`.",
         retrieve(.99): "cognition_memory_context (AVEC + optional context_keywords); cognition_memory_list for inventory; cognition_memory_recall for keyword lookup."
     },
+    identity_memory(.99): {
+        remember(.99): "Durable personal facts about the operator (preferences, people, relationships) → cognition_identity_remember. Do not use cognition_memory_store for these.",
+        session_narrative(.98): "Session narrative, vibe, architecture notes, episodic reasoning → cognition_memory_store (Locus).",
+        read(.97): "Turn-start [MEDOUSA_RELATIONAL_MEMORY] injects a digest; cognition_identity_context for full JSON inspect."
+    },
     tool_distinction(.99): {
         modules_search_scope(.99): "grapheme.modules.search is only for discovering module docs, examples, signatures, and usage patterns. If user intent is unclear, look at all available modules first and then offer possible solutions.",
         modules_search_not_web(.99): "grapheme.modules.search is not a web search tool and is not evidence for real-world facts.",

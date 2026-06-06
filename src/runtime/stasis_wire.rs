@@ -153,7 +153,7 @@ async fn build_in_memory_daemon_composition(
         .with_memory_context_reader(memory.memory_reader.clone())
         .with_memory_context_writer(memory.memory_writer.clone())
         .with_memory_operations(memory.memory_operations.clone())
-        .with_identity_memory_store(memory.identity_store.clone())
+        .with_identity_memory_store(memory.identity_store_dyn())
         .with_locus_memory()
         .with_endpoint_routing_delivery()
         .with_delivery_endpoint_store(in_memory_endpoint_store.clone());
@@ -231,7 +231,7 @@ async fn build_in_memory_local_composition(
             .with_memory_context_reader(memory.memory_reader.clone())
             .with_memory_context_writer(memory.memory_writer.clone())
             .with_memory_operations(memory.memory_operations.clone())
-            .with_identity_memory_store(memory.identity_store.clone())
+            .with_identity_memory_store(memory.identity_store_dyn())
             .with_locus_memory(),
         prompt_pipeline,
         workflow_registry,
@@ -263,7 +263,7 @@ async fn wire_local_stasis_composition(
     let memory_context_reader = Some(memory.memory_reader.clone());
     let memory_context_writer = Some(memory.memory_writer.clone());
     let memory_operations = Some(memory.memory_operations.clone());
-    let identity_memory_store = Some(memory.identity_store.clone());
+    let identity_memory_store = Some(memory.identity_store_dyn());
     let workflow_engine = RuntimeFactory::default_workflow_engine();
     let tool_registry = Arc::new(
         stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default(),
@@ -351,7 +351,7 @@ async fn wire_existing_daemon_composition(
     let memory_context_reader = Some(memory.memory_reader.clone());
     let memory_context_writer = Some(memory.memory_writer.clone());
     let memory_operations = Some(memory.memory_operations.clone());
-    let identity_memory_store = Some(memory.identity_store.clone());
+    let identity_memory_store = Some(memory.identity_store_dyn());
     let workflow_engine = RuntimeFactory::default_workflow_engine();
     let tool_registry = Arc::new(stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default());
     tool_registry.register_tool(MockWebSearchTool)?;

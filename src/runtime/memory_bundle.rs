@@ -16,6 +16,7 @@ use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};
 use stasis::prelude_ext::LocusNodeStoreFactory;
 
 use crate::identity_memory;
+use crate::identity_store_ext::MedousaIdentityMemoryStore;
 use crate::locus_memory::{MedousaLocusContextWriter, resolve_locus_ingest_profile};
 use crate::runtime::locus_surreal_client::StasisSurrealDbClient;
 use crate::runtime::surreal_startup::{timed_step, verify_surreal_responsive};
@@ -53,7 +54,7 @@ pub struct MemoryAdapterBundle {
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
     pub memory_operations: Arc<dyn MemoryOperations>,
-    pub identity_store: Arc<dyn IdentityMemoryStore>,
+    pub identity_store: Arc<MedousaIdentityMemoryStore>,
 }
 
 impl MemoryAdapterBundle {
@@ -81,7 +82,7 @@ impl MemoryAdapterBundle {
 
     pub async fn build_in_memory() -> Result<Self> {
         let locus_store = LocusNodeStoreFactory::in_memory().await?;
-        let identity_store = identity_memory::build_seeded_identity_memory_store()?;
+        let identity_store = identity_memory::build_seeded_medousa_identity_store()?;
         Ok(Self::from_locus_and_identity(locus_store, identity_store))
     }
 
@@ -122,7 +123,7 @@ impl MemoryAdapterBundle {
         let locus_store: Arc<dyn NodeStore> = node_store;
         let identity_store = timeout(
             IDENTITY_INIT_TIMEOUT,
-            identity_memory::build_seeded_identity_memory_store_for_db(db),
+            identity_memory::build_seeded_medousa_identity_store_for_db(db),
         )
         .await
         .map_err(|_| {
@@ -139,7 +140,7 @@ impl MemoryAdapterBundle {
 
     fn from_locus_and_identity(
         locus_store: Arc<dyn NodeStore>,
-        identity_store: Arc<dyn IdentityMemoryStore>,
+        identity_store: Arc<MedousaIdentityMemoryStore>,
     ) -> Self {
         let ingest_profile = resolve_locus_ingest_profile();
         let memory_reader: Arc<dyn MemoryContextReader> =
@@ -158,5 +159,9 @@ impl MemoryAdapterBundle {
             memory_operations,
             identity_store,
         }
+    }
+
+    pub fn identity_store_dyn(&self) -> Arc<dyn IdentityMemoryStore> {
+        self.identity_store.clone() as Arc<dyn IdentityMemoryStore>
     }
 }

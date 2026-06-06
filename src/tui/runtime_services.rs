@@ -7,7 +7,7 @@ use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
-use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
+use crate::identity_store_ext::MedousaIdentityMemoryStore;
 use stasis::prelude::RuntimeBackend;
 use stasis::prelude_ext::{MemoryContextReader, MemoryContextWriter};
 use tokio::sync::mpsc;
@@ -18,6 +18,7 @@ use crate::identity_memory::{
 };
 use crate::identity_tools::{
     CognitionIdentityCommitTool, CognitionIdentityContextTool, CognitionIdentityProposeTool,
+    CognitionIdentityRememberTool,
 };
 use crate::events::TuiEvent;
 use crate::grapheme_sttp_compaction::GraphemeCompactionModelTarget;
@@ -116,7 +117,7 @@ pub(crate) async fn build_tui_runtime_services(
 /// Assemble agent/TUI tooling on top of an existing runtime composition (no new DB connection).
 pub(crate) async fn assemble_tui_runtime(
     runtime: Arc<stasis::prelude::RuntimeComposition>,
-    identity_memory_store: Arc<dyn IdentityMemoryStore>,
+    identity_memory_store: Arc<MedousaIdentityMemoryStore>,
     memory_reader: Arc<dyn MemoryContextReader>,
     memory_writer: Arc<dyn MemoryContextWriter>,
     locus_store: Arc<dyn NodeStore>,
@@ -159,13 +160,15 @@ pub(crate) async fn assemble_tui_runtime(
         compaction_target.clone(),
         turn_scope.clone(),
     ))?;
-    let identity_service = Arc::new(IdentityMemoryService::new(identity_memory_store.clone()));
+    let identity_service = Arc::new(IdentityMemoryService::new(
+        identity_memory_store.clone() as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    ));
     let identity_user_id = resolve_identity_user_id(Some(session_id));
     let identity_persona_id = resolve_identity_persona_id();
     let identity_channel_id = resolve_identity_channel_id(Some("interactive"));
     tool_registry.register_tool(CognitionIdentityContextTool::new(
         identity_service.clone(),
-        identity_user_id,
+        identity_user_id.clone(),
         identity_persona_id,
         identity_channel_id,
         event_tx.clone(),
@@ -176,6 +179,13 @@ pub(crate) async fn assemble_tui_runtime(
     ))?;
     tool_registry.register_tool(CognitionIdentityCommitTool::new(
         identity_service,
+        Some(memory_writer.clone()),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionIdentityRememberTool::new(
+        identity_memory_store.clone(),
+        Some(memory_writer.clone()),
+        identity_user_id.clone(),
         event_tx.clone(),
     ))?;
 
@@ -349,7 +359,8 @@ pub(crate) async fn assemble_tui_runtime(
         mcp_gateway_client,
         workflow_registry,
         locus_store,
-        identity_memory_store,
+        identity_memory_store: identity_memory_store
+            .clone() as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
         memory_reader,
         memory_writer,
         turn_scope,

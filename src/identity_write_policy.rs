@@ -101,15 +101,25 @@ fn flatten_patch_paths(prefix: &str, value: &Value, out: &mut Vec<String>) {
     }
 }
 
+fn patch_field_allowed(config: &IdentityProductConfig, path: &str) -> bool {
+    config.model_inferred_auto_commit_fields.iter().any(|allowed| {
+        if let Some(prefix) = allowed.strip_suffix(".*") {
+            path.starts_with(prefix)
+                && path.len() > prefix.len()
+                && path.as_bytes().get(prefix.len()) == Some(&b'.')
+        } else {
+            allowed == path
+        }
+    })
+}
+
 fn patch_fields_allowed(config: &IdentityProductConfig, patch: &Value) -> bool {
     let mut paths = Vec::new();
     flatten_patch_paths("", patch, &mut paths);
     if paths.is_empty() {
         return false;
     }
-    paths
-        .iter()
-        .all(|path| config.model_inferred_auto_commit_fields.iter().any(|f| f == path))
+    paths.iter().all(|path| patch_field_allowed(config, path))
 }
 
 fn blocks_autonomy_widen(patch: &Value) -> bool {
@@ -149,5 +159,18 @@ pub fn parse_update_source(raw: Option<&str>) -> Result<UpdateSource, String> {
         other => Err(format!(
             "unsupported update source '{other}', expected user_direct|model_inferred|system_event"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn preferences_prefix_allowlist_matches_nested_paths() {
+        let config = IdentityProductConfig::default();
+        let patch = json!({ "preferences.beverage": "matcha" });
+        assert!(patch_fields_allowed(&config, &patch));
     }
 }

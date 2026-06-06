@@ -15,6 +15,7 @@ use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIde
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode, ContactEntity,
+    RelationshipEntity,
     EntityUpdateProposalRecord, GetIdentityContextRequest, GetIdentityContextResponse,
     IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse, PersonaEntity,
     ProposalState, ProposeEntityUpdateRequest, ProposeEntityUpdateResponse,
@@ -36,7 +37,7 @@ const PERSONA_TABLE: &str = "identity_persona";
 const USER_TABLE: &str = "identity_user";
 const CONTACT_TABLE: &str = "identity_contact";
 
-pub fn wrap_in_memory(store: Arc<InMemoryIdentityMemoryStore>) -> Arc<dyn IdentityMemoryStore> {
+pub fn wrap_in_memory(store: Arc<InMemoryIdentityMemoryStore>) -> Arc<MedousaIdentityMemoryStore> {
     Arc::new(MedousaIdentityMemoryStore {
         backing: Backing::InMemory {
             store,
@@ -49,7 +50,7 @@ pub fn wrap_in_memory(store: Arc<InMemoryIdentityMemoryStore>) -> Arc<dyn Identi
 pub fn wrap_surreal(
     store: Arc<SurrealIdentityMemoryStore>,
     db: Surreal<Any>,
-) -> Arc<dyn IdentityMemoryStore> {
+) -> Arc<MedousaIdentityMemoryStore> {
     Arc::new(MedousaIdentityMemoryStore {
         backing: Backing::Surreal {
             store,
@@ -81,8 +82,27 @@ struct CachedProposal {
     source: UpdateSource,
 }
 
-struct MedousaIdentityMemoryStore {
+pub struct MedousaIdentityMemoryStore {
     backing: Backing,
+}
+
+impl MedousaIdentityMemoryStore {
+    pub async fn upsert_contact_entity(&self, contact: ContactEntity) -> StasisResult<()> {
+        match &self.backing {
+            Backing::InMemory { store, .. } => store.upsert_contact(contact),
+            Backing::Surreal { store, .. } => store.upsert_contact(contact).await,
+        }
+    }
+
+    pub async fn upsert_relationship_entity(
+        &self,
+        relationship: RelationshipEntity,
+    ) -> StasisResult<()> {
+        match &self.backing {
+            Backing::InMemory { store, .. } => store.upsert_relationship(relationship),
+            Backing::Surreal { store, .. } => store.upsert_relationship(relationship).await,
+        }
+    }
 }
 
 fn port_err(prefix: &str, err: impl std::fmt::Display) -> StasisError {
@@ -1080,7 +1100,7 @@ mod tests {
             })
             .expect("seed persona");
 
-        let wrapped = wrap_in_memory(store);
+        let wrapped = wrap_in_memory(store) as Arc<dyn IdentityMemoryStore>;
         let proposed = wrapped
             .propose_entity_update(&ProposeEntityUpdateRequest {
                 entity_type: IdentityEntityType::PersonaEntity,
