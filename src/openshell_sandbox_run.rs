@@ -3,6 +3,8 @@
 use std::process::Stdio;
 use std::time::Duration;
 
+use uuid::Uuid;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,6 +40,12 @@ pub struct OpenshellSandboxRunPayload {
     pub manuscript_id: Option<String>,
     #[serde(default)]
     pub correlation_id: Option<String>,
+    #[serde(default)]
+    pub skill_assets_dir: Option<String>,
+    #[serde(default)]
+    pub skill_upload_dest: Option<String>,
+    #[serde(default)]
+    pub skill_script: Option<String>,
 }
 
 fn default_destroy_on_complete() -> bool {
@@ -150,6 +158,42 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
             ));
         }
 
+        if let (Some(assets_dir), Some(upload_dest)) = (
+            payload.skill_assets_dir.as_deref(),
+            payload.skill_upload_dest.as_deref(),
+        ) {
+            let upload_result = tokio::task::spawn_blocking({
+                let sandbox_name = sandbox_name.clone();
+                let gateway_url = gateway_url.clone();
+                let assets_dir = assets_dir.to_string();
+                let upload_dest = upload_dest.to_string();
+                move || run_sandbox_upload(&gateway_url, &sandbox_name, &assets_dir, &upload_dest)
+            })
+            .await
+            .map_err(|err| StasisError::PortFailure(format!("openshell upload join error: {err}")))?;
+            if let Err(message) = upload_result {
+                let _ = tokio::task::spawn_blocking({
+                    let sandbox_name = sandbox_name.clone();
+                    let gateway_url = gateway_url.clone();
+                    move || run_sandbox_delete(&gateway_url, &sandbox_name)
+                })
+                .await;
+                return Ok(fatal_outcome(
+                    message,
+                    Some(
+                        json!({
+                            "gateway_url": gateway_url,
+                            "sandbox_name": sandbox_name,
+                            "stage": "upload",
+                            "skill_assets_dir": assets_dir,
+                            "skill_upload_dest": upload_dest,
+                        })
+                        .to_string(),
+                    ),
+                ));
+            }
+        }
+
         let timeout_secs = payload
             .timeout_secs
             .unwrap_or(DEFAULT_EXEC_TIMEOUT_SECS);
@@ -197,6 +241,8 @@ impl JobHandler for OpenshellSandboxRunJobHandler {
             "stderr": truncate_output(&exec_result.stderr),
             "destroy_on_complete": payload.destroy_on_complete,
             "destroy_ok": destroy_result.map(|value| value.is_ok()),
+            "skill_script": payload.skill_script,
+            "skill_upload_dest": payload.skill_upload_dest,
         })
         .to_string();
 
@@ -334,6 +380,24 @@ fn run_sandbox_exec(
     run_cli_capture_allow_failure(&mut command, "sandbox exec")
 }
 
+fn run_sandbox_upload(
+    gateway_url: &str,
+    sandbox_name: &str,
+    local_assets_dir: &str,
+    dest_path: &str,
+) -> Result<(), String> {
+    let mut command = openshell_command(gateway_url);
+    command
+        .arg("sandbox")
+        .arg("upload")
+        .arg(sandbox_name)
+        .arg(local_assets_dir)
+        .arg(dest_path);
+    run_cli_capture(&mut command, "sandbox upload")
+        .map(|_| ())
+        .map_err(|err| format!("openshell sandbox upload failed: {err}"))
+}
+
 fn run_sandbox_delete(gateway_url: &str, sandbox_name: &str) -> Result<(), String> {
     let mut command = openshell_command(gateway_url);
     command
@@ -377,6 +441,116 @@ fn run_cli_capture_allow_failure(command: &mut std::process::Command, label: &st
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OpenshellProbeReceipt {
+    pub sandbox_name: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
+}
+
+pub fn probe_grapheme_in_sandbox(
+    sandbox_from: &str,
+    policy_template: Option<&str>,
+) -> Result<OpenshellProbeReceipt, String> {
+    let gateway_url = resolve_openshell_gateway_url(None);
+    preflight_gateway(&gateway_url)?;
+    let sandbox_name = format!("medousa-probe-{}", Uuid::new_v4().simple());
+    let policy_path = policy_template.and_then(resolve_policy_template_path);
+    run_sandbox_create(&gateway_url, &sandbox_name, sandbox_from, policy_path.as_deref())?;
+    let exec = run_sandbox_exec(
+        &gateway_url,
+        &sandbox_name,
+        &["grapheme".to_string(), "--version".to_string()],
+        Some("/sandbox"),
+        120,
+    );
+    let _ = run_sandbox_delete(&gateway_url, &sandbox_name);
+    if exec.status_code != Some(0) {
+        return Err(format!(
+            "grapheme probe failed exit={:?} stderr={}",
+            exec.status_code,
+            truncate_output(&exec.stderr)
+        ));
+    }
+    Ok(OpenshellProbeReceipt {
+        sandbox_name,
+        stdout: exec.stdout,
+        stderr: exec.stderr,
+        exit_code: exec.status_code,
+    })
+}
+
+pub fn probe_skill_script_in_sandbox(
+    manuscript_id: &str,
+    script_relative: &str,
+    sandbox_from: &str,
+    policy_template: Option<&str>,
+) -> Result<OpenshellProbeReceipt, String> {
+    let gateway_url = resolve_openshell_gateway_url(None);
+    preflight_gateway(&gateway_url)?;
+    let manuscript = crate::identity_manuscript::build_manuscript_context(manuscript_id)
+        .map_err(|err| err.to_string())?;
+    let payload = crate::skill_execution::build_sandbox_payload_for_skill(
+        manuscript_id,
+        script_relative,
+        &manuscript,
+        None,
+    )
+    .map_err(|err| err.to_string())?;
+    let sandbox_name = format!("medousa-probe-{}", Uuid::new_v4().simple());
+    let policy_path = policy_template
+        .and_then(resolve_policy_template_path)
+        .or_else(|| {
+            payload
+                .policy_template
+                .as_deref()
+                .and_then(resolve_policy_template_path)
+        });
+    let from = payload
+        .sandbox_from
+        .as_deref()
+        .unwrap_or(sandbox_from);
+    run_sandbox_create(&gateway_url, &sandbox_name, from, policy_path.as_deref())?;
+    if let (Some(assets), Some(dest)) = (
+        payload.skill_assets_dir.as_deref(),
+        payload.skill_upload_dest.as_deref(),
+    ) {
+        run_sandbox_upload(&gateway_url, &sandbox_name, assets, dest)?;
+    }
+    let exec = run_sandbox_exec(
+        &gateway_url,
+        &sandbox_name,
+        &payload.command,
+        payload.workdir.as_deref(),
+        payload.timeout_secs.unwrap_or(DEFAULT_EXEC_TIMEOUT_SECS),
+    );
+    let _ = run_sandbox_delete(&gateway_url, &sandbox_name);
+    if exec.status_code != Some(0) {
+        return Err(format!(
+            "skill probe failed exit={:?} stderr={}",
+            exec.status_code,
+            truncate_output(&exec.stderr)
+        ));
+    }
+    Ok(OpenshellProbeReceipt {
+        sandbox_name,
+        stdout: exec.stdout,
+        stderr: exec.stderr,
+        exit_code: exec.status_code,
+    })
+}
+
+fn preflight_gateway(gateway_url: &str) -> Result<(), String> {
+    if !probe_tcp_endpoint(gateway_url, Duration::from_millis(500)) {
+        return Err(format!("openshell gateway not reachable at {gateway_url}"));
+    }
+    if !probe_openshell_readyz(gateway_url) {
+        return Err(format!("openshell gateway /readyz failed at {gateway_url}"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,6 +574,9 @@ mod tests {
             timeout_secs: Some(30),
             manuscript_id: None,
             correlation_id: None,
+            skill_assets_dir: None,
+            skill_upload_dest: None,
+            skill_script: None,
         };
         let raw = payload.to_payload_ref().expect("encode");
         let decoded: OpenshellSandboxRunPayload =

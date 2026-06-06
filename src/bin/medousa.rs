@@ -68,6 +68,7 @@ fn main() -> Result<()> {
         "manuscript-validate" => run_manuscript_validate(&args[1..]),
         "manuscript-install" => run_manuscript_install(&args[1..]),
         "skill-import" => run_skill_import(&args[1..]),
+        "openshell-probe" => run_openshell_probe(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -1656,7 +1657,64 @@ fn run_manuscript_validate(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn run_openshell_probe(args: &[String]) -> Result<()> {
+    let _ = medousa::install_starter_openshell_policies_if_missing();
+    let sandbox_from = find_arg_value(args, "--from")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("medousa-openshell-sandbox:local");
+    let policy = find_arg_value(args, "--policy");
+    let skip_grapheme = has_flag(args, "--skip-grapheme");
+
+    if !skip_grapheme {
+        println!("openshell-probe h6 grapheme --version (sandbox_from={sandbox_from})");
+        let receipt = medousa::openshell_sandbox_run::probe_grapheme_in_sandbox(
+            &sandbox_from,
+            policy.as_deref(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        println!("h6_ok sandbox={} exit={:?}", receipt.sandbox_name, receipt.exit_code);
+        let version_line = receipt
+            .stdout
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("(empty stdout)");
+        println!("grapheme_version={version_line}");
+    }
+
+    let manuscript_id = find_arg_value(args, "--manuscript-id").or_else(|| {
+        args.iter()
+            .find(|arg| !arg.starts_with("--"))
+            .map(|value| value.as_str())
+    });
+    let script = find_arg_value(args, "--script").unwrap_or("scripts/echo.sh");
+
+    if let Some(manuscript_id) = manuscript_id {
+        println!(
+            "openshell-probe h7 skill script={script} manuscript={manuscript_id}"
+        );
+        let receipt = medousa::openshell_sandbox_run::probe_skill_script_in_sandbox(
+            manuscript_id,
+            script,
+            &sandbox_from,
+            policy.as_deref(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        println!("h7_ok sandbox={} exit={:?}", receipt.sandbox_name, receipt.exit_code);
+        println!("stdout={}", receipt.stdout.trim());
+        return Ok(());
+    }
+
+    println!(
+        "h6 complete. For H7 import fixture then probe:\n  \
+         medousa skill-import config/openshell-sandbox/fixtures/echo-skill --project\n  \
+         medousa openshell-probe echo-skill --script scripts/echo.sh"
+    );
+    Ok(())
+}
+
 fn run_skill_import(args: &[String]) -> Result<()> {
+    let _ = medousa::install_starter_openshell_policies_if_missing();
     let scope = if has_flag(args, "--project") {
         medousa::identity_manuscript::ManuscriptScope::Project
     } else {
@@ -2672,6 +2730,7 @@ fn print_help() {
     println!("  medousa manuscript-install <path-to.yaml> [--project]");
     println!("  medousa skill-import <path> [--project] [--force] [--extends <id>|--no-extends]");
     println!("  medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]");
+    println!("  medousa openshell-probe [<manuscript-id>] [--script scripts/echo.sh] [--from medousa-openshell-sandbox:local] [--policy skill-sandbox] [--skip-grapheme]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

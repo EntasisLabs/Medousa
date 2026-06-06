@@ -264,6 +264,9 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
             timeout_secs,
             manuscript_id: manuscript_id.clone(),
             correlation_id,
+            skill_assets_dir: None,
+            skill_upload_dest: None,
+            skill_script: None,
         };
         let payload_ref = payload.to_payload_ref()?;
 

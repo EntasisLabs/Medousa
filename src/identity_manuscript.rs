@@ -10,6 +10,7 @@ use crate::agent_runtime::turn_worker::TurnWorkerIntent;
 use crate::cognitive_identity::DigestCompileOptions;
 use crate::openshell_sandbox_run::resolve_policy_template_path;
 use crate::openshell_tools::is_openshell_cognition_tool;
+use crate::skill_tools::is_skill_cognition_tool;
 
 pub const MANUSCRIPT_API_VERSION: &str = "medousa.dev/v1";
 pub const MANUSCRIPT_KIND: &str = "IdentityManuscript";
@@ -191,7 +192,9 @@ pub fn scheduled_tool_allowlist_for_manuscript(manuscript: &ManuscriptContext) -
     let universe = scheduled_lane_tool_universe();
     let mut allow = HashSet::new();
     for tool in &manuscript.tools_allow {
-        if is_openshell_cognition_tool(tool) && !manuscript.openshell_allow_scheduled {
+        if (is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
+            && !manuscript.openshell_allow_scheduled
+        {
             continue;
         }
         if tool_allowed(tool, &universe) {
@@ -220,11 +223,11 @@ pub fn validate_manuscript_for_scheduled_lane(manuscript: &ManuscriptContext) ->
     if manuscript
         .tools_allow
         .iter()
-        .any(|tool| is_openshell_cognition_tool(tool))
+        .any(|tool| is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
         && !manuscript.openshell_allow_scheduled
     {
         bail!(
-            "openshell tools are denied on scheduled lane unless spec.openshell.allow_scheduled=true"
+            "openshell/skill sandbox tools are denied on scheduled lane unless spec.openshell.allow_scheduled=true"
         );
     }
 

@@ -7,10 +7,12 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::identity_manuscript::{
-    IdentityManuscriptFile, ManuscriptMetadata, ManuscriptPersonaSpec, ManuscriptPromptsSpec,
-    ManuscriptScope, ManuscriptSpec, MANUSCRIPT_API_VERSION, MANUSCRIPT_KIND,
-    build_manuscript_context, project_manuscripts_dir, user_manuscripts_dir, validate_manuscript,
+    IdentityManuscriptFile, ManuscriptMetadata, ManuscriptOpenshellSpec, ManuscriptPersonaSpec,
+    ManuscriptPromptsSpec, ManuscriptScope, ManuscriptSpec, ManuscriptToolsSpec,
+    MANUSCRIPT_API_VERSION, MANUSCRIPT_KIND, build_manuscript_context, project_manuscripts_dir,
+    user_manuscripts_dir, validate_manuscript,
 };
+use crate::skill_execution::skill_has_runnable_scripts;
 
 const MAX_SKILL_ID_LEN: usize = 64;
 
@@ -328,7 +330,8 @@ pub fn import_skill(
 
     copy_dir_recursive(&skill_dir, &assets_dir)?;
 
-    let manuscript = build_manuscript_from_skill(&id, &frontmatter, &id, extends);
+    let mut manuscript = build_manuscript_from_skill(&id, &frontmatter, &id, extends);
+    apply_skill_sandbox_defaults(&mut manuscript, &skill_dir);
     validate_manuscript(&manuscript, &yaml_path)?;
 
     let yaml = serde_yaml::to_string(&manuscript).context("encode imported manuscript yaml")?;
@@ -344,6 +347,32 @@ pub fn import_skill(
         skill_assets_dir: assets_dir,
         source: skill_dir,
     })
+}
+
+/// When a skill ships runnable scripts, enable OpenShell sandbox defaults on the manuscript.
+pub fn apply_skill_sandbox_defaults(manuscript: &mut IdentityManuscriptFile, skill_dir: &Path) {
+    if !skill_has_runnable_scripts(skill_dir) {
+        return;
+    }
+    manuscript.spec.openshell = ManuscriptOpenshellSpec {
+        enabled: true,
+        policy_template: Some("skill-sandbox".to_string()),
+        sandbox_from: Some("medousa-openshell-sandbox:local".to_string()),
+        allow_scheduled: false,
+    };
+    let mut allow = manuscript.spec.tools.allow.clone();
+    for tool in [
+        "cognition_skill_discover",
+        "cognition_skill_propose",
+        "cognition_skill_probe",
+        "cognition_openshell_status",
+        "cognition_openshell_sandbox_run",
+    ] {
+        if !allow.iter().any(|existing| existing == tool) {
+            allow.push(tool.to_string());
+        }
+    }
+    manuscript.spec.tools = ManuscriptToolsSpec { allow };
 }
 
 pub fn import_skills_from_roots(

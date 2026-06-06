@@ -200,22 +200,36 @@ fn count_yaml_policies(dir: &Path) -> usize {
 
 pub fn install_starter_openshell_policies_if_missing() -> Result<bool> {
     let target = medousa_openshell_policies_dir();
-    if target.is_dir() && count_yaml_policies(&target) > 0 {
-        return Ok(false);
-    }
     std::fs::create_dir_all(&target)
         .with_context(|| format!("create {}", target.display()))?;
+    let mut wrote_any = false;
     for (name, contents) in STARTER_OPENSHELL_POLICIES {
         let path = target.join(name);
         if !path.exists() {
             std::fs::write(&path, contents)
                 .with_context(|| format!("write {}", path.display()))?;
+            wrote_any = true;
         }
     }
-    Ok(true)
+    Ok(wrote_any)
 }
 
 pub const STARTER_OPENSHELL_POLICIES: &[(&str, &str)] = &[
+    (
+        "skill-sandbox.yaml",
+        r#"# Medousa starter — skill script execution without network egress
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+"#,
+    ),
     (
         "research-readonly.yaml",
         r#"# Medousa starter — read-only HTTPS for research workers (OpenShell network policy)

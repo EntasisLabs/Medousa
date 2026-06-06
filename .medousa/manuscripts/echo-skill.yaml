@@ -1,0 +1,47 @@
+apiVersion: medousa.dev/v1
+kind: IdentityManuscript
+metadata:
+  id: echo-skill
+  name: Echo Skill
+  description: H7 fixture — runs a local echo script inside OpenShell sandbox.
+  extends: base-researcher
+spec:
+  persona:
+    display_name: null
+    voice_appendix: null
+    soul_md: ./echo-skill/SKILL.md
+  prompts:
+    system_appendix_sttp: null
+    task_template: |-
+      Apply the Echo Skill specialty.
+
+      Trigger context: H7 fixture — runs a local echo script inside OpenShell sandbox.
+  identity:
+    pins:
+      preferences: []
+      contacts: []
+    recall_hints: []
+  worker:
+    intent: null
+    max_tool_rounds: null
+    override_sttp: false
+  tools:
+    allow:
+    - cognition_skill_discover
+    - cognition_skill_propose
+    - cognition_skill_probe
+    - cognition_openshell_status
+    - cognition_openshell_sandbox_run
+  locus:
+    session_id: null
+  delivery:
+    mode: null
+    on_complete: null
+  schedule:
+    cron: null
+    execution_mode: null
+  openshell:
+    enabled: true
+    policy_template: skill-sandbox
+    sandbox_from: medousa-openshell-sandbox:local
+    allow_scheduled: false

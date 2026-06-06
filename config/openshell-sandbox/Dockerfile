@@ -1,12 +1,18 @@
-# Medousa BYOC OpenShell sandbox image (Sprint B6).
+# Medousa BYOC OpenShell sandbox image (H6 — grapheme --version in sandbox child).
 #
-# Build (requires Docker/Podman and network to ghcr.io):
+# Build from repo root:
 #   podman build -t medousa-openshell-sandbox:local -f config/openshell-sandbox/Dockerfile .
 #
-# Use with OpenShell:
-#   openshell sandbox create --from medousa-openshell-sandbox:local --policy ~/.config/medousa/openshell-policies/research-readonly.yaml
+# H6 smoke:
+#   openshell sandbox create --from medousa-openshell-sandbox:local \
+#     --policy ~/.config/medousa/openshell-policies/skill-sandbox.yaml
+#   openshell sandbox exec -n <name> -- grapheme --version
 #
-# Extend this image to install Grapheme CLI, medousa binaries, and imported skill assets.
+# H7 smoke (after skill-import echo-skill):
+#   medousa openshell-probe echo-skill
+
+FROM rust:1.85-bookworm AS grapheme-builder
+RUN cargo install --git https://github.com/entasislabs/grapheme.git grapheme-cli --bin grapheme --locked
 
 FROM ghcr.io/nvidia/openshell-community/sandboxes/base:latest
 
@@ -15,10 +21,8 @@ USER root
 RUN mkdir -p /sandbox/workspace /etc/medousa/policy \
     && chown -R sandbox:sandbox /sandbox/workspace
 
-# Optional: copy repo policy templates into the image for offline sandboxes.
+COPY --from=grapheme-builder /usr/local/cargo/bin/grapheme /usr/local/bin/grapheme
 COPY config/openshell-policies/ /etc/medousa/policy/
 
 USER sandbox
 WORKDIR /sandbox
-
-# Default child command is supplied by openshell.sandbox.run / cognition_openshell_sandbox_run.

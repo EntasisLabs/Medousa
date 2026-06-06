@@ -114,6 +114,9 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_grapheme_cli_run",
                     "cognition_openshell_status",
                     "cognition_openshell_sandbox_run",
+                    "cognition_skill_discover",
+                    "cognition_skill_propose",
+                    "cognition_skill_probe",
                 ],
             );
         }

@@ -383,7 +383,31 @@ openshell sandbox create --from medousa-openshell-sandbox:local \
   --policy ~/.config/medousa/openshell-policies/research-readonly.yaml
 ```
 
-Extend the image to install Grapheme CLI, `medousa` binaries, and `skill-import` assets for H6–H7 validation.
+The Dockerfile installs **Grapheme CLI** (H6). Build and probe:
+
+```bash
+podman build -t medousa-openshell-sandbox:local -f config/openshell-sandbox/Dockerfile .
+medousa doctor   # seeds skill-sandbox + research-readonly policies
+medousa openshell-probe   # H6: grapheme --version in sandbox
+```
+
+### H7 — skill script in sandbox
+
+```bash
+medousa skill-import config/openshell-sandbox/fixtures/echo-skill --project
+medousa manuscript-validate echo-skill
+medousa openshell-probe echo-skill --script scripts/echo.sh
+```
+
+Imported skills with `scripts/` auto-enable `spec.openshell` and add cognition tools:
+
+| Tool | Level | Role |
+|------|-------|------|
+| `cognition_skill_discover` | observe | Inventory scripts + risk class |
+| `cognition_skill_propose` | propose | Policy gate before execution |
+| `cognition_skill_probe` | sandbox | Enqueue H6+H7 jobs (worker lane) |
+
+Security levels: `observe` → `propose` → `sandbox` → `deny`. Network/destructive scripts map to `external_side_effect` / `destructive_command` approval hints.
 
 ---
 

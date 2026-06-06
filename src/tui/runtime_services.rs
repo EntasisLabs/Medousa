@@ -200,6 +200,12 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
         turn_scope.clone(),
     )?;
+    crate::skill_tools::register_skill_tools(
+        &mut tool_registry,
+        runtime.clone(),
+        event_tx.clone(),
+        turn_scope.clone(),
+    )?;
 
     tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
     tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
