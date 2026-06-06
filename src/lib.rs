@@ -33,6 +33,7 @@ pub mod identity_markdown;
 pub mod identity_manuscript;
 pub mod skill_import;
 pub mod skill_execution;
+pub mod skill_ingest;
 pub mod skill_tools;
 pub mod manuscript_tools;
 pub mod cognitive_identity;

@@ -119,7 +119,17 @@ medousa manuscript-validate <id>
 medousa manuscript-install <path> [--project]
 medousa skill-import <path> [--force]
 medousa skill-import --from-hermes|--from-openclaw|--from-cursor
+medousa openshell-probe [<manuscript-id>]   # H6/H7 sandbox validation
 ```
+
+**Skill learning tools** (worker lane; host can discover + propose):
+
+| Tool | Lane | Role |
+|------|------|------|
+| `cognition_skill_discover` | host + worker | Inventory scripts + risk before import |
+| `cognition_skill_propose` | host + worker | Policy level gate (observe → sandbox) |
+| `cognition_skill_probe` | worker | Run skill script in OpenShell sandbox |
+| `cognition_openshell_sandbox_run` | worker | Ad-hoc sandbox command or `skill_script` |
 
 Run `medousa <command> --help` for the rest.
 
@@ -131,6 +141,8 @@ Same engine, same rules:
 |---|---|
 | `/new` | A fresh start |
 | `/brief` | Your morning brief — add a note after if you want |
+| `/skills` | List imported skill specialties with runnable scripts |
+| `/skill <id> [script] [extra]` | Run a skill in OpenShell sandbox (same flow Medousa uses) |
 | `/ask …` | A direct question |
 | `/regen` | Try the last answer again |
 | `/stop` | Cancel what's running |

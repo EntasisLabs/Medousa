@@ -92,6 +92,8 @@ enum IngestCommand {
     Health,
     Heartbeat,
     Brief { args: String },
+    SkillsList,
+    SkillRun { args: String },
     Ask { prompt: String },
 }
 
@@ -166,6 +168,8 @@ fn parse_ingest_command(text: &str) -> IngestCommand {
         "/health" => IngestCommand::Health,
         "/heartbeat" => IngestCommand::Heartbeat,
         "/brief" => IngestCommand::Brief { args },
+        "/skills" => IngestCommand::SkillsList,
+        "/skill" => IngestCommand::SkillRun { args },
         "/ask" => {
             if args.is_empty() {
                 IngestCommand::Help
@@ -240,6 +244,8 @@ pub fn process_ingest(
                 "/health - Daemon health check",
                 "/heartbeat - Daemon heartbeat status",
                 "/brief - Run the morning-brief manuscript (optional extra instructions)",
+                "/skills - List imported skill specialties with runnable scripts",
+                "/skill <id> [script] [extra] - Run a skill in OpenShell sandbox via worker",
                 "",
                 "Plain text messages are treated as asks.",
             ]
@@ -398,6 +404,55 @@ pub fn process_ingest(
                     prompt: merged_prompt,
                     manuscript_id: Some(DEFAULT_INGEST_BRIEF_MANUSCRIPT_ID.to_string()),
                 },
+            }
+        }
+
+        IngestCommand::SkillsList => {
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let reply = crate::skill_ingest::format_skill_manuscripts_list()
+                .unwrap_or_else(|err| format!("could not list skills: {err:#}"));
+            IngestOutcome {
+                session_id,
+                is_new_session: false,
+                reply,
+                action: IngestAction::Reply,
+            }
+        }
+
+        IngestCommand::SkillRun { args } => {
+            let is_new = existing_session_id.is_none();
+            let session_id = existing_session_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let session_prefix = session_id[..8.min(session_id.len())].to_string();
+            let reply = match crate::skill_ingest::parse_skill_command_args(&args)
+                .and_then(|parsed| crate::skill_ingest::build_skill_run_ingest_prompt(&parsed))
+            {
+                Ok(prompt) => {
+                    let merged_prompt =
+                        merge_attachments_into_prompt(&prompt, &request.attachments);
+                    return IngestOutcome {
+                        session_id,
+                        is_new_session: is_new,
+                        reply: format!(
+                            "queued skill run for session {} ({}:{})",
+                            session_prefix,
+                            request.channel,
+                            request.channel_id
+                        ),
+                        action: IngestAction::EnqueueAsk {
+                            prompt: merged_prompt,
+                            manuscript_id: None,
+                        },
+                    };
+                }
+                Err(err) => format!("skill run failed: {err:#}"),
+            };
+            IngestOutcome {
+                session_id,
+                is_new_session: false,
+                reply,
+                action: IngestAction::Reply,
             }
         }
 
@@ -595,6 +650,17 @@ mod tests {
         };
         let outcome = process_ingest(&request, "key", Some("session-1".to_string()));
         assert_eq!(outcome.action, IngestAction::CancelActiveJob);
+    }
+
+    #[test]
+    fn test_parse_skills_and_skill_commands() {
+        assert_eq!(parse_ingest_command("/skills"), IngestCommand::SkillsList);
+        assert_eq!(
+            parse_ingest_command("/skill echo-skill scripts/echo.sh"),
+            IngestCommand::SkillRun {
+                args: "echo-skill scripts/echo.sh".to_string()
+            }
+        );
     }
 
     #[test]

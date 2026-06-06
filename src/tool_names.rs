@@ -120,6 +120,16 @@ mod tests {
     }
 
     #[test]
+    fn host_bus_includes_skill_discover_and_openshell_status() {
+        let host = host_bus_tool_names();
+        assert!(tool_allowed("cognition_skill_discover", &host));
+        assert!(tool_allowed("cognition_skill_propose", &host));
+        assert!(tool_allowed("cognition_openshell_status", &host));
+        assert!(!tool_allowed("cognition_skill_probe", &host));
+        assert!(!tool_allowed("cognition_openshell_sandbox_run", &host));
+    }
+
+    #[test]
     fn host_bus_allowlist_matches_registered_runtime_and_memory_tools() {
         let host = host_bus_tool_names();
         for tool in [

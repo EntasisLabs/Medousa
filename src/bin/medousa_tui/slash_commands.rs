@@ -304,10 +304,31 @@ pub(crate) async fn handle_slash_command(
         "/watch" => {
             return handle_watch_command(&mut parts, state);
         }
+        "/skills" => {
+            match medousa::skill_ingest::format_skill_manuscripts_list() {
+                Ok(list) => push_obs(state, list),
+                Err(err) => push_obs(state, format!("⚠ could not list skills: {err:#}")),
+            }
+        }
+        "/skill" => {
+            let args = parts.collect::<Vec<_>>().join(" ");
+            match medousa::skill_ingest::parse_skill_command_args(&args)
+                .and_then(|parsed| medousa::skill_ingest::build_skill_run_ingest_prompt(&parsed))
+            {
+                Ok(prompt) => {
+                    push_obs(
+                        state,
+                        format!("◈ skill run queued via research worker"),
+                    );
+                    start_prompt_run(state, tui_rt, event_tx, prompt, true).await;
+                }
+                Err(err) => push_obs(state, format!("⚠ skill run failed: {err:#}")),
+            }
+        }
         _ => {
             push_obs(
                 state,
-                "⚠ unknown command. try /new /history /settings /edit /open /save /run /run-current /artifact /artifact-chunks /artifact-list /artifact-maintain /artifact-extract /artifact-extractions /artifact-pack /artifact-packs /artifact-pack-use /artifact-pack-auto /artifact-verify /artifact-verifications /artifact-verification /verify-policy /stage-routes /stage-route-set /stage-route-reset /close /allowlist-preview /clear-key /rotate-key /model /depth /stop /regen /export /perf /daemon /watch"
+                "⚠ unknown command. try /new /history /settings /skills /skill /edit /open /save /run /run-current /artifact /artifact-chunks /artifact-list /artifact-maintain /artifact-extract /artifact-extractions /artifact-pack /artifact-packs /artifact-pack-use /artifact-pack-auto /artifact-verify /artifact-verifications /artifact-verification /verify-policy /stage-routes /stage-route-set /stage-route-reset /close /allowlist-preview /clear-key /rotate-key /model /depth /stop /regen /export /perf /daemon /watch"
                     .to_string(),
             );
         }

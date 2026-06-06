@@ -17,3 +17,6 @@ spec:
     allow:
       - cognition_openshell_status
       - cognition_openshell_sandbox_run
+      - cognition_skill_discover
+      - cognition_skill_propose
+      - cognition_skill_probe

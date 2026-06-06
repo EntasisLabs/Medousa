@@ -119,7 +119,8 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Enqueue a durable OpenShell sandbox job (create → exec → destroy). \
+            "Enqueue a durable OpenShell sandbox job (create → upload skill assets → exec → destroy). \
+             Pass command OR skill_script+manuscript_id for imported skill assets. \
              Requires gateway healthy and manuscript spec.openshell.enabled when manuscript_id is set. \
              Worker lane primary; not available on scheduled lane unless spec.openshell.allow_scheduled=true.",
         )
@@ -151,14 +152,16 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
                 "workdir": { "type": "string" },
                 "timeout_secs": { "type": "integer" },
                 "destroy_on_complete": { "type": "boolean", "default": true },
+                "skill_script": {
+                    "type": "string",
+                    "description": "Relative script path in imported skill assets (e.g. scripts/run.sh). Requires manuscript_id."
+                },
                 "correlation_id": { "type": "string" }
-            },
-            "required": ["command"]
+            }
         }))
     }
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let command = parse_command_argv(&input)?;
         let manuscript_id = input
             .get("manuscript_id")
             .and_then(|value| value.as_str())
@@ -255,18 +258,45 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
             .filter(|value| !value.is_empty())
             .map(str::to_string);
 
-        let payload = OpenshellSandboxRunPayload {
-            command,
-            sandbox_from,
-            policy_template,
-            destroy_on_complete,
-            workdir,
-            timeout_secs,
-            manuscript_id: manuscript_id.clone(),
-            correlation_id,
-            skill_assets_dir: None,
-            skill_upload_dest: None,
-            skill_script: None,
+        let skill_script = input
+            .get("skill_script")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        let payload = if let (Some(manuscript_id), Some(script)) =
+            (manuscript_id.as_deref(), skill_script.as_deref())
+        {
+            let manuscript = build_manuscript_context(manuscript_id)
+                .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            let mut skill_payload = crate::skill_execution::build_sandbox_payload_for_skill(
+                manuscript_id,
+                script,
+                &manuscript,
+                correlation_id.clone(),
+            )
+            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            skill_payload.destroy_on_complete = destroy_on_complete;
+            if let Some(secs) = timeout_secs {
+                skill_payload.timeout_secs = Some(secs);
+            }
+            skill_payload
+        } else {
+            let command = parse_command_argv(&input)?;
+            OpenshellSandboxRunPayload {
+                command,
+                sandbox_from,
+                policy_template,
+                destroy_on_complete,
+                workdir,
+                timeout_secs,
+                manuscript_id: manuscript_id.clone(),
+                correlation_id,
+                skill_assets_dir: None,
+                skill_upload_dest: None,
+                skill_script: None,
+            }
         };
         let payload_ref = payload.to_payload_ref()?;
 
@@ -318,6 +348,7 @@ impl StasisTool for CognitionOpenshellSandboxRunTool {
             "job_type": OPENSHELL_SANDBOX_RUN_JOB_TYPE,
             "manuscript_id": manuscript_id,
             "policy_template": payload.policy_template,
+            "skill_script": payload.skill_script,
         });
         if let Some(scope) = self.turn_scope.read().await.clone() {
             if let Some(obj) = response.as_object_mut() {

@@ -66,7 +66,8 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
             "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). \
              Returns immediately; the worker runs tools with a focused policy, then a synthesis pass \
              delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. \
-             Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins). \
+             Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). \
+             Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. \
              Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
         )
     }

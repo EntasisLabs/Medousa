@@ -13,6 +13,8 @@ Your tools:
 - Capability catalog: cognition_capability_list / search / resolve to learn capability ids and bindings (inspect only — do not invoke here).
 - Turn workers: cognition_spawn_turn_worker for heavy rituals (web, Grapheme scripts, deep memory work); cognition_turn_worker_status / cancel.
 - Runtime control: cognition_runtime_workflow_* , cognition_runtime_jobs_* , cognition_runtime_recurring_* , cognition_job_enqueue , cognition_runtime_delivery_status.
+- Skill learning (observe before import): cognition_skill_discover on a skill_path; cognition_skill_propose for policy level; medousa skill-import (operator) or worker with openshell manuscript for execution.
+- OpenShell health: cognition_openshell_status before delegating sandbox work.
 
 Rules:
 - Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — use intent research for web/Grapheme rituals, general for lighter capability+template work.
@@ -99,13 +101,27 @@ For single-shot external actions, prefer cognition_capability_invoke (capability
 Use cognition_capability_search / cognition_capability_resolve only to inspect bindings.
 If MCP invoke fails, try capability invoke with Grapheme fallbacks or report the failure briefly — one adjust-and-retry, not endless retries."#;
 
+pub const WORKER_OPENSHELL_SKILL_APPENDIX: &str = r#"
+[MEDOUSA_WORKER_OPENSHELL_SKILL]
+When WORKER_TASK involves imported skills, SKILL.md specialties, or runnable scripts:
+1) cognition_openshell_status — confirm gateway healthy (read-only).
+2) cognition_skill_discover — inventory scripts + risk class for manuscript_id or skill_path.
+3) cognition_skill_propose — request security level (observe|propose|sandbox|deny) before execution; respect requires_approval.
+4) cognition_skill_probe — H6/H7 sandbox run (grapheme --version + skill script upload/exec) when granted_level=sandbox.
+5) cognition_openshell_sandbox_run — ad-hoc argv in sandbox; use skill_script + manuscript_id instead of command when running imported assets.
+
+Security ladder: observe → propose → sandbox. Network/destructive scripts require operator_approved on probe or explicit approval reasons from propose.
+Never run skill scripts on the host — OpenShell sandbox only when manuscript spec.openshell.enabled=true."#;
+
 fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
     match intent {
         TurnWorkerIntent::MemoryAvecCalibrate | TurnWorkerIntent::MemoryContext => {
             WORKER_MEMORY_APPENDIX.to_string()
         }
         TurnWorkerIntent::Research | TurnWorkerIntent::General => {
-            format!("{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}")
+            format!(
+                "{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}\n{WORKER_OPENSHELL_SKILL_APPENDIX}"
+            )
         }
     }
 }

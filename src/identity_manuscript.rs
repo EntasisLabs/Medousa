@@ -871,6 +871,9 @@ pub struct WorkerManuscriptHandoff {
     pub voice_appendix: Option<String>,
     pub system_appendix: Option<String>,
     pub tools_allow: Vec<String>,
+    pub openshell_enabled: bool,
+    pub openshell_policy_template: Option<String>,
+    pub openshell_sandbox_from: Option<String>,
 }
 
 impl From<&ManuscriptContext> for WorkerManuscriptHandoff {
@@ -881,6 +884,9 @@ impl From<&ManuscriptContext> for WorkerManuscriptHandoff {
             voice_appendix: manuscript.voice_appendix.clone(),
             system_appendix: manuscript.system_appendix.clone(),
             tools_allow: manuscript.tools_allow.clone(),
+            openshell_enabled: manuscript.openshell_enabled,
+            openshell_policy_template: manuscript.openshell_policy_template.clone(),
+            openshell_sandbox_from: manuscript.openshell_sandbox_from.clone(),
         }
     }
 }
@@ -891,6 +897,30 @@ pub fn format_worker_manuscript_block(manuscript: &WorkerManuscriptHandoff) -> S
         format!("id={}", manuscript.id),
         format!("name={}", manuscript.name),
     ];
+    if !manuscript.tools_allow.is_empty() {
+        lines.push(format!("tools_allow={}", manuscript.tools_allow.join(",")));
+    }
+    if manuscript.openshell_enabled {
+        lines.push("openshell=enabled".to_string());
+        if let Some(template) = manuscript
+            .openshell_policy_template
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(format!("openshell_policy_template={template}"));
+        }
+        if let Some(from) = manuscript
+            .openshell_sandbox_from
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(format!("openshell_sandbox_from={from}"));
+        }
+        lines.push(
+            "skill_flow=cognition_skill_discover → cognition_skill_propose → cognition_skill_probe"
+                .to_string(),
+        );
+    }
     if let Some(voice) = manuscript.voice_appendix.as_deref().filter(|v| !v.is_empty()) {
         lines.push("voice_appendix:".to_string());
         lines.push(voice.trim().to_string());

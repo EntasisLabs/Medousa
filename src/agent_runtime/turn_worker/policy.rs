@@ -188,6 +188,9 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_identity_remember",
             "cognition_manuscript_list",
             "cognition_manuscript_resolve",
+            "cognition_skill_discover",
+            "cognition_skill_propose",
+            "cognition_openshell_status",
         ],
     );
 
@@ -300,6 +303,8 @@ mod tests {
         assert!(!names.contains("cognition_identity_remember"));
         assert!(names.contains("cognition_openshell_status"));
         assert!(names.contains("cognition_openshell_sandbox_run"));
+        assert!(names.contains("cognition_skill_discover"));
+        assert!(names.contains("cognition_skill_probe"));
     }
 
     #[test]

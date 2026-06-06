@@ -215,7 +215,22 @@ impl StasisTool for CognitionSkillProposeTool {
             requested,
             script,
         );
-        Ok(proposal_json(&proposal))
+        let mut response = proposal_json(&proposal);
+        if let Some(obj) = response.as_object_mut() {
+            obj.insert(
+                "next_tools".to_string(),
+                json!({
+                    "observe": [],
+                    "propose": ["cognition_identity_remember", "medousa skill-import"],
+                    "sandbox": [
+                        "cognition_skill_probe",
+                        "cognition_openshell_sandbox_run"
+                    ],
+                    "deny": []
+                }),
+            );
+        }
+        Ok(response)
     }
 }
 
