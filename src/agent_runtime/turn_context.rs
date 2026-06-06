@@ -205,6 +205,8 @@ pub struct WorkerHandoffCapsule {
     pub model_avec: Option<HandoffModelAvec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manuscript: Option<crate::identity_manuscript::WorkerManuscriptHandoff>,
 }
 
 impl WorkerHandoffCapsule {
@@ -243,6 +245,7 @@ impl WorkerHandoffCapsule {
             vibe_signature,
             model_avec,
             host_continuity,
+            manuscript: None,
         }
     }
 
@@ -280,6 +283,16 @@ impl WorkerHandoffCapsule {
             .as_ref()
             .map(|bundle| format!("{}\n\n", bundle.format_user_block()))
             .unwrap_or_default();
+        let manuscript_prefix = self
+            .manuscript
+            .as_ref()
+            .map(|manuscript| {
+                format!(
+                    "{}\n\n",
+                    crate::identity_manuscript::format_worker_manuscript_block(manuscript)
+                )
+            })
+            .unwrap_or_default();
         let digests = if self.host_tool_digests.is_empty() {
             "(none yet)".to_string()
         } else {
@@ -310,7 +323,7 @@ impl WorkerHandoffCapsule {
             })
             .unwrap_or_else(|| "(none)".to_string());
         format!(
-            "{continuity_prefix}{WORKER_HANDOFF_PREFIX}\n\
+            "{continuity_prefix}{manuscript_prefix}{WORKER_HANDOFF_PREFIX}\n\
              session_id={}\n\
              parent_stream_turn_id={}\n\
              parent_turn_correlation_id={parent_corr}\n\

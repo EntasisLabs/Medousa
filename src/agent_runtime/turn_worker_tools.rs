@@ -66,6 +66,7 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
             "Delegate heavy work to a background turn worker (web/Grapheme execution, memory rituals). \
              Returns immediately; the worker runs tools with a focused policy, then a synthesis pass \
              delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. \
+             Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins). \
              Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
         )
     }
@@ -85,26 +86,49 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 "user_ack": {
                     "type": "string",
                     "description": "Short message for the user while the worker runs"
+                },
+                "manuscript_id": {
+                    "type": "string",
+                    "description": "Optional YAML identity manuscript id (e.g. morning-brief)"
                 }
             },
-            "required": ["intent", "task", "user_ack"]
+            "required": ["task", "user_ack"]
         }))
     }
 
     async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let intent_raw = input
-            .get("intent")
+        let manuscript = input
+            .get("manuscript_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                StasisError::PortFailure(
-                    "cognition_spawn_turn_worker: intent is required".to_string(),
-                )
-            })?;
-        let intent = TurnWorkerIntent::parse(intent_raw).ok_or_else(|| {
-            StasisError::PortFailure(format!(
-                "cognition_spawn_turn_worker: unknown intent '{intent_raw}'"
-            ))
-        })?;
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(crate::identity_manuscript::build_manuscript_context)
+            .transpose()
+            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+
+        let intent_raw = input.get("intent").and_then(|v| v.as_str()).map(str::trim);
+        let intent = match (
+            intent_raw.filter(|value| !value.is_empty()),
+            manuscript
+                .as_ref()
+                .and_then(|ctx| ctx.worker_intent.as_deref()),
+        ) {
+            (Some(raw), _) => TurnWorkerIntent::parse(raw).ok_or_else(|| {
+                StasisError::PortFailure(format!(
+                    "cognition_spawn_turn_worker: unknown intent '{raw}'"
+                ))
+            })?,
+            (None, Some(ms_intent)) => TurnWorkerIntent::parse(ms_intent).ok_or_else(|| {
+                StasisError::PortFailure(format!(
+                    "cognition_spawn_turn_worker: manuscript worker intent '{ms_intent}' is invalid"
+                ))
+            })?,
+            (None, None) => {
+                return Err(StasisError::PortFailure(
+                    "cognition_spawn_turn_worker: intent is required (or provide manuscript_id with spec.worker.intent)".to_string(),
+                ));
+            }
+        };
         let task = input
             .get("task")
             .and_then(|v| v.as_str())
@@ -124,7 +148,9 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 )
             })?;
 
-        self.scheduler.spawn_worker(intent, task, user_ack, None).await
+        self.scheduler
+            .spawn_worker(intent, task, user_ack, None, manuscript)
+            .await
     }
 }
 

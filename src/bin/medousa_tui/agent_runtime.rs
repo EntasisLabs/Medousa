@@ -477,6 +477,10 @@ pub(crate) async fn start_prompt_run(
     let turn_scope = tui_rt.turn_scope.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
     let tool_registry = tui_rt.tool_registry.clone();
+    let identity_memory_store = Some(
+        tui_rt.identity_memory_store.clone()
+            as std::sync::Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    );
     let session_id = state.session_id.clone();
     let backend = state.settings.backend.clone();
     let provider = state.settings.provider.clone();
@@ -508,6 +512,7 @@ pub(crate) async fn start_prompt_run(
                 response_depth_mode,
                 worker_scheduler,
                 tool_registry,
+                identity_memory_store,
                 turn_scope: turn_scope.clone(),
                 activation,
                 pipeline,

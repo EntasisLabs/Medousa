@@ -29,7 +29,7 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
-use super::policy::{TurnWorkerIntent, allowed_tool_names_for_intent, max_worker_tool_rounds};
+use super::policy::{TurnWorkerIntent, max_worker_tool_rounds};
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::agent_runtime::worker_continuity::{
     InProcessDelegationRecord, record_in_process_delegation,
@@ -65,6 +65,7 @@ pub struct ActiveWorkerBusSession {
 #[derive(Clone)]
 pub struct WorkerRuntimeContext {
     pub tool_registry: Arc<dyn ToolRegistry>,
+    pub identity_memory_store: Option<Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>>,
     pub provider: String,
     pub model: String,
     pub base_url: Option<String>,
@@ -77,6 +78,7 @@ impl WorkerRuntimeContext {
         let base_url = crate::resolve_llm_base_url(Some(&provider), None);
         Self {
             tool_registry: rt.tool_registry.clone(),
+            identity_memory_store: Some(rt.identity_memory_store.clone()),
             provider,
             model,
             base_url,
@@ -126,6 +128,7 @@ impl TurnWorkerScheduler {
         task: &str,
         user_ack: &str,
         parent_user_prompt: Option<&str>,
+        manuscript: Option<crate::identity_manuscript::ManuscriptContext>,
     ) -> stasis::prelude::Result<Value> {
         let bus = self
             .bus_session
@@ -138,7 +141,7 @@ impl TurnWorkerScheduler {
                 )
             })?;
 
-        let _runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
+        let runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
             stasis::domain::errors::StasisError::PortFailure(
                 "cognition_spawn_turn_worker: agent runtime context not ready (start a turn first)"
                     .to_string(),
@@ -172,6 +175,21 @@ impl TurnWorkerScheduler {
         if handoff.host_continuity.is_none() {
             handoff.host_continuity = bus.host_continuity_bundle.clone();
         }
+        if let Some(ref manuscript_ctx) = manuscript {
+            handoff.manuscript = Some(manuscript_ctx.into());
+            if let Some(bundle) = handoff.host_continuity.as_mut() {
+                if let Some(store) = runtime_ctx.identity_memory_store.as_ref() {
+                    bundle.identity_summary = Some(
+                        crate::identity_manuscript::compile_manuscript_identity_summary(
+                            store,
+                            manuscript_ctx,
+                            Some(task),
+                        )
+                        .await,
+                    );
+                }
+            }
+        }
         handoff.apply_spawn(intent.as_str(), task, &work_id);
         let handoff_summary = handoff.handoff_summary();
         let scratch_digest = handoff.scratch_digest_hash.clone();
@@ -185,6 +203,12 @@ impl TurnWorkerScheduler {
             .map(|bundle| bundle.log_summary())
             .unwrap_or_else(|| "none".to_string());
         let delegation_parent_turn = handoff.parent_turn_correlation_id.clone();
+
+        let max_tool_rounds = manuscript
+            .as_ref()
+            .and_then(|ctx| ctx.max_tool_rounds)
+            .map(|rounds| rounds.max(1))
+            .unwrap_or_else(|| bus.configured_max_tool_rounds.max(1));
 
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
@@ -201,7 +225,7 @@ impl TurnWorkerScheduler {
             provider: bus.provider.clone(),
             model: bus.model.clone(),
             response_depth_mode: bus.response_depth_mode.clone(),
-            max_tool_rounds: bus.configured_max_tool_rounds.max(1),
+            max_tool_rounds,
             delivery_target,
             parent_user_prompt: parent_user_prompt
                 .map(str::trim)
@@ -225,6 +249,7 @@ impl TurnWorkerScheduler {
             ),
         );
 
+        let manuscript_id = manuscript.as_ref().map(|ctx| ctx.id.clone());
         record_in_process_delegation(&InProcessDelegationRecord {
             work_id: work_id.clone(),
             session_id: bus.session_id.clone(),
@@ -233,6 +258,7 @@ impl TurnWorkerScheduler {
             parent_stream_turn_id: bus.stream_turn_id,
             sequential: true,
             continuity_summary: continuity_summary.clone(),
+            manuscript_id: manuscript_id.clone(),
             spawned_at: now,
         });
 
@@ -248,6 +274,14 @@ impl TurnWorkerScheduler {
                 intent = intent.as_str(),
             ))
             .await;
+        if let Some(manuscript_id) = manuscript_id.as_deref() {
+            bus.sink
+                .notice(format!(
+                    "◈ worker_manuscript work_id={work_id} id={manuscript_id} intent={}",
+                    intent.as_str()
+                ))
+                .await;
+        }
 
         let store = self.store.clone();
         let work_id_spawn = work_id.clone();
@@ -263,6 +297,7 @@ impl TurnWorkerScheduler {
             "worker_spawned": true,
             "work_id": work_id,
             "intent": intent.as_str(),
+            "manuscript_id": manuscript_id,
             "status": "pending",
             "user_ack": user_ack,
             "handoff_summary": handoff_summary,
@@ -315,7 +350,13 @@ pub async fn run_worker_turn(
         .await;
 
     let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
-    let allowlist = allowed_tool_names_for_intent(intent);
+    let manuscript_tools = record
+        .handoff_capsule
+        .as_ref()
+        .and_then(|capsule| capsule.manuscript.as_ref())
+        .map(|manuscript| manuscript.tools_allow.as_slice())
+        .unwrap_or(&[] as &[String]);
+    let allowlist = super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),
@@ -361,6 +402,10 @@ pub async fn run_worker_turn(
         system_prompt: Some(worker_system_prompt(
             &record.session_id,
             TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
+            record
+                .handoff_capsule
+                .as_ref()
+                .and_then(|capsule| capsule.manuscript.as_ref()),
         )),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),

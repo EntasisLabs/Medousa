@@ -328,6 +328,35 @@ pub fn list_manuscripts() -> Result<Vec<ManuscriptListing>> {
     Ok(by_id.into_values().collect())
 }
 
+pub async fn compile_manuscript_identity_summary(
+    store: &std::sync::Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+    manuscript: &ManuscriptContext,
+    query_hints: Option<&str>,
+) -> String {
+    use crate::cognitive_identity::{
+        DigestCompileOptions, cognitive_identity_diagnostics_with_stats,
+        compile_relational_memory_digest_with_options, load_cognitive_identity_snapshot,
+        DEFAULT_RELATIONAL_DIGEST_BUDGET,
+    };
+    use crate::identity_memory::resolve_identity_user_id;
+
+    let user_id = resolve_identity_user_id(None);
+    let snapshot = load_cognitive_identity_snapshot(
+        Some(store),
+        &user_id,
+        Some("interactive"),
+        32,
+    )
+    .await;
+    let mut options = DigestCompileOptions::from_product_config(DEFAULT_RELATIONAL_DIGEST_BUDGET)
+        .with_query_hints(query_hints.unwrap_or_default());
+    options = digest_options_for_manuscript(options, manuscript);
+    let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
+    let diagnostics =
+        cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
+    format!("{}\n{diagnostics}", ranked.text)
+}
+
 pub fn digest_options_for_manuscript(
     mut base: DigestCompileOptions,
     manuscript: &ManuscriptContext,
@@ -350,6 +379,44 @@ pub fn digest_options_for_manuscript(
         });
     }
     base
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorkerManuscriptHandoff {
+    pub id: String,
+    pub name: String,
+    pub voice_appendix: Option<String>,
+    pub system_appendix: Option<String>,
+    pub tools_allow: Vec<String>,
+}
+
+impl From<&ManuscriptContext> for WorkerManuscriptHandoff {
+    fn from(manuscript: &ManuscriptContext) -> Self {
+        Self {
+            id: manuscript.id.clone(),
+            name: manuscript.name.clone(),
+            voice_appendix: manuscript.voice_appendix.clone(),
+            system_appendix: manuscript.system_appendix.clone(),
+            tools_allow: manuscript.tools_allow.clone(),
+        }
+    }
+}
+
+pub fn format_worker_manuscript_block(manuscript: &WorkerManuscriptHandoff) -> String {
+    let mut lines = vec![
+        "[MEDOUSA_MANUSCRIPT]".to_string(),
+        format!("id={}", manuscript.id),
+        format!("name={}", manuscript.name),
+    ];
+    if let Some(voice) = manuscript.voice_appendix.as_deref().filter(|v| !v.is_empty()) {
+        lines.push("voice_appendix:".to_string());
+        lines.push(voice.trim().to_string());
+    }
+    if let Some(appendix) = manuscript.system_appendix.as_deref().filter(|v| !v.is_empty()) {
+        lines.push("system_appendix:".to_string());
+        lines.push(appendix.trim().to_string());
+    }
+    lines.join("\n")
 }
 
 pub fn format_manuscript_prompt_block(manuscript: &ManuscriptContext) -> String {

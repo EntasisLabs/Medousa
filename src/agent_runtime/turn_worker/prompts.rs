@@ -110,9 +110,17 @@ fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
     }
 }
 
-pub fn worker_system_prompt(session_id: &str, intent: TurnWorkerIntent) -> String {
+pub fn worker_system_prompt(
+    session_id: &str,
+    intent: TurnWorkerIntent,
+    manuscript: Option<&crate::identity_manuscript::WorkerManuscriptHandoff>,
+) -> String {
+    let manuscript_block = manuscript
+        .map(crate::identity_manuscript::format_worker_manuscript_block)
+        .map(|block| format!("\n{block}\n"))
+        .unwrap_or_default();
     format!(
-        "{WORKER_STTP_POLICY}\n\n{WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+        "{WORKER_STTP_POLICY}{manuscript_block}\n\n{WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
          session_id={session_id}\n\
          worker_intent={}\n\
          Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
@@ -172,9 +180,15 @@ pub fn synthesis_user_prompt_with_handoff(
             )
         })
         .unwrap_or_default();
+    let manuscript_line = handoff
+        .manuscript
+        .as_ref()
+        .map(|manuscript| format!("MANUSCRIPT: {} ({})\n", manuscript.name, manuscript.id))
+        .unwrap_or_default();
     format!(
         "Synthesize a single user-facing reply for the host bus. Use the worker handoff and \
          worker tool summary — not the full parent chat transcript.\n\n\
+         {manuscript_line}\
          WORK_ID: (see handoff)\n\
          WORKER_INTENT: {}\n\
          HOST_SCRATCH_DIGEST: {}\n\n\
@@ -226,7 +240,7 @@ mod tests {
 
     #[test]
     fn research_worker_prompt_includes_grapheme_discovery() {
-        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research);
+        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::Research, None);
         assert!(prompt.contains("MEDOUSA_WORKER_DISCIPLINE"));
         assert!(prompt.contains("HOST_TOOL_DIGESTS"));
         assert!(prompt.contains("cognition_grapheme_modules"));
@@ -236,7 +250,7 @@ mod tests {
 
     #[test]
     fn memory_worker_prompt_includes_calibrate_ritual() {
-        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate);
+        let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate, None);
         assert!(prompt.contains("cognition_memory_calibrate"));
         assert!(!prompt.contains("cognition_grapheme_run"));
     }

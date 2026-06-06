@@ -43,6 +43,7 @@ pub struct InProcessDelegationRecord {
     pub parent_stream_turn_id: u64,
     pub sequential: bool,
     pub continuity_summary: String,
+    pub manuscript_id: Option<String>,
     pub spawned_at: DateTime<Utc>,
 }
 
@@ -226,7 +227,7 @@ impl HostContinuityBundle {
 
 pub fn record_in_process_delegation(record: &InProcessDelegationRecord) {
     eprintln!(
-        "medousa worker_delegation work_id={} session_id={} intent={} parent_turn={} parent_stream_turn_id={} sequential={} continuity={} spawned_at={}",
+        "medousa worker_delegation work_id={} session_id={} intent={} parent_turn={} parent_stream_turn_id={} sequential={} manuscript={} continuity={} spawned_at={}",
         record.work_id,
         record.session_id,
         record.intent,
@@ -236,6 +237,7 @@ pub fn record_in_process_delegation(record: &InProcessDelegationRecord) {
             .unwrap_or("-"),
         record.parent_stream_turn_id,
         record.sequential,
+        record.manuscript_id.as_deref().unwrap_or("-"),
         record.continuity_summary,
         record.spawned_at.to_rfc3339(),
     );

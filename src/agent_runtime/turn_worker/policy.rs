@@ -239,6 +239,21 @@ pub fn tool_allowed(name: &str, allowlist: &HashSet<String>) -> bool {
     crate::tool_aliases::tool_allowed_matches_with_legacy(name, allowlist)
 }
 
+pub fn worker_allowlist_for_intent_and_tools(
+    intent: TurnWorkerIntent,
+    manuscript_tools: &[String],
+) -> HashSet<String> {
+    let intent_allow = allowed_tool_names_for_intent(intent);
+    if manuscript_tools.is_empty() {
+        return intent_allow;
+    }
+    manuscript_tools
+        .iter()
+        .filter(|tool| tool_allowed(tool, &intent_allow))
+        .map(|tool| tool.to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +291,23 @@ mod tests {
         assert!(!names.contains("cognition_memory_calibrate"));
         assert!(names.contains("cognition_identity_recall"));
         assert!(!names.contains("cognition_identity_remember"));
+    }
+
+    #[test]
+    fn manuscript_allowlist_intersects_intent_tools() {
+        let tools = vec![
+            "cognition_identity_recall".to_string(),
+            "cognition_memory_context".to_string(),
+            "cognition_capability_invoke".to_string(),
+            "cognition_spawn_turn_worker".to_string(),
+        ];
+        let allow =
+            worker_allowlist_for_intent_and_tools(TurnWorkerIntent::Research, &tools);
+        assert!(allow.contains("cognition_identity_recall"));
+        assert!(allow.contains("cognition_memory_context"));
+        assert!(allow.contains("cognition_capability_invoke"));
+        assert!(!allow.contains("cognition_spawn_turn_worker"));
+        assert!(!allow.contains("cognition_grapheme_run"));
     }
 
     #[test]

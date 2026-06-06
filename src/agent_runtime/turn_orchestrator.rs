@@ -200,6 +200,8 @@ pub struct LocalTurnExecutionParams {
     pub response_depth_mode: String,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
     pub tool_registry: Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
+    pub identity_memory_store:
+        Option<Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>>,
     pub turn_scope: Arc<tokio::sync::RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
     pub activation: TurnActivationDecision,
     pub pipeline: MedousaToolLoopPipeline,
@@ -331,6 +333,10 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             response_depth_mode: params.response_depth_mode.to_string(),
             worker_scheduler: params.tui_rt.worker_scheduler.clone(),
             tool_registry: params.tui_rt.tool_registry.clone(),
+            identity_memory_store: Some(
+                params.tui_rt.identity_memory_store.clone()
+                    as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
+            ),
             turn_scope: params.tui_rt.turn_scope.clone(),
             activation: activation.clone(),
             pipeline: pipeline_selection.pipeline.clone(),
@@ -657,6 +663,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         response_depth_mode,
         worker_scheduler,
         tool_registry,
+        identity_memory_store,
         turn_scope,
         mut activation,
         pipeline: default_pipeline,
@@ -705,6 +712,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
     worker_scheduler
         .set_runtime_context(WorkerRuntimeContext {
             tool_registry: tool_registry.clone(),
+            identity_memory_store: identity_memory_store.clone(),
             provider: provider.clone(),
             model: model.clone(),
             base_url: base_url.clone(),
