@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Read};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -70,6 +70,7 @@ fn main() -> Result<()> {
         "skill-import" => run_skill_import(&args[1..]),
         "openshell-probe" => run_openshell_probe(&args[1..]),
         "workspace" => run_workspace(&args[1..]),
+        "vault" => run_vault(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -2922,6 +2923,162 @@ fn run_workspace_stream(daemon_url: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn run_vault(args: &[String]) -> Result<()> {
+    let sub = args.first().map(String::as_str).unwrap_or("list");
+    let daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::to_string)
+        .or_else(|| std::env::var("MEDOUSA_DAEMON_URL").ok())
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+    let daemon_url = daemon_url.trim_end_matches('/').to_string();
+
+    if !daemon_http_healthy(&daemon_url) {
+        return Err(anyhow!(
+            "daemon not healthy at {daemon_url} — run: medousa start daemon"
+        ));
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("failed to build HTTP client")?;
+
+    let (method, path, body) = match sub {
+        "list" => {
+            let mut query = Vec::new();
+            if let Some(prefix) = find_arg_value(args, "--prefix") {
+                query.push(format!("prefix={prefix}"));
+            }
+            if let Some(limit) = find_arg_value(args, "--limit") {
+                query.push(format!("limit={limit}"));
+            }
+            let suffix = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", query.join("&"))
+            };
+            (
+                "GET".to_string(),
+                format!("/v1/vault/notes{suffix}"),
+                None,
+            )
+        }
+        "read" => {
+            let note_path = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa vault read <path>"))?;
+            (
+                "GET".to_string(),
+                format!("/v1/vault/notes/{note_path}"),
+                None,
+            )
+        }
+        "write" => {
+            let note_path = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa vault write <path> [--content <text>|--stdin]"))?;
+            let content = if has_flag(args, "--stdin") {
+                let mut buf = String::new();
+                std::io::stdin().read_to_string(&mut buf)?;
+                buf
+            } else {
+                find_arg_value(args, "--content")
+                    .map(str::to_string)
+                    .ok_or_else(|| anyhow!("usage: medousa vault write <path> --content <markdown>"))?
+            };
+            let payload = serde_json::json!({ "path": note_path, "content": content });
+            (
+                "POST".to_string(),
+                "/v1/vault/notes".to_string(),
+                Some(payload.to_string()),
+            )
+        }
+        "search" => {
+            let query = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa vault search <query>"))?;
+            let encoded = urlencoding_encode(query);
+            let mut suffix = format!("?q={encoded}");
+            if let Some(limit) = find_arg_value(args, "--limit") {
+                suffix.push_str(&format!("&limit={limit}"));
+            }
+            (
+                "GET".to_string(),
+                format!("/v1/vault/search{suffix}"),
+                None,
+            )
+        }
+        "delete" => {
+            let note_path = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa vault delete <path>"))?;
+            (
+                "DELETE".to_string(),
+                format!("/v1/vault/notes/{note_path}"),
+                None,
+            )
+        }
+        "backlinks" => {
+            let note_path = args
+                .get(1)
+                .filter(|value| !value.starts_with("--"))
+                .ok_or_else(|| anyhow!("usage: medousa vault backlinks <path>"))?;
+            (
+                "GET".to_string(),
+                format!("/v1/vault/notes/{note_path}/backlinks"),
+                None,
+            )
+        }
+        other => return Err(anyhow!("unknown vault subcommand: {other}")),
+    };
+
+    let url = format!("{daemon_url}{path}");
+    let response = match method.as_str() {
+        "POST" => {
+            let mut request = client.post(&url);
+            if let Some(payload) = body {
+                request = request
+                    .header("content-type", "application/json")
+                    .body(payload);
+            }
+            request.send().with_context(|| format!("POST {url} failed"))?
+        }
+        "DELETE" => client
+            .delete(&url)
+            .send()
+            .with_context(|| format!("DELETE {url} failed"))?,
+        _ => client
+            .get(&url)
+            .send()
+            .with_context(|| format!("GET {url} failed"))?,
+    };
+
+    let status = response.status();
+    let body = response.text().context("failed to read vault response")?;
+    if !status.is_success() {
+        return Err(anyhow!("vault request failed ({status}): {body}"));
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).context("vault response was not valid JSON")?;
+    println!("{}", serde_json::to_string_pretty(&parsed)?);
+    Ok(())
+}
+
+fn urlencoding_encode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
 fn parse_workspace_sse_data(frame: &str) -> Option<String> {
     let mut data_lines = Vec::new();
     for line in frame.lines() {
@@ -2961,6 +3118,7 @@ fn print_help() {
     println!("  medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]");
     println!("  medousa openshell-probe [<manuscript-id>] [--script scripts/echo.sh] [--from medousa-openshell-sandbox:local] [--policy skill-sandbox] [--skip-grapheme]");
     println!("  medousa workspace [snapshot|cards|feed|stream|card <id>|cancel <id>|retry <id>|link-vault <id> --path <vault-path>] [--daemon-url <url>] [--limit N] [--include-terminal] [--column backlog|in_flight|wrapping_up|done|blocked] [--since-revision N] [--max-events N]");
+    println!("  medousa vault [list|read <path>|write <path> --content <md>|--stdin|search <q>|delete <path>|backlinks <path>] [--daemon-url <url>] [--prefix <dir/>] [--limit N]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

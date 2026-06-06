@@ -765,6 +765,94 @@ pub struct WorkspaceLinkVaultRequest {
     pub vault_path: String,
 }
 
+// ── Vault (Medousa Home — Phase V0) ───────────────────────────────────────────
+
+/// Frozen vault HTTP contract version (Phase V0 gate).
+pub const VAULT_API_VERSION: &str = "vault-v1";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VaultNote {
+    pub path: String,
+    pub title: String,
+    pub byte_size: usize,
+    pub content_hash: String,
+    pub modified_at_utc: DateTime<Utc>,
+    pub created_at_utc: DateTime<Utc>,
+    pub tags: Vec<String>,
+    pub wikilinks_out: Vec<String>,
+    pub backlinks: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VaultNoteSummary {
+    pub path: String,
+    pub title: String,
+    pub modified_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultNotesListResponse {
+    pub notes: Vec<VaultNote>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VaultNotesQuery {
+    pub prefix: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultNoteContentResponse {
+    pub note: VaultNote,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultWriteRequest {
+    #[serde(default)]
+    pub path: Option<String>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultWriteResponse {
+    pub note: VaultNote,
+    pub created: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultDeleteResponse {
+    pub path: String,
+    pub deleted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultSearchHit {
+    pub note: VaultNoteSummary,
+    pub score: f32,
+    pub matched_terms: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultSearchResponse {
+    pub query: String,
+    pub hits: Vec<VaultSearchHit>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VaultSearchQuery {
+    pub q: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultBacklinksResponse {
+    pub path: String,
+    pub backlinks: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceCardActionResponse {
     pub workspace_revision: u64,

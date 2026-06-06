@@ -62,6 +62,10 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_skill_discover",
     "cognition_skill_propose",
     "cognition_skill_probe",
+    "cognition_vault_list",
+    "cognition_vault_read",
+    "cognition_vault_search",
+    "cognition_vault_write",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.

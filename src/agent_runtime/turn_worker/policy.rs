@@ -117,6 +117,9 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_skill_discover",
                     "cognition_skill_propose",
                     "cognition_skill_probe",
+                    "cognition_vault_list",
+                    "cognition_vault_read",
+                    "cognition_vault_search",
                 ],
             );
         }
@@ -191,6 +194,10 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_skill_discover",
             "cognition_skill_propose",
             "cognition_openshell_status",
+            "cognition_vault_list",
+            "cognition_vault_read",
+            "cognition_vault_search",
+            "cognition_vault_write",
         ],
     );
 

@@ -142,9 +142,12 @@ medousa workspace stream    # SSE: card + feed events, carries revision
 medousa workspace cancel <card-id>
 medousa workspace retry <card-id>
 medousa workspace link-vault <card-id> --path journal/2026-05-30.md
-medousa vault list
-medousa vault read weekly-review.md
-medousa vault write weekly-review.md --stdin
+medousa vault list [--prefix journal/]
+medousa vault read journal/weekly-review.md
+medousa vault write journal/weekly-review.md --stdin
+medousa vault search medousa --limit 10
+medousa vault delete journal/weekly-review.md
+medousa vault backlinks journal/weekly-review.md
 ```
 
 ---
@@ -569,7 +572,29 @@ pub struct VaultSearchResponse {
 
 Ripgrep (or walk + scan) produces candidate lines; daemon assigns `score` + `matched_terms` before respond. Semantic search later replaces scoring function, not response shape.
 
-**Stability gate V0:** round-trip write/read; search returns `VaultSearchHit` shape; `manuscript-validate` unaffected; external editor watch refreshes index.
+**Stability gate V0:**
+
+- [x] OpenAPI-style routes documented (see **Vault API v1** below)
+- [ ] Round-trip write/read in CI smoke script
+- [x] Search returns ranked `VaultSearchHit` shape
+- [x] Index refresh on list/read/search (external editor picks up on next API call)
+- [ ] 2 weeks dogfood OR explicit `Accept-Version: vault-v1` bump
+
+#### Vault API v1 (frozen contract)
+
+Version header (optional): `Accept-Version: vault-v1` (`VAULT_API_VERSION` in `daemon_api.rs`).
+
+| Method | Route | Body | Response |
+|--------|-------|------|----------|
+| `GET` | `/v1/vault/notes` | `?prefix=&limit=` | `VaultNotesListResponse` |
+| `POST` | `/v1/vault/notes` | `{ path, content }` | `VaultWriteResponse` |
+| `GET` | `/v1/vault/notes/{path}` | — | `VaultNoteContentResponse` |
+| `PUT` | `/v1/vault/notes/{path}` | raw markdown; optional `If-Match: content_hash` | `VaultWriteResponse` |
+| `DELETE` | `/v1/vault/notes/{path}` | — | `VaultDeleteResponse` (soft-delete → `.trash/`) |
+| `GET` | `/v1/vault/search` | `?q=&limit=` | `VaultSearchResponse` |
+| `GET` | `/v1/vault/notes/{path}/backlinks` | — | `VaultBacklinksResponse` |
+
+**Cognition tools:** `cognition_vault_list`, `cognition_vault_read`, `cognition_vault_search` (host + research workers); `cognition_vault_write` (host bus only).
 
 ---
 
@@ -818,6 +843,7 @@ Phase M0+ Tauri (only after both freeze gates)
 | Job listing | `src/runtime_tools.rs` |
 | Turn work records | `src/agent_runtime/turn_worker/store.rs` |
 | Card actions (W3) | `src/workspace/actions.rs` |
+| Vault store + search (V0) | `src/vault/` |
 | Daemon routes | `src/bin/medousa_daemon.rs` |
 | API types | `src/daemon_api.rs` |
 | OpenShell job cards | `src/openshell_sandbox_run.rs` |
@@ -835,3 +861,4 @@ Phase M0+ Tauri (only after both freeze gates)
 | 2026-05-30 | **W1 shipped:** `GET /v1/workspace/cards|feed|snapshot`, thin/detail split, CLI `medousa workspace` |
 | 2026-05-30 | **W2 shipped:** `GET /v1/workspace/stream` SSE (`snapshot`, `card_upserted`, `card_removed`, `feed_appended`, `column_counts`, `heartbeat`); CLI `medousa workspace stream` |
 | 2026-05-30 | **W3 shipped:** `POST /v1/workspace/cards/{id}/cancel|retry|link-vault`; CLI `medousa workspace cancel|retry|link-vault`; API freeze doc (`workspace-v1`) |
+| 2026-05-30 | **V0 shipped:** Vault CRUD + ranked search + backlinks + cognition tools; CLI `medousa vault`; API freeze doc (`vault-v1`) |

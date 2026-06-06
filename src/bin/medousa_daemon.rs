@@ -490,6 +490,27 @@ async fn main() -> Result<()> {
             identity_service: state.identity_service.clone(),
         });
 
+    let vault_router = Router::new()
+        .route(
+            "/v1/vault/notes",
+            get(medousa::vault_handlers::list_vault_notes)
+                .post(medousa::vault_handlers::post_vault_note),
+        )
+        .route(
+            "/v1/vault/notes/{*note_path}/backlinks",
+            get(medousa::vault_handlers::get_vault_backlinks),
+        )
+        .route(
+            "/v1/vault/notes/{*note_path}",
+            get(medousa::vault_handlers::get_vault_note)
+                .put(medousa::vault_handlers::put_vault_note)
+                .delete(medousa::vault_handlers::delete_vault_note),
+        )
+        .route(
+            "/v1/vault/search",
+            get(medousa::vault_handlers::search_vault_notes),
+        );
+
     let workspace_router = Router::new()
         .route(
             "/v1/workspace/cards",
@@ -531,6 +552,7 @@ async fn main() -> Result<()> {
     let app = app
         .merge(capability_router)
         .merge(policy_router)
+        .merge(vault_router)
         .merge(workspace_router);
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
