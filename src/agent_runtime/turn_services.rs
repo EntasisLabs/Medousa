@@ -54,6 +54,30 @@ pub fn select_pipeline_for_turn(
     final_route: Option<&StageRoute>,
     settings: &RuntimeSettings,
 ) -> SelectedTurnPipeline {
+    select_pipeline_for_turn_with_allowlist(tui_rt, final_route, settings, None)
+}
+
+pub fn select_pipeline_for_turn_with_allowlist(
+    tui_rt: &TuiRuntime,
+    final_route: Option<&StageRoute>,
+    settings: &RuntimeSettings,
+    tool_allowlist: Option<std::collections::HashSet<String>>,
+) -> SelectedTurnPipeline {
+    use std::sync::Arc;
+
+    use stasis::application::orchestration::tool_registry::ToolRegistry;
+
+    use crate::agent_runtime::turn_worker::AllowlistToolRegistry;
+    use crate::tui::runtime_services::build_tool_loop_pipeline_for_target;
+
+    let registry: Arc<dyn ToolRegistry> = match tool_allowlist {
+        Some(allowlist) => Arc::new(AllowlistToolRegistry::new(
+            tui_rt.tool_registry.clone(),
+            allowlist,
+        )),
+        None => tui_rt.tool_registry.clone(),
+    };
+
     if let Some(route) = final_route {
         let route_base_url = route_base_url(route, settings);
         let route_notice = format!(
@@ -65,10 +89,11 @@ pub fn select_pipeline_for_turn(
                 .filter(|value| !value.is_empty())
                 .unwrap_or("(auto)"),
         );
-        let pipeline = tui_rt.tool_loop_pipeline_for_target(
+        let pipeline = build_tool_loop_pipeline_for_target(
             &route.provider,
             &route.model,
             route_base_url.as_deref(),
+            registry,
         );
         return SelectedTurnPipeline {
             pipeline,
@@ -76,8 +101,14 @@ pub fn select_pipeline_for_turn(
         };
     }
 
+    let pipeline = build_tool_loop_pipeline_for_target(
+        &settings.provider,
+        &settings.model,
+        (!settings.base_url.trim().is_empty()).then(|| settings.base_url.as_str()),
+        registry,
+    );
     SelectedTurnPipeline {
-        pipeline: tui_rt.tool_loop_pipeline.clone(),
+        pipeline,
         route_dispatch_notice: None,
     }
 }

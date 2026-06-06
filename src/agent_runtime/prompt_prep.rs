@@ -857,6 +857,10 @@ mod tests {
             max_tool_rounds: None,
             tools_allow: Vec::new(),
             locus_session_id: None,
+            delivery_mode: None,
+            delivery_on_complete: None,
+            schedule_cron: None,
+            schedule_execution_mode: None,
             source_path: std::path::PathBuf::from("morning-brief.yaml"),
         };
         let hint = append_manuscript_hint("Plan my day", Some(&manuscript));

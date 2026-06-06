@@ -307,6 +307,42 @@ async fn run_agent_turn_inner(
         conversation.push(user_turn);
     }
 
+    let manuscript_id = request
+        .manuscript_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let scheduled_tool_allowlist = request
+        .scheduled_tool_allowlist
+        .as_ref()
+        .map(|tools| {
+            tools
+                .iter()
+                .map(|tool| tool.trim().to_string())
+                .filter(|tool| !tool.is_empty())
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .filter(|tools| !tools.is_empty())
+        .or_else(|| {
+            manuscript_id.and_then(|id| {
+                crate::identity_manuscript::build_manuscript_context(id)
+                    .ok()
+                    .map(|ctx| crate::identity_manuscript::scheduled_tool_allowlist_for_manuscript(&ctx))
+            })
+        });
+
+    if let Some(manuscript_id) = manuscript_id {
+        sink.notice(format!("◈ manuscript_load id={manuscript_id} lane=scheduled"))
+            .await;
+        if let Some(allowlist) = scheduled_tool_allowlist.as_ref() {
+            sink.notice(format!(
+                "◈ manuscript_tools allowed={} lane=scheduled",
+                allowlist.len()
+            ))
+            .await;
+        }
+    }
+
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &session_id,
         prompt: &prompt,
@@ -317,7 +353,7 @@ async fn run_agent_turn_inner(
         response_depth_mode: &request.response_depth_mode,
         surface: request.surface.as_ref(),
         tui_rt: agent_rt,
-        manuscript_id: None,
+        manuscript_id,
     })
     .await;
 
@@ -365,6 +401,7 @@ async fn run_agent_turn_inner(
         final_route: final_route.as_ref(),
         response_depth_mode: &request.response_depth_mode,
         turn_id: 1,
+        scheduled_tool_allowlist,
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {

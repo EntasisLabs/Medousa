@@ -389,6 +389,10 @@ impl StasisTool for CognitionRuntimeRecurringListTool {
         let mut rows = Vec::with_capacity(definitions.len());
         for definition in &definitions {
             let mut row = recurring_to_json(definition);
+            row["manuscript_id"] = json!(crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
+                &definition.job_type,
+                &definition.payload_template_ref,
+            ));
             if let Some(binding) = delivery_binding_for_recurring(&definition.id).await {
                 row["delivery"] = delivery_binding_to_json(&binding);
             }
@@ -472,6 +476,10 @@ impl StasisTool for CognitionRuntimeRecurringDoctorTool {
             }
 
             let mut row = recurring_to_json(definition);
+            row["manuscript_id"] = json!(crate::recurring_agent_turn::manuscript_id_from_recurring_payload(
+                &definition.job_type,
+                &definition.payload_template_ref,
+            ));
             row["delivery"] = delivery
                 .as_ref()
                 .map(delivery_binding_to_json)

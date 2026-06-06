@@ -190,6 +190,9 @@ pub struct RegisterRecurringPromptRequest {
     pub session_id: Option<String>,
     /// `prompt` (single LLM, default) or `agent_turn` (full Medousa tool loop per tick).
     pub execution_mode: Option<String>,
+    /// Optional YAML identity manuscript (loads task template, tool allowlist, pins).
+    #[serde(default)]
+    pub manuscript_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,6 +428,11 @@ pub struct InteractiveTurnRequest {
     pub max_tool_rounds: Option<usize>,
     #[serde(default)]
     pub retry_runtime_max_rounds: Option<usize>,
+    /// YAML manuscript specialty for ranked digest + scheduled tool allowlist.
+    #[serde(default)]
+    pub manuscript_id: Option<String>,
+    #[serde(default)]
+    pub scheduled_tool_allowlist: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -567,6 +567,8 @@ async fn attempt_daemon_interactive_turn(
             medousa::agent_runtime::ROUND_LIMIT_MIN,
             medousa::agent_runtime::ROUND_LIMIT_MAX,
         )),
+        manuscript_id: None,
+        scheduled_tool_allowlist: None,
     };
 
     daemon_start_interactive_turn(&state.daemon_url, &request)

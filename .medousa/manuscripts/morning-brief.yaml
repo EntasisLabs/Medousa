@@ -27,3 +27,7 @@ spec:
       - cognition_identity_recall
       - cognition_memory_context
       - cognition_capability_invoke
+  locus:
+    session_id: locus-morning-brief
+  delivery:
+    on_complete: locus

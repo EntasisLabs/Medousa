@@ -441,6 +441,8 @@ pub fn build_interactive_turn_request_for_ingest(
                 .retry_runtime_max_rounds
                 .unwrap_or(crate::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
         ),
+        manuscript_id: None,
+        scheduled_tool_allowlist: None,
     }
 }
 

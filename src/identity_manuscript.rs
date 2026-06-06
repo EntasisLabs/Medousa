@@ -1,5 +1,6 @@
 //! YAML identity manuscripts — declarative specialty packs for turns and workers.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -134,7 +135,102 @@ pub struct ManuscriptContext {
     pub max_tool_rounds: Option<usize>,
     pub tools_allow: Vec<String>,
     pub locus_session_id: Option<String>,
+    pub delivery_mode: Option<String>,
+    pub delivery_on_complete: Option<String>,
+    pub schedule_cron: Option<String>,
+    pub schedule_execution_mode: Option<String>,
     pub source_path: PathBuf,
+}
+
+const SCHEDULED_ESSENTIAL_TOOLS: &[&str] = &[
+    "cognition_turn_prepare_final",
+    "cognition.turn.prepare_final",
+    "cognition_utility_time_now",
+    "cognition_utility_day_of_week",
+    "cognition_utility_uuid",
+];
+
+pub fn scheduled_lane_tool_universe() -> HashSet<String> {
+    use crate::agent_runtime::turn_worker::{TurnWorkerIntent, allowed_tool_names_for_intent};
+
+    let mut universe = allowed_tool_names_for_intent(TurnWorkerIntent::Research);
+    universe.extend(allowed_tool_names_for_intent(TurnWorkerIntent::MemoryContext));
+    universe.remove("cognition_identity_remember");
+    universe.remove("cognition_spawn_turn_worker");
+    universe
+}
+
+pub fn scheduled_tool_allowlist_for_manuscript(manuscript: &ManuscriptContext) -> HashSet<String> {
+    use crate::agent_runtime::turn_worker::tool_allowed;
+
+    let universe = scheduled_lane_tool_universe();
+    let mut allow = HashSet::new();
+    for tool in &manuscript.tools_allow {
+        if tool_allowed(tool, &universe) {
+            allow.insert(tool.to_string());
+        }
+    }
+    for essential in SCHEDULED_ESSENTIAL_TOOLS {
+        if universe.contains(*essential) {
+            allow.insert((*essential).to_string());
+        }
+    }
+    allow
+}
+
+pub fn validate_manuscript_for_scheduled_lane(manuscript: &ManuscriptContext) -> Result<()> {
+    if manuscript.tools_allow.is_empty() {
+        bail!("scheduled lane requires spec.tools.allow to be non-empty");
+    }
+    if manuscript
+        .tools_allow
+        .iter()
+        .any(|tool| tool.contains("identity_remember"))
+    {
+        bail!("cognition_identity_remember is not allowed on scheduled manuscript lane");
+    }
+
+    let allow = scheduled_tool_allowlist_for_manuscript(manuscript);
+    let manuscript_tools: HashSet<_> = manuscript.tools_allow.iter().cloned().collect();
+    if allow.intersection(&manuscript_tools).count() == 0 {
+        bail!("spec.tools.allow has no tools permitted on scheduled lane");
+    }
+    Ok(())
+}
+
+pub fn render_manuscript_task_prompt(
+    manuscript: &ManuscriptContext,
+    override_prompt: Option<&str>,
+) -> Result<String> {
+    if let Some(prompt) = override_prompt.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(prompt.to_string());
+    }
+    manuscript
+        .task_template
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "task prompt required: provide prompt or spec.prompts.task_template for manuscript '{}'",
+                manuscript.id
+            )
+        })
+}
+
+pub fn manuscript_wants_locus_store_on_complete(manuscript: &ManuscriptContext) -> bool {
+    manuscript.locus_session_id.is_some()
+        && manuscript
+            .delivery_on_complete
+            .as_deref()
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "locus" | "store" | "locus_store"
+                )
+            })
+            .unwrap_or(false)
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +377,10 @@ pub fn build_manuscript_context(id: &str) -> Result<ManuscriptContext> {
         max_tool_rounds: file.spec.worker.max_tool_rounds,
         tools_allow: file.spec.tools.allow.clone(),
         locus_session_id: file.spec.locus.session_id.clone(),
+        delivery_mode: file.spec.delivery.mode.clone(),
+        delivery_on_complete: file.spec.delivery.on_complete.clone(),
+        schedule_cron: file.spec.schedule.cron.clone(),
+        schedule_execution_mode: file.spec.schedule.execution_mode.clone(),
         source_path: path,
     })
 }
@@ -563,7 +663,73 @@ spec:
             max_tool_rounds: file.spec.worker.max_tool_rounds,
             tools_allow: file.spec.tools.allow.clone(),
             locus_session_id: file.spec.locus.session_id.clone(),
+            delivery_mode: file.spec.delivery.mode.clone(),
+            delivery_on_complete: file.spec.delivery.on_complete.clone(),
+            schedule_cron: file.spec.schedule.cron.clone(),
+            schedule_execution_mode: file.spec.schedule.execution_mode.clone(),
             source_path: path.to_path_buf(),
         })
+    }
+
+    #[test]
+    fn scheduled_lane_requires_tools_allow_and_intersects_universe() {
+        let manuscript = ManuscriptContext {
+            id: "morning-brief".to_string(),
+            name: "Morning Brief".to_string(),
+            description: None,
+            display_name: None,
+            voice_appendix: None,
+            system_appendix: None,
+            task_template: Some("Produce today's brief.".to_string()),
+            pinned_preferences: Vec::new(),
+            pinned_contact_ids: Vec::new(),
+            recall_hints: Vec::new(),
+            worker_intent: Some("research".to_string()),
+            max_tool_rounds: None,
+            tools_allow: vec![
+                "cognition_identity_recall".to_string(),
+                "cognition_memory_context".to_string(),
+                "cognition_spawn_turn_worker".to_string(),
+            ],
+            locus_session_id: None,
+            delivery_mode: None,
+            delivery_on_complete: None,
+            schedule_cron: None,
+            schedule_execution_mode: None,
+            source_path: PathBuf::from("morning-brief.yaml"),
+        };
+
+        validate_manuscript_for_scheduled_lane(&manuscript).expect("valid allowlist");
+        let allow = scheduled_tool_allowlist_for_manuscript(&manuscript);
+        assert!(allow.contains("cognition_identity_recall"));
+        assert!(allow.contains("cognition_memory_context"));
+        assert!(!allow.contains("cognition_spawn_turn_worker"));
+        assert!(!allow.contains("cognition_identity_remember"));
+    }
+
+    #[test]
+    fn scheduled_lane_rejects_empty_tools_allow() {
+        let manuscript = ManuscriptContext {
+            id: "empty".to_string(),
+            name: "Empty".to_string(),
+            description: None,
+            display_name: None,
+            voice_appendix: None,
+            system_appendix: None,
+            task_template: None,
+            pinned_preferences: Vec::new(),
+            pinned_contact_ids: Vec::new(),
+            recall_hints: Vec::new(),
+            worker_intent: None,
+            max_tool_rounds: None,
+            tools_allow: Vec::new(),
+            locus_session_id: None,
+            delivery_mode: None,
+            delivery_on_complete: None,
+            schedule_cron: None,
+            schedule_execution_mode: None,
+            source_path: PathBuf::from("empty.yaml"),
+        };
+        assert!(validate_manuscript_for_scheduled_lane(&manuscript).is_err());
     }
 }

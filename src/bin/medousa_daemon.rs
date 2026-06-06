@@ -1147,15 +1147,53 @@ async fn register_recurring_prompt(
     State(state): State<AppState>,
     Json(request): Json<RegisterRecurringPromptRequest>,
 ) -> Result<Json<RegisterRecurringResponse>, (StatusCode, String)> {
-    if request.prompt.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
-    }
-    if request.cron_expr.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "cron_expr is required".to_string()));
+    let manuscript_id = request
+        .manuscript_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let manuscript_ctx = if let Some(id) = manuscript_id.as_deref() {
+        Some(
+            medousa::identity_manuscript::build_manuscript_context(id).map_err(|err| {
+                (StatusCode::BAD_REQUEST, err.to_string())
+            })?,
+        )
+    } else {
+        None
+    };
+    if let Some(ctx) = manuscript_ctx.as_ref() {
+        medousa::identity_manuscript::validate_manuscript_for_scheduled_lane(ctx).map_err(
+            |err| (StatusCode::BAD_REQUEST, err.to_string()),
+        )?;
     }
 
+    let prompt = if let Some(ctx) = manuscript_ctx.as_ref() {
+        medousa::identity_manuscript::render_manuscript_task_prompt(ctx, Some(&request.prompt))
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+    } else if request.prompt.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
+    } else {
+        request.prompt.trim().to_string()
+    };
+
+    let cron_expr = if request.cron_expr.trim().is_empty() {
+        manuscript_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.schedule_cron.clone())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "cron_expr is required (or provide manuscript spec.schedule.cron)".to_string(),
+                )
+            })?
+    } else {
+        request.cron_expr.trim().to_string()
+    };
+
     let timezone = request.timezone.as_deref().unwrap_or("UTC");
-    medousa::recurring_delivery::validate_recurring_cron(&request.cron_expr, timezone)
+    medousa::recurring_delivery::validate_recurring_cron(&cron_expr, timezone)
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     enforce_lane_safety(
@@ -1178,14 +1216,34 @@ async fn register_recurring_prompt(
     let execution_mode = request
         .execution_mode
         .as_deref()
-        .unwrap_or("prompt")
+        .or_else(|| {
+            manuscript_ctx
+                .as_ref()
+                .and_then(|ctx| ctx.schedule_execution_mode.as_deref())
+        })
+        .unwrap_or(if manuscript_ctx.is_some() {
+            "agent_turn"
+        } else {
+            "prompt"
+        })
         .trim()
         .to_ascii_lowercase();
 
+    let scheduled_tool_allowlist = manuscript_ctx
+        .as_ref()
+        .map(|ctx| {
+            medousa::identity_manuscript::scheduled_tool_allowlist_for_manuscript(ctx)
+                .into_iter()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let max_tool_rounds = manuscript_ctx
+        .as_ref()
+        .and_then(|ctx| ctx.max_tool_rounds);
+
     let (job_type, payload_template_ref) = match execution_mode.as_str() {
         "prompt" => {
-            let compiled_prompt =
-                compile_lane_prompt(EngineExecutionLane::Scheduled, &request.prompt);
+            let compiled_prompt = compile_lane_prompt(EngineExecutionLane::Scheduled, &prompt);
             let prompt_payload = PromptJobPayload {
                 user_prompt: compiled_prompt,
                 system_prompt: request.system_prompt.clone(),
@@ -1213,13 +1271,16 @@ async fn register_recurring_prompt(
                     .filter(|value| !value.is_empty()),
             );
             let agent_payload = medousa::recurring_agent_turn::build_recurring_agent_turn_payload(
-                &request.prompt,
+                &prompt,
                 &fallback_session_id,
                 request.system_prompt.clone(),
                 request.policy_profile.clone(),
                 request.model_hint.clone(),
                 Some(provider),
                 Some(model),
+                manuscript_id.clone(),
+                scheduled_tool_allowlist,
+                max_tool_rounds,
             );
             (
                 medousa::recurring_agent_turn::RECURRING_AGENT_TURN_JOB_TYPE.to_string(),
@@ -1243,7 +1304,7 @@ async fn register_recurring_prompt(
         queue: queue.clone(),
         job_type,
         payload_template_ref,
-        cron_expr: request.cron_expr.clone(),
+        cron_expr: cron_expr.clone(),
         timezone: timezone.clone(),
         jitter_seconds: request.jitter_seconds.unwrap_or(0),
         enabled: request.enabled.unwrap_or(true),

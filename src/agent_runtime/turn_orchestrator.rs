@@ -234,6 +234,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub final_route: Option<&'a StageRoute>,
     pub response_depth_mode: &'a str,
     pub turn_id: u64,
+    pub scheduled_tool_allowlist: Option<std::collections::HashSet<String>>,
 }
 
 pub struct AssembledLocalTurn {
@@ -315,10 +316,11 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
         append_tool_loop_policy(&params.resolved_prompt, activation.max_tool_rounds)
     };
 
-    let pipeline_selection = turn_services::select_pipeline_for_turn(
+    let pipeline_selection = turn_services::select_pipeline_for_turn_with_allowlist(
         params.tui_rt,
         params.final_route,
         params.settings,
+        params.scheduled_tool_allowlist.clone(),
     );
 
     AssembledLocalTurn {
