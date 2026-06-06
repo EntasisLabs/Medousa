@@ -277,6 +277,7 @@ pub(crate) async fn start_prompt_run(
         response_depth_mode: &state.response_depth_mode,
         surface: Some(&tui_surface),
         tui_rt,
+        manuscript_id: None,
     })
     .await;
 

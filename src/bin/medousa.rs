@@ -63,6 +63,9 @@ fn main() -> Result<()> {
         "whatsapp" => run_whatsapp(&args[1..]),
         "doctor" => run_doctor(&args[1..]),
         "identity-export" => run_identity_export(&args[1..]),
+        "identity-remember" => run_identity_remember(&args[1..]),
+        "manuscript-list" => run_manuscript_list(),
+        "manuscript-validate" => run_manuscript_validate(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -1420,7 +1423,126 @@ fn run_identity_export(args: &[String]) -> Result<()> {
     println!("identity markdown exported to {}", written.display());
     println!("  SOUL.md");
     println!("  USER.md");
+    println!("  PEOPLE.md");
     println!("  IDENTITY.md");
+    Ok(())
+}
+
+fn run_identity_remember(args: &[String]) -> Result<()> {
+    let kind = find_arg_value(args, "--kind")
+        .ok_or_else(|| anyhow!("missing --kind preference|person|note"))?;
+    let subject = find_arg_value(args, "--subject")
+        .ok_or_else(|| anyhow!("missing --subject"))?;
+    let statement = find_arg_value(args, "--statement")
+        .ok_or_else(|| anyhow!("missing --statement"))?;
+    let source_raw = find_arg_value(args, "--source").unwrap_or("user_direct");
+    let user_id = find_arg_value(args, "--user-id")
+        .map(str::to_string)
+        .unwrap_or_else(|| medousa::identity_memory::resolve_identity_user_id(None));
+
+    let store = medousa::identity_memory::build_seeded_medousa_identity_store()
+        .context("build identity memory store")?;
+    let writer = medousa::cognitive_identity_writer::CognitiveIdentityWriter::new(store, None);
+    let source = medousa::identity_write_policy::parse_update_source(Some(source_raw))
+        .map_err(anyhow::Error::msg)?;
+
+    let rt = tokio::runtime::Runtime::new().context("start tokio runtime")?;
+    let result = rt.block_on(async {
+        match kind {
+            "preference" => {
+                writer
+                    .remember_preference(
+                        &user_id,
+                        subject,
+                        serde_json::Value::String(statement.to_string()),
+                        source,
+                        1.0,
+                        "cli identity-remember",
+                    )
+                    .await
+            }
+            "person" => {
+                let attrs = find_arg_value(args, "--attributes")
+                    .map(|raw| {
+                        raw.split(',')
+                            .map(str::trim)
+                            .filter(|segment| !segment.is_empty())
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                writer
+                    .remember_contact(
+                        &user_id,
+                        subject,
+                        statement,
+                        &attrs,
+                        &[],
+                        source,
+                        1.0,
+                        "cli identity-remember",
+                    )
+                    .await
+            }
+            "note" => {
+                writer
+                    .remember_note(&user_id, subject, statement, source, 1.0, "cli identity-remember")
+                    .await
+            }
+            other => Err(stasis::domain::errors::StasisError::PortFailure(format!(
+                "unsupported --kind '{other}'"
+            ))),
+        }
+    })?;
+
+    println!(
+        "identity remember kind={kind} subject={subject} committed={} requires_confirmation={} proposals={}",
+        result.committed,
+        result.requires_confirmation,
+        result.proposal_ids.len()
+    );
+    if let Some(preview) = result.digest_preview.as_deref() {
+        println!("digest_preview:\n{preview}");
+    }
+    Ok(())
+}
+
+fn run_manuscript_list() -> Result<()> {
+    let entries = medousa::identity_manuscript::list_manuscripts()?;
+    if entries.is_empty() {
+        println!("no manuscripts found");
+        println!("  project: {}", medousa::identity_manuscript::project_manuscripts_dir().display());
+        println!("  user: {}", medousa::identity_manuscript::user_manuscripts_dir().display());
+        return Ok(());
+    }
+    for entry in entries {
+        println!(
+            "{} ({}) scope={:?} path={}",
+            entry.id,
+            entry.name,
+            entry.scope,
+            entry.path.display()
+        );
+        if let Some(description) = entry.description.as_deref() {
+            println!("  {description}");
+        }
+    }
+    Ok(())
+}
+
+fn run_manuscript_validate(args: &[String]) -> Result<()> {
+    let id = args
+        .first()
+        .map(String::as_str)
+        .ok_or_else(|| anyhow!("usage: medousa manuscript-validate <id>"))?;
+    let (file, path) = medousa::identity_manuscript::load_manuscript(id)?;
+    medousa::identity_manuscript::validate_manuscript(&file, &path)?;
+    let context = medousa::identity_manuscript::build_manuscript_context(id)?;
+    println!("manuscript valid id={} name={}", context.id, context.name);
+    println!("source={}", context.source_path.display());
+    if let Some(intent) = context.worker_intent.as_deref() {
+        println!("worker_intent={intent}");
+    }
     Ok(())
 }
 
@@ -2364,6 +2486,9 @@ fn print_help() {
     println!("    WhatsApp uses a local deliver endpoint; session persists in ~/.local/share/medousa/whatsapp/session.db by default.");
     println!("  medousa doctor");
     println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
+    println!("  medousa identity-remember --kind <preference|person|note> --subject <key|name> --statement <text> [--source user_direct] [--attributes a,b]");
+    println!("  medousa manuscript-list");
+    println!("  medousa manuscript-validate <id>");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

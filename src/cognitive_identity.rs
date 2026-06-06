@@ -72,9 +72,11 @@ pub struct DigestCompileStats {
     pub omitted_people: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RankedDigest {
     pub text: String,
+    pub preference_lines: Vec<String>,
+    pub people_lines: Vec<String>,
     pub stats: DigestCompileStats,
 }
 
@@ -181,7 +183,7 @@ pub fn compile_relational_memory_digest_with_options(
     if let Some(err) = &snapshot.error {
         return RankedDigest {
             text: format!("[MEDOUSA_RELATIONAL_MEMORY]\nstatus=error\nerror={err}"),
-            stats: DigestCompileStats::default(),
+            ..RankedDigest::default()
         };
     }
 
@@ -206,6 +208,7 @@ pub fn compile_relational_memory_digest_with_options(
                 omitted_people: total_people,
                 ..DigestCompileStats::default()
             },
+            ..RankedDigest::default()
         };
     }
 
@@ -228,7 +231,17 @@ pub fn compile_relational_memory_digest_with_options(
                 .filter(|line| line.kind == DigestLineKind::Person)
                 .count();
             return RankedDigest {
-                text: body,
+                text: body.clone(),
+                preference_lines: lines
+                    .iter()
+                    .filter(|line| line.kind == DigestLineKind::Preference)
+                    .map(|line| line.text.clone())
+                    .collect(),
+                people_lines: lines
+                    .iter()
+                    .filter(|line| line.kind == DigestLineKind::Person)
+                    .map(|line| line.text.clone())
+                    .collect(),
                 stats: DigestCompileStats {
                     included_preferences,
                     included_people,
@@ -261,6 +274,7 @@ pub fn compile_relational_memory_digest_with_options(
             omitted_people: total_people,
             ..DigestCompileStats::default()
         },
+        ..RankedDigest::default()
     }
 }
 

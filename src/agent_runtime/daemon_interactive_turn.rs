@@ -317,6 +317,7 @@ async fn run_agent_turn_inner(
         response_depth_mode: &request.response_depth_mode,
         surface: request.surface.as_ref(),
         tui_rt: agent_rt,
+        manuscript_id: None,
     })
     .await;
 

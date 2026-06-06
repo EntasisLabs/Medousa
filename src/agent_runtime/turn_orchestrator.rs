@@ -26,7 +26,8 @@ use super::continuation::{
 };
 use super::prompt_prep::{
     CheapRecallProbe, IdentityContextProbe, append_identity_context_hint,
-    append_memory_recall_hint, cheap_memory_recall_probe, compile_interactive_context_prompt,
+    append_manuscript_hint, append_memory_recall_hint, cheap_memory_recall_probe,
+    compile_interactive_context_prompt,
     channel_policy_probe, derive_recall_readiness, identity_context_probe,
     resolve_prompt_with_context_pack,
     truncate_text_for_budget, verifier_policy_from_settings_and_route, MAX_REQUEST_PROMPT_CHARS,
@@ -108,6 +109,7 @@ pub struct PrepareTurnPromptParams<'a> {
     pub response_depth_mode: &'a str,
     pub surface: Option<&'a TurnSurfaceContext>,
     pub tui_rt: &'a TuiRuntime,
+    pub manuscript_id: Option<&'a str>,
 }
 
 pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> PreparedTurnPrompt {
@@ -122,10 +124,16 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
 
     let recall_probe =
         cheap_memory_recall_probe(params.tui_rt, params.session_id, params.prompt).await;
+    let manuscript_ctx = params
+        .manuscript_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|id| crate::identity_manuscript::build_manuscript_context(id).ok());
     let identity_probe = identity_context_probe(
         params.tui_rt,
         params.final_route.map(|route| route.policy_profile.as_str()),
         Some(params.prompt),
+        manuscript_ctx.as_ref(),
     )
     .await;
     let channel_policy = channel_policy_probe(
@@ -135,6 +143,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     .await;
 
     resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
+    resolved_prompt = append_manuscript_hint(&resolved_prompt, manuscript_ctx.as_ref());
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
     let recall_readiness = derive_recall_readiness(
         verification_state,

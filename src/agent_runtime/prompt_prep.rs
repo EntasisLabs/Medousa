@@ -13,6 +13,9 @@ use crate::cognitive_identity::{
     compile_relational_memory_digest_with_options, load_cognitive_identity_snapshot,
     DEFAULT_RELATIONAL_DIGEST_BUDGET,
 };
+use crate::identity_manuscript::{
+    ManuscriptContext, digest_options_for_manuscript, format_manuscript_prompt_block,
+};
 use crate::identity_memory::{
     policy_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
     resolve_identity_user_id,
@@ -201,6 +204,7 @@ pub async fn identity_context_probe(
     tui_rt: &TuiRuntime,
     policy_profile: Option<&str>,
     query_hints: Option<&str>,
+    manuscript: Option<&ManuscriptContext>,
 ) -> IdentityContextProbe {
     let effective_policy_profile = policy_profile
         .map(str::trim)
@@ -215,8 +219,11 @@ pub async fn identity_context_probe(
         8,
     )
     .await;
-    let options = DigestCompileOptions::from_product_config(DEFAULT_RELATIONAL_DIGEST_BUDGET)
+    let mut options = DigestCompileOptions::from_product_config(DEFAULT_RELATIONAL_DIGEST_BUDGET)
         .with_query_hints(query_hints.unwrap_or_default());
+    if let Some(manuscript) = manuscript {
+        options = digest_options_for_manuscript(options, manuscript);
+    }
     let ranked = compile_relational_memory_digest_with_options(&snapshot, options);
     let diagnostics =
         cognitive_identity_diagnostics_with_stats(&snapshot, Some(&ranked.stats));
@@ -327,6 +334,16 @@ pub fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> Str
         truncate_text_for_budget(&fallback_reason, 200),
         keys,
         snippets_block,
+    )
+}
+
+pub fn append_manuscript_hint(prompt: &str, manuscript: Option<&ManuscriptContext>) -> String {
+    let Some(manuscript) = manuscript else {
+        return prompt.to_string();
+    };
+    format!(
+        "{prompt}\n\n{}",
+        truncate_text_for_budget(&format_manuscript_prompt_block(manuscript), 1_200)
     )
 }
 
@@ -575,7 +592,8 @@ mod tests {
 
     use super::{
         CheapRecallProbe, IdentityContextProbe, RecallSnippet, append_identity_context_hint,
-        append_memory_recall_hint, build_prompt_with_context_pack, compile_interactive_context_prompt,
+        append_manuscript_hint, append_memory_recall_hint, build_prompt_with_context_pack,
+        compile_interactive_context_prompt,
         derive_recall_readiness, verifier_policy_from_settings_and_route,
     };
     use crate::tui::settings::RuntimeSettings;
@@ -820,5 +838,30 @@ mod tests {
         assert!(hint.contains("[MEDOUSA_IDENTITY_CONTEXT]"));
         assert!(hint.contains("status=ready"));
         assert!(hint.contains("beverage=matcha"));
+    }
+
+    #[test]
+    fn manuscript_hint_includes_specialty_block() {
+        let manuscript = crate::identity_manuscript::ManuscriptContext {
+            id: "morning-brief".to_string(),
+            name: "Morning Brief".to_string(),
+            description: Some("Daily summary".to_string()),
+            display_name: None,
+            voice_appendix: Some("Concise chief-of-staff.".to_string()),
+            system_appendix: Some("Lead with overnight deltas.".to_string()),
+            task_template: None,
+            pinned_preferences: vec!["timezone".to_string()],
+            pinned_contact_ids: Vec::new(),
+            recall_hints: Vec::new(),
+            worker_intent: Some("research".to_string()),
+            max_tool_rounds: None,
+            tools_allow: Vec::new(),
+            locus_session_id: None,
+            source_path: std::path::PathBuf::from("morning-brief.yaml"),
+        };
+        let hint = append_manuscript_hint("Plan my day", Some(&manuscript));
+        assert!(hint.contains("[MEDOUSA_MANUSCRIPT]"));
+        assert!(hint.contains("morning-brief"));
+        assert!(hint.contains("chief-of-staff"));
     }
 }
