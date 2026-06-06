@@ -67,6 +67,7 @@ fn main() -> Result<()> {
         "manuscript-list" => run_manuscript_list(),
         "manuscript-validate" => run_manuscript_validate(&args[1..]),
         "manuscript-install" => run_manuscript_install(&args[1..]),
+        "skill-import" => run_skill_import(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -1568,6 +1569,76 @@ fn run_manuscript_validate(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn run_skill_import(args: &[String]) -> Result<()> {
+    let scope = if has_flag(args, "--project") {
+        medousa::identity_manuscript::ManuscriptScope::Project
+    } else {
+        medousa::identity_manuscript::ManuscriptScope::User
+    };
+    let force = has_flag(args, "--force");
+    let extends = if has_flag(args, "--no-extends") {
+        None
+    } else {
+        Some(
+            find_arg_value(args, "--extends")
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("base-researcher"),
+        )
+    };
+
+    let mut roots = Vec::new();
+    if has_flag(args, "--from-hermes") {
+        roots.extend(medousa::skill_import::preset_skill_roots(
+            medousa::skill_import::SkillImportPreset::Hermes,
+        ));
+    }
+    if has_flag(args, "--from-openclaw") {
+        roots.extend(medousa::skill_import::preset_skill_roots(
+            medousa::skill_import::SkillImportPreset::OpenClaw,
+        ));
+    }
+    if has_flag(args, "--from-cursor") {
+        roots.extend(medousa::skill_import::preset_skill_roots(
+            medousa::skill_import::SkillImportPreset::Cursor,
+        ));
+        let project_cursor = medousa::skill_import::project_cursor_skills_dir();
+        if project_cursor.is_dir() {
+            roots.push(project_cursor);
+        }
+    }
+
+    let results = if !roots.is_empty() {
+        medousa::skill_import::import_skills_from_roots(&roots, scope, force, extends)?
+    } else {
+        let source = args
+            .iter()
+            .find(|arg| !arg.starts_with("--") && !arg.starts_with('-'))
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| {
+                anyhow!(
+                    "usage: medousa skill-import <path> [--project] [--force] [--extends <id>|--no-extends]\n       medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]"
+                )
+            })?;
+        medousa::skill_import::import_skills_at_path(&source, scope, force, extends)?
+    };
+
+    if results.is_empty() {
+        println!("no skills imported");
+        return Ok(());
+    }
+
+    println!("imported {} skill(s) as specialties:", results.len());
+    for result in results {
+        println!(
+            "  {} ({}) -> {}",
+            result.id,
+            result.name,
+            result.yaml_path.display()
+        );
+    }
+    Ok(())
+}
+
 fn fetch_mcp_gateway_health(gateway_url: &str) -> Result<medousa::McpGatewayHealthResponse> {
     let gateway_url = gateway_url.trim_end_matches('/');
     let response = reqwest::blocking::Client::builder()
@@ -2512,6 +2583,8 @@ fn print_help() {
     println!("  medousa manuscript-list");
     println!("  medousa manuscript-validate <id>");
     println!("  medousa manuscript-install <path-to.yaml> [--project]");
+    println!("  medousa skill-import <path> [--project] [--force] [--extends <id>|--no-extends]");
+    println!("  medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");

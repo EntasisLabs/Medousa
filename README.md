@@ -31,7 +31,7 @@ These are the things Medousa does out of the box:
 |---|---|
 | Remember where you left off | Ask Medousa. It keeps your history — and who you are — across days. |
 | Stop re-introducing yourself | Tell it once. Your preferences, your people, your rhythms. It builds a picture of you that gets sharper over time. |
-| Wear a different hat on command | Switch to a **specialty** — morning brief, deep research, memory ritual — without rewriting the same instructions every morning. |
+| Wear a different hat on command | Switch to a **specialty** — or import your existing `SKILL.md` libraries from Cursor, Hermes, or OpenClaw. No rewrite required. |
 | Get answers you can trust | For live facts it goes out, gathers sources, and shows you the trail. No flat strings. |
 | Automate what actually matters | Schedule a check-in, a report, or a full working session. Medousa runs it while you sleep. The answer finds you. |
 | Hand off the heavy lifting | Send the big job to the background. One clear answer comes back — not a pile of half-finished threads. |
@@ -117,6 +117,8 @@ medousa identity-remember  Teach it a fact, from the terminal
 medousa manuscript-list    See your installed specialties
 medousa manuscript-validate <id>
 medousa manuscript-install <path> [--project]
+medousa skill-import <path> [--force]
+medousa skill-import --from-hermes|--from-openclaw|--from-cursor
 ```
 
 Run `medousa <command> --help` for the rest.
@@ -180,7 +182,33 @@ A **manuscript** is a specialty pack — morning brief, research deep-dive, memo
 
 Shipped with the repo: **morning-brief**. One command on Telegram. Your day, summarized.
 
-Power users can extend a base specialty, attach a longer prose file, and install copies under `~/.config/medousa/manuscripts/`. The machinery stays invisible. The experience doesn't.
+### Bring your skills with you
+
+You already did the work. Medousa doesn't make you start over.
+
+If you're coming from **Hermes**, **OpenClaw**, or **Cursor**, you already have skills — folders with a `SKILL.md` file and optional scripts, references, and templates. Same format. Same muscle memory. Medousa speaks it natively.
+
+One command imports a skill (or your whole library) as a Medousa specialty. Your `SKILL.md` stays the source of truth — scripts and reference files come along for the ride. Medousa wraps it with scheduling, delivery, memory, and tool policy when you want more than markdown alone.
+
+```bash
+# One skill folder or SKILL.md file
+medousa skill-import ~/.hermes/skills/research/web-research
+
+# Your whole Hermes library
+medousa skill-import --from-hermes
+
+# OpenClaw + .agents skills
+medousa skill-import --from-openclaw
+
+# Cursor personal skills + this project's .cursor/skills
+medousa skill-import --from-cursor
+```
+
+Imported specialties land in `~/.config/medousa/manuscripts/` — a small YAML stub plus your skill folder. List them with `medousa manuscript-list`. Run one with `manuscript_id` on a turn or worker, same as anything built in-house.
+
+Native YAML manuscripts and imported skills coexist. Write new specialties in YAML when you want schedules, delivery, and tool boundaries baked in. Keep authoring `SKILL.md` when that's how you think. Medousa handles both — one runtime, one catalog, zero re-explaining yourself.
+
+Power users can extend a base specialty (`--extends base-researcher` is the default), attach longer prose, and tune tool allowlists after import. The machinery stays invisible. The experience doesn't.
 
 
 ## Where everything lives
@@ -196,7 +224,7 @@ Your data stays on your machine:
 | Keys and tokens | `~/.local/share/medousa/secrets/` |
 | Tool & service bindings | `~/.config/medousa/capabilities.toml` |
 | Connected app servers | `~/.config/medousa/mcp-gateway.toml` |
-| Your specialties | `~/.config/medousa/manuscripts/` |
+| Your specialties (YAML + imported skills) | `~/.config/medousa/manuscripts/` |
 | Logs | `~/.local/share/medousa/logs/` |
 
 **Settings** (`product_config.json`) — who can message you on each channel, heartbeat rhythms, how hard the engine works. Written by setup; yours to tune.
