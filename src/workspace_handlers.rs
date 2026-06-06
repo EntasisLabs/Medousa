@@ -105,7 +105,17 @@ pub async fn link_workspace_card_vault(
     Path(card_id): Path<String>,
     Json(request): Json<WorkspaceLinkVaultRequest>,
 ) -> Result<Json<WorkspaceCardActionResponse>, (StatusCode, String)> {
-    let _ = &state;
+    match WorkspaceService::get_card_detail(state.composition.clone(), &card_id).await {
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                format!("card not found: {card_id}"),
+            ));
+        }
+        Err(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+        Ok(Some(_)) => {}
+    }
+
     link_vault_card(&card_id, &request.vault_path)
         .map(Json)
         .map_err(map_card_action_error)

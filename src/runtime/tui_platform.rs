@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use crate::artifact_store;
 use crate::events::TuiEvent;
 use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
+use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::runtime::stasis_wire::LocalStasisWireConfig;
 use crate::runtime::stasis_wire::build_local_stasis_composition;
 use crate::session_meta_store;
@@ -138,6 +139,9 @@ async fn build_tui_local_platform(
     ensure_stasis_runtime_schema(&composition)
         .await
         .context("failed to ensure Stasis SurrealDB runtime tables")?;
+    ensure_vault_surreal_schema(&composition)
+        .await
+        .context("failed to ensure vault SurrealDB tables")?;
     init_local_platform_stores(&composition).await;
     assemble_tui_agent(composition, memory, config, event_tx).await
 }

@@ -3,6 +3,7 @@ pub mod memory_bundle;
 pub mod platform;
 pub mod stasis_otel;
 pub mod stasis_surreal_schema;
+pub mod vault_surreal_schema;
 pub mod stasis_wire;
 pub mod surreal_startup;
 pub mod tui_platform;

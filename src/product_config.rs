@@ -25,6 +25,8 @@ pub struct ProductConfig {
     #[serde(default)]
     pub identity: IdentityProductConfig,
     #[serde(default)]
+    pub vault: VaultProductConfig,
+    #[serde(default)]
     pub surreal: SurrealProductConfig,
 }
 
@@ -226,6 +228,20 @@ fn default_digest_pinned_preferences() -> Vec<String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VaultProductConfig {
+    #[serde(default)]
+    pub job_success_footer_enabled: bool,
+}
+
+impl Default for VaultProductConfig {
+    fn default() -> Self {
+        Self {
+            job_success_footer_enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TuiProductConfig {
     #[serde(default = "default_response_depth")]
     pub response_depth_mode: String,
@@ -242,6 +258,7 @@ impl Default for ProductConfig {
             tui: TuiProductConfig::default(),
             runtime: RuntimeProductConfig::default(),
             identity: IdentityProductConfig::default(),
+            vault: VaultProductConfig::default(),
             surreal: SurrealProductConfig::default(),
         }
     }

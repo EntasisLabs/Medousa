@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::events::TuiEvent;
 use crate::runtime::stasis_surreal_schema::ensure_stasis_runtime_schema;
+use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::runtime::stasis_wire::{DaemonStasisWireConfig, build_daemon_stasis_composition};
 use crate::artifact_store;
 use crate::channel_session_store;
@@ -117,6 +118,9 @@ async fn build_platform_inner(
     ensure_stasis_runtime_schema(&composition)
         .await
         .context("failed to ensure Stasis SurrealDB runtime tables")?;
+    ensure_vault_surreal_schema(&composition)
+        .await
+        .context("failed to ensure vault SurrealDB tables")?;
 
     eprintln!("medousa-daemon: initializing session and delivery stores…");
     session_store::init_session_store_with_runtime(&composition).await;

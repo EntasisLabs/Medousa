@@ -1,10 +1,13 @@
 //! Vault note metadata extraction.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::daemon_api::VaultNote;
+use crate::vault::links::{merge_tags, parse_inline_tags, parse_raw_wikilinks, resolve_wikilink_target};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -108,39 +111,21 @@ pub fn parse_frontmatter_tags(frontmatter: &str) -> Vec<String> {
     tags
 }
 
-pub fn parse_wikilinks(body: &str) -> Vec<String> {
-    let mut links = Vec::new();
-    let bytes = body.as_bytes();
-    let mut index = 0usize;
-    while index + 4 < bytes.len() {
-        if bytes[index] == b'[' && bytes[index + 1] == b'[' {
-            let start = index + 2;
-            let mut end = start;
-            while end + 1 < bytes.len() {
-                if bytes[end] == b']' && bytes[end + 1] == b']' {
-                    break;
-                }
-                end += 1;
-            }
-            if end + 1 < bytes.len() && bytes[end] == b']' && bytes[end + 1] == b']' {
-                let raw = body[start..end].trim();
-                if !raw.is_empty() && !raw.contains('|') {
-                    if let Ok(path) = crate::vault::path::normalize_vault_path(&format!(
-                        "{}.md",
-                        raw.trim_end_matches(".md")
-                    )) {
-                        if !links.iter().any(|existing| existing == &path) {
-                            links.push(path);
-                        }
-                    }
-                }
-                index = end + 2;
-                continue;
+pub fn resolve_wikilinks_for_body(
+    path: &str,
+    body: &str,
+    known_paths: &HashSet<String>,
+    entries: &[VaultIndexEntry],
+) -> Vec<String> {
+    let mut resolved = Vec::new();
+    for raw in parse_raw_wikilinks(body) {
+        if let Some(target) = resolve_wikilink_target(&raw, path, known_paths, entries) {
+            if !resolved.iter().any(|existing| existing == &target) {
+                resolved.push(target);
             }
         }
-        index += 1;
     }
-    links
+    resolved
 }
 
 pub fn build_index_entry(
@@ -149,11 +134,14 @@ pub fn build_index_entry(
     created_at: DateTime<Utc>,
     modified_at: DateTime<Utc>,
     source: VaultNoteSource,
+    known_paths: &HashSet<String>,
+    entries: &[VaultIndexEntry],
 ) -> VaultIndexEntry {
     let (_content, frontmatter) = strip_frontmatter(body);
-    let tags = frontmatter
+    let frontmatter_tags = frontmatter
         .map(parse_frontmatter_tags)
         .unwrap_or_default();
+    let tags = merge_tags(frontmatter_tags, parse_inline_tags(body));
     VaultIndexEntry {
         path: path.to_string(),
         title: extract_title(body, path),
@@ -162,7 +150,7 @@ pub fn build_index_entry(
         modified_at_utc: modified_at,
         created_at_utc: created_at,
         tags,
-        wikilinks_out: parse_wikilinks(body),
+        wikilinks_out: resolve_wikilinks_for_body(path, body, known_paths, entries),
         source,
     }
 }
@@ -185,6 +173,20 @@ mod tests {
             parse_frontmatter_tags(fm.unwrap()),
             vec!["medousa".to_string(), "vault".to_string()]
         );
-        assert!(parse_wikilinks(body).iter().any(|link| link.contains("projects")));
+        let known = HashSet::from(["projects/plan.md".to_string()]);
+        let entries = vec![VaultIndexEntry {
+            path: "projects/plan.md".to_string(),
+            title: "Plan".to_string(),
+            byte_size: body.len(),
+            content_hash: content_hash(body),
+            modified_at_utc: Utc::now(),
+            created_at_utc: Utc::now(),
+            tags: vec![],
+            wikilinks_out: vec![],
+            source: VaultNoteSource::User,
+        }];
+        assert!(resolve_wikilinks_for_body("journal/note.md", body, &known, &entries)
+            .iter()
+            .any(|link| link.contains("projects")));
     }
 }

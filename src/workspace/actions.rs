@@ -24,6 +24,12 @@ pub enum CardActionError {
     Internal(String),
 }
 
+impl std::fmt::Display for CardActionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message())
+    }
+}
+
 impl CardActionError {
     pub fn message(&self) -> String {
         match self {
@@ -246,7 +252,13 @@ pub fn link_vault_card(
         ));
     }
 
-    let path = normalize_vault_path(vault_path)?;
+    let path = normalize_vault_path(vault_path)
+        .map_err(|err| CardActionError::NotActionable(err.to_string()))?;
+    if !crate::vault::store::vault_store().note_exists(&path) {
+        return Err(CardActionError::NotActionable(format!(
+            "vault note not found: {path}"
+        )));
+    }
     workspace_store().set_vault_association(card_id, path.clone());
 
     if let Some(event) = event_for_vault_link(card_id, &path) {
@@ -351,10 +363,17 @@ mod tests {
 
     #[test]
     fn link_vault_persists_association() {
+        let note_path = format!("journal/link-test-{}.md", uuid::Uuid::new_v4().simple());
+        let request = crate::daemon_api::VaultWriteRequest {
+            path: Some(note_path.clone()),
+            content: "# Link test\n".to_string(),
+        };
+        crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
+
         let card_id = format!("card-link-{}", uuid::Uuid::new_v4().simple());
-        let response = link_vault_card(&card_id, "journal/test-note.md").expect("link");
+        let response = link_vault_card(&card_id, &note_path).expect("link");
         assert!(response.ok);
         let assoc = workspace_store().associations(&card_id);
-        assert_eq!(assoc.vault_paths, vec!["journal/test-note.md".to_string()]);
+        assert_eq!(assoc.vault_paths, vec![note_path]);
     }
 }

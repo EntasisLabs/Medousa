@@ -600,12 +600,18 @@ Version header (optional): `Accept-Version: vault-v1` (`VAULT_API_VERSION` in `d
 
 ### V1 — Wikilinks + work card links
 
-- Parse `[[note]]`, `[[folder/note]]`, `#tags` in frontmatter on save.
-- Maintain backlink index in Surreal table `vault_note_link`.
-- `POST /v1/workspace/cards/{id}/link-vault` writes association row.
-- On job `Succeeded`, auto-append optional footer to linked vault note (config flag, default off).
+- Parse `[[note]]`, `[[folder/note]]`, `#tags` in frontmatter + inline `#tag` on save.
+- Maintain backlink index in `vault/links.jsonl` (+ Surreal `vault_note_link` schema bootstrap when Surreal runtime enabled).
+- `POST /v1/workspace/cards/{id}/link-vault` validates card + vault note exist, writes association row.
+- On job `Succeeded`, auto-append optional footer to linked vault notes when `product_config.vault.job_success_footer_enabled` (default off).
 
-**Stability gate V1:** `[[weekly-review]]` resolves; `WorkCardDetail.associations.vault_paths` populated (not list card); vault save emits `VaultNoteUpdated` feed event; CLI smoke passes.
+**Stability gate V1:**
+
+- [x] `[[weekly-review]]` resolves to `journal/weekly-review.md` (or same-folder / basename match)
+- [x] `WorkCardDetail.associations.vault_paths` populated via link-vault (detail only, not list card)
+- [x] Vault save emits `VaultNoteUpdated` feed event
+- [x] `scripts/smoke-home-api.sh` vault + workspace snapshot smoke
+- [ ] 2 weeks dogfood on wikilink resolution edge cases
 
 ---
 
@@ -862,3 +868,4 @@ Phase M0+ Tauri (only after both freeze gates)
 | 2026-05-30 | **W2 shipped:** `GET /v1/workspace/stream` SSE (`snapshot`, `card_upserted`, `card_removed`, `feed_appended`, `column_counts`, `heartbeat`); CLI `medousa workspace stream` |
 | 2026-05-30 | **W3 shipped:** `POST /v1/workspace/cards/{id}/cancel|retry|link-vault`; CLI `medousa workspace cancel|retry|link-vault`; API freeze doc (`workspace-v1`) |
 | 2026-05-30 | **V0 shipped:** Vault CRUD + ranked search + backlinks + cognition tools; CLI `medousa vault`; API freeze doc (`vault-v1`) |
+| 2026-05-30 | **V1 shipped:** Wikilink resolution + `links.jsonl` backlink index; inline `#tags`; link-vault validation; optional job-success footers; `smoke-home-api.sh` |

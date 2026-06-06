@@ -81,10 +81,52 @@ impl VaultService {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use super::*;
+
+    fn vault_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("vault test lock")
+    }
+
+    #[test]
+    fn wikilink_resolves_and_backlinks() {
+        let _guard = vault_test_lock();
+        let suffix = uuid::Uuid::new_v4().simple();
+        let weekly = format!("journal/weekly-review-{suffix}.md");
+        let daily = format!("journal/daily-{suffix}.md");
+        VaultService::write_note(
+            Some(&weekly),
+            &VaultWriteRequest {
+                path: Some(weekly.clone()),
+                content: "# Weekly Review\n".to_string(),
+            },
+            None,
+        )
+        .expect("weekly");
+        VaultService::write_note(
+            Some(&daily),
+            &VaultWriteRequest {
+                path: Some(daily.clone()),
+                content: format!("# Daily\n\nSee [[weekly-review-{suffix}]]\n"),
+            },
+            None,
+        )
+        .expect("daily");
+
+        let read = VaultService::get_note(&daily).expect("read daily");
+        assert!(read.note.wikilinks_out.iter().any(|path| path == &weekly));
+
+        let backlinks = VaultService::backlinks(&weekly).expect("backlinks");
+        assert!(backlinks.backlinks.iter().any(|path| path == &daily));
+    }
 
     #[test]
     fn round_trip_write_read_search_delete() {
+        let _guard = vault_test_lock();
         let path = format!(
             "journal/test-{}.md",
             uuid::Uuid::new_v4().simple()

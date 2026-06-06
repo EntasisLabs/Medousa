@@ -1,14 +1,16 @@
 //! Vault filesystem store + on-disk index.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 use anyhow::{Context, Result, bail};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
+
+use crate::vault::links::{VaultLinkIndex, load_link_index_from_disk, persist_link_index};
 use crate::vault::note::{VaultIndexEntry, VaultNoteSource, build_index_entry, content_hash};
 use crate::vault::path::{
     normalize_vault_path, project_vault_overlay_root, resolve_overlay_note_path,
@@ -16,6 +18,15 @@ use crate::vault::path::{
 };
 
 const INDEX_FILE: &str = "index.jsonl";
+const LINKS_FILE: &str = "links.jsonl";
+
+struct ScanDraft {
+    path: String,
+    body: String,
+    created_at: DateTime<Utc>,
+    modified_at: DateTime<Utc>,
+    source: VaultNoteSource,
+}
 
 static STORE: Lazy<VaultStore> = Lazy::new(VaultStore::new);
 
@@ -25,12 +36,14 @@ pub fn vault_store() -> &'static VaultStore {
 
 pub struct VaultStore {
     index: RwLock<HashMap<String, VaultIndexEntry>>,
+    link_index: RwLock<VaultLinkIndex>,
 }
 
 impl VaultStore {
     fn new() -> Self {
         let store = Self {
             index: RwLock::new(HashMap::new()),
+            link_index: RwLock::new(load_link_index_from_disk()),
         };
         store.reload_from_disk();
         store
@@ -76,51 +89,87 @@ impl VaultStore {
 
     pub fn refresh_from_disk(&self) -> Result<()> {
         self.reload_from_disk();
-        let mut discovered = HashMap::new();
+        let mut drafts = Vec::new();
 
-        self.scan_root(&user_vault_root(), VaultNoteSource::User, &mut discovered)?;
+        self.scan_root(&user_vault_root(), VaultNoteSource::User, &mut drafts)?;
         if let Some(overlay) = project_vault_overlay_root() {
             if overlay.is_dir() {
-                self.scan_root(&overlay, VaultNoteSource::ProjectOverlay, &mut discovered)?;
+                self.scan_root(&overlay, VaultNoteSource::ProjectOverlay, &mut drafts)?;
             }
         }
 
-        {
-            let mut index = self.index.write().expect("vault index");
-            for (path, entry) in discovered {
-                match index.get(&path) {
-                    Some(existing) if existing.source == VaultNoteSource::ProjectOverlay => {
-                        if entry.source == VaultNoteSource::User {
-                            index.insert(path, entry);
-                        }
-                    }
-                    Some(existing) if existing.content_hash != entry.content_hash => {
-                        let created = existing.created_at_utc;
-                        let mut merged = entry;
-                        merged.created_at_utc = created;
-                        index.insert(path, merged);
-                    }
-                    None => {
-                        index.insert(path, entry);
-                    }
-                    _ => {}
+        let mut by_path: HashMap<String, ScanDraft> = HashMap::new();
+        for draft in drafts {
+            match by_path.get(&draft.path) {
+                Some(existing) if existing.source == VaultNoteSource::User => continue,
+                _ => {
+                    by_path.insert(draft.path.clone(), draft);
                 }
             }
         }
+        let discovered = Self::finalize_entries(by_path.into_values().collect());
+        self.merge_discovered(discovered);
+        self.rebuild_link_index();
         self.persist_index();
         Ok(())
+    }
+
+    fn rebuild_link_index(&self) {
+        let entries: Vec<_> = self
+            .index
+            .read()
+            .expect("vault index")
+            .values()
+            .cloned()
+            .collect();
+        let links = VaultLinkIndex::rebuild(&entries);
+        let _ = persist_link_index(&links);
+        *self.link_index.write().expect("vault links") = links;
+    }
+
+    fn finalize_entries(drafts: Vec<ScanDraft>) -> HashMap<String, VaultIndexEntry> {
+        let known: HashSet<String> = drafts.iter().map(|draft| draft.path.clone()).collect();
+        let seed_entries: Vec<VaultIndexEntry> = drafts
+            .iter()
+            .map(|draft| VaultIndexEntry {
+                path: draft.path.clone(),
+                title: crate::vault::note::extract_title(&draft.body, &draft.path),
+                byte_size: draft.body.len(),
+                content_hash: content_hash(&draft.body),
+                modified_at_utc: draft.modified_at,
+                created_at_utc: draft.created_at,
+                tags: Vec::new(),
+                wikilinks_out: Vec::new(),
+                source: draft.source.clone(),
+            })
+            .collect();
+
+        let mut out = HashMap::new();
+        for draft in drafts {
+            let index_entry = build_index_entry(
+                &draft.path,
+                &draft.body,
+                draft.created_at,
+                draft.modified_at,
+                draft.source,
+                &known,
+                &seed_entries,
+            );
+            out.insert(draft.path, index_entry);
+        }
+        out
     }
 
     fn scan_root(
         &self,
         root: &Path,
         source: VaultNoteSource,
-        out: &mut HashMap<String, VaultIndexEntry>,
+        drafts: &mut Vec<ScanDraft>,
     ) -> Result<()> {
         if !root.is_dir() {
             return Ok(());
         }
-        self.scan_dir(root, root, source, out)
+        self.scan_dir(root, root, source, drafts)
     }
 
     fn scan_dir(
@@ -128,7 +177,7 @@ impl VaultStore {
         root: &Path,
         dir: &Path,
         source: VaultNoteSource,
-        out: &mut HashMap<String, VaultIndexEntry>,
+        drafts: &mut Vec<ScanDraft>,
     ) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
@@ -137,13 +186,14 @@ impl VaultStore {
                 if path.file_name().and_then(|name| name.to_str()) == Some(".trash") {
                     continue;
                 }
-                self.scan_dir(root, &path, source.clone(), out)?;
+                self.scan_dir(root, &path, source.clone(), drafts)?;
                 continue;
             }
             if !path.is_file() {
                 continue;
             }
-            if path.file_name().and_then(|name| name.to_str()) == Some(INDEX_FILE) {
+            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+            if file_name == INDEX_FILE || file_name == LINKS_FILE {
                 continue;
             }
             let relative = path
@@ -158,41 +208,41 @@ impl VaultStore {
             let body = fs::read_to_string(&path)
                 .with_context(|| format!("read vault note {}", path.display()))?;
             let metadata = fs::metadata(&path)?;
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| {
-                    chrono::DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0)
-                        .unwrap_or_else(Utc::now)
-                })
-                .unwrap_or_else(Utc::now);
-            let created = metadata
-                .created()
-                .ok()
-                .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| {
-                    chrono::DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0)
-                        .unwrap_or_else(Utc::now)
-                })
-                .unwrap_or_else(Utc::now);
+            let modified = Self::file_timestamp(metadata.modified());
+            let created = Self::file_timestamp(metadata.created());
 
-            let index_entry = build_index_entry(
-                &normalized,
-                &body,
-                created,
-                modified,
-                source.clone(),
-            );
-
-            match out.get(&normalized) {
-                Some(existing) if existing.source == VaultNoteSource::User => continue,
-                _ => {
-                    out.insert(normalized, index_entry);
-                }
-            }
+            drafts.push(ScanDraft {
+                path: normalized,
+                body,
+                created_at: created,
+                modified_at: modified,
+                source: source.clone(),
+            });
         }
         Ok(())
+    }
+
+    fn merge_discovered(&self, discovered: HashMap<String, VaultIndexEntry>) {
+        let mut index = self.index.write().expect("vault index");
+        for (path, entry) in discovered {
+            match index.get(&path) {
+                Some(existing) if existing.source == VaultNoteSource::ProjectOverlay => {
+                    if entry.source == VaultNoteSource::User {
+                        index.insert(path, entry);
+                    }
+                }
+                Some(existing) if existing.content_hash != entry.content_hash => {
+                    let created = existing.created_at_utc;
+                    let mut merged = entry;
+                    merged.created_at_utc = created;
+                    index.insert(path, merged);
+                }
+                None => {
+                    index.insert(path, entry);
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn list_entries(&self, prefix: Option<&str>, limit: usize) -> Vec<VaultIndexEntry> {
@@ -268,17 +318,35 @@ impl VaultStore {
             })
             .unwrap_or_else(Utc::now);
 
+        let known: HashSet<String> = self
+            .index
+            .read()
+            .expect("vault index")
+            .keys()
+            .cloned()
+            .chain(std::iter::once(normalized.clone()))
+            .collect();
+        let seed_entries: Vec<VaultIndexEntry> = self
+            .index
+            .read()
+            .expect("vault index")
+            .values()
+            .cloned()
+            .collect();
         let entry = build_index_entry(
             &normalized,
             content,
             created_at,
             modified_at,
             VaultNoteSource::User,
+            &known,
+            &seed_entries,
         );
         self.index
             .write()
             .expect("vault index")
             .insert(normalized.clone(), entry.clone());
+        self.rebuild_link_index();
         self.persist_index();
         Ok(entry)
     }
@@ -302,25 +370,41 @@ impl VaultStore {
             .write()
             .expect("vault index")
             .remove(&normalized);
+        self.rebuild_link_index();
         self.persist_index();
         Ok(())
     }
 
+    pub fn note_exists(&self, path: &str) -> bool {
+        let _ = self.refresh_from_disk();
+        normalize_vault_path(path)
+            .ok()
+            .and_then(|normalized| self.index.read().expect("vault index").get(&normalized).cloned())
+            .is_some()
+    }
+
     pub fn backlinks_for(&self, path: &str) -> Vec<String> {
         let _ = self.refresh_from_disk();
-        let normalized = normalize_vault_path(path).ok();
-        let Some(target) = normalized else {
-            return Vec::new();
+        let normalized = match normalize_vault_path(path) {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
         };
-        let index = self.index.read().expect("vault index");
-        let mut backlinks = Vec::new();
-        for entry in index.values() {
-            if entry.wikilinks_out.iter().any(|link| link == &target) {
-                backlinks.push(entry.path.clone());
-            }
-        }
-        backlinks.sort();
-        backlinks
+        self.link_index
+            .read()
+            .expect("vault links")
+            .backlinks_for(&normalized)
+    }
+
+    fn file_timestamp(
+        value: Result<std::time::SystemTime, std::io::Error>,
+    ) -> DateTime<Utc> {
+        value
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| {
+                DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, 0).unwrap_or_else(Utc::now)
+            })
+            .unwrap_or_else(Utc::now)
     }
 
     pub fn all_entries(&self) -> Vec<VaultIndexEntry> {

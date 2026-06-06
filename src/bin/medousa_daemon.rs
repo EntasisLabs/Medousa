@@ -2140,6 +2140,21 @@ async fn deliver_outbox_webhook(
                 return Ok(StatusCode::OK);
             }
 
+            let job_title = resolve_job_title_for_vault_footer(state.composition(), &payload.job_id)
+                .await
+                .unwrap_or_else(|| payload.job_id.clone());
+            let appended = medousa::vault::job_footer::maybe_append_job_success_footers(
+                &payload.job_id,
+                &job_title,
+                Utc::now(),
+            );
+            if appended > 0 {
+                eprintln!(
+                    "vault job_success_footer appended job_id={} notes={appended}",
+                    payload.job_id
+                );
+            }
+
             let Some(target) = target else {
                 eprintln!(
                     "deliver/outbox job_succeeded missing delivery target job_id={}",
@@ -2507,6 +2522,20 @@ fn job_result_from_agent_turn(job_id: &str, record: &AgentTurnJobRecord) -> JobR
         latest_execution_id: None,
         output_text: record.output_text.clone(),
     }
+}
+
+async fn resolve_job_title_for_vault_footer(
+    runtime: &RuntimeComposition,
+    job_id: &str,
+) -> Option<String> {
+    medousa::workspace::WorkspaceService::get_card_detail(
+        std::sync::Arc::new(runtime.clone()),
+        job_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .map(|detail| detail.card.title)
 }
 
 async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
