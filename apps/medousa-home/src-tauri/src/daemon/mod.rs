@@ -1,4 +1,5 @@
 pub mod catalog;
+pub mod runtime;
 pub mod session;
 pub mod sse;
 pub mod types;
@@ -168,18 +169,36 @@ pub async fn interactive_turn_send(
     state: State<'_, DaemonState>,
     session_id: String,
     prompt: String,
+    provider: Option<String>,
+    model: Option<String>,
+    response_depth_mode: Option<String>,
+    stage_routing: Option<StageRoutingMatrix>,
 ) -> Result<InteractiveTurnAccepted, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let (provider, model) = turn_defaults();
+    let (default_provider, default_model) = turn_defaults();
+    let provider = provider
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default_provider);
+    let model = model
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default_model);
+    let response_depth_mode = response_depth_mode
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "standard".to_string());
+    let stage_routing =
+        stage_routing.unwrap_or_else(|| StageRoutingMatrix::default_for(&provider, &model));
 
     let request = InteractiveTurnRequest {
         session_id,
         prompt,
         persist_user_turn: true,
-        response_depth_mode: "balanced".to_string(),
+        response_depth_mode,
         provider: provider.clone(),
         model: model.clone(),
-        stage_routing: StageRoutingMatrix::default_for(&provider, &model),
+        stage_routing,
         surface: Some(TurnSurfaceContext {
             channel_surface: Some("home".to_string()),
             channel_id: None,

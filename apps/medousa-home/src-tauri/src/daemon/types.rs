@@ -377,3 +377,94 @@ pub struct CapabilityListEntry {
 pub struct CapabilityListResponse {
     pub capabilities: Vec<CapabilityListEntry>,
 }
+
+// ── Runtime observability & controls ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonStatsResponse {
+    pub enqueued_jobs: usize,
+    pub running_jobs: usize,
+    pub succeeded_jobs: usize,
+    pub failed_jobs: usize,
+    pub dead_letter_jobs: usize,
+    pub pending_outbox_events: usize,
+    pub recurring_definitions: usize,
+    pub last_tick_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliveryHealthResponse {
+    pub endpoint_id: String,
+    pub endpoint_seeded: bool,
+    pub endpoint_target: String,
+    pub deliver_webhook_auth_configured: bool,
+    pub pending_job_deliveries: usize,
+    pub last_delivery_at_utc: Option<DateTime<Utc>>,
+    pub last_delivery_latency_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinuationStatusResponse {
+    pub pending_count: usize,
+    pub consumed_count: usize,
+    pub resumed_count: usize,
+    pub dead_letter_pending_count: usize,
+    pub total_count: usize,
+    pub last_resume_at_utc: Option<DateTime<Utc>>,
+    pub last_resume_child_job_id: Option<String>,
+    pub last_resume_turn_correlation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum RuntimeConfigCommandSpec {
+    Model { args: Vec<String> },
+    Depth { mode: Option<String> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfigCommandRequest {
+    pub current_provider: String,
+    pub current_model: String,
+    pub draft_provider: String,
+    pub draft_model: String,
+    pub current_response_depth_mode: String,
+    pub command: RuntimeConfigCommandSpec,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfigCommandResponse {
+    pub rendered_output: Option<String>,
+    pub next_draft_provider: String,
+    pub next_draft_model: String,
+    pub next_response_depth_mode: String,
+    pub should_apply_settings: bool,
+    pub should_persist_depth_defaults: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum StageRouteCommandSpec {
+    Routes { role: Option<String> },
+    Set {
+        role: String,
+        target: String,
+        policy_profile: Option<String>,
+        fallback_chain: Option<Vec<String>>,
+    },
+    Reset,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StageRouteCommandRequest {
+    pub stage_routing: StageRoutingMatrix,
+    pub provider: String,
+    pub model: String,
+    pub command: StageRouteCommandSpec,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StageRouteCommandResponse {
+    pub stage_routing: StageRoutingMatrix,
+    pub rendered_output: String,
+}

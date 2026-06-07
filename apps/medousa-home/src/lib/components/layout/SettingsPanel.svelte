@@ -6,19 +6,29 @@
     type DaemonHealth,
   } from "$lib/daemon";
   import { settings } from "$lib/stores/settings.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
+  import type { DepthMode } from "$lib/types/runtime";
 
   interface Props {
     visible: boolean;
     revision: number;
     health: DaemonHealth | null;
+    onOpenRuntime: () => void;
     onDaemonHealth: () => void | Promise<void>;
   }
 
-  let { visible, revision, health, onDaemonHealth }: Props = $props();
+  let { visible, revision, health, onOpenRuntime, onDaemonHealth }: Props = $props();
+
+  let draftProvider = $state(runtime.provider);
+  let draftModel = $state(runtime.model);
 
   $effect(() => {
     if (visible && !settings.daemonUrl) {
       void loadDaemonUrl();
+    }
+    if (visible) {
+      draftProvider = runtime.provider;
+      draftModel = runtime.model;
     }
   });
 
@@ -89,6 +99,73 @@
           </p>
         {/if}
       </div>
+    </section>
+
+    <section class="rounded-container-token border border-surface-500/20 bg-surface-900/50 p-4">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-surface-100">Runtime controls</h2>
+          <p class="mt-1 text-xs text-surface-400">
+            Model and depth for the next chat turn.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface shrink-0"
+          onclick={onOpenRuntime}
+        >
+          Open Runtime
+        </button>
+      </div>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <label class="block text-xs text-surface-400" for="settings-provider">
+          Provider
+        </label>
+        <label class="block text-xs text-surface-400" for="settings-model">
+          Model
+        </label>
+        <input
+          id="settings-provider"
+          class="input"
+          bind:value={draftProvider}
+          placeholder="ollama"
+        />
+        <input
+          id="settings-model"
+          class="input"
+          bind:value={draftModel}
+          placeholder="qwen2.5:7b"
+        />
+      </div>
+      <button
+        type="button"
+        class="btn variant-filled-primary mt-4"
+        disabled={runtime.savingControls || !draftProvider.trim() || !draftModel.trim()}
+        onclick={() => runtime.applyModel(draftProvider, draftModel)}
+      >
+        {runtime.savingControls ? "Applying…" : "Apply model"}
+      </button>
+      <div class="mt-4 flex flex-wrap gap-2">
+        {#each ["concise", "standard", "deep"] as mode (mode)}
+          <button
+            type="button"
+            class="rounded-container-token px-3 py-2 text-sm transition {runtime.depthMode ===
+            mode
+              ? 'bg-primary-500/20 font-medium text-primary-200'
+              : 'bg-surface-800 text-surface-300 hover:text-surface-100'}"
+            disabled={runtime.savingControls}
+            onclick={() => runtime.setDepthMode(mode as DepthMode)}
+          >
+            {mode}
+          </button>
+        {/each}
+      </div>
+      <p class="mt-3 text-xs text-surface-500">
+        Current {runtime.modelLabel()} · depth {runtime.depthMode}
+      </p>
+      {#if runtime.controlsMessage}
+        <p class="mt-2 text-xs text-surface-400">{runtime.controlsMessage}</p>
+      {/if}
     </section>
 
     <section class="rounded-container-token border border-surface-500/20 bg-surface-900/50 p-4">

@@ -3,6 +3,14 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   streaming?: boolean;
+  /** Latest daemon turn phase whisper (e.g. tool_loop, synthesis). */
+  phase?: string | null;
+  /** Human status line from stream event.message. */
+  statusLine?: string | null;
+  /** Tools invoked this turn (cumulative). */
+  tools?: string[];
+  /** Collapsed reasoning scratch from reasoning_delta. */
+  reasoning?: string | null;
 }
 
 export interface InteractiveTurnStreamEvent {

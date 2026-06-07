@@ -1,6 +1,7 @@
 <script lang="ts">
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import { sendInteractiveTurn, startInteractiveStream } from "$lib/daemon";
   import { columnLabel } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
@@ -32,7 +33,12 @@
     chat.beginUserMessage(prompt);
     onOpenChat();
     try {
-      const accepted = await sendInteractiveTurn(chat.sessionId, prompt);
+      const accepted = await sendInteractiveTurn(chat.sessionId, prompt, {
+        provider: runtime.provider,
+        model: runtime.model,
+        responseDepthMode: runtime.depthMode,
+        stageRouting: runtime.stageRouting,
+      });
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));

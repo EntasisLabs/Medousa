@@ -11,6 +11,14 @@ import type {
   SessionSummary,
 } from "$lib/types/session";
 import type {
+  ContinuationStatusResponse,
+  DaemonStatsResponse,
+  DeliveryHealthResponse,
+  RuntimeConfigCommandResponse,
+  StageRouteCommandResponse,
+  StageRoutingMatrix,
+} from "$lib/types/runtime";
+import type {
   VaultBacklinksResponse,
   VaultNoteContentResponse,
   VaultNotesListResponse,
@@ -79,13 +87,72 @@ export async function stopWorkspaceStream(): Promise<void> {
   return invoke("workspace_stream_stop");
 }
 
+export interface InteractiveTurnOptions {
+  provider?: string;
+  model?: string;
+  responseDepthMode?: string;
+  stageRouting?: StageRoutingMatrix;
+}
+
 export async function sendInteractiveTurn(
   sessionId: string,
   prompt: string,
+  options?: InteractiveTurnOptions,
 ): Promise<InteractiveTurnAccepted> {
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
     prompt,
+    provider: options?.provider,
+    model: options?.model,
+    responseDepthMode: options?.responseDepthMode,
+    stageRouting: options?.stageRouting,
+  });
+}
+
+export async function getRuntimeStats(): Promise<DaemonStatsResponse> {
+  return invoke<DaemonStatsResponse>("runtime_get_stats");
+}
+
+export async function getDeliveryStatus(): Promise<DeliveryHealthResponse> {
+  return invoke<DeliveryHealthResponse>("runtime_get_delivery_status");
+}
+
+export async function getContinuationStatus(): Promise<ContinuationStatusResponse> {
+  return invoke<ContinuationStatusResponse>("runtime_get_continuation_status");
+}
+
+export async function sendRuntimeConfigCommand(request: {
+  current_provider: string;
+  current_model: string;
+  draft_provider: string;
+  draft_model: string;
+  current_response_depth_mode: string;
+  command:
+    | { command: "model"; args: string[] }
+    | { command: "depth"; mode: string | null };
+}): Promise<RuntimeConfigCommandResponse> {
+  return invoke<RuntimeConfigCommandResponse>("runtime_config_command", {
+    request,
+  });
+}
+
+export async function sendStageRouteCommand(request: {
+  stage_routing: StageRoutingMatrix;
+  provider: string;
+  model: string;
+  command:
+    | { command: "routes"; role: string | null }
+    | {
+        command: "set";
+        role: string;
+        target: string;
+        policy_profile: string | null;
+        fallback_chain: string[] | null;
+      }
+    | { command: "reset" };
+}): Promise<StageRouteCommandResponse> {
+  return invoke<StageRouteCommandResponse>("runtime_stage_route_command", {
+    request,
   });
 }
 

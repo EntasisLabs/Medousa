@@ -4,4 +4,5 @@ export type Surface =
   | "library"
   | "skills"
   | "work"
+  | "runtime"
   | "settings";

@@ -112,7 +112,24 @@ export class ChatStore {
       content = event.final_text;
     }
 
-    const next = { ...current, content };
+    let reasoning = current.reasoning ?? "";
+    if (event.reasoning_delta) {
+      reasoning += event.reasoning_delta;
+    }
+
+    const tools = [...(current.tools ?? [])];
+    for (const name of event.tool_names ?? []) {
+      if (!tools.includes(name)) tools.push(name);
+    }
+
+    const next: ChatMessage = {
+      ...current,
+      content,
+      phase: event.phase || current.phase,
+      statusLine: event.message?.trim() || current.statusLine,
+      tools: tools.length > 0 ? tools : current.tools,
+      reasoning: reasoning || current.reasoning,
+    };
     this.messages = [
       ...this.messages.slice(0, idx),
       next,
@@ -129,7 +146,12 @@ export class ChatStore {
     if (!this.assistantId) return;
     const idx = this.messages.findIndex((m) => m.id === this.assistantId);
     if (idx >= 0) {
-      const next = { ...this.messages[idx], streaming: false };
+      const next = {
+        ...this.messages[idx],
+        streaming: false,
+        phase: null,
+        statusLine: null,
+      };
       this.messages = [
         ...this.messages.slice(0, idx),
         next,

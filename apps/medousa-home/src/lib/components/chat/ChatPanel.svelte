@@ -4,12 +4,14 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import {
     sendInteractiveTurn,
     startInteractiveStream,
     stopInteractiveStream,
   } from "$lib/daemon";
 
+  import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { isTauri, showChatPopout } from "$lib/window";
 
   interface Props {
@@ -39,7 +41,12 @@
 
     try {
       await stopInteractiveStream();
-      const accepted = await sendInteractiveTurn(chat.sessionId, prompt);
+      const accepted = await sendInteractiveTurn(chat.sessionId, prompt, {
+        provider: runtime.provider,
+        model: runtime.model,
+        responseDepthMode: runtime.depthMode,
+        stageRouting: runtime.stageRouting,
+      });
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
@@ -100,10 +107,42 @@
       >
         <p class="mb-1 text-xs capitalize tracking-wide text-surface-400">
           {message.role}
-          {#if message.streaming}
-            <span class="ml-2 animate-pulse">Thinking…</span>
+          {#if message.streaming && message.phase}
+            <span class="ml-2 text-primary-300">
+              {formatTurnPhase(message.phase)}
+            </span>
+          {:else if message.streaming}
+            <span class="ml-2 animate-pulse text-surface-500">Working…</span>
           {/if}
         </p>
+
+        {#if message.role === "assistant" && (message.tools?.length || message.statusLine || message.reasoning)}
+          <div class="mb-2 space-y-2">
+            {#if message.tools && message.tools.length > 0}
+              <div class="flex flex-wrap gap-1">
+                {#each message.tools as tool (tool)}
+                  <span class="badge variant-soft-primary text-[10px]">
+                    {formatToolName(tool)}
+                  </span>
+                {/each}
+              </div>
+            {/if}
+            {#if message.streaming && message.statusLine}
+              <p class="text-[11px] text-surface-500">{message.statusLine}</p>
+            {/if}
+            {#if message.reasoning?.trim()}
+              <details class="text-[11px] text-surface-500">
+                <summary class="cursor-pointer select-none text-surface-400 hover:text-surface-300">
+                  Reasoning
+                </summary>
+                <p class="mt-1 whitespace-pre-wrap leading-relaxed text-surface-400">
+                  {message.reasoning}
+                </p>
+              </details>
+            {/if}
+          </div>
+        {/if}
+
         {#if message.role === "assistant"}
           <MarkdownContent content={message.content || "…"} />
         {:else}

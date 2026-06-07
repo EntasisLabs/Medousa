@@ -7,6 +7,7 @@
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
   import HomeOverview from "$lib/components/layout/HomeOverview.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
+  import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -19,6 +20,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import {
     checkDaemonHealth,
@@ -51,6 +53,7 @@
 
       await stopWorkspaceStream();
       await startWorkspaceStream(workspace.revision || undefined);
+      void runtime.refresh();
       void chat.refreshSessions();
       if (chat.messages.length === 0) {
         void chat.switchSession(chat.sessionId);
@@ -146,11 +149,17 @@
             onOpenChat={() => (activeSurface = "chat")}
             onSelectCard={handleCardSelect}
           />
+        {:else if activeSurface === "runtime"}
+          <RuntimePanel
+            visible={true}
+            inMotionCount={workspace.inMotionCount()}
+          />
         {:else if activeSurface === "settings"}
           <SettingsPanel
             visible={true}
             revision={workspace.revision}
             health={daemonHealth}
+            onOpenRuntime={() => (activeSurface = "runtime")}
             onDaemonHealth={async () => {
               daemonHealth = await checkDaemonHealth();
             }}
@@ -200,6 +209,9 @@
         health={daemonHealth}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}
+        pendingDeliveries={runtime.delivery?.pending_job_deliveries ?? null}
+        lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
+        onOpenRuntime={() => (activeSurface = "runtime")}
       />
 
       {#if workspace.inMotionCount() > 0 || activeSurface === "work"}

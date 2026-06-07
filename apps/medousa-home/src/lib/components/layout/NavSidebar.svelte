@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    Activity,
     BookOpen,
     Home,
     LayoutGrid,
@@ -23,6 +24,7 @@
     { id: "library", label: "Library", icon: BookOpen },
     { id: "skills", label: "Skills", icon: Zap },
     { id: "work", label: "Work", icon: LayoutGrid },
+    { id: "runtime", label: "Runtime", icon: Activity },
   ];
 
   const iconProps = { size: 20, strokeWidth: 1.75 };

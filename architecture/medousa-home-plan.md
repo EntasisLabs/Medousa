@@ -709,9 +709,17 @@ See [medousa-home-m5-plan.md](medousa-home-m5-plan.md).
 - **M5b (P1):** Kanban visual discipline, Skills consumer cards, nav brand, icon chrome — shipped
 - **M5c (P2):** README screenshot, first-run blocked CTA
 
+### M6 — Main workspace / runtime parity (in progress)
+
+See [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md).
+
+- **M6a:** Turn awareness in chat (phase, tools, reasoning) — in progress
+- **M6b:** Runtime drawer (stats, delivery, model/depth controls)
+- **M6c–M6f:** Job drill-down, recurring, identity, TUI repositioning
+
 ### Deferred
 
-- TUI parity via workspace side panel (optional; lower priority than Tauri)
+- Full TUI feature parity without daemon API projections first
 
 ---
 
