@@ -552,6 +552,8 @@ pub struct JobResultResponse {
     pub latest_outcome: Option<String>,
     pub latest_execution_id: Option<String>,
     pub output_text: Option<String>,
+    #[serde(default)]
+    pub interim_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

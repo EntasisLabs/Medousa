@@ -6,6 +6,7 @@ export interface JobResultResponse {
   latest_outcome: string | null;
   latest_execution_id: string | null;
   output_text: string | null;
+  interim_text?: string | null;
 }
 
 export interface EnqueueResponse {

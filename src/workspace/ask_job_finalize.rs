@@ -56,13 +56,7 @@ pub async fn apply_ask_job_complete_actions(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        let excerpt = truncate(output, 1200);
-        let text = format!(
-            "✓ Ask completed · {}\n\n{}\n\n— {}",
-            truncate(&record.prompt, 120),
-            excerpt,
-            job_id
-        );
+        let text = compose_notify_text(&record, output);
         if let Some(target) = resolve_notify_target(channel) {
             channel_delivery::dispatch_channel_message(dispatch_client, &target, &text)
                 .await
@@ -92,20 +86,72 @@ pub async fn apply_ask_job_complete_actions(
     })
 }
 
-fn write_ask_result_to_journal(path: &str, record: &AskJobRecord, output: &str) -> Result<String> {
-    let normalized = path.trim().trim_start_matches('/');
-    if normalized.is_empty() || normalized.contains("..") {
-        bail!("invalid journal path");
-    }
-
+pub fn compose_ask_journal_body(record: &AskJobRecord, output: &str) -> String {
     let header = format!(
         "\n\n---\n## Ask · {}\n**Finished:** {}\n\n**Prompt:** {}\n\n",
         record.job_id,
         record.finished_at_utc.unwrap_or_else(Utc::now),
         record.prompt.trim()
     );
-    let body = format!("{header}{output}\n");
+    let interim = record
+        .interim_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let result = output.trim();
 
+    let mut sections = Vec::new();
+    if let Some(follow_up) = interim {
+        if !texts_equivalent(follow_up, result) {
+            sections.push(format!("**Follow-up:**\n{follow_up}\n"));
+        }
+    }
+    if result.is_empty() {
+        sections.push("**Result:**\n(no output captured)\n".to_string());
+    } else if sections.is_empty() {
+        sections.push(format!("{result}\n"));
+    } else {
+        sections.push(format!("**Result:**\n{result}\n"));
+    }
+
+    format!("{header}{}", sections.join("\n"))
+}
+
+fn compose_notify_text(record: &AskJobRecord, output: &str) -> String {
+    let interim = record
+        .interim_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let mut body = String::new();
+    if let Some(follow_up) = interim {
+        if !texts_equivalent(follow_up, output) {
+            body.push_str(&format!(
+                "Follow-up:\n{}\n\n",
+                truncate(follow_up, 600)
+            ));
+        }
+    }
+    body.push_str(&truncate(output, 1200));
+    format!(
+        "✓ Ask completed · {}\n\n{}\n\n— {}",
+        truncate(&record.prompt, 120),
+        body.trim(),
+        record.job_id
+    )
+}
+
+fn texts_equivalent(left: &str, right: &str) -> bool {
+    left.trim().eq_ignore_ascii_case(right.trim())
+}
+
+fn write_ask_result_to_journal(path: &str, record: &AskJobRecord, output: &str) -> Result<String> {
+    let normalized = path.trim().trim_start_matches('/');
+    if normalized.is_empty() || normalized.contains("..") {
+        bail!("invalid journal path");
+    }
+
+    let body = compose_ask_journal_body(record, output);
     let store = vault_store();
     if store.get_entry(normalized).is_some() {
         let existing = store.read_content(normalized)?;
@@ -172,4 +218,55 @@ fn truncate(value: &str, max: usize) -> String {
         end -= 1;
     }
     format!("{}…", &value[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::ask_job_store::AskJobStatus;
+
+    fn sample_record() -> AskJobRecord {
+        AskJobRecord {
+            job_id: "medousa-daemon-ask-1".to_string(),
+            prompt: "Research OpenClaw trends".to_string(),
+            status: AskJobStatus::Succeeded,
+            output_text: Some("Here is the full synthesized report.".to_string()),
+            interim_text: Some(
+                "On it — researching OpenClaw trends, give me a moment.".to_string(),
+            ),
+            error: None,
+            session_id: "sess-1".to_string(),
+            manuscript_id: None,
+            additional_manuscript_ids: None,
+            suggested_capability_ids: None,
+            model_hint: None,
+            created_at_utc: Utc::now(),
+            updated_at_utc: Utc::now(),
+            finished_at_utc: Some(Utc::now()),
+            archived: false,
+            journal_path: None,
+            notified_channel: None,
+        }
+    }
+
+    #[test]
+    fn journal_body_includes_follow_up_and_result() {
+        let body = compose_ask_journal_body(
+            &sample_record(),
+            "Here is the full synthesized report.",
+        );
+        assert!(body.contains("**Follow-up:**"));
+        assert!(body.contains("give me a moment"));
+        assert!(body.contains("**Result:**"));
+        assert!(body.contains("full synthesized report"));
+    }
+
+    #[test]
+    fn journal_body_omits_duplicate_follow_up_when_same_as_result() {
+        let mut record = sample_record();
+        record.interim_text = Some("Same answer".to_string());
+        let body = compose_ask_journal_body(&record, "Same answer");
+        assert!(!body.contains("**Follow-up:**"));
+        assert!(body.contains("Same answer"));
+    }
 }

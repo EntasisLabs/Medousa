@@ -419,10 +419,17 @@
             <p class="workshop-faint mt-2">Loading job output…</p>
           {:else if jobResultError}
             <p class="mt-2 text-xs text-warning-400">{jobResultError}</p>
-          {:else if jobResult?.output_text}
+          {:else if jobResult?.interim_text || jobResult?.output_text}
+            {#if jobResult.interim_text && jobResult.output_text && jobResult.interim_text.trim() !== jobResult.output_text.trim()}
+              <p class="workshop-faint mt-2 text-xs">Follow-up</p>
+              <pre
+                class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-surface-300"
+              >{jobResult.interim_text}</pre>
+              <p class="workshop-faint mt-3 text-xs">Result</p>
+            {/if}
             <pre
               class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-surface-100"
-            >{jobResult.output_text}</pre>
+            >{jobResult.output_text ?? jobResult.interim_text}</pre>
           {:else if jobResult}
             <p class="workshop-faint mt-2">
               No output yet

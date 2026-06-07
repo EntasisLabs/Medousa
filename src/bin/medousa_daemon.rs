@@ -991,6 +991,7 @@ async fn get_job_result(
         latest_outcome,
         latest_execution_id,
         output_text,
+        interim_text: None,
     }))
 }
 
@@ -1156,6 +1157,7 @@ async fn enqueue_ask(
             prompt: prompt.clone(),
             status: medousa::workspace::ask_job_store::AskJobStatus::Pending,
             output_text: None,
+            interim_text: None,
             error: None,
             session_id: session_id.clone(),
             manuscript_id: manuscript_id.clone(),
@@ -2778,6 +2780,7 @@ fn job_result_from_agent_turn(job_id: &str, record: &AgentTurnJobRecord) -> JobR
             .or_else(|| Some(format!("status={}", record.status))),
         latest_execution_id: None,
         output_text: record.output_text.clone(),
+        interim_text: None,
     }
 }
 
@@ -2809,6 +2812,7 @@ fn job_result_from_ask_job(
             .or_else(|| Some(format!("status={status}"))),
         latest_execution_id: None,
         output_text: record.output_text.clone(),
+        interim_text: record.interim_text.clone(),
     }
 }
 
@@ -3171,6 +3175,34 @@ impl AgentStreamSink for ApiAgentStreamSink {
     async fn content_chunk(&self, _turn_id: u64, _delta: String) {}
 
     async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
+
+    async fn agent_worker_ack(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        medousa::session::append_turn(
+            &self.session_id,
+            &medousa::session::ConversationTurn {
+                role: "assistant".to_string(),
+                content: text.clone(),
+                timestamp: Utc::now(),
+                tool_names: tool_names.clone(),
+                answer_state: None,
+            },
+        );
+
+        if medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
+            medousa::workspace::ask_job_store::ask_job_store()
+                .set_interim_text(&self.job_id, text);
+            return;
+        }
+
+        self.agent_turn_jobs.write().await.insert(
+            self.job_id.clone(),
+            AgentTurnJobRecord {
+                status: "running".to_string(),
+                output_text: None,
+                error: None,
+            },
+        );
+    }
 
     async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
         medousa::session::append_turn(

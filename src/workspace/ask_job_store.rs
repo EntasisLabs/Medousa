@@ -38,6 +38,9 @@ pub struct AskJobRecord {
     pub status: AskJobStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_text: Option<String>,
+    /// Short host follow-up while a background worker runs (non-terminal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interim_text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub session_id: String,
@@ -147,6 +150,7 @@ impl AskJobStore {
                 if let Some(entry) = map.get_mut(&job_id) {
                     entry.archived = true;
                     entry.output_text = None;
+                    entry.interim_text = None;
                     entry.updated_at_utc = Utc::now();
                 }
             }
@@ -156,6 +160,26 @@ impl AskJobStore {
     pub fn register_pending(&self, record: AskJobRecord) {
         let mut guard = self.records.lock().expect("ask job records");
         guard.insert(record.job_id.clone(), record);
+        drop(guard);
+        self.persist();
+    }
+
+    pub fn set_interim_text(&self, job_id: &str, interim_text: String) {
+        let mut guard = self.records.lock().expect("ask job records");
+        let Some(record) = guard.get_mut(job_id) else {
+            return;
+        };
+        if matches!(
+            record.status,
+            AskJobStatus::Succeeded | AskJobStatus::Failed | AskJobStatus::Canceled
+        ) {
+            return;
+        }
+        record.interim_text = Some(interim_text);
+        if record.status == AskJobStatus::Pending {
+            record.status = AskJobStatus::Running;
+        }
+        record.updated_at_utc = Utc::now();
         drop(guard);
         self.persist();
     }
@@ -213,6 +237,7 @@ impl AskJobStore {
         record.status = AskJobStatus::Pending;
         record.error = None;
         record.output_text = None;
+        record.interim_text = None;
         record.finished_at_utc = None;
         record.updated_at_utc = now;
         let snapshot = record.clone();
@@ -245,6 +270,7 @@ impl AskJobStore {
         record.updated_at_utc = now;
         if purge_body {
             record.output_text = None;
+            record.interim_text = None;
         }
         let snapshot = record.clone();
         drop(guard);
@@ -312,6 +338,7 @@ mod tests {
             prompt: "research openclaw".to_string(),
             status: AskJobStatus::Failed,
             output_text: None,
+            interim_text: None,
             error: Some("tool denied".to_string()),
             session_id: "daemon-api:test".to_string(),
             manuscript_id: None,
