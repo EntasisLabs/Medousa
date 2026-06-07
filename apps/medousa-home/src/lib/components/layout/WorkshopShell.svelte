@@ -6,8 +6,10 @@
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
   import HomeOverview from "$lib/components/layout/HomeOverview.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
+  import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
+  import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -24,19 +26,19 @@
     stopInteractiveStream,
     stopWorkspaceStream,
   } from "$lib/daemon";
+  import type { DaemonHealth } from "$lib/daemon";
   import type { WorkspaceStreamEvent } from "$lib/types/workspace";
   import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 
   let activeSurface = $state<Surface>("chat");
-  let daemonMessage = $state<string | null>(null);
+  let daemonHealth = $state<DaemonHealth | null>(null);
 
   onMount(() => {
     settings.applyTheme();
     const unlisteners: Promise<() => void>[] = [];
 
     (async () => {
-      const health = await checkDaemonHealth();
-      daemonMessage = health.message;
+      daemonHealth = await checkDaemonHealth();
 
       await stopWorkspaceStream();
       await startWorkspaceStream(workspace.revision || undefined);
@@ -116,6 +118,11 @@
           <HomeOverview onOpenWork={() => (activeSurface = "work")} />
         {:else if activeSurface === "library"}
           <LibraryPanel visible={true} />
+        {:else if activeSurface === "skills"}
+          <SkillsPanel
+            visible={true}
+            onOpenChat={() => (activeSurface = "chat")}
+          />
         {:else if activeSurface === "work"}
           <WorkPanel
             visible={true}
@@ -126,7 +133,9 @@
         {:else if activeSurface === "settings"}
           <SettingsPanel
             visible={true}
-            onDaemonHealth={(message) => (daemonMessage = message)}
+            onDaemonHealth={async () => {
+              daemonHealth = await checkDaemonHealth();
+            }}
           />
         {:else}
           <ChatPanel visible={activeSurface === "chat"} />
@@ -135,7 +144,7 @@
         <ActivityPanel
           events={workspace.feed}
           error={workspace.streamError}
-          {daemonMessage}
+          daemonMessage={daemonHealth?.message ?? null}
           notePath={vault.selectedPath}
           noteTitle={vault.title}
           wikilinksOut={vault.wikilinksOut}
@@ -145,6 +154,13 @@
           onOpenNote={handleOpenNote}
         />
       </div>
+
+      <StatusBar
+        health={daemonHealth}
+        revision={workspace.revision}
+        inMotionCount={workspace.railCards().length}
+        activeSurface={activeSurface}
+      />
 
       <WorkRail
         cards={workspace.railCards()}

@@ -152,6 +152,12 @@ pub struct InteractiveTurnStreamEvent {
 pub struct DaemonHealth {
     pub ok: bool,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_registry_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -320,4 +326,54 @@ pub struct ConversationTurn {
 pub struct SessionHistoryResponse {
     pub session_id: String,
     pub turns: Vec<ConversationTurn>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub backend: String,
+    pub worker_id: String,
+    pub now_utc: DateTime<Utc>,
+    #[serde(default)]
+    pub agent_runtime_version: String,
+    #[serde(default)]
+    pub tool_registry_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptScriptEntry {
+    pub relative_path: String,
+    pub risk_class: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptCatalogEntry {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub scope: String,
+    pub path: String,
+    pub has_scripts: bool,
+    #[serde(default)]
+    pub scripts: Vec<ManuscriptScriptEntry>,
+    pub openshell_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptCatalogResponse {
+    pub count: usize,
+    pub manuscripts: Vec<ManuscriptCatalogEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityListEntry {
+    pub id: String,
+    pub title: String,
+    pub binding_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityListResponse {
+    pub capabilities: Vec<CapabilityListEntry>,
 }

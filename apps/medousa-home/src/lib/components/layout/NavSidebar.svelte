@@ -8,11 +8,12 @@
 
   let { active, onSelect }: Props = $props();
 
-  const items: { id: Surface; label: string }[] = [
-    { id: "home", label: "Home" },
-    { id: "chat", label: "Chat" },
-    { id: "library", label: "Library" },
-    { id: "work", label: "Work" },
+  const items: { id: Surface; label: string; glyph: string }[] = [
+    { id: "home", label: "Home", glyph: "⌂" },
+    { id: "chat", label: "Chat", glyph: "◎" },
+    { id: "library", label: "Library", glyph: "▤" },
+    { id: "skills", label: "Skills", glyph: "⚡" },
+    { id: "work", label: "Work", glyph: "▦" },
   ];
 </script>
 
@@ -43,13 +44,7 @@
             ? 'bg-primary-500/25 text-primary-100'
             : 'bg-surface-800 text-surface-400'}"
         >
-          {item.id === "home"
-            ? "⌂"
-            : item.id === "chat"
-              ? "◎"
-              : item.id === "library"
-                ? "▤"
-                : "▦"}
+          {item.glyph}
         </span>
         {item.label}
       </button>

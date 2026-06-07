@@ -1,5 +1,6 @@
 <script lang="ts">
   import { chat } from "$lib/stores/chat.svelte";
+  import type { SessionSummary } from "$lib/types/session";
 
   interface Props {
     visible: boolean;
@@ -9,18 +10,28 @@
 
   let query = $state("");
 
-  const filtered = $derived(
-    chat.sessions.filter((session) => {
-      if (!query.trim()) return true;
-      const needle = query.trim().toLowerCase();
-      const label =
-        session.display_name?.toLowerCase() ??
-        session.preview.toLowerCase() ??
-        session.session_id.toLowerCase();
-      return (
-        label.includes(needle) || session.session_id.toLowerCase().includes(needle)
-      );
-    }),
+  function matchesQuery(session: SessionSummary): boolean {
+    if (!query.trim()) return true;
+    const needle = query.trim().toLowerCase();
+    const label =
+      session.display_name?.toLowerCase() ??
+      session.preview.toLowerCase() ??
+      session.session_id.toLowerCase();
+    return (
+      label.includes(needle) || session.session_id.toLowerCase().includes(needle)
+    );
+  }
+
+  const pinned = $derived(
+    chat.sessions.filter(
+      (session) => chat.isPinned(session.session_id) && matchesQuery(session),
+    ),
+  );
+
+  const recent = $derived(
+    chat.sessions.filter(
+      (session) => !chat.isPinned(session.session_id) && matchesQuery(session),
+    ),
   );
 
   function formatWhen(iso?: string | null): string {
@@ -39,7 +50,7 @@
     }
   }
 
-  function sessionLabel(session: (typeof chat.sessions)[number]): string {
+  function sessionLabel(session: SessionSummary): string {
     return (
       session.display_name?.trim() ||
       session.preview.trim() ||
@@ -74,34 +85,74 @@
     <p class="px-3 py-2 text-xs text-error-400">{chat.sessionsError}</p>
   {/if}
 
-  <ol class="flex-1 space-y-1 overflow-y-auto p-2">
-    {#each filtered as session (session.session_id)}
+  <ol class="flex-1 space-y-3 overflow-y-auto p-2">
+    {#if pinned.length > 0}
       <li>
-        <button
-          type="button"
-          class="w-full rounded-container-token px-3 py-2 text-left transition {chat.sessionId ===
-          session.session_id
-            ? 'bg-surface-800 ring-1 ring-primary-500/40'
-            : 'hover:bg-surface-800/70'}"
-          onclick={() => chat.switchSession(session.session_id)}
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span class="truncate text-sm font-medium text-surface-100">
-              {sessionLabel(session)}
-            </span>
-            <span class="shrink-0 text-xs text-surface-500">
-              {formatWhen(session.last_timestamp)}
-            </span>
-          </div>
-          <p class="mt-0.5 truncate text-xs text-surface-500">
-            {session.turns} turn{session.turns === 1 ? "" : "s"}
-          </p>
-        </button>
+        <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+          Pinned
+        </p>
+        <ul class="mt-1 space-y-1">
+          {#each pinned as session (session.session_id)}
+            <li>
+              {@render sessionButton(session)}
+            </li>
+          {/each}
+        </ul>
       </li>
-    {:else}
-      <li class="px-3 py-6 text-center text-sm text-surface-500">
-        No sessions yet
-      </li>
-    {/each}
+    {/if}
+
+    <li>
+      <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+        Sessions
+      </p>
+      <ul class="mt-1 space-y-1">
+        {#each recent as session (session.session_id)}
+          <li>
+            {@render sessionButton(session)}
+          </li>
+        {:else}
+          {#if pinned.length === 0}
+            <li class="px-3 py-6 text-center text-sm text-surface-500">
+              No sessions yet
+            </li>
+          {/if}
+        {/each}
+      </ul>
+    </li>
   </ol>
 </aside>
+
+{#snippet sessionButton(session: SessionSummary)}
+  <div
+    class="group flex items-stretch rounded-container-token transition {chat.sessionId ===
+    session.session_id
+      ? 'bg-surface-800 ring-1 ring-primary-500/40'
+      : 'hover:bg-surface-800/70'}"
+  >
+    <button
+      type="button"
+      class="min-w-0 flex-1 px-3 py-2 text-left"
+      onclick={() => chat.switchSession(session.session_id)}
+    >
+      <div class="flex items-center justify-between gap-2">
+        <span class="truncate text-sm font-medium text-surface-100">
+          {sessionLabel(session)}
+        </span>
+        <span class="shrink-0 text-xs text-surface-500">
+          {formatWhen(session.last_timestamp)}
+        </span>
+      </div>
+      <p class="mt-0.5 truncate text-xs text-surface-500">
+        {session.turns} turn{session.turns === 1 ? "" : "s"}
+      </p>
+    </button>
+    <button
+      type="button"
+      class="px-2 text-xs text-surface-500 opacity-60 transition hover:text-warning-300 group-hover:opacity-100"
+      title={chat.isPinned(session.session_id) ? "Unpin session" : "Pin session"}
+      onclick={() => chat.togglePin(session.session_id)}
+    >
+      {chat.isPinned(session.session_id) ? "★" : "☆"}
+    </button>
+  </div>
+{/snippet}

@@ -8,7 +8,7 @@
 
   interface Props {
     visible: boolean;
-    onDaemonHealth: (message: string) => void;
+    onDaemonHealth: () => void | Promise<void>;
   }
 
   let { visible, onDaemonHealth }: Props = $props();
@@ -35,7 +35,7 @@
       await setDaemonUrl(settings.daemonUrl);
       const health = await checkDaemonHealth();
       settings.daemonMessage = health.message;
-      onDaemonHealth(health.message);
+      await onDaemonHealth();
     } catch (err) {
       settings.daemonMessage =
         err instanceof Error ? err.message : String(err);

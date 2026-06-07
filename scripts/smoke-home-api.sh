@@ -17,6 +17,8 @@ curl -fsS -X POST "${DAEMON_URL}/v1/vault/notes" \
 curl -fsS "${DAEMON_URL}/v1/vault/notes/${NOTE_PATH}" | grep -q "${TOKEN}"
 curl -fsS "${DAEMON_URL}/v1/vault/search?q=${TOKEN}&limit=5" | grep -q '"hits"'
 curl -fsS "${DAEMON_URL}/v1/workspace/snapshot" | grep -q 'workspace_revision'
+curl -fsS "${DAEMON_URL}/v1/manuscripts?limit=5" | grep -q '"manuscripts"'
+curl -fsS "${DAEMON_URL}/v1/capabilities" | grep -q '"capabilities"'
 
 curl -fsS -X DELETE "${DAEMON_URL}/v1/vault/notes/${NOTE_PATH}" >/dev/null
 

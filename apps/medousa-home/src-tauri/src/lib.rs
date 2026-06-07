@@ -26,6 +26,8 @@ pub fn run() {
             daemon::workspace_card::workspace_retry_card,
             daemon::session::session_list,
             daemon::session::session_get_history,
+            daemon::catalog::catalog_list_manuscripts,
+            daemon::catalog::catalog_list_capabilities,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

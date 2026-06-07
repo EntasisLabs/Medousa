@@ -460,6 +460,11 @@ async fn main() -> Result<()> {
         )
         .with_state(state.clone());
 
+    let catalog_router = Router::new().route(
+        "/v1/manuscripts",
+        get(medousa::manuscript_handlers::list_manuscripts_catalog),
+    );
+
     let capability_router = Router::new()
         .route(
             "/v1/capabilities",
@@ -546,6 +551,7 @@ async fn main() -> Result<()> {
         });
 
     let app = app
+        .merge(catalog_router)
         .merge(capability_router)
         .merge(policy_router)
         .merge(vault_router)

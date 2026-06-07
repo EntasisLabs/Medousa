@@ -1,1 +1,7 @@
-export type Surface = "home" | "chat" | "library" | "work" | "settings";
+export type Surface =
+  | "home"
+  | "chat"
+  | "library"
+  | "skills"
+  | "work"
+  | "settings";

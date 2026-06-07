@@ -64,6 +64,7 @@ Sessions = Hermes-style list when Chat active (~224px)
 | Chat | Interactive turn SSE + session sidebar | M0 + M2.5 sessions |
 | Library | Vault tree + editor | M1 |
 | Work | Kanban + card inspector | M2 |
+| Skills | Manuscript + capability catalog | M2.5 |
 | Settings | Daemon URL, theme, notifications | M2.5 |
 
 ### Default landing
@@ -94,6 +95,8 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 | Stream reply | GET | `/v1/interactive/turn/{id}/stream` | SSE → `interactive://event` |
 | List sessions | GET | `/v1/sessions?limit=` | HTTP |
 | Session history | GET | `/v1/sessions/{id}/history` | HTTP |
+| Manuscript catalog | GET | `/v1/manuscripts?limit=&skills_only=` | HTTP |
+| Capability catalog | GET | `/v1/capabilities` | HTTP |
 
 ### M1 — vault
 
@@ -145,6 +148,8 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 | `workspace_retry_card` | `{ cardId }` | `WorkspaceCardActionResponse` |
 | `session_list` | `{ limit? }` | `{ sessions }` |
 | `session_get_history` | `{ sessionId }` | `{ session_id, turns }` |
+| `catalog_list_manuscripts` | `{ prefix?, limit?, skillsOnly? }` | `ManuscriptCatalogResponse` |
+| `catalog_list_capabilities` | — | `CapabilityListResponse` |
 
 ### Events (listen)
 
@@ -198,8 +203,9 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Codex-style composer (rounded input, surface chips, Enter-to-send)
 - [x] Settings surface — daemon URL, dark mode, notification toggle
 - [x] Work rail filters to in-motion cards only
-- [ ] Skills & Tools catalog (read-only, Hermes parity)
-- [ ] Status strip — daemon health + workspace revision (Cursor-style)
+- [x] Skills & Tools catalog (read-only, Hermes parity)
+- [x] Status strip — daemon health + workspace revision (Cursor-style)
+- [x] Session pinning (star toggle in session sidebar)
 
 ### M3 — polish
 
@@ -241,3 +247,4 @@ Env:
 | 2026-05-30 | **M1 shipped:** Library tree, editor, context panel, card→vault links |
 | 2026-05-30 | **M2 shipped:** Kanban + swimlanes, card inspector, done notifications |
 | 2026-05-30 | **M2.5:** Labeled nav, session sidebar, settings, composer, work-rail filter; design refs (Cursor/Codex/Hermes) |
+| 2026-05-30 | **M2.5 cont.:** Skills & Tools catalog, status strip, session pinning, `GET /v1/manuscripts` |

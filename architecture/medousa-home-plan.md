@@ -676,6 +676,9 @@ Design direction informed by **Cursor** (status/diff awareness), **Codex** (chat
 - Settings — daemon URL, sahara dark toggle, notification opt-out
 - Work rail — in-motion cards only; terminal blocked cards on kanban only
 - Codex-style chat composer
+- Skills & Tools catalog (`GET /v1/manuscripts`, `GET /v1/capabilities`)
+- Status strip (daemon health, workspace revision, in-motion count)
+- Session pinning in chat sidebar
 
 ### M3 — Polish
 

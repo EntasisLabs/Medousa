@@ -3,6 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkspaceCardActionResponse } from "$lib/types/work";
 import type {
+  CapabilityListResponse,
+  ManuscriptCatalogResponse,
+} from "$lib/types/catalog";
+import type {
   SessionHistoryResponse,
   SessionSummary,
 } from "$lib/types/session";
@@ -17,6 +21,9 @@ import type {
 export interface DaemonHealth {
   ok: boolean;
   message: string;
+  backend?: string | null;
+  worker_id?: string | null;
+  tool_registry_count?: number | null;
 }
 
 export interface InteractiveTurnAccepted {
@@ -42,6 +49,22 @@ export async function getSessionHistory(
   sessionId: string,
 ): Promise<SessionHistoryResponse> {
   return invoke<SessionHistoryResponse>("session_get_history", { sessionId });
+}
+
+export async function listManuscripts(options?: {
+  prefix?: string;
+  limit?: number;
+  skillsOnly?: boolean;
+}): Promise<ManuscriptCatalogResponse> {
+  return invoke<ManuscriptCatalogResponse>("catalog_list_manuscripts", {
+    prefix: options?.prefix,
+    limit: options?.limit,
+    skillsOnly: options?.skillsOnly,
+  });
+}
+
+export async function listCapabilities(): Promise<CapabilityListResponse> {
+  return invoke<CapabilityListResponse>("catalog_list_capabilities");
 }
 
 export async function checkDaemonHealth(): Promise<DaemonHealth> {

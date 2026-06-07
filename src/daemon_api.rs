@@ -874,3 +874,37 @@ pub struct WorkspaceCardActionResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub associations: Option<WorkCardAssociations>,
 }
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ManuscriptCatalogQuery {
+    pub prefix: Option<String>,
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub skills_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptScriptEntry {
+    pub relative_path: String,
+    pub risk_class: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptCatalogEntry {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub scope: String,
+    pub path: String,
+    pub has_scripts: bool,
+    #[serde(default)]
+    pub scripts: Vec<ManuscriptScriptEntry>,
+    pub openshell_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptCatalogResponse {
+    pub count: usize,
+    pub manuscripts: Vec<ManuscriptCatalogEntry>,
+}

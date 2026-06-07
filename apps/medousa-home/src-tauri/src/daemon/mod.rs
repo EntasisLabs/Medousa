@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod session;
 pub mod sse;
 pub mod types;
@@ -6,9 +7,9 @@ pub mod workspace_card;
 
 use crate::daemon::sse::stream_sse_json;
 use crate::daemon::types::{
-    DaemonHealth, InteractiveTurnAccepted, InteractiveTurnRequest, InteractiveTurnResponse,
-    InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent,
-    DEFAULT_DAEMON_URL,
+    DaemonHealth, HealthResponse, InteractiveTurnAccepted, InteractiveTurnRequest,
+    InteractiveTurnResponse, InteractiveTurnStreamEvent, StageRoutingMatrix,
+    TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
 use reqwest::Client;
 use std::sync::Mutex;
@@ -79,17 +80,38 @@ pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth
     let client = Client::new();
     let url = format!("{base}/health");
     match client.get(&url).send().await {
-        Ok(response) if response.status().is_success() => Ok(DaemonHealth {
-            ok: true,
-            message: format!("connected to {base}"),
-        }),
+        Ok(response) if response.status().is_success() => {
+            let detail = response.json::<HealthResponse>().await.ok();
+            let message = detail
+                .as_ref()
+                .map(|health| {
+                    format!(
+                        "connected to {base} · {} tools",
+                        health.tool_registry_count
+                    )
+                })
+                .unwrap_or_else(|| format!("connected to {base}"));
+            Ok(DaemonHealth {
+                ok: true,
+                message,
+                backend: detail.as_ref().map(|h| h.backend.clone()),
+                worker_id: detail.as_ref().map(|h| h.worker_id.clone()),
+                tool_registry_count: detail.map(|h| h.tool_registry_count),
+            })
+        }
         Ok(response) => Ok(DaemonHealth {
             ok: false,
             message: format!("daemon returned HTTP {}", response.status()),
+            backend: None,
+            worker_id: None,
+            tool_registry_count: None,
         }),
         Err(err) => Ok(DaemonHealth {
             ok: false,
             message: format!("cannot reach {base}: {err}"),
+            backend: None,
+            worker_id: None,
+            tool_registry_count: None,
         }),
     }
 }

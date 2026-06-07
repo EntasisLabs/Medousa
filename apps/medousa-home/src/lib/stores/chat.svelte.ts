@@ -3,6 +3,7 @@ import type { ChatMessage, InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { SessionSummary } from "$lib/types/session";
 
 const SESSION_KEY = "medousa-home-session-id";
+const PINS_KEY = "medousa-home-pinned-sessions";
 
 export class ChatStore {
   sessionId = $state(loadSessionId());
@@ -12,7 +13,21 @@ export class ChatStore {
   streamError = $state<string | null>(null);
   sessions = $state<SessionSummary[]>([]);
   sessionsError = $state<string | null>(null);
+  pinnedIds = $state<string[]>(loadPinnedIds());
   private assistantId: string | null = null;
+
+  isPinned(sessionId: string): boolean {
+    return this.pinnedIds.includes(sessionId);
+  }
+
+  togglePin(sessionId: string) {
+    if (this.pinnedIds.includes(sessionId)) {
+      this.pinnedIds = this.pinnedIds.filter((id) => id !== sessionId);
+    } else {
+      this.pinnedIds = [...this.pinnedIds, sessionId];
+    }
+    localStorage.setItem(PINS_KEY, JSON.stringify(this.pinnedIds));
+  }
 
   async refreshSessions() {
     this.sessionsError = null;
@@ -122,6 +137,18 @@ function normalizeRole(role: string): ChatMessage["role"] {
     return role;
   }
   return "assistant";
+}
+
+function loadPinnedIds(): string[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(PINS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function loadSessionId(): string {

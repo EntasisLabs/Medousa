@@ -36,6 +36,7 @@ pub mod medousa_tool_loop;
 pub mod grapheme_sttp_compaction;
 pub mod identity_markdown;
 pub mod identity_manuscript;
+pub mod manuscript_handlers;
 pub mod skill_import;
 pub mod skill_execution;
 pub mod skill_ingest;
