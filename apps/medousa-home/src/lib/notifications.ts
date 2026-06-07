@@ -1,14 +1,13 @@
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
-
 let permissionReady: boolean | null = null;
+
+async function notificationApi() {
+  return import("@tauri-apps/plugin-notification");
+}
 
 async function ensurePermission(): Promise<boolean> {
   if (permissionReady !== null) return permissionReady;
   try {
+    const { isPermissionGranted, requestPermission } = await notificationApi();
     let granted = await isPermissionGranted();
     if (!granted) {
       const result = await requestPermission();
@@ -23,9 +22,14 @@ async function ensurePermission(): Promise<boolean> {
 }
 
 export async function notifyCardDone(title: string, statusLabel: string) {
-  if (!(await ensurePermission())) return;
-  sendNotification({
-    title: "Medousa — work finished",
-    body: `${title} · ${statusLabel}`,
-  });
+  try {
+    if (!(await ensurePermission())) return;
+    const { sendNotification } = await notificationApi();
+    sendNotification({
+      title: "Medousa — work finished",
+      body: `${title} · ${statusLabel}`,
+    });
+  } catch {
+    // Vite-only dev or plugin unavailable — ignore.
+  }
 }

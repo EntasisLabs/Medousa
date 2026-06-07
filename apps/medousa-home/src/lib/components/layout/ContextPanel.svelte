@@ -22,13 +22,15 @@
   }: Props = $props();
 
   const cardVaultPaths = $derived(cardDetail?.associations.vault_paths ?? []);
-  const hasNoteContext =
-    notePath !== null && (wikilinksOut.length > 0 || backlinks.length > 0);
-  const hasCardContext =
+  const hasNoteContext = $derived(
+    notePath !== null && (wikilinksOut.length > 0 || backlinks.length > 0),
+  );
+  const hasCardContext = $derived(
     cardDetail !== null &&
-    (cardVaultPaths.length > 0 ||
-      Boolean(cardDetail.result_excerpt) ||
-      Boolean(cardDetail.subtitle));
+      (cardVaultPaths.length > 0 ||
+        Boolean(cardDetail.result_excerpt) ||
+        Boolean(cardDetail.subtitle)),
+  );
 </script>
 
 {#if hasCardContext || hasNoteContext}

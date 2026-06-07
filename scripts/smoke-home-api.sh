@@ -7,7 +7,7 @@ NOTE_PATH="journal/smoke-${TOKEN}.md"
 
 echo "smoke-home-api: daemon=${DAEMON_URL}"
 
-curl -fsS "${DAEMON_URL}/v1/health" >/dev/null
+curl -fsS "${DAEMON_URL}/health" >/dev/null
 
 curl -fsS -X POST "${DAEMON_URL}/v1/vault/notes" \
   -H 'content-type: application/json' \

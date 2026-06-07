@@ -76,7 +76,7 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
 pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let client = Client::new();
-    let url = format!("{base}/v1/health");
+    let url = format!("{base}/health");
     match client.get(&url).send().await {
         Ok(response) if response.status().is_success() => Ok(DaemonHealth {
             ok: true,

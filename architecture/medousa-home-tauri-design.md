@@ -70,7 +70,7 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 
 | UI need | Method | Route | Transport |
 |---------|--------|-------|-----------|
-| Health | GET | `/v1/health` | HTTP |
+| Health | GET | `/health` | HTTP |
 | Workspace snapshot + live | GET | `/v1/workspace/stream?since_revision=` | SSE → `workspace://event` |
 | Send message | POST | `/v1/interactive/turn` | HTTP |
 | Stream reply | GET | `/v1/interactive/turn/{id}/stream` | SSE → `interactive://event` |

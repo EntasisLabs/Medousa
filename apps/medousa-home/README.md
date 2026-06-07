@@ -14,9 +14,11 @@ Design: [`../../architecture/medousa-home-tauri-design.md`](../../architecture/m
 
 ```bash
 cd apps/medousa-home
-npm install
+npm install   # required — includes @tauri-apps/plugin-notification (M2 done toasts)
 npm run tauri dev
 ```
+
+If Vite reports `Failed to resolve import "@tauri-apps/plugin-notification"`, run `npm install` again in this directory and restart the dev server.
 
 ## Surfaces
 

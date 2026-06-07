@@ -108,7 +108,7 @@
         {:else if activeSurface === "work"}
           <WorkPanel
             visible={true}
-            {onOpenNote}
+            onOpenNote={handleOpenNote}
             onOpenChat={() => (activeSurface = "chat")}
             onSelectCard={handleCardSelect}
           />
@@ -126,7 +126,7 @@
           backlinks={vault.backlinks}
           cardDetail={workspace.selectedCardDetail}
           cardError={workspace.cardDetailError}
-          {onOpenNote}
+          onOpenNote={handleOpenNote}
         />
       </div>
 

@@ -11,7 +11,16 @@
 
   let { node, selectedPath, depth = 0, onSelect }: Props = $props();
 
-  let expanded = $state(depth < 2);
+  const startsExpanded = $derived(depth < 2);
+  let expanded = $state(false);
+  let initialized = $state(false);
+
+  $effect(() => {
+    if (!initialized && startsExpanded) {
+      expanded = true;
+      initialized = true;
+    }
+  });
 
   function handleClick() {
     if (node.path && !node.isFolder) {
