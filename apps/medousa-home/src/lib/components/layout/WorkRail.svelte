@@ -31,7 +31,7 @@
 >
   {#if cards.length === 0}
     <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
-      No active work — cards appear when jobs or turns run
+      No in-motion work — backlog, in flight, and wrapping up appear here
     </div>
   {:else}
     {#each cards as card (card.id)}

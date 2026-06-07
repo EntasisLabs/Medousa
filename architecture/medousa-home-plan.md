@@ -667,10 +667,21 @@ Turn-start hint (like context packs): inject **top 3 relevant vault titles** fro
 - Native notifications on `card_upserted` → Done
 - Optional: Telegram card summary via outbox (one line, not full board)
 
+### M2.5 — UX polish (Tauri, shipped)
+
+Design direction informed by **Cursor** (status/diff awareness), **Codex** (chat center + work rail + composer), **Hermes** (labeled nav + sessions + settings). Medousa remains **workspace-first** — vault + live jobs + activity, not config-first.
+
+- Labeled left nav (Home · Chat · Library · Work · Settings)
+- Chat session sidebar — `GET /v1/sessions`, resume via `/history`
+- Settings — daemon URL, sahara dark toggle, notification opt-out
+- Work rail — in-motion cards only; terminal blocked cards on kanban only
+- Codex-style chat composer
+
 ### M3 — Polish
 
 - Drag card → cancel only (no fake reorder)
-- Split panes, system tray
+- Split panes, system tray, pop-out chat
+- Skills & Tools read-only catalog (Hermes parity)
 - TUI parity via workspace side panel (optional; lower priority than Tauri)
 
 ---
@@ -872,4 +883,5 @@ Phase M0+ Tauri (only after both freeze gates)
 | 2026-05-30 | **Vault API fix:** backlinks moved to `GET /v1/vault/backlinks?path=` (Axum catch-all must be route suffix) |
 | 2026-05-30 | **M1 shipped (Tauri):** Library tree, markdown editor, context panel, card→vault associations |
 | 2026-05-30 | **M2 shipped (Tauri):** Kanban + swimlanes, card inspector, done notifications |
+| 2026-05-30 | **M2.5 shipped (Tauri):** Labeled nav, session sidebar, settings, composer polish; Cursor/Codex/Hermes design refs |
 | 2026-05-30 | **V1 shipped:** Wikilink resolution + `links.jsonl` backlink index; inline `#tags`; link-vault validation; optional job-success footers; `smoke-home-api.sh` |

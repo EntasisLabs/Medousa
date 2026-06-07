@@ -21,8 +21,14 @@ async function ensurePermission(): Promise<boolean> {
   }
 }
 
+function notificationsEnabled(): boolean {
+  if (typeof localStorage === "undefined") return true;
+  return localStorage.getItem("medousa-home-notifications") !== "0";
+}
+
 export async function notifyCardDone(title: string, statusLabel: string) {
   try {
+    if (!notificationsEnabled()) return;
     if (!(await ensurePermission())) return;
     const { sendNotification } = await notificationApi();
     sendNotification({

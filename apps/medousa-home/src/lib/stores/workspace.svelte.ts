@@ -130,6 +130,12 @@ export class WorkspaceStore {
     return this.cards.filter((c) => c.column !== "done");
   }
 
+  /** Bottom work rail — in-motion cards only (Codex-style). */
+  railCards(): WorkCard[] {
+    const activeColumns = new Set(["backlog", "in_flight", "wrapping_up"]);
+    return this.cards.filter((card) => activeColumns.has(card.column));
+  }
+
   async selectCard(id: string | null, options?: { inspector?: boolean }) {
     this.selectedCardId = id;
     this.selectedCardDetail = null;

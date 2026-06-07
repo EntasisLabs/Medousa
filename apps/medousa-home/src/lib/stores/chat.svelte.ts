@@ -1,4 +1,6 @@
+import { getSessionHistory, listSessions } from "$lib/daemon";
 import type { ChatMessage, InteractiveTurnStreamEvent } from "$lib/types/chat";
+import type { SessionSummary } from "$lib/types/session";
 
 const SESSION_KEY = "medousa-home-session-id";
 
@@ -8,13 +10,46 @@ export class ChatStore {
   draft = $state("");
   isStreaming = $state(false);
   streamError = $state<string | null>(null);
+  sessions = $state<SessionSummary[]>([]);
+  sessionsError = $state<string | null>(null);
   private assistantId: string | null = null;
 
-  resetSession() {
+  async refreshSessions() {
+    this.sessionsError = null;
+    try {
+      const response = await listSessions(50);
+      this.sessions = response.sessions;
+    } catch (err) {
+      this.sessionsError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async newSession() {
+    if (this.isStreaming) return;
     const id = `medousa-home-${crypto.randomUUID()}`;
     localStorage.setItem(SESSION_KEY, id);
     this.sessionId = id;
     this.messages = [];
+    this.streamError = null;
+    await this.refreshSessions();
+  }
+
+  async switchSession(sessionId: string) {
+    if (this.isStreaming || sessionId === this.sessionId) return;
+    this.sessionId = sessionId;
+    localStorage.setItem(SESSION_KEY, sessionId);
+    this.streamError = null;
+    this.messages = [];
+    try {
+      const history = await getSessionHistory(sessionId);
+      this.messages = history.turns.map((turn) => ({
+        id: crypto.randomUUID(),
+        role: normalizeRole(turn.role),
+        content: turn.content,
+      }));
+    } catch (err) {
+      this.streamError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   beginUserMessage(content: string) {
@@ -57,6 +92,7 @@ export class ChatStore {
 
     if (event.terminal) {
       this.finishStream();
+      void this.refreshSessions();
     }
   }
 
@@ -79,6 +115,13 @@ export class ChatStore {
     this.streamError = message;
     this.finishStream();
   }
+}
+
+function normalizeRole(role: string): ChatMessage["role"] {
+  if (role === "user" || role === "assistant" || role === "system") {
+    return role;
+  }
+  return "assistant";
 }
 
 function loadSessionId(): string {

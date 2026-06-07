@@ -1,6 +1,6 @@
 # Medousa Home — Tauri UI Design
 
-> **Status:** M0 scaffold — Tauri v2 + SvelteKit + Skeleton UI v2  
+> **Status:** M2.5 polish — Tauri v2 + SvelteKit + Skeleton UI v2  
 > **Stack (locked):** Tauri 2 · SvelteKit 2 · Svelte 5 · Skeleton 2.x · daemon HTTP/SSE only
 
 ---
@@ -10,7 +10,20 @@
 1. **`medousa_daemon` is the only source of truth.** The Tauri shell is a thin adapter: HTTP POST + SSE subscribe. No workspace/vault business logic in the UI crate.
 2. **Locus stays out of v1 Home.** Vault/workspace reads flow through frozen daemon APIs. Locus bridge writes remain debounced server-side (V2); no Locus editor in the main surface until a dedicated drawer milestone.
 3. **Activity ≠ Locus.** The right panel shows `WorkspaceEvent` from `feed_appended` — not a Locus graph dump.
-4. **Codex command center + Obsidian library + Word-like prose** — but M0 ships chat + work rail + activity only; vault editor is M1.
+4. **Workspace-first, not config-first.** Medousa Home foregrounds live work, vault, and activity — unlike Hermes (agent catalog) or Cursor (in-repo IDE). Chat is the default bench; Library and Work board are first-class peers.
+5. **Borrow layout DNA from three references** — see [Design references](#design-references) below.
+
+---
+
+## Design references
+
+| Reference | Steal | Skip |
+|-----------|-------|------|
+| **Codex** | Center chat thread, bottom work rail, rounded composer with permission/model chips, optional review pane | Full three-pane diff editor (we are not a repo IDE) |
+| **Hermes** | Labeled left nav, session list + search + new chat, branded empty state, settings gear | Skills-first homepage (we surface Work + Library instead) |
+| **Cursor** | Thin status strip, inline change awareness on vault/card actions | Code editor center, git panel as primary nav |
+
+**Medousa differentiation:** lives inside the running daemon workspace — vault wikilinks, kanban, SSE activity, card cancel/retry — none of the three references combine these in one shell.
 
 ---
 
@@ -30,27 +43,28 @@
 ## The Workshop — layout
 
 ```text
-┌──┬──────────────────────────────────────────────┬──────────┐
-│█ │  Primary surface (one at a time)             │ Activity │
-│█ │  · Chat (default)                            │ feed SSE │
-│█ │  · Vault prose editor (M1)                   │ or card  │
-│█ │  · Card inspector (M2)                       │ context  │
-│█ │                                              │          │
-├──┴──────────────────────────────────────────────┴──────────┤
-│ Work rail — thin cards from workspace stream (SSE)         │
-└────────────────────────────────────────────────────────────┘
-█ = icon rail (48px): Home · Chat · Library · Work · Settings
+┌────┬────────┬────────────────────────────────────┬──────────┐
+│Nav │Sessions│  Primary surface (one at a time)    │ Activity │
+│    │(chat)  │  · Chat (default)                  │ feed SSE │
+│    │        │  · Vault prose editor              │ + context│
+│    │        │  · Kanban / card inspector         │          │
+│    │        │  · Settings                        │          │
+├────┴────────┴────────────────────────────────────┴──────────┤
+│ Work rail — in-motion cards only (backlog/in_flight/wrap)   │
+└─────────────────────────────────────────────────────────────┘
+Nav = labeled sidebar (~176px): Home · Chat · Library · Work · Settings
+Sessions = Hermes-style list when Chat active (~224px)
 ```
 
-### Navigation (icon rail)
+### Navigation (labeled sidebar)
 
-| Icon | Surface | M0 | M1+ |
-|------|---------|----|-----|
-| Home | Dashboard stub → chat | ✓ | Kanban overview |
-| Chat | Interactive turn SSE | ✓ | Pop-out (M3) |
-| Library | Vault tree + editor | — | M1 |
-| Work | Card inspector / kanban | rail only | M2 |
-| Settings | Daemon URL, theme | stub | full |
+| Item | Surface | Shipped |
+|------|---------|---------|
+| Home | Column overview + jump to work | M2 |
+| Chat | Interactive turn SSE + session sidebar | M0 + M2.5 sessions |
+| Library | Vault tree + editor | M1 |
+| Work | Kanban + card inspector | M2 |
+| Settings | Daemon URL, theme, notifications | M2.5 |
 
 ### Default landing
 
@@ -58,7 +72,11 @@
 
 ### Work rail placement
 
-**Bottom horizontal rail** (Codex-style). Vertical left rail remains an M3 option.
+**Bottom horizontal rail** (Codex-style). Shows **in-motion cards only** (`backlog`, `in_flight`, `wrapping_up`) — terminal `blocked`/`done` cards stay on the kanban, not the rail.
+
+### Chat sessions (Hermes-style)
+
+When Chat is active, a secondary column lists daemon session history (`GET /v1/sessions`), supports search, new chat, and resume via `GET /v1/sessions/{id}/history`.
 
 ---
 
@@ -74,6 +92,8 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 | Workspace snapshot + live | GET | `/v1/workspace/stream?since_revision=` | SSE → `workspace://event` |
 | Send message | POST | `/v1/interactive/turn` | HTTP |
 | Stream reply | GET | `/v1/interactive/turn/{id}/stream` | SSE → `interactive://event` |
+| List sessions | GET | `/v1/sessions?limit=` | HTTP |
+| Session history | GET | `/v1/sessions/{id}/history` | HTTP |
 
 ### M1 — vault
 
@@ -123,6 +143,8 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 | `workspace_get_card` | `{ cardId }` | `WorkCardDetail` |
 | `workspace_cancel_card` | `{ cardId }` | `WorkspaceCardActionResponse` |
 | `workspace_retry_card` | `{ cardId }` | `WorkspaceCardActionResponse` |
+| `session_list` | `{ limit? }` | `{ sessions }` |
+| `session_get_history` | `{ sessionId }` | `{ session_id, turns }` |
 
 ### Events (listen)
 
@@ -169,16 +191,27 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Home overview — column counts + jump to work board
 - [ ] Telegram card summary via outbox (deferred)
 
+### M2.5 — UX polish (current)
+
+- [x] Labeled nav sidebar (Hermes-style)
+- [x] Chat session list + resume history
+- [x] Codex-style composer (rounded input, surface chips, Enter-to-send)
+- [x] Settings surface — daemon URL, dark mode, notification toggle
+- [x] Work rail filters to in-motion cards only
+- [ ] Skills & Tools catalog (read-only, Hermes parity)
+- [ ] Status strip — daemon health + workspace revision (Cursor-style)
+
 ### M3 — polish
 
 - Split panes, system tray, pop-out chat
 - Drag-to-cancel only (no fake reorder)
+- Inline vault diff chips (Cursor-style change awareness)
 
 ---
 
 ## Theme
 
-Skeleton preset **sahara** (warm study). Dark mode via `class` strategy; operator toggle in Settings (M1).
+Skeleton preset **sahara** (`data-theme="sahara"` on `<body>`). Dark mode via `class` on `<html>`; operator toggle in Settings.
 
 ---
 
@@ -207,3 +240,4 @@ Env:
 | 2026-05-30 | Initial design — Workshop layout, stack lock, daemon map, Locus boundaries |
 | 2026-05-30 | **M1 shipped:** Library tree, editor, context panel, card→vault links |
 | 2026-05-30 | **M2 shipped:** Kanban + swimlanes, card inspector, done notifications |
+| 2026-05-30 | **M2.5:** Labeled nav, session sidebar, settings, composer, work-rail filter; design refs (Cursor/Codex/Hermes) |

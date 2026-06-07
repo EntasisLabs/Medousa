@@ -3,6 +3,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkspaceCardActionResponse } from "$lib/types/work";
 import type {
+  SessionHistoryResponse,
+  SessionSummary,
+} from "$lib/types/session";
+import type {
   VaultBacklinksResponse,
   VaultNoteContentResponse,
   VaultNotesListResponse,
@@ -22,6 +26,22 @@ export interface InteractiveTurnAccepted {
 
 export async function getDaemonUrl(): Promise<string> {
   return invoke<string>("daemon_url");
+}
+
+export async function setDaemonUrl(url: string): Promise<void> {
+  return invoke("set_daemon_url", { url });
+}
+
+export async function listSessions(
+  limit?: number,
+): Promise<{ sessions: SessionSummary[] }> {
+  return invoke<{ sessions: SessionSummary[] }>("session_list", { limit });
+}
+
+export async function getSessionHistory(
+  sessionId: string,
+): Promise<SessionHistoryResponse> {
+  return invoke<SessionHistoryResponse>("session_get_history", { sessionId });
 }
 
 export async function checkDaemonHealth(): Promise<DaemonHealth> {

@@ -279,3 +279,45 @@ pub struct WorkCardDetail {
     #[serde(default)]
     pub associations: WorkCardAssociations,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHistorySummary {
+    pub session_id: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    pub turns: usize,
+    pub verification_runs: usize,
+    #[serde(default)]
+    pub last_timestamp: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_verification_timestamp: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_verification_confidence: Option<f32>,
+    #[serde(default)]
+    pub last_verification_coverage: Option<f32>,
+    #[serde(default)]
+    pub last_verification_verified: Option<bool>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHistoryListResponse {
+    pub sessions: Vec<SessionHistorySummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationTurn {
+    pub role: String,
+    pub content: String,
+    pub timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub tool_names: Vec<String>,
+    #[serde(default)]
+    pub answer_state: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHistoryResponse {
+    pub session_id: String,
+    pub turns: Vec<ConversationTurn>,
+}
