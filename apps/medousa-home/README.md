@@ -3,7 +3,8 @@
 Tauri v2 + SvelteKit + Skeleton UI v2 workshop shell for Medousa.
 
 Design: [`../../architecture/medousa-home-tauri-design.md`](../../architecture/medousa-home-tauri-design.md)  
-Mobile: [`../../architecture/medousa-home-mobile-plan.md`](../../architecture/medousa-home-mobile-plan.md)
+Mobile: [`../../architecture/medousa-home-mobile-plan.md`](../../architecture/medousa-home-mobile-plan.md)  
+**iPhone dev (Mac):** [`MOBILE-DEV.md`](MOBILE-DEV.md)
 
 ## Prerequisites
 

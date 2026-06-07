@@ -38,6 +38,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "iOS": {
+      "minimumSystemVersion": "15.0",
+      "infoPlist": "Info.mobile.plist"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

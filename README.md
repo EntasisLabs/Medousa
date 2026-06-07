@@ -185,6 +185,8 @@ npm run tauri build
 
 Artifacts land under `apps/medousa-home/src-tauri/target/release/`. Design and milestone notes: [architecture/medousa-home-tauri-design.md](architecture/medousa-home-tauri-design.md).
 
+**iPhone dev** — clone on a Mac, run the daemon on LAN, install to a physical device: [apps/medousa-home/MOBILE-DEV.md](apps/medousa-home/MOBILE-DEV.md).
+
 ## What makes it reliable
 
 You are not watching Medousa when it works. That is the point.

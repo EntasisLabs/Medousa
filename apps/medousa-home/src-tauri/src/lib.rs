@@ -2,18 +2,21 @@ mod daemon;
 mod messaging;
 mod medousa_paths;
 mod tray;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
 
 use daemon::DaemonState;
+use tauri::Manager;
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -24,50 +27,26 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
-            let show = MenuItem::with_id(app, "show", "Show Medousa Home", true, None::<&str>)?;
-            let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
-            let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &chat, &hide, &quit])?;
 
-            if let Some(icon) = app.default_window_icon().cloned() {
-                TrayIconBuilder::with_id("main-tray")
-                    .icon(icon)
-                    .menu(&menu)
-                    .tooltip("Medousa Home")
-                    .on_menu_event(|app, event| match event.id.as_ref() {
-                        "show" => show_main_window(app),
-                        "chat" => {
-                            let _ = window::window_show_chat_popout(app.clone());
-                        }
-                        "hide" => hide_main_window(app),
-                        "quit" => app.exit(0),
-                        _ => {}
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } = event
-                        {
-                            let app = tray.app_handle();
-                            show_main_window(&app);
-                        }
-                    })
-                    .build(app)?;
-            }
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            setup_desktop_tray(app)?;
 
             Ok(())
-        })
-        .on_window_event(|window, event| {
+        });
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder.on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     let _ = window.hide();
                     api.prevent_close();
                 }
             }
-        })
+        });
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
             daemon::daemon_url,
             daemon::set_daemon_url,
@@ -105,7 +84,9 @@ pub fn run() {
             daemon::recurring::recurring_delete,
             daemon::identity::identity_get_context,
             daemon::artifact::artifact_command,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_hide_chat_popout,
             tray::tray_update_blocked_count,
             medousa_paths::medousa_config_paths,
@@ -123,6 +104,46 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show Medousa Home", true, None::<&str>)?;
+    let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &chat, &hide, &quit])?;
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        TrayIconBuilder::with_id("main-tray")
+            .icon(icon)
+            .menu(&menu)
+            .tooltip("Medousa Home")
+            .on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => show_main_window(app),
+                "chat" => {
+                    let _ = window::window_show_chat_popout(app.clone());
+                }
+                "hide" => hide_main_window(app),
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    let app = tray.app_handle();
+                    show_main_window(&app);
+                }
+            })
+            .build(app)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -131,6 +152,7 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn hide_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
