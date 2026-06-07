@@ -202,6 +202,197 @@
     @apply rounded-md px-2 py-1.5 transition hover:bg-surface-800/80;
   }
 
+  .mobile-pulse {
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  }
+
+  .mobile-pulse-status {
+    @apply flex items-center gap-2 rounded-lg px-1 py-1 transition active:bg-surface-800/60;
+  }
+
+  .mobile-alive-dot {
+    @apply h-2 w-2 shrink-0 rounded-full;
+  }
+
+  .mobile-alive-dot-active {
+    animation: mobile-alive-breathe 2.4s ease-in-out infinite;
+  }
+
+  @keyframes mobile-alive-breathe {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgb(var(--color-success-500) / 0.35);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.15);
+      box-shadow: 0 0 0 6px rgb(var(--color-success-500) / 0);
+    }
+  }
+
+  .mobile-pulse-eyebrow {
+    @apply text-xs font-medium uppercase tracking-[0.2em] text-primary-300/90;
+  }
+
+  .mobile-pulse-headline {
+    @apply text-[1.75rem] font-semibold leading-[1.15] tracking-tight text-surface-50;
+  }
+
+  .mobile-pulse-subline {
+    @apply text-sm leading-relaxed text-surface-400;
+  }
+
+  .mobile-pulse-cta {
+    @apply rounded-2xl py-3 text-base font-semibold;
+  }
+
+  .mobile-pulse-whisper {
+    @apply text-[11px] text-surface-500;
+  }
+
+  .mobile-work-status {
+    @apply border-b border-surface-500/25;
+  }
+
+  .mobile-you-section-title {
+    @apply text-xs font-semibold uppercase tracking-[0.16em] text-surface-400;
+  }
+
+  .mobile-activity-sheet-header {
+    @apply items-start;
+  }
+
+  .mobile-activity-feed {
+    @apply px-4 pb-6 pt-2;
+  }
+
+  .mobile-activity-intro {
+    @apply mb-4 text-center text-[11px] text-surface-500;
+  }
+
+  .mobile-activity-banner {
+    @apply mb-3 rounded-lg border border-error-500/30 bg-error-500/10 px-3 py-2 text-xs;
+  }
+
+  .mobile-activity-list {
+    @apply space-y-0;
+  }
+
+  .mobile-activity-item {
+    @apply flex gap-3;
+  }
+
+  .mobile-activity-rail {
+    @apply flex w-8 shrink-0 flex-col items-center pt-1;
+  }
+
+  .mobile-activity-dot {
+    @apply flex h-7 w-7 items-center justify-center rounded-full border;
+  }
+
+  .mobile-activity-line {
+    @apply mt-1 w-px flex-1 rounded-full bg-surface-600/50;
+    min-height: 0.75rem;
+  }
+
+  .mobile-activity-card {
+    @apply mb-4 min-w-0 flex-1 rounded-2xl border px-3.5 py-3;
+  }
+
+  .mobile-activity-card-top {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .mobile-activity-label {
+    @apply text-[11px] font-semibold uppercase tracking-wide;
+  }
+
+  .mobile-activity-time {
+    @apply shrink-0 text-[10px] text-surface-500;
+  }
+
+  .mobile-activity-summary {
+    @apply mt-1.5 text-sm leading-snug text-surface-100;
+  }
+
+  .mobile-activity-success .mobile-activity-dot {
+    @apply border-success-500/35 text-success-400;
+    background-color: rgb(var(--color-success-500) / 0.1);
+  }
+
+  .mobile-activity-success .mobile-activity-card {
+    @apply border-success-500/20;
+    background-color: rgb(var(--color-success-500) / 0.05);
+  }
+
+  .mobile-activity-success .mobile-activity-label {
+    @apply text-success-300;
+  }
+
+  .mobile-activity-motion .mobile-activity-dot {
+    @apply border-primary-500/35 text-primary-300;
+    background-color: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .mobile-activity-motion .mobile-activity-card {
+    @apply border-primary-500/20;
+    background-color: rgb(var(--color-primary-500) / 0.05);
+  }
+
+  .mobile-activity-motion .mobile-activity-label {
+    @apply text-primary-300;
+  }
+
+  .mobile-activity-attention .mobile-activity-dot {
+    @apply border-warning-500/35 text-warning-300;
+    background-color: rgb(var(--color-warning-500) / 0.1);
+  }
+
+  .mobile-activity-attention .mobile-activity-card {
+    @apply border-warning-500/25;
+    background-color: rgb(var(--color-warning-500) / 0.06);
+  }
+
+  .mobile-activity-attention .mobile-activity-label {
+    @apply text-warning-300;
+  }
+
+  .mobile-activity-vault .mobile-activity-dot {
+    @apply border-tertiary-500/35 text-tertiary-300;
+    background-color: rgb(var(--color-tertiary-500) / 0.1);
+  }
+
+  .mobile-activity-vault .mobile-activity-card {
+    @apply border-surface-500/30 bg-surface-800/40;
+  }
+
+  .mobile-activity-vault .mobile-activity-label {
+    @apply text-tertiary-300;
+  }
+
+  .mobile-activity-neutral .mobile-activity-dot {
+    @apply border-surface-500/40 text-surface-400;
+    @apply bg-surface-800/80;
+  }
+
+  .mobile-activity-neutral .mobile-activity-card {
+    @apply border-surface-500/30 bg-surface-800/35;
+  }
+
+  .mobile-activity-neutral .mobile-activity-label {
+    @apply text-surface-400;
+  }
+
+  .mobile-activity-empty {
+    @apply flex flex-col items-center px-4 py-16 text-center;
+  }
+
+  .mobile-activity-empty-icon {
+    @apply mb-4 text-surface-600;
+  }
+
   .mobile-pulse-title {
     @apply text-2xl font-semibold leading-tight tracking-tight text-surface-50;
   }

@@ -28,6 +28,19 @@
   const doneToday = $derived(
     workspace.cards.filter((card) => card.column === "done"),
   );
+  const statusLine = $derived.by(() => {
+    if (needsYou.length > 0) {
+      return needsYou.length === 1
+        ? "1 needs you · pull to refresh"
+        : `${needsYou.length} need you · pull to refresh`;
+    }
+    if (inMotion.length > 0) {
+      return inMotion.length === 1
+        ? "1 running · pull to refresh"
+        : `${inMotion.length} running · pull to refresh`;
+    }
+    return "All clear · pull to refresh";
+  });
 
   let doneOpen = $state(false);
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -108,17 +121,9 @@
 </script>
 
 <div class="relative flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header flex items-center justify-between">
-    <h1 class="text-sm font-semibold">Work</h1>
-    <button
-      type="button"
-      class="btn btn-sm variant-ghost-surface"
-      onclick={refresh}
-      disabled={refreshing}
-    >
-      {refreshing ? "…" : "Refresh"}
-    </button>
-  </header>
+  <p class="mobile-work-status shrink-0 px-4 py-3 text-center text-xs text-surface-400">
+    {refreshing ? "Refreshing…" : statusLine}
+  </p>
 
   <div
     bind:this={scrollEl}
@@ -162,9 +167,9 @@
     {/if}
 
     <section class="mb-5">
-      <h2 class="workshop-section-title">In motion</h2>
+      <h2 class="workshop-section-title">Running now</h2>
       {#if inMotion.length === 0}
-        <p class="workshop-faint mt-3">Nothing running right now.</p>
+        <p class="workshop-faint mt-3">Nothing running.</p>
       {:else}
         <ul class="mt-2 space-y-2">
           {#each inMotion as card (card.id)}
@@ -211,8 +216,8 @@
 
     {#if needsYou.length === 0 && inMotion.length === 0 && doneToday.length === 0}
       <EmptyState
-        title="Nothing in motion"
-        description="Tap + to queue a new ask — skills attach as metadata, not prompt stuffing."
+        title="All clear"
+        description="Tap + to ask Medousa something new."
       />
     {/if}
   </div>

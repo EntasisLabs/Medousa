@@ -1,6 +1,6 @@
 # Medousa Home — Mobile Plan (M8)
 
-> **Status:** M8 complete (M8a–M8e shipped in repo)  
+> **Status:** M8 + M9 shipped in repo  
 > **Date:** 2026-05-30  
 > **Related:** [medousa-home-tauri-design.md](medousa-home-tauri-design.md), [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md)
 
@@ -130,6 +130,7 @@ Detection: `max-width: 768px` media query (+ Tauri mobile builds). `AppShell` pi
 | **M8c** | Mobile chat frame, session sheet, phase strip | “One-handed message” |
 | **M8d** | You drill-downs polished, simplified settings | “Found it without nine icons” |
 | **M8e** | Push, haptics, share, `medousa://work/{id}` deep links | “Felt native” |
+| **M9** | Product skin — human pulse, chrome cuts, alive cues | “I feel the heartbeat” |
 
 **Not M8:** swimlanes, split inspector, full defaults matrix, vault prose editor, stage routing editor.
 
@@ -160,3 +161,4 @@ Detection: `max-width: 768px` media query (+ Tauri mobile builds). `AppShell` pi
 | 2026-05-30 | M8c shipped — mobile chat frame, phase strip, identity sheet |
 | 2026-05-30 | M8d shipped — You hub polish, stack drill-downs, simplified settings |
 | 2026-05-30 | M8e shipped — push taps, haptics, share sheet, `medousa://work/{id}` deep links |
+| 2026-06-07 | M9 started — [mobile-m9-plan](medousa-home-mobile-m9-plan.md) product skin |

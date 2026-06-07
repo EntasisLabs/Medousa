@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Bell } from "@lucide/svelte";
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
-  import ConnectionPill from "$lib/components/mobile/ConnectionPill.svelte";
   import MobileTabBar from "$lib/components/mobile/MobileTabBar.svelte";
   import PulsePanel from "$lib/components/mobile/PulsePanel.svelte";
   import WorkStory from "$lib/components/mobile/WorkStory.svelte";
@@ -64,27 +62,14 @@
 </script>
 
 <div class="mobile-shell flex h-screen w-screen flex-col bg-surface-950 text-surface-50">
-  <header class="mobile-top-bar flex shrink-0 items-center gap-2 px-4 py-2">
-    <ConnectionPill
-      health={daemonHealth}
-      onTap={() => layout.openYou("settings")}
-    />
-    <button
-      type="button"
-      class="mobile-icon-btn shrink-0"
-      aria-label="Activity"
-      onclick={() => layout.toggleActivitySheet()}
-    >
-      <Bell size={20} strokeWidth={1.75} />
-    </button>
-  </header>
-
   <main class="min-h-0 flex-1 overflow-hidden">
     {#if layout.mobileTab === "pulse"}
       <PulsePanel
+        health={daemonHealth}
         onSelectCard={handleSelectCard}
         onOpenChat={handleOpenChat}
-        onOpenNote={handleOpenNote}
+        onOpenSettings={() => layout.openYou("settings")}
+        onToggleActivity={() => layout.toggleActivitySheet()}
       />
     {:else if layout.mobileTab === "work"}
       <WorkTimeline visible={true} onSelectCard={handleSelectCard} />

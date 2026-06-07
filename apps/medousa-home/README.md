@@ -55,6 +55,8 @@ At viewport **≤768px** (or resize your devtools), Home switches to the **mobil
 
 **M8e native touches:** notification tap opens the work card (`medousa://work/{id}`), blocked-count app badge, haptics on key gestures, OS share sheet on job results.
 
+**M9 product skin:** Pulse answers *waiting / working / quiet* in human language (no filename hero, no three zero-tiles). Global top chrome removed; You hub split into Stay in touch · Workshop. See [mobile-m9-plan](../../architecture/medousa-home-mobile-m9-plan.md).
+
 Deep link dev (browser): `http://localhost:1420/?work=<card-id>`. Tauri desktop: `xdg-open 'medousa://work/<card-id>'`.
 
 Desktop layout is unchanged above the breakpoint.

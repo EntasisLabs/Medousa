@@ -19,7 +19,11 @@
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { cronDraft } from "$lib/stores/cron.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { YOU_DESTINATIONS, type YouDestination } from "$lib/types/mobile";
+  import {
+    YOU_DESTINATIONS,
+    YOU_HUB_SECTIONS,
+    type YouDestination,
+  } from "$lib/types/mobile";
   import type { DaemonHealth } from "$lib/daemon";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { Component } from "svelte";
@@ -34,10 +38,7 @@
 
   let { visible, health, revision, onOpenChat, onDaemonHealth }: Props = $props();
 
-  const destinationIcons: Record<
-    Exclude<YouDestination, "hub">,
-    Component
-  > = {
+  const destinationIcons: Record<Exclude<YouDestination, "hub">, Component> = {
     library: BookOpen,
     skills: Sparkles,
     cron: Calendar,
@@ -46,6 +47,13 @@
     advanced: SlidersHorizontal,
     runtime: Activity,
   };
+
+  const destinationById = $derived(
+    Object.fromEntries(YOU_DESTINATIONS.map((dest) => [dest.id, dest])) as Record<
+      Exclude<YouDestination, "hub">,
+      (typeof YOU_DESTINATIONS)[number]
+    >,
+  );
 
   function openDestination(id: Exclude<YouDestination, "hub">) {
     layout.openYou(id);
@@ -60,30 +68,39 @@
 <div class="flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
   {#if layout.youDestination === "hub"}
     <header class="mobile-you-header">
-      <h1 class="text-base font-semibold text-surface-50">You</h1>
-      <p class="workshop-faint mt-0.5">Everything else — one tap away</p>
+      <h1 class="text-lg font-semibold tracking-tight text-surface-50">You</h1>
+      <p class="workshop-faint mt-1 text-sm">The back room — only when you need it</p>
     </header>
-    <ul class="mobile-you-scroll flex-1 overflow-y-auto px-3 py-2">
-      {#each YOU_DESTINATIONS as dest (dest.id)}
-        {@const Icon = destinationIcons[dest.id]}
-        <li class="mb-1">
-          <button
-            type="button"
-            class="mobile-you-destination"
-            onclick={() => openDestination(dest.id)}
-          >
-            <span class="mobile-you-destination-icon">
-              <Icon size={18} strokeWidth={1.75} />
-            </span>
-            <span class="min-w-0 flex-1">
-              <p class="font-medium text-surface-100">{dest.label}</p>
-              <p class="workshop-faint mt-0.5 text-xs">{dest.hint}</p>
-            </span>
-            <ChevronRight size={18} class="shrink-0 text-surface-500" />
-          </button>
-        </li>
+    <div class="mobile-you-scroll flex-1 overflow-y-auto px-4 pb-4">
+      {#each YOU_HUB_SECTIONS as section (section.title)}
+        <section class="mb-6">
+          <h2 class="mobile-you-section-title">{section.title}</h2>
+          <p class="workshop-faint mb-2 text-xs">{section.subtitle}</p>
+          <ul class="space-y-2">
+            {#each section.destinations as destId (destId)}
+              {@const dest = destinationById[destId]}
+              {@const Icon = destinationIcons[destId]}
+              <li>
+                <button
+                  type="button"
+                  class="mobile-you-destination"
+                  onclick={() => openDestination(destId)}
+                >
+                  <span class="mobile-you-destination-icon">
+                    <Icon size={18} strokeWidth={1.75} />
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <p class="font-medium text-surface-100">{dest.label}</p>
+                    <p class="workshop-faint mt-0.5 text-xs">{dest.hint}</p>
+                  </span>
+                  <ChevronRight size={16} class="shrink-0 text-surface-600" />
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </section>
       {/each}
-    </ul>
+    </div>
   {:else}
     <header class="mobile-you-subheader flex items-center gap-2">
       <button

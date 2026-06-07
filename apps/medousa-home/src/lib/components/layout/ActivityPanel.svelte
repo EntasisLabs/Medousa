@@ -5,6 +5,7 @@
   import type { WorkCardDetail } from "$lib/types/card";
   import type { WorkspaceEvent } from "$lib/types/workspace";
   import { filterOperatorActivity } from "$lib/utils/activityFilter";
+  import { presentActivityEvent } from "$lib/utils/activityPresentation";
 
   interface Props {
     events: WorkspaceEvent[];
@@ -42,16 +43,6 @@
     }),
   );
 
-  function formatTime(iso: string): string {
-    try {
-      return new Date(iso).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  }
 </script>
 
 <aside class="flex h-full w-full flex-col" aria-label="Activity and context">
@@ -88,12 +79,13 @@
 
   <ol class="flex-1 space-y-2 overflow-y-auto p-3">
     {#each [...visibleEvents].reverse() as event (event.id)}
+      {@const item = presentActivityEvent(event)}
       <li class="workshop-inset p-3 text-sm">
         <div class="flex items-center justify-between gap-2 text-xs text-surface-300">
-          <span class="capitalize">{event.kind.replaceAll("_", " ")}</span>
-          <time datetime={event.timestamp_utc}>{formatTime(event.timestamp_utc)}</time>
+          <span class="font-medium uppercase tracking-wide">{item.label}</span>
+          <time datetime={event.timestamp_utc}>{item.time}</time>
         </div>
-        <p class="mt-1 text-surface-50">{event.summary}</p>
+        <p class="mt-1 leading-snug text-surface-50">{item.summary}</p>
       </li>
     {:else}
       <li class="px-2 py-8 text-center">

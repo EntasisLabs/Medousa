@@ -47,6 +47,21 @@
     return "Working…";
   });
 
+  const mobileChatTitle = $derived(
+    mobile && chat.isStreaming && phaseLine ? phaseLine : "Medousa",
+  );
+
+  const mobileChatSubtitle = $derived.by(() => {
+    if (!mobile) return sessionLabel;
+    if (chat.isStreaming) return "Thinking…";
+    const last = [...chat.messages].reverse().find((message) => message.content.trim());
+    if (last?.content) {
+      const line = last.content.trim().split("\n")[0];
+      return line.length > 56 ? `${line.slice(0, 55)}…` : line;
+    }
+    return "Say one thing";
+  });
+
   $effect(() => {
     if (scrollEl && (chat.messages.length || chat.isStreaming)) {
       scrollEl.scrollTop = scrollEl.scrollHeight;
@@ -151,10 +166,17 @@
           class="min-w-0 text-left {mobile ? 'py-1' : ''}"
           onclick={() => layout.toggleSessionDrawer()}
         >
-          <h1 class="text-sm font-semibold text-surface-50">Chat</h1>
-          <p class="truncate text-[11px] text-surface-400" title={chat.sessionId}>
-            {sessionLabel}
-          </p>
+          {#if mobile}
+            <h1 class="truncate text-sm font-semibold text-surface-50">
+              {mobileChatTitle}
+            </h1>
+            <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
+          {:else}
+            <h1 class="text-sm font-semibold text-surface-50">Chat</h1>
+            <p class="truncate text-[11px] text-surface-400" title={chat.sessionId}>
+              {sessionLabel}
+            </p>
+          {/if}
         </button>
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
@@ -184,13 +206,6 @@
       <p class="mt-1 text-[11px] text-error-400">{chat.streamError}</p>
     {/if}
   </header>
-
-  {#if mobile && chat.isStreaming && phaseLine}
-    <div class="mobile-chat-phase" role="status" aria-live="polite">
-      <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary-400"></span>
-      {phaseLine}
-    </div>
-  {/if}
 
   <div
     bind:this={scrollEl}
@@ -278,26 +293,46 @@
         {/if}
       </article>
     {:else}
-      <div class="flex h-full min-h-[200px] flex-col justify-center">
-        <p class="workshop-faint font-mono text-[11px]">
-          {runtime.modelLabel()} · depth {runtime.depthMode}
-        </p>
-        {#if recentSessions.length > 0}
-          <ul class="mt-4 space-y-1">
-            {#each recentSessions as session (session.session_id)}
-              <li>
-                <button
-                  type="button"
-                  class="workshop-text-action block max-w-md truncate text-left"
-                  onclick={() => resumeSession(session.session_id)}
-                >
-                  {formatSessionLabel(session)}
-                </button>
-              </li>
-            {/each}
-          </ul>
+      <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
+        {#if mobile}
+          <p class="text-sm text-surface-300">Say one thing.</p>
+          <p class="workshop-faint mt-2 text-xs">Medousa remembers this conversation.</p>
+          {#if recentSessions.length > 0}
+            <ul class="mt-6 space-y-2">
+              {#each recentSessions as session (session.session_id)}
+                <li>
+                  <button
+                    type="button"
+                    class="workshop-text-action block max-w-md truncate text-left text-sm"
+                    onclick={() => resumeSession(session.session_id)}
+                  >
+                    {formatSessionLabel(session)}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         {:else}
-          <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
+          <p class="workshop-faint font-mono text-[11px]">
+            {runtime.modelLabel()} · depth {runtime.depthMode}
+          </p>
+          {#if recentSessions.length > 0}
+            <ul class="mt-4 space-y-1">
+              {#each recentSessions as session (session.session_id)}
+                <li>
+                  <button
+                    type="button"
+                    class="workshop-text-action block max-w-md truncate text-left"
+                    onclick={() => resumeSession(session.session_id)}
+                  >
+                    {formatSessionLabel(session)}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
+          {/if}
         {/if}
       </div>
     {/each}

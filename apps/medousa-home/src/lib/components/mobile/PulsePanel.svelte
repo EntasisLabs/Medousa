@@ -1,115 +1,117 @@
 <script lang="ts">
+  import { Bell } from "@lucide/svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { columnLabel } from "$lib/types/workspace";
-  import { KANBAN_COLUMNS } from "$lib/types/work";
-  import { formatCardTitle } from "$lib/utils/formatWork";
-  import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import type { DaemonHealth } from "$lib/daemon";
+  import { buildPulsePresentation, motionColumnCounts } from "$lib/utils/mobilePulse";
 
   interface Props {
+    health: DaemonHealth | null;
     onSelectCard: (id: string) => void | Promise<void>;
     onOpenChat: () => void;
-    onOpenNote: (path: string) => void;
+    onOpenSettings: () => void;
+    onToggleActivity: () => void;
   }
 
-  let { onSelectCard, onOpenChat, onOpenNote }: Props = $props();
+  let { health, onSelectCard, onOpenChat, onOpenSettings, onToggleActivity }: Props =
+    $props();
 
-  const needsAttention = $derived(workspace.needsAttentionCount());
+  const blocked = $derived(workspace.needsAttentionCount());
+  const inMotion = $derived(workspace.inMotionCount());
   const primaryCard = $derived(workspace.primaryInMotionCard());
+  const nextSchedule = $derived(recurring.soonestEnabled());
 
-  const nextAction = $derived.by(() => {
-    if (primaryCard) {
-      return {
-        kind: "card" as const,
-        title: formatCardTitle(primaryCard),
-        label: columnLabel(primaryCard.column),
-        action: "Continue",
-        onClick: () => onSelectCard(primaryCard.id),
-      };
-    }
-    if (needsAttention > 0) {
-      return {
-        kind: "blocked" as const,
-        title: `${needsAttention} need attention`,
-        label: "blocked",
-        action: "Review",
-        onClick: () => layout.setMobileTab("work"),
-      };
-    }
-    if (vault.selectedPath) {
-      const title = vaultDisplayTitle(
-        vault.labelByPath().get(vault.selectedPath) ?? vault.title,
-        vault.selectedPath,
-      );
-      return {
-        kind: "note" as const,
-        title,
-        label: "last note",
-        action: "Open",
-        onClick: () => onOpenNote(vault.selectedPath!),
-      };
-    }
-    return {
-      kind: "chat" as const,
-      title: "Ready when you are",
-      label: "pulse",
-      action: "Chat",
-      onClick: onOpenChat,
-    };
-  });
-
-  const motionColumns = $derived(
-    KANBAN_COLUMNS.filter((column) => column !== "done" && column !== "blocked"),
+  const pulse = $derived(
+    buildPulsePresentation({
+      healthOk: health === null ? null : health.ok,
+      blocked,
+      inMotion,
+      primaryCard,
+      motionCounts: motionColumnCounts(workspace.cards),
+    }),
   );
 
-  const nextSchedule = $derived(recurring.soonestEnabled());
+  function runHeroAction() {
+    switch (pulse.action.kind) {
+      case "card":
+        void onSelectCard(pulse.action.cardId);
+        break;
+      case "work":
+        layout.setMobileTab("work");
+        break;
+      case "chat":
+        onOpenChat();
+        break;
+      case "settings":
+        onOpenSettings();
+        break;
+    }
+  }
 </script>
 
-<section class="flex flex-1 flex-col px-5 pb-6 pt-4">
-  <p class="workshop-faint uppercase tracking-widest">{nextAction.label}</p>
-
-  <h1 class="mobile-pulse-title mt-2">{nextAction.title}</h1>
-
-  <button
-    type="button"
-    class="btn mt-6 w-full variant-filled-primary"
-    onclick={nextAction.onClick}
-  >
-    {nextAction.action}
-  </button>
-
-  {#if needsAttention > 0 && nextAction.kind !== "blocked"}
+<section class="mobile-pulse flex flex-1 flex-col px-5 pb-8 pt-3">
+  <div class="flex items-center gap-3">
     <button
       type="button"
-      class="mt-4 w-full rounded-md border border-warning-500/35 bg-warning-500/10 px-4 py-3 text-left"
-      onclick={() => layout.setMobileTab("work")}
+      class="mobile-pulse-status min-w-0 flex-1 text-left"
+      onclick={() => (pulse.mood === "offline" ? onOpenSettings() : layout.setMobileTab("work"))}
     >
-      <p class="text-sm font-medium text-warning-200">{needsAttention} need attention</p>
-      <p class="workshop-faint mt-0.5">Tap to review on Work</p>
+      <span
+        class="mobile-alive-dot {pulse.alive && inMotion > 0
+          ? 'mobile-alive-dot-active'
+          : ''} {health?.ok ? 'bg-success-400' : health ? 'bg-warning-400' : 'bg-surface-500'}"
+        aria-hidden="true"
+      ></span>
+      <span class="truncate text-xs text-surface-300">{pulse.statusLine}</span>
     </button>
-  {/if}
-
-  {#if nextSchedule}
-    <p class="workshop-faint mt-6">
-      Next · {recurring.labelFor(nextSchedule)} at
-      {recurring.formatNextRun(nextSchedule.next_run_at_utc)}
-    </p>
-  {/if}
-
-  <div
-    class="mt-8 grid grid-cols-3 gap-2"
-    aria-label="In motion columns"
-  >
-    {#each motionColumns as column (column)}
-      <div class="workshop-inset px-3 py-3 text-center">
-        <p class="workshop-faint capitalize">{columnLabel(column)}</p>
-        <p class="mt-1 text-xl font-semibold tabular-nums text-surface-100">
-          {workspace.columnCounts[column] ??
-            workspace.cards.filter((card) => card.column === column).length}
-        </p>
-      </div>
-    {/each}
+    <button
+      type="button"
+      class="mobile-icon-btn shrink-0"
+      aria-label="Activity"
+      onclick={onToggleActivity}
+    >
+      <Bell size={20} strokeWidth={1.75} />
+    </button>
   </div>
+
+  <div class="mt-10 flex flex-1 flex-col justify-center">
+    <p class="mobile-pulse-eyebrow">{pulse.eyebrow}</p>
+    <h1 class="mobile-pulse-headline mt-3">{pulse.headline}</h1>
+    {#if pulse.subline}
+      <p class="mobile-pulse-subline mt-3">{pulse.subline}</p>
+    {/if}
+
+    <button
+      type="button"
+      class="btn mobile-pulse-cta mt-8 w-full variant-filled-primary"
+      onclick={runHeroAction}
+    >
+      {pulse.actionLabel}
+    </button>
+
+    {#if blocked > 0 && pulse.mood !== "waiting"}
+      <button
+        type="button"
+        class="mt-4 w-full rounded-2xl border border-warning-500/30 bg-warning-500/8 px-4 py-3.5 text-left"
+        onclick={() => layout.setMobileTab("work")}
+      >
+        <p class="text-sm font-medium text-warning-200">
+          {blocked === 1 ? "1 needs you" : `${blocked} need you`}
+        </p>
+      </button>
+    {/if}
+  </div>
+
+  <footer class="mt-auto space-y-2 pt-6">
+    {#if pulse.motionSummary && pulse.mood !== "quiet"}
+      <p class="mobile-pulse-whisper text-center">{pulse.motionSummary}</p>
+    {/if}
+    {#if nextSchedule}
+      <p class="mobile-pulse-whisper text-center">
+        Next · {recurring.labelFor(nextSchedule)} ·
+        {recurring.formatNextRun(nextSchedule.next_run_at_utc)}
+      </p>
+    {/if}
+  </footer>
 </section>
