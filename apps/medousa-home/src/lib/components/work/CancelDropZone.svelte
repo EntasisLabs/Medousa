@@ -42,9 +42,9 @@
 </script>
 
 <div
-  class="mx-4 mb-3 rounded-container-token border border-dashed px-4 py-3 text-center text-sm transition {active
-    ? 'border-error-500/70 bg-error-500/10 text-error-200'
-    : 'border-surface-500/30 bg-surface-900/40 text-surface-400'}"
+  class="mx-4 mb-2 border-b border-dashed border-surface-500/30 px-2 py-1.5 text-center text-[11px] transition {active
+    ? 'border-error-500/60 bg-error-500/5 text-error-300'
+    : 'text-surface-500'}"
   role="region"
   aria-label="Cancel work drop zone"
   ondragover={allowDrop}

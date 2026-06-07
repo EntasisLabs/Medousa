@@ -28,20 +28,58 @@
 
   /* Repeated panel header pattern */
   .workshop-header {
-    @apply border-b border-surface-500/45 bg-surface-800/50 px-5 py-4;
+    @apply border-b border-surface-500/45 bg-surface-800/50 px-4 py-2.5;
   }
 
   /* Inset cards and settings blocks */
   .workshop-inset {
-    @apply rounded-container-token border border-surface-500/45 bg-surface-800/85 shadow-sm;
+    @apply rounded-md border border-surface-500/40 bg-surface-800/80;
   }
 
-  /* Skeleton card variant (kanban, etc.) */
+  /* Large display numbers (home, metrics) */
+  .workshop-display {
+    @apply text-4xl font-semibold tabular-nums tracking-tight text-surface-50;
+  }
+
+  /* Quiet text actions — no pill buttons */
+  .workshop-text-action {
+    @apply text-xs text-surface-400 transition hover:text-primary-300;
+  }
+
+  /* Native-style underline tabs */
+  .workshop-tabs {
+    @apply flex gap-0 border-b border-surface-500/40;
+  }
+
+  .workshop-tab {
+    @apply -mb-px border-b-2 border-transparent px-2.5 py-1.5 text-xs text-surface-400 transition hover:text-surface-200;
+  }
+
+  .workshop-tab-active {
+    @apply border-primary-400 text-surface-100;
+  }
+
+  /* Instrument readout row */
+  .workshop-telemetry {
+    @apply flex flex-wrap items-baseline gap-x-5 gap-y-1 border-b border-surface-500/40 py-2.5 font-mono text-xs;
+  }
+
+  .workshop-telemetry dt {
+    @apply text-[10px] uppercase tracking-wide text-surface-500;
+  }
+
+  .workshop-telemetry dd {
+    @apply ml-1.5 tabular-nums text-surface-100;
+  }
+
+  /* Flat kanban rows */
+  .workshop-kanban-card {
+    @apply w-full border-l-2 bg-surface-800/60 px-2.5 py-2 text-left transition hover:bg-surface-700/50;
+  }
+
+  /* Skeleton card variant (legacy — prefer workshop-kanban-card) */
   .card {
-    @apply border-surface-500/45 bg-surface-800/95 shadow-sm;
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.22),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    @apply border-surface-500/40 bg-surface-800/80;
   }
 
   .input,
@@ -77,7 +115,19 @@
   }
 
   .workshop-composer {
-    @apply border-t border-surface-500/45 bg-surface-800/60 p-4;
+    @apply border-t border-surface-500/45 bg-surface-900 px-4 py-2.5;
+  }
+
+  .workshop-icon-rail {
+    @apply flex w-[52px] shrink-0 flex-col items-center border-r border-surface-500/50 bg-surface-900 py-2;
+  }
+
+  .workshop-rail-btn {
+    @apply flex h-9 w-9 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800 hover:text-surface-200;
+  }
+
+  .workshop-rail-btn-active {
+    @apply bg-surface-800 text-primary-300 ring-1 ring-inset ring-primary-500/35;
   }
 
   /* Markdown body in chat and vault */

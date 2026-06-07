@@ -9,13 +9,12 @@
 </script>
 
 <div class="flex flex-col items-center justify-center px-6 text-center">
-  <div class="mb-4 h-0.5 w-10 rounded-full bg-primary-500"></div>
-  <p class="text-base font-medium text-surface-100">{title}</p>
-  <p class="workshop-muted mt-2 max-w-sm leading-relaxed">
+  <p class="text-sm font-medium text-surface-200">{title}</p>
+  <p class="workshop-faint mt-1 max-w-sm leading-relaxed">
     {description}
   </p>
   {#if children}
-    <div class="mt-4">
+    <div class="mt-3">
       {@render children()}
     </div>
   {/if}

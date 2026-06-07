@@ -50,10 +50,8 @@
   <header class="workshop-header">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-base font-semibold text-surface-50">Runtime</h1>
-        <p class="text-xs text-surface-300">
-          What the workshop is doing right now
-        </p>
+        <h1 class="text-sm font-semibold text-surface-50">Runtime</h1>
+        <p class="workshop-faint">Live workshop telemetry</p>
       </div>
       <button
         type="button"
@@ -65,14 +63,11 @@
       </button>
     </div>
 
-    <div class="mt-4 flex flex-wrap gap-1">
+    <div class="workshop-tabs mt-3">
       {#each tabs as tab (tab.id)}
         <button
           type="button"
-          class="rounded-container-token px-3 py-1.5 text-xs transition {runtime.activeTab ===
-          tab.id
-            ? 'bg-primary-500/20 font-medium text-primary-200'
-            : 'text-surface-300 hover:bg-surface-700/80 hover:text-surface-50'}"
+          class="workshop-tab {runtime.activeTab === tab.id ? 'workshop-tab-active' : ''}"
           onclick={() => (runtime.activeTab = tab.id)}
         >
           {tab.label}
@@ -87,87 +82,63 @@
     {/if}
 
     {#if runtime.activeTab === "now"}
-      <div class="space-y-4">
-        <section class="workshop-inset p-4">
-          <h2 class="workshop-section-title">Active turn</h2>
-          {#if streamingMessage}
-            <p class="mt-2 text-sm text-surface-100">
-              {formatTurnPhase(streamingMessage.phase ?? "streaming")}
-            </p>
-            {#if streamingMessage.statusLine}
-              <p class="workshop-faint mt-1">{streamingMessage.statusLine}</p>
-            {/if}
-            {#if streamingMessage.tools?.length}
-              <div class="mt-3 flex flex-wrap gap-1.5">
-                {#each streamingMessage.tools as tool (tool)}
-                  <span
-                    class="rounded-token bg-surface-800 px-2 py-0.5 text-[11px] text-surface-300"
-                  >
-                    {formatToolName(tool)}
-                  </span>
-                {/each}
-              </div>
-            {/if}
-          {:else if chat.isStreaming}
-            <p class="mt-2 text-sm text-surface-300">Starting turn…</p>
-          {:else}
-            <p class="workshop-muted mt-2">No active turn</p>
-          {/if}
-        </section>
+      <dl class="workshop-telemetry">
+        <div class="flex items-baseline">
+          <dt>in motion</dt>
+          <dd>{inMotionCount}</dd>
+        </div>
+        <div class="flex items-baseline">
+          <dt>running</dt>
+          <dd>{runtime.stats?.running_jobs ?? "—"}</dd>
+        </div>
+        <div class="flex items-baseline">
+          <dt>queued</dt>
+          <dd>{runtime.stats?.enqueued_jobs ?? "—"}</dd>
+        </div>
+        <div class="flex items-baseline">
+          <dt>tick</dt>
+          <dd>{formatTimestamp(runtime.stats?.last_tick_at_utc)}</dd>
+        </div>
+      </dl>
 
-        <section class="workshop-inset p-4">
-          <h2 class="workshop-section-title">Workshop pulse</h2>
-          <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <dt class="workshop-label">In motion</dt>
-              <dd class="mt-0.5 font-mono text-surface-200">{inMotionCount}</dd>
-            </div>
-            <div>
-              <dt class="workshop-label">Running jobs</dt>
-              <dd class="mt-0.5 font-mono text-surface-200">
-                {runtime.stats?.running_jobs ?? "—"}
-              </dd>
-            </div>
-            <div>
-              <dt class="workshop-label">Queued</dt>
-              <dd class="mt-0.5 font-mono text-surface-200">
-                {runtime.stats?.enqueued_jobs ?? "—"}
-              </dd>
-            </div>
-            <div>
-              <dt class="workshop-label">Last scheduler tick</dt>
-              <dd class="mt-0.5 font-mono text-surface-200">
-                {formatTimestamp(runtime.stats?.last_tick_at_utc)}
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        <section class="workshop-inset p-4">
-          <h2 class="workshop-section-title">Current config</h2>
-          <p class="mt-2 font-mono text-sm text-surface-200">{runtime.modelLabel()}</p>
-          <p class="workshop-faint mt-1">
-            Depth {runtime.depthMode} · {runtime.depthHint()}
+      <div class="py-3">
+        {#if streamingMessage}
+          <p class="text-sm text-surface-100">
+            {formatTurnPhase(streamingMessage.phase ?? "streaming")}
           </p>
-        </section>
+          {#if streamingMessage.statusLine}
+            <p class="workshop-faint mt-0.5">{streamingMessage.statusLine}</p>
+          {/if}
+          {#if streamingMessage.tools?.length}
+            <p class="mt-1 font-mono text-[10px] text-surface-500">
+              {streamingMessage.tools.map((tool) => formatToolName(tool)).join(" · ")}
+            </p>
+          {/if}
+        {:else if chat.isStreaming}
+          <p class="text-sm text-surface-300">Starting turn…</p>
+        {:else}
+          <p class="workshop-faint">No active turn</p>
+        {/if}
       </div>
+
+      <p class="workshop-faint border-t border-surface-500/40 py-2.5 font-mono text-[11px]">
+        {runtime.modelLabel()} · depth {runtime.depthMode}
+      </p>
     {:else if runtime.activeTab === "jobs"}
       {#if runtime.stats}
-        <dl class="grid gap-3 sm:grid-cols-2">
+        <dl class="workshop-telemetry flex-col !items-stretch gap-0 border-b-0">
           {#each [
-            ["Enqueued", runtime.stats.enqueued_jobs],
-            ["Running", runtime.stats.running_jobs],
-            ["Succeeded", runtime.stats.succeeded_jobs],
-            ["Failed", runtime.stats.failed_jobs],
-            ["Dead letter", runtime.stats.dead_letter_jobs],
-            ["Pending outbox", runtime.stats.pending_outbox_events],
-            ["Recurring", runtime.stats.recurring_definitions],
+            ["enqueued", runtime.stats.enqueued_jobs],
+            ["running", runtime.stats.running_jobs],
+            ["succeeded", runtime.stats.succeeded_jobs],
+            ["failed", runtime.stats.failed_jobs],
+            ["dead letter", runtime.stats.dead_letter_jobs],
+            ["outbox", runtime.stats.pending_outbox_events],
+            ["recurring", runtime.stats.recurring_definitions],
           ] as [label, value] (label)}
-            <div
-              class="workshop-inset p-4"
-            >
-              <dt class="workshop-label">{label}</dt>
-              <dd class="mt-1 font-mono text-lg text-surface-100">{value}</dd>
+            <div class="flex items-baseline justify-between border-b border-surface-500/30 py-1.5">
+              <dt>{label}</dt>
+              <dd class="ml-0 text-sm">{value}</dd>
             </div>
           {/each}
         </dl>
@@ -205,11 +176,11 @@
                   {/if}
                 </div>
                 <span
-                  class="badge shrink-0 {entry.enabled
-                    ? 'variant-soft-primary'
-                    : 'variant-soft-surface'}"
+                  class="workshop-faint shrink-0 {entry.enabled
+                    ? 'text-primary-300'
+                    : ''}"
                 >
-                  {entry.enabled ? "enabled" : "paused"}
+                  {entry.enabled ? "on" : "paused"}
                 </span>
               </div>
               <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">

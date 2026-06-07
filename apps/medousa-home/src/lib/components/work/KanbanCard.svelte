@@ -1,9 +1,8 @@
 <script lang="ts">
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCard } from "$lib/types/workspace";
-  import { columnLabel } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
-
+  import { columnAccentBorder } from "$lib/utils/kanban";
   import { findBlockedGroupForCard } from "$lib/utils/groupWork";
 
   interface Props {
@@ -41,9 +40,9 @@
 <div
   role="button"
   tabindex="0"
-  class="card w-full p-3 text-left transition hover:brightness-110 {selected
-    ? 'ring-2 ring-primary-500 bg-primary-500/10'
-    : ''} {wrappingUp ? 'animate-pulse border-warning-500/60' : ''} {draggable
+  class="workshop-kanban-card {columnAccentBorder(card.column)} {selected
+    ? 'bg-surface-700/60 ring-1 ring-inset ring-primary-500/40'
+    : ''} {wrappingUp ? 'animate-pulse' : ''} {draggable
     ? 'cursor-grab active:cursor-grabbing'
     : 'cursor-pointer'}"
   draggable={draggable}
@@ -51,37 +50,35 @@
   onclick={() => onSelect(card.id)}
   onkeydown={handleKeydown}
 >
-  <div class="flex items-center justify-between gap-2">
-    <span class="badge variant-soft-surface text-xs capitalize">
-      {columnLabel(card.column)}
-    </span>
-    <span class="truncate text-xs text-surface-400">
-      {formatStatusLabel(card.status_label)}
-    </span>
-  </div>
-  <div class="mt-2 flex items-start justify-between gap-2">
-    <p class="line-clamp-3 text-sm font-medium leading-snug">
+  <div class="flex items-start justify-between gap-2">
+    <p class="line-clamp-2 text-sm leading-snug text-surface-100">
       {formatCardTitle(card)}
     </p>
     {#if groupCount > 1}
-      <span class="badge variant-soft-warning shrink-0 text-[10px]">×{groupCount}</span>
+      <span class="shrink-0 font-mono text-[10px] tabular-nums text-surface-500">
+        ×{groupCount}
+      </span>
     {/if}
   </div>
+  <p class="mt-1 truncate font-mono text-[10px] text-surface-500">
+    {formatStatusLabel(card.status_label)}
+  </p>
+
   {#if blockedGroup && blockedGroup.cards.length > 1}
-    <div class="mt-3 flex flex-wrap gap-1.5">
+    <div class="mt-2 flex items-center gap-3">
       <button
         type="button"
-        class="btn btn-sm variant-soft-primary"
+        class="workshop-text-action"
         onclick={(event) => {
           event.stopPropagation();
           void workspace.retryBlockedGroup(blockedGroup);
         }}
       >
-        Retry ×{blockedGroup.cards.length}
+        Retry all
       </button>
       <button
         type="button"
-        class="btn btn-sm variant-ghost-surface"
+        class="workshop-text-action"
         onclick={(event) => {
           event.stopPropagation();
           void workspace.dismissBlockedGroup(blockedGroup);
@@ -91,8 +88,6 @@
       </button>
     </div>
   {:else if draggable}
-    <p class="mt-2 text-[10px] uppercase tracking-wide text-surface-500">
-      drag to cancel
-    </p>
+    <p class="workshop-faint mt-1.5">drag to cancel</p>
   {/if}
 </div>

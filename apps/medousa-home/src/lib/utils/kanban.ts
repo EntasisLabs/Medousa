@@ -73,3 +73,18 @@ export function columnAccent(column: WorkBoardColumn | string): string {
       return "bg-surface-400";
   }
 }
+
+export function columnAccentBorder(column: WorkBoardColumn | string): string {
+  switch (column) {
+    case "in_flight":
+      return "border-l-primary-500/70";
+    case "wrapping_up":
+      return "border-l-warning-500/70";
+    case "blocked":
+      return "border-l-error-500/60";
+    case "done":
+      return "border-l-success-500/60";
+    default:
+      return "border-l-surface-500/50";
+  }
+}

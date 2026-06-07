@@ -49,12 +49,9 @@
 </script>
 
 <section class="flex h-full min-w-0 flex-1 flex-col">
-  <header
-    class="workshop-header flex flex-wrap items-center justify-between gap-3 py-3"
-  >
+  <header class="workshop-header flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h1 class="text-base font-semibold">Work board</h1>
-      <p class="workshop-faint">Cards update live as work moves</p>
+      <h1 class="text-sm font-semibold">Work</h1>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <label class="flex items-center gap-2 text-xs text-surface-300">
@@ -92,7 +89,7 @@
 
   <CancelDropZone onCanceled={() => {}} />
 
-  <div class="relative flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-4">
+  <div class="relative flex min-h-0 flex-1 gap-2 overflow-x-auto px-3 pb-3">
     {#if !hasCards}
       <div class="absolute inset-0 flex items-center justify-center">
         <EmptyState
@@ -103,17 +100,17 @@
     {/if}
     {#each columns as column (column.column)}
       <div
-        class="flex w-64 shrink-0 flex-col rounded-container-token border {columnTone(
+        class="flex w-52 shrink-0 flex-col rounded-md border {columnTone(
           column.column,
         )}"
       >
-        <header class="border-b border-surface-500/45 bg-surface-800/35 px-3 py-2.5">
+        <header class="border-b border-surface-500/40 bg-surface-800/35 px-2.5 py-2">
           <div class="flex items-center gap-2">
             <span
               class="h-2 w-2 shrink-0 rounded-full {columnAccent(column.column)}"
               aria-hidden="true"
             ></span>
-            <h2 class="text-sm font-medium capitalize text-surface-100">
+            <h2 class="text-xs font-medium capitalize text-surface-200">
               {columnLabel(column.column)}
             </h2>
             <span class="ml-auto text-xs tabular-nums text-surface-500">
@@ -124,7 +121,7 @@
           </div>
         </header>
 
-        <div class="flex-1 space-y-2 overflow-y-auto p-2">
+        <div class="flex-1 space-y-1 overflow-y-auto p-1.5">
           {#if column.column === "blocked" && workspace.swimlane === "none"}
             {#each blockedDisplay.items as item (item.card.id)}
               <KanbanCard

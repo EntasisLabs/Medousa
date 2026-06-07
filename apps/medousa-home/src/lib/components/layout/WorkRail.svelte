@@ -1,6 +1,7 @@
 <script lang="ts">
   import { columnLabel, type WorkCard } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
+  import { columnAccentBorder } from "$lib/utils/kanban";
 
   interface Props {
     cards: WorkCard[];
@@ -9,53 +10,33 @@
   }
 
   let { cards, selectedId, onSelect }: Props = $props();
-
-  function columnTone(column: string): string {
-    switch (column) {
-      case "in_flight":
-        return "variant-filled-primary";
-      case "wrapping_up":
-        return "variant-filled-warning";
-      case "blocked":
-        return "variant-filled-error";
-      case "done":
-        return "variant-soft-surface";
-      default:
-        return "variant-soft-surface";
-    }
-  }
 </script>
 
 <section
-  class="flex h-28 shrink-0 items-stretch gap-2 overflow-x-auto border-t border-surface-500/50 bg-surface-800/90 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+  class="flex h-24 shrink-0 items-stretch gap-1.5 overflow-x-auto border-t border-surface-500/50 bg-surface-800/90 px-3 py-1.5"
   aria-label="Active work"
 >
   {#if cards.length === 0}
-    <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
-      No in-motion work — backlog, in flight, and wrapping up appear here
+    <div class="workshop-faint flex flex-1 items-center justify-center">
+      No in-motion work
     </div>
   {:else}
     {#each cards as card (card.id)}
       <button
         type="button"
-        class="card min-w-[220px] max-w-[280px] shrink-0 p-3 text-left transition {selectedId ===
-        card.id
-          ? 'ring-2 ring-primary-500'
-          : 'hover:brightness-110'} {card.column === 'wrapping_up'
-          ? 'animate-pulse border-warning-500/50'
-          : ''}"
+        class="workshop-kanban-card min-w-[200px] max-w-[240px] shrink-0 {columnAccentBorder(
+          card.column,
+        )} {selectedId === card.id
+          ? 'ring-1 ring-inset ring-primary-500/40'
+          : ''} {card.column === 'wrapping_up' ? 'animate-pulse' : ''}"
         onclick={() => onSelect(card.id)}
       >
-        <div class="flex items-center justify-between gap-2">
-          <span class="badge {columnTone(card.column)} text-xs capitalize">
-            {columnLabel(card.column)}
-          </span>
-          <span class="truncate text-xs text-surface-400">
-            {formatStatusLabel(card.status_label)}
-          </span>
-        </div>
-        <p class="mt-2 line-clamp-2 text-sm font-medium">
+        <p class="workshop-faint capitalize">{columnLabel(card.column)}</p>
+        <p class="mt-0.5 line-clamp-2 text-sm leading-snug text-surface-100">
           {formatCardTitle(card)}
+        </p>
+        <p class="mt-1 truncate font-mono text-[10px] text-surface-500">
+          {formatStatusLabel(card.status_label)}
         </p>
       </button>
     {/each}

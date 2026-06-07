@@ -283,13 +283,9 @@
         <div class="workshop-inset p-4">
           <p class="workshop-label">Worker timeline</p>
           {#if detail.tool_names?.length}
-            <div class="mt-3 flex flex-wrap gap-1.5">
-              {#each detail.tool_names as tool (tool)}
-                <span class="badge variant-soft-primary text-[10px]">
-                  {formatToolName(tool)}
-                </span>
-              {/each}
-            </div>
+            <p class="mt-2 font-mono text-[10px] text-surface-500">
+              {detail.tool_names.map((tool) => formatToolName(tool)).join(" · ")}
+            </p>
           {/if}
           {#if timeline.length > 0}
             <ul class="mt-3 space-y-2">
@@ -312,9 +308,8 @@
           <div class="flex items-center justify-between gap-3">
             <p class="workshop-label">Job result</p>
             {#if jobResult}
-              <span class="badge variant-soft-surface text-[10px]">
-                {jobResult.status}
-                {#if jobResult.is_terminal}· terminal{/if}
+              <span class="workshop-faint font-mono">
+                {jobResult.status}{#if jobResult.is_terminal} · terminal{/if}
               </span>
             {/if}
           </div>

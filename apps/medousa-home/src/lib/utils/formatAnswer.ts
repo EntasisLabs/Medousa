@@ -40,3 +40,18 @@ export function answerStateBadgeClass(tone: AnswerStateTone): string {
       return "variant-soft-surface";
   }
 }
+
+export function answerStateTextClass(tone: AnswerStateTone): string {
+  switch (tone) {
+    case "success":
+      return "text-success-400";
+    case "error":
+      return "text-error-400";
+    case "warning":
+      return "text-warning-400";
+    case "primary":
+      return "text-primary-300";
+    default:
+      return "text-surface-500";
+  }
+}
