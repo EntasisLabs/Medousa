@@ -369,15 +369,75 @@ pub struct ManuscriptCatalogResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityBindingSummary {
+    pub source: String,
+    pub reference: String,
+    pub available: bool,
+    #[serde(default)]
+    pub effect_class: Option<String>,
+    #[serde(default)]
+    pub invoke_via: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityListEntry {
     pub id: String,
     pub title: String,
     pub binding_count: usize,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub domain: String,
+    pub has_grapheme: bool,
+    pub has_mcp: bool,
+    #[serde(default)]
+    pub bindings_summary: Vec<CapabilityBindingSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityListResponse {
     pub capabilities: Vec<CapabilityListEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityBinding {
+    pub source: String,
+    pub reference: String,
+    pub priority: u16,
+    pub available: bool,
+    #[serde(default)]
+    pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    pub invoke_via: Option<String>,
+    #[serde(default)]
+    pub effect_class: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityImplementations {
+    #[serde(default)]
+    pub grapheme: Vec<CapabilityBinding>,
+    #[serde(default)]
+    pub mcp: Vec<CapabilityBinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityRecommendation {
+    pub source: String,
+    pub reference: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityResolveResponse {
+    pub capability: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub implementations: CapabilityImplementations,
+    #[serde(default)]
+    pub recommended: Option<CapabilityRecommendation>,
+    #[serde(default)]
+    pub gateway_unreachable: Option<bool>,
 }
 
 // ── Runtime observability & controls ──────────────────────────────────────────

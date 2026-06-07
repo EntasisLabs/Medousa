@@ -121,6 +121,8 @@ pub struct CapabilityBinding {
     pub server_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect_class: Option<String>,
 }
 
 impl CapabilityBinding {
@@ -137,10 +139,17 @@ impl CapabilityBinding {
             op: Some(op),
             server_id: None,
             tool_name: None,
+            effect_class: None,
         }
     }
 
-    pub fn mcp(server_id: &str, tool_name: &str, priority: u16, available: bool) -> Self {
+    pub fn mcp(
+        server_id: &str,
+        tool_name: &str,
+        priority: u16,
+        available: bool,
+        effect_class: Option<String>,
+    ) -> Self {
         Self {
             source: CapabilitySource::Mcp,
             reference: format!("{server_id}.{tool_name}"),
@@ -152,6 +161,7 @@ impl CapabilityBinding {
             op: None,
             server_id: Some(server_id.to_string()),
             tool_name: Some(tool_name.to_string()),
+            effect_class,
         }
     }
 }
@@ -219,10 +229,28 @@ pub struct CapabilitySearchResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityBindingSummary {
+    pub source: String,
+    pub reference: String,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoke_via: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityListEntry {
     pub id: CapabilityId,
     pub title: String,
     pub binding_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub domain: String,
+    pub has_grapheme: bool,
+    pub has_mcp: bool,
+    #[serde(default)]
+    pub bindings_summary: Vec<CapabilityBindingSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -289,6 +317,7 @@ impl CapabilityRegistry {
                     &binding.tool_name,
                     binding.priority,
                     false,
+                    binding.effect_class.clone(),
                 ));
             }
             resolved.sort_by_key(|b| b.priority);
@@ -314,10 +343,32 @@ impl CapabilityRegistry {
         let mut capabilities = self
             .definitions
             .iter()
-            .map(|(id, def)| CapabilityListEntry {
-                id: id.clone(),
-                title: def.title.clone(),
-                binding_count: self.bindings.get(id).map(|b| b.len()).unwrap_or(0),
+            .map(|(id, def)| {
+                let bindings = self.bindings.get(id).cloned().unwrap_or_default();
+                let bindings_summary = bindings
+                    .iter()
+                    .map(|binding| CapabilityBindingSummary {
+                        source: binding.source.as_str().to_string(),
+                        reference: binding.reference.clone(),
+                        available: binding.available,
+                        effect_class: binding.effect_class.clone(),
+                        invoke_via: binding.invoke_via.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                let has_grapheme = bindings_summary
+                    .iter()
+                    .any(|binding| binding.source == "grapheme");
+                let has_mcp = bindings_summary.iter().any(|binding| binding.source == "mcp");
+                CapabilityListEntry {
+                    id: id.clone(),
+                    title: def.title.clone(),
+                    description: def.description.clone(),
+                    domain: capability_domain(id),
+                    binding_count: bindings.len(),
+                    has_grapheme,
+                    has_mcp,
+                    bindings_summary,
+                }
             })
             .collect::<Vec<_>>();
         capabilities.sort_by(|a, b| a.id.cmp(&b.id));
@@ -413,8 +464,13 @@ impl CapabilityRegistry {
                 if bindings.iter().any(|b| b.reference == reference) {
                     continue;
                 }
-                let mut binding =
-                    CapabilityBinding::mcp(&entry.server_id, &entry.tool_name, 100, entry.available);
+                let mut binding = CapabilityBinding::mcp(
+                    &entry.server_id,
+                    &entry.tool_name,
+                    100,
+                    entry.available,
+                    None,
+                );
                 binding.unavailable_reason = entry.unavailable_reason.clone();
                 bindings.push(binding);
                 bindings.sort_by_key(|b| b.priority);
@@ -438,6 +494,14 @@ fn select_recommended(
         reference: best.reference.clone(),
         reason: "lowest priority number among available bindings".to_string(),
     })
+}
+
+fn capability_domain(id: &str) -> String {
+    id.split('_')
+        .next()
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or(id)
+        .to_uppercase()
 }
 
 fn split_module_op(module_op: &str) -> (String, String) {

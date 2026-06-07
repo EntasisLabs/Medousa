@@ -4,6 +4,7 @@ import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkspaceCardActionResponse } from "$lib/types/work";
 import type {
   CapabilityListResponse,
+  CapabilityResolveResponse,
   ManuscriptCatalogResponse,
 } from "$lib/types/catalog";
 import type {
@@ -83,6 +84,14 @@ export async function listManuscripts(options?: {
 
 export async function listCapabilities(): Promise<CapabilityListResponse> {
   return invoke<CapabilityListResponse>("catalog_list_capabilities");
+}
+
+export async function getCapability(
+  capabilityId: string,
+): Promise<CapabilityResolveResponse> {
+  return invoke<CapabilityResolveResponse>("catalog_get_capability", {
+    capabilityId,
+  });
 }
 
 export async function checkDaemonHealth(): Promise<DaemonHealth> {

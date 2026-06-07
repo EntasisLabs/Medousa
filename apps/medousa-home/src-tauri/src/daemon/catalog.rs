@@ -1,4 +1,6 @@
-use crate::daemon::types::{CapabilityListResponse, ManuscriptCatalogResponse};
+use crate::daemon::types::{
+    CapabilityListResponse, CapabilityResolveResponse, ManuscriptCatalogResponse,
+};
 use reqwest::Client;
 use tauri::State;
 
@@ -64,6 +66,31 @@ pub async fn catalog_list_capabilities(
     }
     response
         .json::<CapabilityListResponse>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn catalog_get_capability(
+    state: State<'_, DaemonState>,
+    capability_id: String,
+) -> Result<CapabilityResolveResponse, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let id = capability_id.trim();
+    let url = format!("{base}/v1/capabilities/{}", urlencoding::encode(id));
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("capability detail failed ({status}): {body}"));
+    }
+    response
+        .json::<CapabilityResolveResponse>()
         .await
         .map_err(|err| err.to_string())
 }
