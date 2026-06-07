@@ -202,11 +202,13 @@
         needsAttentionCount={workspace.needsAttentionCount()}
       />
 
-      <WorkRail
-        cards={workspace.railCards()}
-        selectedId={workspace.selectedCardId}
-        onSelect={handleCardSelect}
-      />
+      {#if workspace.inMotionCount() > 0 || activeSurface === "work"}
+        <WorkRail
+          cards={workspace.railCards()}
+          selectedId={workspace.selectedCardId}
+          onSelect={handleCardSelect}
+        />
+      {/if}
     </div>
   </div>
 </div>

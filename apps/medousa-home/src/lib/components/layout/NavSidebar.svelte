@@ -33,10 +33,8 @@
   aria-label="Primary navigation"
 >
   <div class="border-b border-surface-500/20 px-4 py-4">
-    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-surface-400">
-      Medousa
-    </p>
-    <p class="mt-1 text-sm font-medium text-surface-100">Home</p>
+    <p class="text-sm font-semibold tracking-wide text-surface-100">Medousa</p>
+    <p class="mt-0.5 text-[11px] text-surface-500">The Workshop</p>
   </div>
 
   <div class="flex flex-1 flex-col gap-1 p-2">

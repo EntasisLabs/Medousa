@@ -31,9 +31,7 @@
     notePath !== null &&
       (wikilinksOut.length > 0 || backlinks.length > 0 || noteDiffChip !== null),
   );
-  const titleByPath = $derived(
-    new Map(vault.notes.map((note) => [note.path, note.title])),
-  );
+  const titleByPath = $derived(vault.labelByPath());
 
   const hasCardContext = $derived(
     cardDetail !== null &&

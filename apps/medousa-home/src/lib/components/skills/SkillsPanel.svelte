@@ -1,6 +1,7 @@
 <script lang="ts">
   import { catalog } from "$lib/stores/catalog.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
 
   interface Props {
     visible: boolean;
@@ -18,6 +19,12 @@
   function runSkill(manuscriptId: string) {
     chat.draft = `/skill ${manuscriptId}`;
     onOpenChat();
+  }
+
+  function skillHint(entry: ManuscriptCatalogEntry): string | null {
+    if (entry.openshell_enabled) return "Runs in a sandbox";
+    if (entry.has_scripts) return "Runnable skill";
+    return null;
   }
 </script>
 
@@ -46,7 +53,7 @@
               void catalog.refresh();
             }}
           />
-          Skills with runnable scripts only
+          Runnable skills only
         </label>
         <button
           type="button"
@@ -58,49 +65,59 @@
       </div>
 
       <section>
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-surface-400">
-          Skills ({catalog.manuscripts.length})
+        <h2 class="text-xs font-medium text-surface-500">
+          Skills · {catalog.manuscripts.length}
         </h2>
-        <ul class="mt-2 space-y-2">
+        <ul class="mt-3 space-y-3">
           {#each catalog.manuscripts as entry (entry.id)}
-            <li
-              class="rounded-container-token border border-surface-500/20 bg-surface-900/50 p-3"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
+            <li class="rounded-container-token border border-surface-500/20 bg-surface-900/50 p-4">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1">
                   <p class="font-medium text-surface-100">{entry.name}</p>
-                  <p class="text-xs text-surface-500">
-                    {entry.id} · {entry.scope}
-                    {#if entry.openshell_enabled}
-                      · openshell
-                    {/if}
-                  </p>
                   {#if entry.description}
-                    <p class="mt-1 text-sm text-surface-300">{entry.description}</p>
-                  {/if}
-                  {#if entry.scripts.length > 0}
-                    <p class="mt-2 text-xs text-surface-400">
-                      Scripts:
-                      {entry.scripts
-                        .map((s) => `${s.relative_path} (${s.risk_class})`)
-                        .join(", ")}
+                    <p class="mt-1 text-sm leading-relaxed text-surface-300">
+                      {entry.description}
                     </p>
+                  {/if}
+                  {#if skillHint(entry)}
+                    <p class="mt-2 text-xs text-surface-500">{skillHint(entry)}</p>
                   {/if}
                 </div>
                 {#if entry.has_scripts}
                   <button
                     type="button"
-                    class="btn btn-sm variant-soft-primary shrink-0"
+                    class="btn btn-sm variant-filled-primary shrink-0"
                     onclick={() => runSkill(entry.id)}
                   >
                     Run
                   </button>
                 {/if}
               </div>
+
+              <details class="mt-3 text-xs text-surface-500">
+                <summary class="cursor-pointer select-none text-surface-400 hover:text-surface-300">
+                  Technical details
+                </summary>
+                <dl class="mt-2 space-y-1 font-mono text-[11px] text-surface-500">
+                  <div>id: {entry.id}</div>
+                  <div>scope: {entry.scope}</div>
+                  {#if entry.openshell_enabled}
+                    <div>sandbox: openshell</div>
+                  {/if}
+                  {#if entry.scripts.length > 0}
+                    <div>
+                      scripts:
+                      {entry.scripts
+                        .map((script) => `${script.relative_path} (${script.risk_class})`)
+                        .join(", ")}
+                    </div>
+                  {/if}
+                </dl>
+              </details>
             </li>
           {:else}
             <li class="rounded-container-token bg-surface-900/40 p-4 text-sm text-surface-400">
-              No skills found. Import with
+              No skills yet. Import with
               <code class="text-surface-300">medousa skill-import</code>.
             </li>
           {/each}
@@ -108,25 +125,28 @@
       </section>
 
       <section class="mt-8">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-surface-400">
-          Capabilities ({catalog.capabilities.length})
+        <h2 class="text-xs font-medium text-surface-500">
+          Tools · {catalog.capabilities.length}
         </h2>
-        <ul class="mt-2 space-y-1">
+        <ul class="mt-3 space-y-2">
           {#each catalog.capabilities as capability (capability.id)}
-            <li
-              class="flex items-center justify-between rounded-container-token bg-surface-900/40 px-3 py-2 text-sm"
-            >
-              <span class="font-medium text-surface-200">{capability.title}</span>
-              <span class="text-xs text-surface-500">
-                {capability.id} · {capability.binding_count} binding{capability.binding_count ===
-                1
-                  ? ""
-                  : "s"}
-              </span>
+            <li class="rounded-container-token border border-surface-500/15 bg-surface-900/40 px-4 py-3">
+              <p class="text-sm font-medium text-surface-100">{capability.title}</p>
+              <details class="mt-1 text-xs">
+                <summary class="cursor-pointer select-none text-surface-500 hover:text-surface-400">
+                  Registry entry
+                </summary>
+                <p class="mt-1 font-mono text-[11px] text-surface-500">
+                  {capability.id} · {capability.binding_count} binding{capability.binding_count ===
+                  1
+                    ? ""
+                    : "s"}
+                </p>
+              </details>
             </li>
           {:else}
             <li class="px-3 py-4 text-sm text-surface-400">
-              No capabilities registered.
+              No tools registered yet.
             </li>
           {/each}
         </ul>

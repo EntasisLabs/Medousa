@@ -11,6 +11,7 @@ import type {
   VaultSearchHit,
 } from "$lib/types/vault";
 import type { VaultTreeNode } from "$lib/types/vault";
+import { buildVaultLabelMap } from "$lib/utils/formatVault";
 import { buildVaultTree } from "$lib/utils/vaultTree";
 import { formatDiffChip, lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
 
@@ -33,6 +34,10 @@ export class VaultStore {
   searchQuery = $state("");
   searchHits = $state<VaultSearchHit[]>([]);
   editorMode = $state<"edit" | "preview">("edit");
+
+  labelByPath(): Map<string, string> {
+    return buildVaultLabelMap(this.notes);
+  }
 
   get isDirty(): boolean {
     return this.dirty;

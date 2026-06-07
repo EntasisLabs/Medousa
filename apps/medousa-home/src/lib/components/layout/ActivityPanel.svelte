@@ -75,12 +75,12 @@
       {#if showCollapse && onCollapse}
         <button
           type="button"
-          class="btn btn-sm variant-ghost-surface"
+          class="flex h-8 w-8 items-center justify-center rounded-container-token text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-200"
           aria-label="Collapse activity"
           title="Collapse activity"
           onclick={onCollapse}
         >
-          <PanelRightClose size={16} strokeWidth={1.75} />
+          <PanelRightClose size={20} strokeWidth={1.75} />
         </button>
       {/if}
     </div>

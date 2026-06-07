@@ -69,6 +69,7 @@
       <VaultTree
         tree={vault.tree}
         selectedPath={vault.selectedPath}
+        labelByPath={vault.labelByPath()}
         onSelect={(path) => vault.openNote(path)}
       />
     </aside>

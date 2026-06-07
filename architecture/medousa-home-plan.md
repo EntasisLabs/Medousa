@@ -701,6 +701,14 @@ See [medousa-home-polish-plan.md](medousa-home-polish-plan.md).
 - **M4b:** Home v2 hero, session drawer, Lucide nav, Activity collapse on Work, empty states
 - **M4c:** README Medousa Home section, markdown chat, theme swatch, doctor Home hint
 
+### M5 — World class (in progress)
+
+See [medousa-home-m5-plan.md](medousa-home-m5-plan.md).
+
+- **M5a (P0):** Title sanitizer v2, contextual work rail, blocked grouping, editor breadcrumb, hero priority — shipped
+- **M5b (P1):** Kanban visual discipline, Skills consumer cards, nav brand, icon chrome — shipped
+- **M5c (P2):** README screenshot, first-run blocked CTA
+
 ### Deferred
 
 - TUI parity via workspace side panel (optional; lower priority than Tauri)

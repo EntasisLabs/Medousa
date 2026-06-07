@@ -1,5 +1,6 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
+  import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
   import { renderMarkdownPreview } from "$lib/utils/markdownPreview";
 
   interface Props {
@@ -8,8 +9,21 @@
 
   let { visible }: Props = $props();
 
+  const displayTitle = $derived(
+    vault.selectedPath
+      ? (vault.labelByPath().get(vault.selectedPath) ??
+        vaultDisplayTitle(vault.title, vault.selectedPath))
+      : "Library",
+  );
+
+  const breadcrumb = $derived(
+    vault.selectedPath ? vaultBreadcrumb(vault.selectedPath) : null,
+  );
+
   const previewHtml = $derived(
-    vault.content ? renderMarkdownPreview(vault.content) : "",
+    vault.content
+      ? renderMarkdownPreview(vault.content, vault.labelByPath())
+      : "",
   );
 
   async function handleSave(event: Event) {
@@ -20,13 +34,11 @@
 
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   <header class="flex items-center justify-between gap-3 border-b border-surface-500/20 px-4 py-3">
-    <div class="min-w-0">
-      <h1 class="truncate text-base font-semibold">
-        {vault.title || vault.selectedPath || "Library"}
-      </h1>
-      {#if vault.selectedPath}
-        <p class="truncate text-xs text-surface-400">{vault.selectedPath}</p>
+    <div class="min-w-0" title={vault.selectedPath ?? undefined}>
+      {#if breadcrumb}
+        <p class="truncate text-xs text-surface-500">{breadcrumb}</p>
       {/if}
+      <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
     </div>
     <div class="flex shrink-0 items-center gap-2">
       {#if vault.diffChip()}

@@ -54,17 +54,22 @@ export function buildKanbanColumns(
   });
 }
 
-export function columnTone(column: WorkBoardColumn | string): string {
+/** Unified column chrome — accent lives in header dot only. */
+export function columnTone(_column: WorkBoardColumn | string): string {
+  return "border-surface-500/20 bg-surface-900/40";
+}
+
+export function columnAccent(column: WorkBoardColumn | string): string {
   switch (column) {
     case "in_flight":
-      return "border-primary-500/40 bg-primary-500/5";
+      return "bg-primary-400";
     case "wrapping_up":
-      return "border-warning-500/50 bg-warning-500/10";
+      return "bg-warning-400";
     case "blocked":
-      return "border-error-500/40 bg-error-500/10";
+      return "bg-error-400";
     case "done":
-      return "border-surface-500/30 bg-surface-800/40";
+      return "bg-success-400";
     default:
-      return "border-surface-500/20 bg-surface-900/40";
+      return "bg-surface-400";
   }
 }

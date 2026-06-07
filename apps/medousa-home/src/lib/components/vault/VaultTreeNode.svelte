@@ -6,11 +6,12 @@
   interface Props {
     node: VaultTreeNode;
     selectedPath: string | null;
+    labelByPath: Map<string, string>;
     depth?: number;
     onSelect: (path: string) => void;
   }
 
-  let { node, selectedPath, depth = 0, onSelect }: Props = $props();
+  let { node, selectedPath, labelByPath, depth = 0, onSelect }: Props = $props();
 
   const startsExpanded = $derived(depth < 2);
   let expanded = $state(false);
@@ -26,7 +27,8 @@
   const label = $derived(
     node.isFolder
       ? node.name
-      : vaultDisplayTitle(node.title ?? node.name, node.path),
+      : (node.path ? labelByPath.get(node.path) : null) ??
+        vaultDisplayTitle(node.title ?? node.name, node.path),
   );
 
   function handleClick() {
@@ -63,6 +65,7 @@
       <VaultTreeNodeView
         node={child}
         {selectedPath}
+        {labelByPath}
         depth={depth + 1}
         {onSelect}
       />

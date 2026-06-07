@@ -8,9 +8,10 @@
     card: WorkCard;
     selected: boolean;
     onSelect: (id: string) => void;
+    groupCount?: number;
   }
 
-  let { card, selected, onSelect }: Props = $props();
+  let { card, selected, onSelect, groupCount = 1 }: Props = $props();
 
   const wrappingUp = $derived(card.column === "wrapping_up");
   const draggable = $derived(workspace.isCancellable(card));
@@ -41,9 +42,14 @@
       {formatStatusLabel(card.status_label)}
     </span>
   </div>
-  <p class="mt-2 line-clamp-3 text-sm font-medium leading-snug">
-    {formatCardTitle(card)}
-  </p>
+  <div class="mt-2 flex items-start justify-between gap-2">
+    <p class="line-clamp-3 text-sm font-medium leading-snug">
+      {formatCardTitle(card)}
+    </p>
+    {#if groupCount > 1}
+      <span class="badge variant-soft-warning shrink-0 text-[10px]">×{groupCount}</span>
+    {/if}
+  </div>
   {#if draggable}
     <p class="mt-2 text-[10px] uppercase tracking-wide text-surface-500">
       drag to cancel

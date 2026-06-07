@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PanelLeft } from "@lucide/svelte";
+  import { ExternalLink, PanelLeft } from "@lucide/svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -60,12 +60,12 @@
       <div class="flex min-w-0 items-start gap-3">
         <button
           type="button"
-          class="btn btn-sm variant-ghost-surface mt-0.5 shrink-0"
+          class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-container-token text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-200"
           aria-label="Open sessions"
           title="Sessions"
           onclick={() => layout.toggleSessionDrawer()}
         >
-          <PanelLeft size={18} strokeWidth={1.75} />
+          <PanelLeft size={20} strokeWidth={1.75} />
         </button>
         <div class="min-w-0">
           <h1 class="text-base font-semibold">Chat</h1>
@@ -77,10 +77,12 @@
       {#if showPopout && isTauri()}
         <button
           type="button"
-          class="btn btn-sm variant-ghost-surface shrink-0"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-container-token text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-200"
+          aria-label="Pop out chat"
+          title="Pop out"
           onclick={() => showChatPopout()}
         >
-          Pop out
+          <ExternalLink size={20} strokeWidth={1.75} />
         </button>
       {/if}
     </div>

@@ -1,6 +1,6 @@
 # Medousa Home — Tauri UI Design
 
-> **Status:** M4 shipped — Obsidian polish + Workshop layout ([polish plan](medousa-home-polish-plan.md))  
+> **Status:** M5 in progress — world-class polish ([M5 plan](medousa-home-m5-plan.md), [M4 polish](medousa-home-polish-plan.md))  
 > **Stack (locked):** Tauri 2 · SvelteKit 2 · Svelte 5 · Skeleton 2.x · daemon HTTP/SSE only
 
 ---

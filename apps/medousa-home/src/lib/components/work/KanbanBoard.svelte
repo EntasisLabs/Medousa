@@ -5,7 +5,8 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { SwimlaneMode } from "$lib/types/work";
   import { columnLabel } from "$lib/types/workspace";
-  import { buildKanbanColumns, columnTone } from "$lib/utils/kanban";
+  import { buildKanbanColumns, columnAccent, columnTone } from "$lib/utils/kanban";
+  import { prepareBlockedColumn } from "$lib/utils/groupWork";
 
   interface Props {
     onSelectCard: (id: string) => void;
@@ -29,6 +30,8 @@
       workspace.showDone,
     ),
   );
+
+  const blockedDisplay = $derived(prepareBlockedColumn(workspace.cards));
 
   const hasCards = $derived(
     columns.some((column) =>
@@ -104,15 +107,43 @@
           column.column,
         )}"
       >
-        <header class="border-b border-surface-500/20 px-3 py-2">
-          <h2 class="text-sm font-semibold capitalize">
-            {columnLabel(column.column)}
-          </h2>
-          <p class="text-xs text-surface-400">{column.cards.length}</p>
+        <header class="border-b border-surface-500/20 px-3 py-2.5">
+          <div class="flex items-center gap-2">
+            <span
+              class="h-2 w-2 shrink-0 rounded-full {columnAccent(column.column)}"
+              aria-hidden="true"
+            ></span>
+            <h2 class="text-sm font-medium capitalize text-surface-100">
+              {columnLabel(column.column)}
+            </h2>
+            <span class="ml-auto text-xs tabular-nums text-surface-500">
+              {column.column === "blocked"
+                ? blockedDisplay.total
+                : column.cards.length}
+            </span>
+          </div>
         </header>
 
         <div class="flex-1 space-y-2 overflow-y-auto p-2">
-          {#if workspace.swimlane === "none"}
+          {#if column.column === "blocked" && workspace.swimlane === "none"}
+            {#each blockedDisplay.items as item (item.card.id)}
+              <KanbanCard
+                card={item.card}
+                groupCount={item.count}
+                selected={workspace.selectedCardId === item.card.id}
+                onSelect={onSelectCard}
+              />
+            {:else}
+              {#if blockedDisplay.total === 0}
+                <p class="px-2 py-6 text-center text-xs text-surface-500">Empty</p>
+              {/if}
+            {/each}
+            {#if blockedDisplay.overflow > 0}
+              <p class="px-2 py-3 text-center text-xs text-surface-400">
+                +{blockedDisplay.overflow} more blocked
+              </p>
+            {/if}
+          {:else if workspace.swimlane === "none"}
             {#each column.cards as card (card.id)}
               <KanbanCard
                 {card}
