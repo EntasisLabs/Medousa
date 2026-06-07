@@ -1,4 +1,8 @@
 import {
+  loadTuiDefaultsSummary,
+  persistTuiRuntimePrefs,
+} from "$lib/config";
+import {
   getContinuationStatus,
   getDeliveryStatus,
   getRuntimeStats,
@@ -13,11 +17,8 @@ import type {
   RuntimeTab,
   StageRoutingMatrix,
 } from "$lib/types/runtime";
-
-const PROVIDER_KEY = "medousa-home-provider";
-const MODEL_KEY = "medousa-home-model";
-const DEPTH_KEY = "medousa-home-depth-mode";
-const ROUTING_KEY = "medousa-home-stage-routing";
+import { pollAllSettled } from "$lib/utils/poll";
+import { isTauri } from "$lib/window";
 
 const DEFAULT_PROVIDER = "ollama";
 const DEFAULT_MODEL = "qwen2.5:7b";
@@ -25,10 +26,13 @@ const DEFAULT_DEPTH: DepthMode = "standard";
 
 export class RuntimeStore {
   activeTab = $state<RuntimeTab>("now");
-  provider = $state(loadProvider());
-  model = $state(loadModel());
-  depthMode = $state<DepthMode>(loadDepthMode());
-  stageRouting = $state<StageRoutingMatrix>(loadStageRouting());
+  provider = $state(DEFAULT_PROVIDER);
+  model = $state(DEFAULT_MODEL);
+  depthMode = $state<DepthMode>(DEFAULT_DEPTH);
+  stageRouting = $state<StageRoutingMatrix>(
+    defaultStageRouting(DEFAULT_PROVIDER, DEFAULT_MODEL),
+  );
+  defaultsLoaded = $state(false);
 
   stats = $state<DaemonStatsResponse | null>(null);
   delivery = $state<DeliveryHealthResponse | null>(null);
@@ -36,8 +40,12 @@ export class RuntimeStore {
 
   loading = $state(false);
   error = $state<string | null>(null);
+  errorDetail = $state<string | null>(null);
   controlsMessage = $state<string | null>(null);
   savingControls = $state(false);
+
+  private refreshInFlight = false;
+  private refreshRequestId = 0;
 
   modelLabel(): string {
     return `${this.provider}:${this.model}`;
@@ -62,22 +70,71 @@ export class RuntimeStore {
     ];
   }
 
-  async refresh() {
-    this.loading = true;
-    this.error = null;
+  async loadFromTuiDefaults() {
+    if (!isTauri() || this.defaultsLoaded) return;
     try {
-      const [stats, delivery, continuations] = await Promise.all([
-        getRuntimeStats(),
-        getDeliveryStatus(),
-        getContinuationStatus(),
-      ]);
-      this.stats = stats;
-      this.delivery = delivery;
-      this.continuations = continuations;
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      const summary = await loadTuiDefaultsSummary();
+      const provider = summary.provider?.trim() || DEFAULT_PROVIDER;
+      const model = summary.model?.trim() || DEFAULT_MODEL;
+      this.provider = provider;
+      this.model = model;
+      this.depthMode = normalizeDepth(summary.responseDepthMode ?? DEFAULT_DEPTH);
+      if (summary.stageRouting?.orchestrator?.role) {
+        this.stageRouting = summary.stageRouting;
+      } else {
+        this.stageRouting = defaultStageRouting(provider, model);
+      }
+      this.defaultsLoaded = true;
+    } catch {
+      this.defaultsLoaded = true;
+    }
+  }
+
+  async refresh() {
+    if (this.refreshInFlight) return;
+
+    this.refreshInFlight = true;
+    this.loading = true;
+    const requestId = ++this.refreshRequestId;
+
+    try {
+      const polled = await pollAllSettled(
+        {
+          stats: () => getRuntimeStats(),
+          delivery: () => getDeliveryStatus(),
+          continuations: () => getContinuationStatus(),
+        },
+        {
+          stats: { value: this.stats, error: null },
+          delivery: { value: this.delivery, error: null },
+          continuations: { value: this.continuations, error: null },
+        },
+      );
+
+      if (requestId !== this.refreshRequestId) return;
+
+      this.stats = polled.next.stats.value;
+      this.delivery = polled.next.delivery.value;
+      this.continuations = polled.next.continuations.value;
+
+      if (polled.failed.length === 0) {
+        this.error = null;
+        this.errorDetail = null;
+      } else if (polled.allFailed && !this.hasTelemetryData()) {
+        this.error = polled.failed[0] ?? "Telemetry unavailable";
+        this.errorDetail = polled.failed.join(" · ");
+      } else {
+        this.error =
+          polled.failed.length === 1
+            ? polled.failed[0]
+            : "Some telemetry endpoints are temporarily unavailable";
+        this.errorDetail = polled.failed.join(" · ");
+      }
     } finally {
-      this.loading = false;
+      if (requestId === this.refreshRequestId) {
+        this.loading = false;
+        this.refreshInFlight = false;
+      }
     }
   }
 
@@ -90,10 +147,23 @@ export class RuntimeStore {
         command: { command: "routes", role: null },
       });
       this.stageRouting = response.stage_routing;
-      persistStageRouting(this.stageRouting);
-    } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      if (isTauri()) {
+        await persistTuiRuntimePrefs(
+          this.provider,
+          this.model,
+          this.depthMode,
+          this.stageRouting,
+        );
+      }
+    } catch {
+      // Keep last known routes — routing refresh is best-effort.
     }
+  }
+
+  private hasTelemetryData(): boolean {
+    return (
+      this.stats !== null || this.delivery !== null || this.continuations !== null
+    );
   }
 
   async applyModel(nextProvider: string, nextModel: string) {
@@ -111,9 +181,11 @@ export class RuntimeStore {
       this.provider = response.next_draft_provider;
       this.model = response.next_draft_model;
       this.depthMode = normalizeDepth(response.next_response_depth_mode);
-      persistRuntimePrefs(this.provider, this.model, this.depthMode);
       this.stageRouting = defaultStageRouting(this.provider, this.model);
-      persistStageRouting(this.stageRouting);
+      await this.persistSharedDefaults(
+        response.should_apply_settings,
+        response.should_persist_depth_defaults,
+      );
       this.controlsMessage =
         response.rendered_output ?? `Model set to ${this.provider}:${this.model}`;
     } catch (err) {
@@ -138,7 +210,10 @@ export class RuntimeStore {
       this.provider = response.next_draft_provider;
       this.model = response.next_draft_model;
       this.depthMode = normalizeDepth(response.next_response_depth_mode);
-      persistRuntimePrefs(this.provider, this.model, this.depthMode);
+      await this.persistSharedDefaults(
+        response.should_apply_settings,
+        response.should_persist_depth_defaults,
+      );
       this.controlsMessage =
         response.rendered_output ?? `Depth set to ${this.depthMode}`;
     } catch (err) {
@@ -147,53 +222,29 @@ export class RuntimeStore {
       this.savingControls = false;
     }
   }
+
+  private async persistSharedDefaults(
+    shouldApplySettings: boolean,
+    shouldPersistDepth: boolean,
+  ) {
+    if (!isTauri() || (!shouldApplySettings && !shouldPersistDepth)) return;
+    try {
+      await persistTuiRuntimePrefs(
+        this.provider,
+        this.model,
+        this.depthMode,
+        shouldApplySettings ? this.stageRouting : undefined,
+      );
+    } catch (err) {
+      this.controlsMessage =
+        err instanceof Error ? err.message : String(err);
+    }
+  }
 }
 
 function normalizeDepth(value: string): DepthMode {
   if (value === "concise" || value === "deep") return value;
   return "standard";
-}
-
-function loadProvider(): string {
-  if (typeof localStorage === "undefined") return DEFAULT_PROVIDER;
-  return localStorage.getItem(PROVIDER_KEY)?.trim() || DEFAULT_PROVIDER;
-}
-
-function loadModel(): string {
-  if (typeof localStorage === "undefined") return DEFAULT_MODEL;
-  return localStorage.getItem(MODEL_KEY)?.trim() || DEFAULT_MODEL;
-}
-
-function loadDepthMode(): DepthMode {
-  if (typeof localStorage === "undefined") return DEFAULT_DEPTH;
-  const stored = localStorage.getItem(DEPTH_KEY);
-  if (stored === "concise" || stored === "deep") return stored;
-  return DEFAULT_DEPTH;
-}
-
-function loadStageRouting(): StageRoutingMatrix {
-  if (typeof localStorage === "undefined") {
-    return defaultStageRouting(DEFAULT_PROVIDER, DEFAULT_MODEL);
-  }
-  try {
-    const raw = localStorage.getItem(ROUTING_KEY);
-    if (!raw) return defaultStageRouting(loadProvider(), loadModel());
-    const parsed = JSON.parse(raw) as StageRoutingMatrix;
-    if (parsed?.orchestrator?.role) return parsed;
-  } catch {
-    // fall through
-  }
-  return defaultStageRouting(loadProvider(), loadModel());
-}
-
-function persistRuntimePrefs(provider: string, model: string, depth: DepthMode) {
-  localStorage.setItem(PROVIDER_KEY, provider);
-  localStorage.setItem(MODEL_KEY, model);
-  localStorage.setItem(DEPTH_KEY, depth);
-}
-
-function persistStageRouting(matrix: StageRoutingMatrix) {
-  localStorage.setItem(ROUTING_KEY, JSON.stringify(matrix));
 }
 
 function defaultStageRouting(provider: string, model: string): StageRoutingMatrix {

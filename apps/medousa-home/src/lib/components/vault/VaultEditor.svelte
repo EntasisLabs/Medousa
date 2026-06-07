@@ -87,7 +87,7 @@
     ></textarea>
   {:else}
     <article
-      class="prose-invert flex-1 overflow-y-auto px-6 py-4 text-sm text-surface-100"
+      class="markdown-content flex-1 overflow-y-auto px-5 py-4 text-sm"
     >
       {@html previewHtml}
     </article>

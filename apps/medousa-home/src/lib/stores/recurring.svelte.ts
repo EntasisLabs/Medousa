@@ -1,4 +1,5 @@
 import { listRecurring, registerRecurringPrompt } from "$lib/daemon";
+import { formatDaemonErrorSummary } from "$lib/utils/formatDaemonError";
 import type {
   RecurringDefinitionEntry,
   RegisterRecurringRequest,
@@ -13,12 +14,14 @@ export class RecurringStore {
 
   async refresh(enabledOnly = false) {
     this.loading = true;
-    this.error = null;
     try {
       const response = await listRecurring(enabledOnly);
       this.definitions = response.recurring;
+      this.error = null;
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      if (this.definitions.length === 0) {
+        this.error = formatDaemonErrorSummary(err);
+      }
     } finally {
       this.loading = false;
     }

@@ -55,6 +55,7 @@
 
       await stopWorkspaceStream();
       await startWorkspaceStream(workspace.revision || undefined);
+      await runtime.loadFromTuiDefaults();
       void runtime.refresh();
       void recurring.refresh();
       void chat.refreshSessions();

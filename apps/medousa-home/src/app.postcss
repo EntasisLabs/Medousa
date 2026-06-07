@@ -144,11 +144,29 @@
     @apply text-surface-50;
   }
 
+  .markdown-inline-code,
   .markdown-content code {
-    @apply rounded bg-surface-700 px-1 text-surface-100;
+    @apply rounded bg-surface-700 px-1 font-mono text-[0.9em] text-surface-100;
   }
 
   .markdown-content a {
     @apply text-primary-300 hover:underline;
+  }
+
+  .markdown-code-block {
+    @apply my-3 overflow-hidden rounded-md border border-surface-500/40 bg-surface-900;
+  }
+
+  .markdown-code-lang {
+    @apply block border-b border-surface-500/35 px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-surface-500;
+  }
+
+  .markdown-pre {
+    @apply overflow-x-auto px-3 py-2.5;
+  }
+
+  .markdown-code {
+    @apply block font-mono text-xs leading-relaxed text-surface-100;
+    white-space: pre;
   }
 }

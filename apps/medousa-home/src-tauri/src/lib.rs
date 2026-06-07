@@ -1,4 +1,5 @@
 mod daemon;
+mod medousa_paths;
 mod tray;
 mod window;
 
@@ -95,6 +96,9 @@ pub fn run() {
             window::window_show_chat_popout,
             window::window_hide_chat_popout,
             tray::tray_update_blocked_count,
+            medousa_paths::medousa_config_paths,
+            medousa_paths::load_tui_defaults_summary,
+            medousa_paths::persist_tui_runtime_prefs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

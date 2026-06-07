@@ -1,5 +1,10 @@
 <script lang="ts">
   import {
+    getMedousaConfigPaths,
+    openConfigPath,
+    type MedousaConfigPaths,
+  } from "$lib/config";
+  import {
     checkDaemonHealth,
     getDaemonUrl,
     setDaemonUrl,
@@ -8,6 +13,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import type { DepthMode } from "$lib/types/runtime";
+  import { isTauri } from "$lib/window";
 
   interface Props {
     visible: boolean;
@@ -21,6 +27,38 @@
 
   let draftProvider = $state(runtime.provider);
   let draftModel = $state(runtime.model);
+  let configPaths = $state<MedousaConfigPaths | null>(null);
+
+  const workshopFiles = $derived(
+    configPaths
+      ? [
+          {
+            id: "product",
+            label: "Product settings",
+            hint: "Channels, heartbeat, engine policy",
+            path: configPaths.productConfig,
+          },
+          {
+            id: "workspace",
+            label: "Workspace prefs",
+            hint: "Model, depth, runtime — shared with TUI",
+            path: configPaths.tuiDefaults,
+          },
+          {
+            id: "capabilities",
+            label: "Capabilities",
+            hint: "Tool and service bindings",
+            path: configPaths.capabilities,
+          },
+          {
+            id: "gateway",
+            label: "MCP gateway",
+            hint: "Connected app servers",
+            path: configPaths.mcpGateway,
+          },
+        ]
+      : [],
+  );
 
   $effect(() => {
     if (visible && !settings.daemonUrl) {
@@ -29,8 +67,19 @@
     if (visible) {
       draftProvider = runtime.provider;
       draftModel = runtime.model;
+      if (isTauri() && !configPaths) {
+        void loadConfigPaths();
+      }
     }
   });
+
+  async function loadConfigPaths() {
+    try {
+      configPaths = await getMedousaConfigPaths();
+    } catch {
+      configPaths = null;
+    }
+  }
 
   async function loadDaemonUrl() {
     try {
@@ -60,12 +109,41 @@
 
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   <header class="workshop-header">
-    <h1 class="text-base font-semibold text-surface-50">Settings</h1>
-    <p class="text-xs text-surface-300">Workshop connection and preferences</p>
+    <h1 class="text-sm font-semibold text-surface-50">Settings</h1>
+    <p class="workshop-faint">Home preferences and shared workshop files</p>
   </header>
 
-  <div class="flex-1 space-y-6 overflow-y-auto px-5 py-5">
-    <section class="workshop-inset p-4">
+  <div class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    {#if workshopFiles.length > 0}
+      <section class="workshop-inset p-3">
+        <h2 class="text-sm font-semibold text-surface-100">Workshop files</h2>
+        <p class="workshop-faint mt-1">
+          Same on-disk settings as the TUI and CLI — edit in your editor.
+        </p>
+        <ul class="mt-3 divide-y divide-surface-500/35">
+          {#each workshopFiles as file (file.id)}
+            <li class="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+              <div class="min-w-0">
+                <p class="text-sm text-surface-100">{file.label}</p>
+                <p class="workshop-faint">{file.hint}</p>
+                <p class="mt-0.5 truncate font-mono text-[10px] text-surface-500">
+                  {file.path}
+                </p>
+              </div>
+              <button
+                type="button"
+                class="workshop-text-action shrink-0"
+                onclick={() => openConfigPath(file.path)}
+              >
+                Open
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
+    <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Connection</h2>
       <p class="workshop-faint mt-1">
         Where Medousa Home reaches the running workshop backend.
@@ -101,12 +179,12 @@
       </div>
     </section>
 
-    <section class="workshop-inset p-4">
+    <section class="workshop-inset p-3">
       <div class="flex items-start justify-between gap-3">
         <div>
           <h2 class="text-sm font-semibold text-surface-100">Runtime controls</h2>
           <p class="workshop-faint mt-1">
-            Model and depth for the next chat turn.
+            Model and depth for chat — saved to <code class="markdown-inline-code">tui_defaults.json</code>.
           </p>
         </div>
         <button
@@ -168,8 +246,9 @@
       {/if}
     </section>
 
-    <section class="workshop-inset p-4">
+    <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Appearance</h2>
+      <p class="workshop-faint mt-1">Home-only — not shared with other clients.</p>
       <div class="mt-4 flex items-center gap-4">
         <div
           class="flex h-12 w-28 shrink-0 overflow-hidden rounded-container-token border border-surface-500/30"
@@ -196,7 +275,7 @@
       </label>
     </section>
 
-    <section class="workshop-inset p-4">
+    <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Activity feed</h2>
       <label class="mt-4 flex cursor-pointer items-center gap-3">
         <input
@@ -215,7 +294,7 @@
       </p>
     </section>
 
-    <section class="workshop-inset p-4">
+    <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Notifications</h2>
       <label class="mt-4 flex cursor-pointer items-center gap-3">
         <input
@@ -233,7 +312,7 @@
       </label>
     </section>
 
-    <section class="workshop-inset p-4">
+    <section class="workshop-inset p-3">
       <button
         type="button"
         class="flex w-full items-center justify-between text-left"

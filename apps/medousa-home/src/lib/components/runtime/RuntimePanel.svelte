@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -14,6 +15,7 @@
 
   let draftProvider = $state(runtime.provider);
   let draftModel = $state(runtime.model);
+  let didInitialLoad = $state(false);
 
   const tabs: { id: RuntimeTab; label: string }[] = [
     { id: "now", label: "Now" },
@@ -29,12 +31,21 @@
   );
 
   $effect(() => {
-    if (visible) {
-      draftProvider = runtime.provider;
-      draftModel = runtime.model;
-      void runtime.refresh();
-      void runtime.refreshStageRoutes();
-      void recurring.refresh();
+    if (!visible) {
+      didInitialLoad = false;
+      return;
+    }
+
+    draftProvider = runtime.provider;
+    draftModel = runtime.model;
+
+    if (!didInitialLoad) {
+      didInitialLoad = true;
+      untrack(() => {
+        void runtime.refresh();
+        void runtime.refreshStageRoutes();
+        void recurring.refresh();
+      });
     }
   });
 
@@ -74,12 +85,19 @@
         </button>
       {/each}
     </div>
+
+    <p
+      class="mt-2 min-h-[1.25rem] text-[11px] leading-snug {runtime.error
+        ? 'text-warning-400'
+        : 'text-transparent'}"
+      title={runtime.errorDetail ?? runtime.error ?? undefined}
+      aria-live="polite"
+    >
+      {runtime.error ?? "Telemetry nominal"}
+    </p>
   </header>
 
   <div class="flex-1 overflow-y-auto px-5 py-4">
-    {#if runtime.error}
-      <p class="mb-4 text-sm text-error-400">{runtime.error}</p>
-    {/if}
 
     {#if runtime.activeTab === "now"}
       <dl class="workshop-telemetry">
@@ -154,7 +172,7 @@
       {#if recurring.loading}
         <p class="workshop-muted">Loading schedules…</p>
       {:else if recurring.error}
-        <p class="text-sm text-error-400">{recurring.error}</p>
+        <p class="workshop-faint text-warning-400">{recurring.error}</p>
       {:else if recurring.definitions.length === 0}
         <p class="workshop-muted">
           No recurring schedules yet. Schedule a skill from Skills or register via chat.
