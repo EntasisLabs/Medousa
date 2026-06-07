@@ -40,7 +40,9 @@ use super::prompts::{
     worker_system_prompt,
 };
 use super::registry::{AllowlistToolRegistry, WorkerSessionToolRegistry};
-use super::store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore};
+use super::store::{
+    TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
+};
 
 /// Live host-turn context used when spawning a worker from the tool loop.
 #[derive(Clone)]
@@ -234,6 +236,7 @@ impl TurnWorkerScheduler {
                 .or_else(|| Some(bus.parent_user_prompt.clone())),
             handoff_capsule: Some(handoff),
             worker_scratch: None,
+            synthesis_delivered: false,
             created_at: now,
             updated_at: now,
         };
@@ -643,6 +646,9 @@ async fn run_synthesis_turn(
     let response = match pipeline.execute(request).await {
         Ok(response) => response,
         Err(err) => {
+            turn_worker_store().update(&record.work_id, |worker| {
+                worker.synthesis_delivered = true;
+            });
             sink.agent_error(
                 synthesis_turn_id,
                 format!("Worker synthesis failed: {err}"),
@@ -665,6 +671,9 @@ async fn run_synthesis_turn(
         },
     );
     sink.agent_response(synthesis_turn_id, text, tool_names).await;
+    turn_worker_store().update(&record.work_id, |worker| {
+        worker.synthesis_delivered = true;
+    });
 }
 
 fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {

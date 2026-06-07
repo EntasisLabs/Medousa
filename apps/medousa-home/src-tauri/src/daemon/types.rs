@@ -568,6 +568,38 @@ pub struct EnqueueResponse {
     pub accepted_at_utc: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AskJobCompleteActionsRequest {
+    #[serde(default)]
+    pub write_journal_path: Option<String>,
+    #[serde(default)]
+    pub notify_channel: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AskJobCompleteActionsResponse {
+    pub job_id: String,
+    pub ok: bool,
+    pub message: String,
+    #[serde(default)]
+    pub journal_path: Option<String>,
+    #[serde(default)]
+    pub notified_channel: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchiveAskJobRequest {
+    #[serde(default)]
+    pub purge_output: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchiveAskJobResponse {
+    pub job_id: String,
+    pub archived: bool,
+    pub message: String,
+}
+
 // ── Recurring schedules ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

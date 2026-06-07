@@ -7,7 +7,6 @@ use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::domain::errors::StasisError;
 use stasis::domain::runtime::recurring::RecurringDefinition;
-use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 
 use crate::daemon_api::{

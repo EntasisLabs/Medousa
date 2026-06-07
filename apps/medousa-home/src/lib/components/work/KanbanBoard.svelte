@@ -100,7 +100,7 @@
     {/if}
     {#each columns as column (column.column)}
       <div
-        class="flex w-52 shrink-0 flex-col rounded-md border {columnTone(
+        class="flex min-w-[12.5rem] max-w-xs flex-1 flex-col rounded-md border {columnTone(
           column.column,
         )}"
       >
@@ -112,6 +112,11 @@
             ></span>
             <h2 class="text-xs font-medium capitalize text-surface-200">
               {columnLabel(column.column)}
+              {#if column.column === "in_flight"}
+                <span class="ml-1 font-normal text-surface-500" title="Drag a card to the cancel zone">
+                  · drag to cancel
+                </span>
+              {/if}
             </h2>
             <span class="ml-auto text-xs tabular-nums text-surface-500">
               {column.column === "blocked"

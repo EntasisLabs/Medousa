@@ -10,6 +10,7 @@ use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkStatus, turn_wor
 use crate::daemon_api::{
     WorkBoardColumn, WorkCard, WorkCardDetail, WorkCardId, WorkCardKind,
 };
+use crate::workspace::ask_job_store::{AskJobRecord, AskJobStatus, ask_job_store};
 use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
 use crate::workspace::store::workspace_store;
 
@@ -55,10 +56,22 @@ pub async fn project_workspace_items(
         .iter()
         .map(|record| record.work_id.clone())
         .collect::<std::collections::HashSet<_>>();
+    let ask_parent_ids = ask_job_store()
+        .list_for_workspace(true)
+        .into_iter()
+        .map(|record| record.job_id)
+        .collect::<std::collections::HashSet<_>>();
 
     let mut items = Vec::new();
 
     for worker in &workers {
+        if worker
+            .parent_turn_correlation_id
+            .as_ref()
+            .is_some_and(|parent_id| ask_parent_ids.contains(parent_id))
+        {
+            continue;
+        }
         if let Some(item) = project_turn_worker(worker, include_terminal) {
             items.push(item);
         }
@@ -73,8 +86,76 @@ pub async fn project_workspace_items(
         }
     }
 
+    for ask in ask_job_store().list_for_workspace(include_terminal) {
+        if let Some(item) = project_ask_job(&ask, include_terminal) {
+            items.push(item);
+        }
+    }
+
     items.sort_by(|left, right| right.card.updated_at_utc.cmp(&left.card.updated_at_utc));
     Ok(items)
+}
+
+pub fn project_ask_job(record: &AskJobRecord, include_terminal: bool) -> Option<ProjectedWorkItem> {
+    let (column, status_label, terminal) = column_for_ask_job(record, include_terminal)?;
+
+    let title = truncate_line(&record.prompt, 80);
+    let card = WorkCard {
+        id: WorkCardId(record.job_id.clone()),
+        column,
+        title: title.clone(),
+        status_label: status_label.to_string(),
+        created_at_utc: record.created_at_utc,
+        updated_at_utc: record.updated_at_utc,
+    };
+
+    let result_excerpt = record
+        .output_text
+        .as_deref()
+        .map(|text| truncate_line(text, 500));
+
+    let detail = WorkCardDetail {
+        card: card.clone(),
+        kind: WorkCardKind::AskJob,
+        subtitle: Some("background ask".to_string()),
+        session_id: Some(record.session_id.clone()),
+        correlation_id: None,
+        manuscript_id: record.manuscript_id.clone(),
+        job_id: Some(record.job_id.clone()),
+        work_id: None,
+        job_type: Some("daemon.ask".to_string()),
+        user_ack: None,
+        wrapping_up_reasons: Vec::new(),
+        terminal,
+        error: record.error.clone(),
+        result_excerpt,
+        tool_names: None,
+        associations: workspace_store().associations(&record.job_id),
+    };
+
+    Some(ProjectedWorkItem { card, detail })
+}
+
+fn column_for_ask_job(
+    record: &AskJobRecord,
+    include_terminal: bool,
+) -> Option<(WorkBoardColumn, &'static str, bool)> {
+    match record.status {
+        AskJobStatus::Pending => Some((WorkBoardColumn::Backlog, "queued", false)),
+        AskJobStatus::Running => Some((WorkBoardColumn::InFlight, "running", false)),
+        AskJobStatus::Succeeded => {
+            if !include_terminal && terminal_ask_stale(record.finished_at_utc) {
+                return None;
+            }
+            Some((WorkBoardColumn::Done, "succeeded", true))
+        }
+        AskJobStatus::Failed => Some((WorkBoardColumn::Blocked, "failed", true)),
+        AskJobStatus::Canceled => Some((WorkBoardColumn::Blocked, "canceled", true)),
+    }
+}
+
+fn terminal_ask_stale(finished_at: Option<DateTime<Utc>>) -> bool {
+    finished_at.is_some_and(|at| Utc::now().signed_duration_since(at) > DONE_CARD_TTL)
 }
 
 pub fn project_turn_worker(
@@ -253,8 +334,8 @@ pub fn column_for_turn_worker(
             false,
         )),
         TurnWorkStatus::Completed => {
-            if wrapping_up_stale(record.updated_at) {
-                if !include_terminal {
+            if record.synthesis_delivered || wrapping_up_stale(record.updated_at) {
+                if !include_terminal && wrapping_up_stale(record.updated_at) {
                     return None;
                 }
                 return Some((
@@ -451,6 +532,7 @@ mod tests {
             parent_user_prompt: None,
             handoff_capsule: None,
             worker_scratch: None,
+            synthesis_delivered: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -460,6 +542,39 @@ mod tests {
         assert_eq!(status, "synthesis pending");
         assert_eq!(reasons, vec!["synthesis_pending"]);
         assert!(!terminal);
+    }
+
+    #[test]
+    fn turn_worker_synthesis_delivered_maps_to_done() {
+        let record = TurnWorkRecord {
+            work_id: "work-2".to_string(),
+            session_id: "sess".to_string(),
+            parent_turn_correlation_id: None,
+            intent: "research".to_string(),
+            task_prompt: "run skill".to_string(),
+            status: TurnWorkStatus::Completed,
+            result_text: Some("ok".to_string()),
+            tool_names: vec![],
+            termination_reason: None,
+            error: None,
+            user_ack: "Running skill".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt".to_string(),
+            response_depth_mode: "normal".to_string(),
+            max_tool_rounds: 10,
+            delivery_target: None,
+            parent_user_prompt: None,
+            handoff_capsule: None,
+            worker_scratch: None,
+            synthesis_delivered: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let (column, status, _, terminal) =
+            column_for_turn_worker(&record, true).expect("column");
+        assert_eq!(column, WorkBoardColumn::Done);
+        assert_eq!(status, "completed");
+        assert!(terminal);
     }
 
     #[test]

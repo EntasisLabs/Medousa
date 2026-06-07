@@ -265,7 +265,7 @@
     {:else if runtime.activeTab === "controls"}
       <section class="max-w-xl space-y-4">
         <p class="workshop-faint">
-          Model and depth apply to the next chat turn from Home.
+          Quick model and depth for the next chat turn. Full workshop defaults live in Settings.
         </p>
 
         <div class="workshop-inset p-4">

@@ -39,3 +39,17 @@ export async function notifyCardDone(title: string, statusLabel: string) {
     // Vite-only dev or plugin unavailable — ignore.
   }
 }
+
+export async function notifyAskComplete(title: string) {
+  try {
+    if (!notificationsEnabled()) return;
+    if (!(await ensurePermission())) return;
+    const { sendNotification } = await notificationApi();
+    sendNotification({
+      title: "Medousa — ask ready",
+      body: `${title} · open Work to read the result`,
+    });
+  } catch {
+    // Vite-only dev or plugin unavailable — ignore.
+  }
+}

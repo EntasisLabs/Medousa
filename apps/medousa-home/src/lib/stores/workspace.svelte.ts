@@ -5,7 +5,9 @@ import {
   retryWorkspaceCard,
 } from "$lib/daemon";
 import type { BlockedGroup } from "$lib/utils/groupWork";
-import { notifyCardDone } from "$lib/notifications";
+import { notifyAskComplete, notifyCardDone } from "$lib/notifications";
+import type { PendingAskCompletion } from "$lib/types/askJob";
+import { isAskJobId } from "$lib/types/askJob";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { SwimlaneMode, WorkView } from "$lib/types/work";
 import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
@@ -29,6 +31,7 @@ export class WorkspaceStore {
   askError = $state<string | null>(null);
   askMessage = $state<string | null>(null);
   pendingFocusJobId = $state<string | null>(null);
+  pendingAskCompletion = $state<PendingAskCompletion | null>(null);
   cardDetailsCache = $state<Map<string, WorkCardDetail>>(new Map());
   swimlane = $state<SwimlaneMode>("none");
   showDone = $state(false);
@@ -89,7 +92,15 @@ export class WorkspaceStore {
   private handleCardUpserted(card: WorkCard) {
     const previous = this.previousColumns.get(card.id);
     if (previous !== "done" && card.column === "done") {
-      void notifyCardDone(card.title, card.status_label);
+      if (isAskJobId(card.id)) {
+        void notifyAskComplete(card.title);
+        this.pendingAskCompletion = {
+          jobId: card.id,
+          title: card.title,
+        };
+      } else {
+        void notifyCardDone(card.title, card.status_label);
+      }
     }
     this.previousColumns.set(card.id, card.column);
 
@@ -138,6 +149,10 @@ export class WorkspaceStore {
     } finally {
       this.askSubmitting = false;
     }
+  }
+
+  clearPendingAskCompletion() {
+    this.pendingAskCompletion = null;
   }
 
   setError(message: string) {

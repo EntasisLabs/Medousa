@@ -13,6 +13,7 @@ use crate::daemon_api::{
     ReplayAndResumeResponse, WorkCardDetail, WorkCardKind, WorkspaceCardActionResponse,
 };
 use crate::turn_continuation;
+use crate::workspace::ask_job_store::ask_job_store;
 use crate::workspace::event::event_for_vault_link;
 use crate::workspace::service::WorkspaceService;
 use crate::workspace::store::workspace_store;
@@ -92,6 +93,13 @@ pub async fn cancel_card(
                 )
             };
             (ok, message, Some(job_id))
+        }
+        WorkCardKind::AskJob => {
+            let job_id = detail.job_id.clone().ok_or_else(|| {
+                CardActionError::NotActionable("ask card missing job_id".to_string())
+            })?;
+            ask_job_store().mark_canceled(&job_id);
+            (true, format!("ask {job_id} canceled"), Some(job_id))
         }
         other => {
             return Err(CardActionError::NotActionable(format!(
@@ -350,6 +358,7 @@ mod tests {
             parent_user_prompt: None,
             handoff_capsule: None,
             worker_scratch: None,
+            synthesis_delivered: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

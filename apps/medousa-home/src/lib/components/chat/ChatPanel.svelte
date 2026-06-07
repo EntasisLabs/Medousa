@@ -66,7 +66,7 @@
           {
             id: crypto.randomUUID(),
             role: "system",
-            content: `Queued background ask · job ${accepted.job_id} on ${accepted.queue}. Watch Work for the card.`,
+            content: `Queued background ask · job ${accepted.job_id}. Watch Work — card appears on the board; you'll get a prompt when it finishes.`,
           },
         ];
       } catch (err) {

@@ -3,11 +3,14 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import {
+    archiveAskJob,
+    completeAskJobActions,
     getJobResult,
     lookupArtifact,
     sendInteractiveTurn,
     startInteractiveStream,
   } from "$lib/daemon";
+  import { defaultJournalPathForToday, isAskJobId } from "$lib/types/askJob";
   import type { ArtifactPreview } from "$lib/types/artifact";
   import type { JobResultResponse } from "$lib/types/job";
   import { columnLabel } from "$lib/types/workspace";
@@ -34,6 +37,7 @@
   let jobResultLoading = $state(false);
   let artifactPreviews = $state<ArtifactPreview[]>([]);
   let artifactsLoading = $state(false);
+  let actionBusy = $state(false);
 
   function handleClose() {
     if (onClose) {
@@ -44,6 +48,9 @@
   }
 
   const detail = $derived(workspace.selectedCardDetail);
+  const isAskCard = $derived(
+    detail ? isAskJobId(detail.job_id ?? detail.card.id) : false,
+  );
   const wrappingUp = $derived(detail?.card.column === "wrapping_up");
   const blockedGroup = $derived(
     detail ? findBlockedGroupForCard(workspace.cards, detail.card.id) : null,
@@ -88,11 +95,13 @@
 
   $effect(() => {
     const jobId = detail?.job_id;
+    const cardUpdated = detail?.card.updated_at_utc;
     if (!jobId) {
       jobResult = null;
       jobResultError = null;
       return;
     }
+    void cardUpdated;
 
     jobResultLoading = true;
     jobResultError = null;
@@ -108,6 +117,40 @@
         jobResultLoading = false;
       });
   });
+
+  async function archiveAsk() {
+    if (!detail?.job_id || actionBusy) return;
+    actionBusy = true;
+    workspace.cardActionMessage = null;
+    try {
+      const response = await archiveAskJob(detail.job_id, true);
+      workspace.cardActionMessage = response.message;
+      workspace.clearSelection();
+    } catch (err) {
+      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+    } finally {
+      actionBusy = false;
+    }
+  }
+
+  async function writeResultToJournal() {
+    if (!detail?.job_id || actionBusy) return;
+    actionBusy = true;
+    workspace.cardActionMessage = null;
+    try {
+      const response = await completeAskJobActions(detail.job_id, {
+        writeJournalPath: defaultJournalPathForToday(),
+      });
+      workspace.cardActionMessage = response.message;
+      if (response.journal_path) {
+        onOpenNote(response.journal_path);
+      }
+    } catch (err) {
+      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+    } finally {
+      actionBusy = false;
+    }
+  }
 
   async function askMedousa() {
     if (!detail) return;
@@ -183,11 +226,34 @@
       <button
         type="button"
         class="btn btn-sm variant-filled-primary"
-        disabled={!detail}
+        disabled={!detail ||
+          (isAskCard &&
+            detail.card.column !== "blocked" &&
+            detail.card.status_label !== "failed" &&
+            detail.card.status_label !== "canceled")}
+        title={isAskCard ? "Re-queue a failed ask with the same prompt and skills" : undefined}
         onclick={() => workspace.retrySelectedCard()}
       >
         Retry
       </button>
+      {#if isAskCard && detail?.card.column === "done"}
+        <button
+          type="button"
+          class="btn btn-sm variant-soft-primary"
+          disabled={actionBusy}
+          onclick={() => void writeResultToJournal()}
+        >
+          Journal
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          disabled={actionBusy}
+          onclick={() => void archiveAsk()}
+        >
+          Clear
+        </button>
+      {/if}
       <button
         type="button"
         class="btn btn-sm variant-soft-primary"

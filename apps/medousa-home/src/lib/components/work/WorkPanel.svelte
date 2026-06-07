@@ -3,6 +3,7 @@
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import KanbanBoard from "$lib/components/work/KanbanBoard.svelte";
   import CardInspector from "$lib/components/work/CardInspector.svelte";
+  import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
   import NewWorkAsk from "$lib/components/work/NewWorkAsk.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -21,8 +22,8 @@
   });
 </script>
 
-<div class="flex h-full min-w-0 flex-1 {visible ? '' : 'hidden'}">
-  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+<div class="flex h-full min-h-0 min-w-0 flex-1 {visible ? '' : 'hidden'}">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <KanbanBoard onSelectCard={onSelectCard} />
     <NewWorkAsk {visible} />
   </div>
@@ -43,4 +44,10 @@
       />
     </SplitPane>
   {/if}
+
+  <AskCompletionModal
+    pending={workspace.pendingAskCompletion}
+    {onOpenNote}
+    onClose={() => workspace.clearPendingAskCompletion()}
+  />
 </div>

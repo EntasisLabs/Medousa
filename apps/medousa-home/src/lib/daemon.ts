@@ -279,6 +279,27 @@ export async function getJobResult(jobId: string): Promise<JobResultResponse> {
   return invoke<JobResultResponse>("job_get_result", { jobId });
 }
 
+export async function completeAskJobActions(
+  jobId: string,
+  request: {
+    writeJournalPath?: string;
+    notifyChannel?: string;
+  } = {},
+): Promise<import("$lib/types/askJob").AskJobCompleteActionsResponse> {
+  return invoke("job_complete_actions", {
+    jobId,
+    writeJournalPath: request.writeJournalPath ?? null,
+    notifyChannel: request.notifyChannel ?? null,
+  });
+}
+
+export async function archiveAskJob(
+  jobId: string,
+  purgeOutput = true,
+): Promise<import("$lib/types/askJob").ArchiveAskJobResponse> {
+  return invoke("job_archive_ask", { jobId, purgeOutput });
+}
+
 export interface EnqueueDaemonAskRequest {
   prompt: string;
   modelHint?: string;

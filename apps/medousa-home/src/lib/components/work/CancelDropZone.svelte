@@ -42,11 +42,16 @@
 </script>
 
 <div
-  class="mx-4 mb-2 border-b border-dashed border-surface-500/30 px-2 py-1.5 text-center text-[11px] transition {active
+  class="mx-4 text-center text-[11px] transition-all {active || busy
+    ? 'mb-2 border-b border-dashed px-2 py-1.5'
+    : 'mb-0 h-0 overflow-hidden border-0 py-0 opacity-0'} {active
     ? 'border-error-500/60 bg-error-500/5 text-error-300'
-    : 'text-surface-500'}"
+    : busy
+      ? 'border-surface-500/30 text-surface-400'
+      : 'border-surface-500/30 text-surface-500'}"
   role="region"
   aria-label="Cancel work drop zone"
+  aria-hidden={!active && !busy}
   ondragover={allowDrop}
   ondragleave={clearActive}
   ondrop={handleDrop}

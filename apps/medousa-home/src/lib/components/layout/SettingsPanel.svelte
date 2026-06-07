@@ -10,6 +10,7 @@
     setDaemonUrl,
     type DaemonHealth,
   } from "$lib/daemon";
+  import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauri } from "$lib/window";
 
@@ -48,7 +49,7 @@
           {
             id: "workspace",
             label: "tui_defaults.json",
-            hint: "Model and depth — edit in Runtime → Controls",
+            hint: "Workshop defaults — editable above",
             path: configPaths.tuiDefaults,
           },
           {
@@ -153,14 +154,18 @@
       </div>
     </section>
 
+    {#if isTauri()}
+      <WorkshopDefaultsPanel visible={visible} />
+    {/if}
+
     <section class="workshop-inset p-3">
-      <h2 class="text-sm font-semibold text-surface-100">Workshop surfaces</h2>
+      <h2 class="text-sm font-semibold text-surface-100">Related views</h2>
       <p class="workshop-faint mt-1">
-        Configure runtime, channels, and schedules in their dedicated views.
+        Telemetry, channels, and schedules live in dedicated surfaces.
       </p>
       <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
         <button type="button" class="workshop-text-action" onclick={onOpenRuntime}>
-          Runtime
+          Runtime telemetry
         </button>
         {#if onOpenMessaging}
           <button type="button" class="workshop-text-action" onclick={onOpenMessaging}>

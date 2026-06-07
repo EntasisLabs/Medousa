@@ -21,12 +21,121 @@ pub struct TuiDefaultsSummary {
     pub stage_routing: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TuiDefaultsDto {
+    pub backend: Option<String>,
+    pub theme_id: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub base_url: Option<String>,
+    pub env_overrides: Option<String>,
+    pub allowed_modules: Option<Vec<String>>,
+    pub tool_call_mode: Option<String>,
+    pub max_tool_rounds: Option<usize>,
+    pub host_bus_max_tool_rounds: Option<usize>,
+    pub host_turn_bus_mode: Option<String>,
+    pub activation_tool_intent_max_rounds: Option<usize>,
+    pub activation_short_turn_max_tool_rounds: Option<usize>,
+    pub continuation_max_tool_rounds: Option<usize>,
+    pub max_text_only_stuck_continues: Option<usize>,
+    pub classifier_restricted_max_tool_rounds: Option<usize>,
+    pub thinking_capture: Option<bool>,
+    pub stasis_otel_enabled: Option<bool>,
+    pub thinking_max_lines: Option<usize>,
+    pub activation_direct_answer_max_prompt_chars: Option<usize>,
+    pub activation_long_session_turn_threshold: Option<usize>,
+    pub activation_long_session_max_prompt_chars: Option<usize>,
+    pub slice_hot_window_turns: Option<usize>,
+    pub slice_cold_window_turns: Option<usize>,
+    pub retry_runtime_max_retries: Option<usize>,
+    pub retry_runtime_max_rounds: Option<usize>,
+    pub verifier_min_citation_coverage: Option<f32>,
+    pub verifier_min_avg_support_strength: Option<f32>,
+    pub verifier_min_supported_claim_ratio: Option<f32>,
+    pub verifier_min_claim_support_strength: Option<f32>,
+    pub response_depth_mode: Option<String>,
+    pub stage_routing: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct TuiDefaultsFile {
+    #[serde(default)]
+    backend: Option<String>,
+    #[serde(default)]
+    theme_id: Option<String>,
+    #[serde(default)]
     provider: Option<String>,
+    #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    base_url: Option<String>,
+    #[serde(default)]
+    env_overrides: Option<String>,
+    #[serde(default)]
+    allowed_modules: Option<Vec<String>>,
+    #[serde(default)]
+    tool_call_mode: Option<String>,
+    #[serde(default)]
+    max_tool_rounds: Option<usize>,
+    #[serde(default)]
+    host_bus_max_tool_rounds: Option<usize>,
+    #[serde(default)]
+    host_turn_bus_mode: Option<String>,
+    #[serde(default)]
+    activation_tool_intent_max_rounds: Option<usize>,
+    #[serde(default)]
+    activation_short_turn_max_tool_rounds: Option<usize>,
+    #[serde(default)]
+    continuation_max_tool_rounds: Option<usize>,
+    #[serde(default)]
+    max_text_only_stuck_continues: Option<usize>,
+    #[serde(default)]
+    classifier_restricted_max_tool_rounds: Option<usize>,
+    #[serde(default)]
+    thinking_capture: Option<bool>,
+    #[serde(default)]
+    stasis_otel_enabled: Option<bool>,
+    #[serde(default)]
+    thinking_max_lines: Option<usize>,
+    #[serde(default)]
+    activation_direct_answer_max_prompt_chars: Option<usize>,
+    #[serde(default)]
+    activation_long_session_turn_threshold: Option<usize>,
+    #[serde(default)]
+    activation_long_session_max_prompt_chars: Option<usize>,
+    #[serde(default)]
+    slice_hot_window_turns: Option<usize>,
+    #[serde(default)]
+    slice_cold_window_turns: Option<usize>,
+    #[serde(default)]
+    retry_runtime_max_retries: Option<usize>,
+    #[serde(default)]
+    retry_runtime_max_rounds: Option<usize>,
+    #[serde(default)]
+    verifier_min_citation_coverage: Option<f32>,
+    #[serde(default)]
+    verifier_min_avg_support_strength: Option<f32>,
+    #[serde(default)]
+    verifier_min_supported_claim_ratio: Option<f32>,
+    #[serde(default)]
+    verifier_min_claim_support_strength: Option<f32>,
+    #[serde(default)]
     response_depth_mode: Option<String>,
+    #[serde(default)]
     stage_routing: Option<serde_json::Value>,
+    #[serde(default)]
+    command_usage_counts: Option<serde_json::Value>,
+    #[serde(default)]
+    surreal_endpoint: Option<String>,
+    #[serde(default)]
+    surreal_username: Option<String>,
+    #[serde(default)]
+    surreal_password: Option<String>,
+    #[serde(default)]
+    surreal_namespace: Option<String>,
+    #[serde(default)]
+    surreal_database: Option<String>,
 }
 
 fn medousa_data_dir() -> PathBuf {
@@ -62,6 +171,82 @@ fn write_tui_defaults_file(defaults: &TuiDefaultsFile) -> Result<(), String> {
     std::fs::write(path, json).map_err(|err| err.to_string())
 }
 
+fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
+    TuiDefaultsDto {
+        backend: file.backend.clone(),
+        theme_id: file.theme_id.clone(),
+        provider: file.provider.clone(),
+        model: file.model.clone(),
+        base_url: file.base_url.clone(),
+        env_overrides: file.env_overrides.clone(),
+        allowed_modules: file.allowed_modules.clone(),
+        tool_call_mode: file.tool_call_mode.clone(),
+        max_tool_rounds: file.max_tool_rounds,
+        host_bus_max_tool_rounds: file.host_bus_max_tool_rounds,
+        host_turn_bus_mode: file.host_turn_bus_mode.clone(),
+        activation_tool_intent_max_rounds: file.activation_tool_intent_max_rounds,
+        activation_short_turn_max_tool_rounds: file.activation_short_turn_max_tool_rounds,
+        continuation_max_tool_rounds: file.continuation_max_tool_rounds,
+        max_text_only_stuck_continues: file.max_text_only_stuck_continues,
+        classifier_restricted_max_tool_rounds: file.classifier_restricted_max_tool_rounds,
+        thinking_capture: file.thinking_capture,
+        stasis_otel_enabled: file.stasis_otel_enabled,
+        thinking_max_lines: file.thinking_max_lines,
+        activation_direct_answer_max_prompt_chars: file
+            .activation_direct_answer_max_prompt_chars,
+        activation_long_session_turn_threshold: file.activation_long_session_turn_threshold,
+        activation_long_session_max_prompt_chars: file.activation_long_session_max_prompt_chars,
+        slice_hot_window_turns: file.slice_hot_window_turns,
+        slice_cold_window_turns: file.slice_cold_window_turns,
+        retry_runtime_max_retries: file.retry_runtime_max_retries,
+        retry_runtime_max_rounds: file.retry_runtime_max_rounds,
+        verifier_min_citation_coverage: file.verifier_min_citation_coverage,
+        verifier_min_avg_support_strength: file.verifier_min_avg_support_strength,
+        verifier_min_supported_claim_ratio: file.verifier_min_supported_claim_ratio,
+        verifier_min_claim_support_strength: file.verifier_min_claim_support_strength,
+        response_depth_mode: file.response_depth_mode.clone(),
+        stage_routing: file.stage_routing.clone(),
+    }
+}
+
+fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
+    file.backend = dto.backend.clone();
+    file.theme_id = dto.theme_id.clone();
+    file.provider = dto.provider.clone();
+    file.model = dto.model.clone();
+    file.base_url = dto.base_url.clone();
+    file.env_overrides = dto.env_overrides.clone();
+    file.allowed_modules = dto.allowed_modules.clone();
+    file.tool_call_mode = dto.tool_call_mode.clone();
+    file.max_tool_rounds = dto.max_tool_rounds;
+    file.host_bus_max_tool_rounds = dto.host_bus_max_tool_rounds;
+    file.host_turn_bus_mode = dto.host_turn_bus_mode.clone();
+    file.activation_tool_intent_max_rounds = dto.activation_tool_intent_max_rounds;
+    file.activation_short_turn_max_tool_rounds = dto.activation_short_turn_max_tool_rounds;
+    file.continuation_max_tool_rounds = dto.continuation_max_tool_rounds;
+    file.max_text_only_stuck_continues = dto.max_text_only_stuck_continues;
+    file.classifier_restricted_max_tool_rounds = dto.classifier_restricted_max_tool_rounds;
+    file.thinking_capture = dto.thinking_capture;
+    file.stasis_otel_enabled = dto.stasis_otel_enabled;
+    file.thinking_max_lines = dto.thinking_max_lines;
+    file.activation_direct_answer_max_prompt_chars =
+        dto.activation_direct_answer_max_prompt_chars;
+    file.activation_long_session_turn_threshold = dto.activation_long_session_turn_threshold;
+    file.activation_long_session_max_prompt_chars = dto.activation_long_session_max_prompt_chars;
+    file.slice_hot_window_turns = dto.slice_hot_window_turns;
+    file.slice_cold_window_turns = dto.slice_cold_window_turns;
+    file.retry_runtime_max_retries = dto.retry_runtime_max_retries;
+    file.retry_runtime_max_rounds = dto.retry_runtime_max_rounds;
+    file.verifier_min_citation_coverage = dto.verifier_min_citation_coverage;
+    file.verifier_min_avg_support_strength = dto.verifier_min_avg_support_strength;
+    file.verifier_min_supported_claim_ratio = dto.verifier_min_supported_claim_ratio;
+    file.verifier_min_claim_support_strength = dto.verifier_min_claim_support_strength;
+    file.response_depth_mode = dto.response_depth_mode.clone();
+    if dto.stage_routing.is_some() {
+        file.stage_routing = dto.stage_routing.clone();
+    }
+}
+
 #[tauri::command]
 pub fn medousa_config_paths() -> MedousaConfigPaths {
     let data = medousa_data_dir();
@@ -85,6 +270,18 @@ pub fn load_tui_defaults_summary() -> TuiDefaultsSummary {
         response_depth_mode: file.response_depth_mode,
         stage_routing: file.stage_routing,
     }
+}
+
+#[tauri::command]
+pub fn load_tui_defaults() -> TuiDefaultsDto {
+    file_to_dto(&read_tui_defaults_file())
+}
+
+#[tauri::command]
+pub fn persist_tui_defaults(dto: TuiDefaultsDto) -> Result<(), String> {
+    let mut file = read_tui_defaults_file();
+    apply_dto_to_file(&mut file, &dto);
+    write_tui_defaults_file(&file)
 }
 
 #[tauri::command]

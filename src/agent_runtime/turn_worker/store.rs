@@ -56,6 +56,9 @@ pub struct TurnWorkRecord {
     pub handoff_capsule: Option<WorkerHandoffCapsule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_scratch: Option<crate::agent_runtime::turn_context::TurnScratchpad>,
+    /// Host synthesis delivered the worker result to the parent turn.
+    #[serde(default)]
+    pub synthesis_delivered: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

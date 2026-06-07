@@ -117,7 +117,10 @@
 </script>
 
 {#if visible}
-  <form class="workshop-composer border-t border-surface-800/80" onsubmit={submit}>
+  <form
+    class="workshop-composer shrink-0 border-t border-surface-800/80"
+    onsubmit={submit}
+  >
     <div class="flex flex-col gap-2 px-3 py-2">
       <div class="flex items-center justify-between gap-2">
         <button

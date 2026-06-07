@@ -212,7 +212,9 @@
               noteTitle={vault.title}
               wikilinksOut={vault.wikilinksOut}
               backlinks={vault.backlinks}
-              cardDetail={workspace.selectedCardDetail}
+              cardDetail={activeSurface === "work"
+                ? null
+                : workspace.selectedCardDetail}
               cardError={workspace.cardDetailError}
               noteDiffChip={vault.diffChip()}
               onOpenNote={handleOpenNote}
@@ -247,7 +249,7 @@
         onOpenCron={() => (activeSurface = "cron")}
       />
 
-      {#if workspace.inMotionCount() > 0 || activeSurface === "work"}
+      {#if workspace.inMotionCount() > 0 && activeSurface !== "work"}
         <WorkRail
           cards={workspace.railCards()}
           selectedId={workspace.selectedCardId}

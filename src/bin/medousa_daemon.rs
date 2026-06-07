@@ -429,6 +429,11 @@ async fn main() -> Result<()> {
         .route("/v1/heartbeat/status", get(heartbeat_status))
         .route("/v1/jobs/{job_id}/result", get(get_job_result))
         .route("/v1/jobs/{job_id}/report", get(get_job_report))
+        .route(
+            "/v1/jobs/{job_id}/complete-actions",
+            post(complete_ask_job_actions),
+        )
+        .route("/v1/jobs/{job_id}/archive", post(archive_ask_job))
         .route("/v1/jobs/ask", post(enqueue_ask))
         .route("/v1/jobs/report", post(enqueue_report))
         .route("/v1/jobs/prompt", post(enqueue_prompt))
@@ -464,6 +469,10 @@ async fn main() -> Result<()> {
         .route(
             "/v1/jobs/{job_id}/replay-and-resume",
             post(replay_and_resume_job),
+        )
+        .route(
+            "/v1/workspace/cards/{card_id}/retry",
+            post(retry_workspace_card),
         )
         .with_state(state.clone());
 
@@ -531,10 +540,6 @@ async fn main() -> Result<()> {
         .route(
             "/v1/workspace/cards/{card_id}/cancel",
             post(medousa::workspace_handlers::cancel_workspace_card),
-        )
-        .route(
-            "/v1/workspace/cards/{card_id}/retry",
-            post(medousa::workspace_handlers::retry_workspace_card),
         )
         .route(
             "/v1/workspace/cards/{card_id}/link-vault",
@@ -955,6 +960,10 @@ async fn get_job_result(
         return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
     }
 
+    if let Some(record) = medousa::workspace::ask_job_store::ask_job_store().get(&job_id) {
+        return Ok(Json(job_result_from_ask_job(&job_id, &record)));
+    }
+
     if let Some(record) = state.agent_turn_jobs.read().await.get(&job_id) {
         return Ok(Json(job_result_from_agent_turn(&job_id, record)));
     }
@@ -1141,6 +1150,27 @@ async fn enqueue_ask(
         Some(suggested_capability_ids)
     };
 
+    medousa::workspace::ask_job_store::ask_job_store().register_pending(
+        medousa::workspace::ask_job_store::AskJobRecord {
+            job_id: job_id.clone(),
+            prompt: prompt.clone(),
+            status: medousa::workspace::ask_job_store::AskJobStatus::Pending,
+            output_text: None,
+            error: None,
+            session_id: session_id.clone(),
+            manuscript_id: manuscript_id.clone(),
+            additional_manuscript_ids: additional_manuscript_ids.clone(),
+            suggested_capability_ids: suggested_capability_ids.clone(),
+            model_hint: request.model_hint.clone(),
+            created_at_utc: now,
+            updated_at_utc: now,
+            finished_at_utc: None,
+            archived: false,
+            journal_path: None,
+            notified_channel: None,
+        },
+    );
+
     spawn_daemon_api_agent_turn(
         &state,
         job_id.clone(),
@@ -1160,6 +1190,112 @@ async fn enqueue_ask(
         queue: "agent-runtime".to_string(),
         accepted_at_utc: now,
     }))
+}
+
+fn map_workspace_card_action_error(
+    err: medousa::workspace::actions::CardActionError,
+) -> (StatusCode, String) {
+    match err {
+        medousa::workspace::actions::CardActionError::NotFound => {
+            (StatusCode::NOT_FOUND, err.message())
+        }
+        medousa::workspace::actions::CardActionError::NotActionable(reason) => {
+            (StatusCode::BAD_REQUEST, reason)
+        }
+        medousa::workspace::actions::CardActionError::Internal(reason) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, reason)
+        }
+    }
+}
+
+async fn retry_workspace_card(
+    State(state): State<AppState>,
+    AxumPath(card_id): AxumPath<String>,
+) -> Result<Json<medousa::daemon_api::WorkspaceCardActionResponse>, (StatusCode, String)> {
+    let card_id = card_id.trim();
+    if card_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "card_id is required".to_string()));
+    }
+
+    let composition = Arc::new(state.composition().clone());
+    let detail = medousa::workspace::WorkspaceService::get_card_detail(
+        composition.clone(),
+        card_id,
+    )
+    .await
+    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, format!("card not found: {card_id}")))?;
+
+    if detail.kind == medousa::daemon_api::WorkCardKind::AskJob {
+        return retry_ask_workspace_card(&state, card_id, &detail)
+            .await
+            .map(Json);
+    }
+
+    medousa::workspace::actions::retry_card(composition, card_id, &state.worker_id)
+        .await
+        .map(Json)
+        .map_err(map_workspace_card_action_error)
+}
+
+async fn retry_ask_workspace_card(
+    state: &AppState,
+    card_id: &str,
+    detail: &medousa::daemon_api::WorkCardDetail,
+) -> Result<medousa::daemon_api::WorkspaceCardActionResponse, (StatusCode, String)> {
+    let job_id = detail.job_id.clone().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            "ask card missing job_id".to_string(),
+        )
+    })?;
+
+    if !medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&job_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "retry is only supported for daemon ask job cards".to_string(),
+        ));
+    }
+
+    let record = medousa::workspace::ask_job_store::ask_job_store()
+        .reset_for_retry(&job_id)
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "retry is only supported for failed or canceled ask jobs".to_string(),
+            )
+        })?;
+
+    let (provider, model) =
+        resolve_api_model_routing(record.model_hint.as_deref(), &state.default_runtime_config);
+
+    spawn_daemon_api_agent_turn(
+        state,
+        job_id.clone(),
+        record.session_id.clone(),
+        record.prompt.clone(),
+        state.default_runtime_config.response_depth_mode.clone(),
+        provider,
+        model,
+        record.manuscript_id.clone(),
+        record.additional_manuscript_ids.clone(),
+        record.suggested_capability_ids.clone(),
+    )
+    .await;
+
+    medousa::workspace::WorkspaceService::sync_runtime(state.composition(), true).await;
+
+    Ok(medousa::daemon_api::WorkspaceCardActionResponse {
+        workspace_revision: medousa::workspace::store::workspace_store().revision(),
+        card_id: card_id.to_string(),
+        action: "retry".to_string(),
+        ok: true,
+        message: format!("ask {job_id} re-queued"),
+        job_id: Some(job_id),
+        replayed: Some(true),
+        job_succeeded: None,
+        associations: None,
+    })
 }
 
 async fn enqueue_report(
@@ -2645,6 +2781,103 @@ fn job_result_from_agent_turn(job_id: &str, record: &AgentTurnJobRecord) -> JobR
     }
 }
 
+fn job_result_from_ask_job(
+    job_id: &str,
+    record: &medousa::workspace::ask_job_store::AskJobRecord,
+) -> JobResultResponse {
+    use medousa::workspace::ask_job_store::AskJobStatus;
+
+    let status = match record.status {
+        AskJobStatus::Pending => "pending",
+        AskJobStatus::Running => "running",
+        AskJobStatus::Succeeded => "succeeded",
+        AskJobStatus::Failed => "failed",
+        AskJobStatus::Canceled => "canceled",
+    };
+    let is_terminal = matches!(
+        record.status,
+        AskJobStatus::Succeeded | AskJobStatus::Failed | AskJobStatus::Canceled
+    );
+    JobResultResponse {
+        job_id: job_id.to_string(),
+        status: status.to_string(),
+        is_terminal,
+        attempt_count: usize::from(is_terminal),
+        latest_outcome: record
+            .error
+            .clone()
+            .or_else(|| Some(format!("status={status}"))),
+        latest_execution_id: None,
+        output_text: record.output_text.clone(),
+    }
+}
+
+async fn complete_ask_job_actions(
+    State(state): State<AppState>,
+    AxumPath(job_id): AxumPath<String>,
+    Json(request): Json<medousa::AskJobCompleteActionsRequest>,
+) -> Result<Json<medousa::AskJobCompleteActionsResponse>, (StatusCode, String)> {
+    let job_id = job_id.trim().to_string();
+    if job_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
+    }
+    if !medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&job_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "complete-actions is only supported for daemon ask jobs".to_string(),
+        ));
+    }
+
+    let result = medousa::workspace::ask_job_finalize::apply_ask_job_complete_actions(
+        &job_id,
+        medousa::workspace::ask_job_finalize::AskJobCompleteActions {
+            write_journal_path: request.write_journal_path,
+            notify_channel: request.notify_channel,
+        },
+        &state.channel_dispatch_client,
+    )
+    .await
+    .map_err(internal_error)?;
+
+    Ok(Json(medousa::AskJobCompleteActionsResponse {
+        job_id,
+        ok: true,
+        message: result.message,
+        journal_path: result.journal_path,
+        notified_channel: result.notified_channel,
+    }))
+}
+
+async fn archive_ask_job(
+    AxumPath(job_id): AxumPath<String>,
+    Json(request): Json<medousa::ArchiveAskJobRequest>,
+) -> Result<Json<medousa::ArchiveAskJobResponse>, (StatusCode, String)> {
+    let job_id = job_id.trim().to_string();
+    if job_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "job_id is required".to_string()));
+    }
+    if !medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&job_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "archive is only supported for daemon ask jobs".to_string(),
+        ));
+    }
+
+    medousa::workspace::ask_job_store::ask_job_store()
+        .archive(&job_id, request.purge_output)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("ask job not found: {job_id}")))?;
+
+    Ok(Json(medousa::ArchiveAskJobResponse {
+        job_id: job_id.clone(),
+        archived: true,
+        message: if request.purge_output {
+            format!("archived ask {job_id} and cleared stored output")
+        } else {
+            format!("archived ask {job_id}")
+        },
+    }))
+}
+
 async fn resolve_job_title_for_vault_footer(
     runtime: &RuntimeComposition,
     job_id: &str,
@@ -2878,6 +3111,10 @@ async fn spawn_daemon_api_agent_turn_with_scope(
         AgentTurnJobRecord::pending(),
     );
 
+    if medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&job_id) {
+        medousa::workspace::ask_job_store::ask_job_store().mark_running(&job_id);
+    }
+
     let interactive_request = session_mapping::build_interactive_turn_request_for_ingest(
         &session_id,
         prompt,
@@ -2947,6 +3184,11 @@ impl AgentStreamSink for ApiAgentStreamSink {
             },
         );
 
+        if medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
+            medousa::workspace::ask_job_store::ask_job_store()
+                .mark_succeeded(&self.job_id, text.clone());
+        }
+
         let latency_ms = self.started.elapsed().as_millis() as u64;
         let now = Utc::now();
         self.agent_turn_jobs.write().await.insert(
@@ -2962,6 +3204,11 @@ impl AgentStreamSink for ApiAgentStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
+        if medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
+            medousa::workspace::ask_job_store::ask_job_store()
+                .mark_failed(&self.job_id, message.clone());
+        }
+
         let latency_ms = self.started.elapsed().as_millis() as u64;
         let now = Utc::now();
         self.agent_turn_jobs.write().await.insert(

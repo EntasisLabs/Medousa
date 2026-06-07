@@ -28,8 +28,9 @@ use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
 
 use crate::identity_memory::{
-    full_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
-    resolve_identity_user_id,
+    full_identity_context_request, is_identity_user_preferences_decode_error,
+    repair_surreal_identity_user_preferences, repair_surreal_identity_user_preferences_for_id,
+    resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
 };
 
 const PROPOSAL_TABLE: &str = "identity_entity_update_proposal";
@@ -1004,7 +1005,30 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
     ) -> StasisResult<GetIdentityContextResponse> {
         match &self.backing {
             Backing::InMemory { store, .. } => store.get_identity_context(request).await,
-            Backing::Surreal { store, .. } => store.get_identity_context(request).await,
+            Backing::Surreal { store, db, .. } => {
+                match store.get_identity_context(request).await {
+                    Ok(response) => Ok(response),
+                    Err(err) if is_identity_user_preferences_decode_error(&err) => {
+                        if let Err(repair_err) =
+                            repair_surreal_identity_user_preferences_for_id(db, &request.user_id)
+                                .await
+                        {
+                            eprintln!(
+                                "medousa-daemon: identity user preferences repair failed user_id={} err={repair_err}",
+                                request.user_id
+                            );
+                        } else if let Err(repair_err) =
+                            repair_surreal_identity_user_preferences(db).await
+                        {
+                            eprintln!(
+                                "medousa-daemon: identity user preferences bulk repair failed err={repair_err}"
+                            );
+                        }
+                        store.get_identity_context(request).await
+                    }
+                    Err(err) => Err(err),
+                }
+            }
         }
     }
 

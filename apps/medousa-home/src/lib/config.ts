@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
+import type { TuiDefaults } from "$lib/types/workshopDefaults";
 
 export interface MedousaConfigPaths {
   dataDir: string;
@@ -24,6 +25,14 @@ export async function getMedousaConfigPaths(): Promise<MedousaConfigPaths> {
 
 export async function loadTuiDefaultsSummary(): Promise<TuiDefaultsSummary> {
   return invoke<TuiDefaultsSummary>("load_tui_defaults_summary");
+}
+
+export async function loadTuiDefaults(): Promise<TuiDefaults> {
+  return invoke<TuiDefaults>("load_tui_defaults");
+}
+
+export async function persistTuiDefaults(defaults: TuiDefaults): Promise<void> {
+  return invoke("persist_tui_defaults", { dto: defaults });
 }
 
 export async function persistTuiRuntimePrefs(

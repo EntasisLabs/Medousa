@@ -207,6 +207,56 @@ where
     result
 }
 
+pub fn is_identity_user_preferences_decode_error(err: &StasisError) -> bool {
+    let message = err.to_string().to_ascii_lowercase();
+    message.contains("decode identity user")
+        && message.contains("preferences")
+        && message.contains("expected object, got none")
+}
+
+/// Legacy `identity_user` rows may store `preferences` as Surreal `NONE` instead of `{}`.
+pub async fn repair_surreal_identity_user_preferences(db: &Surreal<Any>) -> Result<()> {
+    if !surreal_identity_table_exists(db).await {
+        return Ok(());
+    }
+
+    timed_step("identity user preferences repair", || async {
+        db.query("UPDATE identity_user SET preferences = {} WHERE preferences = NONE")
+            .await
+            .map_err(|err| anyhow::anyhow!("identity user preferences repair: {err}"))
+    })
+    .await?;
+
+    Ok(())
+}
+
+pub async fn repair_surreal_identity_user_preferences_for_id(
+    db: &Surreal<Any>,
+    user_id: &str,
+) -> Result<()> {
+    if !surreal_identity_table_exists(db).await {
+        return Ok(());
+    }
+
+    let user_id = user_id.trim();
+    if user_id.is_empty() {
+        return Ok(());
+    }
+
+    timed_step("identity user preferences repair (single)", || async {
+        db.query("UPDATE type::record($table, $id) SET preferences = {}")
+            .bind(("table", "identity_user"))
+            .bind(("id", user_id.to_string()))
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!("identity user preferences repair for {user_id}: {err}")
+            })
+    })
+    .await?;
+
+    Ok(())
+}
+
 /// Build identity store on an already-connected Surreal handle.
 ///
 /// `RuntimeFactory::connect_surreal_any` already ran `ensure_schema_for_db` — do not repeat
@@ -222,6 +272,7 @@ pub async fn build_seeded_medousa_identity_store_for_db(
     } else {
         eprintln!("medousa-daemon: identity baseline already present — seed no-op");
     }
+    repair_surreal_identity_user_preferences(&db).await?;
     Ok(wrap_surreal(store, db))
 }
 
@@ -659,8 +710,18 @@ fn trimmed_non_empty(value: &str) -> Option<&str> {
 mod tests {
     use super::{
         build_seeded_identity_memory_store, full_identity_context_request,
-        resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
+        is_identity_user_preferences_decode_error, resolve_identity_channel_id,
+        resolve_identity_persona_id, resolve_identity_user_id,
     };
+    use stasis::prelude::StasisError;
+
+    #[test]
+    fn detects_identity_user_preferences_none_decode_error() {
+        let err = StasisError::PortFailure(
+            "decode identity user: Failed to deserialize field 'preferences' on type 'UserRow': Expected object, got none".to_string(),
+        );
+        assert!(is_identity_user_preferences_decode_error(&err));
+    }
 
     #[tokio::test]
     async fn seeded_identity_store_returns_context_for_defaults() {

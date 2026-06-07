@@ -171,6 +171,9 @@ pub(crate) async fn daemon_enqueue_ask(daemon_url: &str, prompt: &str) -> Result
         identity_user_id: None,
         identity_persona_id: None,
         identity_channel_id: None,
+        manuscript_id: None,
+        additional_manuscript_ids: None,
+        suggested_capability_ids: None,
     };
 
     let response = client
