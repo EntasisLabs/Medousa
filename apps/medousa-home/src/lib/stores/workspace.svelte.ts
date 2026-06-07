@@ -11,6 +11,7 @@ import { isAskJobId } from "$lib/types/askJob";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { SwimlaneMode, WorkView } from "$lib/types/work";
 import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
+import { collectActivityCardIds } from "$lib/utils/activityEnrichment";
 import type {
   WorkCard,
   WorkspaceEvent,
@@ -161,6 +162,15 @@ export class WorkspaceStore {
 
   async prefetchCardDetails() {
     const targets = this.kanbanCards().map((card) => card.id);
+    await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
+  }
+
+  activityCardIds(): string[] {
+    return collectActivityCardIds(this.feed);
+  }
+
+  async prefetchActivityCardDetails() {
+    const targets = this.activityCardIds();
     await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
   }
 

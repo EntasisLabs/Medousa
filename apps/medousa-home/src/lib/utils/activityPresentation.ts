@@ -1,4 +1,10 @@
 import type { WorkspaceEvent } from "$lib/types/workspace";
+import {
+  buildActivityContext,
+  resolveTaskTitle,
+  vaultRefPath,
+  type ActivityEnrichment,
+} from "$lib/utils/activityEnrichment";
 import { formatWorkspaceEventKind } from "$lib/utils/cardTimeline";
 
 export type ActivityTone = "success" | "motion" | "attention" | "neutral" | "vault";
@@ -7,8 +13,11 @@ export interface ActivityPresentation {
   label: string;
   tone: ActivityTone;
   summary: string;
+  context?: string;
   time: string;
 }
+
+export type { ActivityEnrichment };
 
 const TONE_BY_KIND: Record<string, ActivityTone> = {
   job_succeeded: "success",
@@ -31,6 +40,47 @@ function simplifyFragment(text: string): string {
     .replaceAll("_", " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function humanizeVaultPath(path: string): string {
+  const name = path.split("/").pop() ?? path;
+  return name.replace(/\.md$/i, "").replaceAll("-", " ");
+}
+
+function enrichedSummary(
+  event: WorkspaceEvent,
+  enrichment?: ActivityEnrichment,
+): string | null {
+  if (!enrichment?.card && !enrichment?.detail) return null;
+
+  const taskTitle = resolveTaskTitle(enrichment);
+
+  if (event.kind === "vault_note_updated") {
+    const vaultPath = vaultRefPath(event);
+    if (vaultPath) return `Linked ${humanizeVaultPath(vaultPath)}`;
+    if (taskTitle) return taskTitle;
+    return null;
+  }
+
+  switch (event.kind) {
+    case "job_succeeded":
+    case "work_completed":
+      return taskTitle ? `Finished ${taskTitle}` : null;
+    case "work_delegated":
+      return taskTitle ? `Handed off — ${taskTitle}` : null;
+    case "job_started":
+      return taskTitle ? `Started ${taskTitle}` : null;
+    case "job_enqueued":
+      return taskTitle ? `Queued ${taskTitle}` : null;
+    case "job_failed":
+      return taskTitle ? `Failed on ${taskTitle}` : null;
+    case "work_wrapping_up":
+      return taskTitle ? `Wrapping up ${taskTitle}` : null;
+    case "work_unblocked":
+      return taskTitle ? `Ready for you — ${taskTitle}` : null;
+    default:
+      return taskTitle || null;
+  }
 }
 
 function humanizeSummary(event: WorkspaceEvent): string {
@@ -81,11 +131,21 @@ function formatActivityTime(iso: string): string {
   }
 }
 
-export function presentActivityEvent(event: WorkspaceEvent): ActivityPresentation {
+export function presentActivityEvent(
+  event: WorkspaceEvent,
+  enrichment?: ActivityEnrichment,
+): ActivityPresentation {
+  const summary =
+    enrichedSummary(event, enrichment) ?? humanizeSummary(event);
+  const context = enrichment
+    ? buildActivityContext(event, enrichment).trim()
+    : "";
+
   return {
     label: formatWorkspaceEventKind(event.kind),
     tone: TONE_BY_KIND[event.kind] ?? "neutral",
-    summary: humanizeSummary(event),
+    summary,
+    context: context || undefined,
     time: formatActivityTime(event.timestamp_utc),
   };
 }

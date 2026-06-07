@@ -2,9 +2,11 @@
   import { PanelRightClose } from "@lucide/svelte";
   import ContextPanel from "$lib/components/layout/ContextPanel.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCardDetail } from "$lib/types/card";
   import type { WorkspaceEvent } from "$lib/types/workspace";
   import { filterOperatorActivity } from "$lib/utils/activityFilter";
+  import { resolveActivityEnrichment } from "$lib/utils/activityEnrichment";
   import { presentActivityEvent } from "$lib/utils/activityPresentation";
 
   interface Props {
@@ -43,6 +45,15 @@
     }),
   );
 
+  const cardsById = $derived(
+    new Map(workspace.cards.map((card) => [card.id, card])),
+  );
+
+  $effect(() => {
+    if (events.length > 0) {
+      void workspace.prefetchActivityCardDetails();
+    }
+  });
 </script>
 
 <aside class="flex h-full w-full flex-col" aria-label="Activity and context">
@@ -79,13 +90,21 @@
 
   <ol class="flex-1 space-y-2 overflow-y-auto p-3">
     {#each [...visibleEvents].reverse() as event (event.id)}
-      {@const item = presentActivityEvent(event)}
+      {@const enrichment = resolveActivityEnrichment(
+        event,
+        cardsById,
+        workspace.cardDetailsCache,
+      )}
+      {@const item = presentActivityEvent(event, enrichment)}
       <li class="workshop-inset p-3 text-sm">
         <div class="flex items-center justify-between gap-2 text-xs text-surface-300">
           <span class="font-medium uppercase tracking-wide">{item.label}</span>
           <time datetime={event.timestamp_utc}>{item.time}</time>
         </div>
         <p class="mt-1 leading-snug text-surface-50">{item.summary}</p>
+        {#if item.context}
+          <p class="mt-1 text-xs leading-snug text-surface-400">{item.context}</p>
+        {/if}
       </li>
     {:else}
       <li class="px-2 py-8 text-center">

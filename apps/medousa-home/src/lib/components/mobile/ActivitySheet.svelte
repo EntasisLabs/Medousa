@@ -8,6 +8,12 @@
   }
 
   let { onOpenNote: _onOpenNote }: Props = $props();
+
+  $effect(() => {
+    if (layout.activitySheetOpen) {
+      void workspace.prefetchActivityCardDetails();
+    }
+  });
 </script>
 
 {#if layout.activitySheetOpen}
