@@ -82,11 +82,11 @@
 
   <aside
     class="{variant === 'drawer'
-      ? 'absolute left-0 top-0 z-30 w-64 shadow-xl'
-      : 'relative w-56 shrink-0'} flex h-full flex-col border-r border-surface-500/20 bg-surface-900"
+      ? 'workshop-drawer absolute left-0 top-0 z-30 w-64 border-r-2'
+      : 'workshop-drawer relative w-56 shrink-0 border-r-2'} flex h-full flex-col"
     aria-label="Chat sessions"
   >
-    <div class="flex items-center justify-between border-b border-surface-500/20 px-3 py-3">
+    <div class="workshop-header px-3 py-3">
       <p class="text-sm font-semibold text-surface-100">Sessions</p>
       {#if variant === "drawer" && onClose}
         <button
@@ -100,7 +100,7 @@
       {/if}
     </div>
 
-    <div class="border-b border-surface-500/20 p-3">
+    <div class="border-b border-surface-500/45 p-3">
       <button
         type="button"
         class="btn variant-filled-primary w-full text-sm"
@@ -123,9 +123,7 @@
     <ol class="flex-1 space-y-3 overflow-y-auto p-2">
       {#if pinned.length > 0}
         <li>
-          <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-            Pinned
-          </p>
+          <p class="workshop-section-title px-2">Pinned</p>
           <ul class="mt-1 space-y-1">
             {#each pinned as session (session.session_id)}
               <li>
@@ -137,9 +135,7 @@
       {/if}
 
       <li>
-        <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-          Recent
-        </p>
+        <p class="workshop-section-title px-2">Recent</p>
         <ul class="mt-1 space-y-1">
           {#each recent as session (session.session_id)}
             <li>
@@ -147,7 +143,7 @@
             </li>
           {:else}
             {#if pinned.length === 0}
-              <li class="px-3 py-6 text-center text-sm text-surface-500">
+              <li class="workshop-muted px-3 py-6 text-center">
                 No sessions yet
               </li>
             {/if}
@@ -162,8 +158,8 @@
   <div
     class="group flex items-stretch rounded-container-token transition {chat.sessionId ===
     session.session_id
-      ? 'bg-surface-800 ring-1 ring-primary-500/40'
-      : 'hover:bg-surface-800/70'}"
+      ? 'bg-surface-700 ring-1 ring-primary-500/50'
+      : 'hover:bg-surface-700/80'}"
   >
     <button
       type="button"
@@ -174,11 +170,11 @@
         <span class="truncate text-sm font-medium text-surface-100">
           {formatSessionLabel(session)}
         </span>
-        <span class="shrink-0 text-xs text-surface-500">
+        <span class="workshop-faint shrink-0">
           {formatWhen(session.last_timestamp)}
         </span>
       </div>
-      <p class="mt-0.5 truncate text-xs text-surface-500">
+      <p class="workshop-faint mt-0.5 truncate">
         {session.turns} turn{session.turns === 1 ? "" : "s"}
       </p>
     </button>

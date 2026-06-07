@@ -3,6 +3,7 @@ pub mod agent_runtime;
 pub mod channel_delivery;
 pub mod recurring_delivery;
 pub mod recurring_agent_turn;
+pub mod recurring_handlers;
 pub mod artifact_chunking;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;

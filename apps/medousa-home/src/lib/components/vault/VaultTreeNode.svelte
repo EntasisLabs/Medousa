@@ -43,14 +43,14 @@
 <div>
   <button
     type="button"
-    class="flex w-full items-center gap-1 rounded-container-token px-2 py-1 text-left text-sm hover:bg-surface-800/80 {node.path ===
+    class="flex w-full items-center gap-1 rounded-container-token px-2 py-1 text-left text-sm hover:bg-surface-700/80 {node.path ===
     selectedPath
       ? 'bg-primary-500/15 text-primary-300'
       : 'text-surface-200'}"
     style="padding-left: {8 + depth * 12}px"
     onclick={handleClick}
   >
-    <span class="w-4 shrink-0 text-xs text-surface-500">
+    <span class="workshop-faint w-4 shrink-0">
       {#if node.isFolder}
         {expanded ? "▾" : "▸"}
       {:else}

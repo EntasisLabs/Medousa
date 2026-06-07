@@ -36,10 +36,10 @@
     onResize={(width) => layout.setVaultTreeWidth(width)}
   >
     <aside
-      class="flex h-full w-full flex-col bg-surface-900/50"
+      class="workshop-drawer flex h-full w-full flex-col border-r-2"
       aria-label="Vault browser"
     >
-      <div class="border-b border-surface-500/20 p-2">
+      <div class="workshop-header p-2">
         <input
           class="input text-sm"
           type="search"
@@ -50,16 +50,16 @@
       </div>
 
       {#if vault.searchHits.length > 0}
-        <ul class="max-h-40 overflow-y-auto border-b border-surface-500/20 p-2 text-sm">
+        <ul class="max-h-40 overflow-y-auto border-b border-surface-500/45 p-2 text-sm">
           {#each vault.searchHits as hit (hit.note.path)}
             <li>
               <button
                 type="button"
-                class="w-full rounded-container-token px-2 py-1 text-left hover:bg-surface-800/80"
+                class="w-full rounded-container-token px-2 py-1 text-left hover:bg-surface-700/80"
                 onclick={() => vault.openNote(hit.note.path)}
               >
                 <span class="font-medium">{hit.note.title}</span>
-                <span class="block truncate text-xs text-surface-400">{hit.note.path}</span>
+                <span class="workshop-faint block truncate">{hit.note.path}</span>
               </button>
             </li>
           {/each}

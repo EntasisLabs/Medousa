@@ -3,6 +3,7 @@ import {
   getWorkspaceCard,
   retryWorkspaceCard,
 } from "$lib/daemon";
+import type { BlockedGroup } from "$lib/utils/groupWork";
 import { notifyCardDone } from "$lib/notifications";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { SwimlaneMode, WorkView } from "$lib/types/work";
@@ -234,6 +235,70 @@ export class WorkspaceStore {
       }
     } catch (err) {
       this.cardDetailError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async retryBlockedGroup(group: BlockedGroup) {
+    this.cardActionMessage = null;
+    this.cardDetailError = null;
+    let ok = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const card of group.cards) {
+      const detail = this.cardDetailsCache.get(card.id);
+      if (detail?.kind !== "stasis_job") {
+        skipped += 1;
+        continue;
+      }
+      try {
+        const response = await retryWorkspaceCard(card.id);
+        if (response.ok) ok += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    this.cardActionMessage = `Retried ${ok} of ${group.cards.length}${
+      skipped ? ` · ${skipped} skipped (not replayable jobs)` : ""
+    }${failed ? ` · ${failed} failed` : ""}`;
+    if (this.selectedCardId) {
+      await this.refreshSelectedCard();
+    }
+  }
+
+  async dismissBlockedGroup(group: BlockedGroup) {
+    this.cardActionMessage = null;
+    this.cardDetailError = null;
+    let ok = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const card of group.cards) {
+      const detail = this.cardDetailsCache.get(card.id);
+      if (!detail || detail.terminal) {
+        skipped += 1;
+        continue;
+      }
+      if (!this.isCancellable(card)) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        const response = await cancelWorkspaceCard(card.id);
+        if (response.ok) ok += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    this.cardActionMessage = `Dismissed ${ok} of ${group.cards.length}${
+      skipped ? ` · ${skipped} already terminal or not cancelable` : ""
+    }${failed ? ` · ${failed} failed` : ""}`;
+    if (this.selectedCardId) {
+      await this.refreshSelectedCard();
     }
   }
 }

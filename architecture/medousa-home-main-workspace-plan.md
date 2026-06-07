@@ -130,30 +130,30 @@ Chat stays default. Runtime is **one click away**, not a separate app.
 | M6b.4 | Settings → Controls: model + depth via `runtime/config/command` | Wired to `interactive_turn_send` | ✓ |
 | M6b.5 | Stage routing read-only view | `stage-route/command` Routes | ✓ (edit deferred) |
 
-### M6c — Job & worker drill-down
+### M6c — Job & worker drill-down — **shipped**
 
-| # | Work |
-|---|------|
-| M6c.1 | Card inspector: `GET /v1/jobs/{id}/result` output panel |
-| M6c.2 | Worker bus timeline on card detail (turn work events) |
-| M6c.3 | Batch blocked actions (retry group, dismiss group) |
-| M6c.4 | `/daemon ask` equivalent — fire-and-forget from chat composer |
+| # | Work | Status |
+|---|------|--------|
+| M6c.1 | Card inspector: `GET /v1/jobs/{id}/result` output panel | ✓ |
+| M6c.2 | Worker bus timeline on card detail (feed + tool_names) | ✓ |
+| M6c.3 | Batch blocked actions (retry group, dismiss group) | ✓ |
+| M6c.4 | `/ask` / `/daemon ask` fire-and-forget from chat composer | ✓ |
 
-### M6d — Scheduler & recurring
+### M6d — Scheduler & recurring — **shipped**
 
-| # | Work |
-|---|------|
-| M6d.1 | Recurring list (new daemon list route or tool wrapper) |
-| M6d.2 | Schedule manuscript from Skills panel |
-| M6d.3 | Next-run whisper on Home hero |
+| # | Work | Status |
+|---|------|--------|
+| M6d.1 | `GET /v1/recurring` + Runtime Schedule tab | ✓ |
+| M6d.2 | Schedule manuscript from Skills panel | ✓ |
+| M6d.3 | Next-run whisper on Home hero | ✓ |
 
-### M6e — Identity & evidence
+### M6e — Identity & evidence — **shipped**
 
-| # | Work |
-|---|------|
-| M6e.1 | Identity drawer — recall context for session |
-| M6e.2 | Verifier / answer_state on assistant messages |
-| M6e.3 | Artifact links on card detail |
+| # | Work | Status |
+|---|------|--------|
+| M6e.1 | Identity drawer — recall context for session | ✓ |
+| M6e.2 | Verifier / answer_state on assistant messages | ✓ |
+| M6e.3 | Artifact links on card detail | ✓ |
 
 ### M6f — TUI repositioning
 
@@ -173,7 +173,7 @@ Before M6c–M6e UI, prefer these daemon projections:
 |----------|---------|
 | `GET /v1/runtime/status` | Aggregated: active turns, queue, delivery, last tick (one poll for drawer) |
 | `GET /v1/runtime/settings` | Read model, depth, routing (mirror of config command state) |
-| `GET /v1/recurring` | List recurring definitions (today tool-only) |
+| `GET /v1/recurring` | List recurring definitions — **shipped** |
 | `GET /v1/jobs/recent` | Thin job list for Runtime drawer (or extend workspace feed) |
 | SSE `runtime://events` | Optional: push tool invocations globally (Activity enrichment) |
 
@@ -195,3 +195,6 @@ Before M6c–M6e UI, prefer these daemon projections:
 |------|--------|
 | 2026-05-30 | Main workspace plan — gap analysis, M6a–M6f milestones |
 | 2026-05-30 | M6b shipped — Runtime nav, daemon stats/delivery/continuations, model/depth controls |
+| 2026-05-30 | M6c shipped — Job result panel, worker timeline, batch blocked actions, /ask composer |
+| 2026-05-30 | M6d shipped — GET /v1/recurring, Skills schedule, Home next-run whisper |
+| 2026-05-30 | M6e shipped — Identity drawer, answer_state badges, artifact previews on cards |

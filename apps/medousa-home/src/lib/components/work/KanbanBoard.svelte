@@ -50,11 +50,11 @@
 
 <section class="flex h-full min-w-0 flex-1 flex-col">
   <header
-    class="flex flex-wrap items-center justify-between gap-3 border-b border-surface-500/20 px-4 py-3"
+    class="workshop-header flex flex-wrap items-center justify-between gap-3 py-3"
   >
     <div>
       <h1 class="text-base font-semibold">Work board</h1>
-      <p class="text-xs text-surface-400">Cards update live as work moves</p>
+      <p class="workshop-faint">Cards update live as work moves</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <label class="flex items-center gap-2 text-xs text-surface-300">
@@ -107,7 +107,7 @@
           column.column,
         )}"
       >
-        <header class="border-b border-surface-500/20 px-3 py-2.5">
+        <header class="border-b border-surface-500/45 bg-surface-800/35 px-3 py-2.5">
           <div class="flex items-center gap-2">
             <span
               class="h-2 w-2 shrink-0 rounded-full {columnAccent(column.column)}"

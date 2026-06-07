@@ -1,3 +1,104 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html.dark body {
+    @apply antialiased text-surface-50;
+  }
+}
+
+@layer components {
+  /* Primary shell regions */
+  .workshop-nav {
+    @apply border-r border-surface-500/50 bg-surface-900 shadow-[2px_0_16px_rgba(0,0,0,0.28)];
+  }
+
+  .workshop-main {
+    @apply bg-surface-900;
+  }
+
+  .workshop-rail {
+    @apply border-l-2 border-surface-500/45 bg-surface-800 shadow-[-6px_0_20px_rgba(0,0,0,0.22)];
+  }
+
+  .workshop-status {
+    @apply border-t border-surface-500/50 bg-surface-800/95 text-surface-300;
+  }
+
+  /* Repeated panel header pattern */
+  .workshop-header {
+    @apply border-b border-surface-500/45 bg-surface-800/50 px-5 py-4;
+  }
+
+  /* Inset cards and settings blocks */
+  .workshop-inset {
+    @apply rounded-container-token border border-surface-500/45 bg-surface-800/85 shadow-sm;
+  }
+
+  /* Skeleton card variant (kanban, etc.) */
+  .card {
+    @apply border-surface-500/45 bg-surface-800/95 shadow-sm;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .input,
+  .textarea,
+  .select {
+    @apply border-surface-500/50 bg-surface-800 text-surface-50 placeholder:text-surface-400;
+  }
+
+  .checkbox {
+    @apply border-surface-500/55;
+  }
+
+  /* Text hierarchy */
+  .workshop-section-title {
+    @apply text-xs font-semibold uppercase tracking-wide text-surface-300;
+  }
+
+  .workshop-label {
+    @apply text-xs text-surface-300;
+  }
+
+  .workshop-muted {
+    @apply text-sm text-surface-300;
+  }
+
+  .workshop-faint {
+    @apply text-xs text-surface-400;
+  }
+
+  /* Side drawers (sessions, identity) */
+  .workshop-drawer {
+    @apply border-surface-500/50 bg-surface-800 shadow-xl;
+  }
+
+  .workshop-composer {
+    @apply border-t border-surface-500/45 bg-surface-800/60 p-4;
+  }
+
+  /* Markdown body in chat and vault */
+  .markdown-content {
+    @apply text-surface-100;
+  }
+
+  .markdown-content h1,
+  .markdown-content h2,
+  .markdown-content h3,
+  .markdown-content h4,
+  .markdown-content h5,
+  .markdown-content h6 {
+    @apply text-surface-50;
+  }
+
+  .markdown-content code {
+    @apply rounded bg-surface-700 px-1 text-surface-100;
+  }
+
+  .markdown-content a {
+    @apply text-primary-300 hover:underline;
+  }
+}

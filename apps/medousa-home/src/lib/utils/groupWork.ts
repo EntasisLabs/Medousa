@@ -15,6 +15,26 @@ export interface BlockedColumnItem {
   count: number;
 }
 
+export function findBlockedGroupForCard(
+  cards: WorkCard[],
+  cardId: string,
+): BlockedGroup | null {
+  const card = cards.find((item) => item.id === cardId);
+  if (!card || card.column !== "blocked") return null;
+  const key = `${formatCardTitle(card)}::${card.status_label}`;
+  const groupCards = cards.filter(
+    (item) =>
+      item.column === "blocked" &&
+      `${formatCardTitle(item)}::${item.status_label}` === key,
+  );
+  if (groupCards.length === 0) return null;
+  return {
+    key,
+    title: formatCardTitle(groupCards[0]),
+    cards: groupCards,
+  };
+}
+
 export function groupBlockedCards(cards: WorkCard[]): BlockedGroup[] {
   const blocked = cards.filter((card) => card.column === "blocked");
   const map = new Map<string, WorkCard[]>();

@@ -12,6 +12,7 @@
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
+  import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
@@ -20,6 +21,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import {
@@ -54,6 +56,7 @@
       await stopWorkspaceStream();
       await startWorkspaceStream(workspace.revision || undefined);
       void runtime.refresh();
+      void recurring.refresh();
       void chat.refreshSessions();
       if (chat.messages.length === 0) {
         void chat.switchSession(chat.sessionId);
@@ -126,8 +129,9 @@
   <div class="flex min-h-0 flex-1">
     <NavSidebar active={activeSurface} onSelect={handleSurfaceSelect} />
 
-    <div class="relative flex min-w-0 flex-1 flex-col">
+    <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
       <div class="flex min-h-0 flex-1">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         {#if activeSurface === "home"}
           <HomeOverview
             onOpenWork={() => (activeSurface = "work")}
@@ -167,12 +171,14 @@
         {:else}
           <ChatPanel visible={activeSurface === "chat"} />
         {/if}
+        </div>
 
         {#if layout.activityCollapsed}
           <ActivityCollapsedStrip
             onExpand={() => layout.setActivityCollapsed(false)}
           />
         {:else}
+          <div class="workshop-rail flex h-full shrink-0">
           <SplitPane
             width={layout.activityWidth}
             side="right"
@@ -195,6 +201,7 @@
               onCollapse={() => layout.setActivityCollapsed(true)}
             />
           </SplitPane>
+          </div>
         {/if}
       </div>
 
@@ -202,6 +209,10 @@
         <SessionSidebar
           open={layout.sessionDrawerOpen}
           onClose={() => layout.setSessionDrawerOpen(false)}
+        />
+        <IdentityDrawer
+          open={layout.identityDrawerOpen}
+          onClose={() => layout.setIdentityDrawerOpen(false)}
         />
       {/if}
 

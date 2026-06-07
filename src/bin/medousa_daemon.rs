@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use axum::extract::{Path as AxumPath,  State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{get, post};
@@ -42,7 +42,8 @@ use medousa::daemon_api::{
     InteractiveTurnRequest, InteractiveTurnResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent,
-    RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
+    RecurringListQuery, RecurringListResponse, RegisterRecurringPromptRequest,
+    RegisterRecurringResponse, RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
@@ -430,6 +431,7 @@ async fn main() -> Result<()> {
         .route("/v1/jobs/ask", post(enqueue_ask))
         .route("/v1/jobs/report", post(enqueue_report))
         .route("/v1/jobs/prompt", post(enqueue_prompt))
+        .route("/v1/recurring", get(list_recurring_definitions))
         .route("/v1/recurring/prompt", post(register_recurring_prompt))
         .route("/v1/interactive/turn", post(start_interactive_turn))
         .route(
@@ -1206,6 +1208,16 @@ async fn enqueue_prompt(
         queue: "default".to_string(),
         accepted_at_utc: now,
     }))
+}
+
+async fn list_recurring_definitions(
+    State(state): State<AppState>,
+    Query(query): Query<RecurringListQuery>,
+) -> Result<Json<RecurringListResponse>, (StatusCode, String)> {
+    medousa::recurring_handlers::list_recurring(state.composition(), query)
+        .await
+        .map(Json)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
 }
 
 async fn register_recurring_prompt(

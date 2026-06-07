@@ -1,7 +1,11 @@
 <script lang="ts">
   import { catalog } from "$lib/stores/catalog.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { recurring } from "$lib/stores/recurring.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
+
+  const DEFAULT_CRON = "0 9 * * *";
 
   interface Props {
     visible: boolean;
@@ -26,19 +30,55 @@
     if (entry.has_scripts) return "Runnable skill";
     return null;
   }
+
+  let scheduleDrafts = $state<Record<string, { cron: string; prompt: string }>>({});
+
+  function scheduleDraft(entry: ManuscriptCatalogEntry) {
+    return (
+      scheduleDrafts[entry.id] ?? {
+        cron: DEFAULT_CRON,
+        prompt: `Run ${entry.name} on schedule`,
+      }
+    );
+  }
+
+  function updateScheduleDraft(
+    entryId: string,
+    patch: Partial<{ cron: string; prompt: string }>,
+  ) {
+    const current = scheduleDrafts[entryId] ?? {
+      cron: DEFAULT_CRON,
+      prompt: "",
+    };
+    scheduleDrafts = {
+      ...scheduleDrafts,
+      [entryId]: { ...current, ...patch },
+    };
+  }
+
+  async function scheduleSkill(entry: ManuscriptCatalogEntry) {
+    const draft = scheduleDraft(entry);
+    await recurring.register({
+      prompt: draft.prompt.trim() || `Run ${entry.name}`,
+      cron_expr: draft.cron.trim() || DEFAULT_CRON,
+      manuscript_id: entry.id,
+      model_hint: runtime.model,
+      execution_mode: "agent_turn",
+    });
+  }
 </script>
 
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="border-b border-surface-500/20 px-5 py-4">
-    <h1 class="text-base font-semibold">Skills &amp; Tools</h1>
-    <p class="text-xs text-surface-400">
+  <header class="workshop-header">
+    <h1 class="text-base font-semibold text-surface-50">Skills &amp; Tools</h1>
+    <p class="text-xs text-surface-300">
       Specialties and tools available in the workshop
     </p>
   </header>
 
   <div class="flex-1 overflow-y-auto px-5 py-4">
     {#if catalog.loading}
-      <p class="text-sm text-surface-400">Loading catalog…</p>
+      <p class="workshop-muted">Loading catalog…</p>
     {:else if catalog.error}
       <p class="text-sm text-error-400">{catalog.error}</p>
     {:else}
@@ -65,12 +105,12 @@
       </div>
 
       <section>
-        <h2 class="text-xs font-medium text-surface-500">
+        <h2 class="workshop-section-title">
           Skills · {catalog.manuscripts.length}
         </h2>
         <ul class="mt-3 space-y-3">
           {#each catalog.manuscripts as entry (entry.id)}
-            <li class="rounded-container-token border border-surface-500/20 bg-surface-900/50 p-4">
+            <li class="workshop-inset p-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0 flex-1">
                   <p class="font-medium text-surface-100">{entry.name}</p>
@@ -80,25 +120,71 @@
                     </p>
                   {/if}
                   {#if skillHint(entry)}
-                    <p class="mt-2 text-xs text-surface-500">{skillHint(entry)}</p>
+                    <p class="workshop-faint mt-2">{skillHint(entry)}</p>
                   {/if}
                 </div>
-                {#if entry.has_scripts}
+                <div class="flex shrink-0 flex-col gap-2">
+                  {#if entry.has_scripts}
+                    <button
+                      type="button"
+                      class="btn btn-sm variant-filled-primary"
+                      onclick={() => runSkill(entry.id)}
+                    >
+                      Run
+                    </button>
+                  {/if}
                   <button
                     type="button"
-                    class="btn btn-sm variant-filled-primary shrink-0"
-                    onclick={() => runSkill(entry.id)}
+                    class="btn btn-sm variant-soft-primary"
+                    disabled={recurring.registering}
+                    onclick={() => scheduleSkill(entry)}
                   >
-                    Run
+                    Schedule
                   </button>
-                {/if}
+                </div>
               </div>
 
-              <details class="mt-3 text-xs text-surface-500">
-                <summary class="cursor-pointer select-none text-surface-400 hover:text-surface-300">
+              <details class="workshop-faint mt-3">
+                <summary class="cursor-pointer select-none text-surface-300 hover:text-surface-100">
+                  Schedule settings
+                </summary>
+                <div class="mt-3 space-y-3">
+                  <label class="block">
+                    <span class="workshop-label">Cron</span>
+                    <input
+                      class="input mt-1 w-full font-mono text-[11px]"
+                      value={scheduleDraft(entry).cron}
+                      placeholder={DEFAULT_CRON}
+                      oninput={(event) =>
+                        updateScheduleDraft(entry.id, {
+                          cron: (event.currentTarget as HTMLInputElement).value,
+                        })}
+                    />
+                  </label>
+                  <label class="block">
+                    <span class="workshop-label">Prompt</span>
+                    <textarea
+                      class="textarea mt-1 w-full text-xs"
+                      rows="2"
+                      value={scheduleDraft(entry).prompt}
+                      placeholder={`Run ${entry.name} on schedule`}
+                      oninput={(event) =>
+                        updateScheduleDraft(entry.id, {
+                          prompt: (event.currentTarget as HTMLTextAreaElement).value,
+                        })}
+                    ></textarea>
+                  </label>
+                  <p class="workshop-faint">
+                    Uses manuscript {entry.id} with agent_turn execution.
+                  </p>
+                </div>
+              </details>
+
+              <details class="workshop-faint mt-3">
+                <summary class="cursor-pointer select-none text-surface-300 hover:text-surface-100">
                   Technical details
                 </summary>
-                <dl class="mt-2 space-y-1 font-mono text-[11px] text-surface-500">
+                <dl class="workshop-faint mt-2 space-y-1 font-mono">
                   <div>id: {entry.id}</div>
                   <div>scope: {entry.scope}</div>
                   {#if entry.openshell_enabled}
@@ -116,7 +202,7 @@
               </details>
             </li>
           {:else}
-            <li class="rounded-container-token bg-surface-900/40 p-4 text-sm text-surface-400">
+            <li class="workshop-inset p-4 text-sm text-surface-300">
               No skills yet. Import with
               <code class="text-surface-300">medousa skill-import</code>.
             </li>
@@ -125,18 +211,18 @@
       </section>
 
       <section class="mt-8">
-        <h2 class="text-xs font-medium text-surface-500">
+        <h2 class="workshop-section-title">
           Tools · {catalog.capabilities.length}
         </h2>
         <ul class="mt-3 space-y-2">
           {#each catalog.capabilities as capability (capability.id)}
-            <li class="rounded-container-token border border-surface-500/15 bg-surface-900/40 px-4 py-3">
+            <li class="workshop-inset px-4 py-3">
               <p class="text-sm font-medium text-surface-100">{capability.title}</p>
               <details class="mt-1 text-xs">
-                <summary class="cursor-pointer select-none text-surface-500 hover:text-surface-400">
+                <summary class="cursor-pointer select-none text-surface-300 hover:text-surface-100">
                   Registry entry
                 </summary>
-                <p class="mt-1 font-mono text-[11px] text-surface-500">
+                <p class="workshop-faint mt-1 font-mono">
                   {capability.id} · {capability.binding_count} binding{capability.binding_count ===
                   1
                     ? ""
@@ -145,12 +231,16 @@
               </details>
             </li>
           {:else}
-            <li class="px-3 py-4 text-sm text-surface-400">
+            <li class="workshop-muted px-3 py-4">
               No tools registered yet.
             </li>
           {/each}
         </ul>
       </section>
+
+      {#if recurring.registerMessage}
+        <p class="mt-6 text-xs text-primary-300">{recurring.registerMessage}</p>
+      {/if}
     {/if}
   </div>
 </section>

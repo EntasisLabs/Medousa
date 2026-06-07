@@ -38,7 +38,7 @@
 </script>
 
 <footer
-  class="flex h-7 shrink-0 items-center justify-between gap-4 border-t border-surface-500/20 bg-surface-900/90 px-3 text-[11px] text-surface-400"
+  class="workshop-status flex h-8 shrink-0 items-center justify-between gap-4 px-3 text-[11px]"
   aria-label="Workshop status"
 >
   <span class="truncate {health?.ok ? 'text-success-400' : 'text-warning-400'}">

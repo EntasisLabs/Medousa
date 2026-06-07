@@ -27,7 +27,7 @@
 </script>
 
 <section
-  class="flex h-28 shrink-0 items-stretch gap-2 overflow-x-auto border-t border-surface-500/20 bg-surface-900/80 px-3 py-2"
+  class="flex h-28 shrink-0 items-stretch gap-2 overflow-x-auto border-t border-surface-500/50 bg-surface-800/90 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
   aria-label="Active work"
 >
   {#if cards.length === 0}

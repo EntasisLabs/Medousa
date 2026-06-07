@@ -10,6 +10,13 @@ import type {
   SessionHistoryResponse,
   SessionSummary,
 } from "$lib/types/session";
+import type { ArtifactCommandResponse } from "$lib/types/artifact";
+import type { IdentityContextResponse } from "$lib/types/identity";
+import type { EnqueueResponse, JobResultResponse } from "$lib/types/job";
+import type {
+  RecurringListResponse,
+  RegisterRecurringResponse,
+} from "$lib/types/recurring";
 import type {
   ContinuationStatusResponse,
   DaemonStatsResponse,
@@ -253,5 +260,83 @@ export async function retryWorkspaceCard(
 ): Promise<WorkspaceCardActionResponse> {
   return invoke<WorkspaceCardActionResponse>("workspace_retry_card", {
     cardId,
+  });
+}
+
+export async function getJobResult(jobId: string): Promise<JobResultResponse> {
+  return invoke<JobResultResponse>("job_get_result", { jobId });
+}
+
+export async function enqueueDaemonAsk(
+  prompt: string,
+  modelHint?: string,
+): Promise<EnqueueResponse> {
+  return invoke<EnqueueResponse>("job_enqueue_ask", {
+    prompt,
+    modelHint,
+  });
+}
+
+export async function listRecurring(
+  enabledOnly?: boolean,
+): Promise<RecurringListResponse> {
+  return invoke<RecurringListResponse>("recurring_list", { enabledOnly });
+}
+
+export async function getIdentityContext(request: {
+  user_id?: string;
+  persona_id?: string;
+  channel_id?: string;
+  policy_profile?: string;
+  relationship_limit?: number;
+  mode?: string;
+}): Promise<IdentityContextResponse> {
+  return invoke<IdentityContextResponse>("identity_get_context", { request });
+}
+
+export async function lookupArtifact(
+  sessionId: string,
+  artifactId: string,
+): Promise<ArtifactCommandResponse> {
+  return invoke<ArtifactCommandResponse>("artifact_command", {
+    request: {
+      session_id: sessionId,
+      selected_context_pack_query: null,
+      command: { command: "lookup", query: artifactId },
+    },
+  });
+}
+
+export async function registerRecurringPrompt(request: {
+  prompt: string;
+  cron_expr: string;
+  manuscript_id?: string;
+  timezone?: string;
+  execution_mode?: string;
+  model_hint?: string;
+  policy_profile?: string;
+  enabled?: boolean;
+  max_attempts?: number;
+  queue?: string;
+}): Promise<RegisterRecurringResponse> {
+  return invoke<RegisterRecurringResponse>("recurring_register_prompt", {
+    request: {
+      id: null,
+      queue: request.queue ?? "default",
+      prompt: request.prompt,
+      system_prompt:
+        "You are Medousa, a practical research assistant. Be concise and evidence-driven.",
+      cron_expr: request.cron_expr,
+      timezone: request.timezone ?? "UTC",
+      jitter_seconds: 0,
+      enabled: request.enabled ?? true,
+      max_attempts: request.max_attempts ?? 1,
+      policy_profile: request.policy_profile ?? "scheduled",
+      model_hint: request.model_hint ?? null,
+      delivery: null,
+      session_id: null,
+      execution_mode: request.execution_mode ?? null,
+      manuscript_id: request.manuscript_id ?? null,
+    },
   });
 }

@@ -1,4 +1,8 @@
+pub mod artifact;
 pub mod catalog;
+pub mod identity;
+pub mod jobs;
+pub mod recurring;
 pub mod runtime;
 pub mod session;
 pub mod sse;

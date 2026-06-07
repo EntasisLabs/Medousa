@@ -2,6 +2,7 @@ const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
 const WORK_INSPECTOR_WIDTH_KEY = "medousa-home-work-inspector-width";
 const SESSION_DRAWER_KEY = "medousa-home-session-drawer";
+const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
 const ACTIVITY_COLLAPSED_KEY = "medousa-home-activity-collapsed";
 
 export class LayoutStore {
@@ -9,6 +10,7 @@ export class LayoutStore {
   vaultTreeWidth = $state(loadWidth(VAULT_TREE_WIDTH_KEY, 224));
   workInspectorWidth = $state(loadWidth(WORK_INSPECTOR_WIDTH_KEY, 360));
   sessionDrawerOpen = $state(loadFlag(SESSION_DRAWER_KEY, false));
+  identityDrawerOpen = $state(loadFlag(IDENTITY_DRAWER_KEY, false));
   activityCollapsed = $state(loadFlag(ACTIVITY_COLLAPSED_KEY, false));
 
   setActivityWidth(width: number) {
@@ -33,6 +35,15 @@ export class LayoutStore {
 
   toggleSessionDrawer() {
     this.setSessionDrawerOpen(!this.sessionDrawerOpen);
+  }
+
+  setIdentityDrawerOpen(open: boolean) {
+    this.identityDrawerOpen = open;
+    localStorage.setItem(IDENTITY_DRAWER_KEY, open ? "1" : "0");
+  }
+
+  toggleIdentityDrawer() {
+    this.setIdentityDrawerOpen(!this.identityDrawerOpen);
   }
 
   setActivityCollapsed(collapsed: boolean) {

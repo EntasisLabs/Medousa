@@ -204,6 +204,34 @@ pub struct RegisterRecurringResponse {
     pub timezone: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RecurringListQuery {
+    #[serde(default)]
+    pub enabled_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringDefinitionEntry {
+    pub recurring_id: String,
+    pub queue: String,
+    pub job_type: String,
+    pub cron_expr: String,
+    pub timezone: String,
+    pub enabled: bool,
+    pub next_run_at_utc: DateTime<Utc>,
+    pub last_run_at_utc: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manuscript_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_excerpt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringListResponse {
+    pub count: usize,
+    pub recurring: Vec<RecurringDefinitionEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonStatsResponse {
     pub enqueued_jobs: usize,
@@ -641,6 +669,8 @@ pub struct WorkCardDetail {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_names: Option<Vec<String>>,
     #[serde(default)]
     pub associations: WorkCardAssociations,
 }

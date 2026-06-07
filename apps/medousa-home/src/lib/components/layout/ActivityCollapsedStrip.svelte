@@ -10,7 +10,7 @@
 
 <button
   type="button"
-  class="flex h-full w-8 shrink-0 flex-col items-center gap-3 border-l border-surface-500/20 bg-surface-900/60 py-4 transition hover:bg-surface-800/80"
+  class="workshop-rail flex h-full w-8 shrink-0 flex-col items-center gap-3 py-4 transition hover:bg-surface-700"
   title="Expand activity"
   aria-label="Expand activity panel"
   onclick={onExpand}

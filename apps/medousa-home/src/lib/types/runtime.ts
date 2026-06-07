@@ -64,4 +64,10 @@ export interface StageRouteCommandResponse {
   rendered_output: string;
 }
 
-export type RuntimeTab = "now" | "jobs" | "delivery" | "controls" | "routing";
+export type RuntimeTab =
+  | "now"
+  | "jobs"
+  | "schedule"
+  | "delivery"
+  | "controls"
+  | "routing";

@@ -54,10 +54,7 @@
   }
 </script>
 
-<aside
-  class="flex h-full w-full flex-col border-l border-surface-500/20 bg-surface-900/60"
-  aria-label="Activity and context"
->
+<aside class="flex h-full w-full flex-col" aria-label="Activity and context">
   <ContextPanel
     {notePath}
     {noteTitle}
@@ -69,9 +66,9 @@
     {onOpenNote}
   />
 
-  <header class="border-b border-surface-500/20 px-4 py-3">
+  <header class="border-b border-surface-500/45 bg-surface-800/40 px-4 py-3">
     <div class="flex items-center justify-between gap-2">
-      <h2 class="text-sm font-semibold tracking-wide text-surface-200">Activity</h2>
+      <h2 class="text-sm font-semibold tracking-wide text-surface-100">Activity</h2>
       {#if showCollapse && onCollapse}
         <button
           type="button"
@@ -91,12 +88,12 @@
 
   <ol class="flex-1 space-y-2 overflow-y-auto p-3">
     {#each [...visibleEvents].reverse() as event (event.id)}
-      <li class="rounded-container-token bg-surface-800/70 p-3 text-sm">
-        <div class="flex items-center justify-between gap-2 text-xs text-surface-400">
+      <li class="workshop-inset p-3 text-sm">
+        <div class="flex items-center justify-between gap-2 text-xs text-surface-300">
           <span class="capitalize">{event.kind.replaceAll("_", " ")}</span>
           <time datetime={event.timestamp_utc}>{formatTime(event.timestamp_utc)}</time>
         </div>
-        <p class="mt-1 text-surface-100">{event.summary}</p>
+        <p class="mt-1 text-surface-50">{event.summary}</p>
       </li>
     {:else}
       <li class="px-2 py-8 text-center">

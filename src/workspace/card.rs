@@ -117,6 +117,11 @@ pub fn project_turn_worker(
             .result_text
             .as_deref()
             .map(|text| truncate_line(text, 500)),
+        tool_names: if record.tool_names.is_empty() {
+            None
+        } else {
+            Some(record.tool_names.clone())
+        },
         associations: workspace_store().associations(&record.work_id),
     };
 
@@ -168,6 +173,7 @@ pub fn project_job(job: &Job, include_terminal: bool) -> Option<ProjectedWorkIte
         terminal,
         error: job.last_error.clone(),
         result_excerpt: None,
+        tool_names: None,
         associations: workspace_store().associations(&job.id),
     };
 

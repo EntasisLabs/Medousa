@@ -35,7 +35,7 @@ function inline(text: string, titleByPath?: Map<string, string>): string {
       const label = wikilinkLabel(target, titleByPath);
       return `<span class="text-primary-400">${label}</span>`;
     })
-    .replace(/`([^`]+)`/g, '<code class="rounded bg-surface-800 px-1 text-sm">$1</code>')
+    .replace(/`([^`]+)`/g, '<code class="rounded bg-surface-700 px-1 text-sm text-surface-100">$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>");
 }

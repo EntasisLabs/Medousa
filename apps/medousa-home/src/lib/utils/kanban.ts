@@ -56,7 +56,7 @@ export function buildKanbanColumns(
 
 /** Unified column chrome — accent lives in header dot only. */
 export function columnTone(_column: WorkBoardColumn | string): string {
-  return "border-surface-500/20 bg-surface-900/40";
+  return "border-surface-500/45 bg-surface-800/70 shadow-sm";
 }
 
 export function columnAccent(column: WorkBoardColumn | string): string {

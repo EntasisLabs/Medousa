@@ -75,6 +75,8 @@ export class ChatStore {
         id: crypto.randomUUID(),
         role: normalizeRole(turn.role),
         content: turn.content,
+        answerState: turn.answer_state ?? null,
+        tools: turn.tool_names?.length ? turn.tool_names : undefined,
       }));
     } catch (err) {
       this.streamError = err instanceof Error ? err.message : String(err);

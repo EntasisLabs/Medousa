@@ -11,6 +11,8 @@ export interface ChatMessage {
   tools?: string[];
   /** Collapsed reasoning scratch from reasoning_delta. */
   reasoning?: string | null;
+  /** Verifier / turn lifecycle state from session history. */
+  answerState?: string | null;
 }
 
 export interface InteractiveTurnStreamEvent {

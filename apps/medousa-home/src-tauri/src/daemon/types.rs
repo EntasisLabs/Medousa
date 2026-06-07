@@ -283,6 +283,8 @@ pub struct WorkCardDetail {
     #[serde(default)]
     pub result_excerpt: Option<String>,
     #[serde(default)]
+    pub tool_names: Option<Vec<String>>,
+    #[serde(default)]
     pub associations: WorkCardAssociations,
 }
 
@@ -466,5 +468,121 @@ pub struct StageRouteCommandRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StageRouteCommandResponse {
     pub stage_routing: StageRoutingMatrix,
+    pub rendered_output: String,
+}
+
+// ── Jobs ────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobResultResponse {
+    pub job_id: String,
+    pub status: String,
+    pub is_terminal: bool,
+    pub attempt_count: usize,
+    pub latest_outcome: Option<String>,
+    pub latest_execution_id: Option<String>,
+    pub output_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnqueueAskRequest {
+    pub prompt: String,
+    pub policy_profile: Option<String>,
+    pub model_hint: Option<String>,
+    pub max_turns: Option<u32>,
+    pub identity_user_id: Option<String>,
+    pub identity_persona_id: Option<String>,
+    pub identity_channel_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnqueueResponse {
+    pub job_id: String,
+    pub queue: String,
+    pub accepted_at_utc: DateTime<Utc>,
+}
+
+// ── Recurring schedules ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringDefinitionEntry {
+    pub recurring_id: String,
+    pub queue: String,
+    pub job_type: String,
+    pub cron_expr: String,
+    pub timezone: String,
+    pub enabled: bool,
+    pub next_run_at_utc: DateTime<Utc>,
+    pub last_run_at_utc: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub manuscript_id: Option<String>,
+    #[serde(default)]
+    pub prompt_excerpt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringListResponse {
+    pub count: usize,
+    pub recurring: Vec<RecurringDefinitionEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterRecurringPromptRequest {
+    pub id: Option<String>,
+    pub queue: Option<String>,
+    pub prompt: String,
+    pub system_prompt: Option<String>,
+    pub cron_expr: String,
+    pub timezone: Option<String>,
+    pub jitter_seconds: Option<i64>,
+    pub enabled: Option<bool>,
+    pub max_attempts: Option<u32>,
+    pub policy_profile: Option<String>,
+    pub model_hint: Option<String>,
+    pub delivery: Option<serde_json::Value>,
+    pub session_id: Option<String>,
+    pub execution_mode: Option<String>,
+    #[serde(default)]
+    pub manuscript_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterRecurringResponse {
+    pub recurring_id: String,
+    pub queue: String,
+    pub next_run_at_utc: DateTime<Utc>,
+    pub cron_expr: String,
+    pub timezone: String,
+}
+
+// ── Identity & artifacts ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityContextRequest {
+    pub user_id: Option<String>,
+    pub persona_id: Option<String>,
+    pub channel_id: Option<String>,
+    pub policy_profile: Option<String>,
+    pub relationship_limit: Option<usize>,
+    pub mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum ArtifactCommandSpec {
+    Lookup { query: Option<String> },
+    List { limit: usize },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactCommandRequest {
+    pub session_id: String,
+    pub selected_context_pack_query: Option<String>,
+    pub command: ArtifactCommandSpec,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactCommandResponse {
+    pub selected_context_pack_query: Option<String>,
     pub rendered_output: String,
 }

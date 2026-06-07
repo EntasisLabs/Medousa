@@ -33,10 +33,10 @@
 </script>
 
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="flex items-center justify-between gap-3 border-b border-surface-500/20 px-4 py-3">
+  <header class="workshop-header flex items-center justify-between gap-3 py-3">
     <div class="min-w-0" title={vault.selectedPath ?? undefined}>
       {#if breadcrumb}
-        <p class="truncate text-xs text-surface-500">{breadcrumb}</p>
+        <p class="workshop-faint truncate">{breadcrumb}</p>
       {/if}
       <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
     </div>
