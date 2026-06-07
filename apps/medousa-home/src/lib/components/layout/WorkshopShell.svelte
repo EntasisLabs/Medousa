@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import NavSidebar from "$lib/components/layout/NavSidebar.svelte";
+  import { connectWorkshop, refreshDaemonHealth } from "$lib/workshopConnection";
   import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
   import type { Surface } from "$lib/types/ui";
   import WorkRail from "$lib/components/layout/WorkRail.svelte";
@@ -23,23 +24,10 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { settings } from "$lib/stores/settings.svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
-  import {
-    checkDaemonHealth,
-    onInteractiveEvent,
-    onInteractiveError,
-    onWorkspaceEvent,
-    onWorkspaceError,
-    startWorkspaceStream,
-    stopInteractiveStream,
-    stopWorkspaceStream,
-  } from "$lib/daemon";
   import type { DaemonHealth } from "$lib/daemon";
-  import type { WorkspaceStreamEvent } from "$lib/types/workspace";
-  import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 
   let activeSurface = $state<Surface>("chat");
   let daemonHealth = $state<DaemonHealth | null>(null);
@@ -50,58 +38,11 @@
   });
 
   onMount(() => {
-    settings.applyTheme();
-    const unlisteners: Promise<() => void>[] = [];
-
-    (async () => {
-      daemonHealth = await checkDaemonHealth();
-
-      await stopWorkspaceStream();
-      await startWorkspaceStream(workspace.revision || undefined);
-      await runtime.loadFromTuiDefaults();
-      void runtime.refresh();
-      void recurring.refresh();
-      void chat.refreshSessions();
-      if (chat.messages.length === 0) {
-        void chat.switchSession(chat.sessionId);
-      }
-
-      unlisteners.push(
-        onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
-          workspace.applyEvent(event);
-          const kind = event.feed_event?.kind;
-          if (
-            kind === "vault_note_created" ||
-            kind === "vault_note_updated"
-          ) {
-            void vault.refreshNotes();
-            if (
-              vault.selectedPath &&
-              event.feed_event?.summary.includes(vault.selectedPath)
-            ) {
-              void vault.openNote(vault.selectedPath);
-            }
-          }
-        }),
-      );
-      unlisteners.push(
-        onWorkspaceError((message) => workspace.setError(message)),
-      );
-      unlisteners.push(
-        onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
-          chat.applyStreamEvent(event);
-        }),
-      );
-      unlisteners.push(
-        onInteractiveError((message) => chat.setError(message)),
-      );
-    })();
-
-    return () => {
-      Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
-      stopWorkspaceStream();
-      stopInteractiveStream();
-    };
+    return connectWorkshop({
+      onHealthChange: (health) => {
+        daemonHealth = health;
+      },
+    });
   });
 
   function handleSurfaceSelect(surface: Surface) {
@@ -184,7 +125,7 @@
             onOpenMessaging={() => (activeSurface = "messaging")}
             onOpenCron={() => (activeSurface = "cron")}
             onDaemonHealth={async () => {
-              daemonHealth = await checkDaemonHealth();
+              daemonHealth = await refreshDaemonHealth();
             }}
           />
         {:else}

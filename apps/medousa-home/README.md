@@ -2,7 +2,8 @@
 
 Tauri v2 + SvelteKit + Skeleton UI v2 workshop shell for Medousa.
 
-Design: [`../../architecture/medousa-home-tauri-design.md`](../../architecture/medousa-home-tauri-design.md)
+Design: [`../../architecture/medousa-home-tauri-design.md`](../../architecture/medousa-home-tauri-design.md)  
+Mobile: [`../../architecture/medousa-home-mobile-plan.md`](../../architecture/medousa-home-mobile-plan.md)
 
 ## Prerequisites
 
@@ -42,3 +43,14 @@ On Linux, you may see `libayatana-appindicator is deprecated` once at startup wh
 - **Home** — column count overview
 
 Settings and tray polish ship in M3.
+
+### M8 (Mobile — Pulse shell)
+
+At viewport **≤768px** (or resize your devtools), Home switches to the **mobile shell**:
+
+- **Pulse** — glance + one hero action
+- **Work** — vertical timeline (not kanban)
+- **Chat** — same turn SSE, thumb-friendly frame
+- **You** — Notes, Skills, Schedule, Channels, Settings, Workshop health
+
+Desktop layout is unchanged above the breakpoint.

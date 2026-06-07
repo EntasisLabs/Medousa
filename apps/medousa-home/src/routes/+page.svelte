@@ -1,5 +1,5 @@
 <script lang="ts">
-  import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
+  import AppShell from "$lib/components/layout/AppShell.svelte";
 </script>
 
-<WorkshopShell />
+<AppShell />

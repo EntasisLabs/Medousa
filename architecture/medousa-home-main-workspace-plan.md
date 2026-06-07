@@ -179,6 +179,12 @@ Full plan: **[medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)*
 
 **First slice:** M7b Cron list + status bar whisper (proves list → detail pattern).
 
+### M8 — Mobile Pulse shell
+
+Full plan: **[medousa-home-mobile-plan.md](medousa-home-mobile-plan.md)**
+
+Four tabs: **Pulse · Work · Chat · You**. Vertical work timeline, full-screen card story, no split panes. M8a shell landed in `apps/medousa-home/`.
+
 ---
 
 ## API additions needed (daemon-first)

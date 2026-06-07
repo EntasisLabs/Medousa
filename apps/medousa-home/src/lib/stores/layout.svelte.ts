@@ -1,11 +1,21 @@
+import type { MobileTab, YouDestination } from "$lib/types/mobile";
+import { isMobileViewport } from "$lib/platform";
+
 const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
 const WORK_INSPECTOR_WIDTH_KEY = "medousa-home-work-inspector-width";
 const SESSION_DRAWER_KEY = "medousa-home-session-drawer";
 const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
 const ACTIVITY_COLLAPSED_KEY = "medousa-home-activity-collapsed";
+const MOBILE_TAB_KEY = "medousa-home-mobile-tab";
 
 export class LayoutStore {
+  isMobile = $state(
+    typeof window !== "undefined" ? isMobileViewport() : false,
+  );
+  mobileTab = $state<MobileTab>(loadMobileTab());
+  youDestination = $state<YouDestination>("hub");
+  activitySheetOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
   vaultTreeWidth = $state(loadWidth(VAULT_TREE_WIDTH_KEY, 224));
   workInspectorWidth = $state(loadWidth(WORK_INSPECTOR_WIDTH_KEY, 360));
@@ -54,6 +64,43 @@ export class LayoutStore {
   toggleActivityCollapsed() {
     this.setActivityCollapsed(!this.activityCollapsed);
   }
+
+  setMobile(mobile: boolean) {
+    this.isMobile = mobile;
+  }
+
+  setMobileTab(tab: MobileTab) {
+    this.mobileTab = tab;
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(MOBILE_TAB_KEY, tab);
+    }
+  }
+
+  openYou(destination: YouDestination) {
+    this.youDestination = destination;
+    this.mobileTab = "you";
+  }
+
+  backToYouHub() {
+    this.youDestination = "hub";
+  }
+
+  setActivitySheetOpen(open: boolean) {
+    this.activitySheetOpen = open;
+  }
+
+  toggleActivitySheet() {
+    this.setActivitySheetOpen(!this.activitySheetOpen);
+  }
+}
+
+function loadMobileTab(): MobileTab {
+  if (typeof localStorage === "undefined") return "pulse";
+  const stored = localStorage.getItem(MOBILE_TAB_KEY);
+  if (stored === "pulse" || stored === "work" || stored === "chat" || stored === "you") {
+    return stored;
+  }
+  return "pulse";
 }
 
 function loadWidth(key: string, fallback: number): number {

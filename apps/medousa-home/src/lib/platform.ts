@@ -1,0 +1,17 @@
+/** Breakpoint aligned with Tailwind `md` — below = mobile shell. */
+export const MOBILE_LAYOUT_MAX_WIDTH_PX = 768;
+
+export function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches;
+}
+
+export function watchMobileViewport(onChange: (mobile: boolean) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const query = window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`);
+  const handler = () => onChange(query.matches);
+  handler();
+  query.addEventListener("change", handler);
+  return () => query.removeEventListener("change", handler);
+}
