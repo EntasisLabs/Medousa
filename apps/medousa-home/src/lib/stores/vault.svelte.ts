@@ -12,6 +12,7 @@ import type {
 } from "$lib/types/vault";
 import type { VaultTreeNode } from "$lib/types/vault";
 import { buildVaultTree } from "$lib/utils/vaultTree";
+import { formatDiffChip, lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -20,6 +21,7 @@ export class VaultStore {
   tree = $state<VaultTreeNode[]>([]);
   selectedPath = $state<string | null>(loadLastNote());
   content = $state("");
+  baselineContent = $state("");
   contentHash = $state<string | null>(null);
   wikilinksOut = $state<string[]>([]);
   backlinks = $state<string[]>([]);
@@ -34,6 +36,16 @@ export class VaultStore {
 
   get isDirty(): boolean {
     return this.dirty;
+  }
+
+  diffStats(): LineDiffStats | null {
+    if (!this.dirty) return null;
+    return lineDiffStats(this.baselineContent, this.content);
+  }
+
+  diffChip(): string | null {
+    const stats = this.diffStats();
+    return stats ? formatDiffChip(stats) : null;
   }
 
   async refreshNotes() {
@@ -68,6 +80,7 @@ export class VaultStore {
 
   applyNote(response: VaultNoteContentResponse) {
     this.content = response.content;
+    this.baselineContent = response.content;
     this.contentHash = response.note.content_hash;
     this.title = response.note.title;
     this.wikilinksOut = response.note.wikilinks_out;
@@ -102,6 +115,7 @@ export class VaultStore {
       this.contentHash = response.note.content_hash;
       this.title = response.note.title;
       this.wikilinksOut = response.note.wikilinks_out;
+      this.baselineContent = this.content;
       this.dirty = false;
       await this.refreshNotes();
       await this.refreshBacklinks(this.selectedPath);

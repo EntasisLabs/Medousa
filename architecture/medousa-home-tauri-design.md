@@ -207,11 +207,15 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Status strip — daemon health + workspace revision (Cursor-style)
 - [x] Session pinning (star toggle in session sidebar)
 
-### M3 — polish
+### M3 — polish (current)
 
-- Split panes, system tray, pop-out chat
-- Drag-to-cancel only (no fake reorder)
-- Inline vault diff chips (Cursor-style change awareness)
+- [x] Resizable split panes — Activity panel + vault tree (persisted widths)
+- [x] System tray — show/hide/quit + open chat; close hides to tray
+- [x] Pop-out chat window (`chat-popout` label, `/popout/chat` route)
+- [x] Drag-to-cancel — drop zone on work board (no column reorder)
+- [x] Vault diff chips — `+N -M` line stats in editor + context panel
+- [x] Split primary + inspector side-by-side on Work tab
+- [x] Tray badge for blocked card count (tooltip + Linux title + taskbar badge)
 
 ---
 
@@ -248,3 +252,5 @@ Env:
 | 2026-05-30 | **M2 shipped:** Kanban + swimlanes, card inspector, done notifications |
 | 2026-05-30 | **M2.5:** Labeled nav, session sidebar, settings, composer, work-rail filter; design refs (Cursor/Codex/Hermes) |
 | 2026-05-30 | **M2.5 cont.:** Skills & Tools catalog, status strip, session pinning, `GET /v1/manuscripts` |
+| 2026-05-30 | **M3 shipped:** Split panes, tray, pop-out chat, drag-to-cancel, vault diff chips |
+| 2026-05-30 | **M3+ shipped:** Work kanban+inspector split pane, tray blocked-count badge |

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CancelDropZone from "$lib/components/work/CancelDropZone.svelte";
   import KanbanCard from "$lib/components/work/KanbanCard.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { SwimlaneMode } from "$lib/types/work";
@@ -77,7 +78,9 @@
     </div>
   </header>
 
-  <div class="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
+  <CancelDropZone onCanceled={() => {}} />
+
+  <div class="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-4">
     {#each columns as column (column.column)}
       <div
         class="flex w-64 shrink-0 flex-col rounded-container-token border {columnTone(

@@ -13,6 +13,7 @@
     backlinks: string[];
     cardDetail: WorkCardDetail | null;
     cardError: string | null;
+    noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
   }
 
@@ -26,6 +27,7 @@
     backlinks,
     cardDetail,
     cardError,
+    noteDiffChip,
     onOpenNote,
   }: Props = $props();
 
@@ -42,7 +44,7 @@
 </script>
 
 <aside
-  class="flex h-full w-72 shrink-0 flex-col border-l border-surface-500/20 bg-surface-900/60"
+  class="flex h-full w-full flex-col border-l border-surface-500/20 bg-surface-900/60"
   aria-label="Activity and context"
 >
   <ContextPanel
@@ -52,6 +54,7 @@
     {backlinks}
     {cardDetail}
     {cardError}
+    {noteDiffChip}
     {onOpenNote}
   />
 

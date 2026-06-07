@@ -136,18 +136,20 @@ export class WorkspaceStore {
     return this.cards.filter((card) => activeColumns.has(card.column));
   }
 
-  async selectCard(id: string | null, options?: { inspector?: boolean }) {
+  blockedCount(): number {
+    if (this.columnCounts.blocked !== undefined) {
+      return this.columnCounts.blocked;
+    }
+    return this.cards.filter((card) => card.column === "blocked").length;
+  }
+
+  async selectCard(id: string | null) {
     this.selectedCardId = id;
     this.selectedCardDetail = null;
     this.cardDetailError = null;
     this.cardActionMessage = null;
     if (!id) {
-      this.workView = "kanban";
       return;
-    }
-
-    if (options?.inspector !== false) {
-      this.workView = "inspector";
     }
 
     const cached = this.cardDetailsCache.get(id);
@@ -168,7 +170,7 @@ export class WorkspaceStore {
 
   async refreshSelectedCard() {
     if (!this.selectedCardId) return;
-    await this.selectCard(this.selectedCardId, { inspector: true });
+    await this.selectCard(this.selectedCardId);
   }
 
   clearSelection() {
@@ -176,18 +178,21 @@ export class WorkspaceStore {
     this.selectedCardDetail = null;
     this.cardDetailError = null;
     this.cardActionMessage = null;
-    this.workView = "kanban";
   }
 
   showKanban() {
-    this.workView = "kanban";
+    this.clearSelection();
+  }
+
+  async cancelCard(id: string) {
+    return cancelWorkspaceCard(id);
   }
 
   async cancelSelectedCard() {
     if (!this.selectedCardId) return;
     this.cardActionMessage = null;
     try {
-      const response = await cancelWorkspaceCard(this.selectedCardId);
+      const response = await this.cancelCard(this.selectedCardId);
       this.cardActionMessage = response.message;
       if (!response.ok) {
         this.cardDetailError = response.message;
@@ -195,6 +200,10 @@ export class WorkspaceStore {
     } catch (err) {
       this.cardDetailError = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  isCancellable(card: WorkCard): boolean {
+    return ["backlog", "in_flight", "wrapping_up"].includes(card.column);
   }
 
   async retrySelectedCard() {

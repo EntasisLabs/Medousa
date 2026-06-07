@@ -29,6 +29,11 @@
       {/if}
     </div>
     <div class="flex shrink-0 items-center gap-2">
+      {#if vault.diffChip()}
+        <span class="badge variant-soft-warning text-xs font-mono">
+          {vault.diffChip()}
+        </span>
+      {/if}
       <button
         type="button"
         class="btn btn-sm variant-ghost-surface"

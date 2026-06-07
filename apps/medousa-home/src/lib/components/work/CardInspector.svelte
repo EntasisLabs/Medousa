@@ -7,10 +7,20 @@
   interface Props {
     onOpenNote: (path: string) => void;
     onOpenChat: () => void;
-    onBack: () => void;
+    onBack?: () => void;
+    onClose?: () => void;
+    split?: boolean;
   }
 
-  let { onOpenNote, onOpenChat, onBack }: Props = $props();
+  let { onOpenNote, onOpenChat, onBack, onClose, split = false }: Props = $props();
+
+  function handleClose() {
+    if (onClose) {
+      onClose();
+      return;
+    }
+    onBack?.();
+  }
 
   const detail = $derived(workspace.selectedCardDetail);
   const wrappingUp = $derived(detail?.card.column === "wrapping_up");
@@ -29,15 +39,17 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col">
+<section
+  class="flex h-full w-full min-w-0 flex-col border-l border-surface-500/20 bg-surface-950/80"
+>
   <header class="flex items-center justify-between gap-3 border-b border-surface-500/20 px-4 py-3">
     <div class="min-w-0">
       <button
         type="button"
         class="btn btn-sm variant-ghost-surface mb-2"
-        onclick={onBack}
+        onclick={handleClose}
       >
-        ← Board
+        {split ? "Close" : "← Board"}
       </button>
       <h1 class="truncate text-base font-semibold">
         {detail?.card.title ?? "Card inspector"}

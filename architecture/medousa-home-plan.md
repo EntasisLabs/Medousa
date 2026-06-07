@@ -680,11 +680,21 @@ Design direction informed by **Cursor** (status/diff awareness), **Codex** (chat
 - Status strip (daemon health, workspace revision, in-motion count)
 - Session pinning in chat sidebar
 
-### M3 — Polish
+### M3 — Polish (Tauri, in progress)
 
-- Drag card → cancel only (no fake reorder)
-- Split panes, system tray, pop-out chat
-- Skills & Tools read-only catalog (Hermes parity)
+- Resizable Activity + vault tree split panes (widths persisted)
+- System tray with show/hide/quit and chat launcher
+- Pop-out chat window (`Pop out` button + tray menu)
+- Kanban drag-to-cancel drop zone (no fake column reorder)
+- Vault diff chips in editor header and context panel
+
+### M3+ — shipped (Tauri)
+
+- Work tab split: kanban + inspector side-by-side (resizable, persisted width)
+- Tray badge for blocked cards (tooltip, Linux tray title, taskbar badge count)
+
+### Deferred
+
 - TUI parity via workspace side panel (optional; lower priority than Tauri)
 
 ---

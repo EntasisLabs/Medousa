@@ -8,6 +8,7 @@
     backlinks: string[];
     cardDetail: WorkCardDetail | null;
     cardError: string | null;
+    noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
   }
 
@@ -18,12 +19,14 @@
     backlinks,
     cardDetail,
     cardError,
+    noteDiffChip,
     onOpenNote,
   }: Props = $props();
 
   const cardVaultPaths = $derived(cardDetail?.associations.vault_paths ?? []);
   const hasNoteContext = $derived(
-    notePath !== null && (wikilinksOut.length > 0 || backlinks.length > 0),
+    notePath !== null &&
+      (wikilinksOut.length > 0 || backlinks.length > 0 || noteDiffChip !== null),
   );
   const hasCardContext = $derived(
     cardDetail !== null &&
@@ -77,7 +80,14 @@
 
     {#if notePath}
       <div class="mt-3 space-y-2 text-sm">
-        <p class="text-xs text-surface-400">{noteTitle ?? notePath}</p>
+        <div class="flex items-center gap-2">
+          <p class="text-xs text-surface-400">{noteTitle ?? notePath}</p>
+          {#if noteDiffChip}
+            <span class="badge variant-soft-warning text-[10px] font-mono">
+              {noteDiffChip}
+            </span>
+          {/if}
+        </div>
         {#if wikilinksOut.length > 0}
           <div>
             <p class="mb-1 text-xs text-surface-400">Links out</p>

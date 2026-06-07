@@ -6,11 +6,14 @@
     stopInteractiveStream,
   } from "$lib/daemon";
 
+  import { isTauri, showChatPopout } from "$lib/window";
+
   interface Props {
     visible: boolean;
+    showPopout?: boolean;
   }
 
-  let { visible }: Props = $props();
+  let { visible, showPopout = true }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
 
@@ -47,10 +50,21 @@
 
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   <header class="border-b border-surface-500/20 px-5 py-3">
-    <h1 class="text-base font-semibold">Chat</h1>
-    <p class="text-xs text-surface-400 truncate">
-      {chat.sessionId}
-    </p>
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold">Chat</h1>
+        <p class="truncate text-xs text-surface-400">{chat.sessionId}</p>
+      </div>
+      {#if showPopout && isTauri()}
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface shrink-0"
+          onclick={() => showChatPopout()}
+        >
+          Pop out
+        </button>
+      {/if}
+    </div>
     {#if chat.streamError}
       <p class="mt-1 text-xs text-error-400">{chat.streamError}</p>
     {/if}

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import KanbanBoard from "$lib/components/work/KanbanBoard.svelte";
   import CardInspector from "$lib/components/work/CardInspector.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
 
   interface Props {
@@ -19,13 +21,24 @@
 </script>
 
 <div class="flex h-full min-w-0 flex-1 {visible ? '' : 'hidden'}">
-  {#if workspace.workView === "inspector" && workspace.selectedCardId}
-    <CardInspector
-      {onOpenNote}
-      {onOpenChat}
-      onBack={() => workspace.showKanban()}
-    />
-  {:else}
+  <div class="flex min-h-0 min-w-0 flex-1">
     <KanbanBoard onSelectCard={onSelectCard} />
+  </div>
+
+  {#if workspace.selectedCardId}
+    <SplitPane
+      width={layout.workInspectorWidth}
+      side="right"
+      min={280}
+      max={560}
+      onResize={(width) => layout.setWorkInspectorWidth(width)}
+    >
+      <CardInspector
+        split={true}
+        {onOpenNote}
+        {onOpenChat}
+        onClose={() => workspace.clearSelection()}
+      />
+    </SplitPane>
   {/if}
 </div>

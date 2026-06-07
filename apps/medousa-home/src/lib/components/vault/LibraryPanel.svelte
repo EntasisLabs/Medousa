@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import SplitPane from "$lib/components/layout/SplitPane.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import VaultTree from "./VaultTree.svelte";
   import VaultEditor from "./VaultEditor.svelte";
@@ -26,43 +28,51 @@
 </script>
 
 <section class="flex h-full min-w-0 flex-1 {visible ? '' : 'hidden'}">
-  <aside
-    class="flex w-56 shrink-0 flex-col border-r border-surface-500/20 bg-surface-900/50"
-    aria-label="Vault browser"
+  <SplitPane
+    width={layout.vaultTreeWidth}
+    side="left"
+    min={180}
+    max={420}
+    onResize={(width) => layout.setVaultTreeWidth(width)}
   >
-    <div class="border-b border-surface-500/20 p-2">
-      <input
-        class="input text-sm"
-        type="search"
-        placeholder="Search vault…"
-        value={vault.searchQuery}
-        oninput={handleSearchInput}
+    <aside
+      class="flex h-full w-full flex-col bg-surface-900/50"
+      aria-label="Vault browser"
+    >
+      <div class="border-b border-surface-500/20 p-2">
+        <input
+          class="input text-sm"
+          type="search"
+          placeholder="Search vault…"
+          value={vault.searchQuery}
+          oninput={handleSearchInput}
+        />
+      </div>
+
+      {#if vault.searchHits.length > 0}
+        <ul class="max-h-40 overflow-y-auto border-b border-surface-500/20 p-2 text-sm">
+          {#each vault.searchHits as hit (hit.note.path)}
+            <li>
+              <button
+                type="button"
+                class="w-full rounded-container-token px-2 py-1 text-left hover:bg-surface-800/80"
+                onclick={() => vault.openNote(hit.note.path)}
+              >
+                <span class="font-medium">{hit.note.title}</span>
+                <span class="block truncate text-xs text-surface-400">{hit.note.path}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <VaultTree
+        tree={vault.tree}
+        selectedPath={vault.selectedPath}
+        onSelect={(path) => vault.openNote(path)}
       />
-    </div>
-
-    {#if vault.searchHits.length > 0}
-      <ul class="max-h-40 overflow-y-auto border-b border-surface-500/20 p-2 text-sm">
-        {#each vault.searchHits as hit (hit.note.path)}
-          <li>
-            <button
-              type="button"
-              class="w-full rounded-container-token px-2 py-1 text-left hover:bg-surface-800/80"
-              onclick={() => vault.openNote(hit.note.path)}
-            >
-              <span class="font-medium">{hit.note.title}</span>
-              <span class="block truncate text-xs text-surface-400">{hit.note.path}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-
-    <VaultTree
-      tree={vault.tree}
-      selectedPath={vault.selectedPath}
-      onSelect={(path) => vault.openNote(path)}
-    />
-  </aside>
+    </aside>
+  </SplitPane>
 
   <VaultEditor visible={true} />
 </section>

@@ -6,7 +6,9 @@
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
   import HomeOverview from "$lib/components/layout/HomeOverview.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
+  import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
@@ -16,6 +18,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import {
     checkDaemonHealth,
     onInteractiveEvent,
@@ -32,6 +35,11 @@
 
   let activeSurface = $state<Surface>("chat");
   let daemonHealth = $state<DaemonHealth | null>(null);
+
+  $effect(() => {
+    if (!isTauri()) return;
+    void updateTrayBlockedCount(workspace.blockedCount());
+  });
 
   onMount(() => {
     settings.applyTheme();
@@ -90,7 +98,7 @@
     if (surface === "chat") {
       void chat.refreshSessions();
     }
-    if (surface === "work" && workspace.workView === "kanban") {
+    if (surface === "work") {
       void workspace.prefetchCardDetails();
     }
   }
@@ -141,24 +149,34 @@
           <ChatPanel visible={activeSurface === "chat"} />
         {/if}
 
-        <ActivityPanel
-          events={workspace.feed}
-          error={workspace.streamError}
-          daemonMessage={daemonHealth?.message ?? null}
-          notePath={vault.selectedPath}
-          noteTitle={vault.title}
-          wikilinksOut={vault.wikilinksOut}
-          backlinks={vault.backlinks}
-          cardDetail={workspace.selectedCardDetail}
-          cardError={workspace.cardDetailError}
-          onOpenNote={handleOpenNote}
-        />
+        <SplitPane
+          width={layout.activityWidth}
+          side="right"
+          min={220}
+          max={520}
+          onResize={(width) => layout.setActivityWidth(width)}
+        >
+          <ActivityPanel
+            events={workspace.feed}
+            error={workspace.streamError}
+            daemonMessage={daemonHealth?.message ?? null}
+            notePath={vault.selectedPath}
+            noteTitle={vault.title}
+            wikilinksOut={vault.wikilinksOut}
+            backlinks={vault.backlinks}
+            cardDetail={workspace.selectedCardDetail}
+            cardError={workspace.cardDetailError}
+            noteDiffChip={vault.diffChip()}
+            onOpenNote={handleOpenNote}
+          />
+        </SplitPane>
       </div>
 
       <StatusBar
         health={daemonHealth}
         revision={workspace.revision}
         inMotionCount={workspace.railCards().length}
+        blockedCount={workspace.blockedCount()}
         activeSurface={activeSurface}
       />
 

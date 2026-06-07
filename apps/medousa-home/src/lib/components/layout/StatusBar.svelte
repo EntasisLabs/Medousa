@@ -5,10 +5,11 @@
     health: DaemonHealth | null;
     revision: number;
     inMotionCount: number;
+    blockedCount: number;
     activeSurface: string;
   }
 
-  let { health, revision, inMotionCount, activeSurface }: Props = $props();
+  let { health, revision, inMotionCount, blockedCount, activeSurface }: Props = $props();
 </script>
 
 <footer
@@ -25,6 +26,9 @@
     {/if}
     <span>rev {revision}</span>
     <span>{inMotionCount} in motion</span>
+    {#if blockedCount > 0}
+      <span class="text-warning-400">{blockedCount} blocked</span>
+    {/if}
     <span class="capitalize text-surface-500">{activeSurface}</span>
   </div>
 </footer>
