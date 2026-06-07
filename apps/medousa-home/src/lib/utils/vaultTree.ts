@@ -19,12 +19,14 @@ export function buildVaultTree(notes: VaultNote[]): VaultTreeNode[] {
         child = {
           name: part,
           path: isLeaf ? note.path : null,
+          title: isLeaf ? note.title : null,
           children: [],
           isFolder: !isLeaf,
         };
         current.children.push(child);
       } else if (isLeaf) {
         child.path = note.path;
+        child.title = note.title;
         child.isFolder = false;
       }
       current = child;

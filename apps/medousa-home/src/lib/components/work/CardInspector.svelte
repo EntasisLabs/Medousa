@@ -3,6 +3,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { sendInteractiveTurn, startInteractiveStream } from "$lib/daemon";
   import { columnLabel } from "$lib/types/workspace";
+  import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
 
   interface Props {
     onOpenNote: (path: string) => void;
@@ -52,7 +53,7 @@
         {split ? "Close" : "← Board"}
       </button>
       <h1 class="truncate text-base font-semibold">
-        {detail?.card.title ?? "Card inspector"}
+        {detail ? formatCardTitle(detail.card) : "Card inspector"}
       </h1>
       {#if detail}
         <p class="text-xs text-surface-400">
@@ -110,7 +111,7 @@
         <div class="rounded-container-token bg-surface-800/60 p-3">
           <p class="text-xs text-surface-400">Status</p>
           <p class="mt-1 font-medium {wrappingUp ? 'text-warning-300' : ''}">
-            {detail.card.status_label}
+            {formatStatusLabel(detail.card.status_label)}
           </p>
         </div>
         <div class="rounded-container-token bg-surface-800/60 p-3">

@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { Config } from "tailwindcss";
 import forms from "@tailwindcss/forms";
 import { skeleton } from "@skeletonlabs/tw-plugin";
+import { medousaTheme } from "./medousa-theme";
 
 export default {
   darkMode: "class",
@@ -19,7 +20,7 @@ export default {
     forms,
     skeleton({
       themes: {
-        preset: [{ name: "sahara", enhancements: true }],
+        custom: [medousaTheme],
       },
     }),
   ],

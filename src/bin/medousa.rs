@@ -1094,6 +1094,14 @@ fn run_doctor(_args: &[String]) -> Result<()> {
     } else if daemon_http.healthy {
         println!("dashboard_url={}", daemon_dashboard_url(&daemon_url));
     }
+    println!(
+        "medousa_home={} (Tauri workshop UI — cd apps/medousa-home && npm run tauri dev)",
+        if daemon_http.healthy {
+            "ready"
+        } else {
+            "needs daemon http_health=ok"
+        }
+    );
     if let Some(lock_path) = surrealkv_lock_path(&backend) {
         println!(
             "surrealkv_lock={} exists={}",

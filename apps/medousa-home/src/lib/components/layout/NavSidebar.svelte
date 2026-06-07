@@ -1,4 +1,13 @@
 <script lang="ts">
+  import {
+    BookOpen,
+    Home,
+    LayoutGrid,
+    MessageCircle,
+    Settings,
+    Zap,
+  } from "@lucide/svelte";
+  import type { Component } from "svelte";
   import type { Surface } from "$lib/types/ui";
 
   interface Props {
@@ -8,13 +17,15 @@
 
   let { active, onSelect }: Props = $props();
 
-  const items: { id: Surface; label: string; glyph: string }[] = [
-    { id: "home", label: "Home", glyph: "⌂" },
-    { id: "chat", label: "Chat", glyph: "◎" },
-    { id: "library", label: "Library", glyph: "▤" },
-    { id: "skills", label: "Skills", glyph: "⚡" },
-    { id: "work", label: "Work", glyph: "▦" },
+  const items: { id: Surface; label: string; icon: Component }[] = [
+    { id: "home", label: "Home", icon: Home },
+    { id: "chat", label: "Chat", icon: MessageCircle },
+    { id: "library", label: "Library", icon: BookOpen },
+    { id: "skills", label: "Skills", icon: Zap },
+    { id: "work", label: "Work", icon: LayoutGrid },
   ];
+
+  const iconProps = { size: 20, strokeWidth: 1.75 };
 </script>
 
 <nav
@@ -29,7 +40,8 @@
   </div>
 
   <div class="flex flex-1 flex-col gap-1 p-2">
-    {#each items as item}
+    {#each items as item (item.id)}
+      {@const Icon = item.icon}
       <button
         type="button"
         class="flex w-full items-center gap-3 rounded-container-token px-3 py-2.5 text-left text-sm transition {active ===
@@ -39,12 +51,12 @@
         onclick={() => onSelect(item.id)}
       >
         <span
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-token text-xs {active ===
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-token {active ===
           item.id
             ? 'bg-primary-500/25 text-primary-100'
             : 'bg-surface-800 text-surface-400'}"
         >
-          {item.glyph}
+          <Icon {...iconProps} />
         </span>
         {item.label}
       </button>
@@ -61,12 +73,12 @@
       onclick={() => onSelect("settings")}
     >
       <span
-        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-token text-xs {active ===
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-token {active ===
         'settings'
           ? 'bg-primary-500/25 text-primary-100'
           : 'bg-surface-800 text-surface-400'}"
       >
-        ⚙
+        <Settings {...iconProps} />
       </span>
       Settings
     </button>

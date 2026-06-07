@@ -50,6 +50,7 @@ export interface VaultBacklinksResponse {
 export interface VaultTreeNode {
   name: string;
   path: string | null;
+  title?: string | null;
   children: VaultTreeNode[];
   isFolder: boolean;
 }

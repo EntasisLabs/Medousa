@@ -1,6 +1,7 @@
 import { getSessionHistory, listSessions } from "$lib/daemon";
 import type { ChatMessage, InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { SessionSummary } from "$lib/types/session";
+import { formatSessionLabel } from "$lib/utils/formatSession";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
@@ -18,6 +19,19 @@ export class ChatStore {
 
   isPinned(sessionId: string): boolean {
     return this.pinnedIds.includes(sessionId);
+  }
+
+  currentSessionLabel(): string {
+    const match = this.sessions.find((session) => session.session_id === this.sessionId);
+    if (match) return formatSessionLabel(match);
+
+    const firstUser = this.messages.find((message) => message.role === "user");
+    if (firstUser?.content.trim()) {
+      const line = firstUser.content.trim().split("\n")[0];
+      return line.length > 48 ? `${line.slice(0, 47)}…` : line;
+    }
+
+    return "New conversation";
   }
 
   togglePin(sessionId: string) {

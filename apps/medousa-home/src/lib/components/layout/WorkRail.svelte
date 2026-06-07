@@ -1,5 +1,6 @@
 <script lang="ts">
   import { columnLabel, type WorkCard } from "$lib/types/workspace";
+  import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
 
   interface Props {
     cards: WorkCard[];
@@ -49,9 +50,13 @@
           <span class="badge {columnTone(card.column)} text-xs capitalize">
             {columnLabel(card.column)}
           </span>
-          <span class="text-xs text-surface-400 truncate">{card.status_label}</span>
+          <span class="truncate text-xs text-surface-400">
+            {formatStatusLabel(card.status_label)}
+          </span>
         </div>
-        <p class="mt-2 line-clamp-2 text-sm font-medium">{card.title}</p>
+        <p class="mt-2 line-clamp-2 text-sm font-medium">
+          {formatCardTitle(card)}
+        </p>
       </button>
     {/each}
   {/if}

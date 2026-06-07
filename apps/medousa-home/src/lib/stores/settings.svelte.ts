@@ -1,9 +1,12 @@
 const DARK_MODE_KEY = "medousa-home-dark-mode";
 const NOTIFICATIONS_KEY = "medousa-home-notifications";
+const TECHNICAL_ACTIVITY_KEY = "medousa-home-technical-activity";
 
 export class SettingsStore {
   darkMode = $state(loadDarkMode());
   notificationsEnabled = $state(loadNotifications());
+  showTechnicalActivity = $state(loadTechnicalActivity());
+  diagnosticsOpen = $state(false);
   daemonUrl = $state("");
   daemonMessage = $state<string | null>(null);
   savingDaemon = $state(false);
@@ -23,6 +26,11 @@ export class SettingsStore {
     this.notificationsEnabled = enabled;
     localStorage.setItem(NOTIFICATIONS_KEY, enabled ? "1" : "0");
   }
+
+  setShowTechnicalActivity(enabled: boolean) {
+    this.showTechnicalActivity = enabled;
+    localStorage.setItem(TECHNICAL_ACTIVITY_KEY, enabled ? "1" : "0");
+  }
 }
 
 function loadDarkMode(): boolean {
@@ -30,6 +38,11 @@ function loadDarkMode(): boolean {
   const stored = localStorage.getItem(DARK_MODE_KEY);
   if (stored === "0") return false;
   return true;
+}
+
+function loadTechnicalActivity(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(TECHNICAL_ACTIVITY_KEY) === "1";
 }
 
 function loadNotifications(): boolean {

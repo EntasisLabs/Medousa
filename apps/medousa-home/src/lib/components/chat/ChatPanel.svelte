@@ -1,5 +1,9 @@
 <script lang="ts">
+  import { PanelLeft } from "@lucide/svelte";
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import {
     sendInteractiveTurn,
     startInteractiveStream,
@@ -16,6 +20,8 @@
   let { visible, showPopout = true }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
+
+  const sessionLabel = $derived(chat.currentSessionLabel());
 
   $effect(() => {
     if (scrollEl && (chat.messages.length || chat.isStreaming)) {
@@ -48,12 +54,25 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+<section class="relative flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   <header class="border-b border-surface-500/20 px-5 py-3">
     <div class="flex items-start justify-between gap-3">
-      <div class="min-w-0">
-        <h1 class="text-base font-semibold">Chat</h1>
-        <p class="truncate text-xs text-surface-400">{chat.sessionId}</p>
+      <div class="flex min-w-0 items-start gap-3">
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface mt-0.5 shrink-0"
+          aria-label="Open sessions"
+          title="Sessions"
+          onclick={() => layout.toggleSessionDrawer()}
+        >
+          <PanelLeft size={18} strokeWidth={1.75} />
+        </button>
+        <div class="min-w-0">
+          <h1 class="text-base font-semibold">Chat</h1>
+          <p class="truncate text-xs text-surface-400" title={chat.sessionId}>
+            {sessionLabel}
+          </p>
+        </div>
       </div>
       {#if showPopout && isTauri()}
         <button
@@ -77,23 +96,24 @@
           ? 'ml-auto rounded-container-token bg-primary-500/15 px-4 py-3'
           : 'rounded-container-token bg-surface-800/80 px-4 py-3'}"
       >
-        <p class="mb-1 text-xs uppercase tracking-wide text-surface-400">
+        <p class="mb-1 text-xs capitalize tracking-wide text-surface-400">
           {message.role}
           {#if message.streaming}
-            <span class="ml-2 animate-pulse">streaming…</span>
+            <span class="ml-2 animate-pulse">Thinking…</span>
           {/if}
         </p>
-        <p class="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+        {#if message.role === "assistant"}
+          <MarkdownContent content={message.content || "…"} />
+        {:else}
+          <p class="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+        {/if}
       </article>
     {:else}
-      <div class="flex h-full min-h-[240px] flex-col items-center justify-center text-center">
-        <p class="text-lg font-semibold tracking-wide text-surface-200">
-          MEDOUSA HOME
-        </p>
-        <p class="mt-3 max-w-md text-sm text-surface-400">
-          Ask a question, delegate work, or open the library. Turns stream from
-          the daemon agent runtime.
-        </p>
+      <div class="flex h-full min-h-[280px] items-center justify-center">
+        <EmptyState
+          title="The workshop is quiet"
+          description="Ask a question, delegate work, or open the library."
+        />
       </div>
     {/each}
   </div>
@@ -104,16 +124,12 @@
     >
       <textarea
         class="textarea w-full min-h-[72px] border-0 bg-transparent p-0 focus:ring-0"
-        placeholder="Give Medousa a task…"
+        placeholder="What do you want to work on?"
         bind:value={chat.draft}
         disabled={chat.isStreaming}
         onkeydown={handleKeydown}
       ></textarea>
-      <div class="mt-2 flex items-center justify-between gap-2 border-t border-surface-500/15 pt-2">
-        <div class="flex flex-wrap items-center gap-2 text-xs text-surface-400">
-          <span class="badge variant-soft-surface">home</span>
-          <span class="badge variant-soft-surface">balanced</span>
-        </div>
+      <div class="mt-2 flex items-center justify-end gap-2 border-t border-surface-500/15 pt-2">
         <button
           type="submit"
           class="btn variant-filled-primary btn-sm"

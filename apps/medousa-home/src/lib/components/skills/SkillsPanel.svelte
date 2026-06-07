@@ -25,7 +25,7 @@
   <header class="border-b border-surface-500/20 px-5 py-4">
     <h1 class="text-base font-semibold">Skills &amp; Tools</h1>
     <p class="text-xs text-surface-400">
-      Read-only catalog from the daemon — specialties and capability bindings
+      Specialties and tools available in the workshop
     </p>
   </header>
 

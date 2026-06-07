@@ -65,7 +65,7 @@
   </header>
 
   <div class="flex min-h-0 flex-1">
-    <SessionSidebar visible={true} />
+    <SessionSidebar open={true} variant="inline" />
     <ChatPanel visible={true} showPopout={false} />
   </div>
 </div>

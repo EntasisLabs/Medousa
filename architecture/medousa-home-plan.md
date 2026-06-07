@@ -693,6 +693,14 @@ Design direction informed by **Cursor** (status/diff awareness), **Codex** (chat
 - Work tab split: kanban + inspector side-by-side (resizable, persisted width)
 - Tray badge for blocked cards (tooltip, Linux tray title, taskbar badge count)
 
+### M4 — Polish (shipped)
+
+See [medousa-home-polish-plan.md](medousa-home-polish-plan.md).
+
+- **M4a:** Obsidian theme, operator status bar, Activity filter, humanized labels, copy pass
+- **M4b:** Home v2 hero, session drawer, Lucide nav, Activity collapse on Work, empty states
+- **M4c:** README Medousa Home section, markdown chat, theme swatch, doctor Home hint
+
 ### Deferred
 
 - TUI parity via workspace side panel (optional; lower priority than Tauri)

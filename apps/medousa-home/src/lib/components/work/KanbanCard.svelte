@@ -2,6 +2,7 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCard } from "$lib/types/workspace";
   import { columnLabel } from "$lib/types/workspace";
+  import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
 
   interface Props {
     card: WorkCard;
@@ -36,9 +37,13 @@
     <span class="badge variant-soft-surface text-xs capitalize">
       {columnLabel(card.column)}
     </span>
-    <span class="truncate text-xs text-surface-400">{card.status_label}</span>
+    <span class="truncate text-xs text-surface-400">
+      {formatStatusLabel(card.status_label)}
+    </span>
   </div>
-  <p class="mt-2 line-clamp-3 text-sm font-medium leading-snug">{card.title}</p>
+  <p class="mt-2 line-clamp-3 text-sm font-medium leading-snug">
+    {formatCardTitle(card)}
+  </p>
   {#if draggable}
     <p class="mt-2 text-[10px] uppercase tracking-wide text-surface-500">
       drag to cancel

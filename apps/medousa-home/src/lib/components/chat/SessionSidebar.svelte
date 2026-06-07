@@ -1,12 +1,17 @@
 <script lang="ts">
+  import { X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import type { SessionSummary } from "$lib/types/session";
+  import { formatSessionLabel } from "$lib/utils/formatSession";
 
   interface Props {
-    visible: boolean;
+    open: boolean;
+    onClose?: () => void;
+    variant?: "drawer" | "inline";
   }
 
-  let { visible }: Props = $props();
+  let { open, onClose, variant = "drawer" }: Props = $props();
 
   let query = $state("");
 
@@ -50,77 +55,108 @@
     }
   }
 
-  function sessionLabel(session: SessionSummary): string {
-    return (
-      session.display_name?.trim() ||
-      session.preview.trim() ||
-      session.session_id
-    );
+  async function selectSession(sessionId: string) {
+    await chat.switchSession(sessionId);
+    if (variant === "drawer") {
+      layout.setSessionDrawerOpen(false);
+    }
+  }
+
+  async function createSession() {
+    await chat.newSession();
+    if (variant === "drawer") {
+      layout.setSessionDrawerOpen(false);
+    }
   }
 </script>
 
-<aside
-  class="flex h-full w-56 shrink-0 flex-col border-r border-surface-500/20 bg-surface-900/50 {visible
-    ? ''
-    : 'hidden'}"
-  aria-label="Chat sessions"
->
-  <div class="border-b border-surface-500/20 p-3">
+{#if open}
+  {#if variant === "drawer"}
     <button
       type="button"
-      class="btn variant-filled-primary w-full text-sm"
-      onclick={() => chat.newSession()}
-    >
-      New chat
-    </button>
-    <input
-      class="input mt-2 w-full text-sm"
-      type="search"
-      placeholder="Search sessions…"
-      bind:value={query}
-    />
-  </div>
-
-  {#if chat.sessionsError}
-    <p class="px-3 py-2 text-xs text-error-400">{chat.sessionsError}</p>
+      class="absolute inset-0 z-20 bg-surface-950/50"
+      aria-label="Close sessions"
+      onclick={onClose}
+    ></button>
   {/if}
 
-  <ol class="flex-1 space-y-3 overflow-y-auto p-2">
-    {#if pinned.length > 0}
+  <aside
+    class="{variant === 'drawer'
+      ? 'absolute left-0 top-0 z-30 w-64 shadow-xl'
+      : 'relative w-56 shrink-0'} flex h-full flex-col border-r border-surface-500/20 bg-surface-900"
+    aria-label="Chat sessions"
+  >
+    <div class="flex items-center justify-between border-b border-surface-500/20 px-3 py-3">
+      <p class="text-sm font-semibold text-surface-100">Sessions</p>
+      {#if variant === "drawer" && onClose}
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          aria-label="Close sessions drawer"
+          onclick={onClose}
+        >
+          <X size={16} strokeWidth={1.75} />
+        </button>
+      {/if}
+    </div>
+
+    <div class="border-b border-surface-500/20 p-3">
+      <button
+        type="button"
+        class="btn variant-filled-primary w-full text-sm"
+        onclick={createSession}
+      >
+        New chat
+      </button>
+      <input
+        class="input mt-2 w-full text-sm"
+        type="search"
+        placeholder="Search sessions…"
+        bind:value={query}
+      />
+    </div>
+
+    {#if chat.sessionsError}
+      <p class="px-3 py-2 text-xs text-error-400">{chat.sessionsError}</p>
+    {/if}
+
+    <ol class="flex-1 space-y-3 overflow-y-auto p-2">
+      {#if pinned.length > 0}
+        <li>
+          <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+            Pinned
+          </p>
+          <ul class="mt-1 space-y-1">
+            {#each pinned as session (session.session_id)}
+              <li>
+                {@render sessionButton(session)}
+              </li>
+            {/each}
+          </ul>
+        </li>
+      {/if}
+
       <li>
         <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-          Pinned
+          Recent
         </p>
         <ul class="mt-1 space-y-1">
-          {#each pinned as session (session.session_id)}
+          {#each recent as session (session.session_id)}
             <li>
               {@render sessionButton(session)}
             </li>
+          {:else}
+            {#if pinned.length === 0}
+              <li class="px-3 py-6 text-center text-sm text-surface-500">
+                No sessions yet
+              </li>
+            {/if}
           {/each}
         </ul>
       </li>
-    {/if}
-
-    <li>
-      <p class="px-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-        Sessions
-      </p>
-      <ul class="mt-1 space-y-1">
-        {#each recent as session (session.session_id)}
-          <li>
-            {@render sessionButton(session)}
-          </li>
-        {:else}
-          {#if pinned.length === 0}
-            <li class="px-3 py-6 text-center text-sm text-surface-500">
-              No sessions yet
-            </li>
-          {/if}
-        {/each}
-      </ul>
-    </li>
-  </ol>
-</aside>
+    </ol>
+  </aside>
+{/if}
 
 {#snippet sessionButton(session: SessionSummary)}
   <div
@@ -132,11 +168,11 @@
     <button
       type="button"
       class="min-w-0 flex-1 px-3 py-2 text-left"
-      onclick={() => chat.switchSession(session.session_id)}
+      onclick={() => selectSession(session.session_id)}
     >
       <div class="flex items-center justify-between gap-2">
         <span class="truncate text-sm font-medium text-surface-100">
-          {sessionLabel(session)}
+          {formatSessionLabel(session)}
         </span>
         <span class="shrink-0 text-xs text-surface-500">
           {formatWhen(session.last_timestamp)}

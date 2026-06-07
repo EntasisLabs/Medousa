@@ -3,13 +3,15 @@
 
   interface Props {
     health: DaemonHealth | null;
-    revision: number;
     inMotionCount: number;
-    blockedCount: number;
-    activeSurface: string;
+    needsAttentionCount: number;
   }
 
-  let { health, revision, inMotionCount, blockedCount, activeSurface }: Props = $props();
+  let { health, inMotionCount, needsAttentionCount }: Props = $props();
+
+  const statusLabel = $derived(
+    health?.ok ? "Connected" : health ? "Offline" : "Connecting…",
+  );
 </script>
 
 <footer
@@ -17,18 +19,15 @@
   aria-label="Workshop status"
 >
   <span class="truncate {health?.ok ? 'text-success-400' : 'text-warning-400'}">
-    {health?.message ?? "checking daemon…"}
+    {statusLabel}
   </span>
 
   <div class="flex shrink-0 items-center gap-3">
-    {#if health?.backend}
-      <span class="hidden sm:inline">{health.backend}</span>
-    {/if}
-    <span>rev {revision}</span>
     <span>{inMotionCount} in motion</span>
-    {#if blockedCount > 0}
-      <span class="text-warning-400">{blockedCount} blocked</span>
+    {#if needsAttentionCount > 0}
+      <span class="text-warning-400">
+        {needsAttentionCount} need attention
+      </span>
     {/if}
-    <span class="capitalize text-surface-500">{activeSurface}</span>
   </div>
 </footer>

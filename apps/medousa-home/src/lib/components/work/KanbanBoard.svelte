@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import CancelDropZone from "$lib/components/work/CancelDropZone.svelte";
   import KanbanCard from "$lib/components/work/KanbanCard.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -29,6 +30,14 @@
     ),
   );
 
+  const hasCards = $derived(
+    columns.some((column) =>
+      workspace.swimlane === "none"
+        ? column.cards.length > 0
+        : column.lanes.some((lane) => lane.cards.length > 0),
+    ),
+  );
+
   function handleSwimlaneChange(event: Event) {
     workspace.swimlane = (event.currentTarget as HTMLSelectElement)
       .value as SwimlaneMode;
@@ -42,7 +51,7 @@
   >
     <div>
       <h1 class="text-base font-semibold">Work board</h1>
-      <p class="text-xs text-surface-400">Live cards from workspace stream</p>
+      <p class="text-xs text-surface-400">Cards update live as work moves</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <label class="flex items-center gap-2 text-xs text-surface-300">
@@ -80,7 +89,15 @@
 
   <CancelDropZone onCanceled={() => {}} />
 
-  <div class="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-4">
+  <div class="relative flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-4">
+    {#if !hasCards}
+      <div class="absolute inset-0 flex items-center justify-center">
+        <EmptyState
+          title="Nothing in motion"
+          description="When work starts, cards land here — backlog, in flight, and wrapping up."
+        />
+      </div>
+    {/if}
     {#each columns as column (column.column)}
       <div
         class="flex w-64 shrink-0 flex-col rounded-container-token border {columnTone(
@@ -91,12 +108,7 @@
           <h2 class="text-sm font-semibold capitalize">
             {columnLabel(column.column)}
           </h2>
-          <p class="text-xs text-surface-400">
-            {column.cards.length}
-            {workspace.columnCounts[column.column] !== undefined
-              ? `· stream ${workspace.columnCounts[column.column]}`
-              : ""}
-          </p>
+          <p class="text-xs text-surface-400">{column.cards.length}</p>
         </header>
 
         <div class="flex-1 space-y-2 overflow-y-auto p-2">

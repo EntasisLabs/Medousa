@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { VaultTreeNode } from "$lib/types/vault";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import VaultTreeNodeView from "./VaultTreeNode.svelte";
 
   interface Props {
@@ -21,6 +22,12 @@
       initialized = true;
     }
   });
+
+  const label = $derived(
+    node.isFolder
+      ? node.name
+      : vaultDisplayTitle(node.title ?? node.name, node.path),
+  );
 
   function handleClick() {
     if (node.path && !node.isFolder) {
@@ -48,7 +55,7 @@
         ·
       {/if}
     </span>
-    <span class="truncate">{node.name}</span>
+    <span class="truncate">{label}</span>
   </button>
 
   {#if expanded}

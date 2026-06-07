@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import NavSidebar from "$lib/components/layout/NavSidebar.svelte";
+  import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
   import type { Surface } from "$lib/types/ui";
   import WorkRail from "$lib/components/layout/WorkRail.svelte";
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
@@ -94,6 +95,9 @@
   });
 
   function handleSurfaceSelect(surface: Surface) {
+    if (surface === "work") {
+      layout.setActivityCollapsed(true);
+    }
     activeSurface = surface;
     if (surface === "chat") {
       void chat.refreshSessions();
@@ -110,6 +114,7 @@
 
   async function handleCardSelect(id: string) {
     activeSurface = "work";
+    layout.setActivityCollapsed(true);
     await workspace.selectCard(id);
   }
 </script>
@@ -118,12 +123,15 @@
   <div class="flex min-h-0 flex-1">
     <NavSidebar active={activeSurface} onSelect={handleSurfaceSelect} />
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="relative flex min-w-0 flex-1 flex-col">
       <div class="flex min-h-0 flex-1">
-        <SessionSidebar visible={activeSurface === "chat"} />
-
         {#if activeSurface === "home"}
-          <HomeOverview onOpenWork={() => (activeSurface = "work")} />
+          <HomeOverview
+            onOpenWork={() => (activeSurface = "work")}
+            onOpenChat={() => (activeSurface = "chat")}
+            onOpenNote={handleOpenNote}
+            onSelectCard={handleCardSelect}
+          />
         {:else if activeSurface === "library"}
           <LibraryPanel visible={true} />
         {:else if activeSurface === "skills"}
@@ -141,6 +149,8 @@
         {:else if activeSurface === "settings"}
           <SettingsPanel
             visible={true}
+            revision={workspace.revision}
+            health={daemonHealth}
             onDaemonHealth={async () => {
               daemonHealth = await checkDaemonHealth();
             }}
@@ -149,35 +159,47 @@
           <ChatPanel visible={activeSurface === "chat"} />
         {/if}
 
-        <SplitPane
-          width={layout.activityWidth}
-          side="right"
-          min={220}
-          max={520}
-          onResize={(width) => layout.setActivityWidth(width)}
-        >
-          <ActivityPanel
-            events={workspace.feed}
-            error={workspace.streamError}
-            daemonMessage={daemonHealth?.message ?? null}
-            notePath={vault.selectedPath}
-            noteTitle={vault.title}
-            wikilinksOut={vault.wikilinksOut}
-            backlinks={vault.backlinks}
-            cardDetail={workspace.selectedCardDetail}
-            cardError={workspace.cardDetailError}
-            noteDiffChip={vault.diffChip()}
-            onOpenNote={handleOpenNote}
+        {#if layout.activityCollapsed}
+          <ActivityCollapsedStrip
+            onExpand={() => layout.setActivityCollapsed(false)}
           />
-        </SplitPane>
+        {:else}
+          <SplitPane
+            width={layout.activityWidth}
+            side="right"
+            min={220}
+            max={520}
+            onResize={(width) => layout.setActivityWidth(width)}
+          >
+            <ActivityPanel
+              events={workspace.feed}
+              error={workspace.streamError}
+              notePath={vault.selectedPath}
+              noteTitle={vault.title}
+              wikilinksOut={vault.wikilinksOut}
+              backlinks={vault.backlinks}
+              cardDetail={workspace.selectedCardDetail}
+              cardError={workspace.cardDetailError}
+              noteDiffChip={vault.diffChip()}
+              onOpenNote={handleOpenNote}
+              showCollapse={activeSurface === "work"}
+              onCollapse={() => layout.setActivityCollapsed(true)}
+            />
+          </SplitPane>
+        {/if}
       </div>
+
+      {#if activeSurface === "chat"}
+        <SessionSidebar
+          open={layout.sessionDrawerOpen}
+          onClose={() => layout.setSessionDrawerOpen(false)}
+        />
+      {/if}
 
       <StatusBar
         health={daemonHealth}
-        revision={workspace.revision}
-        inMotionCount={workspace.railCards().length}
-        blockedCount={workspace.blockedCount()}
-        activeSurface={activeSurface}
+        inMotionCount={workspace.inMotionCount()}
+        needsAttentionCount={workspace.needsAttentionCount()}
       />
 
       <WorkRail

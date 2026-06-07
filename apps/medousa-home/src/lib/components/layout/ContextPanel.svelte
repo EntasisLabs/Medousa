@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { vault } from "$lib/stores/vault.svelte";
   import type { WorkCardDetail } from "$lib/types/card";
+  import { formatCardTitle } from "$lib/utils/formatWork";
+  import { vaultDisplayTitle, wikilinkLabel } from "$lib/utils/formatVault";
 
   interface Props {
     notePath: string | null;
@@ -28,6 +31,10 @@
     notePath !== null &&
       (wikilinksOut.length > 0 || backlinks.length > 0 || noteDiffChip !== null),
   );
+  const titleByPath = $derived(
+    new Map(vault.notes.map((note) => [note.path, note.title])),
+  );
+
   const hasCardContext = $derived(
     cardDetail !== null &&
       (cardVaultPaths.length > 0 ||
@@ -44,7 +51,9 @@
 
     {#if cardDetail}
       <div class="mt-2 space-y-2 text-sm">
-        <p class="font-medium text-surface-100">{cardDetail.card.title}</p>
+        <p class="font-medium text-surface-100">
+          {formatCardTitle(cardDetail.card)}
+        </p>
         {#if cardDetail.subtitle}
           <p class="text-xs text-surface-400">{cardDetail.subtitle}</p>
         {/if}
@@ -64,7 +73,7 @@
                     class="text-left text-xs text-primary-400 hover:underline"
                     onclick={() => onOpenNote(path)}
                   >
-                    {path}
+                    {vaultDisplayTitle(titleByPath.get(path) ?? path, path)}
                   </button>
                 </li>
               {/each}
@@ -81,7 +90,9 @@
     {#if notePath}
       <div class="mt-3 space-y-2 text-sm">
         <div class="flex items-center gap-2">
-          <p class="text-xs text-surface-400">{noteTitle ?? notePath}</p>
+          <p class="text-xs text-surface-400">
+            {vaultDisplayTitle(noteTitle ?? notePath, notePath)}
+          </p>
           {#if noteDiffChip}
             <span class="badge variant-soft-warning text-[10px] font-mono">
               {noteDiffChip}
@@ -99,7 +110,7 @@
                     class="text-left text-xs text-primary-400 hover:underline"
                     onclick={() => onOpenNote(link)}
                   >
-                    [[{link}]]
+                    {wikilinkLabel(link, titleByPath)}
                   </button>
                 </li>
               {/each}
@@ -117,7 +128,7 @@
                     class="text-left text-xs text-primary-400 hover:underline"
                     onclick={() => onOpenNote(link)}
                   >
-                    {link}
+                    {wikilinkLabel(link, titleByPath)}
                   </button>
                 </li>
               {/each}

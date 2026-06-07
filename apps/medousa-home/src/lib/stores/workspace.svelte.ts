@@ -143,6 +143,23 @@ export class WorkspaceStore {
     return this.cards.filter((card) => card.column === "blocked").length;
   }
 
+  inMotionCount(): number {
+    return this.railCards().length;
+  }
+
+  needsAttentionCount(): number {
+    return this.blockedCount();
+  }
+
+  /** First in-motion card for Home hero — in flight, then wrapping up, then backlog. */
+  primaryInMotionCard(): WorkCard | null {
+    for (const column of ["in_flight", "wrapping_up", "backlog"] as const) {
+      const card = this.cards.find((item) => item.column === column);
+      if (card) return card;
+    }
+    return null;
+  }
+
   async selectCard(id: string | null) {
     this.selectedCardId = id;
     this.selectedCardDetail = null;

@@ -39,7 +39,7 @@ These are the things Medousa does out of the box:
 | Reach it from anywhere | Discord, Telegram, Slack, WhatsApp. Text `/brief` on Telegram and your morning summary starts. |
 | Get checked in on | Turn on proactive nudges. Medousa reaches out on a rhythm you choose — with reasoning, not noise. |
 | Run it fully offline | Point it at a local model. Your machine. Your rules. No network required. |
-| Know it's healthy | Run `medousa doctor`. One pass. Model, engine, bridges — checked. |
+| Know it's healthy | Run `medousa doctor`. One pass. Model, engine, bridges, Home connectivity — checked. |
 | Start fresh on a new machine | Run `medousa setup`. About sixty seconds. You're back. |
 
 
@@ -157,6 +157,33 @@ Or just type. No slash required.
 The workspace is a terminal interface with everything you need in one place. Turn history, slash commands, artifact previews, and a settings panel. When work is running, you see it — jobs, schedules, script output — beside the conversation, not buried in a log file.
 
 It is fast. It connects to the background engine automatically. If the engine is not running, the workspace starts it.
+
+## Medousa Home
+
+**Medousa Home** is the desktop workshop — a native app for chat, your vault library, live work board, and activity feed. Same engine as the terminal workspace; calmer surface for day-to-day use.
+
+**The Workshop** layout: labeled nav, chat with session drawer, vault tree + editor, kanban with card inspector, bottom work rail for in-motion jobs, system tray, and optional pop-out chat.
+
+**Run it** (daemon must be up):
+
+```bash
+medousa start daemon
+
+cd apps/medousa-home
+npm install
+npm run tauri dev
+```
+
+**Connection** — Home talks to `medousa_daemon` over HTTP/SSE. Default base URL: `http://127.0.0.1:7419`. Override with `MEDOUSA_DAEMON_URL` or **Settings → Connection** in the app.
+
+**Build a release binary:**
+
+```bash
+cd apps/medousa-home
+npm run tauri build
+```
+
+Artifacts land under `apps/medousa-home/src-tauri/target/release/`. Design and milestone notes: [architecture/medousa-home-tauri-design.md](architecture/medousa-home-tauri-design.md).
 
 ## What makes it reliable
 

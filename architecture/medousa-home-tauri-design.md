@@ -1,6 +1,6 @@
 # Medousa Home — Tauri UI Design
 
-> **Status:** M2.5 polish — Tauri v2 + SvelteKit + Skeleton UI v2  
+> **Status:** M4 shipped — Obsidian polish + Workshop layout ([polish plan](medousa-home-polish-plan.md))  
 > **Stack (locked):** Tauri 2 · SvelteKit 2 · Svelte 5 · Skeleton 2.x · daemon HTTP/SSE only
 
 ---
@@ -43,17 +43,19 @@
 ## The Workshop — layout
 
 ```text
-┌────┬────────┬────────────────────────────────────┬──────────┐
-│Nav │Sessions│  Primary surface (one at a time)    │ Activity │
-│    │(chat)  │  · Chat (default)                  │ feed SSE │
-│    │        │  · Vault prose editor              │ + context│
-│    │        │  · Kanban / card inspector         │          │
-│    │        │  · Settings                        │          │
-├────┴────────┴────────────────────────────────────┴──────────┤
-│ Work rail — in-motion cards only (backlog/in_flight/wrap)   │
-└─────────────────────────────────────────────────────────────┘
-Nav = labeled sidebar (~176px): Home · Chat · Library · Work · Settings
-Sessions = Hermes-style list when Chat active (~224px)
+┌────┬────────────────────────────────────┬──────────┐
+│Nav │  Primary surface (one at a time)    │ Activity │
+│    │  · Chat (default)                  │ feed SSE │
+│    │  · Vault prose editor              │ + context│
+│    │  · Kanban / card inspector         │(collapse │
+│    │  · Settings                        │ on Work) │
+├────┴────────────────────────────────────┴──────────┤
+│ Work rail — in-motion cards only                   │
+├────────────────────────────────────────────────────┤
+│ Connected · N in motion · N need attention         │
+└────────────────────────────────────────────────────┘
+Nav = Lucide-labeled sidebar (~176px): Home · Chat · Library · Skills · Work · Settings
+Chat sessions = collapsible drawer (not a permanent column)
 ```
 
 ### Navigation (labeled sidebar)
@@ -207,7 +209,7 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Status strip — daemon health + workspace revision (Cursor-style)
 - [x] Session pinning (star toggle in session sidebar)
 
-### M3 — polish (current)
+### M3 — polish (shipped)
 
 - [x] Resizable split panes — Activity panel + vault tree (persisted widths)
 - [x] System tray — show/hide/quit + open chat; close hides to tray
@@ -217,11 +219,37 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Split primary + inspector side-by-side on Work tab
 - [x] Tray badge for blocked card count (tooltip + Linux title + taskbar badge)
 
+### M4 — polish (shipped)
+
+**M4a — trust + Obsidian theme**
+
+- [x] Custom Skeleton theme **Obsidian** (`medousa-theme.ts`, `data-theme="medousa"`)
+- [x] Operator status bar — Connected / in motion / need attention (no URLs)
+- [x] Settings diagnostics drawer — URL, backend, revision, worker, tools
+- [x] Activity operator filter + technical-events toggle
+- [x] Humanized vault titles, session labels, card titles, wikilinks
+- [x] Copy pass — operator language, not daemon plumbing
+
+**M4b — layout + focal surfaces**
+
+- [x] Home v2 hero — next action card (work / note / chat)
+- [x] Chat session drawer (collapsible; default Chat + Activity only)
+- [x] Activity collapses to strip on Work surface
+- [x] Lucide nav icons
+- [x] Branded empty states (chat, work board, activity calm state)
+
+**M4c — docs + rendering**
+
+- [x] README Medousa Home section
+- [x] Markdown rendering for assistant chat turns
+- [x] Settings Obsidian theme swatch
+- [x] `medousa doctor` Home connectivity hint
+
 ---
 
 ## Theme
 
-Skeleton preset **sahara** (`data-theme="sahara"` on `<body>`). Dark mode via `class` on `<html>`; operator toggle in Settings.
+**Obsidian** (shipped) — custom Skeleton theme: near-black canvas (`surface-950`), violet primary (`primary-500`), three surface elevations. Replaces sahara. Toggle in Settings → Appearance. See [medousa-home-polish-plan.md](medousa-home-polish-plan.md).
 
 ---
 
@@ -254,3 +282,4 @@ Env:
 | 2026-05-30 | **M2.5 cont.:** Skills & Tools catalog, status strip, session pinning, `GET /v1/manuscripts` |
 | 2026-05-30 | **M3 shipped:** Split panes, tray, pop-out chat, drag-to-cancel, vault diff chips |
 | 2026-05-30 | **M3+ shipped:** Work kanban+inspector split pane, tray blocked-count badge |
+| 2026-05-30 | **M4 shipped:** Obsidian theme, operator UI, session drawer, Home v2, markdown chat, README |
