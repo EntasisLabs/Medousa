@@ -9,16 +9,6 @@ pub const HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT: usize = 8;
 /// Back-compat alias.
 pub const HOST_BUS_MAX_TOOL_ROUNDS: usize = HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT;
 
-/// Host orchestrator round cap. Override with `MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS` (1–50).
-/// The effective host budget is `min(settings.max_tool_rounds, this cap)`.
-pub fn host_bus_max_tool_rounds_cap() -> usize {
-    std::env::var("MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<usize>().ok())
-        .map(|n| n.clamp(1, 50))
-        .unwrap_or(HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostBusEnvMode {
     /// Slim host only when heuristic says delegate.

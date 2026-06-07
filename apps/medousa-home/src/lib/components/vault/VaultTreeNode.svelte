@@ -1,0 +1,55 @@
+<script lang="ts">
+  import type { VaultTreeNode } from "$lib/types/vault";
+  import VaultTreeNodeView from "./VaultTreeNode.svelte";
+
+  interface Props {
+    node: VaultTreeNode;
+    selectedPath: string | null;
+    depth?: number;
+    onSelect: (path: string) => void;
+  }
+
+  let { node, selectedPath, depth = 0, onSelect }: Props = $props();
+
+  let expanded = $state(depth < 2);
+
+  function handleClick() {
+    if (node.path && !node.isFolder) {
+      onSelect(node.path);
+      return;
+    }
+    expanded = !expanded;
+  }
+</script>
+
+<div>
+  <button
+    type="button"
+    class="flex w-full items-center gap-1 rounded-container-token px-2 py-1 text-left text-sm hover:bg-surface-800/80 {node.path ===
+    selectedPath
+      ? 'bg-primary-500/15 text-primary-300'
+      : 'text-surface-200'}"
+    style="padding-left: {8 + depth * 12}px"
+    onclick={handleClick}
+  >
+    <span class="w-4 shrink-0 text-xs text-surface-500">
+      {#if node.isFolder}
+        {expanded ? "▾" : "▸"}
+      {:else}
+        ·
+      {/if}
+    </span>
+    <span class="truncate">{node.name}</span>
+  </button>
+
+  {#if expanded}
+    {#each node.children as child (child.name + (child.path ?? "folder"))}
+      <VaultTreeNodeView
+        node={child}
+        {selectedPath}
+        depth={depth + 1}
+        {onSelect}
+      />
+    {/each}
+  {/if}
+</div>

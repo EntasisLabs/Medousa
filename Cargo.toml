@@ -5,6 +5,7 @@ edition = "2024"
 
 [workspace]
 members = ["."]
+exclude = ["apps/medousa-home/src-tauri"]
 
 [[bin]]
 name = "medousa_cli"

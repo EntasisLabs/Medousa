@@ -169,8 +169,6 @@ pub use tools::{TuiRuntime, build_tui_runtime};
 
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_LLM_PROVIDER: &str = "openai";
-const DEFAULT_SURREAL_NAMESPACE: &str = "medousa";
-const DEFAULT_SURREAL_DATABASE: &str = "runtime";
 const DEFAULT_SURREALKV_FILENAME: &str = "runtime.surrealkv";
 
 fn provider_base_url_env_keys(provider: &str) -> (String, String) {

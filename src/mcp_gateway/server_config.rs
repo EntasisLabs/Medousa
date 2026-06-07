@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,6 +180,3 @@ fn find_arg_value(args: &[String], flag: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub fn load_gateway_file_for_test(raw: &str) -> Result<McpGatewayFileConfig> {
-    Ok(toml::from_str(raw).context("invalid gateway toml")?)
-}

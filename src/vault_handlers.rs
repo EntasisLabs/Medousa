@@ -6,8 +6,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 
 use crate::daemon_api::{
-    VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse, VaultNotesListResponse,
-    VaultNotesQuery, VaultSearchQuery, VaultSearchResponse, VaultWriteRequest, VaultWriteResponse,
+    VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse,
+    VaultNotesListResponse, VaultNotesQuery, VaultSearchQuery, VaultSearchResponse,
+    VaultWriteRequest, VaultWriteResponse,
 };
 use crate::vault::VaultService;
 
@@ -90,9 +91,15 @@ pub async fn search_vault_notes(
 }
 
 pub async fn get_vault_backlinks(
-    Path(note_path): Path<String>,
+    Query(query): Query<VaultBacklinksQuery>,
 ) -> Result<Json<VaultBacklinksResponse>, (StatusCode, String)> {
-    VaultService::backlinks(&note_path)
+    let note_path = query
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "path is required".to_string()))?;
+    VaultService::backlinks(note_path)
         .map(Json)
         .map_err(map_vault_error)
 }

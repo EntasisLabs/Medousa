@@ -847,6 +847,11 @@ pub struct VaultSearchQuery {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VaultBacklinksQuery {
+    pub path: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultBacklinksResponse {
     pub path: String,

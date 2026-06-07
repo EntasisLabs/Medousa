@@ -79,6 +79,7 @@ struct CachedProposal {
     entity_id: String,
     patch: Value,
     tier: UpdateTier,
+    #[allow(dead_code)]
     source: UpdateSource,
 }
 

@@ -66,7 +66,7 @@ pub fn build_skill_run_ingest_prompt(args: &SkillRunArgs) -> Result<String> {
         format!(" Extra operator note: {}", args.extra.trim())
     };
 
-    let mut lines = vec![
+    let lines = vec![
         format!(
             "Run imported skill specialty '{}' the way Medousa would — delegate to a research worker, never execute scripts on the host.",
             args.manuscript_id

@@ -117,10 +117,6 @@ impl AppState {
     fn composition(&self) -> &RuntimeComposition {
         self.platform.composition()
     }
-
-    fn agent(&self) -> &medousa::TuiRuntime {
-        self.platform.agent()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -497,7 +493,11 @@ async fn main() -> Result<()> {
                 .post(medousa::vault_handlers::post_vault_note),
         )
         .route(
-            "/v1/vault/notes/{*note_path}/backlinks",
+            "/v1/vault/search",
+            get(medousa::vault_handlers::search_vault_notes),
+        )
+        .route(
+            "/v1/vault/backlinks",
             get(medousa::vault_handlers::get_vault_backlinks),
         )
         .route(
@@ -505,10 +505,6 @@ async fn main() -> Result<()> {
             get(medousa::vault_handlers::get_vault_note)
                 .put(medousa::vault_handlers::put_vault_note)
                 .delete(medousa::vault_handlers::delete_vault_note),
-        )
-        .route(
-            "/v1/vault/search",
-            get(medousa::vault_handlers::search_vault_notes),
         );
 
     let workspace_router = Router::new()

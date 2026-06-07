@@ -335,7 +335,7 @@ pub struct MedousaSequentialWorkflowHandler {
 }
 
 impl MedousaSequentialWorkflowHandler {
-    pub fn new(executor: WorkflowExecutor) -> Self {
+    pub(crate) fn new(executor: WorkflowExecutor) -> Self {
         Self { executor }
     }
 
@@ -362,7 +362,7 @@ pub struct MedousaConcurrentWorkflowHandler {
 }
 
 impl MedousaConcurrentWorkflowHandler {
-    pub fn new(executor: WorkflowExecutor) -> Self {
+    pub(crate) fn new(executor: WorkflowExecutor) -> Self {
         Self { executor }
     }
 
@@ -389,7 +389,7 @@ pub struct MedousaHandoffWorkflowHandler {
 }
 
 impl MedousaHandoffWorkflowHandler {
-    pub fn new(executor: WorkflowExecutor) -> Self {
+    pub(crate) fn new(executor: WorkflowExecutor) -> Self {
         Self { executor }
     }
 
@@ -419,7 +419,7 @@ enum WorkflowExecutionMode {
 }
 
 #[derive(Clone)]
-struct WorkflowExecutor {
+pub(crate) struct WorkflowExecutor {
     workflow_engine: Arc<dyn WorkflowEngine>,
     prompt_pipeline: PromptExecutionPipeline,
     mcp_client: Arc<McpGatewayClient>,

@@ -22,7 +22,7 @@ use crate::agent_runtime::turn_completion::{
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
-    push_turn_scratch_message_with_budget, tool_output_ok,
+    push_turn_scratch_message_with_budget,
 };
 use crate::agent_runtime::turn_ledger::{
     TurnLoopAwareness, TurnLoopDiscipline, developer_message_for_gatekeeper_continue,

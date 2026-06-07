@@ -23,9 +23,6 @@ pub fn resolve_mcp_policy_token() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-// Backward-compatible alias used by Phase A code paths.
-pub type McpGatewayConfig = McpGatewayFullConfig;
-
 impl McpGatewayFullConfig {
     pub fn from_env_and_args_legacy(args: &[String]) -> Self {
         Self::from_env_and_args(args)

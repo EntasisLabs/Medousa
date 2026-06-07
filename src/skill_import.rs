@@ -17,7 +17,7 @@ use crate::skill_execution::skill_has_runnable_scripts;
 const MAX_SKILL_ID_LEN: usize = 64;
 
 #[derive(Debug, Clone, Deserialize)]
-struct SkillFrontmatter {
+pub(crate) struct SkillFrontmatter {
     name: Option<String>,
     description: Option<String>,
 }
@@ -141,7 +141,7 @@ pub fn resolve_skill_source(path: &Path) -> Result<PathBuf> {
     bail!("skill path does not exist: {}", path.display());
 }
 
-pub fn parse_skill_md(path: &Path) -> Result<(SkillFrontmatter, String)> {
+pub(crate) fn parse_skill_md(path: &Path) -> Result<(SkillFrontmatter, String)> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read SKILL.md {}", path.display()))?;
     let trimmed = raw.trim_start();
@@ -219,7 +219,7 @@ fn title_from_id(id: &str) -> String {
         .join(" ")
 }
 
-pub fn build_manuscript_from_skill(
+pub(crate) fn build_manuscript_from_skill(
     id: &str,
     frontmatter: &SkillFrontmatter,
     skill_dir_name: &str,

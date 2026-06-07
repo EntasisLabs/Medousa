@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::identity_manuscript::{
-    ManuscriptContext, build_manuscript_context, resolve_manuscript_path, user_manuscripts_dir,
+    ManuscriptContext, resolve_manuscript_path, user_manuscripts_dir,
 };
 use crate::openshell_sandbox_run::OpenshellSandboxRunPayload;
 
@@ -145,13 +145,13 @@ fn collect_scripts_recursive(
     Ok(())
 }
 
-struct ScriptAssessment {
+pub(crate) struct ScriptAssessment {
     risk_class: SkillScriptRiskClass,
     risk_score: u8,
     rationale: String,
 }
 
-pub fn assess_skill_script(path: &Path) -> Result<ScriptAssessment> {
+pub(crate) fn assess_skill_script(path: &Path) -> Result<ScriptAssessment> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read skill script {}", path.display()))?;
     let lower = raw.to_ascii_lowercase();

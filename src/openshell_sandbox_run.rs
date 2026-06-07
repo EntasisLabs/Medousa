@@ -14,7 +14,7 @@ use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::openshell_handoff::{
     medousa_openshell_policies_dir, probe_openshell_readyz, probe_tcp_endpoint,
-    resolve_openshell_gateway_url, ENV_OPENSHELL_GATEWAY_URL,
+    resolve_openshell_gateway_url,
 };
 
 pub const OPENSHELL_SANDBOX_RUN_JOB_TYPE: &str = "openshell.sandbox.run";

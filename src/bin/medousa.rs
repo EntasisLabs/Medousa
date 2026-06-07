@@ -2904,8 +2904,16 @@ fn run_workspace_stream(daemon_url: &str, args: &[String]) -> Result<()> {
 
     let mut buf = String::new();
     let mut event_count = 0usize;
-    for chunk in response.bytes() {
-        buf.push_str(&String::from_utf8_lossy(&chunk));
+    let mut response = response;
+    let mut chunk_buf = [0u8; 8192];
+    loop {
+        let n = response
+            .read(&mut chunk_buf)
+            .context("workspace stream read failed")?;
+        if n == 0 {
+            break;
+        }
+        buf.push_str(&String::from_utf8_lossy(&chunk_buf[..n]));
 
         while let Some(idx) = buf.find("\n\n") {
             let frame = buf[..idx].to_string();
@@ -3026,9 +3034,10 @@ fn run_vault(args: &[String]) -> Result<()> {
                 .get(1)
                 .filter(|value| !value.starts_with("--"))
                 .ok_or_else(|| anyhow!("usage: medousa vault backlinks <path>"))?;
+            let encoded = urlencoding_encode(note_path);
             (
                 "GET".to_string(),
-                format!("/v1/vault/notes/{note_path}/backlinks"),
+                format!("/v1/vault/backlinks?path={encoded}"),
                 None,
             )
         }

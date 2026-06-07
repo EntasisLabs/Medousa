@@ -1,0 +1,28 @@
+[workspace]
+
+[package]
+name = "medousa-home"
+version = "0.1.0"
+description = "Medousa Home — Tauri workshop UI"
+authors = ["Entasis Labs"]
+edition = "2021"
+
+[lib]
+name = "medousa_home_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+urlencoding = "2"

@@ -566,11 +566,6 @@ trait DaemonRuntimeRegistrar {
         &self,
         handler: H,
     ) -> stasis::prelude::Result<()>;
-
-    fn register_event_publisher(
-        &self,
-        publisher: stasis::infrastructure::runtime::endpoint_routing_event_publisher::EndpointRoutingEventPublisher,
-    ) -> stasis::prelude::Result<()>;
 }
 
 impl DaemonRuntimeRegistrar for stasis::application::runtime::in_memory_runtime::InMemoryRuntime {
@@ -580,13 +575,6 @@ impl DaemonRuntimeRegistrar for stasis::application::runtime::in_memory_runtime:
     ) -> stasis::prelude::Result<()> {
         self.register_handler(handler)
     }
-
-    fn register_event_publisher(
-        &self,
-        publisher: stasis::infrastructure::runtime::endpoint_routing_event_publisher::EndpointRoutingEventPublisher,
-    ) -> stasis::prelude::Result<()> {
-        self.register_event_publisher(publisher)
-    }
 }
 
 impl DaemonRuntimeRegistrar for stasis::application::runtime::surreal_runtime::SurrealRuntime {
@@ -595,12 +583,5 @@ impl DaemonRuntimeRegistrar for stasis::application::runtime::surreal_runtime::S
         handler: H,
     ) -> stasis::prelude::Result<()> {
         self.register_handler(handler)
-    }
-
-    fn register_event_publisher(
-        &self,
-        publisher: stasis::infrastructure::runtime::endpoint_routing_event_publisher::EndpointRoutingEventPublisher,
-    ) -> stasis::prelude::Result<()> {
-        self.register_event_publisher(publisher)
     }
 }

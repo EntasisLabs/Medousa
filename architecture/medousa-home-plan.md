@@ -530,7 +530,7 @@ POST /v1/vault/notes               # { path, content }
 DELETE /v1/vault/notes/{path}      # soft-delete → .trash/ (default)
 
 GET  /v1/vault/search?q=medousa&limit=20   # ranked hits — see below
-GET  /v1/vault/notes/{path}/backlinks
+GET  /v1/vault/backlinks?path=journal/weekly-review.md
 ```
 
 **Cognition tools** (host + worker read; write host-gated like `identity_remember`):
@@ -592,7 +592,7 @@ Version header (optional): `Accept-Version: vault-v1` (`VAULT_API_VERSION` in `d
 | `PUT` | `/v1/vault/notes/{path}` | raw markdown; optional `If-Match: content_hash` | `VaultWriteResponse` |
 | `DELETE` | `/v1/vault/notes/{path}` | — | `VaultDeleteResponse` (soft-delete → `.trash/`) |
 | `GET` | `/v1/vault/search` | `?q=&limit=` | `VaultSearchResponse` |
-| `GET` | `/v1/vault/notes/{path}/backlinks` | — | `VaultBacklinksResponse` |
+| `GET` | `/v1/vault/backlinks` | `?path=` | `VaultBacklinksResponse` |
 
 **Cognition tools:** `cognition_vault_list`, `cognition_vault_read`, `cognition_vault_search` (host + research workers); `cognition_vault_write` (host bus only).
 
@@ -868,4 +868,7 @@ Phase M0+ Tauri (only after both freeze gates)
 | 2026-05-30 | **W2 shipped:** `GET /v1/workspace/stream` SSE (`snapshot`, `card_upserted`, `card_removed`, `feed_appended`, `column_counts`, `heartbeat`); CLI `medousa workspace stream` |
 | 2026-05-30 | **W3 shipped:** `POST /v1/workspace/cards/{id}/cancel|retry|link-vault`; CLI `medousa workspace cancel|retry|link-vault`; API freeze doc (`workspace-v1`) |
 | 2026-05-30 | **V0 shipped:** Vault CRUD + ranked search + backlinks + cognition tools; CLI `medousa vault`; API freeze doc (`vault-v1`) |
+| 2026-05-30 | **M0 scaffold:** `apps/medousa-home` — Tauri v2 + SvelteKit + Skeleton v2; design doc `medousa-home-tauri-design.md` |
+| 2026-05-30 | **Vault API fix:** backlinks moved to `GET /v1/vault/backlinks?path=` (Axum catch-all must be route suffix) |
+| 2026-05-30 | **M1 shipped (Tauri):** Library tree, markdown editor, context panel, card→vault associations |
 | 2026-05-30 | **V1 shipped:** Wikilink resolution + `links.jsonl` backlink index; inline `#tags`; link-vault validation; optional job-success footers; `smoke-home-api.sh` |
