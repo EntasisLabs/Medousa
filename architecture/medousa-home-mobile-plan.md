@@ -156,3 +156,6 @@ Detection: `max-width: 768px` media query (+ Tauri mobile builds). `AppShell` pi
 |------|--------|
 | 2026-05-30 | Initial mobile plan — 4 tabs, M8a–M8e milestones |
 | 2026-05-30 | M8a implementation started — `AppShell`, `MobileShell`, Pulse, You hub |
+| 2026-05-30 | M8b shipped — `AskSheet`, pull-to-refresh, swipe-cancel, session sheet |
+| 2026-05-30 | M8c shipped — mobile chat frame, phase strip, identity sheet |
+| 2026-05-30 | M8d shipped — You hub polish, stack drill-downs, simplified settings |

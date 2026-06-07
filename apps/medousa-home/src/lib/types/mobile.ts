@@ -7,6 +7,7 @@ export type YouDestination =
   | "cron"
   | "messaging"
   | "settings"
+  | "advanced"
   | "runtime";
 
 export const MOBILE_TABS: { id: MobileTab; label: string }[] = [
@@ -26,5 +27,6 @@ export const YOU_DESTINATIONS: {
   { id: "cron", label: "Schedule", hint: "Recurring prompts" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, and more" },
   { id: "settings", label: "Workshop", hint: "Connection and preferences" },
+  { id: "advanced", label: "Advanced", hint: "Model, API key, essentials" },
   { id: "runtime", label: "Workshop health", hint: "Queue, delivery, telemetry" },
 ];

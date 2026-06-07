@@ -21,7 +21,10 @@
     onOpenRuntime: () => void;
     onOpenMessaging?: () => void;
     onOpenCron?: () => void;
+    onOpenAdvanced?: () => void;
     onDaemonHealth: () => void | Promise<void>;
+    mobile?: boolean;
+    embedded?: boolean;
   }
 
   let {
@@ -31,7 +34,10 @@
     onOpenRuntime,
     onOpenMessaging,
     onOpenCron,
+    onOpenAdvanced,
     onDaemonHealth,
+    mobile = false,
+    embedded = false,
   }: Props = $props();
 
   let configPaths = $state<MedousaConfigPaths | null>(null);
@@ -111,13 +117,15 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header">
-    <h1 class="text-sm font-semibold text-surface-50">Settings</h1>
-    <p class="workshop-faint">Home preferences and daemon connection</p>
-  </header>
+<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+  {#if !embedded}
+    <header class="workshop-header">
+      <h1 class="text-sm font-semibold text-surface-50">Settings</h1>
+      <p class="workshop-faint">Home preferences and daemon connection</p>
+    </header>
+  {/if}
 
-  <div class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+  <div class="mobile-you-scroll flex-1 space-y-4 overflow-y-auto px-4 py-4">
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Connection</h2>
       <p class="workshop-faint mt-1">
@@ -154,31 +162,47 @@
       </div>
     </section>
 
-    {#if isTauri()}
+    {#if isTauri() && !mobile}
       <WorkshopDefaultsPanel visible={visible} />
     {/if}
 
-    <section class="workshop-inset p-3">
-      <h2 class="text-sm font-semibold text-surface-100">Related views</h2>
-      <p class="workshop-faint mt-1">
-        Telemetry, channels, and schedules live in dedicated surfaces.
-      </p>
-      <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        <button type="button" class="workshop-text-action" onclick={onOpenRuntime}>
-          Runtime telemetry
+    {#if mobile && onOpenAdvanced}
+      <section class="workshop-inset p-3">
+        <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
+        <p class="workshop-faint mt-1">
+          Model, provider, and API key — essentials only on mobile.
+        </p>
+        <button
+          type="button"
+          class="workshop-text-action mt-3 text-sm"
+          onclick={onOpenAdvanced}
+        >
+          Open advanced settings →
         </button>
-        {#if onOpenMessaging}
-          <button type="button" class="workshop-text-action" onclick={onOpenMessaging}>
-            Messaging
+      </section>
+    {:else if !mobile}
+      <section class="workshop-inset p-3">
+        <h2 class="text-sm font-semibold text-surface-100">Related views</h2>
+        <p class="workshop-faint mt-1">
+          Telemetry, channels, and schedules live in dedicated surfaces.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <button type="button" class="workshop-text-action" onclick={onOpenRuntime}>
+            Runtime telemetry
           </button>
-        {/if}
-        {#if onOpenCron}
-          <button type="button" class="workshop-text-action" onclick={onOpenCron}>
-            Cron
-          </button>
-        {/if}
-      </div>
-    </section>
+          {#if onOpenMessaging}
+            <button type="button" class="workshop-text-action" onclick={onOpenMessaging}>
+              Messaging
+            </button>
+          {/if}
+          {#if onOpenCron}
+            <button type="button" class="workshop-text-action" onclick={onOpenCron}>
+              Cron
+            </button>
+          {/if}
+        </div>
+      </section>
+    {/if}
 
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Appearance</h2>
@@ -246,7 +270,7 @@
       </label>
     </section>
 
-    {#if workshopFiles.length > 0}
+    {#if workshopFiles.length > 0 && !mobile}
       <section class="workshop-inset p-3">
         <button
           type="button"

@@ -6,12 +6,18 @@
 
   interface Props {
     visible: boolean;
+    mobile?: boolean;
+    embedded?: boolean;
   }
 
-  let { visible }: Props = $props();
+  let { visible, mobile = false, embedded = false }: Props = $props();
 
   let search = $state("");
   let selectedId = $state<string | null>(null);
+
+  const mobileDetailOpen = $derived(
+    mobile && (selectedId !== null || cronDraft.showCreate),
+  );
   let confirmDeleteId = $state<string | null>(null);
 
   let createPrompt = $state("");
@@ -87,37 +93,58 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-base font-semibold text-surface-50">Cron jobs</h1>
-        <p class="text-xs text-surface-300">
-          {counts.enabled}/{counts.total} active · sorted by next run
-        </p>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm variant-filled-primary"
-        onclick={openNew}
-      >
-        + New cron
-      </button>
-    </div>
+<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+  {#if !mobileDetailOpen}
+    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
+      {#if !embedded}
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 class="text-base font-semibold text-surface-50">Cron jobs</h1>
+            <p class="text-xs text-surface-300">
+              {counts.enabled}/{counts.total} active · sorted by next run
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-primary"
+            onclick={openNew}
+          >
+            + New cron
+          </button>
+        </div>
+      {:else}
+        <div class="flex items-center justify-between gap-2">
+          <p class="workshop-faint text-xs">
+            {counts.enabled}/{counts.total} active
+          </p>
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-primary"
+            onclick={openNew}
+          >
+            + New
+          </button>
+        </div>
+      {/if}
 
-    <label class="mt-3 block">
-      <span class="sr-only">Search cron jobs</span>
-      <input
-        class="input w-full max-w-md text-sm"
-        type="search"
-        placeholder="Search cron jobs…"
-        bind:value={search}
-      />
-    </label>
-  </header>
+      <label class="mt-3 block">
+        <span class="sr-only">Search cron jobs</span>
+        <input
+          class="input w-full text-sm"
+          type="search"
+          placeholder="Search cron jobs…"
+          bind:value={search}
+        />
+      </label>
+    </header>
+  {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
-    <div class="min-w-0 flex-1 overflow-y-auto px-4 py-3">
+    <div
+      class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
+        ? 'hidden'
+        : ''}"
+    >
       {#if recurring.loading && recurring.definitions.length === 0}
         <p class="workshop-muted">Loading schedules…</p>
       {:else if recurring.error}
@@ -181,8 +208,25 @@
     </div>
 
     <aside
-      class="w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40 bg-surface-800/40 px-4 py-4"
+      class="{mobile
+        ? mobileDetailOpen
+          ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-y-auto'
+          : 'hidden'
+        : 'w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40 bg-surface-800/40'} px-4 py-4"
     >
+      {#if mobileDetailOpen}
+        <button
+          type="button"
+          class="workshop-text-action mb-3 shrink-0 text-sm"
+          onclick={() => {
+            selectedId = null;
+            cronDraft.clearCreate();
+            confirmDeleteId = null;
+          }}
+        >
+          ← Back to list
+        </button>
+      {/if}
       {#if cronDraft.showCreate}
         <h2 class="workshop-section-title">New cron</h2>
         <form

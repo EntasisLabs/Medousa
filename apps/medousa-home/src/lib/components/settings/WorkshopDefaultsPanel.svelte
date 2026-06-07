@@ -11,15 +11,33 @@
 
   interface Props {
     visible: boolean;
+    mobile?: boolean;
   }
 
-  let { visible }: Props = $props();
+  let { visible, mobile = false }: Props = $props();
+
+  const visibleTabs = $derived(
+    mobile
+      ? WORKSHOP_DEFAULTS_TABS.filter((tab) =>
+          ["setup", "secrets"].includes(tab.id),
+        )
+      : WORKSHOP_DEFAULTS_TABS,
+  );
 
   const policyOptions = ["balanced", "strict", "analytical", "fast"];
 
   $effect(() => {
     if (visible && !workshopDefaults.loaded) {
       void workshopDefaults.load();
+    }
+  });
+
+  $effect(() => {
+    if (
+      mobile &&
+      !visibleTabs.some((tab) => tab.id === workshopDefaults.activeTab)
+    ) {
+      workshopDefaults.activeTab = "setup";
     }
   });
 
@@ -60,8 +78,12 @@
     <div>
       <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
       <p class="workshop-faint mt-0.5">
-        Same fields as TUI <span class="font-mono">/settings</span> — saved to
-        <span class="font-mono">tui_defaults.json</span>.
+        {#if mobile}
+          Essentials for mobile — full matrix on desktop.
+        {:else}
+          Same fields as TUI <span class="font-mono">/settings</span> — saved to
+          <span class="font-mono">tui_defaults.json</span>.
+        {/if}
       </p>
     </div>
     <button
@@ -75,7 +97,7 @@
   </div>
 
   <div class="workshop-tabs mt-3 flex-wrap">
-    {#each WORKSHOP_DEFAULTS_TABS as tab (tab.id)}
+    {#each visibleTabs as tab (tab.id)}
       <button
         type="button"
         class="workshop-tab {workshopDefaults.activeTab === tab.id
@@ -101,7 +123,7 @@
   {#if workshopDefaults.loading}
     <p class="workshop-faint mt-4 text-sm">Loading defaults…</p>
   {:else}
-    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+    <div class="mt-4 grid gap-4 {mobile ? '' : 'sm:grid-cols-2'}">
       {#if workshopDefaults.activeTab === "setup"}
         <label class="block">
           <span class="workshop-label">Backend</span>

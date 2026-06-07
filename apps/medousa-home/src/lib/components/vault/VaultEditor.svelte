@@ -5,9 +5,11 @@
 
   interface Props {
     visible: boolean;
+    /** Mobile reader: preview-only, no edit chrome. */
+    mobile?: boolean;
   }
 
-  let { visible }: Props = $props();
+  let { visible, mobile = false }: Props = $props();
 
   const displayTitle = $derived(
     vault.selectedPath
@@ -32,37 +34,46 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header flex items-center justify-between gap-3 py-3">
-    <div class="min-w-0" title={vault.selectedPath ?? undefined}>
+<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+  {#if !mobile}
+    <header class="workshop-header flex items-center justify-between gap-3 py-3">
+      <div class="min-w-0" title={vault.selectedPath ?? undefined}>
+        {#if breadcrumb}
+          <p class="workshop-faint truncate">{breadcrumb}</p>
+        {/if}
+        <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
+      </div>
+      <div class="flex shrink-0 items-center gap-2">
+        {#if vault.diffChip()}
+          <span class="badge variant-soft-warning text-xs font-mono">
+            {vault.diffChip()}
+          </span>
+        {/if}
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={() => vault.toggleEditorMode()}
+        >
+          {vault.editorMode === "edit" ? "Preview" : "Edit"}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-filled-primary"
+          disabled={!vault.selectedPath || !vault.dirty || vault.saving}
+          onclick={handleSave}
+        >
+          {vault.saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </header>
+  {:else}
+    <div class="shrink-0 border-b border-surface-500/40 px-4 py-2">
       {#if breadcrumb}
-        <p class="workshop-faint truncate">{breadcrumb}</p>
+        <p class="workshop-faint truncate text-xs">{breadcrumb}</p>
       {/if}
-      <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
+      <h1 class="truncate text-sm font-semibold text-surface-50">{displayTitle}</h1>
     </div>
-    <div class="flex shrink-0 items-center gap-2">
-      {#if vault.diffChip()}
-        <span class="badge variant-soft-warning text-xs font-mono">
-          {vault.diffChip()}
-        </span>
-      {/if}
-      <button
-        type="button"
-        class="btn btn-sm variant-ghost-surface"
-        onclick={() => vault.toggleEditorMode()}
-      >
-        {vault.editorMode === "edit" ? "Preview" : "Edit"}
-      </button>
-      <button
-        type="button"
-        class="btn btn-sm variant-filled-primary"
-        disabled={!vault.selectedPath || !vault.dirty || vault.saving}
-        onclick={handleSave}
-      >
-        {vault.saving ? "Saving…" : "Save"}
-      </button>
-    </div>
-  </header>
+  {/if}
 
   {#if vault.error}
     <p class="border-b border-error-500/30 bg-error-500/10 px-4 py-2 text-xs text-error-300">
@@ -78,7 +89,7 @@
     <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
       Loading note…
     </div>
-  {:else if vault.editorMode === "edit"}
+  {:else if !mobile && vault.editorMode === "edit"}
     <textarea
       class="textarea flex-1 resize-none rounded-none border-0 bg-surface-950 font-mono text-sm leading-relaxed"
       value={vault.content}

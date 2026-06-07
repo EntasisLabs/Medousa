@@ -14,9 +14,12 @@
 
   interface Props {
     visible: boolean;
+    /** Sheet mode: taller picker, no outer border (parent provides chrome). */
+    sheet?: boolean;
+    onQueued?: () => void;
   }
 
-  let { visible }: Props = $props();
+  let { visible, sheet = false, onQueued }: Props = $props();
 
   let prompt = $state("");
   let selectedSkillIds = $state<string[]>([]);
@@ -103,6 +106,7 @@
     try {
       await workspace.submitAsk({ ...request, modelHint: runtime.model });
       resetComposer();
+      onQueued?.();
     } catch {
       // workspace.askError is set in the store
     }
@@ -118,7 +122,9 @@
 
 {#if visible}
   <form
-    class="workshop-composer shrink-0 border-t border-surface-800/80"
+    class="{sheet
+      ? 'flex flex-col'
+      : 'workshop-composer shrink-0 border-t border-surface-800/80'}"
     onsubmit={submit}
   >
     <div class="flex flex-col gap-2 px-3 py-2">
@@ -183,7 +189,7 @@
           />
         </label>
 
-        <div class="grid max-h-36 grid-cols-2 gap-2 overflow-hidden">
+        <div class="grid {sheet ? 'max-h-48' : 'max-h-36'} grid-cols-2 gap-2 overflow-hidden">
           <div class="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1">
             <span class="sticky top-0 bg-surface-950/95 text-[10px] font-medium uppercase tracking-wide text-surface-500">
               Skills

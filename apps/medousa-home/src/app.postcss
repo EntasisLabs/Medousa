@@ -182,7 +182,7 @@
   }
 
   .mobile-tab-bar {
-    @apply flex shrink-0 items-stretch justify-around border-t border-surface-500/45 bg-surface-900/98;
+    @apply flex shrink-0 items-stretch justify-around border-t border-surface-500/45 bg-surface-900/95;
     padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
   }
 
@@ -207,7 +207,8 @@
   }
 
   .mobile-sheet-backdrop {
-    @apply fixed inset-0 z-50 flex items-end justify-center bg-surface-950/75 p-0;
+    @apply fixed inset-0 z-50 flex items-end justify-center p-0;
+    background-color: rgb(var(--color-surface-950) / 0.7);
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
@@ -224,7 +225,8 @@
   }
 
   .mobile-story-overlay {
-    @apply fixed inset-0 z-40 flex flex-col bg-surface-950;
+    @apply fixed inset-0 z-40 flex flex-col;
+    background-color: rgb(var(--color-surface-950));
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -235,5 +237,109 @@
 
   .mobile-pull-scroll {
     -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-pull-indicator {
+    @apply flex items-end justify-center overflow-hidden transition-[height];
+  }
+
+  .mobile-fab {
+    @apply fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-surface-50 shadow-lg transition active:scale-95;
+    right: 1rem;
+    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-swipe-row {
+    @apply touch-pan-y;
+  }
+
+  .mobile-swipe-cancel-bg {
+    @apply absolute inset-y-0 right-0 flex w-[5.5rem] items-center justify-center text-xs font-semibold uppercase tracking-wide text-surface-50;
+    background-color: rgb(var(--color-error-600) / 0.9);
+  }
+
+  .mobile-toast {
+    @apply fixed left-4 right-4 z-40 flex items-center gap-3 rounded-lg border border-surface-500/50 bg-surface-800 px-3 py-2.5 shadow-lg;
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-toast-action {
+    @apply shrink-0 text-sm font-semibold text-primary-300;
+  }
+
+  .mobile-toast-dismiss {
+    @apply shrink-0 px-1 text-sm text-surface-500;
+  }
+
+  .mobile-chat-panel {
+    @apply min-h-0;
+  }
+
+  .mobile-chat-header {
+    @apply shrink-0 border-b border-surface-500/40 bg-surface-900/95 px-3 py-2;
+  }
+
+  .mobile-chat-phase {
+    @apply flex shrink-0 items-center gap-2 border-b border-primary-500/25 px-4 py-2 text-xs text-primary-200;
+    background-color: rgb(var(--color-primary-500) / 0.08);
+  }
+
+  .mobile-chat-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto px-3 py-3;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-chat-bubble-user {
+    @apply ml-8 rounded-2xl rounded-br-md px-3.5 py-2.5;
+    background-color: rgb(var(--color-primary-500) / 0.14);
+  }
+
+  .mobile-chat-bubble-assistant {
+    @apply mr-4 border-l-2 border-surface-500/35 pl-3 py-0.5;
+  }
+
+  .mobile-chat-composer {
+    @apply shrink-0 border-t border-surface-500/45 bg-surface-900/95 px-3 py-2.5;
+  }
+
+  .mobile-chat-send {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-600 text-lg font-semibold text-surface-50 transition active:scale-95 disabled:opacity-40;
+  }
+
+  .mobile-you-header {
+    @apply shrink-0 border-b border-surface-500/40 px-4 py-3;
+  }
+
+  .mobile-you-subheader {
+    @apply shrink-0 border-b border-surface-500/40 px-3 py-2;
+  }
+
+  .mobile-you-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-you-destination {
+    @apply flex w-full items-center gap-3 rounded-xl border border-surface-500/35 px-3 py-3.5 text-left transition active:bg-surface-800/80;
+  }
+
+  .mobile-you-destination-icon {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-800 text-surface-300;
+  }
+
+  .mobile-you-row {
+    @apply rounded-lg px-3 py-2.5 transition active:bg-surface-800/80;
+  }
+
+  .mobile-channel-strip {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-channel-chip {
+    @apply flex shrink-0 flex-col items-start gap-0.5 rounded-lg border border-surface-500/40 px-3 py-2 text-left text-xs text-surface-300;
+  }
+
+  .mobile-channel-chip-active {
+    @apply border-primary-500/45 text-surface-100;
+    background-color: rgb(var(--color-primary-500) / 0.1);
   }
 }

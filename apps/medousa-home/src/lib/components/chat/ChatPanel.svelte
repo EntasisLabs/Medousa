@@ -22,9 +22,10 @@
   interface Props {
     visible: boolean;
     showPopout?: boolean;
+    mobile?: boolean;
   }
 
-  let { visible, showPopout = true }: Props = $props();
+  let { visible, showPopout = true, mobile = false }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
 
@@ -32,6 +33,18 @@
   const recentSessions = $derived(
     chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
   );
+  const streamingMessage = $derived(
+    chat.messages.find((message) => message.streaming && message.role === "assistant"),
+  );
+  const phaseLine = $derived.by(() => {
+    if (!streamingMessage) return null;
+    if (streamingMessage.statusLine?.trim()) return streamingMessage.statusLine.trim();
+    if (streamingMessage.phase) return formatTurnPhase(streamingMessage.phase);
+    if (streamingMessage.tools?.length) {
+      return streamingMessage.tools.map((tool) => formatToolName(tool)).join(" · ");
+    }
+    return "Working…";
+  });
 
   $effect(() => {
     if (scrollEl && (chat.messages.length || chat.isStreaming)) {
@@ -103,35 +116,54 @@
   }
 </script>
 
-<section class="relative flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header">
+<section
+  class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible
+    ? ''
+    : 'hidden'} {mobile ? 'mobile-chat-panel' : ''}"
+>
+  <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-2">
+        {#if mobile}
+          <button
+            type="button"
+            class="mobile-icon-btn shrink-0"
+            aria-label="Open sessions"
+            onclick={() => layout.toggleSessionDrawer()}
+          >
+            <PanelLeft size={20} strokeWidth={1.75} />
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="workshop-rail-btn shrink-0"
+            aria-label="Open sessions"
+            title="Sessions"
+            onclick={() => layout.toggleSessionDrawer()}
+          >
+            <PanelLeft size={16} strokeWidth={1.75} />
+          </button>
+        {/if}
         <button
           type="button"
-          class="workshop-rail-btn shrink-0"
-          aria-label="Open sessions"
-          title="Sessions"
+          class="min-w-0 text-left {mobile ? 'py-1' : ''}"
           onclick={() => layout.toggleSessionDrawer()}
         >
-          <PanelLeft size={16} strokeWidth={1.75} />
-        </button>
-        <div class="min-w-0">
           <h1 class="text-sm font-semibold text-surface-50">Chat</h1>
           <p class="truncate text-[11px] text-surface-400" title={chat.sessionId}>
             {sessionLabel}
           </p>
-        </div>
+        </button>
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
         <button
           type="button"
-          class="workshop-rail-btn"
+          class="{mobile ? 'mobile-icon-btn' : 'workshop-rail-btn'}"
           aria-label="Identity recall"
           title="Identity recall"
           onclick={() => layout.toggleIdentityDrawer()}
         >
-          <Users size={16} strokeWidth={1.75} />
+          <Users size={mobile ? 20 : 16} strokeWidth={1.75} />
         </button>
         {#if showPopout && isTauri()}
           <button
@@ -151,16 +183,36 @@
     {/if}
   </header>
 
-  <div bind:this={scrollEl} class="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+  {#if mobile && chat.isStreaming && phaseLine}
+    <div class="mobile-chat-phase" role="status" aria-live="polite">
+      <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary-400"></span>
+      {phaseLine}
+    </div>
+  {/if}
+
+  <div
+    bind:this={scrollEl}
+    class="{mobile
+      ? 'mobile-chat-scroll space-y-3'
+      : 'flex-1 space-y-3 overflow-y-auto px-4 py-3'}"
+  >
     {#each chat.messages as message (message.id)}
       <article
-        class="max-w-2xl {message.role === 'user'
-          ? 'ml-auto rounded-md bg-primary-500/12 px-3 py-2'
+        class="{mobile && message.role === 'user'
+          ? 'mobile-chat-bubble-user'
+          : mobile && message.role === 'assistant'
+            ? 'mobile-chat-bubble-assistant'
+            : ''} max-w-2xl {message.role === 'user'
+          ? mobile
+            ? ''
+            : 'ml-auto rounded-md bg-primary-500/12 px-3 py-2'
           : message.role === 'system'
             ? 'workshop-faint px-1'
-            : 'border-l-2 border-surface-500/35 pl-3'}"
+            : mobile
+              ? ''
+              : 'border-l-2 border-surface-500/35 pl-3'}"
       >
-        {#if message.role !== "system"}
+        {#if message.role !== "system" && !mobile}
           <p class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wide text-surface-500">
             <span>{message.role}</span>
             {#if message.role === "assistant"}
@@ -181,7 +233,7 @@
           </p>
         {/if}
 
-        {#if message.role === "assistant" && (message.tools?.length || message.statusLine || message.reasoning)}
+        {#if message.role === "assistant" && !mobile && (message.tools?.length || message.statusLine || message.reasoning)}
           <div class="mb-1.5 space-y-1">
             {#if message.tools && message.tools.length > 0}
               <p class="font-mono text-[10px] text-surface-500">
@@ -202,6 +254,17 @@
               </details>
             {/if}
           </div>
+        {/if}
+
+        {#if message.role === "assistant" && mobile && message.reasoning?.trim() && !message.streaming}
+          <details class="workshop-faint mb-1.5">
+            <summary class="cursor-pointer select-none text-xs text-surface-400">
+              Reasoning
+            </summary>
+            <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-surface-300">
+              {message.reasoning}
+            </p>
+          </details>
         {/if}
 
         {#if message.role === "assistant"}
@@ -238,11 +301,16 @@
     {/each}
   </div>
 
-  <form class="workshop-composer" onsubmit={submit}>
+  <form
+    class="{mobile ? 'mobile-chat-composer' : 'workshop-composer'}"
+    onsubmit={submit}
+  >
     <div class="flex items-end gap-2">
       <textarea
-        class="textarea min-h-[36px] max-h-28 flex-1 resize-none py-1.5 text-sm"
-        placeholder="Message · /ask for background jobs"
+        class="textarea {mobile
+          ? 'min-h-[44px] max-h-32 flex-1 resize-none rounded-2xl py-2.5 text-base'
+          : 'min-h-[36px] max-h-28 flex-1 resize-none py-1.5 text-sm'}"
+        placeholder={mobile ? "Message" : "Message · /ask for background jobs"}
         rows="1"
         bind:value={chat.draft}
         disabled={chat.isStreaming}
@@ -250,7 +318,9 @@
       ></textarea>
       <button
         type="submit"
-        class="btn btn-sm variant-filled-primary h-8 w-8 shrink-0 p-0"
+        class="{mobile
+          ? 'mobile-chat-send'
+          : 'btn btn-sm variant-filled-primary h-8 w-8 shrink-0 p-0'}"
         disabled={chat.isStreaming || !chat.draft.trim()}
         aria-label="Send message"
       >

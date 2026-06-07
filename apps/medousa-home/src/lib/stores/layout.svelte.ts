@@ -16,6 +16,7 @@ export class LayoutStore {
   mobileTab = $state<MobileTab>(loadMobileTab());
   youDestination = $state<YouDestination>("hub");
   activitySheetOpen = $state(false);
+  askSheetOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
   vaultTreeWidth = $state(loadWidth(VAULT_TREE_WIDTH_KEY, 224));
   workInspectorWidth = $state(loadWidth(WORK_INSPECTOR_WIDTH_KEY, 360));
@@ -91,6 +92,14 @@ export class LayoutStore {
 
   toggleActivitySheet() {
     this.setActivitySheetOpen(!this.activitySheetOpen);
+  }
+
+  setAskSheetOpen(open: boolean) {
+    this.askSheetOpen = open;
+  }
+
+  openAskSheet() {
+    this.askSheetOpen = true;
   }
 }
 

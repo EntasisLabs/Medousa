@@ -10,15 +10,18 @@
     visible: boolean;
     inMotionCount: number;
     onOpenCron?: () => void;
+    mobile?: boolean;
+    embedded?: boolean;
   }
 
-  let { visible, inMotionCount, onOpenCron }: Props = $props();
+  let { visible, inMotionCount, onOpenCron, mobile = false, embedded = false }: Props =
+    $props();
 
   let draftProvider = $state(runtime.provider);
   let draftModel = $state(runtime.model);
   let didInitialLoad = $state(false);
 
-  const tabs: { id: RuntimeTab; label: string }[] = [
+  const allTabs: { id: RuntimeTab; label: string }[] = [
     { id: "now", label: "Now" },
     { id: "jobs", label: "Jobs" },
     { id: "schedule", label: "Schedule" },
@@ -27,9 +30,21 @@
     { id: "routing", label: "Routing" },
   ];
 
+  const tabs = $derived(
+    mobile
+      ? allTabs.filter((tab) => ["now", "jobs", "delivery"].includes(tab.id))
+      : allTabs,
+  );
+
   const streamingMessage = $derived(
     chat.messages.find((message) => message.streaming) ?? null,
   );
+
+  $effect(() => {
+    if (mobile && !tabs.some((tab) => tab.id === runtime.activeTab)) {
+      runtime.activeTab = "now";
+    }
+  });
 
   $effect(() => {
     if (!visible) {
@@ -58,13 +73,17 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header">
+<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+  <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
     <div class="flex items-start justify-between gap-4">
-      <div>
-        <h1 class="text-sm font-semibold text-surface-50">Runtime</h1>
-        <p class="workshop-faint">Live workshop telemetry</p>
-      </div>
+      {#if !embedded}
+        <div>
+          <h1 class="text-sm font-semibold text-surface-50">Runtime</h1>
+          <p class="workshop-faint">Live workshop telemetry</p>
+        </div>
+      {:else}
+        <p class="workshop-faint text-xs">Live telemetry</p>
+      {/if}
       <button
         type="button"
         class="btn btn-sm variant-ghost-surface"
@@ -98,7 +117,7 @@
     </p>
   </header>
 
-  <div class="flex-1 overflow-y-auto px-5 py-4">
+  <div class="mobile-you-scroll flex-1 overflow-y-auto px-4 py-4">
 
     {#if runtime.activeTab === "now"}
       <dl class="workshop-telemetry">

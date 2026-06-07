@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { Bell } from "@lucide/svelte";
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
+  import AskSheet from "$lib/components/mobile/AskSheet.svelte";
   import ConnectionPill from "$lib/components/mobile/ConnectionPill.svelte";
   import MobileTabBar from "$lib/components/mobile/MobileTabBar.svelte";
   import PulsePanel from "$lib/components/mobile/PulsePanel.svelte";
@@ -82,7 +83,7 @@
     {:else if layout.mobileTab === "work"}
       <WorkTimeline visible={true} onSelectCard={handleSelectCard} />
     {:else if layout.mobileTab === "chat"}
-      <ChatPanel visible={true} />
+      <ChatPanel visible={true} showPopout={false} mobile={true} />
     {:else}
       <YouHub
         visible={true}
@@ -99,10 +100,13 @@
   <MobileTabBar />
 
   <SessionSidebar
+    variant="sheet"
     open={layout.mobileTab === "chat" && layout.sessionDrawerOpen}
     onClose={() => layout.setSessionDrawerOpen(false)}
   />
+  <AskSheet />
   <IdentityDrawer
+    variant="sheet"
     open={layout.mobileTab === "chat" && layout.identityDrawerOpen}
     onClose={() => layout.setIdentityDrawerOpen(false)}
   />

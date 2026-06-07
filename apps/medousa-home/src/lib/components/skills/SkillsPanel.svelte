@@ -28,9 +28,12 @@
     visible: boolean;
     onOpenChat: () => void;
     onScheduleSkill: (entry: ManuscriptCatalogEntry) => void;
+    mobile?: boolean;
+    embedded?: boolean;
   }
 
-  let { visible, onOpenChat, onScheduleSkill }: Props = $props();
+  let { visible, onOpenChat, onScheduleSkill, mobile = false, embedded = false }: Props =
+    $props();
 
   let activeTab = $state<CatalogTab>("skills");
   let search = $state("");
@@ -38,6 +41,10 @@
   let toolFilter = $state<ToolFilterChip>("all");
   let selectedSkillId = $state<string | null>(null);
   let selectedToolId = $state<string | null>(null);
+
+  const mobileDetailOpen = $derived(
+    mobile && (selectedSkillId !== null || selectedToolId !== null),
+  );
 
   $effect(() => {
     if (visible) {
@@ -108,27 +115,47 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-base font-semibold text-surface-50">Skills &amp; Tools</h1>
-        <p class="text-xs text-surface-300">
-          {#if activeTab === "skills"}
-            {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
-          {:else}
-            {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
-          {/if}
-        </p>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm variant-ghost-surface"
-        onclick={() => catalog.refresh()}
-      >
-        Refresh
-      </button>
-    </div>
+<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+  {#if !mobileDetailOpen}
+    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
+      {#if !embedded}
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 class="text-base font-semibold text-surface-50">Skills &amp; Tools</h1>
+            <p class="text-xs text-surface-300">
+              {#if activeTab === "skills"}
+                {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
+              {:else}
+                {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+              {/if}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={() => catalog.refresh()}
+          >
+            Refresh
+          </button>
+        </div>
+      {:else}
+        <div class="flex items-center justify-between gap-2">
+          <p class="workshop-faint text-xs">
+            {#if activeTab === "skills"}
+              {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
+            {:else}
+              {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+            {/if}
+          </p>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={() => catalog.refresh()}
+          >
+            Refresh
+          </button>
+        </div>
+      {/if}
 
     <div class="workshop-tabs mt-3">
       <button
@@ -190,10 +217,15 @@
         {/each}
       </div>
     {/if}
-  </header>
+    </header>
+  {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
-    <div class="min-w-0 flex-1 overflow-y-auto px-4 py-3">
+    <div
+      class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
+        ? 'hidden'
+        : ''}"
+    >
       {#if catalog.loading && catalog.manuscripts.length === 0 && catalog.capabilities.length === 0}
         <p class="workshop-muted">Loading catalog…</p>
       {:else if catalog.error}
@@ -246,31 +278,33 @@
                           </p>
                         {/if}
                       </button>
-                      <div class="flex shrink-0 items-center gap-2">
-                        {#if entry.has_scripts}
+                      {#if !mobile}
+                        <div class="flex shrink-0 items-center gap-2">
+                          {#if entry.has_scripts}
+                            <button
+                              type="button"
+                              class="workshop-text-action"
+                              onclick={() => runSkill(entry.id)}
+                            >
+                              Run
+                            </button>
+                          {/if}
                           <button
                             type="button"
                             class="workshop-text-action"
-                            onclick={() => runSkill(entry.id)}
+                            onclick={() => onScheduleSkill(entry)}
                           >
-                            Run
+                            Schedule…
                           </button>
-                        {/if}
-                        <button
-                          type="button"
-                          class="workshop-text-action"
-                          onclick={() => onScheduleSkill(entry)}
-                        >
-                          Schedule…
-                        </button>
-                        <button
-                          type="button"
-                          class="workshop-text-action"
-                          onclick={() => void openConfigPath(entry.path)}
-                        >
-                          Open
-                        </button>
-                      </div>
+                          <button
+                            type="button"
+                            class="workshop-text-action"
+                            onclick={() => void openConfigPath(entry.path)}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      {/if}
                     </div>
                   </li>
                 {/each}
@@ -341,8 +375,25 @@
     </div>
 
     <aside
-      class="w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40 bg-surface-800/40 px-4 py-4"
+      class="{mobile
+        ? mobileDetailOpen
+          ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-y-auto'
+          : 'hidden'
+        : 'w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40 bg-surface-800/40'} px-4 py-4"
     >
+      {#if mobileDetailOpen}
+        <button
+          type="button"
+          class="workshop-text-action mb-3 shrink-0 text-sm"
+          onclick={() => {
+            selectedSkillId = null;
+            selectedToolId = null;
+            catalog.clearCapabilityDetail();
+          }}
+        >
+          ← Back to list
+        </button>
+      {/if}
       {#if activeTab === "skills" && selectedSkill}
         <h2 class="workshop-section-title">Skill detail</h2>
         <p class="mt-2 font-medium text-surface-100">{selectedSkill.name}</p>

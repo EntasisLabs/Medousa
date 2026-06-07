@@ -8,7 +8,7 @@
   interface Props {
     open: boolean;
     onClose?: () => void;
-    variant?: "drawer" | "inline";
+    variant?: "drawer" | "inline" | "sheet";
   }
 
   let { open, onClose, variant = "drawer" }: Props = $props();
@@ -57,45 +57,74 @@
 
   async function selectSession(sessionId: string) {
     await chat.switchSession(sessionId);
-    if (variant === "drawer") {
+    if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
+      onClose?.();
     }
   }
 
   async function createSession() {
     await chat.newSession();
-    if (variant === "drawer") {
+    if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
+      onClose?.();
     }
   }
 </script>
 
 {#if open}
-  {#if variant === "drawer"}
-    <button
-      type="button"
-      class="absolute inset-0 z-20 bg-surface-950/50"
-      aria-label="Close sessions"
-      onclick={onClose}
-    ></button>
-  {/if}
+  {#if variant === "sheet"}
+    <div
+      class="mobile-sheet-backdrop"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
+      <div
+        class="mobile-sheet mobile-sheet-tall flex flex-col"
+        role="dialog"
+        aria-label="Chat sessions"
+      >
+        {@render sessionPanel()}
+      </div>
+    </div>
+  {:else}
+    {#if variant === "drawer"}
+      <button
+        type="button"
+        class="absolute inset-0 z-20 bg-surface-950/50"
+        aria-label="Close sessions"
+        onclick={onClose}
+      ></button>
+    {/if}
 
-  <aside
-    class="{variant === 'drawer'
-      ? 'workshop-drawer absolute left-0 top-0 z-30 w-64 border-r-2'
-      : 'workshop-drawer relative w-56 shrink-0 border-r-2'} flex h-full flex-col"
-    aria-label="Chat sessions"
-  >
+    <aside
+      class="{variant === 'drawer'
+        ? 'workshop-drawer absolute left-0 top-0 z-30 w-64 border-r-2'
+        : 'workshop-drawer relative w-56 shrink-0 border-r-2'} flex h-full flex-col"
+      aria-label="Chat sessions"
+    >
+      {@render sessionPanel()}
+    </aside>
+  {/if}
+{/if}
+
+{#snippet sessionPanel()}
+  <div class="flex min-h-0 flex-1 flex-col">
     <div class="workshop-header px-3 py-3">
       <p class="text-sm font-semibold text-surface-100">Sessions</p>
-      {#if variant === "drawer" && onClose}
+      {#if (variant === "drawer" || variant === "sheet") && onClose}
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface"
-          aria-label="Close sessions drawer"
+          aria-label="Close sessions"
           onclick={onClose}
         >
-          <X size={16} strokeWidth={1.75} />
+          {variant === "sheet" ? "Done" : ""}
+          {#if variant === "drawer"}
+            <X size={16} strokeWidth={1.75} />
+          {/if}
         </button>
       {/if}
     </div>
@@ -151,8 +180,8 @@
         </ul>
       </li>
     </ol>
-  </aside>
-{/if}
+  </div>
+{/snippet}
 
 {#snippet sessionButton(session: SessionSummary)}
   <div

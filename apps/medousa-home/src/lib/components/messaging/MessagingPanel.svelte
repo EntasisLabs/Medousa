@@ -22,9 +22,11 @@
   interface Props {
     visible: boolean;
     health: DaemonHealth | null;
+    mobile?: boolean;
+    embedded?: boolean;
   }
 
-  let { visible, health }: Props = $props();
+  let { visible, health, mobile = false, embedded = false }: Props = $props();
 
   let search = $state("");
   let selectedChannel = $state<ChannelId>("telegram");
@@ -161,15 +163,39 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  <header class="workshop-header">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-base font-semibold text-surface-50">Messaging</h1>
-        <p class="text-xs text-surface-300">
-          Channels share the same product config as TUI and CLI
-        </p>
+<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+  {#if !embedded}
+    <header class="workshop-header">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-base font-semibold text-surface-50">Messaging</h1>
+          <p class="text-xs text-surface-300">
+            Channels share the same product config as TUI and CLI
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={() => messaging.refresh()}
+        >
+          Refresh
+        </button>
       </div>
+
+      {#if !mobile}
+        <label class="mt-3 block">
+          <span class="sr-only">Search channels</span>
+          <input
+            class="input w-full max-w-md text-sm"
+            type="search"
+            placeholder="Search channels…"
+            bind:value={search}
+          />
+        </label>
+      {/if}
+    </header>
+  {:else}
+    <div class="flex items-center justify-end border-b border-surface-500/40 px-4 py-2">
       <button
         type="button"
         class="btn btn-sm variant-ghost-surface"
@@ -178,19 +204,34 @@
         Refresh
       </button>
     </div>
+  {/if}
 
-    <label class="mt-3 block">
-      <span class="sr-only">Search channels</span>
-      <input
-        class="input w-full max-w-md text-sm"
-        type="search"
-        placeholder="Search channels…"
-        bind:value={search}
-      />
-    </label>
-  </header>
+  {#if mobile}
+    <div class="mobile-channel-strip shrink-0 overflow-x-auto border-b border-surface-500/40 px-3 py-2">
+      <div class="flex gap-2">
+        {#each filteredChannels as channel (channel.id)}
+          {@const Icon = channelIcons[channel.id]}
+          {@const status = channelStatus(channel.id, messaging.summary, daemonOk)}
+          <button
+            type="button"
+            class="mobile-channel-chip {selectedChannel === channel.id
+              ? 'mobile-channel-chip-active'
+              : ''}"
+            onclick={() => selectChannel(channel.id)}
+          >
+            <Icon size={14} strokeWidth={1.75} />
+            <span>{channel.name}</span>
+            <span class="text-[9px] uppercase {statusClass(status)}">
+              {statusLabel(status)}
+            </span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
-  <div class="flex min-h-0 flex-1 overflow-hidden">
+  <div class="flex min-h-0 flex-1 overflow-hidden {mobile ? 'flex-col' : ''}">
+    {#if !mobile}
     <div class="w-[min(280px,34%)] shrink-0 overflow-y-auto border-r border-surface-500/40 px-3 py-3">
       {#if messaging.loading && !messaging.summary}
         <p class="workshop-muted">Loading channels…</p>
@@ -236,8 +277,9 @@
         </ul>
       {/if}
     </div>
+    {/if}
 
-    <div class="min-w-0 flex-1 overflow-y-auto px-5 py-4">
+    <div class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-4">
       {#if selectedChannel === "telegram"}
         <h2 class="workshop-section-title">Telegram</h2>
         <p class="workshop-faint mt-2 text-sm">
