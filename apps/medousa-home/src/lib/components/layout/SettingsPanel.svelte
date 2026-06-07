@@ -11,8 +11,6 @@
     type DaemonHealth,
   } from "$lib/daemon";
   import { settings } from "$lib/stores/settings.svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
-  import type { DepthMode } from "$lib/types/runtime";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -20,40 +18,49 @@
     revision: number;
     health: DaemonHealth | null;
     onOpenRuntime: () => void;
+    onOpenMessaging?: () => void;
+    onOpenCron?: () => void;
     onDaemonHealth: () => void | Promise<void>;
   }
 
-  let { visible, revision, health, onOpenRuntime, onDaemonHealth }: Props = $props();
+  let {
+    visible,
+    revision,
+    health,
+    onOpenRuntime,
+    onOpenMessaging,
+    onOpenCron,
+    onDaemonHealth,
+  }: Props = $props();
 
-  let draftProvider = $state(runtime.provider);
-  let draftModel = $state(runtime.model);
   let configPaths = $state<MedousaConfigPaths | null>(null);
+  let advancedOpen = $state(false);
 
   const workshopFiles = $derived(
     configPaths
       ? [
           {
             id: "product",
-            label: "Product settings",
-            hint: "Channels, heartbeat, engine policy",
+            label: "product_config.json",
+            hint: "Full product policy — channels live in Messaging",
             path: configPaths.productConfig,
           },
           {
             id: "workspace",
-            label: "Workspace prefs",
-            hint: "Model, depth, runtime — shared with TUI",
+            label: "tui_defaults.json",
+            hint: "Model and depth — edit in Runtime → Controls",
             path: configPaths.tuiDefaults,
           },
           {
             id: "capabilities",
-            label: "Capabilities",
-            hint: "Tool and service bindings",
+            label: "capabilities.toml",
+            hint: "Tool bindings — catalog in Skills → Tools",
             path: configPaths.capabilities,
           },
           {
             id: "gateway",
-            label: "MCP gateway",
-            hint: "Connected app servers",
+            label: "mcp-gateway.toml",
+            hint: "Connected MCP servers",
             path: configPaths.mcpGateway,
           },
         ]
@@ -64,12 +71,8 @@
     if (visible && !settings.daemonUrl) {
       void loadDaemonUrl();
     }
-    if (visible) {
-      draftProvider = runtime.provider;
-      draftModel = runtime.model;
-      if (isTauri() && !configPaths) {
-        void loadConfigPaths();
-      }
+    if (visible && isTauri() && !configPaths) {
+      void loadConfigPaths();
     }
   });
 
@@ -110,39 +113,10 @@
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   <header class="workshop-header">
     <h1 class="text-sm font-semibold text-surface-50">Settings</h1>
-    <p class="workshop-faint">Home preferences and shared workshop files</p>
+    <p class="workshop-faint">Home preferences and daemon connection</p>
   </header>
 
   <div class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    {#if workshopFiles.length > 0}
-      <section class="workshop-inset p-3">
-        <h2 class="text-sm font-semibold text-surface-100">Workshop files</h2>
-        <p class="workshop-faint mt-1">
-          Same on-disk settings as the TUI and CLI — edit in your editor.
-        </p>
-        <ul class="mt-3 divide-y divide-surface-500/35">
-          {#each workshopFiles as file (file.id)}
-            <li class="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-              <div class="min-w-0">
-                <p class="text-sm text-surface-100">{file.label}</p>
-                <p class="workshop-faint">{file.hint}</p>
-                <p class="mt-0.5 truncate font-mono text-[10px] text-surface-500">
-                  {file.path}
-                </p>
-              </div>
-              <button
-                type="button"
-                class="workshop-text-action shrink-0"
-                onclick={() => openConfigPath(file.path)}
-              >
-                Open
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Connection</h2>
       <p class="workshop-faint mt-1">
@@ -180,75 +154,30 @@
     </section>
 
     <section class="workshop-inset p-3">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <h2 class="text-sm font-semibold text-surface-100">Runtime controls</h2>
-          <p class="workshop-faint mt-1">
-            Model and depth for chat — saved to <code class="markdown-inline-code">tui_defaults.json</code>.
-          </p>
-        </div>
-        <button
-          type="button"
-          class="btn btn-sm variant-ghost-surface shrink-0"
-          onclick={onOpenRuntime}
-        >
-          Open Runtime
-        </button>
-      </div>
-      <div class="mt-4 grid gap-3 sm:grid-cols-2">
-        <label class="workshop-label block" for="settings-provider">
-          Provider
-        </label>
-        <label class="workshop-label block" for="settings-model">
-          Model
-        </label>
-        <input
-          id="settings-provider"
-          class="input"
-          bind:value={draftProvider}
-          placeholder="ollama"
-        />
-        <input
-          id="settings-model"
-          class="input"
-          bind:value={draftModel}
-          placeholder="qwen2.5:7b"
-        />
-      </div>
-      <button
-        type="button"
-        class="btn variant-filled-primary mt-4"
-        disabled={runtime.savingControls || !draftProvider.trim() || !draftModel.trim()}
-        onclick={() => runtime.applyModel(draftProvider, draftModel)}
-      >
-        {runtime.savingControls ? "Applying…" : "Apply model"}
-      </button>
-      <div class="mt-4 flex flex-wrap gap-2">
-        {#each ["concise", "standard", "deep"] as mode (mode)}
-          <button
-            type="button"
-            class="rounded-container-token px-3 py-2 text-sm transition {runtime.depthMode ===
-            mode
-              ? 'bg-primary-500/20 font-medium text-primary-200'
-              : 'bg-surface-800 text-surface-300 hover:text-surface-100'}"
-            disabled={runtime.savingControls}
-            onclick={() => runtime.setDepthMode(mode as DepthMode)}
-          >
-            {mode}
-          </button>
-        {/each}
-      </div>
-      <p class="workshop-faint mt-3">
-        Current {runtime.modelLabel()} · depth {runtime.depthMode}
+      <h2 class="text-sm font-semibold text-surface-100">Workshop surfaces</h2>
+      <p class="workshop-faint mt-1">
+        Configure runtime, channels, and schedules in their dedicated views.
       </p>
-      {#if runtime.controlsMessage}
-        <p class="workshop-faint mt-2">{runtime.controlsMessage}</p>
-      {/if}
+      <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <button type="button" class="workshop-text-action" onclick={onOpenRuntime}>
+          Runtime
+        </button>
+        {#if onOpenMessaging}
+          <button type="button" class="workshop-text-action" onclick={onOpenMessaging}>
+            Messaging
+          </button>
+        {/if}
+        {#if onOpenCron}
+          <button type="button" class="workshop-text-action" onclick={onOpenCron}>
+            Cron
+          </button>
+        {/if}
+      </div>
     </section>
 
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Appearance</h2>
-      <p class="workshop-faint mt-1">Home-only — not shared with other clients.</p>
+      <p class="workshop-faint mt-1">Home-only — not shared with TUI or CLI.</p>
       <div class="mt-4 flex items-center gap-4">
         <div
           class="flex h-12 w-28 shrink-0 overflow-hidden rounded-container-token border border-surface-500/30"
@@ -311,6 +240,48 @@
         </span>
       </label>
     </section>
+
+    {#if workshopFiles.length > 0}
+      <section class="workshop-inset p-3">
+        <button
+          type="button"
+          class="flex w-full items-center justify-between text-left"
+          onclick={() => (advancedOpen = !advancedOpen)}
+        >
+          <div>
+            <h2 class="text-sm font-semibold text-surface-100">Advanced</h2>
+            <p class="workshop-faint mt-0.5">
+              On-disk files shared with TUI and CLI
+            </p>
+          </div>
+          <span class="workshop-faint shrink-0">
+            {advancedOpen ? "▾" : "▸"}
+          </span>
+        </button>
+        {#if advancedOpen}
+          <ul class="mt-3 divide-y divide-surface-500/35">
+            {#each workshopFiles as file (file.id)}
+              <li class="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div class="min-w-0">
+                  <p class="font-mono text-[11px] text-surface-200">{file.label}</p>
+                  <p class="workshop-faint">{file.hint}</p>
+                  <p class="mt-0.5 truncate font-mono text-[10px] text-surface-500">
+                    {file.path}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="workshop-text-action shrink-0"
+                  onclick={() => openConfigPath(file.path)}
+                >
+                  Open
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {/if}
 
     <section class="workshop-inset p-3">
       <button

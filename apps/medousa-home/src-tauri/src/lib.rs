@@ -1,4 +1,5 @@
 mod daemon;
+mod messaging;
 mod medousa_paths;
 mod tray;
 mod window;
@@ -102,6 +103,11 @@ pub fn run() {
             medousa_paths::medousa_config_paths,
             medousa_paths::load_tui_defaults_summary,
             medousa_paths::persist_tui_runtime_prefs,
+            messaging::messaging_load_product_config_summary,
+            messaging::messaging_save_channel_config,
+            messaging::messaging_secret_status,
+            messaging::messaging_save_secret,
+            messaging::messaging_clear_secret,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

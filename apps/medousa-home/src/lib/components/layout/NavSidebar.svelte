@@ -6,6 +6,7 @@
     Home,
     LayoutGrid,
     MessageCircle,
+    Radio,
     Settings,
     Zap,
   } from "@lucide/svelte";
@@ -25,6 +26,7 @@
     { id: "library", label: "Library", icon: BookOpen },
     { id: "skills", label: "Skills", icon: Zap },
     { id: "cron", label: "Cron", icon: Calendar },
+    { id: "messaging", label: "Messaging", icon: Radio },
     { id: "work", label: "Work", icon: LayoutGrid },
     { id: "runtime", label: "Runtime", icon: Activity },
   ];

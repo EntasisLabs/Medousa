@@ -4,6 +4,7 @@ export type Surface =
   | "library"
   | "skills"
   | "cron"
+  | "messaging"
   | "work"
   | "runtime"
   | "settings";

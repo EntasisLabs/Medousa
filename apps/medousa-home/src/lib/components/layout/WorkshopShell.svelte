@@ -15,6 +15,7 @@
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import CronPanel from "$lib/components/cron/CronPanel.svelte";
+  import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { cronDraft } from "$lib/stores/cron.svelte";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
@@ -159,6 +160,8 @@
           />
         {:else if activeSurface === "cron"}
           <CronPanel visible={true} />
+        {:else if activeSurface === "messaging"}
+          <MessagingPanel visible={true} health={daemonHealth} />
         {:else if activeSurface === "work"}
           <WorkPanel
             visible={true}
@@ -178,6 +181,8 @@
             revision={workspace.revision}
             health={daemonHealth}
             onOpenRuntime={() => (activeSurface = "runtime")}
+            onOpenMessaging={() => (activeSurface = "messaging")}
+            onOpenCron={() => (activeSurface = "cron")}
             onDaemonHealth={async () => {
               daemonHealth = await checkDaemonHealth();
             }}
