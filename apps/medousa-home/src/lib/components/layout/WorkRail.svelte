@@ -40,7 +40,9 @@
         class="card min-w-[220px] max-w-[280px] shrink-0 p-3 text-left transition {selectedId ===
         card.id
           ? 'ring-2 ring-primary-500'
-          : 'hover:brightness-110'}"
+          : 'hover:brightness-110'} {card.column === 'wrapping_up'
+          ? 'animate-pulse border-warning-500/50'
+          : ''}"
         onclick={() => onSelect(card.id)}
       >
         <div class="flex items-center justify-between gap-2">

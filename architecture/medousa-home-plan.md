@@ -871,4 +871,5 @@ Phase M0+ Tauri (only after both freeze gates)
 | 2026-05-30 | **M0 scaffold:** `apps/medousa-home` — Tauri v2 + SvelteKit + Skeleton v2; design doc `medousa-home-tauri-design.md` |
 | 2026-05-30 | **Vault API fix:** backlinks moved to `GET /v1/vault/backlinks?path=` (Axum catch-all must be route suffix) |
 | 2026-05-30 | **M1 shipped (Tauri):** Library tree, markdown editor, context panel, card→vault associations |
+| 2026-05-30 | **M2 shipped (Tauri):** Kanban + swimlanes, card inspector, done notifications |
 | 2026-05-30 | **V1 shipped:** Wikilink resolution + `links.jsonl` backlink index; inline `#tags`; link-vault validation; optional job-success footers; `smoke-home-api.sh` |

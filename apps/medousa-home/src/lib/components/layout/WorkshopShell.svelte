@@ -4,8 +4,10 @@
   import type { Surface } from "$lib/types/ui";
   import WorkRail from "$lib/components/layout/WorkRail.svelte";
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
+  import HomeOverview from "$lib/components/layout/HomeOverview.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
+  import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -75,11 +77,10 @@
 
   function handleSurfaceSelect(surface: Surface) {
     if (surface === "settings") return;
-    if (surface === "work") {
-      activeSurface = "chat";
-      return;
-    }
     activeSurface = surface;
+    if (surface === "work" && workspace.workView === "kanban") {
+      void workspace.prefetchCardDetails();
+    }
   }
 
   async function handleOpenNote(path: string) {
@@ -88,8 +89,10 @@
   }
 
   async function handleCardSelect(id: string) {
+    activeSurface = "work";
     await workspace.selectCard(id);
   }
+
 </script>
 
 <div class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50">
@@ -99,16 +102,16 @@
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="flex min-h-0 flex-1">
         {#if activeSurface === "home"}
-          <section class="flex flex-1 items-center justify-center p-8 text-surface-400">
-            <div class="max-w-md text-center">
-              <h2 class="text-lg font-semibold text-surface-100">Medousa Home</h2>
-              <p class="mt-2 text-sm">
-                Workshop — chat, library, work rail, and live activity from the daemon.
-              </p>
-            </div>
-          </section>
+          <HomeOverview onOpenWork={() => (activeSurface = "work")} />
         {:else if activeSurface === "library"}
           <LibraryPanel visible={true} />
+        {:else if activeSurface === "work"}
+          <WorkPanel
+            visible={true}
+            {onOpenNote}
+            onOpenChat={() => (activeSurface = "chat")}
+            onSelectCard={handleCardSelect}
+          />
         {:else}
           <ChatPanel visible={activeSurface === "chat"} />
         {/if}
@@ -123,7 +126,7 @@
           backlinks={vault.backlinks}
           cardDetail={workspace.selectedCardDetail}
           cardError={workspace.cardDetailError}
-          onOpenNote={handleOpenNote}
+          {onOpenNote}
         />
       </div>
 

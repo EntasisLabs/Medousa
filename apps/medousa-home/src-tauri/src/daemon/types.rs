@@ -233,6 +233,23 @@ pub struct WorkCardAssociations {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceCardActionResponse {
+    pub workspace_revision: u64,
+    pub card_id: String,
+    pub action: String,
+    pub ok: bool,
+    pub message: String,
+    #[serde(default)]
+    pub job_id: Option<String>,
+    #[serde(default)]
+    pub replayed: Option<bool>,
+    #[serde(default)]
+    pub job_succeeded: Option<bool>,
+    #[serde(default)]
+    pub associations: Option<WorkCardAssociations>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkCardDetail {
     pub card: WorkCard,
     pub kind: String,

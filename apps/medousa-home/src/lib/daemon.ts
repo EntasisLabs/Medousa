@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WorkCardDetail } from "$lib/types/card";
+import type { WorkspaceCardActionResponse } from "$lib/types/work";
 import type {
   VaultBacklinksResponse,
   VaultNoteContentResponse,
@@ -127,4 +128,20 @@ export async function getWorkspaceCard(
   cardId: string,
 ): Promise<WorkCardDetail> {
   return invoke<WorkCardDetail>("workspace_get_card", { cardId });
+}
+
+export async function cancelWorkspaceCard(
+  cardId: string,
+): Promise<WorkspaceCardActionResponse> {
+  return invoke<WorkspaceCardActionResponse>("workspace_cancel_card", {
+    cardId,
+  });
+}
+
+export async function retryWorkspaceCard(
+  cardId: string,
+): Promise<WorkspaceCardActionResponse> {
+  return invoke<WorkspaceCardActionResponse>("workspace_retry_card", {
+    cardId,
+  });
 }

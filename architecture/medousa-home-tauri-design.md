@@ -121,6 +121,8 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 | `vault_search` | `{ query, limit? }` | `VaultSearchResponse` |
 | `vault_backlinks` | `{ path }` | `VaultBacklinksResponse` |
 | `workspace_get_card` | `{ cardId }` | `WorkCardDetail` |
+| `workspace_cancel_card` | `{ cardId }` | `WorkspaceCardActionResponse` |
+| `workspace_retry_card` | `{ cardId }` | `WorkspaceCardActionResponse` |
 
 ### Events (listen)
 
@@ -148,7 +150,7 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Interactive turn POST + SSE → chat panel
 - [ ] 2-week dogfood on frozen APIs (gate from plan)
 
-### M1 — library (current)
+### M1 — library
 
 - [x] Vault tree + search (`GET /v1/vault/notes`, `/search`)
 - [x] Prose editor with raw/preview toggle + `PUT` save (`If-Match: content_hash`)
@@ -157,11 +159,15 @@ All calls originate in `src-tauri/`; Svelte invokes commands and listens for eve
 - [x] Last-opened note restored from `localStorage`
 - [ ] Vault create/delete UI (CLI OK for now)
 
-### M2 — full home
+### M2 — full home (current)
 
-- Kanban toggle + swimlanes (`intent`, `manuscript_id`)
-- `card_upserted` → Done native notification
-- Card inspector primary surface
+- [x] Work tab — kanban columns (backlog → done) with live stream counts
+- [x] Swimlanes: intent, manuscript, job family, session (detail cache prefetch)
+- [x] WrappingUp pulse emphasis on board + inspector
+- [x] Card inspector — cancel, retry, ask Medousa, vault links, result excerpt
+- [x] Native notification when card transitions to `done`
+- [x] Home overview — column counts + jump to work board
+- [ ] Telegram card summary via outbox (deferred)
 
 ### M3 — polish
 
@@ -200,3 +206,4 @@ Env:
 |------|--------|
 | 2026-05-30 | Initial design — Workshop layout, stack lock, daemon map, Locus boundaries |
 | 2026-05-30 | **M1 shipped:** Library tree, editor, context panel, card→vault links |
+| 2026-05-30 | **M2 shipped:** Kanban + swimlanes, card inspector, done notifications |

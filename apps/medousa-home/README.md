@@ -31,4 +31,10 @@ npm run tauri dev
 - **Search** — `GET /v1/vault/search`
 - **Context panel** — backlinks, wikilinks, card-linked notes (`GET /v1/workspace/cards/{id}`)
 
-Kanban and settings ship in M2+.
+### M2 (Work board)
+- **Kanban** — columns + swimlane grouping (intent, manuscript, job family, session)
+- **Card inspector** — cancel, retry, ask Medousa, linked vault notes
+- **Done notifications** — native OS toast when a card hits `done`
+- **Home** — column count overview
+
+Settings and tray polish ship in M3.
