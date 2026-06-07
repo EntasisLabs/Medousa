@@ -1,18 +1,15 @@
 <script lang="ts">
   import { catalog } from "$lib/stores/catalog.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { recurring } from "$lib/stores/recurring.svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
   import type { ManuscriptCatalogEntry } from "$lib/types/catalog";
-
-  const DEFAULT_CRON = "0 9 * * *";
 
   interface Props {
     visible: boolean;
     onOpenChat: () => void;
+    onScheduleSkill: (entry: ManuscriptCatalogEntry) => void;
   }
 
-  let { visible, onOpenChat }: Props = $props();
+  let { visible, onOpenChat, onScheduleSkill }: Props = $props();
 
   $effect(() => {
     if (visible) {
@@ -31,41 +28,6 @@
     return null;
   }
 
-  let scheduleDrafts = $state<Record<string, { cron: string; prompt: string }>>({});
-
-  function scheduleDraft(entry: ManuscriptCatalogEntry) {
-    return (
-      scheduleDrafts[entry.id] ?? {
-        cron: DEFAULT_CRON,
-        prompt: `Run ${entry.name} on schedule`,
-      }
-    );
-  }
-
-  function updateScheduleDraft(
-    entryId: string,
-    patch: Partial<{ cron: string; prompt: string }>,
-  ) {
-    const current = scheduleDrafts[entryId] ?? {
-      cron: DEFAULT_CRON,
-      prompt: "",
-    };
-    scheduleDrafts = {
-      ...scheduleDrafts,
-      [entryId]: { ...current, ...patch },
-    };
-  }
-
-  async function scheduleSkill(entry: ManuscriptCatalogEntry) {
-    const draft = scheduleDraft(entry);
-    await recurring.register({
-      prompt: draft.prompt.trim() || `Run ${entry.name}`,
-      cron_expr: draft.cron.trim() || DEFAULT_CRON,
-      manuscript_id: entry.id,
-      model_hint: runtime.model,
-      execution_mode: "agent_turn",
-    });
-  }
 </script>
 
 <section class="flex h-full min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
@@ -136,49 +98,12 @@
                   <button
                     type="button"
                     class="btn btn-sm variant-soft-primary"
-                    disabled={recurring.registering}
-                    onclick={() => scheduleSkill(entry)}
+                    onclick={() => onScheduleSkill(entry)}
                   >
-                    Schedule
+                    Schedule…
                   </button>
                 </div>
               </div>
-
-              <details class="workshop-faint mt-3">
-                <summary class="cursor-pointer select-none text-surface-300 hover:text-surface-100">
-                  Schedule settings
-                </summary>
-                <div class="mt-3 space-y-3">
-                  <label class="block">
-                    <span class="workshop-label">Cron</span>
-                    <input
-                      class="input mt-1 w-full font-mono text-[11px]"
-                      value={scheduleDraft(entry).cron}
-                      placeholder={DEFAULT_CRON}
-                      oninput={(event) =>
-                        updateScheduleDraft(entry.id, {
-                          cron: (event.currentTarget as HTMLInputElement).value,
-                        })}
-                    />
-                  </label>
-                  <label class="block">
-                    <span class="workshop-label">Prompt</span>
-                    <textarea
-                      class="textarea mt-1 w-full text-xs"
-                      rows="2"
-                      value={scheduleDraft(entry).prompt}
-                      placeholder={`Run ${entry.name} on schedule`}
-                      oninput={(event) =>
-                        updateScheduleDraft(entry.id, {
-                          prompt: (event.currentTarget as HTMLTextAreaElement).value,
-                        })}
-                    ></textarea>
-                  </label>
-                  <p class="workshop-faint">
-                    Uses manuscript {entry.id} with agent_turn execution.
-                  </p>
-                </div>
-              </details>
 
               <details class="workshop-faint mt-3">
                 <summary class="cursor-pointer select-none text-surface-300 hover:text-surface-100">
@@ -238,9 +163,6 @@
         </ul>
       </section>
 
-      {#if recurring.registerMessage}
-        <p class="mt-6 text-xs text-primary-300">{recurring.registerMessage}</p>
-      {/if}
     {/if}
   </div>
 </section>

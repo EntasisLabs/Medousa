@@ -14,7 +14,9 @@
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
+  import CronPanel from "$lib/components/cron/CronPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
+  import { cronDraft } from "$lib/stores/cron.svelte";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -146,7 +148,17 @@
           <SkillsPanel
             visible={true}
             onOpenChat={() => (activeSurface = "chat")}
+            onScheduleSkill={(entry) => {
+              cronDraft.openCreate({
+                prompt: `Run ${entry.name} on schedule`,
+                cron_expr: "0 9 * * *",
+                manuscript_id: entry.id,
+              });
+              activeSurface = "cron";
+            }}
           />
+        {:else if activeSurface === "cron"}
+          <CronPanel visible={true} />
         {:else if activeSurface === "work"}
           <WorkPanel
             visible={true}
@@ -158,6 +170,7 @@
           <RuntimePanel
             visible={true}
             inMotionCount={workspace.inMotionCount()}
+            onOpenCron={() => (activeSurface = "cron")}
           />
         {:else if activeSurface === "settings"}
           <SettingsPanel
@@ -221,9 +234,12 @@
         health={daemonHealth}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}
+        cronActiveCount={recurring.activeCount().enabled}
+        cronTotalCount={recurring.activeCount().total}
         pendingDeliveries={runtime.delivery?.pending_job_deliveries ?? null}
         lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
         onOpenRuntime={() => (activeSurface = "runtime")}
+        onOpenCron={() => (activeSurface = "cron")}
       />
 
       {#if workspace.inMotionCount() > 0 || activeSurface === "work"}

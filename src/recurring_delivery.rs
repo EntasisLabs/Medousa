@@ -126,6 +126,10 @@ pub fn validate_recurring_cron(cron_expr: &str, timezone: &str) -> StasisResult<
 }
 
 /// Parse optional `delivery` from tool/API JSON and upsert binding for `recurring_id`.
+pub async fn remove_recurring_delivery_binding(recurring_id: &str) -> anyhow::Result<()> {
+    recurring_delivery_store().remove(recurring_id).await
+}
+
 pub async fn persist_recurring_delivery_binding(
     recurring_id: &str,
     input: &Value,

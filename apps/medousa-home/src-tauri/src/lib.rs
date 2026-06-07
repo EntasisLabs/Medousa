@@ -91,6 +91,8 @@ pub fn run() {
             daemon::jobs::job_enqueue_ask,
             daemon::recurring::recurring_list,
             daemon::recurring::recurring_register_prompt,
+            daemon::recurring::recurring_update,
+            daemon::recurring::recurring_delete,
             daemon::identity::identity_get_context,
             daemon::artifact::artifact_command,
             window::window_show_chat_popout,

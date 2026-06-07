@@ -555,6 +555,31 @@ pub struct RegisterRecurringResponse {
     pub timezone: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateRecurringRequest {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub cron_expr: Option<String>,
+    #[serde(default)]
+    pub timezone: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateRecurringResponse {
+    pub recurring_id: String,
+    pub enabled: bool,
+    pub cron_expr: String,
+    pub timezone: String,
+    pub next_run_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteRecurringResponse {
+    pub recurring_id: String,
+    pub deleted: bool,
+}
+
 // ── Identity & artifacts ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3,6 +3,7 @@ export type Surface =
   | "chat"
   | "library"
   | "skills"
+  | "cron"
   | "work"
   | "runtime"
   | "settings";

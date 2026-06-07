@@ -14,8 +14,11 @@ import type { ArtifactCommandResponse } from "$lib/types/artifact";
 import type { IdentityContextResponse } from "$lib/types/identity";
 import type { EnqueueResponse, JobResultResponse } from "$lib/types/job";
 import type {
+  DeleteRecurringResponse,
   RecurringListResponse,
   RegisterRecurringResponse,
+  UpdateRecurringRequest,
+  UpdateRecurringResponse,
 } from "$lib/types/recurring";
 import type {
   ContinuationStatusResponse,
@@ -305,6 +308,22 @@ export async function lookupArtifact(
       command: { command: "lookup", query: artifactId },
     },
   });
+}
+
+export async function updateRecurring(
+  recurringId: string,
+  request: UpdateRecurringRequest,
+): Promise<UpdateRecurringResponse> {
+  return invoke<UpdateRecurringResponse>("recurring_update", {
+    recurringId,
+    request,
+  });
+}
+
+export async function deleteRecurring(
+  recurringId: string,
+): Promise<DeleteRecurringResponse> {
+  return invoke<DeleteRecurringResponse>("recurring_delete", { recurringId });
 }
 
 export async function registerRecurringPrompt(request: {

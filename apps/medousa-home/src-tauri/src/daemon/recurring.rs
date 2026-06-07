@@ -1,5 +1,6 @@
 use crate::daemon::types::{
-    RecurringListResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    DeleteRecurringResponse, RecurringListResponse, RegisterRecurringPromptRequest,
+    RegisterRecurringResponse, UpdateRecurringRequest, UpdateRecurringResponse,
 };
 use reqwest::Client;
 use tauri::State;
@@ -48,6 +49,48 @@ pub async fn recurring_register_prompt(
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(format!("recurring register failed ({status}): {body}"));
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn recurring_update(
+    state: State<'_, DaemonState>,
+    recurring_id: String,
+    request: UpdateRecurringRequest,
+) -> Result<UpdateRecurringResponse, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let client = Client::new();
+    let response = client
+        .patch(format!("{base}/v1/recurring/{}", recurring_id.trim()))
+        .json(&request)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("recurring update failed ({status}): {body}"));
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn recurring_delete(
+    state: State<'_, DaemonState>,
+    recurring_id: String,
+) -> Result<DeleteRecurringResponse, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let client = Client::new();
+    let response = client
+        .delete(format!("{base}/v1/recurring/{}", recurring_id.trim()))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("recurring delete failed ({status}): {body}"));
     }
     response.json().await.map_err(|err| err.to_string())
 }

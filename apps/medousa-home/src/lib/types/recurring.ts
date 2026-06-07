@@ -32,3 +32,29 @@ export interface RegisterRecurringRequest {
   execution_mode?: string;
   model_hint?: string;
 }
+
+export interface UpdateRecurringRequest {
+  enabled?: boolean;
+  cron_expr?: string;
+  timezone?: string;
+}
+
+export interface UpdateRecurringResponse {
+  recurring_id: string;
+  enabled: boolean;
+  cron_expr: string;
+  timezone: string;
+  next_run_at_utc: string;
+}
+
+export interface DeleteRecurringResponse {
+  recurring_id: string;
+  deleted: boolean;
+}
+
+export interface CronCreateDraft {
+  prompt: string;
+  cron_expr: string;
+  manuscript_id?: string;
+  timezone?: string;
+}

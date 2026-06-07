@@ -9,7 +9,7 @@ use anyhow::{Context, Result, anyhow};
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Timelike, Utc};
 use futures_util::stream::{self, Stream};
@@ -42,8 +42,9 @@ use medousa::daemon_api::{
     InteractiveTurnRequest, InteractiveTurnResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent,
-    RecurringListQuery, RecurringListResponse, RegisterRecurringPromptRequest,
-    RegisterRecurringResponse, RuntimeConfigCommandRequest,
+    DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
+    RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
+    UpdateRecurringResponse, RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
@@ -433,6 +434,10 @@ async fn main() -> Result<()> {
         .route("/v1/jobs/prompt", post(enqueue_prompt))
         .route("/v1/recurring", get(list_recurring_definitions))
         .route("/v1/recurring/prompt", post(register_recurring_prompt))
+        .route(
+            "/v1/recurring/{recurring_id}",
+            patch(update_recurring_definition).delete(delete_recurring_definition),
+        )
         .route("/v1/interactive/turn", post(start_interactive_turn))
         .route(
             "/v1/interactive/turn/{turn_id}/stream",
@@ -1218,6 +1223,45 @@ async fn list_recurring_definitions(
         .await
         .map(Json)
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+}
+
+async fn update_recurring_definition(
+    State(state): State<AppState>,
+    AxumPath(recurring_id): AxumPath<String>,
+    Json(request): Json<UpdateRecurringRequest>,
+) -> Result<Json<UpdateRecurringResponse>, (StatusCode, String)> {
+    medousa::recurring_handlers::update_recurring(
+        state.composition(),
+        recurring_id.trim(),
+        request,
+    )
+    .await
+    .map(Json)
+    .map_err(|err| {
+        let message = err.to_string();
+        if message.contains("not found") {
+            (StatusCode::NOT_FOUND, message)
+        } else {
+            (StatusCode::BAD_REQUEST, message)
+        }
+    })
+}
+
+async fn delete_recurring_definition(
+    State(state): State<AppState>,
+    AxumPath(recurring_id): AxumPath<String>,
+) -> Result<Json<DeleteRecurringResponse>, (StatusCode, String)> {
+    medousa::recurring_handlers::delete_recurring(state.composition(), recurring_id.trim())
+        .await
+        .map(Json)
+        .map_err(|err| {
+            let message = err.to_string();
+            if message.contains("not found") {
+                (StatusCode::NOT_FOUND, message)
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, message)
+            }
+        })
 }
 
 async fn register_recurring_prompt(

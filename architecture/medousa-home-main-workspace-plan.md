@@ -163,6 +163,22 @@ Chat stays default. Runtime is **one click away**, not a separate app.
 | Default onboarding | `medousa setup` → **Home** on desktop; TUI optional |
 | Parity rule | Every TUI slash command maps to Home action or Runtime drawer within 2 releases |
 
+### M7 — Product UX (Hermes closure)
+
+**Settings, cron, skills, tools** must become **first-class objects** — not file paths, Runtime sub-tabs, or registry dumps.
+
+Full plan: **[medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)**
+
+| Milestone | Focus |
+|-----------|-------|
+| **M7a** | Messaging — channel list → detail; secrets in-app; demote Workshop files |
+| **M7b** | Cron workspace — nav + list + + New + status bar active count |
+| **M7c** | Skills catalog — search, dense rows, decouple schedule to Cron |
+| **M7d** | Tools catalog — descriptions, bindings, Toolsets tab |
+| **M7e** | Settings cleanup — Home-only prefs; Runtime controls link out |
+
+**First slice:** M7b Cron list + status bar whisper (proves list → detail pattern).
+
 ---
 
 ## API additions needed (daemon-first)
@@ -198,3 +214,4 @@ Before M6c–M6e UI, prefer these daemon projections:
 | 2026-05-30 | M6c shipped — Job result panel, worker timeline, batch blocked actions, /ask composer |
 | 2026-05-30 | M6d shipped — GET /v1/recurring, Skills schedule, Home next-run whisper |
 | 2026-05-30 | M6e shipped — Identity drawer, answer_state badges, artifact previews on cards |
+| 2026-05-30 | M7 product UX plan — messaging, cron, skills, tools ([medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)) |

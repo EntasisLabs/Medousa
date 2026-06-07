@@ -1,8 +1,14 @@
-import { listRecurring, registerRecurringPrompt } from "$lib/daemon";
+import {
+  deleteRecurring,
+  listRecurring,
+  registerRecurringPrompt,
+  updateRecurring,
+} from "$lib/daemon";
 import { formatDaemonErrorSummary } from "$lib/utils/formatDaemonError";
 import type {
   RecurringDefinitionEntry,
   RegisterRecurringRequest,
+  UpdateRecurringRequest,
 } from "$lib/types/recurring";
 
 export class RecurringStore {
@@ -11,6 +17,8 @@ export class RecurringStore {
   error = $state<string | null>(null);
   registerMessage = $state<string | null>(null);
   registering = $state(false);
+  updatingId = $state<string | null>(null);
+  deletingId = $state<string | null>(null);
 
   async refresh(enabledOnly = false) {
     this.loading = true;
@@ -27,6 +35,12 @@ export class RecurringStore {
     }
   }
 
+  activeCount(): { enabled: number; total: number } {
+    const total = this.definitions.length;
+    const enabled = this.definitions.filter((entry) => entry.enabled).length;
+    return { enabled, total };
+  }
+
   soonestEnabled(): RecurringDefinitionEntry | null {
     const enabled = this.definitions.filter((entry) => entry.enabled);
     if (enabled.length === 0) return null;
@@ -41,6 +55,11 @@ export class RecurringStore {
     if (entry.manuscript_id) return entry.manuscript_id;
     if (entry.prompt_excerpt) return entry.prompt_excerpt;
     return entry.recurring_id;
+  }
+
+  originFor(entry: RecurringDefinitionEntry): string {
+    if (entry.manuscript_id) return "Skill";
+    return "Manual";
   }
 
   formatNextRun(value: string): string {
@@ -64,7 +83,9 @@ export class RecurringStore {
         cron_expr: request.cron_expr,
         manuscript_id: request.manuscript_id,
         timezone: request.timezone ?? "UTC",
-        execution_mode: request.execution_mode ?? (request.manuscript_id ? "agent_turn" : "prompt"),
+        execution_mode:
+          request.execution_mode ??
+          (request.manuscript_id ? "agent_turn" : "prompt"),
         model_hint: request.model_hint,
         policy_profile: "scheduled",
         enabled: true,
@@ -79,6 +100,39 @@ export class RecurringStore {
       throw err;
     } finally {
       this.registering = false;
+    }
+  }
+
+  async setEnabled(recurringId: string, enabled: boolean) {
+    this.updatingId = recurringId;
+    try {
+      await updateRecurring(recurringId, { enabled });
+      await this.refresh();
+    } finally {
+      this.updatingId = null;
+    }
+  }
+
+  async updateCron(
+    recurringId: string,
+    patch: Pick<UpdateRecurringRequest, "cron_expr" | "timezone">,
+  ) {
+    this.updatingId = recurringId;
+    try {
+      await updateRecurring(recurringId, patch);
+      await this.refresh();
+    } finally {
+      this.updatingId = null;
+    }
+  }
+
+  async remove(recurringId: string) {
+    this.deletingId = recurringId;
+    try {
+      await deleteRecurring(recurringId);
+      await this.refresh();
+    } finally {
+      this.deletingId = null;
     }
   }
 }

@@ -9,9 +9,10 @@
   interface Props {
     visible: boolean;
     inMotionCount: number;
+    onOpenCron?: () => void;
   }
 
-  let { visible, inMotionCount }: Props = $props();
+  let { visible, inMotionCount, onOpenCron }: Props = $props();
 
   let draftProvider = $state(runtime.provider);
   let draftModel = $state(runtime.model);
@@ -169,58 +170,23 @@
         <p class="workshop-muted">No stats yet — refresh to poll the daemon.</p>
       {/if}
     {:else if runtime.activeTab === "schedule"}
-      {#if recurring.loading}
-        <p class="workshop-muted">Loading schedules…</p>
-      {:else if recurring.error}
-        <p class="workshop-faint text-warning-400">{recurring.error}</p>
-      {:else if recurring.definitions.length === 0}
-        <p class="workshop-muted">
-          No recurring schedules yet. Schedule a skill from Skills or register via chat.
+      <div class="space-y-3">
+        <p class="workshop-muted text-sm">
+          Cron jobs live in the dedicated Cron workspace — search, pause, and create from one list.
         </p>
-      {:else}
-        <ul class="space-y-3">
-          {#each recurring.definitions as entry (entry.recurring_id)}
-            <li class="workshop-inset p-4">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="font-medium text-surface-100">
-                    {recurring.labelFor(entry)}
-                  </p>
-                  <p class="workshop-faint mt-1 font-mono">
-                    {entry.cron_expr} · {entry.timezone}
-                  </p>
-                  {#if entry.prompt_excerpt && entry.manuscript_id}
-                    <p class="workshop-faint mt-2">{entry.prompt_excerpt}</p>
-                  {/if}
-                </div>
-                <span
-                  class="workshop-faint shrink-0 {entry.enabled
-                    ? 'text-primary-300'
-                    : ''}"
-                >
-                  {entry.enabled ? "on" : "paused"}
-                </span>
-              </div>
-              <dl class="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <dt class="workshop-label">Next run</dt>
-                  <dd class="mt-0.5 text-surface-200">
-                    {recurring.formatNextRun(entry.next_run_at_utc)}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="workshop-label">Last run</dt>
-                  <dd class="mt-0.5 text-surface-200">
-                    {entry.last_run_at_utc
-                      ? recurring.formatNextRun(entry.last_run_at_utc)
-                      : "—"}
-                  </dd>
-                </div>
-              </dl>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+        <p class="workshop-faint">
+          {recurring.activeCount().enabled}/{recurring.activeCount().total} active
+        </p>
+        {#if onOpenCron}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-primary"
+            onclick={onOpenCron}
+          >
+            Open Cron jobs
+          </button>
+        {/if}
+      </div>
     {:else if runtime.activeTab === "delivery"}
       <div class="space-y-4">
         {#if runtime.delivery}

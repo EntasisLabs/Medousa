@@ -5,18 +5,24 @@
     health: DaemonHealth | null;
     inMotionCount: number;
     needsAttentionCount: number;
+    cronActiveCount?: number;
+    cronTotalCount?: number;
     pendingDeliveries?: number | null;
     lastTickAt?: string | null;
     onOpenRuntime?: () => void;
+    onOpenCron?: () => void;
   }
 
   let {
     health,
     inMotionCount,
     needsAttentionCount,
+    cronActiveCount = 0,
+    cronTotalCount = 0,
     pendingDeliveries = null,
     lastTickAt = null,
     onOpenRuntime,
+    onOpenCron,
   }: Props = $props();
 
   const statusLabel = $derived(
@@ -46,6 +52,17 @@
   </span>
 
   <div class="flex shrink-0 items-center gap-3">
+    {#if onOpenCron}
+      <button
+        type="button"
+        class="text-surface-300 transition hover:text-primary-300"
+        onclick={onOpenCron}
+      >
+        {cronActiveCount} cron active
+      </button>
+    {:else if cronTotalCount > 0}
+      <span>{cronActiveCount} cron active</span>
+    {/if}
     {#if deliveryLabel}
       <span class={pendingDeliveries && pendingDeliveries > 0 ? "text-warning-400" : ""}>
         {deliveryLabel}
