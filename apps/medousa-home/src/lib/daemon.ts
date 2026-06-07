@@ -279,13 +279,34 @@ export async function getJobResult(jobId: string): Promise<JobResultResponse> {
   return invoke<JobResultResponse>("job_get_result", { jobId });
 }
 
+export interface EnqueueDaemonAskRequest {
+  prompt: string;
+  modelHint?: string;
+  manuscriptId?: string;
+  additionalManuscriptIds?: string[];
+  suggestedCapabilityIds?: string[];
+}
+
 export async function enqueueDaemonAsk(
-  prompt: string,
+  request: EnqueueDaemonAskRequest | string,
   modelHint?: string,
 ): Promise<EnqueueResponse> {
+  if (typeof request === "string") {
+    return invoke<EnqueueResponse>("job_enqueue_ask", {
+      prompt: request,
+      modelHint,
+      manuscriptId: null,
+      additionalManuscriptIds: null,
+      suggestedCapabilityIds: null,
+    });
+  }
+
   return invoke<EnqueueResponse>("job_enqueue_ask", {
-    prompt,
-    modelHint,
+    prompt: request.prompt,
+    modelHint: request.modelHint,
+    manuscriptId: request.manuscriptId ?? null,
+    additionalManuscriptIds: request.additionalManuscriptIds ?? null,
+    suggestedCapabilityIds: request.suggestedCapabilityIds ?? null,
   });
 }
 

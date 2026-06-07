@@ -1,5 +1,6 @@
 import {
   cancelWorkspaceCard,
+  enqueueDaemonAsk,
   getWorkspaceCard,
   retryWorkspaceCard,
 } from "$lib/daemon";
@@ -7,6 +8,7 @@ import type { BlockedGroup } from "$lib/utils/groupWork";
 import { notifyCardDone } from "$lib/notifications";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { SwimlaneMode, WorkView } from "$lib/types/work";
+import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
 import type {
   WorkCard,
   WorkspaceEvent,
@@ -23,6 +25,10 @@ export class WorkspaceStore {
   selectedCardDetail = $state<WorkCardDetail | null>(null);
   cardDetailError = $state<string | null>(null);
   cardActionMessage = $state<string | null>(null);
+  askSubmitting = $state(false);
+  askError = $state<string | null>(null);
+  askMessage = $state<string | null>(null);
+  pendingFocusJobId = $state<string | null>(null);
   cardDetailsCache = $state<Map<string, WorkCardDetail>>(new Map());
   swimlane = $state<SwimlaneMode>("none");
   showDone = $state(false);
@@ -94,11 +100,44 @@ export class WorkspaceStore {
       this.cards = [...this.cards, card];
     }
 
-    if (this.selectedCardId === card.id) {
+    if (this.pendingFocusJobId && card.id === this.pendingFocusJobId) {
+      this.pendingFocusJobId = null;
+      void this.selectCard(card.id);
+    } else if (this.selectedCardId === card.id) {
       void this.refreshSelectedCard();
     }
 
     void this.cacheCardDetail(card.id);
+  }
+
+  async submitAsk(request: EnqueueAskJobRequest) {
+    const trimmed = request.prompt.trim();
+    const hasSkills =
+      Boolean(request.manuscriptId) ||
+      (request.additionalManuscriptIds?.length ?? 0) > 0;
+    if ((!trimmed && !hasSkills) || this.askSubmitting) return;
+
+    this.askSubmitting = true;
+    this.askError = null;
+    this.askMessage = null;
+
+    try {
+      const accepted = await enqueueDaemonAsk({
+        prompt: request.prompt,
+        modelHint: request.modelHint,
+        manuscriptId: request.manuscriptId,
+        additionalManuscriptIds: request.additionalManuscriptIds,
+        suggestedCapabilityIds: request.suggestedCapabilityIds,
+      });
+      this.pendingFocusJobId = accepted.job_id;
+      this.askMessage = `Queued · job ${accepted.job_id}`;
+      await this.selectCard(accepted.job_id);
+    } catch (err) {
+      this.askError = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      this.askSubmitting = false;
+    }
   }
 
   setError(message: string) {

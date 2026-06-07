@@ -205,6 +205,8 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             max_tool_rounds: payload.max_tool_rounds,
             retry_runtime_max_rounds: None,
             manuscript_id: manuscript_id.clone(),
+            additional_manuscript_ids: None,
+            suggested_capability_ids: None,
             scheduled_tool_allowlist: if payload.scheduled_tool_allowlist.is_empty() {
                 None
             } else {

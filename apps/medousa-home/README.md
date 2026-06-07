@@ -20,6 +20,8 @@ npm run tauri dev
 
 If Vite reports `Failed to resolve import "@tauri-apps/plugin-notification"`, run `npm install` again in this directory and restart the dev server.
 
+On Linux, you may see `libayatana-appindicator is deprecated` once at startup when the tray icon loads. That comes from Tauri’s tray stack (`tray-icon` → libappindicator), not Medousa Home code; it is harmless until upstream migrates to `libayatana-appindicator-glib` ([tauri-apps/tray-icon#260](https://github.com/tauri-apps/tray-icon/issues/260)).
+
 ## Surfaces
 
 ### M0

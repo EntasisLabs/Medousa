@@ -45,6 +45,7 @@ pub use continuation::{
 pub use prompt_prep::{
     CheapRecallProbe, ContextPackQuality, IdentityContextProbe, RecallSnippet,
     append_identity_context_hint, append_manuscript_hint, append_memory_recall_hint,
+    append_suggested_capabilities_hint,
     channel_policy_probe,
     cheap_memory_recall_probe, compile_interactive_context_prompt, derive_recall_readiness,
     identity_context_probe,

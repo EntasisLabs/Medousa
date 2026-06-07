@@ -26,7 +26,8 @@ use super::continuation::{
 };
 use super::prompt_prep::{
     CheapRecallProbe, IdentityContextProbe, append_identity_context_hint,
-    append_manuscript_hint, append_memory_recall_hint, cheap_memory_recall_probe,
+    append_manuscript_hint, append_memory_recall_hint, append_suggested_capabilities_hint,
+    cheap_memory_recall_probe,
     compile_interactive_context_prompt,
     channel_policy_probe, derive_recall_readiness, identity_context_probe,
     resolve_prompt_with_context_pack,
@@ -110,6 +111,8 @@ pub struct PrepareTurnPromptParams<'a> {
     pub surface: Option<&'a TurnSurfaceContext>,
     pub tui_rt: &'a TuiRuntime,
     pub manuscript_id: Option<&'a str>,
+    pub additional_manuscript_ids: Option<&'a [String]>,
+    pub suggested_capability_ids: Option<&'a [String]>,
 }
 
 pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> PreparedTurnPrompt {
@@ -144,6 +147,23 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
 
     resolved_prompt = append_memory_recall_hint(&resolved_prompt, &recall_probe);
     resolved_prompt = append_manuscript_hint(&resolved_prompt, manuscript_ctx.as_ref());
+    if let Some(ids) = params.additional_manuscript_ids {
+        for id in ids {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if Some(trimmed) == params.manuscript_id {
+                continue;
+            }
+            if let Ok(ctx) = crate::identity_manuscript::build_manuscript_context(trimmed) {
+                resolved_prompt = append_manuscript_hint(&resolved_prompt, Some(&ctx));
+            }
+        }
+    }
+    if let Some(ids) = params.suggested_capability_ids {
+        resolved_prompt = append_suggested_capabilities_hint(&resolved_prompt, ids);
+    }
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
     let recall_readiness = derive_recall_readiness(
         verification_state,

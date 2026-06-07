@@ -1051,13 +1051,59 @@ async fn get_job_report(
     }))
 }
 
+fn normalize_ask_manuscript_ids(
+    primary: Option<&str>,
+    additional: Option<&[String]>,
+) -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Some(id) = primary.map(str::trim).filter(|value| !value.is_empty()) {
+        ids.push(id.to_string());
+    }
+    if let Some(more) = additional {
+        for id in more {
+            let trimmed = id.trim();
+            if trimmed.is_empty() || ids.iter().any(|existing| existing == trimmed) {
+                continue;
+            }
+            ids.push(trimmed.to_string());
+        }
+    }
+    ids
+}
+
+fn normalize_ask_capability_ids(ids: Option<Vec<String>>) -> Vec<String> {
+    ids.unwrap_or_default()
+        .into_iter()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect()
+}
+
+fn resolve_enqueue_ask_prompt(prompt: &str, manuscript_ids: &[String]) -> Result<String, String> {
+    let trimmed = prompt.trim();
+    if !trimmed.is_empty() {
+        return Ok(trimmed.to_string());
+    }
+    let primary = manuscript_ids
+        .first()
+        .ok_or_else(|| "prompt is required".to_string())?;
+    let ctx = medousa::identity_manuscript::build_manuscript_context(primary)
+        .map_err(|err| err.to_string())?;
+    medousa::identity_manuscript::render_manuscript_task_prompt(&ctx, None)
+        .map_err(|err| err.to_string())
+}
+
 async fn enqueue_ask(
     State(state): State<AppState>,
     Json(request): Json<EnqueueAskRequest>,
 ) -> Result<Json<EnqueueResponse>, (StatusCode, String)> {
-    if request.prompt.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
-    }
+    let manuscript_ids = normalize_ask_manuscript_ids(
+        request.manuscript_id.as_deref(),
+        request.additional_manuscript_ids.as_deref(),
+    );
+    let suggested_capability_ids = normalize_ask_capability_ids(request.suggested_capability_ids);
+    let prompt = resolve_enqueue_ask_prompt(&request.prompt, &manuscript_ids)
+        .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
 
     enforce_lane_safety(
         EngineExecutionLane::Interactive,
@@ -1083,15 +1129,29 @@ async fn enqueue_ask(
     let session_id = format!("daemon-api:{}", identity_context.user_id);
     let (provider, model) =
         resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
+    let manuscript_id = manuscript_ids.first().cloned();
+    let additional_manuscript_ids = if manuscript_ids.len() > 1 {
+        Some(manuscript_ids.into_iter().skip(1).collect())
+    } else {
+        None
+    };
+    let suggested_capability_ids = if suggested_capability_ids.is_empty() {
+        None
+    } else {
+        Some(suggested_capability_ids)
+    };
 
     spawn_daemon_api_agent_turn(
         &state,
         job_id.clone(),
         session_id,
-        request.prompt,
+        prompt,
         state.default_runtime_config.response_depth_mode.clone(),
         provider,
         model,
+        manuscript_id,
+        additional_manuscript_ids,
+        suggested_capability_ids,
     )
     .await;
 
@@ -1144,6 +1204,9 @@ async fn enqueue_report(
         state.default_runtime_config.response_depth_mode.clone(),
         provider,
         model,
+        None,
+        None,
+        None,
     )
     .await;
 
@@ -2679,6 +2742,8 @@ async fn spawn_continuation_agent_turn(
         &record.response_depth_mode,
         None,
         None,
+        None,
+        None,
     );
     interactive_request.persist_user_turn = false;
 
@@ -2751,6 +2816,9 @@ async fn spawn_continuation_agent_turn(
         record.provider.clone(),
         record.model.clone(),
         continuation_scope,
+        interactive_request.manuscript_id.clone(),
+        interactive_request.additional_manuscript_ids.clone(),
+        interactive_request.suggested_capability_ids.clone(),
     )
     .await;
 }
@@ -2763,6 +2831,9 @@ async fn spawn_daemon_api_agent_turn(
     response_depth_mode: String,
     provider: String,
     model: String,
+    manuscript_id: Option<String>,
+    additional_manuscript_ids: Option<Vec<String>>,
+    suggested_capability_ids: Option<Vec<String>>,
 ) {
     let continuation_scope = medousa::turn_continuation::TurnContinuationScope {
         turn_correlation_id: job_id.clone(),
@@ -2782,6 +2853,9 @@ async fn spawn_daemon_api_agent_turn(
         provider,
         model,
         continuation_scope,
+        manuscript_id,
+        additional_manuscript_ids,
+        suggested_capability_ids,
     )
     .await;
 }
@@ -2795,6 +2869,9 @@ async fn spawn_daemon_api_agent_turn_with_scope(
     provider: String,
     model: String,
     continuation_scope: medousa::turn_continuation::TurnContinuationScope,
+    manuscript_id: Option<String>,
+    additional_manuscript_ids: Option<Vec<String>>,
+    suggested_capability_ids: Option<Vec<String>>,
 ) {
     state.agent_turn_jobs.write().await.insert(
         job_id.clone(),
@@ -2808,7 +2885,9 @@ async fn spawn_daemon_api_agent_turn_with_scope(
         &model,
         &response_depth_mode,
         None,
-        None,
+        manuscript_id,
+        additional_manuscript_ids,
+        suggested_capability_ids,
     );
 
     let agent_runtime = state.platform.agent_handle();
@@ -3189,6 +3268,8 @@ async fn start_ingest_ask_stream(
         &runtime_config.response_depth_mode,
         Some(request),
         manuscript_id,
+        None,
+        None,
     );
 
     let stream_id = format!("ingest-{}", Uuid::new_v4().simple());

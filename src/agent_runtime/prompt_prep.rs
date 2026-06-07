@@ -337,6 +337,16 @@ pub fn append_memory_recall_hint(prompt: &str, recall: &CheapRecallProbe) -> Str
     )
 }
 
+pub fn append_suggested_capabilities_hint(prompt: &str, capability_ids: &[String]) -> String {
+    if capability_ids.is_empty() {
+        return prompt.to_string();
+    }
+    let ids = capability_ids.join(", ");
+    format!(
+        "{prompt}\n\n[MEDOUSA_SUGGESTED_CAPABILITIES]\nids={ids}\nPrefer cognition_capability_resolve and cognition_capability_invoke with these capability ids when the task needs them."
+    )
+}
+
 pub fn append_manuscript_hint(prompt: &str, manuscript: Option<&ManuscriptContext>) -> String {
     let Some(manuscript) = manuscript else {
         return prompt.to_string();

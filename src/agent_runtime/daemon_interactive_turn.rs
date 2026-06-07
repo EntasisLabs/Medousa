@@ -343,6 +343,15 @@ async fn run_agent_turn_inner(
         }
     }
 
+    let additional_manuscript_ids = request
+        .additional_manuscript_ids
+        .as_deref()
+        .filter(|ids| !ids.is_empty());
+    let suggested_capability_ids = request
+        .suggested_capability_ids
+        .as_deref()
+        .filter(|ids| !ids.is_empty());
+
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &session_id,
         prompt: &prompt,
@@ -354,6 +363,8 @@ async fn run_agent_turn_inner(
         surface: request.surface.as_ref(),
         tui_rt: agent_rt,
         manuscript_id,
+        additional_manuscript_ids,
+        suggested_capability_ids,
     })
     .await;
 

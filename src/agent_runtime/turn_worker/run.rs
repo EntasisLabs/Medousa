@@ -680,6 +680,8 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         max_tool_rounds: None,
         retry_runtime_max_rounds: None,
         manuscript_id: None,
+        additional_manuscript_ids: None,
+        suggested_capability_ids: None,
         scheduled_tool_allowlist: None,
     };
     let mut settings = runtime_settings_for_interactive_turn("worker", &request);

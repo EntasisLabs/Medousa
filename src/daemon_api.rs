@@ -46,6 +46,15 @@ pub struct EnqueueAskRequest {
     pub identity_user_id: Option<String>,
     pub identity_persona_id: Option<String>,
     pub identity_channel_id: Option<String>,
+    /// Primary YAML manuscript specialty for the ask turn.
+    #[serde(default)]
+    pub manuscript_id: Option<String>,
+    /// Extra manuscript specialties beyond `manuscript_id`.
+    #[serde(default)]
+    pub additional_manuscript_ids: Option<Vec<String>>,
+    /// Capability catalog ids the operator suggests for this ask.
+    #[serde(default)]
+    pub suggested_capability_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -484,6 +493,10 @@ pub struct InteractiveTurnRequest {
     /// YAML manuscript specialty for ranked digest + scheduled tool allowlist.
     #[serde(default)]
     pub manuscript_id: Option<String>,
+    #[serde(default)]
+    pub additional_manuscript_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub suggested_capability_ids: Option<Vec<String>>,
     #[serde(default)]
     pub scheduled_tool_allowlist: Option<Vec<String>>,
 }

@@ -522,6 +522,8 @@ pub fn build_interactive_turn_request_for_ingest(
     response_depth_mode: &str,
     ingest: Option<&IngestRequest>,
     manuscript_id: Option<String>,
+    additional_manuscript_ids: Option<Vec<String>>,
+    suggested_capability_ids: Option<Vec<String>>,
 ) -> InteractiveTurnRequest {
     let defaults = crate::session::load_tui_defaults();
     let surface = ingest.map(|request| {
@@ -553,6 +555,8 @@ pub fn build_interactive_turn_request_for_ingest(
                 .unwrap_or(crate::agent_runtime::turn_orchestrator::DEFAULT_RETRY_RUNTIME_MAX_ROUNDS),
         ),
         manuscript_id,
+        additional_manuscript_ids,
+        suggested_capability_ids,
         scheduled_tool_allowlist: None,
     }
 }

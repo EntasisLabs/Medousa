@@ -94,7 +94,7 @@
       <div class="absolute inset-0 flex items-center justify-center">
         <EmptyState
           title="Nothing in motion"
-          description="When work starts, cards land here — backlog, in flight, and wrapping up."
+          description="Queue a new ask below, or use /ask in Chat — cards land in backlog, in flight, and wrapping up."
         />
       </div>
     {/if}

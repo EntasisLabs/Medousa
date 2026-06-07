@@ -30,6 +30,9 @@ pub async fn job_enqueue_ask(
     state: State<'_, DaemonState>,
     prompt: String,
     model_hint: Option<String>,
+    manuscript_id: Option<String>,
+    additional_manuscript_ids: Option<Vec<String>>,
+    suggested_capability_ids: Option<Vec<String>>,
 ) -> Result<EnqueueResponse, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let request = EnqueueAskRequest {
@@ -40,6 +43,9 @@ pub async fn job_enqueue_ask(
         identity_user_id: None,
         identity_persona_id: None,
         identity_channel_id: None,
+        manuscript_id,
+        additional_manuscript_ids,
+        suggested_capability_ids,
     };
     let client = Client::new();
     let response = client

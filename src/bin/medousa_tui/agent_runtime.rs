@@ -278,6 +278,8 @@ pub(crate) async fn start_prompt_run(
         surface: Some(&tui_surface),
         tui_rt,
         manuscript_id: None,
+        additional_manuscript_ids: None,
+        suggested_capability_ids: None,
     })
     .await;
 
@@ -568,6 +570,8 @@ async fn attempt_daemon_interactive_turn(
             medousa::agent_runtime::ROUND_LIMIT_MAX,
         )),
         manuscript_id: None,
+        additional_manuscript_ids: None,
+        suggested_capability_ids: None,
         scheduled_tool_allowlist: None,
     };
 
