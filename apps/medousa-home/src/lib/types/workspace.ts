@@ -21,6 +21,10 @@ export interface WorkspaceEvent {
   actor: string;
   summary: string;
   refs: { ref_type: string; ref_id: string }[];
+  detail_line?: string | null;
+  context_line?: string | null;
+  intent?: string | null;
+  tool_names?: string[];
 }
 
 export interface WorkspaceSnapshot {

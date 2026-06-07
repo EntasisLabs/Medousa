@@ -741,6 +741,8 @@ pub struct WorkCardDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_excerpt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_line: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_names: Option<Vec<String>>,
     #[serde(default)]
     pub associations: WorkCardAssociations,
@@ -790,6 +792,18 @@ pub struct WorkspaceEvent {
     pub summary: String,
     #[serde(default)]
     pub refs: Vec<WorkspaceEventRef>,
+    /// Operator-facing task label (full prompt when user_ack is a slug).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail_line: Option<String>,
+    /// Secondary context: intent, tools, wrapping-up reasons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_line: Option<String>,
+    /// Worker intent or job family at emit time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    /// Tools invoked on the work card when the event was emitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

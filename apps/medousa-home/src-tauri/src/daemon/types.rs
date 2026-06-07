@@ -29,6 +29,14 @@ pub struct WorkspaceEvent {
     pub summary: String,
     #[serde(default)]
     pub refs: Vec<WorkspaceEventRef>,
+    #[serde(default)]
+    pub detail_line: Option<String>,
+    #[serde(default)]
+    pub context_line: Option<String>,
+    #[serde(default)]
+    pub intent: Option<String>,
+    #[serde(default)]
+    pub tool_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +290,8 @@ pub struct WorkCardDetail {
     pub error: Option<String>,
     #[serde(default)]
     pub result_excerpt: Option<String>,
+    #[serde(default)]
+    pub task_line: Option<String>,
     #[serde(default)]
     pub tool_names: Option<Vec<String>>,
     #[serde(default)]

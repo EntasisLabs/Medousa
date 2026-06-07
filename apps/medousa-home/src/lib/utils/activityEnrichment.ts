@@ -106,8 +106,17 @@ export function formatActivityTools(
 
 export function resolveTaskTitle(
   enrichment: ActivityEnrichment,
+  detailLine?: string | null,
 ): string {
+  if (detailLine?.trim()) return detailLine.trim();
+
   const { card, detail } = enrichment;
+  if (detail?.task_line?.trim()) {
+    const task = detail.task_line.trim();
+    const title = card ? formatCardTitle(card).trim() : "";
+    if (!title || isSlugLikeTitle(title)) return task;
+  }
+
   if (card) {
     const title = formatCardTitle(card).trim();
     if (title && !isSlugLikeTitle(title)) return title;
@@ -139,9 +148,14 @@ export function buildActivityContext(
   event: WorkspaceEvent,
   enrichment: ActivityEnrichment,
 ): string {
+  if (event.context_line?.trim()) return event.context_line.trim();
+
   const { detail } = enrichment;
   const parts: string[] = [];
-  const taskTitle = resolveTaskTitle(enrichment).toLowerCase();
+  const taskTitle = resolveTaskTitle(
+    enrichment,
+    event.detail_line,
+  ).toLowerCase();
 
   if (detail?.kind === "turn_worker") {
     const intent = formatWorkerIntent(detail.subtitle);

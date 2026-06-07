@@ -33,7 +33,7 @@ impl WorkspaceService {
             let previous = store.previous_column(&item.card.id.0);
             if previous != Some(item.card.column) {
                 if let Some(event) =
-                    event_for_column_transition(&item.card, previous, item.card.column)
+                    event_for_column_transition(&item.detail, previous, item.card.column)
                 {
                     store.append_event(event);
                 }

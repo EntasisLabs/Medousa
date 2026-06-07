@@ -154,13 +154,18 @@ fn append_vault_feed_event(path: &str, title: &str) {
         ref_type: "vault_path".to_string(),
         ref_id: path.to_string(),
     });
+    let detail_line = title.trim().to_string();
     let event = crate::daemon_api::WorkspaceEvent {
         id: crate::workspace::event::new_event_id(),
         timestamp_utc: chrono::Utc::now(),
         kind: crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated,
         actor: crate::daemon_api::WorkspaceEventActor::Operator,
-        summary: format!("Vault updated — {title}"),
+        summary: format!("Vault updated — {detail_line}"),
         refs,
+        detail_line: Some(detail_line),
+        context_line: Some(path.to_string()),
+        intent: None,
+        tool_names: Vec::new(),
     };
     workspace_store().append_event(event);
 }

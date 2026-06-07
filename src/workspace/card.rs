@@ -129,6 +129,7 @@ pub fn project_ask_job(record: &AskJobRecord, include_terminal: bool) -> Option<
         terminal,
         error: record.error.clone(),
         result_excerpt,
+        task_line: Some(truncate_line(&record.prompt, 500)),
         tool_names: None,
         associations: workspace_store().associations(&record.job_id),
     };
@@ -198,6 +199,7 @@ pub fn project_turn_worker(
             .result_text
             .as_deref()
             .map(|text| truncate_line(text, 500)),
+        task_line: Some(truncate_line(&record.task_prompt, 500)),
         tool_names: if record.tool_names.is_empty() {
             None
         } else {
@@ -238,6 +240,18 @@ pub fn project_job(job: &Job, include_terminal: bool) -> Option<ProjectedWorkIte
         .get("user_ack")
         .and_then(|value| value.as_str())
         .map(str::to_string);
+    let task_line = user_ack
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| truncate_line(value, 500))
+        .or_else(|| {
+            payload
+                .get("prompt")
+                .or_else(|| payload.get("task"))
+                .and_then(|value| value.as_str())
+                .map(|value| truncate_line(value, 500))
+        });
 
     let detail = WorkCardDetail {
         card: card.clone(),
@@ -254,6 +268,7 @@ pub fn project_job(job: &Job, include_terminal: bool) -> Option<ProjectedWorkIte
         terminal,
         error: job.last_error.clone(),
         result_excerpt: None,
+        task_line,
         tool_names: None,
         associations: workspace_store().associations(&job.id),
     };

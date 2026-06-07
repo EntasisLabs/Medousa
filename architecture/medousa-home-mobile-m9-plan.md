@@ -85,3 +85,4 @@ M9a–M9c ship together in this pass.
 | 2026-06-07 | M9 shipped — Pulse rewrite, chrome cuts, You sections, human copy |
 | 2026-06-07 | Activity feed polish — timeline cards, tone icons, human summaries |
 | 2026-06-07 | Activity enrichment slice 1 — client join via card refs + detail cache |
+| 2026-06-07 | Activity enrichment slice 3 — structured WorkspaceEvent metadata at emit |

@@ -47,13 +47,46 @@ function humanizeVaultPath(path: string): string {
   return name.replace(/\.md$/i, "").replaceAll("-", " ");
 }
 
+function summaryForDetailLine(kind: string, detailLine: string): string {
+  switch (kind) {
+    case "job_succeeded":
+    case "work_completed":
+      return `Finished ${detailLine}`;
+    case "work_delegated":
+      return `Handed off — ${detailLine}`;
+    case "job_started":
+      return `Started ${detailLine}`;
+    case "job_enqueued":
+      return `Queued ${detailLine}`;
+    case "job_failed":
+      return `Failed on ${detailLine}`;
+    case "work_wrapping_up":
+      return `Wrapping up ${detailLine}`;
+    case "work_unblocked":
+      return `Ready for you — ${detailLine}`;
+    case "vault_note_updated":
+      return `Linked ${detailLine}`;
+    default:
+      return detailLine;
+  }
+}
+
+function presentationFromServer(event: WorkspaceEvent): string | null {
+  const detailLine = event.detail_line?.trim();
+  if (!detailLine) return null;
+  return summaryForDetailLine(event.kind, detailLine);
+}
+
 function enrichedSummary(
   event: WorkspaceEvent,
   enrichment?: ActivityEnrichment,
 ): string | null {
+  const server = presentationFromServer(event);
+  if (server) return server;
+
   if (!enrichment?.card && !enrichment?.detail) return null;
 
-  const taskTitle = resolveTaskTitle(enrichment);
+  const taskTitle = resolveTaskTitle(enrichment, event.detail_line);
 
   if (event.kind === "vault_note_updated") {
     const vaultPath = vaultRefPath(event);
@@ -137,9 +170,7 @@ export function presentActivityEvent(
 ): ActivityPresentation {
   const summary =
     enrichedSummary(event, enrichment) ?? humanizeSummary(event);
-  const context = enrichment
-    ? buildActivityContext(event, enrichment).trim()
-    : "";
+  const context = buildActivityContext(event, enrichment ?? {}).trim();
 
   return {
     label: formatWorkspaceEventKind(event.kind),

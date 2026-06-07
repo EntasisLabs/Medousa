@@ -21,6 +21,7 @@ export interface WorkCardDetail {
   terminal: boolean;
   error?: string | null;
   result_excerpt?: string | null;
+  task_line?: string | null;
   tool_names?: string[] | null;
   associations: WorkCardAssociations;
 }
