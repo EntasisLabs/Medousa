@@ -16,6 +16,8 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { ensureNotificationPermission } from "$lib/notifications";
+  import { setMobileBadge } from "$lib/mobileBadge";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import {
     connectWorkshop,
@@ -26,11 +28,15 @@
   let daemonHealth = $state<DaemonHealth | null>(null);
 
   $effect(() => {
-    if (!isTauri()) return;
-    void updateTrayBlockedCount(workspace.blockedCount());
+    const blocked = workspace.blockedCount();
+    void setMobileBadge(blocked);
+    if (isTauri()) {
+      void updateTrayBlockedCount(blocked);
+    }
   });
 
   onMount(() => {
+    void ensureNotificationPermission();
     return connectWorkshop({
       onHealthChange: (health) => {
         daemonHealth = health;

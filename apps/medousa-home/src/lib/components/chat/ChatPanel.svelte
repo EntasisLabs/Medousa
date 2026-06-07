@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -63,6 +64,7 @@
     event.preventDefault();
     const prompt = chat.draft.trim();
     if (!prompt || chat.isStreaming) return;
+    if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
     chat.draft = "";

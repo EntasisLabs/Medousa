@@ -20,6 +20,8 @@
     filterCardTimeline,
     formatWorkspaceEventKind,
   } from "$lib/utils/cardTimeline";
+  import { haptic } from "$lib/haptics";
+  import { shareWorkResult } from "$lib/share";
   import { formatToolName } from "$lib/utils/formatTurn";
 
   interface Props {
@@ -38,6 +40,26 @@
   let artifactPreviews = $state<ArtifactPreview[]>([]);
   let artifactsLoading = $state(false);
   let actionBusy = $state(false);
+  let shareMessage = $state<string | null>(null);
+
+  async function shareResult() {
+    if (!detail?.job_id || !jobResult?.output_text) return;
+    shareMessage = null;
+    const outcome = await shareWorkResult(
+      formatCardTitle(detail.card),
+      jobResult.output_text,
+      detail.job_id,
+    );
+    if (outcome === "shared") {
+      haptic("success");
+      shareMessage = "Shared";
+    } else if (outcome === "copied") {
+      haptic("light");
+      shareMessage = "Copied to clipboard";
+    } else {
+      shareMessage = "Could not share";
+    }
+  }
 
   function handleClose() {
     if (onClose) {
@@ -373,12 +395,26 @@
         <div class="workshop-inset p-4">
           <div class="flex items-center justify-between gap-3">
             <p class="workshop-label">Job result</p>
-            {#if jobResult}
-              <span class="workshop-faint font-mono">
-                {jobResult.status}{#if jobResult.is_terminal} · terminal{/if}
-              </span>
-            {/if}
+            <div class="flex items-center gap-2">
+              {#if jobResult?.output_text}
+                <button
+                  type="button"
+                  class="btn btn-sm variant-ghost-surface"
+                  onclick={() => void shareResult()}
+                >
+                  Share
+                </button>
+              {/if}
+              {#if jobResult}
+                <span class="workshop-faint font-mono">
+                  {jobResult.status}{#if jobResult.is_terminal} · terminal{/if}
+                </span>
+              {/if}
+            </div>
           </div>
+          {#if shareMessage}
+            <p class="workshop-faint mt-1 text-xs">{shareMessage}</p>
+          {/if}
           {#if jobResultLoading}
             <p class="workshop-faint mt-2">Loading job output…</p>
           {:else if jobResultError}

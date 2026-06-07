@@ -1,6 +1,6 @@
 # Medousa Home — Mobile Plan (M8)
 
-> **Status:** In progress — M8a shell shipped in repo  
+> **Status:** M8 complete (M8a–M8e shipped in repo)  
 > **Date:** 2026-05-30  
 > **Related:** [medousa-home-tauri-design.md](medousa-home-tauri-design.md), [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md)
 
@@ -159,3 +159,4 @@ Detection: `max-width: 768px` media query (+ Tauri mobile builds). `AppShell` pi
 | 2026-05-30 | M8b shipped — `AskSheet`, pull-to-refresh, swipe-cancel, session sheet |
 | 2026-05-30 | M8c shipped — mobile chat frame, phase strip, identity sheet |
 | 2026-05-30 | M8d shipped — You hub polish, stack drill-downs, simplified settings |
+| 2026-05-30 | M8e shipped — push taps, haptics, share sheet, `medousa://work/{id}` deep links |

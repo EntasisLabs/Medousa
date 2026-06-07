@@ -93,13 +93,13 @@ export class WorkspaceStore {
     const previous = this.previousColumns.get(card.id);
     if (previous !== "done" && card.column === "done") {
       if (isAskJobId(card.id)) {
-        void notifyAskComplete(card.title);
+        void notifyAskComplete(card.title, card.id);
         this.pendingAskCompletion = {
           jobId: card.id,
           title: card.title,
         };
       } else {
-        void notifyCardDone(card.title, card.status_label);
+        void notifyCardDone(card.title, card.status_label, card.id);
       }
     }
     this.previousColumns.set(card.id, card.column);

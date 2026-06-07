@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Activity, LayoutGrid, MessageCircle, User } from "@lucide/svelte";
+  import { haptic } from "$lib/haptics";
   import { layout } from "$lib/stores/layout.svelte";
   import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
   import type { Component } from "svelte";
@@ -22,6 +23,7 @@
       class="mobile-tab-btn {layout.mobileTab === tab.id ? 'mobile-tab-btn-active' : ''}"
       aria-current={layout.mobileTab === tab.id ? "page" : undefined}
       onclick={() => {
+        haptic("light");
         layout.setMobileTab(tab.id);
         if (tab.id === "you") {
           layout.backToYouHub();

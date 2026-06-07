@@ -15,7 +15,7 @@ Mobile: [`../../architecture/medousa-home-mobile-plan.md`](../../architecture/me
 
 ```bash
 cd apps/medousa-home
-npm install   # required — includes @tauri-apps/plugin-notification (M2 done toasts)
+npm install   # required — includes @tauri-apps/plugin-notification (M2/M8e)
 npm run tauri dev
 ```
 
@@ -52,5 +52,9 @@ At viewport **≤768px** (or resize your devtools), Home switches to the **mobil
 - **Work** — vertical timeline (not kanban)
 - **Chat** — same turn SSE, thumb-friendly frame
 - **You** — Notes, Skills, Schedule, Channels, Settings, Workshop health
+
+**M8e native touches:** notification tap opens the work card (`medousa://work/{id}`), blocked-count app badge, haptics on key gestures, OS share sheet on job results.
+
+Deep link dev (browser): `http://localhost:1420/?work=<card-id>`. Tauri desktop: `xdg-open 'medousa://work/<card-id>'`.
 
 Desktop layout is unchanged above the breakpoint.

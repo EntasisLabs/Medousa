@@ -3,6 +3,7 @@
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import MobileWorkCard from "$lib/components/mobile/MobileWorkCard.svelte";
+  import { haptic } from "$lib/haptics";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { retryWorkspaceCard } from "$lib/daemon";
@@ -70,6 +71,7 @@
       refreshing = true;
       try {
         await refresh();
+        haptic("success");
       } finally {
         refreshing = false;
       }
@@ -94,6 +96,7 @@
     if (!toastCardId) return;
     const cardId = toastCardId;
     dismissToast();
+    haptic("light");
     try {
       await retryWorkspaceCard(cardId);
     } catch (err) {

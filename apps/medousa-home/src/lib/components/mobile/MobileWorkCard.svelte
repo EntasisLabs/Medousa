@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCard } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
@@ -44,6 +45,7 @@
       busy = true;
       try {
         const response = await workspace.cancelCard(card.id);
+        haptic("warning");
         onCanceled?.(card.id, response.message);
       } catch (err) {
         onCanceled?.(
