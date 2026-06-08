@@ -210,34 +210,35 @@
 
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Appearance</h2>
-      <p class="workshop-faint mt-1">Home-only — workshop layout stays calm; accent palette swaps.</p>
+      <p class="workshop-faint mt-1">
+        Each palette has a light and dark variant — tuned for calm, readable contrast.
+      </p>
 
-      <p class="workshop-label mt-4">Color theme</p>
-      <div class="mt-2 grid gap-2 sm:grid-cols-2">
-        {#each COLOR_THEME_OPTIONS as option (option.id)}
-          <button
-            type="button"
-            class="theme-option {settings.colorTheme === option.id
-              ? 'theme-option-active'
-              : ''}"
-            aria-pressed={settings.colorTheme === option.id}
-            onclick={() => settings.setColorTheme(option.id)}
-          >
-            <div
-              class="theme-option-swatches"
-              aria-hidden="true"
+      {#each ["workshop", "apple"] as group (group)}
+        <p class="workshop-label mt-4">{group === "workshop" ? "Workshop" : "Apple"}</p>
+        <div class="mt-2 grid gap-2 sm:grid-cols-2">
+          {#each COLOR_THEME_OPTIONS.filter((option) => option.group === group) as option (option.id)}
+            <button
+              type="button"
+              class="theme-option {settings.colorTheme === option.id
+                ? 'theme-option-active'
+                : ''}"
+              aria-pressed={settings.colorTheme === option.id}
+              onclick={() => settings.setColorTheme(option.id)}
             >
-              {#each option.swatches as swatch, index (index)}
-                <span style:background-color={swatch}></span>
-              {/each}
-            </div>
-            <div class="min-w-0 text-left">
-              <p class="text-sm font-medium text-surface-100">{option.label}</p>
-              <p class="workshop-faint mt-0.5 leading-snug">{option.tagline}</p>
-            </div>
-          </button>
-        {/each}
-      </div>
+              <div class="theme-option-swatches" aria-hidden="true">
+                {#each option.swatches as swatch, index (index)}
+                  <span style:background-color={swatch}></span>
+                {/each}
+              </div>
+              <div class="min-w-0 text-left">
+                <p class="text-sm font-medium text-surface-100">{option.label}</p>
+                <p class="workshop-faint mt-0.5 leading-snug">{option.tagline}</p>
+              </div>
+            </button>
+          {/each}
+        </div>
+      {/each}
 
       <label class="mt-4 flex cursor-pointer items-center gap-3">
         <input
@@ -250,7 +251,7 @@
         <span class="text-sm text-surface-200">Dark mode</span>
       </label>
       <p class="mt-2 text-xs text-surface-500">
-        Color themes apply in dark mode. Light mode uses the default Obsidian palette.
+        Try Cupertino light for a clean iOS-style day look, or Obsidian dark for the workshop default.
       </p>
     </section>
 

@@ -17,6 +17,12 @@
     @apply antialiased text-surface-50;
   }
 
+  html:not(.dark) body {
+    -webkit-font-smoothing: antialiased;
+    color: rgb(var(--color-surface-50));
+    background-color: rgb(var(--color-surface-950));
+  }
+
   html.dark[data-theme="black-lily"] body {
     background-color: rgb(var(--color-surface-950));
     background-image:
@@ -972,6 +978,105 @@
       rgb(var(--color-secondary-700))
     );
     box-shadow: 0 0 14px rgb(var(--color-primary-500) / 0.28);
+  }
+
+  /* Light mode — softer elevation, Apple-style separators */
+  html:not(.dark) .workshop-nav {
+    border-color: rgb(var(--color-surface-700) / 0.8);
+    background-color: rgb(var(--color-surface-900));
+    box-shadow: 2px 0 16px rgb(0 0 0 / 0.04);
+  }
+
+  html:not(.dark) .workshop-main {
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  html:not(.dark) .workshop-rail {
+    border-color: rgb(var(--color-surface-700) / 0.8);
+    background-color: rgb(var(--color-surface-900));
+    box-shadow: -4px 0 16px rgb(0 0 0 / 0.04);
+  }
+
+  html:not(.dark) .workshop-status {
+    border-color: rgb(var(--color-surface-700) / 0.8);
+    background-color: rgb(var(--color-surface-900) / 0.95);
+    color: rgb(var(--color-surface-200));
+  }
+
+  html:not(.dark) .workshop-header {
+    border-color: rgb(var(--color-surface-700) / 0.7);
+    background-color: rgb(var(--color-surface-900) / 0.8);
+  }
+
+  html:not(.dark) .workshop-inset {
+    border-color: rgb(var(--color-surface-700) / 0.75);
+    background-color: rgb(var(--color-surface-900));
+  }
+
+  html:not(.dark) .workshop-tabs {
+    border-color: rgb(var(--color-surface-700) / 0.7);
+  }
+
+  html:not(.dark) .workshop-kanban-card {
+    border-color: rgb(var(--color-surface-700) / 0.6);
+    background-color: rgb(var(--color-surface-900));
+  }
+
+  html:not(.dark) .workshop-kanban-card:hover {
+    background-color: rgb(var(--color-surface-800) / 0.8);
+  }
+
+  html:not(.dark) .card {
+    border-color: rgb(var(--color-surface-700) / 0.7);
+    background-color: rgb(var(--color-surface-900));
+  }
+
+  html:not(.dark) :is(.input, .textarea, .select) {
+    border-color: rgb(var(--color-surface-700) / 0.8);
+    background-color: rgb(var(--color-surface-900));
+    color: rgb(var(--color-surface-50));
+  }
+
+  html:not(.dark) :is(.input, .textarea, .select)::placeholder {
+    color: rgb(var(--color-surface-400));
+  }
+
+  html:not(.dark) .mobile-shell {
+    background-color: rgb(var(--color-surface-950));
+    color: rgb(var(--color-surface-50));
+  }
+
+  html:not(.dark) .mobile-top-bar {
+    border-color: rgb(var(--color-surface-700) / 0.7);
+    background-color: rgb(var(--color-surface-900) / 0.95);
+  }
+
+  html:not(.dark) .mobile-bottom-chrome {
+    background-color: rgb(var(--color-surface-900) / 0.96);
+    border-top-color: rgb(var(--color-surface-700) / 0.65);
+  }
+
+  html:not(.dark) .composer-bar {
+    border-color: rgb(var(--color-surface-700) / 0.75);
+    background-color: rgb(var(--color-surface-900));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  html:not(.dark) .composer-bar-mobile {
+    border-color: rgb(var(--color-surface-700) / 0.8);
+    background-color: rgb(var(--color-surface-900));
+  }
+
+  html:not(.dark) .theme-option {
+    border-color: rgb(var(--color-surface-700) / 0.75);
+    background-color: rgb(var(--color-surface-900));
+  }
+
+  html:not(.dark) .theme-option:hover {
+    border-color: rgb(var(--color-surface-600) / 0.8);
+    background-color: rgb(var(--color-surface-800) / 0.6);
   }
 
   /* Temporary layout debug — enabled via data-layout-debug on Tauri iOS */

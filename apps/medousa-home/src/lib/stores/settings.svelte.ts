@@ -4,6 +4,7 @@ import {
   isColorThemeId,
   type ColorThemeId,
 } from "$lib/types/colorThemes";
+import { resolveSkeletonThemeName } from "$lib/types/themeResolve";
 
 const DARK_MODE_KEY = "medousa-home-dark-mode";
 const COLOR_THEME_KEY = "medousa-home-color-theme";
@@ -23,9 +24,9 @@ export class SettingsStore {
   applyTheme() {
     if (typeof document === "undefined") return;
     document.documentElement.classList.toggle("dark", this.darkMode);
-    const theme = this.darkMode ? this.colorTheme : DEFAULT_COLOR_THEME;
-    document.documentElement.dataset.theme = theme;
-    document.body.dataset.theme = theme;
+    const skeletonTheme = resolveSkeletonThemeName(this.colorTheme, this.darkMode);
+    document.documentElement.dataset.theme = skeletonTheme;
+    document.body.dataset.theme = skeletonTheme;
   }
 
   setDarkMode(enabled: boolean) {

@@ -13,12 +13,18 @@
         try {
           var dark = localStorage.getItem("medousa-home-dark-mode") !== "0";
           var stored = localStorage.getItem("medousa-home-color-theme");
-          var theme =
-            dark && (stored === "black-lily" || stored === "medousa")
-              ? stored
-              : "medousa";
+          var ids = ["medousa", "black-lily", "cupertino", "graphite", "midnight"];
+          var themeId = ids.indexOf(stored) >= 0 ? stored : "medousa";
+          var names = {
+            medousa: { dark: "medousa", light: "medousa-light" },
+            "black-lily": { dark: "black-lily", light: "black-lily-light" },
+            cupertino: { dark: "cupertino-dark", light: "cupertino-light" },
+            graphite: { dark: "graphite-dark", light: "graphite-light" },
+            midnight: { dark: "midnight-dark", light: "midnight-light" },
+          };
+          var skeletonTheme = names[themeId][dark ? "dark" : "light"];
           document.documentElement.classList.toggle("dark", dark);
-          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.theme = skeletonTheme;
           if (
             window.__TAURI_INTERNALS__ &&
             /iPhone|iPad|iPod/i.test(navigator.userAgent)
