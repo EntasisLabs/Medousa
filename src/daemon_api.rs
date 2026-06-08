@@ -635,6 +635,11 @@ pub struct InteractiveTurnStreamEvent {
     pub tool_names: Option<Vec<String>>,
     pub terminal: bool,
     pub emitted_at_utc: DateTime<Utc>,
+    /// Turn budget approval pause — card id for Home deep link / notifications.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_rounds: Option<usize>,
 }
 
 // ── Ingester types ────────────────────────────────────────────────────────────

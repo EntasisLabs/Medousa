@@ -26,4 +26,6 @@ export interface InteractiveTurnStreamEvent {
   tool_names?: string[] | null;
   terminal: boolean;
   emitted_at_utc: string;
+  budget_request_id?: string | null;
+  requested_rounds?: number | null;
 }

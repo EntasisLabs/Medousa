@@ -5,7 +5,12 @@ import {
   retryWorkspaceCard,
 } from "$lib/daemon";
 import type { BlockedGroup } from "$lib/utils/groupWork";
-import { notifyAskComplete, notifyCardDone } from "$lib/notifications";
+import {
+  notifyAskComplete,
+  notifyBudgetApprovalRequired,
+  notifyCardDone,
+} from "$lib/notifications";
+import { isTauriMobilePlatform } from "$lib/platform";
 import type { PendingAskCompletion } from "$lib/types/askJob";
 import { isAskJobId } from "$lib/types/askJob";
 import type { WorkCardDetail } from "$lib/types/card";
@@ -102,6 +107,14 @@ export class WorkspaceStore {
       } else {
         void notifyCardDone(card.title, card.status_label, card.id);
       }
+    }
+    if (
+      isTauriMobilePlatform() &&
+      previous !== "blocked" &&
+      card.column === "blocked" &&
+      card.status_label === "needs approval"
+    ) {
+      void notifyBudgetApprovalRequired(card.title, card.id);
     }
     this.previousColumns.set(card.id, card.column);
 

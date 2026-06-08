@@ -1,6 +1,9 @@
+import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { OpenWorkHandler } from "$lib/mobileNative";
+import { isTauriMobilePlatform } from "$lib/platform";
 
 let permissionReady: boolean | null = null;
+const budgetNotified = new Set<string>();
 
 async function notificationApi() {
   return import("@tauri-apps/plugin-notification");
@@ -39,6 +42,16 @@ function notificationId(seed: string): number {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   }
   return Math.abs(hash) || 1;
+}
+
+function rememberBudgetNotification(requestId: string): boolean {
+  if (budgetNotified.has(requestId)) return false;
+  budgetNotified.add(requestId);
+  if (budgetNotified.size > 128) {
+    const oldest = budgetNotified.values().next().value;
+    if (oldest) budgetNotified.delete(oldest);
+  }
+  return true;
 }
 
 async function sendWorkNotification(
@@ -87,6 +100,41 @@ export async function notifyAskComplete(title: string, cardId: string) {
   } catch {
     // Vite-only dev or plugin unavailable — ignore.
   }
+}
+
+/** Local push on iOS/Android when a turn pauses for tool-round budget approval. */
+export async function notifyBudgetApprovalRequired(
+  title: string,
+  requestId: string,
+  detail?: string,
+) {
+  if (!isTauriMobilePlatform()) return;
+  const trimmedId = requestId.trim();
+  if (!trimmedId || !rememberBudgetNotification(trimmedId)) return;
+
+  const summary = detail?.trim() || title.trim() || "Turn needs more tool rounds";
+  const body =
+    summary.length > 160 ? `${summary.slice(0, 157)}…` : summary;
+
+  try {
+    await sendWorkNotification(
+      `budget-${trimmedId}`,
+      "Medousa — approve more rounds?",
+      `${body} · tap to review`,
+      trimmedId,
+    );
+  } catch {
+    // Vite-only dev or plugin unavailable — ignore.
+  }
+}
+
+export function budgetRequestIdFromStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): string | null {
+  const explicit = event.budget_request_id?.trim();
+  if (explicit) return explicit;
+  const match = event.message.match(/\(request ([^)]+)\)/);
+  return match?.[1]?.trim() ?? null;
 }
 
 function cardIdFromNotification(extra: unknown): string | null {

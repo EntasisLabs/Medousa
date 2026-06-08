@@ -7,6 +7,12 @@ import { workspace } from "$lib/stores/workspace.svelte";
 import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
+  budgetRequestIdFromStreamEvent,
+  notifyBudgetApprovalRequired,
+} from "$lib/notifications";
+import { isTauriMobilePlatform } from "$lib/platform";
+import { haptic } from "$lib/haptics";
+import {
   checkDaemonHealth,
   onInteractiveEvent,
   onInteractiveError,
@@ -45,6 +51,20 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
       chat.applyStreamEvent(event);
+      if (
+        isTauriMobilePlatform() &&
+        event.event_type === "budget_approval"
+      ) {
+        const requestId = budgetRequestIdFromStreamEvent(event);
+        if (requestId) {
+          void notifyBudgetApprovalRequired(
+            event.message.split(".")[0]?.trim() || "Turn paused",
+            requestId,
+            event.message,
+          );
+          haptic("warning");
+        }
+      }
     }),
   );
   unlisteners.push(onInteractiveError((message) => chat.setError(message)));

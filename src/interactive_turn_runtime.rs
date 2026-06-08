@@ -207,6 +207,8 @@ pub fn budget_approval_stream_event(
     );
     let mut event = build_event(turn_id, "budget_approval", "awaiting_operator", &message)?;
     event.message = format!("{message} (request {request_id})");
+    event.budget_request_id = Some(request_id.to_string());
+    event.requested_rounds = Some(requested_rounds);
     if !summary.is_empty() {
         event.message.push_str(&format!(". Progress: {summary}"));
     }
@@ -236,5 +238,7 @@ fn build_event(
         tool_names: None,
         terminal: false,
         emitted_at_utc: Utc::now(),
+        budget_request_id: None,
+        requested_rounds: None,
     })
 }
