@@ -20,6 +20,11 @@ pub const COGNITION_TURN_REQUEST_MORE_ROUNDS: &str = "cognition_turn_request_mor
 
 pub const COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED: &str = "cognition.turn.request_more_rounds";
 
+/// Signal tool-loop entry with a principal-facing progress message (does not end the turn).
+pub const COGNITION_TURN_BEGIN_WORK: &str = "cognition_turn_begin_work";
+
+pub const COGNITION_TURN_BEGIN_WORK_DOTTED: &str = "cognition.turn.begin_work";
+
 pub struct RequestMoreRoundsPayload {
     pub requested_rounds: usize,
     pub reason: String,
@@ -47,6 +52,41 @@ pub fn is_request_more_rounds_tool_name(name: &str) -> bool {
         || trimmed == COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED
         || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
             == COGNITION_TURN_REQUEST_MORE_ROUNDS
+}
+
+pub fn is_begin_work_tool_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed == COGNITION_TURN_BEGIN_WORK
+        || trimmed == COGNITION_TURN_BEGIN_WORK_DOTTED
+        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_BEGIN_WORK
+}
+
+/// Extract the latest successful begin-work progress message from a tool batch.
+pub fn begin_work_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    for inv in invocations.iter().rev() {
+        if !is_begin_work_tool_name(&inv.tool_name) {
+            continue;
+        }
+        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
+            continue;
+        }
+        if let Some(message) = message_from_begin_work_payload(&inv.tool_input) {
+            return Some(message);
+        }
+        if let Some(message) = message_from_begin_work_payload(&inv.tool_output) {
+            return Some(message);
+        }
+    }
+    None
+}
+
+fn message_from_begin_work_payload(payload: &Value) -> Option<String> {
+    payload
+        .get("message")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 /// Extract the operator-facing final message from a tool batch, if `cognition_turn_finish` ran.
@@ -118,6 +158,62 @@ fn message_from_finish_turn_payload(payload: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+/// Signal tool-loop entry with a principal-facing progress line (loop continues).
+pub struct CognitionTurnBeginWorkTool;
+
+#[async_trait]
+impl StasisTool for CognitionTurnBeginWorkTool {
+    fn name(&self) -> &'static str {
+        COGNITION_TURN_BEGIN_WORK
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Tell the principal you are starting tool work and what you are doing. \
+             Call alongside or before execution tools when you need a progress line — not for final answers.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Short principal-facing progress line while tools run"
+                },
+                "intent": {
+                    "type": "string",
+                    "description": "Optional note for logs (not shown to the principal)"
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let Some(message) = message_from_begin_work_payload(&input) else {
+            return Ok(json!({
+                "ok": false,
+                "begin_work": false,
+                "error": "message is required and must be non-empty",
+            }));
+        };
+        let intent = input
+            .get("intent")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        Ok(json!({
+            "ok": true,
+            "begin_work": true,
+            "message": message,
+            "intent": intent,
+        }))
+    }
 }
 
 /// Signal that the **next** assistant message (text-only) should be the user-facing final answer.
@@ -300,6 +396,33 @@ impl StasisTool for CognitionTurnRequestMoreRoundsTool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn recognizes_begin_work_names() {
+        assert!(is_begin_work_tool_name("cognition_turn_begin_work"));
+        assert!(is_begin_work_tool_name("cognition.turn.begin_work"));
+        assert!(!is_begin_work_tool_name("cognition_turn_finish"));
+    }
+
+    #[test]
+    fn begin_work_from_invocations_reads_latest_successful_call() {
+        let invocations = vec![
+            ToolInvocation {
+                tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
+                tool_input: json!({ "message": "Checking memory nodes." }),
+                tool_output: json!({ "ok": true, "begin_work": true }),
+            },
+            ToolInvocation {
+                tool_name: "cognition_memory_list".to_string(),
+                tool_input: Value::Null,
+                tool_output: Value::Null,
+            },
+        ];
+        assert_eq!(
+            begin_work_message_from_invocations(&invocations).as_deref(),
+            Some("Checking memory nodes.")
+        );
+    }
 
     #[test]
     fn recognizes_prepare_final_names() {

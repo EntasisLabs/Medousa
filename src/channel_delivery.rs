@@ -68,6 +68,14 @@ pub fn is_home_channel(channel: &str) -> bool {
     )
 }
 
+/// Principal-facing surfaces where continuation synthesis and legacy loop extras stay off.
+pub fn is_principal_interactive_channel(channel: &str) -> bool {
+    let normalized = normalize_channel_surface(channel);
+    normalized == CHANNEL_INTERACTIVE
+        || normalized == CHANNEL_TUI
+        || is_home_channel(&normalized)
+}
+
 pub fn is_external_push_channel(channel: &str) -> bool {
     matches!(
         channel.trim().to_ascii_lowercase().as_str(),

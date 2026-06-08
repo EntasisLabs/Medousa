@@ -41,6 +41,8 @@ Start here for product-level usage:
 24. [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) — **Planned:** relevance-ranked digest, `cognition_identity_recall`, YAML identity manuscripts (workers + cron + delivery); revises Phase 4 sequencing
 25. [medousa-home-plan.md](medousa-home-plan.md) — **Design:** daemon-first Medousa Home (workspace feed + Kanban cards from Stasis, vault notes, deferred Tauri); API contracts W1–V3 before any UI
 26. [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) — **Plan:** channel-agnostic turn envelope, surface formatters, Home tool chips + Obsidian markdown, attachment hooks
+27. [media-and-attachments-plan.md](media-and-attachments-plan.md) — **Draft (P5):** user attachments, vision, generated images, voice; blob store + upload + `parts[]` phasing (P5a–P5e)
+28. [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md) — **Active:** tool-call loop gate, `cognition_turn_begin_work`, single-writer commit, FSM/interim cleanup
 
 ## Primary Code Anchors
 

@@ -1009,7 +1009,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 emit_orchestration_summary(&sink, &orchestration_state).await;
                 return;
             }
-            if should_run_continuation(&combined_invocations) {
+            if should_run_continuation(&combined_invocations)
+                && !crate::channel_delivery::is_principal_interactive_channel(
+                    origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
+                )
+            {
                 if let Some(continuation_prompt) = build_continuation_prompt(
                     &original_prompt,
                     &final_text,

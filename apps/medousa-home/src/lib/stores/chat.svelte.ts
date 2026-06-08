@@ -794,6 +794,28 @@ export class ChatStore {
     const current = this.messages[idx];
     let content = current.content;
 
+    if (event.event_type === "turn_progress") {
+      const statusLine = event.message?.trim() || current.statusLine;
+      if (!content.trim() && statusLine) {
+        content = statusLine;
+      }
+      const next: ChatMessage = {
+        ...current,
+        content,
+        phase: "tool_loop",
+        statusLine: statusLine || current.statusLine,
+        tools: event.tool_names?.length
+          ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
+          : current.tools,
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      return;
+    }
+
     if (event.content_delta) {
       content += event.content_delta;
     } else if (event.final_text) {

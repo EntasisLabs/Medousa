@@ -135,6 +135,30 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             }
             super::invalidate_markdown_cache(state);
         }
+        TuiEvent::AgentTurnProgress {
+            turn_id,
+            message,
+            tool_names,
+        } => {
+            if !is_active_stream_turn(state, turn_id) {
+                return;
+            }
+            super::push_obs(state, format!("◈ {message}"));
+            if let Some(idx) = state.active_agent_stream_turn {
+                if let Some(turn) = state.conversation.get_mut(idx) {
+                    if turn.content.trim().is_empty() {
+                        turn.content = message.clone();
+                    }
+                    turn.tool_names = tool_names;
+                    turn.answer_state = Some("tool_loop".to_string());
+                    turn.timestamp = Utc::now();
+                }
+            }
+            if state.auto_scroll {
+                state.conv_scroll = state.conv_max_scroll;
+            }
+            super::invalidate_markdown_cache(state);
+        }
         TuiEvent::AgentNeedsInput {
             turn_id,
             text,

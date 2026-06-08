@@ -18,6 +18,10 @@ pub trait AgentStreamSink: Send + Sync {
     async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         let _ = (turn_id, text, tool_names);
     }
+    /// Non-terminal progress line after `cognition_turn_begin_work` — status only, not a final commit.
+    async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
+        let _ = (turn_id, message, tool_names);
+    }
     /// Short host acknowledgement while a background turn worker runs (non-terminal delivery).
     async fn agent_worker_ack(
         &self,

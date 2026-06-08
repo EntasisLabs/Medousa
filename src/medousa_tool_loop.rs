@@ -36,7 +36,8 @@ use crate::turn_budget_request::{
     turn_budget_request_store, BudgetResolution, CreateTurnBudgetRequest,
 };
 use crate::turn_control_tools::{
-    finish_turn_from_invocations, is_finish_turn_tool_name, is_prepare_final_tool_name,
+    finish_turn_from_invocations, begin_work_message_from_invocations,
+    is_begin_work_tool_name, is_finish_turn_tool_name, is_prepare_final_tool_name,
     is_request_more_rounds_tool_name, request_more_rounds_from_invocations,
     COGNITION_TURN_FINISH,
 };
@@ -385,6 +386,7 @@ impl MedousaToolLoopPipeline {
                 if pending_final_answer
                     && tool_calls.iter().any(|call| {
                         !is_prepare_final_tool_name(&call.fn_name)
+                            && !is_begin_work_tool_name(&call.fn_name)
                             && !is_finish_turn_tool_name(&call.fn_name)
                             && !is_request_more_rounds_tool_name(&call.fn_name)
                     })
@@ -574,20 +576,25 @@ impl MedousaToolLoopPipeline {
                     .await;
                 }
 
-                if prepare_final_in_batch {
-                    pending_final_answer = true;
-                    turn_ctx.scratchpad.phase =
-                        crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
+                if let Some(progress_message) =
+                    begin_work_message_from_invocations(round_invocations)
+                {
                     if let Some(gate) = completion_gate.as_ref() {
                         if let Some(sink) = gate.sink.as_ref() {
-                            sink.agent_final_pending(
+                            sink.agent_turn_progress(
                                 gate.stream_turn_id,
-                                "Still gathering — preparing your answer…".to_string(),
+                                progress_message,
                                 round_tool_names.clone(),
                             )
                             .await;
                         }
                     }
+                }
+
+                if prepare_final_in_batch {
+                    pending_final_answer = true;
+                    turn_ctx.scratchpad.phase =
+                        crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
                 }
 
                 discipline.on_tool_round();
@@ -1058,10 +1065,9 @@ mod tests {
     }
 
     #[test]
-    fn celebratory_preamble_continues_via_fsm_after_tools() {
+    fn celebratory_preamble_after_tools_ends_turn() {
         use crate::agent_runtime::turn_completion_fsm::{
-            decide_after_tools_text_round, AfterToolsRoundContext, ContinueReason,
-            TurnRoundAction,
+            decide_after_tools_text_round, AfterToolsRoundContext, TurnRoundAction,
         };
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let preamble = "Yesss! Let's do this — I'll pull up the current context, check what's \
@@ -1090,9 +1096,8 @@ mod tests {
         });
         assert!(matches!(
             action,
-            TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::AwaitingTools,
-                ..
+            TurnRoundAction::EndTurn {
+                termination_reason: "tool_debt_complete"
             }
         ));
     }

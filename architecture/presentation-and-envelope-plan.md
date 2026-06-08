@@ -288,9 +288,11 @@ Reuse envelope types in `event_reducer` — unify chat tool row with observabili
 
 ---
 
-### P5 — Media & attachments (much later)
+### P5 — Media & attachments (draft)
 
-Composer intake, image tools, blob inspector — only after P3 envelope is stable.
+Composer intake, image tools, blob inspector — **only after P3 envelope is stable** (✅).
+
+**Draft plan:** [media-and-attachments-plan.md](media-and-attachments-plan.md) — as-built audit, P5a–P5e phasing, risks, success criteria. Saved 2026-06-07; resume after runtime bugfix.
 
 ---
 

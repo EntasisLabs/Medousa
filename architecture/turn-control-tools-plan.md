@@ -58,6 +58,18 @@ Internal plan for two model-facing control-plane tools that give Medousa better 
 
 ---
 
+## Tool C — `cognition_turn_begin_work` (Phase 5) ✅
+
+**Purpose:** Explicit tool-loop entry signal with a principal-facing progress line. Replaces interim-heuristic continues.
+
+**Input:** `{ "message": "…", "intent": "optional log" }`
+
+**Flow:** After tool batch → `turn_progress` bus event (status only). Loop continues via tool debt.
+
+See [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md).
+
+---
+
 ## Tool B — `cognition_turn_finish` (Phase 1) ✅ in progress
 
 **Purpose:** Model ends the turn **immediately** with final user-facing text in the tool call — bypasses gatekeeper “continue” misjudgments. No extra model round.

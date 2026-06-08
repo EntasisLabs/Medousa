@@ -304,6 +304,18 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         );
     }
 
+    async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        self.publish_tracked(interactive_turn_runtime::turn_progress_stream_event(
+            &self.turn_id,
+            &message,
+            tool_names,
+        ));
+    }
+
     async fn agent_error(&self, _turn_id: u64, message: String) {
         let assistant_turn = self
             .parts
@@ -749,6 +761,10 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.inner.agent_final_pending(turn_id, text, tool_names).await;
+    }
+
+    async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
+        self.inner.agent_turn_progress(turn_id, message, tool_names).await;
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {

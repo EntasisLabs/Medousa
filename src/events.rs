@@ -60,6 +60,12 @@ pub enum TuiEvent {
         text: String,
         tool_names: Vec<String>,
     },
+    /// Non-terminal: `begin_work` progress line — status only.
+    AgentTurnProgress {
+        turn_id: u64,
+        message: String,
+        tool_names: Vec<String>,
+    },
     /// Partial assistant output chunk streamed from the model.
     AgentChunk { turn_id: u64, delta: String },
     /// Replace in-flight assistant scratch text (new model round / gatekeeper continue).

@@ -1,7 +1,8 @@
 //! Explicit turn completion FSM — text-only model rounds.
 //!
 //! Phase 1: no-tool-debt policy + transcript helpers.
-//! Phase 2: post-tool-debt policy via receipt checklist + interim heuristics.
+//! Phase 2: post-tool-debt policy via receipt checklist.
+//! Phase 5: no interim-heuristic continues — tool call = loop; prose-only = EndTurn.
 //! Phase 3: centralized continue control messages + ledger reason mapping.
 
 use genai::chat::ChatMessage;
@@ -9,8 +10,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::agent_runtime::turn_completion::missing_ritual_tools_for_avec;
 use crate::turn_text_heuristics::{
-    looks_like_clarifying_question, looks_like_interim_status,
-    looks_like_substantive_final_answer,
+    looks_like_clarifying_question, looks_like_substantive_final_answer,
 };
 
 /// What the tool loop should do after a text-only model response.
@@ -101,10 +101,6 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
         };
     }
 
-    if looks_like_interim_status(&ctx.draft_text) {
-        return continue_loop(ContinueReason::AwaitingTools, Vec::new());
-    }
-
     if looks_like_clarifying_question(&ctx.draft_text) {
         return TurnRoundAction::EndTurn {
             termination_reason: "clarifying_question",
@@ -112,7 +108,7 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
     }
 
     TurnRoundAction::EndTurn {
-        termination_reason: "no_tool_debt_complete",
+        termination_reason: "no_tools_prose",
     }
 }
 
@@ -140,10 +136,6 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         }
     }
 
-    if ctx.pending_final_answer && looks_like_interim_status(&ctx.draft_text) {
-        return continue_loop(ContinueReason::PrepareFinalInterim, Vec::new());
-    }
-
     if ctx.pending_final_answer && !draft.is_empty() {
         return TurnRoundAction::EndTurn {
             termination_reason: "prepare_final_then_text",
@@ -160,10 +152,6 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         return TurnRoundAction::EndTurn {
             termination_reason: "clarifying_question",
         };
-    }
-
-    if looks_like_interim_status(&ctx.draft_text) {
-        return continue_loop(ContinueReason::AwaitingTools, Vec::new());
     }
 
     TurnRoundAction::EndTurn {
@@ -219,13 +207,12 @@ mod tests {
     }
 
     #[test]
-    fn interim_before_tools_continues_with_transcript_note() {
+    fn interim_before_tools_ends_without_loop() {
         let action = decide_no_tool_debt_text_round(&ctx("Let me check that for you."));
         assert!(matches!(
             action,
-            TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::AwaitingTools,
-                ..
+            TurnRoundAction::EndTurn {
+                termination_reason: "no_tools_prose"
             }
         ));
     }
@@ -238,7 +225,7 @@ mod tests {
         assert!(matches!(
             action,
             TurnRoundAction::EndTurn {
-                termination_reason: "no_tool_debt_complete"
+                termination_reason: "no_tools_prose"
             }
         ));
     }
@@ -338,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn interim_after_tools_continues() {
+    fn short_ack_after_tools_ends() {
         let invocations = vec![tool("cognition_memory_moods"), tool("cognition_memory_calibrate")];
         let action = decide_after_tools_text_round(&after_tools(
             "pull focused AVEC",
@@ -347,24 +334,22 @@ mod tests {
         ));
         assert!(matches!(
             action,
-            TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::AwaitingTools,
-                ..
+            TurnRoundAction::EndTurn {
+                termination_reason: "tool_debt_complete"
             }
         ));
     }
 
     #[test]
-    fn prepare_final_with_interim_after_tools_continues() {
+    fn prepare_final_with_interim_after_tools_ends() {
         let invocations = vec![tool("cognition_turn_prepare_final")];
         let mut round = after_tools("summarize findings", "Stored.", &invocations);
         round.pending_final_answer = true;
         let action = decide_after_tools_text_round(&round);
         assert!(matches!(
             action,
-            TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::PrepareFinalInterim,
-                ..
+            TurnRoundAction::EndTurn {
+                termination_reason: "prepare_final_then_text"
             }
         ));
     }

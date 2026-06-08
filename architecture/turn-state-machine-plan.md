@@ -140,6 +140,23 @@ stateDiagram-v2
 
 ---
 
+### Phase 5 — Single writer & explicit loop entry 🚧 In progress
+
+**Goal:** Tool call = loop; prose-only = EndTurn; `cognition_turn_begin_work` replaces interim heuristics.
+
+See [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md).
+
+**Deliverables:**
+
+- ✅ `cognition_turn_begin_work` + `turn_progress` bus event
+- ✅ FSM: remove interim `ContinueLoop` paths
+- ✅ Drop `final_pending` body injection on `prepare_final`
+- ✅ Disable continuation synthesis on principal interactive channels
+- ✅ Home/TUI reducer alignment for `turn_progress`
+- 🚧 Deprecate `prepare_final` fully in prompts (partial — host prompt updated)
+
+---
+
 ## Module map (target)
 
 | Module | Role |
