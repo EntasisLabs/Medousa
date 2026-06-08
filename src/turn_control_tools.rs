@@ -16,6 +16,16 @@ pub const COGNITION_TURN_FINISH: &str = "cognition_turn_finish";
 
 pub const COGNITION_TURN_FINISH_DOTTED: &str = "cognition.turn.finish";
 
+pub const COGNITION_TURN_REQUEST_MORE_ROUNDS: &str = "cognition_turn_request_more_rounds";
+
+pub const COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED: &str = "cognition.turn.request_more_rounds";
+
+pub struct RequestMoreRoundsPayload {
+    pub requested_rounds: usize,
+    pub reason: String,
+    pub progress_summary: Option<String>,
+}
+
 pub fn is_prepare_final_tool_name(name: &str) -> bool {
     let trimmed = name.trim();
     trimmed == COGNITION_TURN_PREPARE_FINAL
@@ -29,6 +39,14 @@ pub fn is_finish_turn_tool_name(name: &str) -> bool {
     trimmed == COGNITION_TURN_FINISH
         || trimmed == COGNITION_TURN_FINISH_DOTTED
         || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_FINISH
+}
+
+pub fn is_request_more_rounds_tool_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed == COGNITION_TURN_REQUEST_MORE_ROUNDS
+        || trimmed == COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED
+        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed)
+            == COGNITION_TURN_REQUEST_MORE_ROUNDS
 }
 
 /// Extract the operator-facing final message from a tool batch, if `cognition_turn_finish` ran.
@@ -46,6 +64,49 @@ pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<St
         if let Some(message) = message_from_finish_turn_payload(&inv.tool_output) {
             return Some(message);
         }
+    }
+    None
+}
+
+pub fn request_more_rounds_from_invocations(
+    invocations: &[ToolInvocation],
+) -> Option<RequestMoreRoundsPayload> {
+    for inv in invocations.iter().rev() {
+        if !is_request_more_rounds_tool_name(&inv.tool_name) {
+            continue;
+        }
+        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
+            continue;
+        }
+        let requested_rounds = inv
+            .tool_input
+            .get("requested_rounds")
+            .or_else(|| inv.tool_output.get("requested_rounds"))
+            .and_then(|value| value.as_u64())
+            .map(|value| value as usize)
+            .unwrap_or(1)
+            .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK);
+        let reason = inv
+            .tool_input
+            .get("reason")
+            .or_else(|| inv.tool_output.get("reason"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)?;
+        let progress_summary = inv
+            .tool_input
+            .get("progress_summary")
+            .or_else(|| inv.tool_output.get("progress_summary"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        return Some(RequestMoreRoundsPayload {
+            requested_rounds,
+            reason,
+            progress_summary,
+        });
     }
     None
 }
@@ -157,6 +218,81 @@ impl StasisTool for CognitionTurnFinishTool {
             "finish_turn": true,
             "message": message,
             "reason": reason,
+        }))
+    }
+}
+
+/// Pause the turn and ask the operator for more tool rounds.
+pub struct CognitionTurnRequestMoreRoundsTool;
+
+#[async_trait]
+impl StasisTool for CognitionTurnRequestMoreRoundsTool {
+    fn name(&self) -> &'static str {
+        COGNITION_TURN_REQUEST_MORE_ROUNDS
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Request additional tool rounds for this turn when the current budget is too tight. \
+             Pauses the turn until the operator approves or denies. Provide a clear reason and progress summary.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["requested_rounds", "reason"],
+            "properties": {
+                "requested_rounds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK,
+                    "description": "How many additional model/tool rounds you need"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why the current budget is insufficient"
+                },
+                "progress_summary": {
+                    "type": "string",
+                    "description": "What is done and what remains"
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let requested_rounds = input
+            .get("requested_rounds")
+            .and_then(|value| value.as_u64())
+            .map(|value| value as usize)
+            .unwrap_or(0)
+            .clamp(1, crate::turn_budget_request::MAX_REQUESTED_ROUNDS_PER_ASK);
+        let reason = input
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let Some(reason) = reason else {
+            return Ok(json!({
+                "ok": false,
+                "budget_request": false,
+                "error": "reason is required",
+            }));
+        };
+        let progress_summary = input
+            .get("progress_summary")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        Ok(json!({
+            "ok": true,
+            "budget_request": true,
+            "requested_rounds": requested_rounds,
+            "reason": reason,
+            "progress_summary": progress_summary,
+            "message": "Turn paused pending operator approval for additional tool rounds.",
         }))
     }
 }

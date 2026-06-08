@@ -747,6 +747,56 @@ pub struct ReplayAndResumeResponse {
     pub message: String,
 }
 
+// ── Turn budget requests (tool-round extensions) ─────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetRequestListQuery {
+    pub limit: Option<usize>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetRequestRecord {
+    pub request_id: String,
+    pub turn_correlation_id: Option<String>,
+    pub stream_turn_id: u64,
+    pub session_id: String,
+    pub channel: Option<String>,
+    pub rounds_executed: usize,
+    pub max_tool_rounds: usize,
+    pub requested_rounds: usize,
+    pub granted_rounds: Option<usize>,
+    pub reason: String,
+    pub progress_summary: Option<String>,
+    pub status: String,
+    pub resolved_by: Option<String>,
+    pub created_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+    pub resolved_at_utc: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetRequestListResponse {
+    pub requests: Vec<TurnBudgetRequestRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetApproveRequest {
+    pub extra_rounds: Option<usize>,
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetDenyRequest {
+    pub resolved_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetRequestResponse {
+    pub request: TurnBudgetRequestRecord,
+    pub message: String,
+}
+
 // ── Workspace (Medousa Home — Phase W1) ─────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -780,6 +830,7 @@ pub enum WorkCardKind {
     InteractiveTurn,
     AskJob,
     RecurringTick,
+    TurnBudgetRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

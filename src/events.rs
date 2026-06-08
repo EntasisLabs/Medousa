@@ -58,4 +58,14 @@ pub enum TuiEvent {
         tool_name: String,
         reason: String,
     },
+    /// Tool-round budget extension waiting on operator approve/deny.
+    TurnBudgetApprovalRequired {
+        turn_id: u64,
+        request_id: String,
+        rounds_executed: usize,
+        max_tool_rounds: usize,
+        requested_rounds: usize,
+        reason: String,
+        progress_summary: Option<String>,
+    },
 }

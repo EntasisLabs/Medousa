@@ -38,6 +38,28 @@ pub trait AgentStreamSink: Send + Sync {
     async fn scratch_reset(&self, turn_id: u64) {
         let _ = turn_id;
     }
+
+    /// Turn paused waiting for operator approval to extend tool-round budget.
+    async fn turn_budget_approval_required(
+        &self,
+        turn_id: u64,
+        request_id: String,
+        rounds_executed: usize,
+        max_tool_rounds: usize,
+        requested_rounds: usize,
+        reason: String,
+        progress_summary: Option<String>,
+    ) {
+        let _ = (
+            turn_id,
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        );
+    }
 }
 
 pub type SharedAgentStreamSink = Arc<dyn AgentStreamSink>;

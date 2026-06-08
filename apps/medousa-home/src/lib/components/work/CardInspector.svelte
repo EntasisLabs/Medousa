@@ -4,7 +4,9 @@
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import {
     archiveAskJob,
+    approveTurnBudgetRequest,
     completeAskJobActions,
+    denyTurnBudgetRequest,
     getJobResult,
     lookupArtifact,
     sendInteractiveTurn,
@@ -72,6 +74,13 @@
   const detail = $derived(workspace.selectedCardDetail);
   const isAskCard = $derived(
     detail ? isAskJobId(detail.job_id ?? detail.card.id) : false,
+  );
+  const isTurnBudgetCard = $derived(
+    detail?.job_type === "turn.budget_request" ||
+      detail?.kind === "turn_budget_request",
+  );
+  const isPendingBudgetRequest = $derived(
+    isTurnBudgetCard && detail?.card.status_label === "needs approval",
   );
   const wrappingUp = $derived(detail?.card.column === "wrapping_up");
   const blockedGroup = $derived(
@@ -174,6 +183,38 @@
     }
   }
 
+  async function approveBudgetRequest() {
+    if (!detail || actionBusy || !isPendingBudgetRequest) return;
+    actionBusy = true;
+    workspace.cardActionMessage = null;
+    try {
+      const response = await approveTurnBudgetRequest(detail.card.id);
+      workspace.cardActionMessage = response.message;
+      haptic("success");
+      await workspace.refreshSelectedCard();
+    } catch (err) {
+      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+    } finally {
+      actionBusy = false;
+    }
+  }
+
+  async function denyBudgetRequest() {
+    if (!detail || actionBusy || !isPendingBudgetRequest) return;
+    actionBusy = true;
+    workspace.cardActionMessage = null;
+    try {
+      const response = await denyTurnBudgetRequest(detail.card.id);
+      workspace.cardActionMessage = response.message;
+      haptic("light");
+      await workspace.refreshSelectedCard();
+    } catch (err) {
+      workspace.cardDetailError = err instanceof Error ? err.message : String(err);
+    } finally {
+      actionBusy = false;
+    }
+  }
+
   async function askMedousa() {
     if (!detail) return;
     const prompt = `Tell me about work card ${detail.card.id}: "${detail.card.title}". Status: ${detail.card.status_label}.`;
@@ -220,6 +261,24 @@
       {/if}
     </div>
     <div class="flex shrink-0 flex-wrap gap-2">
+      {#if isPendingBudgetRequest}
+        <button
+          type="button"
+          class="btn btn-sm variant-filled-primary"
+          disabled={actionBusy}
+          onclick={() => void approveBudgetRequest()}
+        >
+          Approve rounds
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-filled-warning"
+          disabled={actionBusy}
+          onclick={() => void denyBudgetRequest()}
+        >
+          Deny
+        </button>
+      {/if}
       {#if blockedGroup && blockedGroup.cards.length > 1}
         <button
           type="button"

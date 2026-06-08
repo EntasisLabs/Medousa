@@ -280,6 +280,31 @@ export async function retryWorkspaceCard(
   });
 }
 
+export async function approveTurnBudgetRequest(
+  requestId: string,
+  extraRounds?: number,
+): Promise<TurnBudgetRequestResponse> {
+  return invoke<TurnBudgetRequestResponse>("turn_budget_approve", {
+    requestId,
+    extraRounds: extraRounds ?? null,
+  });
+}
+
+export async function denyTurnBudgetRequest(
+  requestId: string,
+): Promise<TurnBudgetRequestResponse> {
+  return invoke<TurnBudgetRequestResponse>("turn_budget_deny", { requestId });
+}
+
+export interface TurnBudgetRequestResponse {
+  request: {
+    request_id: string;
+    status: string;
+    granted_rounds?: number | null;
+  };
+  message: string;
+}
+
 export async function getJobResult(jobId: string): Promise<JobResultResponse> {
   return invoke<JobResultResponse>("job_get_result", { jobId });
 }

@@ -9,6 +9,7 @@ pub mod sse;
 pub mod types;
 pub mod vault;
 pub mod workspace_card;
+pub mod turn_budget;
 
 use crate::daemon::sse::stream_sse_json;
 use crate::daemon::types::{

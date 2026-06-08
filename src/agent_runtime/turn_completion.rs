@@ -42,6 +42,8 @@ pub struct ToolLoopCompletionGate<'a> {
     pub handoff_continuity_bundle: Option<HostContinuityBundle>,
     /// Workshop lane (research/general worker): skip host memory AVEC ritual receipt checks.
     pub skip_avec_ritual_check: bool,
+    /// Origin channel for operator notifications (`tui`, `telegram`, `home`, …).
+    pub channel: Option<String>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -72,6 +74,7 @@ impl ToolLoopCompletionGate<'_> {
             handoff_model_avec: None,
             handoff_continuity_bundle: None,
             skip_avec_ritual_check: false,
+            channel: None,
         }
     }
 }

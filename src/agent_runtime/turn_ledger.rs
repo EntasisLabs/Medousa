@@ -36,6 +36,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          Tool failures appear as JSON receipts (ok=false when applicable). \
          cognition_turn_prepare_final is available to mark the next text-only message as the intended final reply. \
          cognition_turn_finish delivers the complete user-facing answer in one tool call and ends the turn immediately (use when the loop would otherwise keep going). \
+         cognition_turn_request_more_rounds pauses the turn and asks the operator for more tool rounds when the budget is too tight. \
          Text-only replies classified as interim are streamed to the user but not appended to the tool transcript. \
          You do NOT need to use all {max_tool_rounds} rounds. End early when you have enough evidence, when one \
          clarifying question is better than more tools, or when the request should pivot (say so plainly). \

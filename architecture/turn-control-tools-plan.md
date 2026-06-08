@@ -20,7 +20,9 @@ Internal plan for two model-facing control-plane tools that give Medousa better 
 
 ---
 
-## Tool A — `cognition_turn_request_more_rounds` (Phase 2)
+## Tool B — `cognition_turn_finish` (Phase 1) ✅
+
+## Tool A — `cognition_turn_request_more_rounds` (Phase 2) ✅
 
 **Purpose:** Model asks for budget extension instead of burning stuck continues or failing at the fuse.
 
@@ -110,7 +112,7 @@ execute_local_turn → MedousaToolLoopPipeline
 | Phase | Scope |
 |-------|--------|
 | **1** | `cognition_turn_finish` + loop hard-stop + prompts + tests |
-| **2** | Budget request store, pause/resume, workspace blocked cards, daemon approve/deny, TUI/Home UX |
+| **2** | `cognition_turn_request_more_rounds` + inline pause/wait/resume + workspace blocked cards + daemon approve/deny + Home UX |
 | **3** | Channel push (Telegram/Discord/Slack) with deep link to Home card |
 
 ---

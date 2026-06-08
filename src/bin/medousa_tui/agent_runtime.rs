@@ -147,6 +147,30 @@ impl AgentStreamSink for TuiStreamSink {
             .send(TuiEvent::AgentScratchReset { turn_id })
             .await;
     }
+
+    async fn turn_budget_approval_required(
+        &self,
+        turn_id: u64,
+        request_id: String,
+        rounds_executed: usize,
+        max_tool_rounds: usize,
+        requested_rounds: usize,
+        reason: String,
+        progress_summary: Option<String>,
+    ) {
+        let _ = self
+            .tx
+            .send(TuiEvent::TurnBudgetApprovalRequired {
+                turn_id,
+                request_id,
+                rounds_executed,
+                max_tool_rounds,
+                requested_rounds,
+                reason,
+                progress_summary,
+            })
+            .await;
+    }
 }
 
 pub(crate) async fn start_prompt_run(

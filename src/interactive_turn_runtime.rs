@@ -189,6 +189,31 @@ pub fn scratch_reset_stream_event(turn_id: &str) -> Result<InteractiveTurnStream
     build_event(turn_id, "scratch_reset", "streaming", "assistant scratch cleared")
 }
 
+pub fn budget_approval_stream_event(
+    turn_id: &str,
+    request_id: &str,
+    rounds_executed: usize,
+    max_tool_rounds: usize,
+    requested_rounds: usize,
+    reason: &str,
+    progress_summary: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let summary = progress_summary
+        .filter(|value| !value.trim().is_empty())
+        .map(str::trim)
+        .unwrap_or("");
+    let message = format!(
+        "Turn paused at {rounds_executed}/{max_tool_rounds}. Requesting +{requested_rounds} rounds: {reason}"
+    );
+    let mut event = build_event(turn_id, "budget_approval", "awaiting_operator", &message)?;
+    event.message = format!("{message} (request {request_id})");
+    if !summary.is_empty() {
+        event.message.push_str(&format!(". Progress: {summary}"));
+    }
+    event.terminal = false;
+    Ok(event)
+}
+
 fn build_event(
     turn_id: &str,
     event_type: &str,

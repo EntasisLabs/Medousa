@@ -190,6 +190,30 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         );
     }
 
+    async fn turn_budget_approval_required(
+        &self,
+        _turn_id: u64,
+        request_id: String,
+        rounds_executed: usize,
+        max_tool_rounds: usize,
+        requested_rounds: usize,
+        reason: String,
+        progress_summary: Option<String>,
+    ) {
+        publish(
+            &self.stream_tx,
+            interactive_turn_runtime::budget_approval_stream_event(
+                &self.turn_id,
+                &request_id,
+                rounds_executed,
+                max_tool_rounds,
+                requested_rounds,
+                &reason,
+                progress_summary.as_deref(),
+            ),
+        );
+    }
+
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         publish(
             &self.stream_tx,

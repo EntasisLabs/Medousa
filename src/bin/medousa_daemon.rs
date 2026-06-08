@@ -564,12 +564,32 @@ async fn main() -> Result<()> {
             worker_id: state.worker_id.clone(),
         });
 
+    let budget_router = Router::new()
+        .route(
+            "/v1/turns/budget-requests",
+            get(medousa::turn_budget_handlers::list_turn_budget_requests),
+        )
+        .route(
+            "/v1/turns/budget-requests/{request_id}",
+            get(medousa::turn_budget_handlers::get_turn_budget_request),
+        )
+        .route(
+            "/v1/turns/budget-requests/{request_id}/approve",
+            post(medousa::turn_budget_handlers::approve_turn_budget_request),
+        )
+        .route(
+            "/v1/turns/budget-requests/{request_id}/deny",
+            post(medousa::turn_budget_handlers::deny_turn_budget_request),
+        )
+        .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState);
+
     let app = app
         .merge(catalog_router)
         .merge(capability_router)
         .merge(policy_router)
         .merge(vault_router)
-        .merge(workspace_router);
+        .merge(workspace_router)
+        .merge(budget_router);
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),

@@ -11,6 +11,7 @@ use crate::daemon_api::{
     WorkBoardColumn, WorkCard, WorkCardDetail, WorkCardId, WorkCardKind,
 };
 use crate::workspace::ask_job_store::{AskJobRecord, AskJobStatus, ask_job_store};
+use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequest, TurnBudgetRequestStatus};
 use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
 use crate::workspace::store::workspace_store;
 
@@ -92,6 +93,12 @@ pub async fn project_workspace_items(
         }
     }
 
+    for budget in turn_budget_request_store().list_for_workspace(include_terminal) {
+        if let Some(item) = project_turn_budget_request(&budget, include_terminal) {
+            items.push(item);
+        }
+    }
+
     items.sort_by(|left, right| right.card.updated_at_utc.cmp(&left.card.updated_at_utc));
     Ok(items)
 }
@@ -132,6 +139,74 @@ pub fn project_ask_job(record: &AskJobRecord, include_terminal: bool) -> Option<
         task_line: Some(truncate_line(&record.prompt, 500)),
         tool_names: None,
         associations: workspace_store().associations(&record.job_id),
+    };
+
+    Some(ProjectedWorkItem { card, detail })
+}
+
+pub fn project_turn_budget_request(
+    record: &TurnBudgetRequest,
+    include_terminal: bool,
+) -> Option<ProjectedWorkItem> {
+    let (column, status_label, terminal) = match record.status {
+        TurnBudgetRequestStatus::Pending => (WorkBoardColumn::Blocked, "needs approval", false),
+        TurnBudgetRequestStatus::Approved => {
+            if !include_terminal {
+                return None;
+            }
+            (WorkBoardColumn::Done, "approved", true)
+        }
+        TurnBudgetRequestStatus::Denied => {
+            if !include_terminal {
+                return None;
+            }
+            (WorkBoardColumn::Blocked, "denied", true)
+        }
+        TurnBudgetRequestStatus::Expired => {
+            if !include_terminal {
+                return None;
+            }
+            (WorkBoardColumn::Blocked, "expired", true)
+        }
+    };
+
+    let title = truncate_line(&record.reason, 80);
+    let card = WorkCard {
+        id: WorkCardId(record.request_id.clone()),
+        column,
+        title: title.clone(),
+        status_label: status_label.to_string(),
+        created_at_utc: record.created_at_utc,
+        updated_at_utc: record.updated_at_utc,
+    };
+
+    let task_line = record.progress_summary.clone().or_else(|| {
+        Some(format!(
+            "At {}/{} rounds — requesting +{}",
+            record.rounds_executed, record.max_tool_rounds, record.requested_rounds
+        ))
+    });
+
+    let detail = WorkCardDetail {
+        card: card.clone(),
+        kind: WorkCardKind::TurnBudgetRequest,
+        subtitle: record.channel.clone(),
+        session_id: Some(record.session_id.clone()),
+        correlation_id: record.turn_correlation_id.clone(),
+        manuscript_id: None,
+        job_id: None,
+        work_id: None,
+        job_type: Some("turn.budget_request".to_string()),
+        user_ack: None,
+        wrapping_up_reasons: Vec::new(),
+        terminal,
+        error: None,
+        result_excerpt: record
+            .granted_rounds
+            .map(|granted| format!("Granted +{granted} tool rounds")),
+        task_line,
+        tool_names: None,
+        associations: workspace_store().associations(&record.request_id),
     };
 
     Some(ProjectedWorkItem { card, detail })

@@ -37,6 +37,27 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 ),
             );
         }
+        TuiEvent::TurnBudgetApprovalRequired {
+            turn_id: _,
+            request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            reason,
+            progress_summary,
+        } => {
+            let progress = progress_summary
+                .map(|value| format!(" — {value}"))
+                .unwrap_or_default();
+            super::push_obs(
+                state,
+                format!(
+                    "⏸ turn budget request {request_id}: at {rounds_executed}/{max_tool_rounds}, \
+                     asking +{requested_rounds} rounds — {reason}{progress}. \
+                     Approve in Home work board or POST /v1/turns/budget-requests/{request_id}/approve"
+                ),
+            );
+        }
         TuiEvent::AgentScratchReset { turn_id } => {
             if !is_active_stream_turn(state, turn_id) {
                 return;

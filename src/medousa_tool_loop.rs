@@ -28,11 +28,15 @@ use crate::agent_runtime::turn_ledger::{
     TurnLoopAwareness, TurnLoopDiscipline, developer_message_for_gatekeeper_continue,
     developer_message_for_heuristic_interim_continue, ledger_tool_names, persist_ledger_record,
     push_turn_control_message, record_finalized, record_from_gatekeeper_continue,
-    record_stuck, record_tool_round, stuck_turn_user_message,
+    record_stuck, record_tool_round, stuck_turn_user_message, TURN_CONTROL_PREFIX,
 };
 use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_batch_allowed};
+use crate::turn_budget_request::{
+    turn_budget_request_store, BudgetResolution, CreateTurnBudgetRequest,
+};
 use crate::turn_control_tools::{
     finish_turn_from_invocations, is_finish_turn_tool_name, is_prepare_final_tool_name,
+    is_request_more_rounds_tool_name, request_more_rounds_from_invocations,
     COGNITION_TURN_FINISH,
 };
 pub(crate) use crate::turn_text_heuristics::{
@@ -156,7 +160,7 @@ impl MedousaToolLoopPipeline {
             tool_call_mode,
         } = request;
 
-        let max_tool_rounds = max_tool_rounds.max(1);
+        let mut effective_max_tool_rounds = max_tool_rounds.max(1);
         let shared_inputs = ToolLoopSharedInputs {
             user_prompt: Arc::<str>::from(user_prompt),
             system_prompt: system_prompt.map(Arc::<str>::from),
@@ -201,7 +205,7 @@ impl MedousaToolLoopPipeline {
             .map(|gate| gate.max_text_only_stuck_continues)
             .unwrap_or_else(|| {
                 crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
-                    max_tool_rounds,
+                    effective_max_tool_rounds,
                 )
             });
         let mut discipline =
@@ -209,10 +213,10 @@ impl MedousaToolLoopPipeline {
         let mut loop_awareness = TurnLoopAwareness::default();
 
         if !tools.is_empty() {
-            for _ in 0..max_tool_rounds {
+            while rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
                 let tool_rounds_remaining =
-                    max_tool_rounds.saturating_sub(rounds_executed);
+                    effective_max_tool_rounds.saturating_sub(rounds_executed);
                 turn_ctx.scratchpad.on_tool_round_start(rounds_executed);
                 push_turn_control_message(
                     &mut turn_ctx.tool_lane.messages,
@@ -292,7 +296,7 @@ impl MedousaToolLoopPipeline {
                             &text,
                             pending_final_answer,
                             rounds_executed,
-                            max_tool_rounds,
+                            effective_max_tool_rounds,
                         );
 
                         if heuristic_would_finalize {
@@ -303,7 +307,7 @@ impl MedousaToolLoopPipeline {
                                     &invocations,
                                     pending_final_answer,
                                     rounds_executed,
-                                    max_tool_rounds,
+                                    effective_max_tool_rounds,
                                     true,
                                     last_streamed_draft.as_deref(),
                                     gate.skip_avec_ritual_check,
@@ -408,7 +412,7 @@ impl MedousaToolLoopPipeline {
                             let termination_reason = termination_reason_for_text_only_finalize(
                                 pending_final_answer,
                                 rounds_executed,
-                                max_tool_rounds,
+                                effective_max_tool_rounds,
                             )
                             .to_string();
 
@@ -471,7 +475,7 @@ impl MedousaToolLoopPipeline {
                                 .map(|g| g.max_text_only_stuck_continues)
                                 .unwrap_or_else(|| {
                                     crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
-                                        max_tool_rounds,
+                                        effective_max_tool_rounds,
                                     )
                                 });
                             return finish_stuck_turn_response(
@@ -479,7 +483,7 @@ impl MedousaToolLoopPipeline {
                                 invocations,
                                 rounds_executed,
                                 text_only_limit,
-                                max_tool_rounds,
+                                effective_max_tool_rounds,
                             );
                         }
                         last_streamed_draft = Some(text);
@@ -495,6 +499,7 @@ impl MedousaToolLoopPipeline {
                     && tool_calls.iter().any(|call| {
                         !is_prepare_final_tool_name(&call.fn_name)
                             && !is_finish_turn_tool_name(&call.fn_name)
+                            && !is_request_more_rounds_tool_name(&call.fn_name)
                     })
                 {
                     pending_final_answer = false;
@@ -636,6 +641,80 @@ impl MedousaToolLoopPipeline {
                     );
                 }
 
+                if let Some(payload) = request_more_rounds_from_invocations(&invocations) {
+                    if let Some(gate) = completion_gate.as_ref() {
+                        let create_result = turn_budget_request_store()
+                            .create_and_register_wait(CreateTurnBudgetRequest {
+                                turn_correlation_id: gate.parent_turn_correlation_id.clone(),
+                                stream_turn_id: gate.stream_turn_id,
+                                session_id: gate.session_id.clone(),
+                                channel: gate.channel.clone(),
+                                rounds_executed,
+                                max_tool_rounds: effective_max_tool_rounds,
+                                requested_rounds: payload.requested_rounds,
+                                reason: payload.reason.clone(),
+                                progress_summary: payload.progress_summary.clone(),
+                            })
+                            .await;
+                        match create_result {
+                            Ok((request_id, rx)) => {
+                                if let Some(sink) = gate.sink.as_ref() {
+                                    sink.turn_budget_approval_required(
+                                        gate.stream_turn_id,
+                                        request_id.clone(),
+                                        rounds_executed,
+                                        effective_max_tool_rounds,
+                                        payload.requested_rounds,
+                                        payload.reason.clone(),
+                                        payload.progress_summary.clone(),
+                                    )
+                                    .await;
+                                    sink.notice(format!(
+                                        "◈ turn_budget_request id={request_id} at {rounds_executed}/{effective_max_tool_rounds} requested=+{}",
+                                        payload.requested_rounds
+                                    ))
+                                    .await;
+                                }
+                                let resolution = turn_budget_request_store()
+                                    .wait_for_resolution(&request_id, rx)
+                                    .await;
+                                match resolution {
+                                    BudgetResolution::Approved { granted_rounds } => {
+                                        effective_max_tool_rounds = effective_max_tool_rounds
+                                            .saturating_add(granted_rounds)
+                                            .min(
+                                                crate::turn_budget_request::ABSOLUTE_MAX_TOOL_ROUNDS,
+                                            );
+                                        push_turn_control_message(
+                                            &mut turn_ctx.tool_lane.messages,
+                                            &format!(
+                                                "{TURN_CONTROL_PREFIX}\nOperator approved +{granted_rounds} tool rounds (budget now {effective_max_tool_rounds}). Continue the task."
+                                            ),
+                                        );
+                                    }
+                                    BudgetResolution::Denied => {
+                                        push_turn_control_message(
+                                            &mut turn_ctx.tool_lane.messages,
+                                            &format!(
+                                                "{TURN_CONTROL_PREFIX}\nOperator denied extra tool rounds. Wrap up with cognition_turn_finish, one clarifying question, or best-effort answer now."
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                push_turn_control_message(
+                                    &mut turn_ctx.tool_lane.messages,
+                                    &format!(
+                                        "{TURN_CONTROL_PREFIX}\nExtra rounds unavailable: {err}. Finish with cognition_turn_finish or best effort."
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+
                 if let Some(message) = finish_turn_from_invocations(&invocations) {
                     if let Some(gate) = completion_gate.as_ref() {
                         let tools = collect_tool_names(&invocations);
@@ -719,7 +798,7 @@ impl MedousaToolLoopPipeline {
 
             if !should_use_legacy_fallback {
                 return Err(StasisError::PortFailure(format!(
-                    "tool loop exceeded max rounds ({max_tool_rounds}) without final response"
+                    "tool loop exceeded max rounds ({effective_max_tool_rounds}) without final response"
                 )));
             }
         }

@@ -446,6 +446,10 @@ pub async fn run_worker_turn(
             intent,
             TurnWorkerIntent::Research | TurnWorkerIntent::General
         ),
+        channel: record
+            .delivery_target
+            .as_ref()
+            .map(|target| target.channel.clone()),
     };
 
     let result = worker_pipeline
