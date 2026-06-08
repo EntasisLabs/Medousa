@@ -23,6 +23,7 @@ import type {
 import type { WorkCard } from "$lib/types/workspace";
 import { reasoningFromParts, toolRunsFromParts } from "$lib/types/turnParts";
 import { formatSessionLabel } from "$lib/utils/formatSession";
+import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
@@ -686,6 +687,14 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "scratch_reset") {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (messageId) {
+        this.applyStreamEventToMessage(messageId, event);
+      }
+      return;
+    }
+
     const messageId = this.messageIdForTurn(event.turn_id);
     if (messageId) {
       this.applyStreamEventToMessage(messageId, event);
@@ -816,10 +825,29 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "scratch_reset") {
+      const next: ChatMessage = {
+        ...current,
+        content: "",
+        phase: "streaming",
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      return;
+    }
+
     if (event.content_delta) {
       content += event.content_delta;
     } else if (event.final_text) {
-      content = event.final_text;
+      const terminal =
+        event.terminal ||
+        event.event_type === "final" ||
+        event.event_type === "needs_input" ||
+        event.event_type === "error";
+      content = resolveTurnContent(current.content, event.final_text, terminal);
     }
 
     let reasoning = current.reasoning ?? "";

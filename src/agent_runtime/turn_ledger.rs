@@ -35,10 +35,10 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          environment=This turn has up to {max_tool_rounds} model rounds (tool calls and/or assistant text). \
          Tool receipts accumulate in the transcript until the turn ends. \
          Failures return JSON receipts (ok=false when applicable). \
-         cognition_turn_prepare_final marks the next text-only message as the intended final reply. \
+         cognition_turn_begin_work tells the principal you are starting tool work (progress line only). \
          cognition_turn_finish delivers the complete principal-facing answer in one tool call and ends the turn immediately. \
          cognition_turn_request_more_rounds pauses for principal approval when the budget is tight. \
-         Interim text may continue the loop; interim drafts stay in the transcript before the next round. \
+         Prose-only with no tools ends the turn; any tool call enters the loop. \
          Rounds are a budget, not a quota — end early with cognition_turn_finish or complete prose when the principal is served. \
          One sharp question beats spinning tools on vague intent."
     )
@@ -120,7 +120,8 @@ impl TurnLoopAwareness {
             ));
         }
         lines.push(
-            "Early exit allowed: if you can answer now, call cognition_turn_finish with the full reply, or cognition_turn_prepare_final then reply. \
+            "Early exit allowed: if you can answer now, call cognition_turn_finish with the full reply. \
+             Use cognition_turn_begin_work when the principal should see progress before tools run. \
              If intent is unclear, ask one concise clarifying question instead of using remaining rounds."
                 .to_string(),
         );

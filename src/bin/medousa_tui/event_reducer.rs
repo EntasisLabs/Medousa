@@ -101,34 +101,16 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             if !is_active_stream_turn(state, turn_id) {
                 return;
             }
-            let (visible_text, thinking_chunks) = strip_thinking_tags(&text);
-            if !state.received_native_reasoning {
-                for chunk in thinking_chunks {
-                    super::push_thinking(state, chunk);
-                }
-            }
-            state.in_thinking_tag = false;
-            state.received_native_reasoning = false;
-            super::flush_thinking_buffer(state);
-
+            super::push_obs(state, format!("◈ {text}"));
             if let Some(idx) = state.active_agent_stream_turn {
                 if let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.content = resolve_agent_turn_content(&turn.content, &visible_text, false);
-                    turn.tool_names = tool_names.clone();
-                    turn.answer_state = Some("final_pending".to_string());
+                    if turn.content.trim().is_empty() {
+                        turn.content = text.clone();
+                    }
+                    turn.tool_names = tool_names;
+                    turn.answer_state = Some("tool_loop".to_string());
                     turn.timestamp = Utc::now();
                 }
-            } else {
-                let turn = ConversationTurn::plain(
-                    "agent",
-                    visible_text,
-                    Utc::now(),
-                    tool_names.clone(),
-                    Some("final_pending".to_string()),
-                );
-                state.conversation.push(turn);
-                state.active_agent_stream_turn =
-                    Some(state.conversation.len().saturating_sub(1));
             }
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;

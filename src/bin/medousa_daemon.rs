@@ -3748,9 +3748,24 @@ impl AgentStreamSink for IngestAgentStreamSink {
 
         publish_interactive_turn_event(
             &self.stream_tx,
-            medousa::interactive_turn_runtime::final_pending_stream_event_with_tools(
+            medousa::interactive_turn_runtime::turn_progress_stream_event(
                 &self.stream_id,
                 &text,
+                tool_names,
+            ),
+        );
+    }
+
+    async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {
+        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+            return;
+        }
+
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::turn_progress_stream_event(
+                &self.stream_id,
+                &message,
                 tool_names,
             ),
         );

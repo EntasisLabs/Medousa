@@ -290,18 +290,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
-    async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
-        if self.emit_cancelled_if_needed().await {
-            return;
-        }
-
-        self.publish_tracked(
-            interactive_turn_runtime::final_pending_stream_event_with_tools(
-                &self.turn_id,
-                &text,
-                tool_names,
-            ),
-        );
+    async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        self.agent_turn_progress(turn_id, text, tool_names).await;
     }
 
     async fn agent_turn_progress(&self, _turn_id: u64, message: String, tool_names: Vec<String>) {

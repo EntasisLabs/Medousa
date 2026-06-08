@@ -96,7 +96,7 @@ No `ContinueLoop` on interim phrasing or `PrepareFinalInterim`.
 |-------|--------|--------|
 | **A** | Doc + `cognition_turn_begin_work` + `turn_progress` bus + FSM simplify | ✅ |
 | **B** | Home/TUI reducers, drop `final_pending` body, disable interactive continuation | ✅ |
-| **C** | Deprecate `prepare_final` in prompts; optional AnswerBuffer struct in sink | Planned |
+| **C** | Deprecate `prepare_final` on host; Home scratch_reset + terminal merge | ✅ |
 
 ---
 

@@ -227,9 +227,8 @@ impl StasisTool for CognitionTurnPrepareFinalTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Signal that the next text-only message is the intended principal-facing final for this turn. \
-             Optional after tool receipts are in context. \
-             Substantive prose on the following round ends the turn.",
+            "Deprecated — prefer cognition_turn_finish with the complete answer. \
+             Workshop workers may still call this; host turns should use cognition_turn_begin_work for progress and cognition_turn_finish to commit.",
         )
     }
 
@@ -255,7 +254,8 @@ impl StasisTool for CognitionTurnPrepareFinalTool {
         Ok(json!({
             "ok": true,
             "prepare_final": true,
-            "message": "Send the complete principal-facing reply on the next turn without calling other tools.",
+            "deprecated": true,
+            "message": "Deprecated — call cognition_turn_finish with the complete principal-facing reply. Workshop lane may still send one final prose round.",
             "reason": reason,
         }))
     }

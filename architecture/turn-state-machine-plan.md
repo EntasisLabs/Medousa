@@ -153,7 +153,8 @@ See [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md).
 - ✅ Drop `final_pending` body injection on `prepare_final`
 - ✅ Disable continuation synthesis on principal interactive channels
 - ✅ Home/TUI reducer alignment for `turn_progress`
-- 🚧 Deprecate `prepare_final` fully in prompts (partial — host prompt updated)
+- ✅ Deprecate `prepare_final` on host (workshop lane retains flag); prompts updated
+- ✅ Home `scratch_reset` + terminal merge (`resolveTurnContent.ts`)
 
 ---
 

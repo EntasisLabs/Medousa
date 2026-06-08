@@ -54,7 +54,7 @@ Memory:
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
 - Principal-facing prose belongs in host synthesis — workshop output is receipts and structured result.
-- When finished, prefer cognition_turn_finish with the complete result. Alternatively call cognition_turn_prepare_final once, then one complete result message on the next turn without further tools.
+- When finished, call cognition_turn_finish with the complete result. Use cognition_turn_begin_work only when a progress line helps before heavy tools.
 - If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.

@@ -98,14 +98,7 @@ impl AgentStreamSink for TuiStreamSink {
     }
 
     async fn agent_final_pending(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        let _ = self
-            .tx
-            .send(TuiEvent::AgentFinalPending {
-                turn_id,
-                text,
-                tool_names,
-            })
-            .await;
+        self.agent_turn_progress(turn_id, text, tool_names).await;
     }
 
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
@@ -856,28 +849,7 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
-        "final_pending" => {
-            let text = payload
-                .final_text
-                .or_else(|| {
-                    if payload.message.trim().is_empty() {
-                        None
-                    } else {
-                        Some(payload.message.clone())
-                    }
-                })
-                .unwrap_or_else(|| "Still gathering your answer…".to_string());
-            let tool_names = payload.tool_names.unwrap_or_default();
-            event_tx
-                .send(TuiEvent::AgentFinalPending {
-                    turn_id,
-                    text,
-                    tool_names,
-                })
-                .await
-                .map_err(|err| err.to_string())?;
-        }
-        "turn_progress" => {
+        "final_pending" | "turn_progress" => {
             let message = payload.message.trim();
             if message.is_empty() {
                 return Ok(false);

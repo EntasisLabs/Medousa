@@ -592,9 +592,24 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if prepare_final_in_batch {
-                    pending_final_answer = true;
-                    turn_ctx.scratchpad.phase =
-                        crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
+                    let workshop_lane = completion_gate
+                        .as_ref()
+                        .map(|gate| gate.skip_avec_ritual_check)
+                        .unwrap_or(false);
+                    if workshop_lane {
+                        pending_final_answer = true;
+                        turn_ctx.scratchpad.phase =
+                            crate::agent_runtime::turn_context::TurnScratchPhase::Finalize;
+                    } else if let Some(gate) = completion_gate.as_ref() {
+                        if let Some(sink) = gate.sink.as_ref() {
+                            sink.agent_turn_progress(
+                                gate.stream_turn_id,
+                                "Wrapping up your answer…".to_string(),
+                                round_tool_names.clone(),
+                            )
+                            .await;
+                        }
+                    }
                 }
 
                 discipline.on_tool_round();

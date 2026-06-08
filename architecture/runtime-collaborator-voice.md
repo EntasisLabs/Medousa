@@ -53,8 +53,9 @@ In prompts and control messages we use **principal** for the workspace owner. Le
 After Phases 1–3, completion is runtime-owned:
 
 - Normal prose ends the turn (no hidden loop manager)
-- `cognition_turn_finish` when tool work is done
-- Continue only for receipts, interim, or `prepare_final` gap
+- Call `cognition_turn_begin_work` when the principal should see progress before tools
+- Call `cognition_turn_finish` when tool work is complete
+- Continue only for open ritual receipts (contractual checklist)
 
 Prompts align with that — no "you must finalize" stacking on top of the FSM.
 
