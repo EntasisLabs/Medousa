@@ -1,0 +1,25 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Medousa Home",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640
+      },
+      {
+        "label": "chat-popout",
+        "title": "Medousa Chat",
+        "url": "/popout/chat",
+        "width": 440,
+        "height": 760,
+        "minWidth": 360,
+        "minHeight": 480,
+        "visible": false,
+        "resizable": true
+      }
+    ]
+  }
+}

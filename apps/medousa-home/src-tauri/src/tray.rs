@@ -1,4 +1,8 @@
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use tauri::Manager;
+
+use crate::badge;
 
 #[tauri::command]
 pub fn tray_update_blocked_count(app: AppHandle, blocked_count: u32) -> Result<(), String> {
@@ -27,14 +31,7 @@ pub fn tray_update_blocked_count(app: AppHandle, blocked_count: u32) -> Result<(
         }
     }
 
-    if let Some(window) = app.get_webview_window("main") {
-        let badge = if blocked_count > 0 {
-            Some(blocked_count as i64)
-        } else {
-            None
-        };
-        let _ = window.set_badge_count(badge);
-    }
+    badge::set_app_badge_count(&app, blocked_count)?;
 
     Ok(())
 }

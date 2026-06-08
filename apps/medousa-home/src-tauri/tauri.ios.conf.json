@@ -1,0 +1,12 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Medousa Home",
+        "width": 390,
+        "height": 844
+      }
+    ]
+  }
+}

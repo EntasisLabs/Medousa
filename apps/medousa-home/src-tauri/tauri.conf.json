@@ -18,17 +18,6 @@
         "height": 900,
         "minWidth": 960,
         "minHeight": 640
-      },
-      {
-        "label": "chat-popout",
-        "title": "Medousa Chat",
-        "url": "/popout/chat",
-        "width": 440,
-        "height": 760,
-        "minWidth": 360,
-        "minHeight": 480,
-        "visible": false,
-        "resizable": true
       }
     ],
     "security": {
@@ -40,6 +29,7 @@
     "targets": "all",
     "iOS": {
       "minimumSystemVersion": "15.0",
+      "developmentTeam": "K5SZ28RN9P",
       "infoPlist": "Info.mobile.plist"
     },
     "icon": [

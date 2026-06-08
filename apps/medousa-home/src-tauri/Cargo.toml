@@ -30,3 +30,6 @@ uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 dirs = "6"
 keyring = "2.3"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"

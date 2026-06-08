@@ -155,7 +155,7 @@ npm run tauri ios build                  # release IPA for TestFlight-style inst
 
 | Variable | Purpose |
 |----------|---------|
-| `MEDOUSA_DAEMON_URL` | Default connection in the Tauri shell (set before `ios dev` if you want a baked-in URL) |
+| `MEDOUSA_DAEMON_URL` | Default daemon URL at **desktop** launch. On iPhone, set URL in **You → Settings → Connection** (saved in app data) or rely on dev auto-detect from the Vite host. |
 | `APPLE_DEVELOPMENT_TEAM` | Code signing team for `ios init` / `ios dev` |
 | `MEDOUSA_MOBILE_BIND` | Override daemon bind (default `0.0.0.0:7419`) in `scripts/mobile-dev-daemon.sh` |
 
@@ -184,10 +184,10 @@ medousa://work/<paste-card-id>
 
 | Symptom | Fix |
 |---------|-----|
-| **Offline / connection failed** | Daemon running? `--bind 0.0.0.0:7419`? Mac firewall? Same Wi‑Fi? URL uses LAN IP not `127.0.0.1`? |
+| **Offline / connection failed** | Daemon running? `--bind 0.0.0.0:7419`? Mac firewall? Same Wi‑Fi? URL uses LAN IP not `127.0.0.1`? In dev, the app auto-sets daemon URL from the Vite host (e.g. `http://10.x.x.x:7419`). |
 | **ATS / cleartext HTTP blocked** | `tauri.conf.json` includes `NSAllowsLocalNetworking` for iOS. Re-run `ios dev` after config changes. |
 | **Code signing errors** | Xcode → Accounts → Apple Development cert; set team in Xcode project under `gen/apple`. |
-| **Blank webview / dev server** | Phone must reach Mac Vite port (default **1420**). `tauri ios dev` usually handles this; check firewall. |
+| **Blank / white webview** | Phone must reach Mac Vite on **1420** (open `http://<mac-ip>:1420` in Safari on the phone). Allow **1420** in Mac firewall. Re-run `npm run tauri ios dev` after config changes. On device, try `npm run tauri ios dev -- --force-ip-prompt` and pick the phone’s TUN address if LAN IP fails. iOS uses only the **main** window — desktop `chat-popout` is excluded from mobile builds. |
 | **Tray / desktop-only APIs** | Mobile build skips system tray; app icon badge still updates for blocked work. |
 
 ---

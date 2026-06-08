@@ -19,7 +19,7 @@
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import {
     connectWorkshop,
-    refreshDaemonHealth,
+    reconnectWorkshop,
   } from "$lib/workshopConnection";
   import type { DaemonHealth } from "$lib/daemon";
 
@@ -82,7 +82,9 @@
         revision={workspace.revision}
         onOpenChat={handleOpenChat}
         onDaemonHealth={async () => {
-          daemonHealth = await refreshDaemonHealth();
+          daemonHealth = await reconnectWorkshop((health) => {
+            daemonHealth = health;
+          });
         }}
       />
     {/if}

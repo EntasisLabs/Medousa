@@ -5,7 +5,7 @@
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { watchMobileViewport } from "$lib/platform";
+  import { isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
 
   async function openWorkCard(cardId: string) {
     if (layout.isMobile) {
@@ -17,7 +17,11 @@
   }
 
   onMount(() => {
-    const stopViewport = watchMobileViewport((mobile) => layout.setMobile(mobile));
+    const stopViewport = isTauriMobilePlatform()
+      ? () => {
+          layout.setMobile(true);
+        }
+      : watchMobileViewport((mobile) => layout.setMobile(mobile));
     const stopNative = initMobileNative(openWorkCard);
     return () => {
       stopViewport();

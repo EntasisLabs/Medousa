@@ -5,11 +5,11 @@
     type MedousaConfigPaths,
   } from "$lib/config";
   import {
-    checkDaemonHealth,
     getDaemonUrl,
     setDaemonUrl,
     type DaemonHealth,
   } from "$lib/daemon";
+  import { reconnectWorkshop } from "$lib/workshopConnection";
   import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauri } from "$lib/window";
@@ -105,9 +105,8 @@
     settings.daemonMessage = null;
     try {
       await setDaemonUrl(settings.daemonUrl);
-      const probe = await checkDaemonHealth();
+      const probe = await reconnectWorkshop(onDaemonHealth);
       settings.daemonMessage = probe.ok ? "Connected" : probe.message;
-      await onDaemonHealth();
     } catch (err) {
       settings.daemonMessage =
         err instanceof Error ? err.message : String(err);
@@ -138,7 +137,7 @@
         id="daemon-url"
         class="input mt-1 w-full max-w-xl"
         bind:value={settings.daemonUrl}
-        placeholder="http://127.0.0.1:7419"
+        placeholder={mobile ? "http://192.168.1.42:7419" : "http://127.0.0.1:7419"}
       />
       <div class="mt-3 flex items-center gap-2">
         <button

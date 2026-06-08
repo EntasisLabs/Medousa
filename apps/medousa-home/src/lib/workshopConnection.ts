@@ -4,6 +4,7 @@ import { runtime } from "$lib/stores/runtime.svelte";
 import { settings } from "$lib/stores/settings.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
+import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
   checkDaemonHealth,
   onInteractiveEvent,
@@ -23,6 +24,67 @@ export type WorkshopConnection = {
   refreshHealth: () => Promise<DaemonHealth | null>;
 };
 
+function registerStreamListeners(unlisteners: Promise<() => void>[]) {
+  unlisteners.push(
+    onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
+      workspace.applyEvent(event);
+      const kind = event.feed_event?.kind;
+      if (kind === "vault_note_created" || kind === "vault_note_updated") {
+        void vault.refreshNotes();
+        if (
+          vault.selectedPath &&
+          event.feed_event?.summary.includes(vault.selectedPath)
+        ) {
+          void vault.openNote(vault.selectedPath);
+        }
+      }
+    }),
+  );
+  unlisteners.push(onWorkspaceError((message) => workspace.setError(message)));
+  unlisteners.push(
+    onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
+      chat.applyStreamEvent(event);
+    }),
+  );
+  unlisteners.push(onInteractiveError((message) => chat.setError(message)));
+}
+
+async function startWorkshopStreams(): Promise<void> {
+  await stopWorkspaceStream();
+  await startWorkspaceStream(workspace.revision || undefined);
+  void recurring.refresh();
+  void chat.refreshSessions();
+  if (chat.messages.length === 0) {
+    void chat.switchSession(chat.sessionId);
+  }
+}
+
+async function loadWorkshopDefaults(): Promise<void> {
+  try {
+    await runtime.loadFromTuiDefaults();
+    void runtime.refresh();
+  } catch {
+    // Local defaults are optional when offline.
+  }
+}
+
+export async function reconnectWorkshop(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<DaemonHealth> {
+  await ensureMobileDaemonUrl();
+  const health = await checkDaemonHealth();
+  onHealthChange(health);
+
+  await stopWorkspaceStream();
+  stopInteractiveStream();
+
+  if (health.ok) {
+    await startWorkshopStreams();
+  }
+
+  return health;
+}
+
 /**
  * Shared daemon + SSE bootstrap for desktop and mobile shells.
  */
@@ -30,45 +92,27 @@ export function connectWorkshop(options: {
   onHealthChange: (health: DaemonHealth | null) => void;
 }): () => void {
   settings.applyTheme();
-  let health: DaemonHealth | null = null;
   const unlisteners: Promise<() => void>[] = [];
+  registerStreamListeners(unlisteners);
 
-  (async () => {
-    health = await checkDaemonHealth();
-    options.onHealthChange(health);
+  void (async () => {
+    try {
+      options.onHealthChange(null);
+      await ensureMobileDaemonUrl();
+      const health = await checkDaemonHealth();
+      options.onHealthChange(health);
 
-    await stopWorkspaceStream();
-    await startWorkspaceStream(workspace.revision || undefined);
-    await runtime.loadFromTuiDefaults();
-    void runtime.refresh();
-    void recurring.refresh();
-    void chat.refreshSessions();
-    if (chat.messages.length === 0) {
-      void chat.switchSession(chat.sessionId);
+      void loadWorkshopDefaults();
+
+      if (health.ok) {
+        await startWorkshopStreams();
+      }
+    } catch (err) {
+      options.onHealthChange({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
-
-    unlisteners.push(
-      onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
-        workspace.applyEvent(event);
-        const kind = event.feed_event?.kind;
-        if (kind === "vault_note_created" || kind === "vault_note_updated") {
-          void vault.refreshNotes();
-          if (
-            vault.selectedPath &&
-            event.feed_event?.summary.includes(vault.selectedPath)
-          ) {
-            void vault.openNote(vault.selectedPath);
-          }
-        }
-      }),
-    );
-    unlisteners.push(onWorkspaceError((message) => workspace.setError(message)));
-    unlisteners.push(
-      onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
-        chat.applyStreamEvent(event);
-      }),
-    );
-    unlisteners.push(onInteractiveError((message) => chat.setError(message)));
   })();
 
   return () => {

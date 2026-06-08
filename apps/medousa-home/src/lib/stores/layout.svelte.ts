@@ -1,5 +1,5 @@
 import type { MobileTab, YouDestination } from "$lib/types/mobile";
-import { isMobileViewport } from "$lib/platform";
+import { shouldUseMobileShell } from "$lib/platform";
 
 const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
@@ -11,7 +11,7 @@ const MOBILE_TAB_KEY = "medousa-home-mobile-tab";
 
 export class LayoutStore {
   isMobile = $state(
-    typeof window !== "undefined" ? isMobileViewport() : false,
+    typeof window !== "undefined" ? shouldUseMobileShell() : false,
   );
   mobileTab = $state<MobileTab>(loadMobileTab());
   youDestination = $state<YouDestination>("hub");

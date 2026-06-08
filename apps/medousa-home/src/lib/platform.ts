@@ -1,9 +1,23 @@
 /** Breakpoint aligned with Tailwind `md` — below = mobile shell. */
 export const MOBILE_LAYOUT_MAX_WIDTH_PX = 768;
 
+export function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** Native iOS/Android shell — always use mobile UI, not viewport width. */
+export function isTauriMobilePlatform(): boolean {
+  if (!isTauri() || typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 export function isMobileViewport(): boolean {
   if (typeof window === "undefined") return false;
   return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches;
+}
+
+export function shouldUseMobileShell(): boolean {
+  return isTauriMobilePlatform() || isMobileViewport();
 }
 
 export function watchMobileViewport(onChange: (mobile: boolean) => void): () => void {

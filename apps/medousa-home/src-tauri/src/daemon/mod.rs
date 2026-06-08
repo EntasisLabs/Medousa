@@ -17,7 +17,9 @@ use crate::daemon::types::{
     TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
 use reqwest::Client;
+use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, State};
 use tokio::sync::watch;
 
@@ -40,9 +42,44 @@ impl DaemonState {
 pub fn resolve_daemon_url() -> String {
     std::env::var("MEDOUSA_DAEMON_URL")
         .or_else(|_| std::env::var("STASIS_DAEMON_URL"))
-        .unwrap_or_else(|_| DEFAULT_DAEMON_URL.to_string())
-        .trim_end_matches('/')
-        .to_string()
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(read_persisted_daemon_url)
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string())
+}
+
+fn daemon_url_store_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("medousa")
+        .join("home_daemon_url.txt")
+}
+
+fn read_persisted_daemon_url() -> Option<String> {
+    let raw = std::fs::read_to_string(daemon_url_store_path()).ok()?;
+    let trimmed = raw.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn persist_daemon_url(url: &str) -> Result<(), String> {
+    let path = daemon_url_store_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    std::fs::write(path, url).map_err(|err| err.to_string())
+}
+
+fn daemon_http_client() -> Result<Client, String> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|err| err.to_string())
 }
 
 fn turn_defaults() -> (String, String) {
@@ -75,14 +112,15 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
     if trimmed.is_empty() {
         return Err("daemon URL cannot be empty".to_string());
     }
-    *state.daemon_url.lock().expect("daemon url lock") = trimmed;
+    *state.daemon_url.lock().expect("daemon url lock") = trimmed.clone();
+    persist_daemon_url(&trimmed)?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let client = Client::new();
+    let client = daemon_http_client()?;
     let url = format!("{base}/health");
     match client.get(&url).send().await {
         Ok(response) if response.status().is_success() => {
@@ -135,6 +173,7 @@ pub async fn workspace_stream_start(
 
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
     let client = Client::builder()
+        .connect_timeout(Duration::from_secs(5))
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|err| err.to_string())?;
@@ -239,6 +278,7 @@ pub async fn interactive_stream_start(
 ) -> Result<(), String> {
     let cancel_rx = replace_cancel_slot(&state.interactive_cancel);
     let client = Client::builder()
+        .connect_timeout(Duration::from_secs(5))
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|err| err.to_string())?;

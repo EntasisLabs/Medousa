@@ -1,3 +1,4 @@
+mod badge;
 mod daemon;
 mod messaging;
 mod medousa_paths;
