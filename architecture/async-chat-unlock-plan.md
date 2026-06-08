@@ -93,7 +93,7 @@ Durable host/worker synthesis delivery via **workspace + session**, not only int
 | `final` | true | Finish bubble; clear live |
 | `worker_ack` | false | Handoff; **unlock composer**; pulse++ |
 | `budget_approval` | false | Handoff; **unlock composer**; pulse++ |
-| `final_pending` | false | Still live (prepare_final path) |
+| `final_pending` | — | Legacy; redirects to `turn_progress` |
 | `needs_input` | true | Finish; unlock |
 
 ---

@@ -22,7 +22,8 @@ Rules:
 - Use workflows/jobs when work must persist across turns.
 - Do not claim tool receipts the worker has not produced.
 - Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn.
-- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering."#;
+- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
+- Turn control: answer in prose when no tools are needed; cognition_turn_begin_work for a progress line before host tools; cognition_turn_finish to commit when done; cognition_turn_request_more_rounds if the round budget is tight."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");

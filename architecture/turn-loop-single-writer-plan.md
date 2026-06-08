@@ -1,6 +1,6 @@
 # Turn loop — single writer & explicit loop entry
 
-**Status:** Phase A–B in progress (2026-06-07)
+**Status:** ✅ Complete (2026-06-07)
 
 Replaces interim-heuristic loop management with a deterministic rule: **no tool call → EndTurn; any tool call → loop semantics**. Interim user-facing prose is declared via `cognition_turn_begin_work`, not inferred from text.
 
@@ -37,27 +37,25 @@ begin_work(message)  →  turn_progress on bus (status / empty bubble)
 finish(message)      →  terminal commit (existing)
 ```
 
-| Tool | Role |
-|------|------|
-| `cognition_turn_begin_work` | Signal tool loop start; principal-facing interim via bus progress |
-| `cognition_turn_finish` | Hard stop + final message (unchanged) |
-| `cognition_turn_request_more_rounds` | Budget pause (unchanged) |
-| `cognition_turn_prepare_final` | **Deprecated** — flag only; no `final_pending` body injection |
+| Tool | Host bus | Worker lane |
+|------|----------|-------------|
+| `cognition_turn_begin_work` | ✅ | ✅ |
+| `cognition_turn_finish` | ✅ | ✅ |
+| `cognition_turn_request_more_rounds` | ✅ | ✅ |
+| `cognition_turn_prepare_final` | ❌ removed | ✅ workshop only (deprecated) |
 
 ---
 
-## FSM policy (post-change)
+## FSM policy (shipped)
 
 ### No tool debt (zero invocations)
 
 | Condition | Action |
 |-----------|--------|
-| `prepare_final` pending + non-empty draft | EndTurn |
+| `prepare_final` pending + non-empty draft (workshop) | EndTurn |
 | At max rounds | EndTurn (fuse) |
 | Clarifying question | EndTurn |
 | **Otherwise** | **EndTurn** (`no_tools_prose`) |
-
-No `ContinueLoop(AwaitingTools)` on interim phrasing.
 
 ### Tool debt (invocations exist)
 
@@ -67,9 +65,7 @@ No `ContinueLoop(AwaitingTools)` on interim phrasing.
 | At max rounds | EndTurn (fuse) |
 | Missing AVEC/calibrate receipts | ContinueLoop (MissingReceipts) |
 | `prepare_final` + non-empty draft | EndTurn |
-| Substantive / clarifying / default | EndTurn |
-
-No `ContinueLoop` on interim phrasing or `PrepareFinalInterim`.
+| Default | EndTurn |
 
 ---
 
@@ -79,14 +75,14 @@ No `ContinueLoop` on interim phrasing or `PrepareFinalInterim`.
 |-------|--------------|-----|
 | `content_delta` | — | Append preview |
 | `turn_progress` | **no** | `statusLine`; fill content only if bubble empty |
-| `final` | yes | Terminal replace / merge (TUI) |
-| `scratch_reset` | — | Clear preview (TUI); Home TBD |
+| `final` | yes | Terminal merge (`resolveTurnContent.ts` / TUI reducer) |
+| `scratch_reset` | — | Clear preview (Home + TUI) |
 
 ---
 
 ## Orchestrator
 
-**Continuation synthesis** (`should_run_continuation`) disabled on principal interactive surfaces (`interactive`, `tui`, `home-*`). Scheduled/headless lanes may still run it.
+**Continuation synthesis** disabled on principal interactive surfaces (`interactive`, `tui`, `home-*`). Scheduled/headless lanes may still run it.
 
 ---
 
@@ -97,6 +93,17 @@ No `ContinueLoop` on interim phrasing or `PrepareFinalInterim`.
 | **A** | Doc + `cognition_turn_begin_work` + `turn_progress` bus + FSM simplify | ✅ |
 | **B** | Home/TUI reducers, drop `final_pending` body, disable interactive continuation | ✅ |
 | **C** | Deprecate `prepare_final` on host; Home scratch_reset + terminal merge | ✅ |
+| **D** | Host allowlist: `begin_work` in, `prepare_final` out; docs closed | ✅ |
+
+---
+
+## Success criteria (met)
+
+- [x] Prose-only turn ends in one delivery (no interim continue)
+- [x] Progress lines do not swap bubble body on terminal
+- [x] Host cannot call `prepare_final` (workshop retains it)
+- [x] Interactive continuation synthesis off
+- [x] Home + TUI handle `scratch_reset` and terminal merge
 
 ---
 
@@ -105,9 +112,9 @@ No `ContinueLoop` on interim phrasing or `PrepareFinalInterim`.
 | Area | Path |
 |------|------|
 | Control tools | `src/turn_control_tools.rs` |
+| Host allowlist | `src/agent_runtime/turn_worker/policy.rs` |
 | FSM | `src/agent_runtime/turn_completion_fsm.rs` |
 | Tool loop | `src/medousa_tool_loop.rs` |
-| Stream sink | `src/agent_runtime/stream_sink.rs` |
-| SSE events | `src/interactive_turn_runtime.rs` |
+| Home merge | `apps/medousa-home/src/lib/utils/resolveTurnContent.ts` |
 | Home reducer | `apps/medousa-home/src/lib/stores/chat.svelte.ts` |
 | Orchestrator | `src/agent_runtime/turn_orchestrator.rs` |

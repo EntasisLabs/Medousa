@@ -56,6 +56,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
         &[
             "cognition_turn_prepare_final",
             "cognition.turn.prepare_final",
+            "cognition_turn_begin_work",
+            "cognition.turn.begin_work",
             "cognition_turn_finish",
             "cognition.turn.finish",
             "cognition_turn_request_more_rounds",
@@ -168,8 +170,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
     push(
         &mut names,
         &[
-            "cognition_turn_prepare_final",
-            "cognition.turn.prepare_final",
+            "cognition_turn_begin_work",
+            "cognition.turn.begin_work",
             "cognition_turn_finish",
             "cognition.turn.finish",
             "cognition_turn_request_more_rounds",
@@ -353,5 +355,8 @@ mod tests {
         assert!(!names.contains("cognition_grapheme_run"));
         assert!(!names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_mcp_invoke"));
+        assert!(!names.contains("cognition_turn_prepare_final"));
+        assert!(names.contains("cognition_turn_begin_work"));
+        assert!(names.contains("cognition_turn_finish"));
     }
 }

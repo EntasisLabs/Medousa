@@ -32,6 +32,7 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_spawn_turn_worker",
     "cognition_turn_worker_status",
     "cognition_turn_worker_cancel",
+    "cognition_turn_begin_work",
     "cognition_turn_prepare_final",
     "cognition_turn_finish",
     "cognition_turn_request_more_rounds",
@@ -144,9 +145,12 @@ mod tests {
             "cognition_runtime_workflow_run",
             "cognition_capability_search",
             "cognition_spawn_turn_worker",
+            "cognition_turn_begin_work",
+            "cognition_turn_finish",
         ] {
             assert!(tool_allowed(tool, &host), "host bus missing {tool}");
         }
+        assert!(!tool_allowed("cognition_turn_prepare_final", &host));
         assert!(!tool_allowed("cognition_grapheme_run", &host));
         assert!(!tool_allowed("cognition_capability_invoke", &host));
         assert!(!tool_allowed("cognition_grapheme_template_run", &host));

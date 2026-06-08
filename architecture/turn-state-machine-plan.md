@@ -26,7 +26,7 @@ Gatekeeper rarely ran on that path because it only engaged when `heuristic_would
 | **Transcript integrity** | On `ContinueLoop`, append assistant draft to tool lane **before** the next model call |
 | **No tool debt → default end** | Zero invocations + non-interim prose → end turn (no hidden loop manager) |
 | **Tool debt → receipts later** | After tools ran, continue only for receipts / prepare_final / fuse (Phases 2–3) |
-| **Model tools win** | `cognition_turn_finish`, `prepare_final`, `request_more_rounds` bypass FSM prose path |
+| **Model tools win** | `cognition_turn_finish`, `cognition_turn_begin_work`, `request_more_rounds` bypass FSM prose path |
 
 Intent classifier and round **caps** stay. Gatekeeper model is **removed from the hot path** in Phase 3, not patched in Phase 1.
 
@@ -140,7 +140,7 @@ stateDiagram-v2
 
 ---
 
-### Phase 5 — Single writer & explicit loop entry 🚧 In progress
+### Phase 5 — Single writer & explicit loop entry ✅ Done
 
 **Goal:** Tool call = loop; prose-only = EndTurn; `cognition_turn_begin_work` replaces interim heuristics.
 
@@ -155,6 +155,7 @@ See [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md).
 - ✅ Home/TUI reducer alignment for `turn_progress`
 - ✅ Deprecate `prepare_final` on host (workshop lane retains flag); prompts updated
 - ✅ Home `scratch_reset` + terminal merge (`resolveTurnContent.ts`)
+- ✅ Host bus allowlist: `begin_work` in, `prepare_final` out
 
 ---
 

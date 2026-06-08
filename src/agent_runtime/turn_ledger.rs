@@ -252,8 +252,8 @@ pub fn stuck_turn_user_message(
     format!(
         "We hit the turn loop limit: {text_only_limit} consecutive principal-visible replies without \
          new tool receipts (turn budget: {max_tool_rounds} rounds; used {rounds_executed} this turn). \
-         What should we do next — run the missing ritual (calibrate, moods), call cognition_turn_prepare_final \
-         with a shorter final answer, or extend the budget?"
+         What should we do next — run the missing ritual (calibrate, moods), call cognition_turn_finish \
+         with the complete answer, or extend the budget?"
     )
 }
 
