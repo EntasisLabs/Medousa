@@ -83,6 +83,8 @@ mod slash_command_stage_services;
 mod slash_commands;
 #[path = "medousa_tui/theme_ui.rs"]
 mod theme_ui;
+#[path = "medousa_tui/tui_presentation.rs"]
+mod tui_presentation;
 #[path = "medousa_tui/ui_helpers.rs"]
 mod ui_helpers;
 #[path = "medousa_tui/ui_render.rs"]
@@ -209,6 +211,7 @@ struct TuiState {
     ui_dirty: bool,
     pending_agent_chunk_delta: String,
     pending_agent_chunk_count: u64,
+    turn_parts: medousa::turn_parts::TurnPartsAccumulator,
     pending_paint_since: Option<Instant>,
     perf: UiPerfStats,
     worker_cmd_tx: mpsc::Sender<WorkerCommand>,
@@ -693,6 +696,7 @@ async fn main() -> Result<()> {
         ui_dirty: false,
         pending_agent_chunk_delta: String::new(),
         pending_agent_chunk_count: 0,
+        turn_parts: medousa::turn_parts::TurnPartsAccumulator::default(),
         pending_paint_since: None,
         perf: UiPerfStats::default(),
         worker_cmd_tx,
@@ -1106,11 +1110,8 @@ fn export_current_session(state: &TuiState, format: &str) -> std::result::Result
                     "Assistant"
                 };
                 out.push_str(&format!("## {title} ({})\n\n", turn.timestamp.to_rfc3339()));
-                out.push_str(&turn.content);
+                out.push_str(&medousa::turn_parts::compose_turn_markdown(turn));
                 out.push_str("\n\n");
-                if !turn.tool_names.is_empty() {
-                    out.push_str(&format!("Tools: {}\n\n", turn.tool_names.join(", ")));
-                }
             }
 
             out.push_str("## Verification Runs\n\n");
@@ -1352,6 +1353,7 @@ mod tests {
             ui_dirty: false,
             pending_agent_chunk_delta: String::new(),
             pending_agent_chunk_count: 0,
+        turn_parts: medousa::turn_parts::TurnPartsAccumulator::default(),
             pending_paint_since: None,
             perf: UiPerfStats::default(),
             next_worker_request_id: 0,

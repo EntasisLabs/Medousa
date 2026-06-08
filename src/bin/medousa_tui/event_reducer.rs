@@ -69,6 +69,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             }
             state.pending_agent_chunk_delta.clear();
             state.pending_agent_chunk_count = 0;
+            state.turn_parts.scratch_reset();
             super::invalidate_markdown_cache(state);
         }
         TuiEvent::AgentChunk { turn_id, delta } => {
@@ -88,6 +89,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 state.received_native_reasoning = true;
                 state.in_thinking_tag = false;
                 state.stream_tag_tail.clear();
+                state.turn_parts.push_reasoning_delta(&delta);
                 super::push_thinking(state, delta);
             }
         }
@@ -155,34 +157,34 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             super::flush_thinking_buffer(state);
 
             let final_text = visible_text;
-            if let Some(idx) = state.active_agent_stream_turn {
-                let mut persisted_turn: Option<ConversationTurn> = None;
-                if let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.content = resolve_agent_turn_content(&turn.content, &final_text, true);
-                    turn.tool_names = tool_names.clone();
-                    turn.answer_state = Some("needs_input".to_string());
-                    turn.timestamp = Utc::now();
-                    persisted_turn = Some(turn.clone());
-                }
-                state.active_agent_stream_turn = None;
-                if let Some(turn) = persisted_turn {
-                    let session_id = state.session_id.clone();
-                    super::history_services::append_turn_daemon_first(state, &session_id, &turn)
-                        .await;
-                }
-            } else {
-                let turn = ConversationTurn::plain(
-                    "agent",
-                    final_text,
-                    Utc::now(),
+            let finalized = if let Some(idx) = state.active_agent_stream_turn {
+                let content = state
+                    .conversation
+                    .get(idx)
+                    .map(|turn| resolve_agent_turn_content(&turn.content, &final_text, true))
+                    .unwrap_or_else(|| final_text.clone());
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    content,
                     tool_names.clone(),
                     Some("needs_input".to_string()),
                 );
-                let session_id = state.session_id.clone();
-                super::history_services::append_turn_daemon_first(state, &session_id, &turn)
-                    .await;
-                state.conversation.push(turn);
-            }
+                if let Some(existing) = state.conversation.get_mut(idx) {
+                    *existing = turn.clone();
+                }
+                state.active_agent_stream_turn = None;
+                turn
+            } else {
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    final_text.clone(),
+                    tool_names.clone(),
+                    Some("needs_input".to_string()),
+                );
+                state.conversation.push(turn.clone());
+                turn
+            };
+            let session_id = state.session_id.clone();
+            super::history_services::append_turn_daemon_first(state, &session_id, &finalized)
+                .await;
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -193,6 +195,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             text,
             tool_names,
             terminal,
+            work_id,
         } => {
             if !is_active_stream_turn(state, turn_id) {
                 return;
@@ -232,42 +235,51 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 None => None,
             };
             let final_text = visible_text;
+            let is_worker_handoff = !terminal && work_id.is_some();
 
-            if let Some(idx) = state.active_agent_stream_turn {
-                let mut persisted_turn: Option<ConversationTurn> = None;
-                if let Some(turn) = state.conversation.get_mut(idx) {
-                    turn.content =
-                        resolve_agent_turn_content(&turn.content, &final_text, terminal);
-                    turn.tool_names = tool_names.clone();
-                    turn.answer_state = answer_state.clone();
-                    turn.timestamp = Utc::now();
-                    persisted_turn = Some(turn.clone());
+            let persisted = if is_worker_handoff {
+                let turn = state.turn_parts.finalize_worker_ack_turn(
+                    final_text.clone(),
+                    tool_names.clone(),
+                    work_id.clone(),
+                );
+                state.conversation.push(turn.clone());
+                state.active_agent_stream_turn = None;
+                turn
+            } else if let Some(idx) = state.active_agent_stream_turn {
+                let content = state
+                    .conversation
+                    .get(idx)
+                    .map(|turn| resolve_agent_turn_content(&turn.content, &final_text, terminal))
+                    .unwrap_or_else(|| final_text.clone());
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    content,
+                    tool_names.clone(),
+                    answer_state.clone(),
+                );
+                if let Some(existing) = state.conversation.get_mut(idx) {
+                    *existing = turn.clone();
                 }
                 if terminal {
                     state.active_agent_stream_turn = None;
                 }
-                if let Some(turn) = persisted_turn {
-                    let session_id = state.session_id.clone();
-                    super::history_services::append_turn_daemon_first(state, &session_id, &turn)
-                        .await;
-                }
+                turn
             } else {
-                let turn = ConversationTurn::plain(
-                    "agent",
-                    final_text,
-                    Utc::now(),
+                let turn = state.turn_parts.finalize_assistant_turn(
+                    final_text.clone(),
                     tool_names.clone(),
                     answer_state.clone(),
                 );
-                let session_id = state.session_id.clone();
-                super::history_services::append_turn_daemon_first(state, &session_id, &turn)
-                    .await;
                 state.conversation.push(turn.clone());
                 if !terminal {
                     state.active_agent_stream_turn =
                         Some(state.conversation.len().saturating_sub(1));
                 }
-            }
+                turn
+            };
+
+            let session_id = state.session_id.clone();
+            super::history_services::append_turn_daemon_first(state, &session_id, &persisted).await;
             if state.auto_scroll {
                 state.conv_scroll = state.conv_max_scroll;
             }
@@ -314,6 +326,47 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     break;
                 }
             }
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::ToolRunStarted {
+            tool_run_id,
+            tool_name,
+            input_summary,
+            tool_round,
+        } => {
+            state.turn_parts.tool_started(
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                tool_round,
+            );
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            super::push_obs(state, format!("◆ {label}  {input_summary}"));
+            super::invalidate_markdown_cache(state);
+        }
+        TuiEvent::ToolRunFinished {
+            tool_run_id,
+            tool_name,
+            status,
+            input_summary,
+            output_summary,
+            tool_round: _,
+        } => {
+            state.turn_parts.tool_finished(
+                &tool_run_id,
+                &status,
+                output_summary.clone(),
+                Vec::new(),
+            );
+            let label = super::tui_presentation::format_tool_name(&tool_name);
+            let suffix = output_summary
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| format!(" → {value}"))
+                .unwrap_or_default();
+            super::push_obs(
+                state,
+                format!("◈ tool {label} {status}  {input_summary}{suffix}"),
+            );
             super::invalidate_markdown_cache(state);
         }
         TuiEvent::ToolInvoked {

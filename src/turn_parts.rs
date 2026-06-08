@@ -113,6 +113,14 @@ impl TurnPartsAccumulator {
         run.finished_at = Some(Utc::now());
     }
 
+    pub fn preview_tool_runs(&self) -> Vec<TurnPart> {
+        self.tool_run_parts()
+    }
+
+    pub fn has_pending_tool_runs(&self) -> bool {
+        !self.tool_runs.is_empty()
+    }
+
     pub fn reset(&mut self) {
         *self = Self::default();
     }

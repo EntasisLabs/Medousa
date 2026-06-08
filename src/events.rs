@@ -1,6 +1,22 @@
 /// Events emitted by cognition tools and background agent tasks back to the TUI event loop.
 #[derive(Debug, Clone)]
 pub enum TuiEvent {
+    /// Structured tool run started (P1/P4 presentation).
+    ToolRunStarted {
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        tool_round: usize,
+    },
+    /// Structured tool run finished (P1/P4 presentation).
+    ToolRunFinished {
+        tool_run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        output_summary: Option<String>,
+        tool_round: usize,
+    },
     /// A cognition tool was invoked during the tool loop.
     ToolInvoked {
         tool_name: String,
@@ -29,6 +45,8 @@ pub enum TuiEvent {
         tool_names: Vec<String>,
         /// When false, the turn stays open (host worker ack); a later terminal response completes it.
         terminal: bool,
+        /// Workspace card id when this is a worker handoff ack.
+        work_id: Option<String>,
     },
     /// Medousa is asking the operator a clarifying question (terminal, distinct from a full answer).
     AgentNeedsInput {

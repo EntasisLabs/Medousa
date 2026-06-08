@@ -800,7 +800,7 @@ fn build_conversation_text(
 ) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    for turn in turns {
+    for (index, turn) in turns.iter().enumerate() {
         match turn.role.as_str() {
             "user" => {
                 lines.push(Line::from(Span::styled(
@@ -847,14 +847,19 @@ fn build_conversation_text(
                 ]));
             }
             lines.extend(render_markdown_lines_cached(state, content_body, width));
+            if let Some(handoff) = super::tui_presentation::render_handoff_line(turn) {
+                lines.push(handoff);
+            }
         }
 
-        if !turn.tool_names.is_empty() {
-            lines.push(Line::from(Span::styled(
-                format!("  [{}]", turn.tool_names.join(", ")),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
+        let live_parts = state
+            .active_agent_stream_turn
+            .filter(|active| *active == index)
+            .map(|_| &state.turn_parts);
+        lines.extend(super::tui_presentation::render_turn_tool_lines(
+            turn,
+            live_parts,
+        ));
 
         lines.push(Line::from(""));
     }

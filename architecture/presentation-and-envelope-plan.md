@@ -280,9 +280,11 @@ These are **not** Phase 1–2 work — but the envelope avoids painting us into 
 
 ---
 
-### P4 — TUI presentation alignment (later)
+### P4 — TUI presentation alignment ✅
 
 Reuse envelope types in `event_reducer` — unify chat tool row with observability receipts. TUI already renders `tool_names` separately and has artifact storage in workers.
+
+**Shipped:** `TurnPartsAccumulator` on TUI turns; `tool_started`/`tool_finished` SSE + local sink; round-grouped tool lines in conversation; handoff badges; session export via `compose_turn_markdown`; observability lines aligned with structured tool events.
 
 ---
 

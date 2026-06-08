@@ -59,7 +59,7 @@ impl AgentStreamSink for TuiStreamSink {
         turn_id: u64,
         text: String,
         tool_names: Vec<String>,
-        _work_id: Option<String>,
+        work_id: Option<String>,
     ) {
         let _ = self
             .tx
@@ -68,6 +68,7 @@ impl AgentStreamSink for TuiStreamSink {
                 text,
                 tool_names,
                 terminal: false,
+                work_id,
             })
             .await;
     }
@@ -80,6 +81,7 @@ impl AgentStreamSink for TuiStreamSink {
                 text,
                 tool_names,
                 terminal: true,
+                work_id: None,
             })
             .await;
     }
@@ -115,6 +117,50 @@ impl AgentStreamSink for TuiStreamSink {
 
     async fn notice(&self, message: String) {
         let _ = self.tx.send(TuiEvent::UiNotice(message)).await;
+    }
+
+    async fn tool_run_started(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        tool_round: usize,
+    ) {
+        let _ = self
+            .tx
+            .send(TuiEvent::ToolRunStarted {
+                tool_run_id,
+                tool_name,
+                input_summary,
+                tool_round,
+            })
+            .await;
+    }
+
+    async fn tool_run_finished(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        output_summary: Option<String>,
+        _tool_input: Value,
+        _tool_output: Value,
+        _input_receipt: Option<ArtifactReceiptMeta>,
+        _output_receipt: Option<ArtifactReceiptMeta>,
+        tool_round: usize,
+    ) {
+        let _ = self
+            .tx
+            .send(TuiEvent::ToolRunFinished {
+                tool_run_id,
+                tool_name,
+                status,
+                input_summary,
+                output_summary,
+                tool_round,
+            })
+            .await;
     }
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
@@ -249,6 +295,7 @@ pub(crate) async fn start_prompt_run(
     state.auto_scroll = true;
     state.conv_scroll = state.conv_max_scroll;
     state.active_agent_stream_turn = None;
+    state.turn_parts.reset();
     state.pending_agent_chunk_delta.clear();
     state.pending_agent_chunk_count = 0;
     state.in_thinking_tag = false;
@@ -256,13 +303,7 @@ pub(crate) async fn start_prompt_run(
     state.received_native_reasoning = false;
 
     if persist_user_turn {
-        let user_turn = ConversationTurn::plain(
-            "user",
-            prompt.clone(),
-            chrono::Utc::now(),
-            vec![],
-            None,
-        );
+        let user_turn = medousa::turn_parts::user_conversation_turn(prompt.clone());
         let session_id = state.session_id.clone();
         super::history_services::append_turn_daemon_first(state, &session_id, &user_turn).await;
         state.conversation.push(user_turn);
@@ -625,6 +666,7 @@ async fn start_daemon_stream_prompt_run(
     state.auto_scroll = true;
     state.conv_scroll = state.conv_max_scroll;
     state.active_agent_stream_turn = None;
+    state.turn_parts.reset();
     state.pending_agent_chunk_delta.clear();
     state.pending_agent_chunk_count = 0;
     state.in_thinking_tag = false;
@@ -633,13 +675,7 @@ async fn start_daemon_stream_prompt_run(
     state.pending_response_verified = None;
 
     if persist_user_turn {
-        let user_turn = ConversationTurn::plain(
-            "user",
-            prompt.to_string(),
-            chrono::Utc::now(),
-            vec![],
-            None,
-        );
+        let user_turn = medousa::turn_parts::user_conversation_turn(prompt.to_string());
         let session_id = state.session_id.clone();
         super::history_services::append_turn_daemon_first(state, &session_id, &user_turn).await;
         state.conversation.push(user_turn);
@@ -760,6 +796,34 @@ async fn dispatch_daemon_stream_event(
                     .map_err(|err| err.to_string())?;
             }
         }
+        "tool_started" => {
+            if let (Some(run_id), Some(tool_name)) = (payload.tool_run_id, payload.tool_name) {
+                event_tx
+                    .send(TuiEvent::ToolRunStarted {
+                        tool_run_id: run_id,
+                        tool_name,
+                        input_summary: payload.tool_input_summary.unwrap_or_default(),
+                        tool_round: payload.tool_round.unwrap_or(1),
+                    })
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+        "tool_finished" => {
+            if let (Some(run_id), Some(tool_name)) = (payload.tool_run_id, payload.tool_name) {
+                event_tx
+                    .send(TuiEvent::ToolRunFinished {
+                        tool_run_id: run_id,
+                        tool_name,
+                        status: payload.tool_status.unwrap_or_else(|| "succeeded".to_string()),
+                        input_summary: payload.tool_input_summary.unwrap_or_default(),
+                        output_summary: payload.tool_output_summary,
+                        tool_round: payload.tool_round.unwrap_or(1),
+                    })
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+        }
         "needs_input" => {
             let text = payload
                 .final_text
@@ -820,6 +884,11 @@ async fn dispatch_daemon_stream_event(
                     text,
                     tool_names,
                     terminal: payload.terminal,
+                    work_id: if payload.phase == "worker_ack" {
+                        payload.work_id
+                    } else {
+                        None
+                    },
                 })
                 .await
                 .map_err(|err| err.to_string())?;
