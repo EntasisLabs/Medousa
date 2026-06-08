@@ -1,7 +1,8 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { renderMarkdownPreview } from "$lib/utils/markdownPreview";
+  import { hydrateMermaid } from "$lib/markdown/mermaid";
+  import { renderMarkdownPreview } from "$lib/markdown";
 
   interface Props {
     visible: boolean;
@@ -27,6 +28,14 @@
       ? renderMarkdownPreview(vault.content, vault.labelByPath())
       : "",
   );
+
+  let previewContainer: HTMLElement | undefined = $state();
+
+  $effect(() => {
+    previewHtml;
+    if (!previewContainer) return;
+    void hydrateMermaid(previewContainer);
+  });
 
   async function handleSave(event: Event) {
     event.preventDefault();
@@ -98,6 +107,7 @@
     ></textarea>
   {:else}
     <article
+      bind:this={previewContainer}
       class="markdown-content flex-1 overflow-y-auto px-5 py-4 text-sm"
     >
       {@html previewHtml}

@@ -1,15 +1,25 @@
 <script lang="ts">
-  import { renderMarkdownPreview } from "$lib/utils/markdownPreview";
+  import { renderMarkdown } from "$lib/markdown";
+  import { hydrateMermaid } from "$lib/markdown/mermaid";
 
   interface Props {
     content: string;
+    titleByPath?: Map<string, string>;
   }
 
-  let { content }: Props = $props();
+  let { content, titleByPath }: Props = $props();
 
-  const html = $derived(renderMarkdownPreview(content));
+  let container: HTMLDivElement | undefined = $state();
+
+  const html = $derived(renderMarkdown(content, titleByPath));
+
+  $effect(() => {
+    html;
+    if (!container) return;
+    void hydrateMermaid(container);
+  });
 </script>
 
-<div class="markdown-content text-sm leading-relaxed">
+<div bind:this={container} class="markdown-content text-sm leading-relaxed">
   {@html html}
 </div>

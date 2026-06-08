@@ -246,18 +246,20 @@ These are **not** Phase 1–2 work — but the envelope avoids painting us into 
 
 ---
 
-### P2 — Home tool UI + markdown engine (Home only)
+### P2 — Home tool UI + markdown engine (Home only) ✅
 
 **Goal:** Operator-grade chat + journal rendering.
 
-1. Shared markdown module (replace `markdownPreview.ts`)  
-2. `ToolRunChips.svelte` in `ChatPanel`  
-3. Style pass: chip colors by status (running / ok / failed / delegated)  
-4. Journal preview uses same renderer  
+1. Shared markdown module (replace `markdownPreview.ts`) ✅  
+2. `ToolRunChips.svelte` in `ChatPanel` ✅  
+3. Style pass: chip colors by status (running / ok / failed / delegated) ✅  
+4. Journal preview uses same renderer ✅  
 
 **Touch:** `MarkdownContent.svelte`, new `ToolRunChips.svelte`, `ChatPanel.svelte`, vault preview if any  
 
 **Risk:** Low–medium. Visual-only; fallback to current mono tool line.
+
+**Shipped:** `$lib/markdown` (marked + DOMPurify + mermaid hydrate), Obsidian callouts/wikilinks/tables/tasks, wired in chat + vault preview.
 
 ---
 

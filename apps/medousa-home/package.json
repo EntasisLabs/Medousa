@@ -19,7 +19,10 @@
     "@lucide/svelte": "^1.17.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2.3.3",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "dompurify": "^3.4.8",
+    "marked": "^18.0.5",
+    "mermaid": "^11.15.0"
   },
   "devDependencies": {
     "@skeletonlabs/skeleton": "^2.10.3",
@@ -29,6 +32,7 @@
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tauri-apps/cli": "^2",
+    "@types/dompurify": "^3.0.5",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.3",
     "svelte": "^5.0.0",

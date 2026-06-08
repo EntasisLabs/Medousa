@@ -146,7 +146,131 @@
   .markdown-content h4,
   .markdown-content h5,
   .markdown-content h6 {
-    @apply text-surface-50;
+    @apply mt-4 mb-2 font-semibold text-surface-50 first:mt-0;
+  }
+
+  .markdown-content h1 {
+    @apply text-xl;
+  }
+
+  .markdown-content h2 {
+    @apply text-lg;
+  }
+
+  .markdown-content h3 {
+    @apply text-base;
+  }
+
+  .markdown-content p {
+    @apply my-2 first:mt-0 last:mb-0;
+  }
+
+  .markdown-content ul,
+  .markdown-content ol {
+    @apply my-2 list-outside pl-5;
+  }
+
+  .markdown-content ul {
+    @apply list-disc;
+  }
+
+  .markdown-content ol {
+    @apply list-decimal;
+  }
+
+  .markdown-content li {
+    @apply my-0.5;
+  }
+
+  .markdown-content li > ul,
+  .markdown-content li > ol {
+    @apply my-1;
+  }
+
+  .markdown-content blockquote {
+    @apply my-3 border-l-2 border-surface-500/50 pl-3 text-surface-300 italic;
+  }
+
+  .markdown-content hr {
+    @apply my-4 border-surface-500/40;
+  }
+
+  .markdown-content table {
+    @apply my-3 w-full border-collapse text-left text-xs;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    @apply border border-surface-500/40 px-2.5 py-1.5 align-top;
+  }
+
+  .markdown-content th {
+    @apply bg-surface-800/80 font-semibold text-surface-100;
+  }
+
+  .markdown-content tr:nth-child(even) td {
+    @apply bg-surface-800/35;
+  }
+
+  .markdown-content del {
+    @apply text-surface-500;
+  }
+
+  .markdown-content input[type="checkbox"] {
+    @apply mr-2 align-middle;
+  }
+
+  .markdown-content li:has(> input[type="checkbox"]) {
+    @apply list-none -ml-5;
+  }
+
+  .markdown-wikilink {
+    @apply cursor-default rounded bg-primary-500/15 px-1 text-primary-200;
+  }
+
+  .markdown-callout {
+    @apply my-3 overflow-hidden rounded-md border border-surface-500/40 bg-surface-800/60;
+  }
+
+  .markdown-callout-title {
+    @apply border-b border-surface-500/35 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-surface-200;
+  }
+
+  .markdown-callout-body {
+    @apply px-3 py-2 text-surface-200;
+  }
+
+  .markdown-callout-body p {
+    @apply my-1 first:mt-0 last:mb-0;
+  }
+
+  .markdown-callout-note .markdown-callout-title {
+    @apply text-primary-300;
+    background-color: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .markdown-callout-tip .markdown-callout-title {
+    @apply text-success-300;
+    background-color: rgb(var(--color-success-500) / 0.12);
+  }
+
+  .markdown-callout-warning .markdown-callout-title {
+    @apply text-warning-300;
+    background-color: rgb(var(--color-warning-500) / 0.12);
+  }
+
+  .markdown-callout-danger .markdown-callout-title,
+  .markdown-callout-error .markdown-callout-title {
+    @apply text-error-300;
+    background-color: rgb(var(--color-error-500) / 0.12);
+  }
+
+  .markdown-content pre.mermaid {
+    @apply my-3 overflow-x-auto rounded-md border border-surface-500/40 bg-surface-900 p-3;
+  }
+
+  .markdown-mermaid-error {
+    @apply border-error-500/40 text-error-300;
   }
 
   .markdown-inline-code,
