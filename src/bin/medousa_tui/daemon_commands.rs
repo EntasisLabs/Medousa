@@ -196,8 +196,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         queue: Some("default".to_string()),
         prompt: prompt.to_string(),
         system_prompt: Some(
-            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT,
-                .to_string(),
+            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
         ),
         cron_expr: cron_expr.to_string(),
         timezone: Some("UTC".to_string()),
