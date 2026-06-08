@@ -100,6 +100,8 @@ struct AppState {
     agent_turn_jobs: Arc<RwLock<HashMap<String, AgentTurnJobRecord>>>,
     default_runtime_config: session_mapping::IngestSessionRuntimeConfig,
     cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
+    cancelled_interactive_turns: Arc<RwLock<HashSet<String>>>,
+    active_session_turns: medousa::session_active_turn::ActiveSessionTurnRegistry,
     session_runtime_configs:
         Arc<RwLock<HashMap<String, medousa::session_mapping::IngestSessionRuntimeConfig>>>,
     backend: String,
@@ -397,6 +399,8 @@ async fn main() -> Result<()> {
         agent_turn_jobs: Arc::new(RwLock::new(HashMap::new())),
         default_runtime_config,
         cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
+        cancelled_interactive_turns: Arc::new(RwLock::new(HashSet::new())),
+        active_session_turns: medousa::session_active_turn::new_registry(),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
         worker_id: worker_id.clone(),
@@ -427,6 +431,10 @@ async fn main() -> Result<()> {
         .route(
             "/v1/sessions/{session_id}/name",
             axum::routing::put(medousa::daemon_handlers::set_session_display_name),
+        )
+        .route(
+            "/v1/sessions/{session_id}/active-turn",
+            get(get_active_session_turn).post(cancel_active_session_turn),
         )
         .route("/v1/heartbeat/status", get(heartbeat_status))
         .route("/v1/jobs/{job_id}/result", get(get_job_result))
@@ -1736,6 +1744,23 @@ async fn start_interactive_turn(
     State(state): State<AppState>,
     Json(request): Json<InteractiveTurnRequest>,
 ) -> Result<Json<InteractiveTurnResponse>, (StatusCode, String)> {
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+
+    if state
+        .active_session_turns
+        .read()
+        .await
+        .contains_key(&session_id)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "session already has an active interactive turn".to_string(),
+        ));
+    }
+
     let turn_id = format!("daemon-turn-{}", Uuid::new_v4().simple());
     let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
 
@@ -1755,6 +1780,14 @@ async fn start_interactive_turn(
     )
     .map_err(internal_error)?;
 
+    medousa::session_active_turn::register_active_turn(
+        &state.active_session_turns,
+        &session_id,
+        &turn_id,
+        &response.stream_url,
+    )
+    .await;
+
     let delivery_target =
         channel_delivery::delivery_target_from_interactive_turn(&request, &turn_id);
     state.channel_deliveries.write().await.insert(
@@ -1764,6 +1797,8 @@ async fn start_interactive_turn(
     record_job_delivery_pending(&state, &turn_id).await;
 
     let stream_registry = state.interactive_turn_streams.clone();
+    let active_session_turns = state.active_session_turns.clone();
+    let cancelled_interactive_turns = state.cancelled_interactive_turns.clone();
     let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let delivery_records = state.job_delivery_records.clone();
@@ -1787,6 +1822,10 @@ async fn start_interactive_turn(
         model: request.model.clone(),
         response_depth_mode: request.response_depth_mode.clone(),
     };
+    let session_hooks = medousa::agent_runtime::InteractiveTurnSessionHooks {
+        cancelled_turns: Some(cancelled_interactive_turns),
+        active_turn_registry: Some(active_session_turns.clone()),
+    };
     tokio::spawn(async move {
         // Give the client a brief window to subscribe before first deltas.
         tokio::time::sleep(Duration::from_millis(120)).await;
@@ -1798,6 +1837,13 @@ async fn start_interactive_turn(
             stream_tx,
             Some(delivery),
             Some(continuation_scope),
+            Some(session_hooks),
+        )
+        .await;
+
+        medousa::session_active_turn::clear_active_turn_by_turn_id(
+            &active_session_turns,
+            &turn_id,
         )
         .await;
 
@@ -1808,6 +1854,74 @@ async fn start_interactive_turn(
     });
 
     Ok(Json(response))
+}
+
+async fn get_active_session_turn(
+    State(state): State<AppState>,
+    AxumPath(session_id): AxumPath<String>,
+) -> Json<medousa::session_active_turn::ActiveSessionTurnResponse> {
+    Json(
+        medousa::session_active_turn::get_active_turn(&state.active_session_turns, &session_id)
+            .await,
+    )
+}
+
+async fn cancel_active_session_turn(
+    State(state): State<AppState>,
+    AxumPath(session_id): AxumPath<String>,
+) -> Json<medousa::session_active_turn::CancelActiveSessionTurnResponse> {
+    let active = state
+        .active_session_turns
+        .write()
+        .await
+        .remove(&session_id);
+
+    let Some(active) = active else {
+        return Json(medousa::session_active_turn::CancelActiveSessionTurnResponse {
+            cancelled: false,
+            turn_id: None,
+            message: "no active turn for session".to_string(),
+        });
+    };
+
+    state
+        .cancelled_interactive_turns
+        .write()
+        .await
+        .insert(active.turn_id.clone());
+
+    if let Some(stream_tx) = state
+        .interactive_turn_streams
+        .read()
+        .await
+        .get(&active.turn_id)
+        .cloned()
+    {
+        publish_interactive_turn_event(
+            &stream_tx,
+            medousa::interactive_turn_runtime::error_stream_event(
+                &active.turn_id,
+                "interactive turn cancelled",
+            ),
+        );
+    }
+
+    state
+        .channel_deliveries
+        .write()
+        .await
+        .remove(&active.turn_id);
+    state
+        .job_delivery_records
+        .write()
+        .await
+        .remove(&active.turn_id);
+
+    Json(medousa::session_active_turn::CancelActiveSessionTurnResponse {
+        cancelled: true,
+        turn_id: Some(active.turn_id),
+        message: "interactive turn cancelled".to_string(),
+    })
 }
 
 async fn interactive_turn_stream(

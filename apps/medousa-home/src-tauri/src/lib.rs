@@ -69,6 +69,8 @@ pub fn run() {
             daemon::turn_budget::turn_budget_deny,
             daemon::session::session_list,
             daemon::session::session_get_history,
+            daemon::session::session_get_active_turn,
+            daemon::session::session_cancel_active_turn,
             daemon::catalog::catalog_list_manuscripts,
             daemon::catalog::catalog_list_capabilities,
             daemon::catalog::catalog_get_capability,

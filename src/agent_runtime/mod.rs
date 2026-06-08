@@ -58,7 +58,8 @@ pub use heartbeat_turn::{
     heartbeat_policy_doc_path, load_heartbeat_policy_doc, run_heartbeat_agent_turn,
 };
 pub use daemon_interactive_turn::{
-    InteractiveTurnDeliveryContext, run_agent_turn, run_daemon_interactive_turn,
+    InteractiveTurnDeliveryContext, InteractiveTurnSessionHooks, run_agent_turn,
+    run_daemon_interactive_turn,
 };
 pub use runtime::{
     MedousaAgentRuntime, build_agent_runtime, build_daemon_agent_runtime,

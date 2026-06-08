@@ -7,6 +7,7 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import {
+    cancelActiveSessionTurn,
     enqueueDaemonAsk,
     sendInteractiveTurn,
     startInteractiveStream,
@@ -128,12 +129,14 @@
     chat.beginUserMessage(prompt);
 
     try {
+      await cancelActiveSessionTurn(chat.sessionId).catch(() => {});
       await stopInteractiveStream();
       const accepted = await sendInteractiveTurn(
         chat.sessionId,
         prompt,
         buildInteractiveTurnOptions(),
       );
+      chat.noteTurnStarted(accepted.turn_id);
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));

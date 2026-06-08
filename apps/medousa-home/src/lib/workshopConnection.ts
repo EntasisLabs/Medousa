@@ -76,6 +76,7 @@ async function startWorkshopStreams(): Promise<void> {
   void recurring.refresh();
   await chat.refreshSessions();
   await chat.ensureSessionHydrated({ notice: true });
+  await chat.tryReattachActiveTurn();
 }
 
 async function loadWorkshopDefaults(connected: boolean): Promise<void> {

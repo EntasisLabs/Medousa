@@ -8,6 +8,8 @@ import type {
   ManuscriptCatalogResponse,
 } from "$lib/types/catalog";
 import type {
+  ActiveSessionTurnResponse,
+  CancelActiveSessionTurnResponse,
   SessionHistoryResponse,
   SessionSummary,
 } from "$lib/types/session";
@@ -69,6 +71,22 @@ export async function getSessionHistory(
   sessionId: string,
 ): Promise<SessionHistoryResponse> {
   return invoke<SessionHistoryResponse>("session_get_history", { sessionId });
+}
+
+export async function getActiveSessionTurn(
+  sessionId: string,
+): Promise<ActiveSessionTurnResponse> {
+  return invoke<ActiveSessionTurnResponse>("session_get_active_turn", {
+    sessionId,
+  });
+}
+
+export async function cancelActiveSessionTurn(
+  sessionId: string,
+): Promise<CancelActiveSessionTurnResponse> {
+  return invoke<CancelActiveSessionTurnResponse>("session_cancel_active_turn", {
+    sessionId,
+  });
 }
 
 export async function listManuscripts(options?: {

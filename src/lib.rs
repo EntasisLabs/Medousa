@@ -63,6 +63,7 @@ pub mod interactive_turn_runtime;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
 pub mod session;
+pub mod session_active_turn;
 pub mod service_launch;
 pub mod session_mapping;
 pub mod session_store;

@@ -49,19 +49,19 @@ This plan unlocks chat incrementally without waiting for a full TurnTicket rewri
 
 ---
 
-## Tier 1 — Session turn registry (medium)
+## Tier 1 — Session turn registry (medium) ✅
 
 Mirror ingest `active_ingest_jobs`:
 
 ```
-session_id → { turn_id, stream_url, phase, started_at }
+session_id → { turn_id, stream_url, phase, composer_handoff, started_at }
 ```
 
-- `GET /v1/sessions/{id}/active-turn` for reconnect after WebView refresh
-- `POST .../cancel` — today `stopInteractiveStream` only kills the client listener
-- Per-session turn mutex (or turn-scoped runtime instead of global `turn_scope`)
+- `GET /v1/sessions/{id}/active-turn` — reconnect after WebView refresh
+- `POST /v1/sessions/{id}/active-turn` — daemon-side cancel (best-effort; in-flight model work may finish)
+- Per-session turn mutex — `409 Conflict` if a live turn already exists
 
-**Files:** `medousa_daemon.rs`, new `session_active_turn.rs`, Home startup hydrate + reattach SSE.
+**Files:** `session_active_turn.rs`, `medousa_daemon.rs`, `daemon_interactive_turn.rs` (session hooks), Home `chat.svelte.ts` + `workshopConnection.ts` reattach on hydrate.
 
 ---
 
@@ -104,7 +104,8 @@ Durable host/worker tickets across adapters. Chat observes **workspace + session
 | Tier | Scope | Status |
 |------|--------|--------|
 | **0** | Composer handoff + pulse + stuck-state fixes | ✅ |
-| **1–3** | Session registry, TurnTicket, worker bus | ⏸ Paused — see [turn-state-machine-plan.md](turn-state-machine-plan.md) |
+| **1** | Session registry, reconnect, daemon cancel | ✅ |
+| **2–3** | TurnTicket, worker bus | Planned |
 
 ---
 
@@ -113,6 +114,7 @@ Durable host/worker tickets across adapters. Chat observes **workspace + session
 | Area | Path |
 |------|------|
 | Chat state | `apps/medousa-home/src/lib/stores/chat.svelte.ts` |
+| Session registry | `src/session_active_turn.rs` |
 | Chat UI | `apps/medousa-home/src/lib/components/chat/ChatPanel.svelte` |
 | SSE wiring | `apps/medousa-home/src/lib/workshopConnection.ts` |
 | Stream events | `src/interactive_turn_runtime.rs` |

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -15,6 +15,7 @@ use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session::{ConversationTurn, append_turn, load_history};
+use crate::session_active_turn::{self, ActiveSessionTurnRegistry};
 
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
 
@@ -54,30 +55,100 @@ impl InteractiveTurnDeliveryContext {
     }
 }
 
+/// Optional session registry + cancel hooks for daemon interactive turns.
+#[derive(Clone, Default)]
+pub struct InteractiveTurnSessionHooks {
+    pub cancelled_turns: Option<Arc<RwLock<HashSet<String>>>>,
+    pub active_turn_registry: Option<ActiveSessionTurnRegistry>,
+}
+
 struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
     stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
     delivery: Option<InteractiveTurnDeliveryContext>,
+    session_hooks: InteractiveTurnSessionHooks,
+}
+
+impl InteractiveTurnStreamSink {
+    async fn turn_cancelled(&self) -> bool {
+        match &self.session_hooks.cancelled_turns {
+            Some(set) => set.read().await.contains(&self.turn_id),
+            None => false,
+        }
+    }
+
+    async fn emit_cancelled_if_needed(&self) -> bool {
+        if !self.turn_cancelled().await {
+            return false;
+        }
+
+        publish(
+            &self.stream_tx,
+            interactive_turn_runtime::error_stream_event(
+                &self.turn_id,
+                "interactive turn cancelled",
+            ),
+        );
+
+        if let Some(delivery) = &self.delivery {
+            delivery
+                .mark_complete(Some("interactive turn cancelled".to_string()))
+                .await;
+        }
+
+        true
+    }
+
+    fn publish_tracked(&self, event: anyhow::Result<InteractiveTurnStreamEvent>) {
+        if let Ok(payload) = event {
+            if let Some(registry) = &self.session_hooks.active_turn_registry {
+                let registry = registry.clone();
+                let turn_id = self.turn_id.clone();
+                let event_type = payload.event_type.clone();
+                let phase = payload.phase.clone();
+                tokio::spawn(async move {
+                    session_active_turn::note_stream_event(
+                        &registry,
+                        &turn_id,
+                        &event_type,
+                        &phase,
+                    )
+                    .await;
+                });
+            }
+            let _ = self.stream_tx.send(payload);
+        }
+    }
 }
 
 #[async_trait]
 impl AgentStreamSink for InteractiveTurnStreamSink {
     async fn content_chunk(&self, _turn_id: u64, delta: String) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::content_delta_stream_event(&self.turn_id, &delta),
-        );
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+        self.publish_tracked(interactive_turn_runtime::content_delta_stream_event(
+            &self.turn_id,
+            &delta,
+        ));
     }
 
     async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::reasoning_delta_stream_event(&self.turn_id, &delta),
-        );
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+        self.publish_tracked(interactive_turn_runtime::reasoning_delta_stream_event(
+            &self.turn_id,
+            &delta,
+        ));
     }
 
     async fn agent_worker_ack(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
         let assistant_turn = ConversationTurn {
             role: "assistant".to_string(),
             content: text.clone(),
@@ -87,8 +158,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         };
         append_turn(&self.session_id, &assistant_turn);
 
-        publish(
-            &self.stream_tx,
+        self.publish_tracked(
             interactive_turn_runtime::worker_ack_stream_event_with_tools(
                 &self.turn_id,
                 &text,
@@ -98,6 +168,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
         let assistant_turn = ConversationTurn {
             role: "assistant".to_string(),
             content: text.clone(),
@@ -107,14 +181,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         };
         append_turn(&self.session_id, &assistant_turn);
 
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::final_stream_event_with_tools(
-                &self.turn_id,
-                &text,
-                tool_names,
-            ),
-        );
+        self.publish_tracked(interactive_turn_runtime::final_stream_event_with_tools(
+            &self.turn_id,
+            &text,
+            tool_names,
+        ));
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -122,6 +193,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
         let assistant_turn = ConversationTurn {
             role: "assistant".to_string(),
             content: text.clone(),
@@ -131,8 +206,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         };
         append_turn(&self.session_id, &assistant_turn);
 
-        publish(
-            &self.stream_tx,
+        self.publish_tracked(
             interactive_turn_runtime::needs_input_stream_event_with_tools(
                 &self.turn_id,
                 &text,
@@ -146,8 +220,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
-        publish(
-            &self.stream_tx,
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        self.publish_tracked(
             interactive_turn_runtime::final_pending_stream_event_with_tools(
                 &self.turn_id,
                 &text,
@@ -166,10 +243,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         };
         append_turn(&self.session_id, &assistant_turn);
 
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::error_stream_event(&self.turn_id, &message),
-        );
+        self.publish_tracked(interactive_turn_runtime::error_stream_event(
+            &self.turn_id,
+            &message,
+        ));
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(Some(message)).await;
@@ -177,17 +254,15 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn notice(&self, message: String) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::status_stream_event(&self.turn_id, "orchestration", &message),
-        );
+        self.publish_tracked(interactive_turn_runtime::status_stream_event(
+            &self.turn_id,
+            "orchestration",
+            &message,
+        ));
     }
 
     async fn scratch_reset(&self, _turn_id: u64) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id),
-        );
+        self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id));
     }
 
     async fn turn_budget_approval_required(
@@ -200,29 +275,27 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         reason: String,
         progress_summary: Option<String>,
     ) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::budget_approval_stream_event(
-                &self.turn_id,
-                &request_id,
-                rounds_executed,
-                max_tool_rounds,
-                requested_rounds,
-                &reason,
-                progress_summary.as_deref(),
-            ),
-        );
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        self.publish_tracked(interactive_turn_runtime::budget_approval_stream_event(
+            &self.turn_id,
+            &request_id,
+            rounds_executed,
+            max_tool_rounds,
+            requested_rounds,
+            &reason,
+            progress_summary.as_deref(),
+        ));
     }
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::status_stream_event(
-                &self.turn_id,
-                "tool",
-                &format!("tool={tool_name} {input_summary}"),
-            ),
-        );
+        self.publish_tracked(interactive_turn_runtime::status_stream_event(
+            &self.turn_id,
+            "tool",
+            &format!("tool={tool_name} {input_summary}"),
+        ));
     }
 
     async fn tool_payload(
@@ -233,14 +306,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         _input_receipt: Option<ArtifactReceiptMeta>,
         _output_receipt: Option<ArtifactReceiptMeta>,
     ) {
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::status_stream_event(
-                &self.turn_id,
-                "tool",
-                &format!("tool_payload={tool_name}"),
-            ),
-        );
+        self.publish_tracked(interactive_turn_runtime::status_stream_event(
+            &self.turn_id,
+            "tool",
+            &format!("tool_payload={tool_name}"),
+        ));
     }
 }
 
@@ -559,6 +629,7 @@ pub async fn run_daemon_interactive_turn(
     stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
     delivery: Option<InteractiveTurnDeliveryContext>,
     continuation_scope: Option<TurnContinuationScope>,
+    session_hooks: Option<InteractiveTurnSessionHooks>,
 ) {
     publish(
         &stream_tx,
@@ -575,6 +646,7 @@ pub async fn run_daemon_interactive_turn(
         session_id,
         stream_tx,
         delivery,
+        session_hooks: session_hooks.unwrap_or_default(),
     });
 
     run_agent_turn(

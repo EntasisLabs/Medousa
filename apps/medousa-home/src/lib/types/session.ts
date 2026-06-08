@@ -19,3 +19,23 @@ export interface SessionTurn {
   tool_names?: string[];
   answer_state?: string | null;
 }
+
+export interface ActiveSessionTurn {
+  turn_id: string;
+  session_id: string;
+  stream_url: string;
+  phase: string;
+  composer_handoff: boolean;
+  started_at: string;
+}
+
+export interface ActiveSessionTurnResponse {
+  active: boolean;
+  turn?: ActiveSessionTurn;
+}
+
+export interface CancelActiveSessionTurnResponse {
+  cancelled: boolean;
+  turn_id?: string;
+  message: string;
+}

@@ -1,4 +1,11 @@
-import { getSessionHistory, listSessions } from "$lib/daemon";
+import {
+  cancelActiveSessionTurn,
+  getActiveSessionTurn,
+  getSessionHistory,
+  listSessions,
+  startInteractiveStream,
+  stopInteractiveStream,
+} from "$lib/daemon";
 import type { ChatMessage, InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { SessionHistoryResponse, SessionSummary } from "$lib/types/session";
 import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -21,6 +28,8 @@ export class ChatStore {
   historyLoading = $state(false);
   /** Brief banner after reloading turns from the Mac daemon (e.g. after WebView refresh). */
   historyNotice = $state<string | null>(null);
+  /** Daemon turn id for the live interactive stream, if any. */
+  activeTurnId = $state<string | null>(null);
   private assistantId: string | null = null;
   /** Bumps when the local transcript changes; stale daemon reloads must not overwrite it. */
   private transcriptEpoch = 0;
@@ -86,6 +95,7 @@ export class ChatStore {
     this.streamError = null;
     this.historyNotice = null;
     this.backgroundActivity = 0;
+    this.activeTurnId = null;
     await this.refreshSessions();
   }
 
@@ -138,12 +148,14 @@ export class ChatStore {
     this.historyNotice = null;
     this.messages = [];
     this.backgroundActivity = 0;
+    this.activeTurnId = null;
     this.historyLoading = true;
     const epoch = this.transcriptEpoch;
     try {
       const history = await getSessionHistory(sessionId);
       if (epoch !== this.transcriptEpoch) return;
       this.messages = mapTurns(history.turns);
+      await this.tryReattachActiveTurn();
     } catch (err) {
       if (epoch === this.transcriptEpoch) {
         this.streamError = err instanceof Error ? err.message : String(err);
@@ -157,6 +169,79 @@ export class ChatStore {
 
   clearHistoryNotice() {
     this.historyNotice = null;
+  }
+
+  noteTurnStarted(turnId: string) {
+    this.activeTurnId = turnId;
+  }
+
+  clearActiveTurn() {
+    this.activeTurnId = null;
+  }
+
+  /**
+   * Reattach to a daemon turn still running after WebView refresh or reconnect.
+   * Returns true when an SSE listener was started.
+   */
+  async tryReattachActiveTurn(): Promise<boolean> {
+    if (this.liveStreamActive) return false;
+
+    const sessionId = this.sessionId.trim();
+    if (!sessionId) return false;
+
+    try {
+      const active = await getActiveSessionTurn(sessionId);
+      if (!active.active || !active.turn) {
+        this.activeTurnId = null;
+        return false;
+      }
+
+      const turn = active.turn;
+      this.activeTurnId = turn.turn_id;
+
+      await stopInteractiveStream();
+      await startInteractiveStream(turn.stream_url);
+
+      if (turn.composer_handoff) {
+        this.backgroundActivity = Math.max(this.backgroundActivity, 1);
+        return true;
+      }
+
+      if (!this.assistantId) {
+        const id = crypto.randomUUID();
+        this.messages = [
+          ...this.messages,
+          {
+            id,
+            role: "assistant",
+            content: "",
+            streaming: true,
+          },
+        ];
+        this.assistantId = id;
+      }
+      this.liveStreamActive = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Cancel the daemon-side turn and detach the local SSE listener. */
+  async cancelActiveTurn(): Promise<void> {
+    const sessionId = this.sessionId.trim();
+    if (!sessionId) return;
+
+    try {
+      await cancelActiveSessionTurn(sessionId);
+    } catch {
+      // Best-effort — still stop the local listener below.
+    }
+
+    await stopInteractiveStream();
+    this.activeTurnId = null;
+    this.finishStream();
+    this.backgroundActivity = 0;
   }
 
   /** Workspace/worker or budget card settled — drop one background pulse unit. */
@@ -190,6 +275,7 @@ export class ChatStore {
       }
       if (event.terminal) {
         this.liveStreamActive = false;
+        this.activeTurnId = null;
         if (this.backgroundActivity > 0) {
           this.backgroundActivity -= 1;
         }
@@ -207,6 +293,7 @@ export class ChatStore {
       if (event.terminal) {
         this.assistantId = null;
         this.liveStreamActive = false;
+        this.activeTurnId = null;
         if (this.backgroundActivity > 0) {
           this.backgroundActivity -= 1;
         }
@@ -270,6 +357,7 @@ export class ChatStore {
         this.backgroundActivity -= 1;
       }
       this.finishStream();
+      this.activeTurnId = null;
       void this.refreshSessions();
     }
   }
@@ -319,6 +407,7 @@ export class ChatStore {
         this.backgroundActivity -= 1;
       }
       this.finishStream();
+      this.activeTurnId = null;
       void this.refreshSessions();
     }
   }

@@ -11,6 +11,8 @@
     lookupArtifact,
     sendInteractiveTurn,
     startInteractiveStream,
+    cancelActiveSessionTurn,
+    stopInteractiveStream,
   } from "$lib/daemon";
   import { defaultJournalPathForToday, isAskJobId } from "$lib/types/askJob";
   import type { ArtifactPreview } from "$lib/types/artifact";
@@ -229,11 +231,14 @@
     chat.beginUserMessage(prompt);
     onOpenChat();
     try {
+      await cancelActiveSessionTurn(chat.sessionId).catch(() => {});
+      await stopInteractiveStream();
       const accepted = await sendInteractiveTurn(
         chat.sessionId,
         prompt,
         buildInteractiveTurnOptions(),
       );
+      chat.noteTurnStarted(accepted.turn_id);
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
