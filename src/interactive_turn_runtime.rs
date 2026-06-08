@@ -194,6 +194,54 @@ pub fn scratch_reset_stream_event(turn_id: &str) -> Result<InteractiveTurnStream
     build_event(turn_id, "scratch_reset", "streaming", "assistant scratch cleared")
 }
 
+pub fn tool_started_stream_event(
+    turn_id: &str,
+    tool_run_id: &str,
+    tool_name: &str,
+    input_summary: &str,
+    tool_round: usize,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event(
+        turn_id,
+        "tool_started",
+        "tool_loop",
+        &format!("Running {tool_name}"),
+    )?;
+    event.tool_run_id = Some(tool_run_id.to_string());
+    event.tool_name = Some(tool_name.to_string());
+    event.tool_status = Some("running".to_string());
+    event.tool_input_summary = Some(input_summary.to_string());
+    event.tool_round = Some(tool_round.max(1));
+    Ok(event)
+}
+
+pub fn tool_finished_stream_event(
+    turn_id: &str,
+    tool_run_id: &str,
+    tool_name: &str,
+    status: &str,
+    input_summary: &str,
+    output_summary: Option<&str>,
+    tool_round: usize,
+    artifact_refs: Vec<crate::daemon_api::StreamToolArtifactRef>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let message = match output_summary.filter(|value| !value.trim().is_empty()) {
+        Some(summary) => format!("{tool_name}: {summary}"),
+        None => format!("{tool_name} {status}"),
+    };
+    let mut event = build_event(turn_id, "tool_finished", "tool_loop", &message)?;
+    event.tool_run_id = Some(tool_run_id.to_string());
+    event.tool_name = Some(tool_name.to_string());
+    event.tool_status = Some(status.to_string());
+    event.tool_input_summary = Some(input_summary.to_string());
+    event.tool_output_summary = output_summary.map(str::to_string);
+    event.tool_round = Some(tool_round.max(1));
+    if !artifact_refs.is_empty() {
+        event.tool_artifact_refs = Some(artifact_refs);
+    }
+    Ok(event)
+}
+
 pub fn budget_approval_stream_event(
     turn_id: &str,
     request_id: &str,
@@ -246,5 +294,12 @@ fn build_event(
         budget_request_id: None,
         requested_rounds: None,
         work_id: None,
+        tool_run_id: None,
+        tool_name: None,
+        tool_status: None,
+        tool_input_summary: None,
+        tool_output_summary: None,
+        tool_round: None,
+        tool_artifact_refs: None,
     })
 }

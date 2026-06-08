@@ -11,11 +11,13 @@ pub mod daemon_interactive_turn;
 pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod continuation;
+pub mod presentation;
 pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;
 pub mod stream_sink;
 pub mod system_prompt;
+pub mod tool_stream;
 pub mod turn_budget;
 pub mod turn_completion;
 pub mod turn_completion_fsm;
@@ -42,6 +44,13 @@ pub use turn_delivery::{
 pub use continuation::{
     build_continuation_prior_messages, build_continuation_prompt, collect_tool_names,
     should_run_continuation,
+};
+pub use presentation::{
+    format_channel_delivery_text, format_tools_footer_markdown,
+    format_tools_footer_markdown_from_invocations, format_tools_footer_plain,
+    maybe_append_tools_to_canonical_body, presentation_profile_for_channel,
+    presentation_profile_for_surface, unique_tool_names, ChannelToolsFooter,
+    PresentationProfile,
 };
 pub use prompt_prep::{
     CheapRecallProbe, ContextPackQuality, IdentityContextProbe, RecallSnippet,

@@ -411,17 +411,31 @@ impl MedousaToolLoopPipeline {
                 if use_parallel && tool_calls.len() > 1 {
                     let mut join_set = tokio::task::JoinSet::new();
                     for call in tool_calls.clone() {
+                        let run_id = crate::agent_runtime::tool_stream::new_tool_run_id();
+                        if let Some(gate) = completion_gate.as_ref() {
+                            if let Some(sink) = gate.sink.as_ref() {
+                                crate::agent_runtime::tool_stream::emit_tool_run_started(
+                                    sink,
+                                    &run_id,
+                                    &call.fn_name,
+                                    &call.fn_arguments,
+                                    rounds_executed,
+                                )
+                                .await;
+                            }
+                        }
                         let registry = self.tool_registry.clone();
+                        let run_id_spawn = run_id.clone();
                         join_set.spawn(async move {
                             let output = registry
                                 .invoke_tool(&call.fn_name, call.fn_arguments.clone())
                                 .await;
-                            (call, output)
+                            (call, output, run_id_spawn)
                         });
                     }
 
                     while let Some(joined) = join_set.join_next().await {
-                        let (call, output) = match joined {
+                        let (call, output, run_id) = match joined {
                             Ok(pair) => pair,
                             Err(error) => {
                                 if let Some(gate) = completion_gate.as_ref() {
@@ -445,13 +459,50 @@ impl MedousaToolLoopPipeline {
                             prepare_final_in_batch = true;
                         }
                         invocations.push(ToolInvocation {
-                            tool_name: call.fn_name,
-                            tool_input: call.fn_arguments,
-                            tool_output,
+                            tool_name: call.fn_name.clone(),
+                            tool_input: call.fn_arguments.clone(),
+                            tool_output: tool_output.clone(),
                         });
+                        if let Some(gate) = completion_gate.as_ref() {
+                            if let Some(sink) = gate.sink.as_ref() {
+                                let safe_input = crate::settings_guard::redact_json_value(
+                                    &call.fn_arguments,
+                                );
+                                let safe_output =
+                                    crate::settings_guard::redact_json_value(&tool_output);
+                                crate::agent_runtime::tool_stream::emit_tool_run_finished(
+                                    sink,
+                                    &run_id,
+                                    rounds_executed,
+                                    invocations.last().expect("invocation"),
+                                    crate::payload_receipt::receipt_meta(
+                                        &safe_input,
+                                        crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+                                    ),
+                                    crate::payload_receipt::receipt_meta(
+                                        &safe_output,
+                                        crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+                                    ),
+                                )
+                                .await;
+                            }
+                        }
                     }
                 } else {
                     for call in tool_calls {
+                        let run_id = crate::agent_runtime::tool_stream::new_tool_run_id();
+                        if let Some(gate) = completion_gate.as_ref() {
+                            if let Some(sink) = gate.sink.as_ref() {
+                                crate::agent_runtime::tool_stream::emit_tool_run_started(
+                                    sink,
+                                    &run_id,
+                                    &call.fn_name,
+                                    &call.fn_arguments,
+                                    rounds_executed,
+                                )
+                                .await;
+                            }
+                        }
                         let tool_output = tool_output_from_invoke(
                             self.tool_registry
                                 .invoke_tool(&call.fn_name, call.fn_arguments.clone())
@@ -468,10 +519,34 @@ impl MedousaToolLoopPipeline {
                             tool_output_text,
                         )));
                         invocations.push(ToolInvocation {
-                            tool_name: call.fn_name,
-                            tool_input: call.fn_arguments,
-                            tool_output,
+                            tool_name: call.fn_name.clone(),
+                            tool_input: call.fn_arguments.clone(),
+                            tool_output: tool_output.clone(),
                         });
+                        if let Some(gate) = completion_gate.as_ref() {
+                            if let Some(sink) = gate.sink.as_ref() {
+                                let safe_input = crate::settings_guard::redact_json_value(
+                                    &call.fn_arguments,
+                                );
+                                let safe_output =
+                                    crate::settings_guard::redact_json_value(&tool_output);
+                                crate::agent_runtime::tool_stream::emit_tool_run_finished(
+                                    sink,
+                                    &run_id,
+                                    rounds_executed,
+                                    invocations.last().expect("invocation"),
+                                    crate::payload_receipt::receipt_meta(
+                                        &safe_input,
+                                        crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+                                    ),
+                                    crate::payload_receipt::receipt_meta(
+                                        &safe_output,
+                                        crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+                                    ),
+                                )
+                                .await;
+                            }
+                        }
                     }
                 }
 

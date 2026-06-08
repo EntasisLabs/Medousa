@@ -340,6 +340,72 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         ));
     }
 
+    async fn tool_run_started(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        tool_round: usize,
+    ) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+        self.publish_tracked(interactive_turn_runtime::tool_started_stream_event(
+            &self.turn_id,
+            &tool_run_id,
+            &tool_name,
+            &input_summary,
+            tool_round,
+        ));
+    }
+
+    async fn tool_run_finished(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        output_summary: Option<String>,
+        tool_input: Value,
+        tool_output: Value,
+        input_receipt: Option<ArtifactReceiptMeta>,
+        output_receipt: Option<ArtifactReceiptMeta>,
+        tool_round: usize,
+    ) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+        let safe_input = crate::settings_guard::redact_json_value(&tool_input);
+        let safe_output = crate::settings_guard::redact_json_value(&tool_output);
+        let input_receipt = input_receipt.or_else(|| {
+            crate::payload_receipt::receipt_meta(
+                &safe_input,
+                crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+            )
+        });
+        let output_receipt = output_receipt.or_else(|| {
+            crate::payload_receipt::receipt_meta(
+                &safe_output,
+                crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+            )
+        });
+        let artifact_refs = super::tool_stream::artifact_refs_from_receipts(
+            input_receipt.as_ref(),
+            output_receipt.as_ref(),
+        );
+        self.publish_tracked(interactive_turn_runtime::tool_finished_stream_event(
+            &self.turn_id,
+            &tool_run_id,
+            &tool_name,
+            &status,
+            &input_summary,
+            output_summary.as_deref(),
+            tool_round,
+            artifact_refs,
+        ));
+        let _ = (tool_input, tool_output, input_receipt, output_receipt);
+    }
+
     async fn tool_payload(
         &self,
         tool_name: String,
@@ -644,6 +710,47 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         self.inner.tool_invoked(tool_name, input_summary).await;
+    }
+
+    async fn tool_run_started(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        tool_round: usize,
+    ) {
+        self.inner
+            .tool_run_started(tool_run_id, tool_name, input_summary, tool_round)
+            .await;
+    }
+
+    async fn tool_run_finished(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        output_summary: Option<String>,
+        tool_input: Value,
+        tool_output: Value,
+        input_receipt: Option<ArtifactReceiptMeta>,
+        output_receipt: Option<ArtifactReceiptMeta>,
+        tool_round: usize,
+    ) {
+        self.inner
+            .tool_run_finished(
+                tool_run_id,
+                tool_name,
+                status,
+                input_summary,
+                output_summary,
+                tool_input,
+                tool_output,
+                input_receipt,
+                output_receipt,
+                tool_round,
+            )
+            .await;
     }
 
     async fn tool_payload(

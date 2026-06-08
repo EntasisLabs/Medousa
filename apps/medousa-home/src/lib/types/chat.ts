@@ -1,3 +1,20 @@
+export interface ToolArtifactRef {
+  role: string;
+  content_type: string;
+  byte_size: number;
+  hash64: string;
+}
+
+export interface ToolRunState {
+  runId: string;
+  toolName: string;
+  status: "running" | "succeeded" | "failed";
+  round: number;
+  inputSummary?: string | null;
+  outputSummary?: string | null;
+  artifactRefs?: ToolArtifactRef[];
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -9,6 +26,8 @@ export interface ChatMessage {
   statusLine?: string | null;
   /** Tools invoked this turn (cumulative). */
   tools?: string[];
+  /** Structured tool runs grouped by round (P1). */
+  toolRuns?: ToolRunState[];
   /** Collapsed reasoning scratch from reasoning_delta. */
   reasoning?: string | null;
   /** Verifier / turn lifecycle state from session history. */
@@ -41,4 +60,11 @@ export interface InteractiveTurnStreamEvent {
   budget_request_id?: string | null;
   requested_rounds?: number | null;
   work_id?: string | null;
+  tool_run_id?: string | null;
+  tool_name?: string | null;
+  tool_status?: string | null;
+  tool_input_summary?: string | null;
+  tool_output_summary?: string | null;
+  tool_round?: number | null;
+  tool_artifact_refs?: ToolArtifactRef[] | null;
 }

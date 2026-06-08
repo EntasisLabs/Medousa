@@ -40,6 +40,7 @@ Start here for product-level usage:
 23. [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md) — identity store as relational memory (preferences, contacts, cognitive mode, remember tool); Stasis 0.4.0; Phases 0–5
 24. [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) — **Planned:** relevance-ranked digest, `cognition_identity_recall`, YAML identity manuscripts (workers + cron + delivery); revises Phase 4 sequencing
 25. [medousa-home-plan.md](medousa-home-plan.md) — **Design:** daemon-first Medousa Home (workspace feed + Kanban cards from Stasis, vault notes, deferred Tauri); API contracts W1–V3 before any UI
+26. [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) — **Plan:** channel-agnostic turn envelope, surface formatters, Home tool chips + Obsidian markdown, attachment hooks
 
 ## Primary Code Anchors
 

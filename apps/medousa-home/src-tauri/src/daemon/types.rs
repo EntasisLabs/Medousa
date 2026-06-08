@@ -160,6 +160,28 @@ pub struct InteractiveTurnStreamEvent {
     pub requested_rounds: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_input_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_output_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_round: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_artifact_refs: Option<Vec<StreamToolArtifactRef>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamToolArtifactRef {
+    pub role: String,
+    pub content_type: String,
+    pub byte_size: usize,
+    pub hash64: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

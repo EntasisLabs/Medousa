@@ -40,6 +40,39 @@ pub trait AgentStreamSink: Send + Sync {
         input_receipt: Option<ArtifactReceiptMeta>,
         output_receipt: Option<ArtifactReceiptMeta>,
     );
+    async fn tool_run_started(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        tool_round: usize,
+    ) {
+        let _ = (tool_run_id, tool_round);
+        self.tool_invoked(tool_name, input_summary).await;
+    }
+    async fn tool_run_finished(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        _status: String,
+        _input_summary: String,
+        _output_summary: Option<String>,
+        tool_input: Value,
+        tool_output: Value,
+        input_receipt: Option<ArtifactReceiptMeta>,
+        output_receipt: Option<ArtifactReceiptMeta>,
+        _tool_round: usize,
+    ) {
+        let _ = tool_run_id;
+        self.tool_payload(
+            tool_name,
+            tool_input,
+            tool_output,
+            input_receipt,
+            output_receipt,
+        )
+        .await;
+    }
 
     /// Clear in-flight assistant scratch text before the next model round (TUI replaces draft).
     async fn scratch_reset(&self, turn_id: u64) {

@@ -165,21 +165,7 @@ impl TurnScratchpad {
     }
 
     pub fn summarize_for_user_footer(invocations: &[ToolInvocation]) -> Option<String> {
-        if invocations.is_empty() {
-            return None;
-        }
-        let names = invocations
-            .iter()
-            .map(|i| i.tool_name.as_str())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut names = names;
-        names.sort();
-        Some(format!(
-            "\n\n---\n_Tools this turn:_ {}",
-            names.join(", ")
-        ))
+        super::presentation::format_tools_footer_markdown_from_invocations(invocations)
     }
 }
 

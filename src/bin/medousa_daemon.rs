@@ -3749,10 +3749,15 @@ impl AgentStreamSink for IngestAgentStreamSink {
         );
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
+        let delivery_text = medousa::agent_runtime::format_channel_delivery_text(
+            &text,
+            &tool_names,
+            &self.delivery_target.channel,
+        );
         if let Err(err) = channel_delivery::dispatch_channel_message(
             &self.dispatch_client,
             &self.delivery_target,
-            &text,
+            &delivery_text,
         )
         .await
         {
@@ -3817,10 +3822,15 @@ impl AgentStreamSink for IngestAgentStreamSink {
         );
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
+        let delivery_text = medousa::agent_runtime::format_channel_delivery_text(
+            &text,
+            &tool_names,
+            &self.delivery_target.channel,
+        );
         if let Err(err) = channel_delivery::dispatch_channel_message(
             &self.dispatch_client,
             &self.delivery_target,
-            &text,
+            &delivery_text,
         )
         .await
         {
@@ -3905,6 +3915,71 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &self.stream_id,
                 "tool",
                 &format!("tool={tool_name} {input_summary}"),
+            ),
+        );
+    }
+
+    async fn tool_run_started(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        input_summary: String,
+        tool_round: usize,
+    ) {
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::tool_started_stream_event(
+                &self.stream_id,
+                &tool_run_id,
+                &tool_name,
+                &input_summary,
+                tool_round,
+            ),
+        );
+    }
+
+    async fn tool_run_finished(
+        &self,
+        tool_run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        output_summary: Option<String>,
+        tool_input: Value,
+        tool_output: Value,
+        input_receipt: Option<medousa::payload_receipt::ArtifactReceiptMeta>,
+        output_receipt: Option<medousa::payload_receipt::ArtifactReceiptMeta>,
+        tool_round: usize,
+    ) {
+        let safe_input = medousa::settings_guard::redact_json_value(&tool_input);
+        let safe_output = medousa::settings_guard::redact_json_value(&tool_output);
+        let input_receipt = input_receipt.or_else(|| {
+            medousa::payload_receipt::receipt_meta(
+                &safe_input,
+                medousa::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+            )
+        });
+        let output_receipt = output_receipt.or_else(|| {
+            medousa::payload_receipt::receipt_meta(
+                &safe_output,
+                medousa::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
+            )
+        });
+        let artifact_refs = medousa::agent_runtime::tool_stream::artifact_refs_from_receipts(
+            input_receipt.as_ref(),
+            output_receipt.as_ref(),
+        );
+        publish_interactive_turn_event(
+            &self.stream_tx,
+            medousa::interactive_turn_runtime::tool_finished_stream_event(
+                &self.stream_id,
+                &tool_run_id,
+                &tool_name,
+                &status,
+                &input_summary,
+                output_summary.as_deref(),
+                tool_round,
+                artifact_refs,
             ),
         );
     }

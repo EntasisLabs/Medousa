@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -282,9 +283,11 @@
           </p>
         {/if}
 
-        {#if message.role === "assistant" && !mobile && (message.tools?.length || message.statusLine || message.reasoning)}
+        {#if message.role === "assistant" && !mobile && (message.toolRuns?.length || message.tools?.length || message.statusLine || message.reasoning)}
           <div class="mb-1.5 space-y-1">
-            {#if message.tools && message.tools.length > 0}
+            {#if message.toolRuns && message.toolRuns.length > 0}
+              <ToolRunChips runs={message.toolRuns} compact={mobile} />
+            {:else if message.tools && message.tools.length > 0}
               <p class="font-mono text-[10px] text-surface-500">
                 {message.tools.map((tool) => formatToolName(tool)).join(" · ")}
               </p>

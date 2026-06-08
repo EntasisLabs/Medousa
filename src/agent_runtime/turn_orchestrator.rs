@@ -9,6 +9,7 @@ use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use stasis::application::orchestration::tool_loop_pipeline::{ToolCallMode, ToolInvocation, ToolLoopExecutionRequest};
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
+use crate::channel_delivery;
 use crate::engine_context::{EngineExecutionLane, RecallReadiness};
 use stasis::ports::outbound::memory::memory_models::MemoryAvecState;
 use crate::session::ConversationTurn;
@@ -995,8 +996,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 "◈ fallback_mode=tool_loop retry_count=0 retry_reason=none".to_string(),
             )
             .await;
-            emit_tool_payload_events(&sink, &response.tool_invocations).await;
-
             let mut combined_invocations = response.tool_invocations.clone();
             let mut final_text = response.text;
             if response.termination_reason == "worker_spawned" {
@@ -1099,11 +1098,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                         match continuation_result
                         {
                             Ok(continuation_response) => {
-                                emit_tool_payload_events(
-                                    &sink,
-                                    &continuation_response.tool_invocations,
-                                )
-                                .await;
                                 final_text = continuation_response.text;
                                 combined_invocations.extend(continuation_response.tool_invocations);
                             }
@@ -1121,9 +1115,14 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 }
             }
 
-            if let Some(footer) = TurnScratchpad::summarize_for_user_footer(&combined_invocations) {
-                final_text.push_str(&footer);
-            }
+            let profile = super::presentation::presentation_profile_for_channel(
+                origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),
+            );
+            super::presentation::maybe_append_tools_to_canonical_body(
+                &mut final_text,
+                &combined_invocations,
+                profile,
+            );
             let tool_names = collect_tool_names(&combined_invocations);
             sink.tool_invoked(
                 "llm.chat".to_string(),
@@ -1214,7 +1213,6 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     match retry_result
                     {
                         Ok(response) => {
-                            emit_tool_payload_events(&sink, &response.tool_invocations).await;
                             let tool_names = collect_tool_names(&response.tool_invocations);
                             super::turn_delivery::deliver_agent_turn_outcome(
                                 &sink,
