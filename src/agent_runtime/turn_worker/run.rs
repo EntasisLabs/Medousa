@@ -450,6 +450,7 @@ pub async fn run_worker_turn(
             .delivery_target
             .as_ref()
             .map(|target| target.channel.clone()),
+        delivery_target: record.delivery_target.clone(),
     };
 
     let result = worker_pipeline

@@ -11,6 +11,15 @@ export function isTauriMobilePlatform(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+/** Channel surface tag sent to the daemon for interactive turns from Medousa Home. */
+export function homeChannelSurface(): string {
+  if (!isTauri() || typeof navigator === "undefined") return "home-desktop";
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/i.test(ua)) return "home-ios";
+  if (/Android/i.test(ua)) return "home-android";
+  return "home-desktop";
+}
+
 export function isMobileViewport(): boolean {
   if (typeof window === "undefined") return false;
   return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches;

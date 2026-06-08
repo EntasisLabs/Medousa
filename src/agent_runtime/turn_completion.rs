@@ -42,8 +42,10 @@ pub struct ToolLoopCompletionGate<'a> {
     pub handoff_continuity_bundle: Option<HostContinuityBundle>,
     /// Workshop lane (research/general worker): skip host memory AVEC ritual receipt checks.
     pub skip_avec_ritual_check: bool,
-    /// Origin channel for operator notifications (`tui`, `telegram`, `home`, …).
+    /// Origin channel for operator notifications (`tui`, `telegram`, `home-desktop`, …).
     pub channel: Option<String>,
+    /// Full delivery target for channel push (Telegram chat id, Home session, …).
+    pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -75,6 +77,7 @@ impl ToolLoopCompletionGate<'_> {
             handoff_continuity_bundle: None,
             skip_avec_ritual_check: false,
             channel: None,
+            delivery_target: None,
         }
     }
 }

@@ -675,6 +675,31 @@ impl MedousaToolLoopPipeline {
                                     ))
                                     .await;
                                 }
+                                if let Some(stored) = gate.delivery_target.as_ref() {
+                                    let target = crate::channel_delivery::ChannelDeliveryTarget::from(stored);
+                                    let notify_payload =
+                                        crate::turn_budget_notify::TurnBudgetNotifyPayload {
+                                            request_id: request_id.clone(),
+                                            rounds_executed,
+                                            max_tool_rounds: effective_max_tool_rounds,
+                                            requested_rounds: payload.requested_rounds,
+                                            reason: payload.reason.clone(),
+                                            progress_summary: payload.progress_summary.clone(),
+                                        };
+                                    tokio::spawn(async move {
+                                        let client = reqwest::Client::new();
+                                        if let Err(err) =
+                                            crate::turn_budget_notify::notify_turn_budget_approval_required(
+                                                &client,
+                                                &target,
+                                                notify_payload,
+                                            )
+                                            .await
+                                        {
+                                            eprintln!("turn budget channel notify failed: {err:#}");
+                                        }
+                                    });
+                                }
                                 let resolution = turn_budget_request_store()
                                     .wait_for_resolution(&request_id, rx)
                                     .await;

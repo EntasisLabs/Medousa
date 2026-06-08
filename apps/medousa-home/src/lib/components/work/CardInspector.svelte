@@ -23,6 +23,7 @@
     formatWorkspaceEventKind,
   } from "$lib/utils/cardTimeline";
   import { haptic } from "$lib/haptics";
+  import { homeChannelSurface } from "$lib/platform";
   import { shareWorkResult } from "$lib/share";
   import { formatToolName } from "$lib/utils/formatTurn";
 
@@ -188,7 +189,11 @@
     actionBusy = true;
     workspace.cardActionMessage = null;
     try {
-      const response = await approveTurnBudgetRequest(detail.card.id);
+      const response = await approveTurnBudgetRequest(
+        detail.card.id,
+        undefined,
+        homeChannelSurface(),
+      );
       workspace.cardActionMessage = response.message;
       haptic("success");
       await workspace.refreshSelectedCard();
@@ -204,7 +209,10 @@
     actionBusy = true;
     workspace.cardActionMessage = null;
     try {
-      const response = await denyTurnBudgetRequest(detail.card.id);
+      const response = await denyTurnBudgetRequest(
+        detail.card.id,
+        homeChannelSurface(),
+      );
       workspace.cardActionMessage = response.message;
       haptic("light");
       await workspace.refreshSelectedCard();

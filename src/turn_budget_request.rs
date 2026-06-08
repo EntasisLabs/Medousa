@@ -375,7 +375,7 @@ mod tests {
                 turn_correlation_id: Some("turn-1".to_string()),
                 stream_turn_id: 1,
                 session_id: Some("sess".to_string()),
-                channel: Some("home".to_string()),
+                channel: Some("home-ios".to_string()),
                 rounds_executed: 4,
                 max_tool_rounds: 8,
                 requested_rounds: 5,

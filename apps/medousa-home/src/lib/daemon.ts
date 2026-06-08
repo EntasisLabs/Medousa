@@ -112,6 +112,7 @@ export interface InteractiveTurnOptions {
   model?: string;
   responseDepthMode?: string;
   stageRouting?: StageRoutingMatrix;
+  channelSurface?: string;
 }
 
 export async function sendInteractiveTurn(
@@ -126,6 +127,7 @@ export async function sendInteractiveTurn(
     model: options?.model,
     responseDepthMode: options?.responseDepthMode,
     stageRouting: options?.stageRouting,
+    channelSurface: options?.channelSurface,
   });
 }
 
@@ -283,17 +285,23 @@ export async function retryWorkspaceCard(
 export async function approveTurnBudgetRequest(
   requestId: string,
   extraRounds?: number,
+  resolvedBy?: string,
 ): Promise<TurnBudgetRequestResponse> {
   return invoke<TurnBudgetRequestResponse>("turn_budget_approve", {
     requestId,
     extraRounds: extraRounds ?? null,
+    resolvedBy: resolvedBy ?? null,
   });
 }
 
 export async function denyTurnBudgetRequest(
   requestId: string,
+  resolvedBy?: string,
 ): Promise<TurnBudgetRequestResponse> {
-  return invoke<TurnBudgetRequestResponse>("turn_budget_deny", { requestId });
+  return invoke<TurnBudgetRequestResponse>("turn_budget_deny", {
+    requestId,
+    resolvedBy: resolvedBy ?? null,
+  });
 }
 
 export interface TurnBudgetRequestResponse {

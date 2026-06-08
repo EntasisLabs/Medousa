@@ -557,7 +557,7 @@ pub struct RuntimeConfigCommandResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct TurnSurfaceContext {
-    /// Adapter surface: telegram, discord, slack, cli, tui, api.
+    /// Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …
     #[serde(default)]
     pub channel_surface: Option<String>,
     #[serde(default)]

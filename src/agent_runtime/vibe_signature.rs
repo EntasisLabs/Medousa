@@ -75,6 +75,8 @@ fn surface_tone_phrase(surface: Option<&TurnSurfaceContext>) -> &'static str {
         "cli" => "scriptable terse",
         "tui" => "operator-console",
         "api" => "integration-neutral",
+        "home" | "home-desktop" => "workshop desktop",
+        "home-ios" | "home-android" => "workshop mobile",
         _ => "neutral channel",
     }
 }

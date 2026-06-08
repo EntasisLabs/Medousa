@@ -45,6 +45,83 @@ pub async fn ensure_surreal_delivery_schema(db: &Surreal<Any>) -> Result<()> {
 pub const INTERNAL_OUTBOX_ENDPOINT_ID: &str = "medousa.internal.outbox";
 pub const INTERNAL_OUTBOX_DELIVER_PATH: &str = "/v1/deliver/outbox";
 
+pub const CHANNEL_HOME: &str = "home";
+pub const CHANNEL_HOME_DESKTOP: &str = "home-desktop";
+pub const CHANNEL_HOME_IOS: &str = "home-ios";
+pub const CHANNEL_HOME_ANDROID: &str = "home-android";
+pub const CHANNEL_TUI: &str = "tui";
+pub const CHANNEL_INTERACTIVE: &str = "interactive";
+
+/// Normalize legacy/generic home surface tags to explicit workshop channels.
+pub fn normalize_channel_surface(channel: &str) -> String {
+    match channel.trim().to_ascii_lowercase().as_str() {
+        "" => CHANNEL_INTERACTIVE.to_string(),
+        CHANNEL_HOME => CHANNEL_HOME_DESKTOP.to_string(),
+        other => other.to_string(),
+    }
+}
+
+pub fn is_home_channel(channel: &str) -> bool {
+    matches!(
+        channel.trim().to_ascii_lowercase().as_str(),
+        CHANNEL_HOME | CHANNEL_HOME_DESKTOP | CHANNEL_HOME_IOS | CHANNEL_HOME_ANDROID
+    )
+}
+
+pub fn is_external_push_channel(channel: &str) -> bool {
+    matches!(
+        channel.trim().to_ascii_lowercase().as_str(),
+        "telegram" | "discord" | "slack" | "whatsapp"
+    )
+}
+
+pub fn work_deep_link_url(card_id: &str) -> String {
+    format!("medousa://work/{}", card_id.trim())
+}
+
+pub fn delivery_target_from_interactive_turn(
+    request: &crate::daemon_api::InteractiveTurnRequest,
+    turn_id: &str,
+) -> ChannelDeliveryTarget {
+    let session_id = request.session_id.clone();
+    if let Some(surface) = request.surface.as_ref() {
+        let channel = surface
+            .channel_surface
+            .as_deref()
+            .map(normalize_channel_surface)
+            .unwrap_or_else(|| CHANNEL_INTERACTIVE.to_string());
+        let channel_id = surface
+            .channel_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| session_id.clone());
+        let user_id = surface
+            .user_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| session_id.clone());
+        return ChannelDeliveryTarget {
+            channel,
+            user_id,
+            channel_id,
+            session_id,
+            stream_id: Some(turn_id.to_string()),
+        };
+    }
+
+    ChannelDeliveryTarget {
+        channel: CHANNEL_INTERACTIVE.to_string(),
+        user_id: session_id.clone(),
+        channel_id: session_id.clone(),
+        session_id,
+        stream_id: Some(turn_id.to_string()),
+    }
+}
+
 /// Where to deliver a completed ingest job (keyed by `job_id` in the daemon).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelDeliveryTarget {
@@ -591,10 +668,13 @@ fn read_non_empty_text(value: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_output_text_from_diagnostics, format_for_telegram_markdown_v2,
-        internal_deliver_webhook_url, is_missing_runtime_table_error, parse_slack_channel_id,
+        delivery_target_from_interactive_turn, extract_output_text_from_diagnostics,
+        format_for_telegram_markdown_v2, internal_deliver_webhook_url, is_home_channel,
+        is_missing_runtime_table_error, normalize_channel_surface, parse_slack_channel_id,
         parse_telegram_chat_id, truncate_for_slack, truncate_for_telegram,
     };
+    use crate::daemon_api::{InteractiveTurnRequest, TurnSurfaceContext};
+    use crate::stage_routing::StageRoutingMatrix;
 
     #[test]
     fn missing_runtime_table_error_detection() {
@@ -653,5 +733,39 @@ mod tests {
             extract_output_text_from_diagnostics(Some(diagnostics)).as_deref(),
             Some("hello world")
         );
+    }
+
+    #[test]
+    fn normalize_legacy_home_surface() {
+        assert_eq!(normalize_channel_surface("home"), "home-desktop");
+        assert_eq!(normalize_channel_surface("home-ios"), "home-ios");
+    }
+
+    #[test]
+    fn interactive_turn_resolves_home_ios_delivery_target() {
+        let request = InteractiveTurnRequest {
+            session_id: "sess-1".to_string(),
+            prompt: "hi".to_string(),
+            persist_user_turn: true,
+            response_depth_mode: "standard".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            stage_routing: StageRoutingMatrix::default_for("openai", "gpt-4o-mini"),
+            surface: Some(TurnSurfaceContext {
+                channel_surface: Some("home-ios".to_string()),
+                channel_id: None,
+                user_id: None,
+            }),
+            max_tool_rounds: None,
+            retry_runtime_max_rounds: None,
+            manuscript_id: None,
+            additional_manuscript_ids: None,
+            suggested_capability_ids: None,
+            scheduled_tool_allowlist: None,
+        };
+        let target = delivery_target_from_interactive_turn(&request, "turn-1");
+        assert_eq!(target.channel, "home-ios");
+        assert_eq!(target.channel_id, "sess-1");
+        assert!(is_home_channel(&target.channel));
     }
 }

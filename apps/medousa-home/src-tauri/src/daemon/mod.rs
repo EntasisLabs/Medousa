@@ -225,6 +225,21 @@ pub fn workspace_stream_stop(state: State<'_, DaemonState>) -> Result<(), String
     Ok(())
 }
 
+fn default_home_channel_surface() -> String {
+    #[cfg(target_os = "ios")]
+    {
+        return "home-ios".to_string();
+    }
+    #[cfg(target_os = "android")]
+    {
+        return "home-android".to_string();
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        "home-desktop".to_string()
+    }
+}
+
 #[tauri::command]
 pub async fn interactive_turn_send(
     state: State<'_, DaemonState>,
@@ -234,6 +249,7 @@ pub async fn interactive_turn_send(
     model: Option<String>,
     response_depth_mode: Option<String>,
     stage_routing: Option<StageRoutingMatrix>,
+    channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let provider = provider
@@ -255,8 +271,13 @@ pub async fn interactive_turn_send(
         )
     });
 
+    let channel_surface = channel_surface
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(default_home_channel_surface);
+
     let request = InteractiveTurnRequest {
-        session_id,
+        session_id: session_id.clone(),
         prompt,
         persist_user_turn: true,
         response_depth_mode,
@@ -264,9 +285,9 @@ pub async fn interactive_turn_send(
         model: model.clone(),
         stage_routing,
         surface: Some(TurnSurfaceContext {
-            channel_surface: Some("home".to_string()),
-            channel_id: None,
-            user_id: None,
+            channel_surface: Some(channel_surface),
+            channel_id: Some(session_id.clone()),
+            user_id: Some(session_id),
         }),
     };
 

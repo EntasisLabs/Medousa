@@ -113,7 +113,18 @@ execute_local_turn → MedousaToolLoopPipeline
 |-------|--------|
 | **1** | `cognition_turn_finish` + loop hard-stop + prompts + tests |
 | **2** | `cognition_turn_request_more_rounds` + inline pause/wait/resume + workspace blocked cards + daemon approve/deny + Home UX |
-| **3** | Channel push (Telegram/Discord/Slack) with deep link to Home card |
+| **3** | Channel push (Telegram/Discord/Slack/WhatsApp) with `medousa://work/{request_id}` deep link; Home surfaces tagged `home-desktop` / `home-ios` / `home-android` |
+
+### Home channel surfaces
+
+| Surface | When |
+|---------|------|
+| `home-desktop` | Tauri macOS/Windows/Linux or browser workshop |
+| `home-ios` | Tauri iOS shell |
+| `home-android` | Tauri Android shell |
+| `home` | Legacy alias → normalized to `home-desktop` |
+
+Interactive turns from Medousa Home send `TurnSurfaceContext.channel_surface`; the daemon resolves `delivery_target` from that (no longer hardcoded `tui`). Budget cards show the channel in subtitle; external ingest channels get a push message with deep link when the turn pauses.
 
 ---
 

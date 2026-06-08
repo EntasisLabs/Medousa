@@ -951,6 +951,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .as_ref()
         .and_then(|scope| scope.delivery_target.as_ref().map(|target| target.channel.clone()))
         .or_else(|| Some("interactive".to_string()));
+    let origin_delivery_target = scope_snapshot
+        .as_ref()
+        .and_then(|scope| scope.delivery_target.as_ref())
+        .map(StoredDeliveryTarget::from);
     let mut last_tool_scratch: Option<TurnScratchpad> = None;
     let first_attempt = {
         let loop_max_rounds = activation.max_tool_rounds.max(1);
@@ -972,6 +976,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             handoff_continuity_bundle: handoff_continuity_bundle.clone(),
             skip_avec_ritual_check: false,
             channel: origin_channel.clone(),
+            delivery_target: origin_delivery_target.clone(),
         };
         pipeline
             .execute_with_stream_prior_messages_max_rounds(
@@ -1074,6 +1079,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 handoff_continuity_bundle: handoff_continuity_bundle.clone(),
                                 skip_avec_ritual_check: false,
                                 channel: origin_channel.clone(),
+                                delivery_target: origin_delivery_target.clone(),
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -1188,6 +1194,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             handoff_continuity_bundle: handoff_continuity_bundle.clone(),
                             skip_avec_ritual_check: false,
                             channel: origin_channel.clone(),
+                            delivery_target: origin_delivery_target.clone(),
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(

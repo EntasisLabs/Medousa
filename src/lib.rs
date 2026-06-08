@@ -12,6 +12,7 @@ pub mod channel_session_store;
 pub mod turn_continuation;
 pub mod turn_budget_request;
 pub mod turn_budget_handlers;
+pub mod turn_budget_notify;
 pub mod turn_control_tools;
 pub mod turn_text_heuristics;
 pub mod context_pack;

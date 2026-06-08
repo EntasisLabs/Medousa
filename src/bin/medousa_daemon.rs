@@ -1755,15 +1755,11 @@ async fn start_interactive_turn(
     )
     .map_err(internal_error)?;
 
+    let delivery_target =
+        channel_delivery::delivery_target_from_interactive_turn(&request, &turn_id);
     state.channel_deliveries.write().await.insert(
         turn_id.clone(),
-        channel_delivery::ChannelDeliveryTarget {
-            channel: "tui".to_string(),
-            user_id: request.session_id.clone(),
-            channel_id: request.session_id.clone(),
-            session_id: request.session_id.clone(),
-            stream_id: Some(turn_id.clone()),
-        },
+        delivery_target.clone(),
     );
     record_job_delivery_pending(&state, &turn_id).await;
 
@@ -1786,13 +1782,7 @@ async fn start_interactive_turn(
         turn_correlation_id: turn_id.clone(),
         session_id: request.session_id.clone(),
         original_prompt: request.prompt.clone(),
-        delivery_target: Some(channel_delivery::ChannelDeliveryTarget {
-            channel: "tui".to_string(),
-            user_id: request.session_id.clone(),
-            channel_id: request.session_id.clone(),
-            session_id: request.session_id.clone(),
-            stream_id: Some(turn_id.clone()),
-        }),
+        delivery_target: Some(delivery_target),
         provider: request.provider.clone(),
         model: request.model.clone(),
         response_depth_mode: request.response_depth_mode.clone(),
