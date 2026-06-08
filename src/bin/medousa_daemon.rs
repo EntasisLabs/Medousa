@@ -3576,7 +3576,13 @@ impl AgentStreamSink for ApiAgentStreamSink {
 
     async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
 
-    async fn agent_worker_ack(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+    async fn agent_worker_ack(
+        &self,
+        _turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        _work_id: Option<String>,
+    ) {
         medousa::session::append_turn(
             &self.session_id,
             &medousa::session::ConversationTurn {

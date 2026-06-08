@@ -124,10 +124,15 @@ pub fn worker_ack_stream_event_with_tools(
     turn_id: &str,
     ack_text: &str,
     tool_names: Vec<String>,
+    work_id: Option<&str>,
 ) -> Result<InteractiveTurnStreamEvent> {
     let mut event = final_stream_event_with_tools_terminal(turn_id, ack_text, tool_names, false)?;
     event.phase = "worker_ack".to_string();
     event.message = "background worker started".to_string();
+    event.work_id = work_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     Ok(event)
 }
 
@@ -240,5 +245,6 @@ fn build_event(
         emitted_at_utc: Utc::now(),
         budget_request_id: None,
         requested_rounds: None,
+        work_id: None,
     })
 }

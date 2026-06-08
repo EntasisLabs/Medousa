@@ -145,7 +145,12 @@ export class WorkspaceStore {
       void this.refreshSelectedCard();
     }
 
-    void this.cacheCardDetail(card.id);
+    void this.cacheCardDetail(card.id, previous);
+  }
+
+  /** Tier 3 — scan cached turn_worker cards and deliver pending syntheses to chat. */
+  async syncTurnWorkerCardsToChat() {
+    await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
   }
 
   async submitAsk(request: EnqueueAskJobRequest) {
@@ -200,13 +205,17 @@ export class WorkspaceStore {
     await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
   }
 
-  private async cacheCardDetail(id: string) {
+  private async cacheCardDetail(id: string, previousColumn?: string) {
     try {
       const detail = await getWorkspaceCard(id);
       this.cardDetailsCache.set(id, detail);
       this.cardDetailsCache = new Map(this.cardDetailsCache);
       if (this.selectedCardId === id) {
         this.selectedCardDetail = detail;
+      }
+      const card = this.cards.find((item) => item.id === id);
+      if (card) {
+        chat.onWorkerCardDetail(detail, card.column, previousColumn);
       }
     } catch {
       // Swimlane label falls back when detail is missing.

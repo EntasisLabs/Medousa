@@ -8,16 +8,26 @@ import {
   stopInteractiveStream,
 } from "$lib/daemon";
 import type { ChatMessage, InteractiveTurnStreamEvent, TurnTicketState } from "$lib/types/chat";
+import type { WorkCardDetail } from "$lib/types/card";
 import type {
   SessionHistoryResponse,
   SessionSummary,
   TurnTicketRecord,
   TurnTicketResponse,
 } from "$lib/types/session";
+import type { WorkCard } from "$lib/types/workspace";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
+
+interface WorkerLink {
+  workId: string;
+  parentTurnId: string | null;
+  messageId: string | null;
+  sessionId: string;
+  synthesisDelivered: boolean;
+}
 
 export class ChatStore {
   sessionId = $state(loadSessionId());
@@ -36,6 +46,8 @@ export class ChatStore {
   activeTurnId = $state<string | null>(null);
   /** Turn-centric state keyed by daemon turn id. */
   turns = $state<Map<string, TurnTicketState>>(new Map());
+  /** Turn worker cards linked to chat handoff bubbles (Tier 3). */
+  workers = $state<Map<string, WorkerLink>>(new Map());
   private assistantId: string | null = null;
   /** Bumps when the local transcript changes; stale daemon reloads must not overwrite it. */
   private transcriptEpoch = 0;
@@ -126,6 +138,7 @@ export class ChatStore {
     this.backgroundActivity = 0;
     this.activeTurnId = null;
     this.turns = new Map();
+    this.workers = new Map();
     await this.refreshSessions();
   }
 
@@ -178,6 +191,7 @@ export class ChatStore {
     this.backgroundActivity = 0;
     this.activeTurnId = null;
     this.turns = new Map();
+    this.workers = new Map();
     this.historyLoading = true;
     const epoch = this.transcriptEpoch;
     try {
@@ -352,12 +366,213 @@ export class ChatStore {
     this.activeTurnId = null;
     this.assistantId = null;
     this.turns = new Map();
+    this.workers = new Map();
     this.backgroundActivity = 0;
   }
 
   /** Workspace/worker or budget card settled — drop one background pulse unit. */
   noteBackgroundSettled(count = 1) {
     this.backgroundActivity = Math.max(0, this.backgroundActivity - count);
+  }
+
+  private linkWorker(params: {
+    workId: string;
+    parentTurnId: string | null;
+    messageId: string | null;
+    sessionId: string;
+  }) {
+    const existing = this.workers.get(params.workId);
+    const link: WorkerLink = {
+      workId: params.workId,
+      parentTurnId: params.parentTurnId ?? existing?.parentTurnId ?? null,
+      messageId: params.messageId ?? existing?.messageId ?? null,
+      sessionId: params.sessionId,
+      synthesisDelivered: existing?.synthesisDelivered ?? false,
+    };
+    const nextWorkers = new Map(this.workers);
+    nextWorkers.set(params.workId, link);
+    this.workers = nextWorkers;
+
+    if (params.parentTurnId) {
+      const turn = this.turns.get(params.parentTurnId);
+      if (turn) {
+        const nextTurns = new Map(this.turns);
+        nextTurns.set(params.parentTurnId, {
+          ...turn,
+          workspaceCardId: params.workId,
+        });
+        this.turns = nextTurns;
+      }
+    }
+  }
+
+  linkWorkerFromStream(event: InteractiveTurnStreamEvent, messageId: string) {
+    const workId = event.work_id?.trim();
+    if (!workId) return;
+    this.linkWorker({
+      workId,
+      parentTurnId: event.turn_id,
+      messageId,
+      sessionId: this.sessionId,
+    });
+  }
+
+  onWorkerCardDetail(
+    detail: WorkCardDetail,
+    column: string,
+    previousColumn: string | undefined,
+  ) {
+    if (detail.kind !== "turn_worker") return;
+    const sessionId = detail.session_id?.trim();
+    if (!sessionId || sessionId !== this.sessionId) return;
+
+    const workId = detail.work_id?.trim() || detail.card.id;
+    const parentTurnId = detail.correlation_id?.trim() || null;
+    const messageId = parentTurnId ? this.messageIdForTurn(parentTurnId) : null;
+    this.linkWorker({ workId, parentTurnId, messageId, sessionId });
+
+    if (column === "wrapping_up" && previousColumn !== "wrapping_up") {
+      this.noteWorkerSynthesizing(workId);
+    }
+    if (
+      (column === "done" || (column === "blocked" && detail.terminal)) &&
+      previousColumn !== column
+    ) {
+      void this.deliverWorkerSynthesis(workId, detail);
+    }
+  }
+
+  /** After hydrate/reconnect — deliver syntheses that landed while SSE was detached. */
+  async recoverPendingWorkerSyntheses(
+    cards: WorkCard[],
+    details: Map<string, WorkCardDetail>,
+  ) {
+    for (const card of cards) {
+      const detail = details.get(card.id);
+      if (!detail || detail.kind !== "turn_worker") continue;
+      if (detail.session_id?.trim() !== this.sessionId) continue;
+      this.onWorkerCardDetail(detail, card.column, undefined);
+      const workId = detail.work_id?.trim() || card.id;
+      const link = this.workers.get(workId);
+      if (link && !link.synthesisDelivered && card.column === "done") {
+        await this.deliverWorkerSynthesis(workId, detail);
+      }
+    }
+  }
+
+  private noteWorkerSynthesizing(workId: string) {
+    const link = this.workers.get(workId);
+    if (!link?.messageId) return;
+    const idx = this.messages.findIndex((m) => m.id === link.messageId);
+    if (idx < 0) return;
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        streaming: false,
+        phase: "worker_ack",
+        statusLine: "Synthesizing answer…",
+      },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
+  private async deliverWorkerSynthesis(workId: string, detail?: WorkCardDetail) {
+    const link = this.workers.get(workId);
+    if (!link || link.synthesisDelivered) return;
+
+    let content = detail?.result_excerpt?.trim();
+    if (!content && detail?.error?.trim()) {
+      content = detail.error.trim();
+    }
+    if (!content) {
+      content = (await this.fetchLatestAssistantTurn(link.sessionId)) ?? undefined;
+    }
+    if (!content) return;
+
+    if (link.messageId) {
+      const idx = this.messages.findIndex((m) => m.id === link.messageId);
+      if (idx >= 0) {
+        const current = this.messages[idx];
+        if (this.isFullSynthesisBubble(current, content)) {
+          this.markWorkerSynthesisDelivered(workId);
+          return;
+        }
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          {
+            ...current,
+            content,
+            streaming: false,
+            phase: null,
+            statusLine: null,
+            tools: detail?.tool_names?.length ? [...detail.tool_names] : current.tools,
+          },
+          ...this.messages.slice(idx + 1),
+        ];
+      } else {
+        this.appendWorkerSynthesisMessage(link.parentTurnId, content, detail?.tool_names);
+      }
+    } else {
+      this.appendWorkerSynthesisMessage(link.parentTurnId, content, detail?.tool_names);
+    }
+
+    this.markWorkerSynthesisDelivered(workId);
+    this.noteBackgroundSettled();
+  }
+
+  private markWorkerSynthesisDelivered(workId: string) {
+    const link = this.workers.get(workId);
+    if (!link || link.synthesisDelivered) return;
+    const nextWorkers = new Map(this.workers);
+    nextWorkers.set(workId, { ...link, synthesisDelivered: true });
+    this.workers = nextWorkers;
+  }
+
+  private markWorkerSynthesisDeliveredForTurn(turnId: string) {
+    for (const [workId, link] of this.workers) {
+      if (link.parentTurnId === turnId && !link.synthesisDelivered) {
+        this.markWorkerSynthesisDelivered(workId);
+        break;
+      }
+    }
+  }
+
+  private appendWorkerSynthesisMessage(
+    parentTurnId: string | null,
+    content: string,
+    toolNames?: string[] | null,
+  ) {
+    this.messages = [
+      ...this.messages,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content,
+        turnId: parentTurnId,
+        tools: toolNames?.length ? [...toolNames] : undefined,
+      },
+    ];
+  }
+
+  private isFullSynthesisBubble(message: ChatMessage, synthesis: string): boolean {
+    if (message.streaming) return false;
+    if (message.phase === "worker_ack") return false;
+    const trimmed = message.content.trim();
+    if (!trimmed) return false;
+    if (trimmed === synthesis.trim()) return true;
+    return trimmed.length > synthesis.length * 0.8;
+  }
+
+  private async fetchLatestAssistantTurn(sessionId: string): Promise<string | null> {
+    try {
+      const history = await getSessionHistory(sessionId);
+      const last = [...history.turns].reverse().find((turn) => turn.role === "assistant");
+      return last?.content?.trim() || null;
+    } catch {
+      return null;
+    }
   }
 
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
@@ -446,6 +661,7 @@ export class ChatStore {
     if (event.terminal) {
       this.finishMessage(messageId);
       this.noteTurnTerminal(event);
+      this.markWorkerSynthesisDeliveredForTurn(event.turn_id);
       void this.refreshSessions();
     }
   }
@@ -508,6 +724,7 @@ export class ChatStore {
     if (event.terminal) {
       this.finishMessage(id);
       this.noteTurnTerminal(event);
+      this.markWorkerSynthesisDeliveredForTurn(event.turn_id);
       void this.refreshSessions();
     }
   }
@@ -557,6 +774,10 @@ export class ChatStore {
       this.activeTurnId = null;
     }
     this.backgroundActivity += 1;
+
+    if (phase === "worker_ack") {
+      this.linkWorkerFromStream(event, messageId);
+    }
   }
 
   finishMessage(messageId: string) {

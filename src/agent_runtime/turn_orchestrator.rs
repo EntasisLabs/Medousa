@@ -1001,7 +1001,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             let mut final_text = response.text;
             if response.termination_reason == "worker_spawned" {
                 let tool_names = collect_tool_names(&combined_invocations);
-                sink.agent_worker_ack(turn_id, final_text, tool_names)
+                let work_id = crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
+                    &combined_invocations,
+                )
+                .map(|(id, _)| id);
+                sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
                 return;

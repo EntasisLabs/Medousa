@@ -75,9 +75,13 @@ Collapse interactive turn + ask job into one durable **TurnTicket** — see [asy
 
 ---
 
-## Tier 3 — Turn worker bus (see turn-worker-bus-plan.md)
+## Tier 3 — Turn worker bus adapter ✅
 
-Durable host/worker tickets across adapters. Chat observes **workspace + session** for synthesis delivery, not only interactive SSE.
+Durable host/worker synthesis delivery via **workspace + session**, not only interactive SSE — see [async-chat-tier3-plan.md](async-chat-tier3-plan.md).
+
+- `work_id` on SSE `worker_ack` for immediate worker ↔ turn linking
+- Chat `WorkerLink` map; workspace `turn_worker` cards drive synthesizing/done bubble updates
+- Session hydrate recovery after reconnect
 
 ---
 
@@ -101,7 +105,7 @@ Durable host/worker tickets across adapters. Chat observes **workspace + session
 | **0** | Composer handoff + pulse + stuck-state fixes | ✅ |
 | **1** | Session registry, reconnect, daemon cancel | ✅ |
 | **2** | TurnTicket unified (2a–2d) | ✅ |
-| **3** | Turn worker bus | Planned |
+| **3** | Turn worker bus adapter (workspace + session synthesis) | ✅ |
 
 ---
 

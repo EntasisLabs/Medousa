@@ -19,7 +19,14 @@ pub trait AgentStreamSink: Send + Sync {
         let _ = (turn_id, text, tool_names);
     }
     /// Short host acknowledgement while a background turn worker runs (non-terminal delivery).
-    async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+    async fn agent_worker_ack(
+        &self,
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        let _ = work_id;
         self.agent_response(turn_id, text, tool_names).await;
     }
     async fn agent_error(&self, turn_id: u64, message: String);

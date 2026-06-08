@@ -715,6 +715,9 @@ pub struct InteractiveTurnStreamEvent {
     pub budget_request_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requested_rounds: Option<usize>,
+    /// Turn worker handoff — workspace card id (`work-…`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
 }
 
 // ── Ingester types ────────────────────────────────────────────────────────────

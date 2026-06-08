@@ -176,7 +176,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         ));
     }
 
-    async fn agent_worker_ack(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+    async fn agent_worker_ack(
+        &self,
+        _turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
         if self.emit_cancelled_if_needed().await {
             return;
         }
@@ -195,6 +201,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 &self.turn_id,
                 &text,
                 tool_names,
+                work_id.as_deref(),
             ),
         );
         self.sync_ask_job_interim(text).await;
@@ -600,8 +607,16 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
         self.inner.reasoning_chunk(turn_id, delta).await;
     }
 
-    async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.inner.agent_worker_ack(turn_id, text, tool_names).await;
+    async fn agent_worker_ack(
+        &self,
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        self.inner
+            .agent_worker_ack(turn_id, text, tool_names, work_id)
+            .await;
     }
 
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {

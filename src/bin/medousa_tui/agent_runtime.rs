@@ -54,7 +54,13 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
-    async fn agent_worker_ack(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+    async fn agent_worker_ack(
+        &self,
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        _work_id: Option<String>,
+    ) {
         let _ = self
             .tx
             .send(TuiEvent::AgentResponse {

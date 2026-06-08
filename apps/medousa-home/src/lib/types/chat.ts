@@ -40,4 +40,5 @@ export interface InteractiveTurnStreamEvent {
   emitted_at_utc: string;
   budget_request_id?: string | null;
   requested_rounds?: number | null;
+  work_id?: string | null;
 }

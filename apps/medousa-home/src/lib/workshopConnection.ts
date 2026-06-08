@@ -91,6 +91,7 @@ async function startWorkshopStreams(): Promise<void> {
   await chat.refreshSessions();
   await chat.ensureSessionHydrated({ notice: true });
   await chat.tryReattachActiveTurn();
+  await workspace.syncTurnWorkerCardsToChat();
 }
 
 async function loadWorkshopDefaults(connected: boolean): Promise<void> {
