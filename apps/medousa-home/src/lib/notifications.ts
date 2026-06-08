@@ -137,6 +137,72 @@ export function budgetRequestIdFromStreamEvent(
   return match?.[1]?.trim() ?? null;
 }
 
+const turnTerminalNotified = new Set<string>();
+
+export async function notifyTurnTicketTerminal(
+  event: InteractiveTurnStreamEvent,
+  workspaceCardId?: string | null,
+) {
+  if (!isTauriMobilePlatform() || !event.terminal) return;
+  const turnId = event.turn_id.trim();
+  if (!turnId || turnTerminalNotified.has(turnId)) return;
+  turnTerminalNotified.add(turnId);
+  if (turnTerminalNotified.size > 128) {
+    const oldest = turnTerminalNotified.values().next().value;
+    if (oldest) turnTerminalNotified.delete(oldest);
+  }
+
+  const cardId = workspaceCardId?.trim() || turnId;
+  const preview =
+    event.final_text?.trim().split("\n")[0]?.trim() ||
+    event.message?.trim() ||
+    "Turn finished";
+
+  if (event.event_type === "error") {
+    try {
+      await sendWorkNotification(
+        `turn-error-${turnId}`,
+        "Medousa — turn failed",
+        preview.length > 120 ? `${preview.slice(0, 117)}…` : preview,
+        cardId,
+      );
+    } catch {
+      // ignore
+    }
+    return;
+  }
+
+  try {
+    await sendWorkNotification(
+      `turn-done-${turnId}`,
+      "Medousa — turn ready",
+      preview.length > 120 ? `${preview.slice(0, 117)}…` : preview,
+      cardId,
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export async function notifyWorkerHandoff(
+  event: InteractiveTurnStreamEvent,
+  workspaceCardId?: string | null,
+) {
+  if (!isTauriMobilePlatform() || event.event_type !== "worker_ack") return;
+  const cardId = workspaceCardId?.trim() || event.turn_id.trim();
+  if (!cardId) return;
+  try {
+    await sendWorkNotification(
+      `worker-${event.turn_id}`,
+      "Medousa — worker started",
+      event.message?.trim() || "Background worker is on it",
+      cardId,
+    );
+  } catch {
+    // ignore
+  }
+}
+
 function cardIdFromNotification(extra: unknown): string | null {
   if (!extra || typeof extra !== "object") return null;
   const record = extra as Record<string, unknown>;

@@ -7,11 +7,8 @@
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import {
-    cancelActiveSessionTurn,
     createTurnTicket,
-    sendInteractiveTurn,
     startInteractiveStream,
-    stopInteractiveStream,
   } from "$lib/daemon";
 
   import {
@@ -96,54 +93,39 @@
     return null;
   }
 
+  async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
+    const opts = buildInteractiveTurnOptions();
+    const accepted = await createTurnTicket({
+      sessionId: chat.sessionId,
+      prompt,
+      mode,
+      provider: opts.provider,
+      model: opts.model,
+      responseDepthMode: opts.responseDepthMode,
+      stageRouting: opts.stageRouting,
+      channelSurface: opts.channelSurface,
+    });
+    chat.beginTurn(userContent, accepted);
+    await startInteractiveStream(accepted.stream_url);
+  }
+
   async function submit(event: Event) {
     event.preventDefault();
     const prompt = chat.draft.trim();
-    if (!prompt || chat.composerBlocked) return;
+    if (!prompt) return;
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
     chat.draft = "";
 
-    if (askPrompt) {
-      chat.messages = [
-        ...chat.messages,
-        { id: crypto.randomUUID(), role: "user", content: prompt },
-      ];
-      try {
-        await cancelActiveSessionTurn(chat.sessionId).catch(() => {});
-        await stopInteractiveStream();
-        const opts = buildInteractiveTurnOptions();
-        const accepted = await createTurnTicket({
-          sessionId: chat.sessionId,
-          prompt: askPrompt,
-          mode: "background",
-          provider: opts.provider,
-          model: opts.model,
-          responseDepthMode: opts.responseDepthMode,
-          stageRouting: opts.stageRouting,
-          channelSurface: opts.channelSurface,
-        });
-        chat.beginBackgroundTurn(accepted);
-        await startInteractiveStream(accepted.stream_url);
-      } catch (err) {
-        chat.setError(err instanceof Error ? err.message : String(err));
-      }
-      return;
-    }
-
-    chat.beginUserMessage(prompt);
-
     try {
-      await cancelActiveSessionTurn(chat.sessionId).catch(() => {});
-      await stopInteractiveStream();
-      const accepted = await sendInteractiveTurn(
-        chat.sessionId,
-        prompt,
-        buildInteractiveTurnOptions(),
-      );
-      chat.registerTurn(accepted, chat.messages.at(-1)?.id ?? null);
-      await startInteractiveStream(accepted.stream_url);
+      if (askPrompt) {
+        await submitTurn(prompt, askPrompt, "background");
+        return;
+      }
+
+      const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
+      await submitTurn(prompt, prompt, mode);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }

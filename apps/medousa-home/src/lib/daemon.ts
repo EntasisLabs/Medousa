@@ -236,6 +236,10 @@ export async function stopInteractiveStream(): Promise<void> {
   return invoke("interactive_stream_stop");
 }
 
+export async function stopInteractiveStreamTurn(turnId: string): Promise<void> {
+  return invoke("interactive_stream_stop_turn", { turnId });
+}
+
 export function onWorkspaceEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {

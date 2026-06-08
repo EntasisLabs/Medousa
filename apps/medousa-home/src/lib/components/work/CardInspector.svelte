@@ -9,10 +9,8 @@
     denyTurnBudgetRequest,
     getJobResult,
     lookupArtifact,
-    sendInteractiveTurn,
+    createTurnTicket,
     startInteractiveStream,
-    cancelActiveSessionTurn,
-    stopInteractiveStream,
   } from "$lib/daemon";
   import { defaultJournalPathForToday, isAskJobId } from "$lib/types/askJob";
   import type { ArtifactPreview } from "$lib/types/artifact";
@@ -228,17 +226,20 @@
   async function askMedousa() {
     if (!detail) return;
     const prompt = `Tell me about work card ${detail.card.id}: "${detail.card.title}". Status: ${detail.card.status_label}.`;
-    chat.beginUserMessage(prompt);
     onOpenChat();
     try {
-      await cancelActiveSessionTurn(chat.sessionId).catch(() => {});
-      await stopInteractiveStream();
-      const accepted = await sendInteractiveTurn(
-        chat.sessionId,
+      const opts = buildInteractiveTurnOptions();
+      const accepted = await createTurnTicket({
+        sessionId: chat.sessionId,
         prompt,
-        buildInteractiveTurnOptions(),
-      );
-      chat.noteTurnStarted(accepted.turn_id);
+        mode: "interactive",
+        provider: opts.provider,
+        model: opts.model,
+        responseDepthMode: opts.responseDepthMode,
+        stageRouting: opts.stageRouting,
+        channelSurface: opts.channelSurface,
+      });
+      chat.beginTurn(prompt, accepted);
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));

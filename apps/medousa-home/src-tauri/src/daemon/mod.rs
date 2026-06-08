@@ -18,6 +18,7 @@ use crate::daemon::types::{
     TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
 use reqwest::Client;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -27,7 +28,8 @@ use tokio::sync::watch;
 pub struct DaemonState {
     pub daemon_url: Mutex<String>,
     workspace_cancel: Mutex<Option<watch::Sender<bool>>>,
-    interactive_cancel: Mutex<Option<watch::Sender<bool>>>,
+    /// One SSE listener per turn id — Tier 2c multi-stream bridge.
+    interactive_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
 }
 
 impl DaemonState {
@@ -35,7 +37,7 @@ impl DaemonState {
         Self {
             daemon_url: Mutex::new(resolve_daemon_url()),
             workspace_cancel: Mutex::new(None),
-            interactive_cancel: Mutex::new(None),
+            interactive_streams: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -112,6 +114,32 @@ fn replace_cancel_slot(slot: &Mutex<Option<watch::Sender<bool>>>) -> watch::Rece
         let _ = previous.send(true);
     }
     slot.lock().expect("daemon cancel lock").replace(tx);
+    rx
+}
+
+fn extract_turn_id_from_stream_url(stream_url: &str) -> Option<String> {
+    const MARKER: &str = "/v1/interactive/turn/";
+    let start = stream_url.find(MARKER)? + MARKER.len();
+    let rest = &stream_url[start..];
+    let end = rest.find("/stream").or_else(|| rest.find('?'))?;
+    let turn_id = rest[..end].trim();
+    if turn_id.is_empty() {
+        None
+    } else {
+        Some(turn_id.to_string())
+    }
+}
+
+fn add_interactive_stream_slot(
+    streams: &Mutex<HashMap<String, watch::Sender<bool>>>,
+    turn_id: &str,
+) -> watch::Receiver<bool> {
+    let (tx, rx) = watch::channel(false);
+    let mut guard = streams.lock().expect("interactive streams lock");
+    if let Some(previous) = guard.remove(turn_id) {
+        let _ = previous.send(true);
+    }
+    guard.insert(turn_id.to_string(), tx);
     rx
 }
 
@@ -320,7 +348,9 @@ pub async fn interactive_stream_start(
 ) -> Result<(), String> {
     let daemon_url = state.daemon_url.lock().expect("daemon url lock").clone();
     let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
-    let cancel_rx = replace_cancel_slot(&state.interactive_cancel);
+    let turn_id = extract_turn_id_from_stream_url(&stream_url)
+        .ok_or_else(|| "stream URL missing turn id".to_string())?;
+    let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(std::time::Duration::from_secs(600))
@@ -345,11 +375,30 @@ pub async fn interactive_stream_start(
 
 #[tauri::command]
 pub fn interactive_stream_stop(state: State<'_, DaemonState>) -> Result<(), String> {
-    if let Some(tx) = state
-        .interactive_cancel
+    let mut guard = state
+        .interactive_streams
         .lock()
-        .expect("interactive cancel lock")
-        .take()
+        .expect("interactive streams lock");
+    for (_, tx) in guard.drain() {
+        let _ = tx.send(true);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn interactive_stream_stop_turn(
+    state: State<'_, DaemonState>,
+    turn_id: String,
+) -> Result<(), String> {
+    let trimmed = turn_id.trim();
+    if trimmed.is_empty() {
+        return Err("turn_id is required".to_string());
+    }
+    if let Some(tx) = state
+        .interactive_streams
+        .lock()
+        .expect("interactive streams lock")
+        .remove(trimmed)
     {
         let _ = tx.send(true);
     }

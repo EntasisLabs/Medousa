@@ -57,6 +57,7 @@ pub fn run() {
             daemon::interactive_turn_send,
             daemon::interactive_stream_start,
             daemon::interactive_stream_stop,
+            daemon::interactive_stream_stop_turn,
             daemon::vault::vault_list_notes,
             daemon::vault::vault_get_note,
             daemon::vault::vault_save_note,

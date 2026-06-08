@@ -9,6 +9,8 @@ import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
   budgetRequestIdFromStreamEvent,
   notifyBudgetApprovalRequired,
+  notifyTurnTicketTerminal,
+  notifyWorkerHandoff,
 } from "$lib/notifications";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { haptic } from "$lib/haptics";
@@ -50,11 +52,11 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(onWorkspaceError((message) => workspace.setError(message)));
   unlisteners.push(
     onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
+      const turnBefore = chat.turns.get(event.turn_id);
       chat.applyStreamEvent(event);
-      if (
-        isTauriMobilePlatform() &&
-        event.event_type === "budget_approval"
-      ) {
+      if (!isTauriMobilePlatform()) return;
+
+      if (event.event_type === "budget_approval") {
         const requestId = budgetRequestIdFromStreamEvent(event);
         if (requestId) {
           void notifyBudgetApprovalRequired(
@@ -64,6 +66,18 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
           );
           haptic("warning");
         }
+        return;
+      }
+
+      if (event.event_type === "worker_ack") {
+        void notifyWorkerHandoff(event, turnBefore?.workspaceCardId);
+        haptic("light");
+        return;
+      }
+
+      if (event.terminal) {
+        void notifyTurnTicketTerminal(event, turnBefore?.workspaceCardId);
+        haptic("success");
       }
     }),
   );

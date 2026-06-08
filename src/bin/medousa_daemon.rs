@@ -1214,8 +1214,6 @@ async fn enqueue_ask(
     )
     .await?;
 
-    let now = Utc::now();
-    let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
     let session_id = format!("daemon-api:{}", identity_context.user_id);
     let (provider, model) =
         resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
@@ -1231,46 +1229,51 @@ async fn enqueue_ask(
         Some(suggested_capability_ids)
     };
 
-    medousa::workspace::ask_job_store::ask_job_store().register_pending(
-        medousa::workspace::ask_job_store::AskJobRecord {
-            job_id: job_id.clone(),
-            prompt: prompt.clone(),
-            status: medousa::workspace::ask_job_store::AskJobStatus::Pending,
-            output_text: None,
-            interim_text: None,
-            error: None,
-            session_id: session_id.clone(),
-            manuscript_id: manuscript_id.clone(),
-            additional_manuscript_ids: additional_manuscript_ids.clone(),
-            suggested_capability_ids: suggested_capability_ids.clone(),
-            model_hint: request.model_hint.clone(),
-            created_at_utc: now,
-            updated_at_utc: now,
-            finished_at_utc: None,
-            archived: false,
-            journal_path: None,
-            notified_channel: None,
+    let now = Utc::now();
+    let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+    let stage_routing = medousa::stage_routing::StageRoutingMatrix::default_for(
+        if provider.is_empty() {
+            "openai"
+        } else {
+            provider.as_str()
+        },
+        if model.is_empty() {
+            "gpt-4o-mini"
+        } else {
+            model.as_str()
         },
     );
-
-    spawn_daemon_api_agent_turn(
-        &state,
-        job_id.clone(),
-        session_id,
+    let ticket_request = CreateTurnTicketRequest {
+        session_id: session_id.clone(),
         prompt,
-        state.default_runtime_config.response_depth_mode.clone(),
-        provider,
-        model,
+        mode: medousa::turn_ticket::TurnTicketMode::Background,
+        persist_user_turn: true,
+        response_depth_mode: state.default_runtime_config.response_depth_mode.clone(),
+        provider: provider.clone(),
+        model: model.clone(),
+        stage_routing: Some(stage_routing.clone()),
+        surface: None,
+        model_hint: request.model_hint.clone(),
         manuscript_id,
         additional_manuscript_ids,
         suggested_capability_ids,
+    };
+    let interactive_request =
+        build_interactive_request_from_ticket(&ticket_request, provider, model, stage_routing);
+
+    let ticket = spawn_turn_ticket(
+        &state,
+        job_id.clone(),
+        medousa::turn_ticket::TurnTicketMode::Background,
+        interactive_request,
+        Some(job_id.clone()),
     )
-    .await;
+    .await?;
 
     Ok(Json(EnqueueResponse {
-        job_id,
-        queue: "agent-runtime".to_string(),
-        accepted_at_utc: now,
+        job_id: ticket.turn_id,
+        queue: "turn-ticket".to_string(),
+        accepted_at_utc: ticket.accepted_at_utc,
     }))
 }
 
