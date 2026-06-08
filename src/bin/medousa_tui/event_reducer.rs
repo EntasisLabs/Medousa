@@ -117,13 +117,13 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                     turn.timestamp = Utc::now();
                 }
             } else {
-                let turn = ConversationTurn {
-                    role: "agent".to_string(),
-                    content: visible_text,
-                    timestamp: Utc::now(),
-                    tool_names: tool_names.clone(),
-                    answer_state: Some("final_pending".to_string()),
-                };
+                let turn = ConversationTurn::plain(
+                    "agent",
+                    visible_text,
+                    Utc::now(),
+                    tool_names.clone(),
+                    Some("final_pending".to_string()),
+                );
                 state.conversation.push(turn);
                 state.active_agent_stream_turn =
                     Some(state.conversation.len().saturating_sub(1));
@@ -171,13 +171,13 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                         .await;
                 }
             } else {
-                let turn = ConversationTurn {
-                    role: "agent".to_string(),
-                    content: final_text,
-                    timestamp: Utc::now(),
-                    tool_names: tool_names.clone(),
-                    answer_state: Some("needs_input".to_string()),
-                };
+                let turn = ConversationTurn::plain(
+                    "agent",
+                    final_text,
+                    Utc::now(),
+                    tool_names.clone(),
+                    Some("needs_input".to_string()),
+                );
                 let session_id = state.session_id.clone();
                 super::history_services::append_turn_daemon_first(state, &session_id, &turn)
                     .await;
@@ -252,13 +252,13 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                         .await;
                 }
             } else {
-                let turn = ConversationTurn {
-                    role: "agent".to_string(),
-                    content: final_text,
-                    timestamp: Utc::now(),
-                    tool_names: tool_names.clone(),
-                    answer_state: answer_state.clone(),
-                };
+                let turn = ConversationTurn::plain(
+                    "agent",
+                    final_text,
+                    Utc::now(),
+                    tool_names.clone(),
+                    answer_state.clone(),
+                );
                 let session_id = state.session_id.clone();
                 super::history_services::append_turn_daemon_first(state, &session_id, &turn)
                     .await;
@@ -602,13 +602,13 @@ fn apply_agent_chunk_delta(delta: &str, state: &mut TuiState) {
             turn.content.push_str(&visible_delta);
         }
     } else {
-        state.conversation.push(ConversationTurn {
-            role: "agent".to_string(),
-            content: visible_delta,
-            timestamp: Utc::now(),
-            tool_names: vec![],
-            answer_state: None,
-        });
+        state.conversation.push(ConversationTurn::plain(
+            "agent",
+            visible_delta,
+            Utc::now(),
+            vec![],
+            None,
+        ));
         state.active_agent_stream_turn = Some(state.conversation.len().saturating_sub(1));
     }
 

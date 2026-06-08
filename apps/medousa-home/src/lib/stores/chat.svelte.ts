@@ -21,6 +21,7 @@ import type {
   TurnTicketResponse,
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
+import { reasoningFromParts, toolRunsFromParts } from "$lib/types/turnParts";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 
 const SESSION_KEY = "medousa-home-session-id";
@@ -1056,6 +1057,8 @@ function mapTurns(turns: SessionHistoryResponse["turns"]): ChatMessage[] {
     content: turn.content,
     answerState: turn.answer_state ?? null,
     tools: turn.tool_names?.length ? turn.tool_names : undefined,
+    toolRuns: toolRunsFromParts(turn.parts ?? null),
+    reasoning: reasoningFromParts(turn.parts ?? null),
   }));
 }
 

@@ -18,6 +18,7 @@ export interface SessionTurn {
   timestamp: string;
   tool_names?: string[];
   answer_state?: string | null;
+  parts?: import("$lib/types/turnParts").TurnPart[] | null;
 }
 
 export interface ActiveSessionTurn {

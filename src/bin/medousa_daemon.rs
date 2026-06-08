@@ -3426,6 +3426,7 @@ async fn spawn_continuation_agent_turn(
             last_delivery_latency_ms: state.last_delivery_latency_ms.clone(),
             cancelled_streams: state.cancelled_ingest_streams.clone(),
             delivery_started: std::time::Instant::now(),
+            parts: std::sync::Mutex::new(medousa::turn_parts::TurnPartsAccumulator::default()),
         });
 
         let agent_runtime = state.platform.agent_handle();
@@ -3585,13 +3586,15 @@ impl AgentStreamSink for ApiAgentStreamSink {
     ) {
         medousa::session::append_turn(
             &self.session_id,
-            &medousa::session::ConversationTurn {
-                role: "assistant".to_string(),
-                content: text.clone(),
-                timestamp: Utc::now(),
-                tool_names: tool_names.clone(),
-                answer_state: None,
-            },
+            &medousa::turn_parts::conversation_turn_from_parts(
+                "assistant",
+                text.clone(),
+                tool_names.clone(),
+                None,
+                vec![medousa::turn_parts::TurnPart::Text {
+                    markdown: text.clone(),
+                }],
+            ),
         );
 
         if medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
@@ -3613,13 +3616,13 @@ impl AgentStreamSink for ApiAgentStreamSink {
     async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
         medousa::session::append_turn(
             &self.session_id,
-            &medousa::session::ConversationTurn {
-                role: "assistant".to_string(),
-                content: text.clone(),
-                timestamp: Utc::now(),
-                tool_names: _tool_names,
-                answer_state: None,
-            },
+            &medousa::session::ConversationTurn::plain(
+                "assistant",
+                text.clone(),
+                Utc::now(),
+                _tool_names,
+                None,
+            ),
         );
 
         if medousa::workspace::ask_job_store::AskJobStore::is_ask_job_id(&self.job_id) {
@@ -3689,6 +3692,31 @@ struct IngestAgentStreamSink {
     last_delivery_latency_ms: Arc<RwLock<Option<u64>>>,
     cancelled_streams: Arc<RwLock<HashSet<String>>>,
     delivery_started: std::time::Instant,
+    parts: std::sync::Mutex<medousa::turn_parts::TurnPartsAccumulator>,
+}
+
+impl IngestAgentStreamSink {
+    fn persist_assistant_turn(
+        &self,
+        content: String,
+        tool_names: Vec<String>,
+        answer_state: Option<String>,
+    ) {
+        let turn = self
+            .parts
+            .lock()
+            .map(|mut parts| parts.finalize_assistant_turn(content.clone(), tool_names.clone(), answer_state.clone()))
+            .unwrap_or_else(|_| {
+                medousa::turn_parts::conversation_turn_from_parts(
+                    "assistant",
+                    content,
+                    tool_names,
+                    answer_state,
+                    vec![],
+                )
+            });
+        medousa::session::append_turn(&self.session_id, &turn);
+    }
 }
 
 #[async_trait]
@@ -3701,6 +3729,9 @@ impl AgentStreamSink for IngestAgentStreamSink {
     }
 
     async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.push_reasoning_delta(&delta);
+        }
         publish_interactive_turn_event(
             &self.stream_tx,
             medousa::interactive_turn_runtime::reasoning_delta_stream_event(
@@ -3737,15 +3768,10 @@ impl AgentStreamSink for IngestAgentStreamSink {
             return;
         }
 
-        medousa::session::append_turn(
-            &self.session_id,
-            &medousa::session::ConversationTurn {
-                role: "assistant".to_string(),
-                content: text.clone(),
-                timestamp: Utc::now(),
-                tool_names: tool_names.clone(),
-                answer_state: Some("needs_input".to_string()),
-            },
+        self.persist_assistant_turn(
+            text.clone(),
+            tool_names.clone(),
+            Some("needs_input".to_string()),
         );
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
@@ -3810,16 +3836,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
             return;
         }
 
-        medousa::session::append_turn(
-            &self.session_id,
-            &medousa::session::ConversationTurn {
-                role: "assistant".to_string(),
-                content: text.clone(),
-                timestamp: Utc::now(),
-                tool_names: tool_names.clone(),
-                answer_state: None,
-            },
-        );
+        self.persist_assistant_turn(text.clone(), tool_names.clone(), None);
 
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
         let delivery_text = medousa::agent_runtime::format_channel_delivery_text(
@@ -3926,6 +3943,9 @@ impl AgentStreamSink for IngestAgentStreamSink {
         input_summary: String,
         tool_round: usize,
     ) {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+        }
         publish_interactive_turn_event(
             &self.stream_tx,
             medousa::interactive_turn_runtime::tool_started_stream_event(
@@ -3969,6 +3989,14 @@ impl AgentStreamSink for IngestAgentStreamSink {
             input_receipt.as_ref(),
             output_receipt.as_ref(),
         );
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_finished(
+                &tool_run_id,
+                &status,
+                output_summary.clone(),
+                medousa::turn_parts::artifact_refs_from_stream(&artifact_refs),
+            );
+        }
         publish_interactive_turn_event(
             &self.stream_tx,
             medousa::interactive_turn_runtime::tool_finished_stream_event(
@@ -4127,6 +4155,7 @@ async fn start_ingest_ask_stream(
             last_delivery_latency_ms,
             cancelled_streams,
             delivery_started: std::time::Instant::now(),
+            parts: std::sync::Mutex::new(medousa::turn_parts::TurnPartsAccumulator::default()),
         });
 
         medousa::agent_runtime::run_agent_turn(

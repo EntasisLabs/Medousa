@@ -25,13 +25,13 @@ async fn session_append_and_get_via_handlers() {
 
     let session_id = "test-session-handlers".to_string();
 
-    let turn = ConversationTurn {
-        role: "user".to_string(),
-        content: "hello from test".to_string(),
-        timestamp: Utc::now(),
-        tool_names: vec![],
-        answer_state: None,
-    };
+    let turn = ConversationTurn::plain(
+        "user",
+        "hello from test".to_string(),
+        Utc::now(),
+        vec![],
+        None,
+    );
 
     let req = SessionAppendTurnRequest { turn: turn.clone() };
 
@@ -59,13 +59,13 @@ async fn list_history_sessions_handler() {
     // create two sessions
     for i in 0..2 {
         let sid = format!("session-{}", i);
-        let turn = ConversationTurn {
-            role: "user".to_string(),
-            content: format!("content {}", i),
-            timestamp: Utc::now(),
-            tool_names: vec![],
-            answer_state: None,
-        };
+        let turn = ConversationTurn::plain(
+            "user",
+            format!("content {}", i),
+            Utc::now(),
+            vec![],
+            None,
+        );
         medousa::session::append_turn(&sid, &turn);
     }
 

@@ -14,8 +14,9 @@ use crate::channel_delivery::{
 use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
-use crate::session::{ConversationTurn, append_turn, load_history};
+use crate::session::{append_turn, load_history};
 use crate::session_active_turn::{self, TurnTicketRegistry};
+use crate::turn_parts::{artifact_refs_from_stream, user_conversation_turn, TurnPartsAccumulator};
 use crate::workspace::ask_job_store::{self, AskJobStore};
 
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
@@ -71,6 +72,7 @@ struct InteractiveTurnStreamSink {
     stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
+    parts: std::sync::Mutex<TurnPartsAccumulator>,
 }
 
 impl InteractiveTurnStreamSink {
@@ -160,6 +162,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.push_content_delta(&delta);
+        }
         self.publish_tracked(interactive_turn_runtime::content_delta_stream_event(
             &self.turn_id,
             &delta,
@@ -169,6 +174,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
         if self.emit_cancelled_if_needed().await {
             return;
+        }
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.push_reasoning_delta(&delta);
         }
         self.publish_tracked(interactive_turn_runtime::reasoning_delta_stream_event(
             &self.turn_id,
@@ -187,13 +195,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let assistant_turn = ConversationTurn {
-            role: "assistant".to_string(),
-            content: text.clone(),
-            timestamp: Utc::now(),
-            tool_names: tool_names.clone(),
-            answer_state: None,
-        };
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
+            .unwrap_or_else(|_| user_conversation_turn(text.clone()));
         append_turn(&self.session_id, &assistant_turn);
 
         self.publish_tracked(
@@ -212,13 +218,23 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let assistant_turn = ConversationTurn {
-            role: "assistant".to_string(),
-            content: text.clone(),
-            timestamp: Utc::now(),
-            tool_names: tool_names.clone(),
-            answer_state: None,
-        };
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| {
+                parts.finalize_assistant_turn(text.clone(), tool_names.clone(), None)
+            })
+            .unwrap_or_else(|_| {
+                crate::turn_parts::conversation_turn_from_parts(
+                    "assistant",
+                    text.clone(),
+                    tool_names.clone(),
+                    None,
+                    vec![crate::turn_parts::TurnPart::Text {
+                        markdown: text.clone(),
+                    }],
+                )
+            });
         append_turn(&self.session_id, &assistant_turn);
 
         self.publish_tracked(interactive_turn_runtime::final_stream_event_with_tools(
@@ -238,13 +254,27 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let assistant_turn = ConversationTurn {
-            role: "assistant".to_string(),
-            content: text.clone(),
-            timestamp: Utc::now(),
-            tool_names: tool_names.clone(),
-            answer_state: Some("needs_input".to_string()),
-        };
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| {
+                parts.finalize_assistant_turn(
+                    text.clone(),
+                    tool_names.clone(),
+                    Some("needs_input".to_string()),
+                )
+            })
+            .unwrap_or_else(|_| {
+                crate::turn_parts::conversation_turn_from_parts(
+                    "assistant",
+                    text.clone(),
+                    tool_names.clone(),
+                    Some("needs_input".to_string()),
+                    vec![crate::turn_parts::TurnPart::Text {
+                        markdown: text.clone(),
+                    }],
+                )
+            });
         append_turn(&self.session_id, &assistant_turn);
 
         self.publish_tracked(
@@ -275,13 +305,27 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
-        let assistant_turn = ConversationTurn {
-            role: "assistant".to_string(),
-            content: message.clone(),
-            timestamp: Utc::now(),
-            tool_names: vec![],
-            answer_state: Some("error".to_string()),
-        };
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| {
+                parts.finalize_assistant_turn(
+                    message.clone(),
+                    vec![],
+                    Some("error".to_string()),
+                )
+            })
+            .unwrap_or_else(|_| {
+                crate::turn_parts::conversation_turn_from_parts(
+                    "assistant",
+                    message.clone(),
+                    vec![],
+                    Some("error".to_string()),
+                    vec![crate::turn_parts::TurnPart::Text {
+                        markdown: message.clone(),
+                    }],
+                )
+            });
         append_turn(&self.session_id, &assistant_turn);
 
         self.publish_tracked(interactive_turn_runtime::error_stream_event(
@@ -304,6 +348,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn scratch_reset(&self, _turn_id: u64) {
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.scratch_reset();
+        }
         self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id));
     }
 
@@ -350,6 +397,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
+        }
         self.publish_tracked(interactive_turn_runtime::tool_started_stream_event(
             &self.turn_id,
             &tool_run_id,
@@ -393,6 +443,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             input_receipt.as_ref(),
             output_receipt.as_ref(),
         );
+        if let Ok(mut parts) = self.parts.lock() {
+            parts.tool_finished(
+                &tool_run_id,
+                &status,
+                output_summary.clone(),
+                artifact_refs_from_stream(&artifact_refs),
+            );
+        }
         self.publish_tracked(interactive_turn_runtime::tool_finished_stream_event(
             &self.turn_id,
             &tool_run_id,
@@ -508,13 +566,7 @@ async fn run_agent_turn_inner(
 
     let mut conversation = load_history(&session_id);
     if request.persist_user_turn {
-        let user_turn = ConversationTurn {
-            role: "user".to_string(),
-            content: prompt.clone(),
-            timestamp: Utc::now(),
-            tool_names: vec![],
-            answer_state: None,
-        };
+        let user_turn = user_conversation_turn(prompt.clone());
         append_turn(&session_id, &user_turn);
         conversation.push(user_turn);
     }
@@ -804,6 +856,7 @@ pub async fn run_daemon_interactive_turn(
         stream_tx,
         delivery,
         session_hooks: session_hooks.unwrap_or_default(),
+        parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
     });
 
     run_agent_turn(

@@ -4,6 +4,8 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::turn_parts::TurnPart;
+
 const API_KEY_SERVICE: &str = "medousa.tui";
 const API_KEY_ACCOUNT: &str = "api_key";
 const DISCORD_BOT_TOKEN_SERVICE: &str = "medousa.discord";
@@ -25,6 +27,29 @@ pub struct ConversationTurn {
     pub tool_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer_state: Option<String>,
+    /// Ordered timeline (P3). Surfaces prefer parts; content + tool_names remain for compat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<TurnPart>>,
+}
+
+impl ConversationTurn {
+    /// Legacy constructor without structured timeline parts (TUI, tests, channel adapters).
+    pub fn plain(
+        role: impl Into<String>,
+        content: String,
+        timestamp: DateTime<Utc>,
+        tool_names: Vec<String>,
+        answer_state: Option<String>,
+    ) -> Self {
+        Self {
+            role: role.into(),
+            content,
+            timestamp,
+            tool_names,
+            answer_state,
+            parts: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

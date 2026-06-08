@@ -256,13 +256,13 @@ pub(crate) async fn start_prompt_run(
     state.received_native_reasoning = false;
 
     if persist_user_turn {
-        let user_turn = ConversationTurn {
-            role: "user".to_string(),
-            content: prompt.clone(),
-            timestamp: chrono::Utc::now(),
-            tool_names: vec![],
-            answer_state: None,
-        };
+        let user_turn = ConversationTurn::plain(
+            "user",
+            prompt.clone(),
+            chrono::Utc::now(),
+            vec![],
+            None,
+        );
         let session_id = state.session_id.clone();
         super::history_services::append_turn_daemon_first(state, &session_id, &user_turn).await;
         state.conversation.push(user_turn);
@@ -633,13 +633,13 @@ async fn start_daemon_stream_prompt_run(
     state.pending_response_verified = None;
 
     if persist_user_turn {
-        let user_turn = ConversationTurn {
-            role: "user".to_string(),
-            content: prompt.to_string(),
-            timestamp: chrono::Utc::now(),
-            tool_names: vec![],
-            answer_state: None,
-        };
+        let user_turn = ConversationTurn::plain(
+            "user",
+            prompt.to_string(),
+            chrono::Utc::now(),
+            vec![],
+            None,
+        );
         let session_id = state.session_id.clone();
         super::history_services::append_turn_daemon_first(state, &session_id, &user_turn).await;
         state.conversation.push(user_turn);

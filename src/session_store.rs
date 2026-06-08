@@ -9,6 +9,7 @@ use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
 use crate::session::{ConversationTurn, SessionHistorySummary};
+use crate::turn_parts::TurnPart;
 use stasis::prelude::RuntimeComposition;
 
 const SESSION_TURN_TABLE: &str = "session_turn";
@@ -21,6 +22,7 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD timestamp ON TABLE session_turn TYPE datetime",
     "DEFINE FIELD tool_names ON TABLE session_turn TYPE array<string>",
     "DEFINE FIELD answer_state ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD parts ON TABLE session_turn TYPE option<object>",
     "DEFINE INDEX idx_session_turn_session_id ON TABLE session_turn COLUMNS session_id",
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
 ];
@@ -55,6 +57,16 @@ struct SessionTurnRecord {
     tool_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     answer_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parts: Option<serde_json::Value>,
+}
+
+fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<serde_json::Value> {
+    parts.map(|items| serde_json::to_value(items).unwrap_or(serde_json::Value::Null))
+}
+
+fn parts_from_json(value: Option<serde_json::Value>) -> Option<Vec<TurnPart>> {
+    value.and_then(|raw| serde_json::from_value(raw).ok())
 }
 
 impl From<SessionTurnRecord> for ConversationTurn {
@@ -65,6 +77,7 @@ impl From<SessionTurnRecord> for ConversationTurn {
             timestamp: record.timestamp,
             tool_names: record.tool_names,
             answer_state: record.answer_state,
+            parts: parts_from_json(record.parts),
         }
     }
 }
@@ -78,6 +91,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
             timestamp: turn.timestamp,
             tool_names: turn.tool_names.clone(),
             answer_state: turn.answer_state.clone(),
+            parts: parts_to_json(turn.parts.as_deref()),
         }
     }
 }
@@ -155,7 +169,7 @@ impl SurrealSessionStore {
 
 impl SessionStore for SurrealSessionStore {
     fn load_history(&self, session_id: &str) -> Vec<ConversationTurn> {
-        let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state \
+        let sql = "SELECT session_id, role, content, timestamp, tool_names, answer_state, parts \
                     FROM type::table($table) \
                     WHERE session_id = $session_id \
                     ORDER BY timestamp ASC";

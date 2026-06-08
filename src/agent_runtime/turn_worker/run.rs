@@ -567,13 +567,15 @@ async fn run_worker_failure_notify(
 
     crate::session::append_turn(
         &record.session_id,
-        &crate::session::ConversationTurn {
-            role: "assistant".to_string(),
-            content: text.clone(),
-            timestamp: chrono::Utc::now(),
-            tool_names: vec!["turn_worker.failure".to_string()],
-            answer_state: None,
-        },
+        &crate::turn_parts::conversation_turn_from_parts(
+            "assistant",
+            text.clone(),
+            vec!["turn_worker.failure".to_string()],
+            None,
+            vec![crate::turn_parts::TurnPart::Text {
+                markdown: text.clone(),
+            }],
+        ),
     );
     sink.agent_response(notify_turn_id, text, vec!["turn_worker.failure".to_string()])
         .await;
@@ -667,13 +669,15 @@ async fn run_synthesis_turn(
     let text = response.text.clone();
     crate::session::append_turn(
         &record.session_id,
-        &crate::session::ConversationTurn {
-            role: "assistant".to_string(),
-            content: text.clone(),
-            timestamp: chrono::Utc::now(),
-            tool_names: tool_names.clone(),
-            answer_state: None,
-        },
+        &crate::turn_parts::conversation_turn_from_parts(
+            "assistant",
+            text.clone(),
+            tool_names.clone(),
+            None,
+            vec![crate::turn_parts::TurnPart::Text {
+                markdown: text.clone(),
+            }],
+        ),
     );
     sink.agent_response(synthesis_turn_id, text, tool_names).await;
     turn_worker_store().update(&record.work_id, |worker| {

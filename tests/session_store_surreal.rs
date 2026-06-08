@@ -27,13 +27,7 @@ async fn setup_store() -> SurrealSessionStore {
 }
 
 fn user_turn(content: &str, at: chrono::DateTime<Utc>) -> ConversationTurn {
-    ConversationTurn {
-        role: "user".to_string(),
-        content: content.to_string(),
-        timestamp: at,
-        tool_names: vec![],
-        answer_state: None,
-    }
+    ConversationTurn::plain("user", content.to_string(), at, vec![], None)
 }
 
 #[tokio::test(flavor = "multi_thread")]

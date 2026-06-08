@@ -352,6 +352,47 @@ pub struct SessionHistoryListResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnArtifactRef {
+    pub role: String,
+    pub content_type: String,
+    pub byte_size: usize,
+    pub hash64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TurnPart {
+    Text {
+        markdown: String,
+    },
+    Reasoning {
+        markdown: String,
+    },
+    ToolRun {
+        run_id: String,
+        tool_name: String,
+        status: String,
+        input_summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output_summary: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        artifact_refs: Vec<TurnArtifactRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_round: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        started_at: Option<DateTime<Utc>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        finished_at: Option<DateTime<Utc>>,
+    },
+    Handoff {
+        handoff_kind: String,
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationTurn {
     pub role: String,
     pub content: String,
@@ -360,6 +401,8 @@ pub struct ConversationTurn {
     pub tool_names: Vec<String>,
     #[serde(default)]
     pub answer_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<TurnPart>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -263,18 +263,20 @@ These are **not** Phase 1–2 work — but the envelope avoids painting us into 
 
 ---
 
-### P3 — Session `parts[]` persistence (daemon)
+### P3 — Session `parts[]` persistence (daemon) ✅
 
 **Goal:** Survive refresh; enable attachment timeline.
 
-1. Extend `ConversationTurn` with optional `parts: Vec<TurnPart>`  
-2. Sink writes parts as turn progresses  
-3. Home hydrates from `parts` when present  
-4. Export / journal compose from parts  
+1. Extend `ConversationTurn` with optional `parts: Vec<TurnPart>` ✅  
+2. Sink writes parts as turn progresses ✅  
+3. Home hydrates from `parts` when present ✅  
+4. Export / journal compose from parts ✅  
 
 **Touch:** `session.rs`, `daemon_api` types, Home `mapTurns`  
 
 **Risk:** Medium. Migration: old rows synthesize `Text { markdown: content }` + tool names.
+
+**Shipped:** `turn_parts.rs` accumulator on interactive + ingest sinks; Surreal/file JSON persistence; Home `toolRunsFromParts` on session load; `composeTurnMarkdown` / `compose_turn_markdown` for journal export.
 
 ---
 

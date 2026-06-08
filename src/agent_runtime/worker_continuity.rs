@@ -303,6 +303,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: vec![],
                 answer_state: None,
+                parts: None,
             })
             .collect::<Vec<_>>();
 
@@ -321,6 +322,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: vec![],
                 answer_state: None,
+                parts: None,
             }],
             Some("turn-abc".to_string()),
         );

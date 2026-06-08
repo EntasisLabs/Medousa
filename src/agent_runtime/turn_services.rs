@@ -588,6 +588,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             });
         }
 
@@ -613,6 +614,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
             ConversationTurn {
                 role: "agent".to_string(),
@@ -620,6 +622,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
         ];
 
@@ -640,6 +643,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
             ConversationTurn {
                 role: "agent".to_string(),
@@ -647,6 +651,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
             ConversationTurn {
                 role: "user".to_string(),
@@ -654,6 +659,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
         ];
 
@@ -681,6 +687,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
             ConversationTurn {
                 role: "user".to_string(),
@@ -688,6 +695,7 @@ mod tests {
                 timestamp: Utc::now(),
                 tool_names: Vec::new(),
                 answer_state: None,
+                parts: None,
             },
         ];
 
