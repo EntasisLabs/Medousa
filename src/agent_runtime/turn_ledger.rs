@@ -268,7 +268,25 @@ pub fn record_from_gatekeeper_continue(
     tools_invoked: &[String],
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
-    let kind = if !verdict.missing_tools.is_empty() {
+    record_fsm_continue(
+        stream_turn_id,
+        &verdict.reason,
+        &verdict.missing_tools,
+        rounds_executed,
+        tools_invoked,
+        scratch,
+    )
+}
+
+pub fn record_fsm_continue(
+    stream_turn_id: u64,
+    detail: &str,
+    missing_tools: &[String],
+    rounds_executed: usize,
+    tools_invoked: &[String],
+    scratch: &TurnScratchpad,
+) -> TurnLedgerRecord {
+    let kind = if !missing_tools.is_empty() {
         TurnLedgerEventKind::ReceiptMissing
     } else {
         TurnLedgerEventKind::GatekeeperContinue
@@ -277,9 +295,9 @@ pub fn record_from_gatekeeper_continue(
         timestamp: Utc::now(),
         stream_turn_id,
         kind,
-        detail: verdict.reason.clone(),
+        detail: detail.to_string(),
         tools_invoked: tools_invoked.to_vec(),
-        missing_tools: verdict.missing_tools.clone(),
+        missing_tools: missing_tools.to_vec(),
         rounds_executed,
         scratch: Some(scratch.clone()),
     }

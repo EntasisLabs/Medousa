@@ -18,6 +18,7 @@ pub mod stream_sink;
 pub mod system_prompt;
 pub mod turn_budget;
 pub mod turn_completion;
+pub mod turn_completion_fsm;
 pub mod turn_context;
 pub mod turn_ledger;
 pub mod turn_loop_settings;

@@ -4,6 +4,7 @@ import {
   getWorkspaceCard,
   retryWorkspaceCard,
 } from "$lib/daemon";
+import { chat } from "$lib/stores/chat.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import {
   notifyAskComplete,
@@ -115,6 +116,18 @@ export class WorkspaceStore {
       card.status_label === "needs approval"
     ) {
       void notifyBudgetApprovalRequired(card.title, card.id);
+    }
+    if (
+      previous === "in_flight" &&
+      (card.column === "wrapping_up" || card.column === "done")
+    ) {
+      chat.noteBackgroundSettled();
+    }
+    if (
+      previous === "blocked" &&
+      card.status_label !== "needs approval"
+    ) {
+      chat.noteBackgroundSettled();
     }
     this.previousColumns.set(card.id, card.column);
 

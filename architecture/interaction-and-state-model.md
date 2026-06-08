@@ -58,6 +58,8 @@ State touched:
 
 Host/worker delegation and pending-work lifecycle are **daemon agent runtime** concerns, not TUI-specific. Any comms medium (TUI SSE, Telegram ingest, `interactive/turn`, `jobs/ask`) should observe the same bus events and session ledger. See [turn-worker-bus-plan.md](turn-worker-bus-plan.md).
 
+For unlocking sync chat → async conversation UX, see [async-chat-unlock-plan.md](async-chat-unlock-plan.md).
+
 ## State Domains
 
 ## A) UI state domain (TUI)

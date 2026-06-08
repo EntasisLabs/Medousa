@@ -152,8 +152,14 @@
               {streamingMessage.tools.map((tool) => formatToolName(tool)).join(" · ")}
             </p>
           {/if}
-        {:else if chat.isStreaming}
+        {:else if chat.liveStreamActive}
           <p class="text-sm text-surface-300">Starting turn…</p>
+        {:else if chat.backgroundActivity > 0}
+          <p class="text-sm text-surface-300">
+            {chat.backgroundActivity === 1
+              ? "1 turn in background"
+              : `${chat.backgroundActivity} turns in background`}
+          </p>
         {:else}
           <p class="workshop-faint">No active turn</p>
         {/if}

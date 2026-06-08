@@ -145,7 +145,7 @@ pub fn lane_execution_budget(lane: EngineExecutionLane) -> LaneExecutionBudget {
             max_tool_loop_calls: 10,
             max_prompt_only_calls: 1,
             max_classifier_calls: 1,
-            max_gatekeeper_calls: 2,
+            max_gatekeeper_calls: 0,
             max_retries: 1,
             max_continuations: 1,
         },

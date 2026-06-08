@@ -1,5 +1,7 @@
 # Turn completion gatekeeper
 
+> **Migration:** Output-side loop control lives in [turn-state-machine-plan.md](turn-state-machine-plan.md). Phase 1–2 FSM owns text-only round decisions; this gatekeeper model layer is **off the tool-loop hot path** (Interactive `max_gatekeeper_calls: 0`). Kept for Scheduled lane fallback and tests until Phase 3 removal.
+
 ## Role
 
 Symmetric to the **input intent classifier**: a small completion pass decides whether a text-only tool-loop round should **end the turn** or **continue** (more tools / another model round).
@@ -17,8 +19,8 @@ Symmetric to the **input intent classifier**: a small completion pass decides wh
 
 - `ToolLoopCompletionGate` passed from `execute_local_turn` into `MedousaToolLoopPipeline::execute_with_stream_prior_messages_max_rounds`.
 - Notices: `◈ completion gatekeeper decision=... source=... reason=...`
-- Termination: `gatekeeper_receipt_checklist` | `gatekeeper_gatekeeper_model` | heuristic paths unchanged.
+- Termination: FSM reasons (`tool_debt_complete`, `receipt_checklist` continues) via [turn-state-machine-plan.md](turn-state-machine-plan.md). Legacy gatekeeper paths below apply only when `resolve_turn_completion` is invoked elsewhere.
 
 ## Budget
 
-Interactive lane: `max_gatekeeper_calls: 2` (shares `max_llm_calls_total` pool).
+Interactive lane: `max_gatekeeper_calls: 0` (FSM owns completion). Scheduled lane: `1` (legacy fallback in `resolve_turn_completion`).

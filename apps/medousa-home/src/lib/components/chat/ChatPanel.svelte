@@ -48,13 +48,21 @@
     return "Working…";
   });
 
-  const mobileChatTitle = $derived(
-    mobile && chat.isStreaming && phaseLine ? phaseLine : "Medousa",
-  );
+  const mobileChatTitle = $derived.by(() => {
+    if (!mobile) return "Medousa";
+    if (chat.liveStreamActive && phaseLine) return phaseLine;
+    if (chat.backgroundActivity > 0) {
+      return chat.backgroundActivity === 1
+        ? "Working in background"
+        : `${chat.backgroundActivity} turns active`;
+    }
+    return "Medousa";
+  });
 
   const mobileChatSubtitle = $derived.by(() => {
     if (!mobile) return sessionLabel;
-    if (chat.isStreaming) return "Thinking…";
+    if (chat.liveStreamActive) return "Thinking…";
+    if (chat.backgroundActivity > 0) return "Composer open · check Work";
     const last = [...chat.messages].reverse().find((message) => message.content.trim());
     if (last?.content) {
       const line = last.content.trim().split("\n")[0];
@@ -64,7 +72,7 @@
   });
 
   $effect(() => {
-    if (scrollEl && (chat.messages.length || chat.isStreaming)) {
+    if (scrollEl && (chat.messages.length || chat.hasTurnActivity)) {
       scrollEl.scrollTop = scrollEl.scrollHeight;
     }
   });
@@ -90,7 +98,7 @@
   async function submit(event: Event) {
     event.preventDefault();
     const prompt = chat.draft.trim();
-    if (!prompt || chat.isStreaming) return;
+    if (!prompt || chat.composerBlocked) return;
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
@@ -189,6 +197,20 @@
             </p>
           {/if}
         </button>
+        {#if chat.hasTurnActivity}
+          <span
+            class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
+            title={chat.liveStreamActive
+              ? "Live turn streaming"
+              : `${chat.backgroundActivity} background turn(s)`}
+          >
+            {#if chat.liveStreamActive}
+              Live
+            {:else}
+              {chat.backgroundActivity} active
+            {/if}
+          </span>
+        {/if}
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
         <button
@@ -259,6 +281,10 @@
               <span class="normal-case text-primary-300">
                 · {formatTurnPhase(message.phase)}
               </span>
+            {:else if message.phase === "worker_ack" || message.phase === "awaiting_operator"}
+              <span class="normal-case text-warning-300">
+                · {formatTurnPhase(message.phase)}
+              </span>
             {:else if message.streaming}
               <span class="workshop-faint normal-case animate-pulse">· working</span>
             {/if}
@@ -272,7 +298,7 @@
                 {message.tools.map((tool) => formatToolName(tool)).join(" · ")}
               </p>
             {/if}
-            {#if message.streaming && message.statusLine}
+            {#if message.statusLine && (message.streaming || message.phase === "worker_ack" || message.phase === "awaiting_operator")}
               <p class="workshop-faint">{message.statusLine}</p>
             {/if}
             {#if message.reasoning?.trim()}
@@ -365,7 +391,7 @@
         placeholder={mobile ? "Message" : "Message · /ask for background jobs"}
         rows="1"
         bind:value={chat.draft}
-        disabled={chat.isStreaming}
+        disabled={chat.composerBlocked}
         onkeydown={handleKeydown}
       ></textarea>
       <button
@@ -373,10 +399,10 @@
         class="{mobile
           ? 'mobile-chat-send'
           : 'btn btn-sm variant-filled-primary h-8 w-8 shrink-0 p-0'}"
-        disabled={chat.isStreaming || !chat.draft.trim()}
+        disabled={chat.composerBlocked || !chat.draft.trim()}
         aria-label="Send message"
       >
-        {chat.isStreaming ? "…" : "↑"}
+        {chat.composerBlocked ? "…" : "↑"}
       </button>
     </div>
   </form>

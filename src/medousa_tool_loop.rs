@@ -16,19 +16,20 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::domain::errors::{Result, StasisError};
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
-use crate::agent_runtime::turn_completion::{
-    ToolLoopCompletionGate, TurnCompletionDecision, build_turn_completion_docket,
-    collect_tool_names, resolve_turn_completion,
+use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
+use crate::agent_runtime::turn_completion_fsm::{
+    append_assistant_draft_to_tool_lane, decide_after_tools_text_round,
+    decide_no_tool_debt_text_round, AfterToolsRoundContext, NoToolDebtRoundContext,
+    TurnRoundAction,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
     push_turn_scratch_message_with_budget,
 };
 use crate::agent_runtime::turn_ledger::{
-    TurnLoopAwareness, TurnLoopDiscipline, developer_message_for_gatekeeper_continue,
-    developer_message_for_heuristic_interim_continue, ledger_tool_names, persist_ledger_record,
-    push_turn_control_message, record_finalized, record_from_gatekeeper_continue,
-    record_stuck, record_tool_round, stuck_turn_user_message, TURN_CONTROL_PREFIX,
+    TurnLoopAwareness, TurnLoopDiscipline, ledger_tool_names, persist_ledger_record,
+    push_turn_control_message, record_finalized, record_fsm_continue, record_stuck,
+    record_tool_round, stuck_turn_user_message, TURN_CONTROL_PREFIX,
 };
 use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_batch_allowed};
 use crate::turn_budget_request::{
@@ -198,7 +199,6 @@ impl MedousaToolLoopPipeline {
         let mut fallback_draft_text: Option<String> = None;
         let mut rounds_executed = 0usize;
         let mut pending_final_answer = false;
-        let mut last_streamed_draft: Option<String> = None;
         let streaming_enabled = chunk_tx.is_some();
         let max_text_only_stuck = completion_gate
             .as_ref()
@@ -290,67 +290,77 @@ impl MedousaToolLoopPipeline {
                     }
 
                     if let Some(text) = maybe_text {
-                        let heuristic_would_finalize = should_finalize_on_text_only_response(
-                            has_selected_tool,
-                            invocations.len(),
-                            &text,
-                            pending_final_answer,
-                            rounds_executed,
-                            effective_max_tool_rounds,
-                        );
-
-                        if heuristic_would_finalize {
-                            if let Some(gate) = completion_gate.as_mut() {
-                                let docket = build_turn_completion_docket(
-                                    shared_inputs.user_prompt.as_ref(),
-                                    &text,
-                                    &invocations,
-                                    pending_final_answer,
-                                    rounds_executed,
-                                    effective_max_tool_rounds,
-                                    true,
-                                    last_streamed_draft.as_deref(),
-                                    gate.skip_avec_ritual_check,
-                                );
-                                let sink = gate.sink.clone();
-                                let orchestration = gate.orchestration.as_deref_mut();
-                                let budget = gate.budget;
-                                let verdict = resolve_turn_completion(
-                                    &self.prompt_pipeline,
-                                    &docket,
-                                    sink.as_ref(),
-                                    orchestration,
-                                    budget,
-                                )
-                                .await;
-
-                                if verdict.decision == TurnCompletionDecision::Continue {
-                                    let tools = ledger_tool_names(&invocations);
-                                    turn_ctx
-                                        .scratchpad
-                                        .set_open_gaps(&verdict.missing_tools);
-                                    let record = record_from_gatekeeper_continue(
-                                        gate.stream_turn_id,
-                                        &verdict,
-                                        rounds_executed,
-                                        &tools,
-                                        &turn_ctx.scratchpad,
-                                    );
-                                    persist_ledger_record(
-                                        gate.session_id.as_deref(),
-                                        &record,
-                                    );
-                                    if let Some(slot) = gate.scratch_out.as_mut() {
-                                        **slot = Some(turn_ctx.scratchpad.clone());
+                        if invocations.is_empty() {
+                            let action = decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
+                                draft_text: text.clone(),
+                                pending_final_answer,
+                                rounds_executed,
+                                max_tool_rounds: effective_max_tool_rounds,
+                            });
+                            match action {
+                                TurnRoundAction::EndTurn { termination_reason } => {
+                                    if let Some(gate) = completion_gate.as_ref() {
+                                        persist_ledger_record(
+                                            gate.session_id.as_deref(),
+                                            &record_finalized(
+                                                gate.stream_turn_id,
+                                                termination_reason,
+                                                rounds_executed,
+                                                &[],
+                                            ),
+                                        );
                                     }
+                                    let last = ToolInvocation {
+                                        tool_name: shared_inputs.selected_tool_name().to_string(),
+                                        tool_input: (*shared_inputs.tool_input).clone(),
+                                        tool_output: Value::Null,
+                                    };
+                                    return Ok(ToolLoopExecutionResponse {
+                                        text,
+                                        metadata: shared_inputs.context_clone(),
+                                        tool_name: last.tool_name,
+                                        tool_output: last.tool_output,
+                                        tool_invocations: invocations,
+                                        rounds_executed,
+                                        termination_reason: termination_reason.to_string(),
+                                    });
+                                }
+                                TurnRoundAction::ContinueLoop {
+                                    control_message,
+                                    missing_tools,
+                                    ..
+                                } => {
+                                    if !missing_tools.is_empty() {
+                                        turn_ctx
+                                            .scratchpad
+                                            .set_open_gaps(&missing_tools);
+                                    }
+                                    if let Some(gate) = completion_gate.as_deref_mut() {
+                                        persist_ledger_record(
+                                            gate.session_id.as_deref(),
+                                            &record_fsm_continue(
+                                                gate.stream_turn_id,
+                                                &control_message,
+                                                &missing_tools,
+                                                rounds_executed,
+                                                &[],
+                                                &turn_ctx.scratchpad,
+                                            ),
+                                        );
+                                        if let Some(slot) = gate.scratch_out.as_mut() {
+                                            **slot = Some(turn_ctx.scratchpad.clone());
+                                        }
+                                    }
+                                    append_assistant_draft_to_tool_lane(
+                                        &mut turn_ctx.tool_lane.messages,
+                                        &text,
+                                    );
                                     loop_awareness.record_user_response(&text);
                                     push_turn_control_message(
                                         &mut turn_ctx.tool_lane.messages,
                                         &loop_awareness.wrap_control_body(
                                             tool_rounds_remaining,
-                                            &developer_message_for_gatekeeper_continue(
-                                                &verdict,
-                                            ),
+                                            &control_message,
                                         ),
                                     );
                                     push_turn_scratch_message_with_budget(
@@ -358,136 +368,135 @@ impl MedousaToolLoopPipeline {
                                         &turn_ctx.scratchpad,
                                         tool_rounds_remaining,
                                     );
+                                    sync_scratch_snapshot(
+                                        completion_gate.as_deref_mut(),
+                                        &turn_ctx.scratchpad,
+                                    );
                                     if discipline.on_text_only_continue(invocations.len()) {
-                                        return finish_stuck_turn(
-                                            &shared_inputs,
-                                            invocations,
-                                            rounds_executed,
-                                            gate,
-                                        )
-                                        .await;
+                                        if let Some(gate) = completion_gate.as_ref() {
+                                            return finish_stuck_turn(
+                                                &shared_inputs,
+                                                invocations,
+                                                rounds_executed,
+                                                gate,
+                                            )
+                                            .await;
+                                        }
                                     }
-                                    gate.reset_scratch(streaming_enabled).await;
-                                    last_streamed_draft = Some(text);
+                                    if let Some(gate) = completion_gate.as_ref() {
+                                        gate.reset_scratch(streaming_enabled).await;
+                                    }
                                     continue;
                                 }
-
-                                let tools = collect_tool_names(&invocations);
-                                persist_ledger_record(
-                                    gate.session_id.as_deref(),
-                                    &record_finalized(
-                                        gate.stream_turn_id,
-                                        "gatekeeper_finalize",
-                                        rounds_executed,
-                                        &tools,
-                                    ),
-                                );
-
-                                let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                                    tool_name: shared_inputs.selected_tool_name().to_string(),
-                                    tool_input: (*shared_inputs.tool_input).clone(),
-                                    tool_output: Value::Null,
-                                });
-
-                                return Ok(ToolLoopExecutionResponse {
-                                    text,
-                                    metadata: shared_inputs.context_clone(),
-                                    tool_name: last.tool_name,
-                                    tool_output: last.tool_output,
-                                    tool_invocations: invocations,
-                                    rounds_executed,
-                                    termination_reason: format!(
-                                        "gatekeeper_{}",
-                                        verdict.source
-                                    ),
-                                });
                             }
-
-                            let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                                tool_name: shared_inputs.selected_tool_name().to_string(),
-                                tool_input: (*shared_inputs.tool_input).clone(),
-                                tool_output: Value::Null,
-                            });
-
-                            let termination_reason = termination_reason_for_text_only_finalize(
+                        } else {
+                            let workshop_lane = completion_gate
+                                .as_ref()
+                                .map(|gate| gate.skip_avec_ritual_check)
+                                .unwrap_or(false);
+                            let action = decide_after_tools_text_round(&AfterToolsRoundContext {
+                                user_prompt: shared_inputs.user_prompt.as_ref(),
+                                draft_text: text.clone(),
                                 pending_final_answer,
                                 rounds_executed,
-                                effective_max_tool_rounds,
-                            )
-                            .to_string();
-
-                            if let Some(gate) = completion_gate.as_ref() {
-                                let tools = collect_tool_names(&invocations);
-                                persist_ledger_record(
-                                    gate.session_id.as_deref(),
-                                    &record_finalized(
-                                        gate.stream_turn_id,
-                                        &termination_reason,
-                                        rounds_executed,
-                                        &tools,
-                                    ),
-                                );
-                            }
-
-                            return Ok(ToolLoopExecutionResponse {
-                                text,
-                                metadata: shared_inputs.context_clone(),
-                                tool_name: last.tool_name,
-                                tool_output: last.tool_output,
-                                tool_invocations: invocations,
-                                rounds_executed,
-                                termination_reason,
+                                max_tool_rounds: effective_max_tool_rounds,
+                                invocations: &invocations,
+                                workshop_lane,
                             });
-                        }
-
-                        if let Some(gate) = completion_gate.as_ref() {
-                            gate.reset_scratch(streaming_enabled).await;
-                        }
-                        loop_awareness.record_user_response(&text);
-                        push_turn_control_message(
-                            &mut turn_ctx.tool_lane.messages,
-                            &loop_awareness.wrap_control_body(
-                                tool_rounds_remaining,
-                                developer_message_for_heuristic_interim_continue(),
-                            ),
-                        );
-                        push_turn_scratch_message_with_budget(
-                            &mut turn_ctx.tool_lane.messages,
-                            &turn_ctx.scratchpad,
-                            tool_rounds_remaining,
-                        );
-                        sync_scratch_snapshot(
-                            completion_gate.as_deref_mut(),
-                            &turn_ctx.scratchpad,
-                        );
-                        if discipline.on_text_only_continue(invocations.len()) {
-                            if let Some(gate) = completion_gate.as_ref() {
-                                return finish_stuck_turn(
-                                    &shared_inputs,
-                                    invocations,
-                                    rounds_executed,
-                                    gate,
-                                )
-                                .await;
+                            match action {
+                                TurnRoundAction::EndTurn { termination_reason } => {
+                                    let tools = collect_tool_names(&invocations);
+                                    if let Some(gate) = completion_gate.as_ref() {
+                                        persist_ledger_record(
+                                            gate.session_id.as_deref(),
+                                            &record_finalized(
+                                                gate.stream_turn_id,
+                                                termination_reason,
+                                                rounds_executed,
+                                                &tools,
+                                            ),
+                                        );
+                                    }
+                                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                                        tool_name: shared_inputs.selected_tool_name().to_string(),
+                                        tool_input: (*shared_inputs.tool_input).clone(),
+                                        tool_output: Value::Null,
+                                    });
+                                    return Ok(ToolLoopExecutionResponse {
+                                        text,
+                                        metadata: shared_inputs.context_clone(),
+                                        tool_name: last.tool_name,
+                                        tool_output: last.tool_output,
+                                        tool_invocations: invocations,
+                                        rounds_executed,
+                                        termination_reason: termination_reason.to_string(),
+                                    });
+                                }
+                                TurnRoundAction::ContinueLoop {
+                                    control_message,
+                                    missing_tools,
+                                    ..
+                                } => {
+                                    if !missing_tools.is_empty() {
+                                        turn_ctx
+                                            .scratchpad
+                                            .set_open_gaps(&missing_tools);
+                                    }
+                                    if let Some(gate) = completion_gate.as_deref_mut() {
+                                        persist_ledger_record(
+                                            gate.session_id.as_deref(),
+                                            &record_fsm_continue(
+                                                gate.stream_turn_id,
+                                                &control_message,
+                                                &missing_tools,
+                                                rounds_executed,
+                                                &ledger_tool_names(&invocations),
+                                                &turn_ctx.scratchpad,
+                                            ),
+                                        );
+                                        if let Some(slot) = gate.scratch_out.as_mut() {
+                                            **slot = Some(turn_ctx.scratchpad.clone());
+                                        }
+                                    }
+                                    append_assistant_draft_to_tool_lane(
+                                        &mut turn_ctx.tool_lane.messages,
+                                        &text,
+                                    );
+                                    loop_awareness.record_user_response(&text);
+                                    push_turn_control_message(
+                                        &mut turn_ctx.tool_lane.messages,
+                                        &loop_awareness.wrap_control_body(
+                                            tool_rounds_remaining,
+                                            &control_message,
+                                        ),
+                                    );
+                                    push_turn_scratch_message_with_budget(
+                                        &mut turn_ctx.tool_lane.messages,
+                                        &turn_ctx.scratchpad,
+                                        tool_rounds_remaining,
+                                    );
+                                    sync_scratch_snapshot(
+                                        completion_gate.as_deref_mut(),
+                                        &turn_ctx.scratchpad,
+                                    );
+                                    if discipline.on_text_only_continue(invocations.len()) {
+                                        if let Some(gate) = completion_gate.as_ref() {
+                                            return finish_stuck_turn(
+                                                &shared_inputs,
+                                                invocations,
+                                                rounds_executed,
+                                                gate,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                    if let Some(gate) = completion_gate.as_ref() {
+                                        gate.reset_scratch(streaming_enabled).await;
+                                    }
+                                    continue;
+                                }
                             }
-                            let text_only_limit = completion_gate
-                                .as_ref()
-                                .map(|g| g.max_text_only_stuck_continues)
-                                .unwrap_or_else(|| {
-                                    crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
-                                        effective_max_tool_rounds,
-                                    )
-                                });
-                            return finish_stuck_turn_response(
-                                &shared_inputs,
-                                invocations,
-                                rounds_executed,
-                                text_only_limit,
-                                effective_max_tool_rounds,
-                            );
                         }
-                        last_streamed_draft = Some(text);
-                        continue;
                     }
 
                     return Err(StasisError::PortFailure(
@@ -1133,14 +1142,21 @@ mod tests {
     }
 
     #[test]
-    fn before_tools_never_finalizes_on_text_even_on_last_round() {
-        assert!(!should_finalize_on_text_only_response(
-            false,
-            0,
-            "Let me check.",
-            false,
-            10,
-            10
+    fn no_tool_debt_fuses_at_max_rounds() {
+        use crate::agent_runtime::turn_completion_fsm::{
+            decide_no_tool_debt_text_round, NoToolDebtRoundContext, TurnRoundAction,
+        };
+        let action = decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
+            draft_text: "Let me check.".to_string(),
+            pending_final_answer: false,
+            rounds_executed: 10,
+            max_tool_rounds: 10,
+        });
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "max_rounds_fuse"
+            }
         ));
     }
 }

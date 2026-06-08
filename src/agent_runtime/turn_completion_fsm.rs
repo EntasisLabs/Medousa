@@ -1,0 +1,374 @@
+//! Explicit turn completion FSM — text-only model rounds.
+//!
+//! Phase 1: no-tool-debt policy + transcript helpers.
+//! Phase 2: post-tool-debt policy via receipt checklist + interim heuristics.
+
+use genai::chat::ChatMessage;
+use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+
+use crate::agent_runtime::turn_completion::missing_ritual_tools_for_avec;
+use crate::turn_text_heuristics::{
+    looks_like_clarifying_question, looks_like_interim_status,
+    looks_like_substantive_final_answer,
+};
+
+/// What the tool loop should do after a text-only model response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnRoundAction {
+    EndTurn {
+        termination_reason: &'static str,
+    },
+    ContinueLoop {
+        reason: ContinueReason,
+        control_message: String,
+        missing_tools: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContinueReason {
+    /// Model prose looks in-progress; expect tools or a complete answer next round.
+    AwaitingTools,
+    /// AVEC / calibrate receipt checklist still open.
+    MissingReceipts,
+    /// `prepare_final` was invoked but draft still looks interim.
+    PrepareFinalInterim,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoToolDebtRoundContext {
+    pub draft_text: String,
+    pub pending_final_answer: bool,
+    pub rounds_executed: usize,
+    pub max_tool_rounds: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct AfterToolsRoundContext<'a> {
+    pub user_prompt: &'a str,
+    pub draft_text: String,
+    pub pending_final_answer: bool,
+    pub rounds_executed: usize,
+    pub max_tool_rounds: usize,
+    pub invocations: &'a [ToolInvocation],
+    pub workshop_lane: bool,
+}
+
+/// Phase 1 policy: zero tool invocations this turn — default is end, not loop.
+pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
+    let draft = ctx.draft_text.trim();
+
+    if ctx.pending_final_answer && !draft.is_empty() {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "prepare_final_then_text",
+        };
+    }
+
+    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "max_rounds_fuse",
+        };
+    }
+
+    if looks_like_interim_status(&ctx.draft_text) {
+        return TurnRoundAction::ContinueLoop {
+            reason: ContinueReason::AwaitingTools,
+            control_message: "Turn state: awaiting tools or a complete answer. \
+                              Last assistant message looked in-progress; draft kept in transcript."
+                .to_string(),
+            missing_tools: Vec::new(),
+        };
+    }
+
+    if looks_like_clarifying_question(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "clarifying_question",
+        };
+    }
+
+    TurnRoundAction::EndTurn {
+        termination_reason: "no_tool_debt_complete",
+    }
+}
+
+/// Phase 2 policy: tools already ran this turn — end by default; continue for receipts or interim.
+pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
+    let draft = ctx.draft_text.trim();
+
+    if ctx.workshop_lane && ctx.pending_final_answer && !draft.is_empty() {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "workshop_lane_prepare_final",
+        };
+    }
+
+    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "max_rounds_fuse",
+        };
+    }
+
+    if !ctx.workshop_lane {
+        let missing_ritual =
+            missing_ritual_tools_for_avec(ctx.user_prompt, ctx.invocations);
+        if !missing_ritual.is_empty() {
+            return TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::MissingReceipts,
+                control_message: format!(
+                    "Receipt gap (not yet in this turn tool transcript): {}.",
+                    missing_ritual.join(", ")
+                ),
+                missing_tools: missing_ritual,
+            };
+        }
+    }
+
+    if ctx.pending_final_answer && looks_like_interim_status(&ctx.draft_text) {
+        return TurnRoundAction::ContinueLoop {
+            reason: ContinueReason::PrepareFinalInterim,
+            control_message: "State: cognition_turn_prepare_final was invoked; last draft still \
+                              matched interim heuristics (not published as final)."
+                .to_string(),
+            missing_tools: Vec::new(),
+        };
+    }
+
+    if ctx.pending_final_answer && !draft.is_empty() {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "prepare_final_then_text",
+        };
+    }
+
+    if looks_like_substantive_final_answer(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "tool_debt_complete",
+        };
+    }
+
+    if looks_like_clarifying_question(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "clarifying_question",
+        };
+    }
+
+    if looks_like_interim_status(&ctx.draft_text) {
+        return TurnRoundAction::ContinueLoop {
+            reason: ContinueReason::AwaitingTools,
+            control_message: "Turn state: awaiting tools or a complete answer. \
+                              Last assistant message looked in-progress; draft kept in transcript."
+                .to_string(),
+            missing_tools: Vec::new(),
+        };
+    }
+
+    TurnRoundAction::EndTurn {
+        termination_reason: "tool_debt_complete",
+    }
+}
+
+/// Keep assistant prose in the tool-lane transcript before another model round.
+pub fn append_assistant_draft_to_tool_lane(messages: &mut Vec<ChatMessage>, text: &str) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    messages.push(ChatMessage::assistant(trimmed.to_string()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    fn ctx(draft: &str) -> NoToolDebtRoundContext {
+        NoToolDebtRoundContext {
+            draft_text: draft.to_string(),
+            pending_final_answer: false,
+            rounds_executed: 1,
+            max_tool_rounds: 10,
+        }
+    }
+
+    fn after_tools<'a>(
+        user_prompt: &'a str,
+        draft: &str,
+        invocations: &'a [ToolInvocation],
+    ) -> AfterToolsRoundContext<'a> {
+        AfterToolsRoundContext {
+            user_prompt,
+            draft_text: draft.to_string(),
+            pending_final_answer: false,
+            rounds_executed: 3,
+            max_tool_rounds: 10,
+            invocations,
+            workshop_lane: false,
+        }
+    }
+
+    fn tool(name: &str) -> ToolInvocation {
+        ToolInvocation {
+            tool_name: name.to_string(),
+            tool_input: Value::Null,
+            tool_output: Value::Null,
+        }
+    }
+
+    #[test]
+    fn interim_before_tools_continues_with_transcript_note() {
+        let action = decide_no_tool_debt_text_round(&ctx("Let me check that for you."));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::AwaitingTools,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn substantive_no_tool_answer_ends() {
+        let answer = "Here is a complete explanation of how the ingester maps channel \
+                      sessions to Medousa history without any further steps needed.";
+        let action = decide_no_tool_debt_text_round(&ctx(answer));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "no_tool_debt_complete"
+            }
+        ));
+    }
+
+    #[test]
+    fn clarifying_question_ends_without_tools() {
+        let action = decide_no_tool_debt_text_round(&ctx(
+            "Which session should I calibrate — the default or medousa-home?",
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "clarifying_question"
+            }
+        ));
+    }
+
+    #[test]
+    fn prepare_final_with_text_ends() {
+        let mut round = ctx("Here is your answer.");
+        round.pending_final_answer = true;
+        let action = decide_no_tool_debt_text_round(&round);
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "prepare_final_then_text"
+            }
+        ));
+    }
+
+    #[test]
+    fn max_rounds_fuse_ends() {
+        let mut round = ctx("Still working…");
+        round.rounds_executed = 10;
+        round.max_tool_rounds = 10;
+        let action = decide_no_tool_debt_text_round(&round);
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "max_rounds_fuse"
+            }
+        ));
+    }
+
+    #[test]
+    fn append_assistant_draft_skips_empty() {
+        let mut messages = Vec::new();
+        append_assistant_draft_to_tool_lane(&mut messages, "   ");
+        assert!(messages.is_empty());
+        append_assistant_draft_to_tool_lane(&mut messages, "Hello");
+        assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn substantive_answer_after_tools_ends() {
+        let invocations = vec![tool("cognition_memory_moods"), tool("cognition_memory_calibrate")];
+        let answer = "Your memory profile shows stability at 0.95 and three recent nodes about \
+                      the ingester roadmap. I stored the update in Locus.";
+        let action = decide_after_tools_text_round(&after_tools(
+            "pull focused AVEC and calibrate",
+            answer,
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "tool_debt_complete"
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_calibrate_receipt_continues() {
+        let invocations = vec![tool("cognition_memory_moods")];
+        let action = decide_after_tools_text_round(&after_tools(
+            "pull focused AVEC and calibrate",
+            "Focused preset pulled. Stability 0.95.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::MissingReceipts,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn interim_after_tools_continues() {
+        let invocations = vec![tool("cognition_memory_moods"), tool("cognition_memory_calibrate")];
+        let action = decide_after_tools_text_round(&after_tools(
+            "pull focused AVEC",
+            "Stored.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::AwaitingTools,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn prepare_final_with_interim_after_tools_continues() {
+        let invocations = vec![tool("cognition_turn_prepare_final")];
+        let mut round = after_tools("summarize findings", "Stored.", &invocations);
+        round.pending_final_answer = true;
+        let action = decide_after_tools_text_round(&round);
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PrepareFinalInterim,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn workshop_lane_prepare_final_ends_despite_interim() {
+        let invocations = vec![tool("cognition_turn_prepare_final")];
+        let mut round = after_tools(
+            "WORKER_TASK",
+            "searching tavily — here are raw results:\n- title one",
+            &invocations,
+        );
+        round.pending_final_answer = true;
+        round.workshop_lane = true;
+        let action = decide_after_tools_text_round(&round);
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "workshop_lane_prepare_final"
+            }
+        ));
+    }
+}
