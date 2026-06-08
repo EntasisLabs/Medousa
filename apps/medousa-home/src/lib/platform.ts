@@ -52,13 +52,11 @@ export function applyNativeMobileShellLayout(): () => void {
   const ua = navigator.userAgent;
   if (/iPhone|iPad|iPod/i.test(ua)) {
     root.dataset.nativeShell = "ios";
-    root.style.setProperty("--mobile-chrome-safe-bottom", "0px");
   } else if (/Android/i.test(ua)) {
     root.dataset.nativeShell = "android";
   }
 
   return () => {
     delete root.dataset.nativeShell;
-    root.style.removeProperty("--mobile-chrome-safe-bottom");
   };
 }

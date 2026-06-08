@@ -7,6 +7,8 @@ mod tray;
 mod window;
 
 use daemon::DaemonState;
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::Manager;
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -17,20 +19,29 @@ use tauri::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // UIKit otherwise shrinks WKWebView scroll content and exposes window background
+    // as a band below fixed bottom UI (matches env(safe-area-inset-bottom) ~34px).
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder.plugin(tauri_plugin_ios_webview_insets::init());
+    }
+
+    builder = builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(DaemonState::new())
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(any(windows, target_os = "linux"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                let _ = app.deep_link().register_all();
+                let _ = _app.deep_link().register_all();
             }
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            setup_desktop_tray(app)?;
+            setup_desktop_tray(_app)?;
 
             Ok(())
         });

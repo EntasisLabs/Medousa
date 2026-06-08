@@ -24,10 +24,6 @@
             /iPhone|iPad|iPod/i.test(navigator.userAgent)
           ) {
             document.documentElement.dataset.nativeShell = "ios";
-            document.documentElement.style.setProperty(
-              "--mobile-chrome-safe-bottom",
-              "0px",
-            );
           }
         } catch (_) {}
       })();

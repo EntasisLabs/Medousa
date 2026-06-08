@@ -1,4 +1,6 @@
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(desktop)]
+use tauri::Manager;
 
 pub fn set_app_badge_count(app: &AppHandle, blocked_count: u32) -> Result<(), String> {
     let badge = if blocked_count > 0 {

@@ -1,5 +1,3 @@
-import { isTauriMobilePlatform } from "$lib/platform";
-
 /** Keeps floating mobile composers above the keyboard without shifting the whole shell. */
 export function attachMobileKeyboardViewport(
   root: HTMLElement = document.documentElement,
@@ -48,30 +46,84 @@ export function setMobileComposerFocus(active: boolean) {
   document.documentElement.dataset.mobileComposerActive = active ? "true" : "false";
 }
 
-function viewportHeight(): number {
-  return window.visualViewport?.height ?? window.innerHeight;
+function isLayoutDebugEnabled(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.documentElement.dataset.layoutDebug === "true";
 }
 
-function isIosTauriShell(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return isTauriMobilePlatform() && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+function probeEnvSafeAreaBottom(): number {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;visibility:hidden;pointer-events:none;padding-bottom:env(safe-area-inset-bottom);";
+  document.body.appendChild(probe);
+  const value = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+  probe.remove();
+  return value;
 }
 
-function bottomChromeAnchor(chromeEl: HTMLElement): HTMLElement {
-  const tabBar = chromeEl.querySelector<HTMLElement>(".mobile-tab-bar-inner");
-  if (tabBar && getComputedStyle(tabBar).display !== "none") {
-    return tabBar;
+function measureBottomChromeContentHeight(chromeEl: HTMLElement): number {
+  let height = 0;
+  for (const child of chromeEl.children) {
+    if (!(child instanceof HTMLElement)) continue;
+    if (getComputedStyle(child).display === "none") continue;
+    height += child.getBoundingClientRect().height;
   }
-
-  const composer = chromeEl.querySelector<HTMLElement>(".mobile-chat-composer");
-  return composer ?? chromeEl;
+  return Math.ceil(height);
 }
 
-/**
- * Measures bottom chrome against the visual viewport and keeps main content aligned.
- * On Tauri iOS, WKWebView often reports safe-area insets that do not match the
- * native layout rect — we detect the actual gap below tabs and pull chrome down.
- */
+function attachMobileLayoutDebugHud(chromeEl: HTMLElement): () => void {
+  const hud = document.createElement("div");
+  hud.className = "mobile-layout-debug-hud";
+  hud.setAttribute("aria-hidden", "true");
+  document.body.appendChild(hud);
+
+  const update = () => {
+    const viewport = window.visualViewport;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const chromeRect = chromeEl.getBoundingClientRect();
+    const tabBar = chromeEl.querySelector<HTMLElement>(".mobile-tab-bar-inner");
+    const tabRect = tabBar?.getBoundingClientRect();
+    const chromeStyle = getComputedStyle(chromeEl);
+    const contentHeight = measureBottomChromeContentHeight(chromeEl);
+    const envBottom = probeEnvSafeAreaBottom();
+    const reserved = getComputedStyle(document.documentElement).getPropertyValue(
+      "--mobile-bottom-chrome-height",
+    );
+
+    hud.textContent = [
+      "Layout debug (set data-layout-debug=true on html)",
+      `innerHeight: ${window.innerHeight}px`,
+      `visualViewport: ${viewportHeight.toFixed(1)}px`,
+      `env(safe-area-inset-bottom): ${envBottom}px`,
+      "",
+      `chrome bottom: ${chromeRect.bottom.toFixed(1)}px`,
+      `tab bar bottom: ${tabRect ? tabRect.bottom.toFixed(1) : "n/a"}px`,
+      `gap chrome→viewport: ${(viewportHeight - chromeRect.bottom).toFixed(1)}px`,
+      "",
+      `chrome padding-bottom: ${chromeStyle.paddingBottom}`,
+      `chrome offsetHeight: ${chromeEl.offsetHeight}px`,
+      `content height (children): ${contentHeight}px`,
+      `--mobile-bottom-chrome-height: ${reserved.trim() || "unset"}`,
+    ].join("\n");
+  };
+
+  update();
+  const observer = new ResizeObserver(update);
+  observer.observe(chromeEl);
+  window.visualViewport?.addEventListener("resize", update);
+  window.visualViewport?.addEventListener("scroll", update);
+  window.addEventListener("orientationchange", update);
+
+  return () => {
+    observer.disconnect();
+    window.visualViewport?.removeEventListener("resize", update);
+    window.visualViewport?.removeEventListener("scroll", update);
+    window.removeEventListener("orientationchange", update);
+    hud.remove();
+  };
+}
+
+/** Sync `--mobile-bottom-chrome-height` with the fixed bottom chrome element. */
 export function attachMobileBottomChromeLayout(
   chromeEl: HTMLElement | null | undefined,
 ): () => void {
@@ -83,17 +135,7 @@ export function attachMobileBottomChromeLayout(
   const update = () => {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
-      if (isIosTauriShell()) {
-        root.style.setProperty("--mobile-chrome-safe-bottom", "0px");
-        const anchor = bottomChromeAnchor(chromeEl);
-        const gap = Math.round(viewportHeight() - anchor.getBoundingClientRect().bottom);
-        chromeEl.style.bottom = gap > 0 ? `-${gap}px` : "";
-      } else {
-        chromeEl.style.bottom = "";
-      }
-
-      const reserved = Math.max(0, Math.ceil(viewportHeight() - chromeEl.getBoundingClientRect().top));
-      root.style.setProperty("--mobile-bottom-chrome-height", `${reserved}px`);
+      root.style.setProperty("--mobile-bottom-chrome-height", `${chromeEl.offsetHeight}px`);
     });
   };
 
@@ -103,17 +145,15 @@ export function attachMobileBottomChromeLayout(
   for (const child of chromeEl.children) {
     if (child instanceof HTMLElement) observer.observe(child);
   }
-  window.visualViewport?.addEventListener("resize", update);
-  window.visualViewport?.addEventListener("scroll", update);
   window.addEventListener("orientationchange", update);
+
+  const stopDebug = isLayoutDebugEnabled() ? attachMobileLayoutDebugHud(chromeEl) : () => {};
 
   return () => {
     cancelAnimationFrame(raf);
     observer.disconnect();
-    window.visualViewport?.removeEventListener("resize", update);
-    window.visualViewport?.removeEventListener("scroll", update);
     window.removeEventListener("orientationchange", update);
-    chromeEl.style.bottom = "";
     root.style.removeProperty("--mobile-bottom-chrome-height");
+    stopDebug();
   };
 }
