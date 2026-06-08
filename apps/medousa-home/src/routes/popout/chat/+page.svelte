@@ -17,10 +17,8 @@
     const unlisteners: Promise<() => void>[] = [];
 
     (async () => {
-      void chat.refreshSessions();
-      if (chat.messages.length === 0) {
-        void chat.switchSession(chat.sessionId);
-      }
+      await chat.refreshSessions();
+      await chat.reloadCurrentSession();
 
       unlisteners.push(
         onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {

@@ -1,7 +1,7 @@
 use crate::daemon::types::{
     ContinuationStatusResponse, DaemonStatsResponse, DeliveryHealthResponse,
-    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, StageRouteCommandRequest,
-    StageRouteCommandResponse,
+    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeDefaultsResponse,
+    StageRouteCommandRequest, StageRouteCommandResponse,
 };
 use reqwest::Client;
 use tauri::State;
@@ -53,6 +53,13 @@ pub async fn runtime_get_stats(
     state: State<'_, DaemonState>,
 ) -> Result<DaemonStatsResponse, String> {
     daemon_get(&state, "/v1/stats").await
+}
+
+#[tauri::command]
+pub async fn runtime_get_defaults(
+    state: State<'_, DaemonState>,
+) -> Result<RuntimeDefaultsResponse, String> {
+    daemon_get(&state, "/v1/runtime/defaults").await
 }
 
 #[tauri::command]

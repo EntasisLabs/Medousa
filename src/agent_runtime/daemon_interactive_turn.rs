@@ -19,7 +19,7 @@ use crate::session::{ConversationTurn, append_turn, load_history};
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
 
 use super::prompt_prep::{truncate_text_for_budget, MAX_REQUEST_PROMPT_CHARS};
-use super::settings::runtime_settings_for_interactive_turn;
+use super::settings::{runtime_settings_for_interactive_turn, stage_routing_for_interactive_turn};
 use super::stream_sink::AgentStreamSink;
 use super::stream_sink::SharedAgentStreamSink;
 use super::turn_orchestrator::{self, AssembleLocalTurnParams, PrepareTurnPromptParams};
@@ -157,6 +157,15 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
+        let assistant_turn = ConversationTurn {
+            role: "assistant".to_string(),
+            content: message.clone(),
+            timestamp: Utc::now(),
+            tool_names: vec![],
+            answer_state: Some("error".to_string()),
+        };
+        append_turn(&self.session_id, &assistant_turn);
+
         publish(
             &self.stream_tx,
             interactive_turn_runtime::error_stream_event(&self.turn_id, &message),
@@ -280,8 +289,9 @@ async fn run_agent_turn_inner(
     }
 
     let settings = runtime_settings_for_interactive_turn(backend, &request);
-    let final_route = request.stage_routing.get("final_response").cloned();
-    let verifier_route = request.stage_routing.get("verifier").cloned();
+    let stage_routing = stage_routing_for_interactive_turn(&request);
+    let final_route = stage_routing.get("final_response").cloned();
+    let verifier_route = stage_routing.get("verifier").cloned();
 
     if let Some(route) = final_route.as_ref() {
         sink.notice(format!(

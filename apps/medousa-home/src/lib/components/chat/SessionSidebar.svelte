@@ -15,6 +15,12 @@
 
   let query = $state("");
 
+  $effect(() => {
+    if (open) {
+      void chat.refreshSessions();
+    }
+  });
+
   function matchesQuery(session: SessionSummary): boolean {
     if (!query.trim()) return true;
     const needle = query.trim().toLowerCase();

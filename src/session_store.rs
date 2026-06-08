@@ -198,9 +198,10 @@ impl SessionStore for SurrealSessionStore {
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
+        // time::max (not math::max) — Surreal 3 GROUP BY returns -Infinity for math::max(datetime).
         let sql = "SELECT session_id, \
                            count() AS turns, \
-                           math::max(timestamp) AS last_timestamp \
+                           time::max(timestamp) AS last_timestamp \
                     FROM type::table($table) \
                     GROUP BY session_id \
                     ORDER BY last_timestamp DESC \

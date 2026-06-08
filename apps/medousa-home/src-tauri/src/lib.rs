@@ -71,6 +71,7 @@ pub fn run() {
             daemon::catalog::catalog_list_capabilities,
             daemon::catalog::catalog_get_capability,
             daemon::runtime::runtime_get_stats,
+            daemon::runtime::runtime_get_defaults,
             daemon::runtime::runtime_get_delivery_status,
             daemon::runtime::runtime_get_continuation_status,
             daemon::runtime::runtime_config_command,

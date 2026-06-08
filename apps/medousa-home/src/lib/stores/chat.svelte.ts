@@ -1,6 +1,6 @@
 import { getSessionHistory, listSessions } from "$lib/daemon";
 import type { ChatMessage, InteractiveTurnStreamEvent } from "$lib/types/chat";
-import type { SessionSummary } from "$lib/types/session";
+import type { SessionHistoryResponse, SessionSummary } from "$lib/types/session";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 
 const SESSION_KEY = "medousa-home-session-id";
@@ -15,7 +15,12 @@ export class ChatStore {
   sessions = $state<SessionSummary[]>([]);
   sessionsError = $state<string | null>(null);
   pinnedIds = $state<string[]>(loadPinnedIds());
+  historyLoading = $state(false);
+  /** Brief banner after reloading turns from the Mac daemon (e.g. after WebView refresh). */
+  historyNotice = $state<string | null>(null);
   private assistantId: string | null = null;
+  /** Bumps when the local transcript changes; stale daemon reloads must not overwrite it. */
+  private transcriptEpoch = 0;
 
   isPinned(sessionId: string): boolean {
     return this.pinnedIds.includes(sessionId);
@@ -55,35 +60,88 @@ export class ChatStore {
 
   async newSession() {
     if (this.isStreaming) return;
+    this.transcriptEpoch += 1;
     const id = `medousa-home-${crypto.randomUUID()}`;
     localStorage.setItem(SESSION_KEY, id);
     this.sessionId = id;
     this.messages = [];
     this.streamError = null;
+    this.historyNotice = null;
     await this.refreshSessions();
   }
 
-  async switchSession(sessionId: string) {
-    if (this.isStreaming || sessionId === this.sessionId) return;
-    this.sessionId = sessionId;
-    localStorage.setItem(SESSION_KEY, sessionId);
+  /** Pull transcript from daemon when the UI remounted empty (startup / reconnect). */
+  async ensureSessionHydrated(options?: { notice?: boolean }) {
+    if (this.isStreaming || this.historyLoading || this.messages.length > 0) {
+      return;
+    }
+    await this.reloadCurrentSession(options);
+  }
+
+  /** Fetch current session history from the Mac daemon (survives WebView refresh). */
+  async reloadCurrentSession(options?: { notice?: boolean }) {
+    if (this.isStreaming) return;
+    const sessionId = this.sessionId.trim();
+    if (!sessionId) return;
+
+    const epoch = this.transcriptEpoch;
+    this.historyLoading = true;
     this.streamError = null;
-    this.messages = [];
     try {
       const history = await getSessionHistory(sessionId);
-      this.messages = history.turns.map((turn) => ({
-        id: crypto.randomUUID(),
-        role: normalizeRole(turn.role),
-        content: turn.content,
-        answerState: turn.answer_state ?? null,
-        tools: turn.tool_names?.length ? turn.tool_names : undefined,
-      }));
+      if (epoch !== this.transcriptEpoch || this.isStreaming) return;
+      this.messages = mapTurns(history.turns);
+      if (options?.notice !== false && history.turns.length > 0) {
+        const count = history.turns.length;
+        this.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"} from Mac`;
+      }
     } catch (err) {
-      this.streamError = err instanceof Error ? err.message : String(err);
+      if (epoch === this.transcriptEpoch) {
+        this.streamError = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      if (epoch === this.transcriptEpoch) {
+        this.historyLoading = false;
+      }
     }
   }
 
+  async switchSession(sessionId: string) {
+    if (this.isStreaming) return;
+    if (sessionId === this.sessionId) {
+      await this.reloadCurrentSession({ notice: false });
+      return;
+    }
+    this.transcriptEpoch += 1;
+    this.sessionId = sessionId;
+    localStorage.setItem(SESSION_KEY, sessionId);
+    this.streamError = null;
+    this.historyNotice = null;
+    this.messages = [];
+    this.historyLoading = true;
+    const epoch = this.transcriptEpoch;
+    try {
+      const history = await getSessionHistory(sessionId);
+      if (epoch !== this.transcriptEpoch) return;
+      this.messages = mapTurns(history.turns);
+    } catch (err) {
+      if (epoch === this.transcriptEpoch) {
+        this.streamError = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      if (epoch === this.transcriptEpoch) {
+        this.historyLoading = false;
+      }
+    }
+  }
+
+  clearHistoryNotice() {
+    this.historyNotice = null;
+  }
+
   beginUserMessage(content: string) {
+    this.transcriptEpoch += 1;
+    this.historyNotice = null;
     this.messages = [
       ...this.messages,
       { id: crypto.randomUUID(), role: "user", content },
@@ -100,10 +158,23 @@ export class ChatStore {
   }
 
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
-    if (!this.assistantId) return;
+    if (!this.assistantId) {
+      if (event.terminal) {
+        this.isStreaming = false;
+        void this.refreshSessions();
+      }
+      return;
+    }
 
     const idx = this.messages.findIndex((m) => m.id === this.assistantId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      if (event.terminal) {
+        this.assistantId = null;
+        this.isStreaming = false;
+        void this.refreshSessions();
+      }
+      return;
+    }
 
     const current = this.messages[idx];
     let content = current.content;
@@ -145,7 +216,10 @@ export class ChatStore {
   }
 
   finishStream() {
-    if (!this.assistantId) return;
+    if (!this.assistantId) {
+      this.isStreaming = false;
+      return;
+    }
     const idx = this.messages.findIndex((m) => m.id === this.assistantId);
     if (idx >= 0) {
       const next = {
@@ -175,6 +249,16 @@ function normalizeRole(role: string): ChatMessage["role"] {
     return role;
   }
   return "assistant";
+}
+
+function mapTurns(turns: SessionHistoryResponse["turns"]): ChatMessage[] {
+  return turns.map((turn) => ({
+    id: crypto.randomUUID(),
+    role: normalizeRole(turn.role),
+    content: turn.content,
+    answerState: turn.answer_state ?? null,
+    tools: turn.tool_names?.length ? turn.tool_names : undefined,
+  }));
 }
 
 function loadPinnedIds(): string[] {

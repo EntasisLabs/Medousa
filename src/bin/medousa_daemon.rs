@@ -41,7 +41,7 @@ use medousa::daemon_api::{
     ContinuationStatusResponse, TurnContinuationLineageResponse, ReplayAndResumeResponse,
     InteractiveTurnRequest, InteractiveTurnResponse,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
-    JobResultResponse, InteractiveTurnStreamEvent,
+    JobResultResponse, InteractiveTurnStreamEvent, RuntimeDefaultsResponse,
     DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
     UpdateRecurringResponse, RuntimeConfigCommandRequest,
@@ -256,6 +256,7 @@ async fn main() -> Result<()> {
         .to_string();
     apply_daemon_env(&load_product_config());
     medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
+    medousa::apply_workshop_llm_env();
     let backend = parse_backend(Some(&backend_name));
     let provider = find_arg_value(&args, "--provider");
     let model = find_arg_value(&args, "--model");
@@ -376,7 +377,7 @@ async fn main() -> Result<()> {
 
     let state = AppState {
         platform: platform.clone(),
-        daemon_base_url: format!("http://{bind}"),
+        daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(&bind),
         interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
         channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
@@ -413,6 +414,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
+        .route("/v1/runtime/defaults", get(runtime_defaults))
         .route("/v1/sessions", get(medousa::daemon_handlers::list_session_history))
         .route(
             "/v1/sessions/{session_id}/history",
@@ -786,6 +788,49 @@ async fn stats(
         recurring_definitions: snapshot.recurring_definitions,
         last_tick_at_utc,
     }))
+}
+
+async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsResponse> {
+    let saved = medousa::session::load_tui_defaults();
+    let product = medousa::load_product_config();
+    let provider = saved
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| medousa::resolve_llm_provider(None));
+    let model = saved
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| medousa::resolve_llm_model(None));
+    let response_depth_mode = saved
+        .response_depth_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(product.tui.response_depth_mode.as_str())
+        .to_string();
+    let base_url = saved
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let stage_routing = saved.stage_routing.clone().unwrap_or_else(|| {
+        medousa::stage_routing::StageRoutingMatrix::default_for(&provider, &model)
+    });
+    Json(RuntimeDefaultsResponse {
+        backend: state.backend.clone(),
+        provider,
+        model,
+        response_depth_mode,
+        base_url,
+        stage_routing,
+    })
 }
 
 

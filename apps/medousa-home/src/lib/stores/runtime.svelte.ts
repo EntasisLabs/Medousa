@@ -5,6 +5,7 @@ import {
 import {
   getContinuationStatus,
   getDeliveryStatus,
+  getRuntimeDefaults,
   getRuntimeStats,
   sendRuntimeConfigCommand,
   sendStageRouteCommand,
@@ -18,6 +19,7 @@ import type {
   StageRoutingMatrix,
 } from "$lib/types/runtime";
 import { pollAllSettled } from "$lib/utils/poll";
+import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
 
 const DEFAULT_PROVIDER = "ollama";
@@ -70,23 +72,67 @@ export class RuntimeStore {
     ];
   }
 
-  async loadFromTuiDefaults() {
+  async loadWorkshopRuntime(options?: { connected?: boolean }) {
     if (!isTauri() || this.defaultsLoaded) return;
-    try {
-      const summary = await loadTuiDefaultsSummary();
-      const provider = summary.provider?.trim() || DEFAULT_PROVIDER;
-      const model = summary.model?.trim() || DEFAULT_MODEL;
-      this.provider = provider;
-      this.model = model;
-      this.depthMode = normalizeDepth(summary.responseDepthMode ?? DEFAULT_DEPTH);
-      if (summary.stageRouting?.orchestrator?.role) {
-        this.stageRouting = summary.stageRouting;
-      } else {
-        this.stageRouting = defaultStageRouting(provider, model);
+
+    if (isTauriMobilePlatform()) {
+      if (options?.connected === false) {
+        return;
+      }
+      try {
+        const defaults = await getRuntimeDefaults();
+        this.applyRuntimeDefaults(defaults);
+      } catch {
+        // Keep built-in defaults when offline.
       }
       this.defaultsLoaded = true;
+      return;
+    }
+
+    try {
+      const summary = await loadTuiDefaultsSummary();
+      this.applyRuntimeDefaults({
+        provider: summary.provider?.trim() || DEFAULT_PROVIDER,
+        model: summary.model?.trim() || DEFAULT_MODEL,
+        response_depth_mode: summary.responseDepthMode ?? DEFAULT_DEPTH,
+        stage_routing:
+          summary.stageRouting?.orchestrator?.role
+            ? summary.stageRouting
+            : defaultStageRouting(
+                summary.provider?.trim() || DEFAULT_PROVIDER,
+                summary.model?.trim() || DEFAULT_MODEL,
+              ),
+      });
     } catch {
-      this.defaultsLoaded = true;
+      // Local defaults are optional.
+    }
+    this.defaultsLoaded = true;
+  }
+
+  /** @deprecated use loadWorkshopRuntime */
+  async loadFromTuiDefaults() {
+    return this.loadWorkshopRuntime({ connected: true });
+  }
+
+  resetWorkshopRuntime() {
+    this.defaultsLoaded = false;
+  }
+
+  private applyRuntimeDefaults(defaults: {
+    provider: string;
+    model: string;
+    response_depth_mode: string;
+    stage_routing: StageRoutingMatrix;
+  }) {
+    const provider = defaults.provider.trim() || DEFAULT_PROVIDER;
+    const model = defaults.model.trim() || DEFAULT_MODEL;
+    this.provider = provider;
+    this.model = model;
+    this.depthMode = normalizeDepth(defaults.response_depth_mode ?? DEFAULT_DEPTH);
+    if (defaults.stage_routing?.orchestrator?.role) {
+      this.stageRouting = defaults.stage_routing;
+    } else {
+      this.stageRouting = defaultStageRouting(provider, model);
     }
   }
 
@@ -147,7 +193,7 @@ export class RuntimeStore {
         command: { command: "routes", role: null },
       });
       this.stageRouting = response.stage_routing;
-      if (isTauri()) {
+      if (isTauri() && !isTauriMobilePlatform()) {
         await persistTuiRuntimePrefs(
           this.provider,
           this.model,
@@ -227,7 +273,13 @@ export class RuntimeStore {
     shouldApplySettings: boolean,
     shouldPersistDepth: boolean,
   ) {
-    if (!isTauri() || (!shouldApplySettings && !shouldPersistDepth)) return;
+    if (
+      !isTauri() ||
+      isTauriMobilePlatform() ||
+      (!shouldApplySettings && !shouldPersistDepth)
+    ) {
+      return;
+    }
     try {
       await persistTuiRuntimePrefs(
         this.provider,

@@ -90,27 +90,34 @@ This generates `src-tauri/gen/apple/` (machine-local; gitignored).
 
 ## 5. Start the daemon for mobile
 
-On the Mac, bind the daemon to all interfaces so the phone can reach it:
+On the Mac, start the daemon in **public** mode — binds to all interfaces, detects your LAN IP, and prints the URL for the phone:
 
 ```bash
-# from repo root
+# from repo root (preferred)
+medousa start daemon --public
+```
+
+Or use the thin wrapper (same thing):
+
+```bash
 ./scripts/mobile-dev-daemon.sh
 ```
 
-Or manually:
+Foreground / debug:
 
 ```bash
-medousa start daemon --bind 0.0.0.0:7419
-# foreground debug:
-# cargo run -p medousa --bin medousa_daemon -- --bind 0.0.0.0:7419
+medousa daemon --public
+# or: cargo run -p medousa --bin medousa -- start daemon --public
 ```
 
-Note your Mac’s Wi‑Fi IP:
+The CLI prints something like:
 
-```bash
-ipconfig getifaddr en0
-# e.g. 192.168.1.42
+```text
+[ok] Mobile / LAN clients: http://192.168.1.42:7419
+[info] Point Medousa Home → Settings → Connection at that URL on iPhone.
 ```
+
+Use that URL in **You → Settings → Connection** on the phone. Custom port: `medousa start daemon --public --bind 0.0.0.0:7420`.
 
 **Firewall** — allow incoming TCP **7419** on the Mac (System Settings → Network → Firewall).
 
@@ -136,7 +143,7 @@ First run opens Xcode signing if needed — pick your **Personal Team** on the a
 When the app launches:
 
 1. Open **You → Settings → Connection**
-2. Set daemon URL to `http://<MAC_LAN_IP>:7419` (e.g. `http://192.168.1.42:7419`)
+2. Set daemon URL to the **Mobile / LAN clients** URL printed by `medousa start daemon --public`
 3. Confirm **Connected** / green health
 
 `tauri ios dev` runs Vite on your Mac and hot-reloads the webview on device — keep the Mac awake on the same Wi‑Fi as the phone.
@@ -157,7 +164,7 @@ npm run tauri ios build                  # release IPA for TestFlight-style inst
 |----------|---------|
 | `MEDOUSA_DAEMON_URL` | Default daemon URL at **desktop** launch. On iPhone, set URL in **You → Settings → Connection** (saved in app data) or rely on dev auto-detect from the Vite host. |
 | `APPLE_DEVELOPMENT_TEAM` | Code signing team for `ios init` / `ios dev` |
-| `MEDOUSA_MOBILE_BIND` | Override daemon bind (default `0.0.0.0:7419`) in `scripts/mobile-dev-daemon.sh` |
+| `MEDOUSA_DAEMON_PUBLIC_URL` | Set automatically by `--public` so chat stream URLs use your Mac LAN IP (not `0.0.0.0`). Override only if auto-detect picks the wrong interface. |
 
 Example:
 
@@ -165,6 +172,8 @@ Example:
 export MEDOUSA_DAEMON_URL="http://192.168.1.42:7419"
 npm run tauri ios dev
 ```
+
+**Settings on mobile:** Connection URL is stored on the phone. Provider, model, and API keys live on the **Mac daemon** (`tui_defaults.json`). After connecting, the app loads runtime defaults from the daemon. Change model on the phone via **You → Runtime → Controls** (updates the workshop for all clients).
 
 ---
 
@@ -184,11 +193,12 @@ medousa://work/<paste-card-id>
 
 | Symptom | Fix |
 |---------|-----|
-| **Offline / connection failed** | Daemon running? `--bind 0.0.0.0:7419`? Mac firewall? Same Wi‑Fi? URL uses LAN IP not `127.0.0.1`? In dev, the app auto-sets daemon URL from the Vite host (e.g. `http://10.x.x.x:7419`). |
+| **Offline / connection failed** | Daemon running? `medousa start daemon --public`? Mac firewall? Same Wi‑Fi? URL uses LAN IP not `127.0.0.1`? In dev, the app auto-sets daemon URL from the Vite host (e.g. `http://10.x.x.x:7419`). |
 | **ATS / cleartext HTTP blocked** | `tauri.conf.json` includes `NSAllowsLocalNetworking` for iOS. Re-run `ios dev` after config changes. |
 | **Code signing errors** | Xcode → Accounts → Apple Development cert; set team in Xcode project under `gen/apple`. |
 | **Blank / white webview** | Phone must reach Mac Vite on **1420** (open `http://<mac-ip>:1420` in Safari on the phone). Allow **1420** in Mac firewall. Re-run `npm run tauri ios dev` after config changes. On device, try `npm run tauri ios dev -- --force-ip-prompt` and pick the phone’s TUN address if LAN IP fails. iOS uses only the **main** window — desktop `chat-popout` is excluded from mobile builds. |
-| **Tray / desktop-only APIs** | Mobile build skips system tray; app icon badge still updates for blocked work. |
+| **Chat fails / stream URL** | Restart with `medousa start daemon --public` (sets LAN stream URLs). Old daemons bound to `0.0.0.0` without `--public` return unreachable stream URLs. |
+| **Wrong model on mobile** | Mobile reads provider/model from the Mac daemon after connect — not local `tui_defaults`. Use **You → Runtime → Controls** or edit `tui_defaults.json` on the Mac. |
 
 ---
 
@@ -197,7 +207,7 @@ medousa://work/<paste-card-id>
 - [ ] Mac: Xcode + CocoaPods + Rust iOS targets
 - [ ] `npm install` in `apps/medousa-home`
 - [ ] `npm run tauri ios init` (once)
-- [ ] Daemon: `./scripts/mobile-dev-daemon.sh`
+- [ ] Daemon: `medousa start daemon --public`
 - [ ] iPhone: Developer Mode on, USB trusted
 - [ ] `npm run tauri ios dev`
 - [ ] Settings → Connection → `http://<mac-ip>:7419`

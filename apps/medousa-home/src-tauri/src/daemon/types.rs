@@ -465,6 +465,16 @@ pub struct DaemonStatsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeDefaultsResponse {
+    pub backend: String,
+    pub provider: String,
+    pub model: String,
+    pub response_depth_mode: String,
+    pub base_url: Option<String>,
+    pub stage_routing: StageRoutingMatrix,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeliveryHealthResponse {
     pub endpoint_id: String,
     pub endpoint_seeded: bool,

@@ -4,6 +4,7 @@ import { runtime } from "$lib/stores/runtime.svelte";
 import { settings } from "$lib/stores/settings.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
+import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
   checkDaemonHealth,
@@ -53,18 +54,19 @@ async function startWorkshopStreams(): Promise<void> {
   await stopWorkspaceStream();
   await startWorkspaceStream(workspace.revision || undefined);
   void recurring.refresh();
-  void chat.refreshSessions();
-  if (chat.messages.length === 0) {
-    void chat.switchSession(chat.sessionId);
-  }
+  await chat.refreshSessions();
+  await chat.ensureSessionHydrated({ notice: true });
 }
 
-async function loadWorkshopDefaults(): Promise<void> {
+async function loadWorkshopDefaults(connected: boolean): Promise<void> {
   try {
-    await runtime.loadFromTuiDefaults();
-    void runtime.refresh();
+    await runtime.loadWorkshopRuntime({ connected });
+    if (connected) {
+      await workshopDefaults.load(true);
+      void runtime.refresh();
+    }
   } catch {
-    // Local defaults are optional when offline.
+    // Workshop defaults are optional when offline.
   }
 }
 
@@ -79,6 +81,10 @@ export async function reconnectWorkshop(
   stopInteractiveStream();
 
   if (health.ok) {
+    runtime.resetWorkshopRuntime();
+    workshopDefaults.resetForReconnect();
+    await runtime.loadWorkshopRuntime({ connected: true });
+    await workshopDefaults.load(true);
     await startWorkshopStreams();
   }
 
@@ -102,7 +108,7 @@ export function connectWorkshop(options: {
       const health = await checkDaemonHealth();
       options.onHealthChange(health);
 
-      void loadWorkshopDefaults();
+      void loadWorkshopDefaults(health.ok);
 
       if (health.ok) {
         await startWorkshopStreams();

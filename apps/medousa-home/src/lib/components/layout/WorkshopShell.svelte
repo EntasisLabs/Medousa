@@ -52,6 +52,7 @@
     activeSurface = surface;
     if (surface === "chat") {
       void chat.refreshSessions();
+      void chat.ensureSessionHydrated();
     }
     if (surface === "work") {
       void workspace.prefetchCardDetails();

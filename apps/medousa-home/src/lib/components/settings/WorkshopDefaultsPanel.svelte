@@ -18,9 +18,7 @@
 
   const visibleTabs = $derived(
     mobile
-      ? WORKSHOP_DEFAULTS_TABS.filter((tab) =>
-          ["setup", "secrets"].includes(tab.id),
-        )
+      ? [{ id: "setup" as WorkshopDefaultsTab, label: "Workshop" }]
       : WORKSHOP_DEFAULTS_TABS,
   );
 
@@ -79,21 +77,24 @@
       <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
       <p class="workshop-faint mt-0.5">
         {#if mobile}
-          Essentials for mobile — full matrix on desktop.
+          Read-only view of the Mac workshop — connection URL is under Settings. Change model in
+          <span class="font-medium text-surface-300">You → Runtime → Controls</span>.
         {:else}
           Same fields as TUI <span class="font-mono">/settings</span> — saved to
           <span class="font-mono">tui_defaults.json</span>.
         {/if}
       </p>
     </div>
-    <button
-      type="button"
-      class="btn btn-sm variant-filled-primary"
-      disabled={workshopDefaults.saving || workshopDefaults.loading}
-      onclick={() => workshopDefaults.save()}
-    >
-      {workshopDefaults.saving ? "Saving…" : "Save defaults"}
-    </button>
+    {#if !mobile}
+      <button
+        type="button"
+        class="btn btn-sm variant-filled-primary"
+        disabled={workshopDefaults.saving || workshopDefaults.loading}
+        onclick={() => workshopDefaults.save()}
+      >
+        {workshopDefaults.saving ? "Saving…" : "Save defaults"}
+      </button>
+    {/if}
   </div>
 
   <div class="workshop-tabs mt-3 flex-wrap">
@@ -142,6 +143,8 @@
           <input
             class="input mt-1 w-full"
             value={workshopDefaults.draft.provider ?? ""}
+            readonly={mobile}
+            disabled={mobile}
             oninput={(e) => textField("provider", e)}
           />
         </label>
@@ -150,6 +153,8 @@
           <input
             class="input mt-1 w-full"
             value={workshopDefaults.draft.model ?? ""}
+            readonly={mobile}
+            disabled={mobile}
             oninput={(e) => textField("model", e)}
           />
         </label>
@@ -159,6 +164,8 @@
             class="input mt-1 w-full"
             placeholder="optional provider endpoint"
             value={workshopDefaults.draft.baseUrl ?? ""}
+            readonly={mobile}
+            disabled={mobile}
             oninput={(e) => textField("baseUrl", e)}
           />
         </label>

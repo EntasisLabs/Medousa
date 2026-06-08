@@ -6,6 +6,45 @@ use crate::stage_routing::StageRoutingMatrix;
 
 pub const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
 pub const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
+pub const DEFAULT_DAEMON_PORT: u16 = 7419;
+
+pub fn parse_daemon_bind_port(bind: &str) -> u16 {
+    bind
+        .rsplit(':')
+        .next()
+        .and_then(|port| port.parse().ok())
+        .unwrap_or(DEFAULT_DAEMON_PORT)
+}
+
+/// Best-effort LAN IPv4 for advertising a daemon bound to `0.0.0.0`.
+pub fn detect_lan_ipv4() -> Option<String> {
+    use std::net::{IpAddr, UdpSocket};
+    let socket = UdpSocket::bind(format!("0.0.0.0:0")).ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    match socket.local_addr().ok()?.ip() {
+        IpAddr::V4(addr) if !addr.is_loopback() && !addr.is_unspecified() => Some(addr.to_string()),
+        _ => None,
+    }
+}
+
+/// Bind address when `--public` is passed to `medousa start daemon`.
+pub fn resolve_public_daemon_bind(explicit_bind: Option<&str>, fallback_port: u16) -> String {
+    let port = explicit_bind
+        .map(parse_daemon_bind_port)
+        .unwrap_or(fallback_port);
+    format!("0.0.0.0:{port}")
+}
+
+/// URL phones and other LAN clients should use (when binding publicly).
+pub fn resolve_mobile_client_daemon_url(bind: &str) -> Option<String> {
+    let port = parse_daemon_bind_port(bind);
+    detect_lan_ipv4().map(|host| format!("http://{host}:{port}"))
+}
+
+/// Local URL for health checks when the daemon binds to all interfaces.
+pub fn resolve_local_daemon_health_url(bind: &str) -> String {
+    format!("http://127.0.0.1:{}", parse_daemon_bind_port(bind))
+}
 
 pub fn resolve_daemon_url(explicit: Option<&str>) -> String {
     explicit
@@ -15,6 +54,33 @@ pub fn resolve_daemon_url(explicit: Option<&str>) -> String {
         .or_else(|| std::env::var("MEDOUSA_DAEMON_URL").ok())
         .or_else(|| std::env::var("STASIS_DAEMON_URL").ok())
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string())
+}
+
+/// Client-reachable base URL embedded in stream links (distinct from `--bind`).
+pub fn resolve_daemon_public_base_url(bind: &str) -> String {
+    if let Ok(public) = std::env::var("MEDOUSA_DAEMON_PUBLIC_URL") {
+        let trimmed = public.trim().trim_end_matches('/');
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    let bind = bind.trim();
+    if bind.starts_with("0.0.0.0:") || bind.starts_with("[::]:") {
+        if let Some(host) = detect_lan_ipv4() {
+            let port = parse_daemon_bind_port(bind);
+            return format!("http://{host}:{port}");
+        }
+        if let Ok(host) = std::env::var("MEDOUSA_DEV_HOST") {
+            let host = host.trim();
+            if !host.is_empty() {
+                let port = parse_daemon_bind_port(bind);
+                return format!("http://{host}:{port}");
+            }
+        }
+    }
+
+    format!("http://{bind}")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -310,6 +376,17 @@ pub struct DaemonStatsResponse {
     pub pending_outbox_events: usize,
     pub recurring_definitions: usize,
     pub last_tick_at_utc: Option<DateTime<Utc>>,
+}
+
+/// Live workshop runtime defaults from the daemon host (`tui_defaults.json` + env).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeDefaultsResponse {
+    pub backend: String,
+    pub provider: String,
+    pub model: String,
+    pub response_depth_mode: String,
+    pub base_url: Option<String>,
+    pub stage_routing: StageRoutingMatrix,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

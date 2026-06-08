@@ -26,6 +26,7 @@ import type {
   DaemonStatsResponse,
   DeliveryHealthResponse,
   RuntimeConfigCommandResponse,
+  RuntimeDefaultsResponse,
   StageRouteCommandResponse,
   StageRoutingMatrix,
 } from "$lib/types/runtime";
@@ -130,6 +131,10 @@ export async function sendInteractiveTurn(
 
 export async function getRuntimeStats(): Promise<DaemonStatsResponse> {
   return invoke<DaemonStatsResponse>("runtime_get_stats");
+}
+
+export async function getRuntimeDefaults(): Promise<RuntimeDefaultsResponse> {
+  return invoke<RuntimeDefaultsResponse>("runtime_get_defaults");
 }
 
 export async function getDeliveryStatus(): Promise<DeliveryHealthResponse> {

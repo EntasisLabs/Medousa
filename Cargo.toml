@@ -74,3 +74,7 @@ libc = "0.2"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+
+[dev-dependencies]
+surrealdb-types = { version = "3" }
+surrealdb = { version = "3", default-features = false, features = ["kv-mem"] }

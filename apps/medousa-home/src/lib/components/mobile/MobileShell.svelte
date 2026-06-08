@@ -12,6 +12,7 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { ensureNotificationPermission } from "$lib/notifications";
@@ -30,6 +31,12 @@
     void setMobileBadge(blocked);
     if (isTauri()) {
       void updateTrayBlockedCount(blocked);
+    }
+  });
+
+  $effect(() => {
+    if (layout.mobileTab === "chat" && daemonHealth?.ok) {
+      void chat.ensureSessionHydrated();
     }
   });
 

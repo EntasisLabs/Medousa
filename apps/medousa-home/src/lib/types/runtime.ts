@@ -59,6 +59,15 @@ export interface RuntimeConfigCommandResponse {
   should_persist_depth_defaults: boolean;
 }
 
+export interface RuntimeDefaultsResponse {
+  backend: string;
+  provider: string;
+  model: string;
+  response_depth_mode: string;
+  base_url: string | null;
+  stage_routing: StageRoutingMatrix;
+}
+
 export interface StageRouteCommandResponse {
   stage_routing: StageRoutingMatrix;
   rendered_output: string;

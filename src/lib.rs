@@ -73,6 +73,7 @@ pub mod runtime;
 pub mod runtime_tools;
 pub mod workflow;
 pub mod workflow_plan;
+pub mod workshop_env;
 pub mod tools;
 pub mod tui;
 pub mod verification_store;
@@ -144,6 +145,7 @@ pub use surreal_config::{
     resolve_daemon_launch_backend, resolve_surreal_connection_settings, sync_profile_daemon_backend,
 };
 pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
+pub use workshop_env::apply_workshop_llm_env;
 pub use adapter_ingest::{
     AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,
     wait_for_ask_delivery, ADAPTER_COMMAND_HINT,
@@ -223,7 +225,9 @@ impl StasisTool for MockWebSearchTool {
 
 pub fn resolve_llm_model(explicit_model: Option<&str>) -> String {
     explicit_model
-        .map(|value| value.to_string())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
         .or_else(|| std::env::var("MEDOUSA_LLM_MODEL").ok())
         .or_else(|| std::env::var("STASIS_LLM_MODEL").ok())
         .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string())
@@ -231,7 +235,9 @@ pub fn resolve_llm_model(explicit_model: Option<&str>) -> String {
 
 pub fn resolve_llm_provider(explicit_provider: Option<&str>) -> String {
     explicit_provider
-        .map(|value| value.to_string())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
         .or_else(|| std::env::var("MEDOUSA_LLM_PROVIDER").ok())
         .or_else(|| std::env::var("STASIS_LLM_PROVIDER").ok())
         .unwrap_or_else(|| DEFAULT_LLM_PROVIDER.to_string())
@@ -299,6 +305,7 @@ pub async fn build_runtime_with_identity_store(
     identity_memory_store: Option<Arc<dyn IdentityMemoryStore>>,
 ) -> Result<RuntimeComposition> {
     runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
+    apply_workshop_llm_env();
     ensure_runtime_backend_prerequisites(&backend)?;
 
     let provider = resolve_llm_provider(explicit_provider);
@@ -339,6 +346,7 @@ pub async fn build_daemon_runtime(
     deliver_webhook_url: &str,
 ) -> Result<RuntimeComposition> {
     runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
+    apply_workshop_llm_env();
     ensure_runtime_backend_prerequisites(&backend)?;
 
     let provider = resolve_llm_provider(explicit_provider);

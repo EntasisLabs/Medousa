@@ -522,9 +522,14 @@ fn run_onboard(args: &[String]) -> Result<()> {
     );
 
     if selected.start_daemon {
-        if daemon_http_healthy(&selected.daemon_url) {
-            print_daemon_ready_messages(&selected.daemon_url, true);
-        } else if is_bind_reachable(&daemon_bind) {
+        let plan = DaemonLaunchPlan {
+            bind: daemon_bind.clone(),
+            health_url: selected.daemon_url.clone(),
+            mobile_url: None,
+        };
+        if daemon_http_healthy(&plan.health_url) {
+            print_daemon_ready_messages(&plan, true);
+        } else if is_bind_reachable(&plan.bind) {
             println!(
                 "{}",
                 "[warn] Port is open but the daemon API is not healthy (dashboard and delivery will not work)."
@@ -535,9 +540,9 @@ fn run_onboard(args: &[String]) -> Result<()> {
                 "       Restart with: medousa start daemon-restart".blue()
             );
         } else {
-            ensure_daemon_running(&daemon_launch_backend, &daemon_bind, &selected.daemon_url)?;
-            if wait_for_daemon_healthy(&selected.daemon_url, Duration::from_secs(20)) {
-                print_daemon_ready_messages(&selected.daemon_url, false);
+            ensure_daemon_running(&daemon_launch_backend, &plan)?;
+            if wait_for_daemon_healthy(&plan.health_url, Duration::from_secs(20)) {
+                print_daemon_ready_messages(&plan, false);
             } else {
                 println!(
                     "{}",
@@ -702,13 +707,7 @@ fn run_tui(args: &[String]) -> Result<()> {
     let defaults = load_tui_defaults();
     let product_config = load_product_config();
     apply_adapter_env(&product_config);
-    let daemon_bind = resolve_daemon_bind(args, &profile, &product_config);
-    let daemon_url = find_arg_value(args, "--daemon-url")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| profile.daemon_url.clone())
-        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+    let plan = resolve_daemon_launch_plan(args, &profile, &product_config);
     let backend = medousa::resolve_daemon_launch_backend(
         find_arg_value(args, "--backend"),
         profile.daemon_backend.as_deref(),
@@ -716,18 +715,18 @@ fn run_tui(args: &[String]) -> Result<()> {
         &defaults,
     );
 
-    let daemon_already_healthy = daemon_http_healthy(&daemon_url);
+    let daemon_already_healthy = daemon_http_healthy(&plan.health_url);
 
     if !has_flag(args, "--no-daemon") && !daemon_already_healthy {
-        ensure_daemon_running(&backend, &daemon_bind, &daemon_url)?;
+        ensure_daemon_running(&backend, &plan)?;
     }
 
     // When the daemon owns persistence, the TUI uses in-memory locally and talks to the daemon API.
-    let daemon_hosts_persistence = daemon_http_healthy(&daemon_url);
+    let daemon_hosts_persistence = daemon_http_healthy(&plan.health_url);
     if daemon_hosts_persistence {
-        launch_tui_process(&daemon_url, args, Some("in-memory"))
+        launch_tui_process(&plan.health_url, args, Some("in-memory"))
     } else {
-        launch_tui_process(&daemon_url, args, None)
+        launch_tui_process(&plan.health_url, args, None)
     }
 }
 
@@ -735,7 +734,7 @@ fn run_daemon(args: &[String]) -> Result<()> {
     let profile = load_onboard_profile();
     let defaults = load_tui_defaults();
     let product_config = load_product_config();
-    let bind = resolve_daemon_bind(args, &profile, &product_config);
+    let plan = resolve_daemon_launch_plan(args, &profile, &product_config);
     let backend = medousa::resolve_daemon_launch_backend(
         find_arg_value(args, "--backend"),
         profile.daemon_backend.as_deref(),
@@ -745,12 +744,16 @@ fn run_daemon(args: &[String]) -> Result<()> {
 
     let mut passthrough = drop_flag_value_pair(args, "--backend");
     passthrough = drop_flag_value_pair(&passthrough, "--bind");
+    passthrough.retain(|arg| arg != "--public");
 
     let daemon = resolve_component_command("medousa_daemon")?;
     let mut command = Command::new(&daemon.program);
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
-    command.arg("--bind").arg(bind);
+    command.arg("--bind").arg(&plan.bind);
+    if let Some(mobile_url) = &plan.mobile_url {
+        command.env("MEDOUSA_DAEMON_PUBLIC_URL", mobile_url);
+    }
     apply_daemon_env(&product_config);
     command.args(&passthrough);
 
@@ -1943,6 +1946,51 @@ fn resolve_daemon_bind(args: &[String], profile: &OnboardProfile, product: &Prod
         })
 }
 
+struct DaemonLaunchPlan {
+    bind: String,
+    health_url: String,
+    mobile_url: Option<String>,
+}
+
+fn resolve_daemon_launch_plan(
+    args: &[String],
+    profile: &OnboardProfile,
+    product: &ProductConfig,
+) -> DaemonLaunchPlan {
+    let explicit_daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+
+    if has_flag(args, "--public") {
+        let fallback_bind = resolve_daemon_bind(args, profile, product);
+        let fallback_port = medousa::daemon_api::parse_daemon_bind_port(&fallback_bind);
+        let bind = medousa::daemon_api::resolve_public_daemon_bind(
+            find_arg_value(args, "--bind"),
+            fallback_port,
+        );
+        let health_url = explicit_daemon_url
+            .clone()
+            .unwrap_or_else(|| medousa::daemon_api::resolve_local_daemon_health_url(&bind));
+        let mobile_url = medousa::daemon_api::resolve_mobile_client_daemon_url(&bind);
+        return DaemonLaunchPlan {
+            bind,
+            health_url,
+            mobile_url,
+        };
+    }
+
+    let bind = resolve_daemon_bind(args, profile, product);
+    let health_url = explicit_daemon_url
+        .or_else(|| profile.daemon_url.clone())
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+    DaemonLaunchPlan {
+        bind,
+        health_url,
+        mobile_url: None,
+    }
+}
+
 fn normalize_provider(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -2059,7 +2107,8 @@ fn probe_daemon_http(daemon_url: &str) -> DaemonHttpProbe {
     }
 }
 
-fn print_daemon_ready_messages(daemon_url: &str, already_running: bool) {
+fn print_daemon_ready_messages(plan: &DaemonLaunchPlan, already_running: bool) {
+    let daemon_url = &plan.health_url;
     if already_running {
         println!(
             "{}",
@@ -2079,6 +2128,23 @@ fn print_daemon_ready_messages(daemon_url: &str, already_running: bool) {
         )
         .green()
     );
+    if let Some(mobile_url) = &plan.mobile_url {
+        println!(
+            "{}",
+            format!("[ok] Mobile / LAN clients: {mobile_url}").green()
+        );
+        println!(
+            "{}",
+            "[info] Point Medousa Home → Settings → Connection at that URL on iPhone."
+                .blue()
+        );
+    } else if plan.bind.starts_with("0.0.0.0:") || plan.bind.starts_with("[::]:") {
+        println!(
+            "{}",
+            "[warn] Public bind but no LAN IP detected — chat stream URLs may fail from phones until MEDOUSA_DAEMON_PUBLIC_URL is set."
+                .yellow()
+        );
+    }
 }
 
 fn wait_for_daemon_healthy(daemon_url: &str, timeout: Duration) -> bool {
@@ -2116,18 +2182,19 @@ fn wait_for_bind_closed(bind: &str, timeout: Duration) -> bool {
     false
 }
 
-fn restart_daemon_service(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
+fn restart_daemon_service(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     println!("{}", "[info] Stopping medousa_daemon…".yellow());
     stop_medousa_daemon_process();
-    if is_bind_reachable(bind) && !wait_for_bind_closed(bind, Duration::from_secs(8)) {
+    if is_bind_reachable(&plan.bind) && !wait_for_bind_closed(&plan.bind, Duration::from_secs(8)) {
         return Err(anyhow!(
-            "port {bind} still in use after stop — check {}",
+            "port {} still in use after stop — check {}",
+            plan.bind,
             daemon_log_path().display()
         ));
     }
-    ensure_daemon_running(backend, bind, daemon_url)?;
-    if wait_for_daemon_healthy(daemon_url, Duration::from_secs(30)) {
-        print_daemon_ready_messages(daemon_url, false);
+    ensure_daemon_running(backend, plan)?;
+    if wait_for_daemon_healthy(&plan.health_url, Duration::from_secs(30)) {
+        print_daemon_ready_messages(plan, false);
         Ok(())
     } else {
         Err(anyhow!(
@@ -2174,27 +2241,30 @@ fn is_medousa_daemon_process_running() -> bool {
     }
 }
 
-fn ensure_daemon_running(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
-    if daemon_http_healthy(daemon_url) {
+fn ensure_daemon_running(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
+    if daemon_http_healthy(&plan.health_url) {
         return Ok(());
     }
 
-    if is_bind_reachable(bind) {
+    if is_bind_reachable(&plan.bind) {
         return Err(anyhow!(
-            "port {bind} is open but {daemon_url}/health is not responding. \
+            "port {} is open but {}/health is not responding. \
              The daemon is wedged or the wrong process owns the port. \
-             Run: medousa start daemon-restart"
+             Run: medousa start daemon-restart",
+            plan.bind,
+            plan.health_url.trim_end_matches('/')
         ));
     }
 
     if is_medousa_daemon_process_running() {
-        if wait_for_bind_reachable(bind, Duration::from_secs(15)) {
-            if daemon_http_healthy(daemon_url) {
+        if wait_for_bind_reachable(&plan.bind, Duration::from_secs(15)) {
+            if daemon_http_healthy(&plan.health_url) {
                 return Ok(());
             }
         }
         return Err(anyhow!(
-            "medousa_daemon is running but not healthy at {daemon_url} — check {}",
+            "medousa_daemon is running but not healthy at {} — check {}",
+            plan.health_url,
             daemon_log_path().display()
         ));
     }
@@ -2207,32 +2277,42 @@ fn ensure_daemon_running(backend: &str, bind: &str, daemon_url: &str) -> Result<
         )
     })?;
 
-    start_daemon_background(backend, bind)?;
+    start_daemon_background(backend, plan)?;
 
-    if wait_for_bind_reachable(bind, Duration::from_secs(15)) {
+    if wait_for_bind_reachable(&plan.bind, Duration::from_secs(15)) {
         return Ok(());
     }
 
     Err(anyhow!(
-        "medousa_daemon failed to start or is not reachable at {bind} — check {}",
+        "medousa_daemon failed to start or is not reachable at {} — check {}",
+        plan.bind,
         daemon_log_path().display()
     ))
 }
 
-fn start_daemon_background(backend: &str, bind: &str) -> Result<()> {
+fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     let daemon = resolve_component_command("medousa_daemon")?;
     let log = medousa::service_launch::BackgroundLog::new(daemon_log_path());
     let mut command = Command::new(&daemon.program);
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
-    command.arg("--bind").arg(bind);
+    command.arg("--bind").arg(&plan.bind);
+    if let Some(mobile_url) = &plan.mobile_url {
+        command.env("MEDOUSA_DAEMON_PUBLIC_URL", mobile_url);
+    }
     let product_config = load_product_config();
     apply_daemon_env(&product_config);
     medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     println!(
         "{}",
-        format!("[info] medousa_daemon --backend {backend} --bind {bind}").blue()
+        format!("[info] medousa_daemon --backend {backend} --bind {}", plan.bind).blue()
     );
+    if let Some(mobile_url) = &plan.mobile_url {
+        println!(
+            "{}",
+            format!("[info] Public stream URL base: {mobile_url}").blue()
+        );
+    }
     println!("{}", medousa::runtime::stasis_otel::stasis_otel_status_line());
     let pid = medousa::service_launch::spawn_command_background(command, &log)
         .with_context(|| format!("failed to spawn medousa_daemon using {}", daemon.program))?;
@@ -2516,13 +2596,7 @@ fn run_start(args: &[String]) -> Result<()> {
 
     let profile = load_onboard_profile();
     let product_config = load_product_config();
-    let daemon_url = find_arg_value(args, "--daemon-url")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-        .or_else(|| profile.daemon_url.clone())
-        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
-    let daemon_bind = resolve_daemon_bind(args, &profile, &product_config);
+    let plan = resolve_daemon_launch_plan(args, &profile, &product_config);
     let defaults = load_tui_defaults();
     let backend = medousa::resolve_daemon_launch_backend(
         find_arg_value(args, "--backend"),
@@ -2532,22 +2606,20 @@ fn run_start(args: &[String]) -> Result<()> {
     );
 
     match service.as_str() {
-        "daemon" => start_daemon_service(&backend, &daemon_bind, &daemon_url),
-        "daemon-restart" | "restart-daemon" => {
-            restart_daemon_service(&backend, &daemon_bind, &daemon_url)
-        }
+        "daemon" => start_daemon_service(&backend, &plan),
+        "daemon-restart" | "restart-daemon" => restart_daemon_service(&backend, &plan),
         "mcp-gateway" | "mcp_gateway" | "mcp" => start_mcp_gateway_service(),
-        "discord" => start_discord_service(&daemon_url),
-        "telegram" => start_telegram_service(&daemon_url),
-        "slack" => start_slack_service(&daemon_url),
-        "whatsapp" => start_whatsapp_service(&daemon_url, &product_config),
+        "discord" => start_discord_service(&plan.health_url),
+        "telegram" => start_telegram_service(&plan.health_url),
+        "slack" => start_slack_service(&plan.health_url),
+        "whatsapp" => start_whatsapp_service(&plan.health_url, &product_config),
         "all" => {
-            start_daemon_service(&backend, &daemon_bind, &daemon_url)?;
+            start_daemon_service(&backend, &plan)?;
             start_mcp_gateway_service()?;
-            start_discord_service(&daemon_url).ok();
-            start_telegram_service(&daemon_url).ok();
-            start_slack_service(&daemon_url).ok();
-            start_whatsapp_service(&daemon_url, &product_config).ok();
+            start_discord_service(&plan.health_url).ok();
+            start_telegram_service(&plan.health_url).ok();
+            start_slack_service(&plan.health_url).ok();
+            start_whatsapp_service(&plan.health_url, &product_config).ok();
             Ok(())
         }
         other => Err(anyhow!(
@@ -2556,14 +2628,14 @@ fn run_start(args: &[String]) -> Result<()> {
     }
 }
 
-fn start_daemon_service(backend: &str, bind: &str, daemon_url: &str) -> Result<()> {
-    if daemon_http_healthy(daemon_url) {
-        print_daemon_ready_messages(daemon_url, true);
+fn start_daemon_service(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
+    if daemon_http_healthy(&plan.health_url) {
+        print_daemon_ready_messages(plan, true);
         return Ok(());
     }
-    ensure_daemon_running(backend, bind, daemon_url)?;
-    if wait_for_daemon_healthy(daemon_url, Duration::from_secs(30)) {
-        print_daemon_ready_messages(daemon_url, false);
+    ensure_daemon_running(backend, plan)?;
+    if wait_for_daemon_healthy(&plan.health_url, Duration::from_secs(30)) {
+        print_daemon_ready_messages(plan, false);
     } else {
         println!(
             "{}",
@@ -2653,7 +2725,10 @@ fn print_start_help() {
     println!("medousa start — launch Medousa services in the background");
     println!();
     println!("USAGE:");
-    println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--daemon-url <url>]");
+    println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--public] [--daemon-url <url>]");
+    println!();
+    println!("FLAGS:");
+    println!("  --public      Bind daemon to 0.0.0.0 and print LAN URL for phones (mobile dev)");
     println!();
     println!("SERVICES:");
     println!("  daemon        Background medousa_daemon (engine)");
@@ -2670,6 +2745,7 @@ fn print_start_help() {
     println!();
     println!("EXAMPLES:");
     println!("  medousa start daemon --backend surreal-mem");
+    println!("  medousa start daemon --public          # iPhone / LAN mobile dev");
     println!("  medousa start mcp-gateway");
     println!("  medousa start all");
 }
@@ -3118,7 +3194,7 @@ fn print_help() {
     println!("  medousa onboard|setup|init [--yes] [--advanced] [--provider <name>] [--model <name>] [--base-url <url>] [--api-key <key>] [--backend <name>] [--daemon-url <url>] [--no-daemon] [--no-tui]");
     println!("  medousa start <service>   Background daemon, mcp-gateway, adapters (see: medousa start --help)");
     println!("  medousa tui [--daemon-url <url>] [--no-daemon] [-- <medousa_tui args>]");
-    println!("  medousa daemon [--backend <name>] [--bind <host:port>] [-- <medousa_daemon args>]  (foreground)");
+    println!("  medousa daemon [--backend <name>] [--bind <host:port>] [--public] [-- <medousa_daemon args>]  (foreground)");
     println!("  medousa discord [--daemon-url <url>] [--token <token>] [-- <medousa_discord args>]");
     println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
     println!("    Telegram allowlist is configured in medousa setup (product_config.json).");

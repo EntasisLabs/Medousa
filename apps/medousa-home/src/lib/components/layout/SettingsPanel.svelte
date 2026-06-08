@@ -128,7 +128,12 @@
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Connection</h2>
       <p class="workshop-faint mt-1">
-        Where Medousa Home reaches the running workshop backend.
+        {#if mobile}
+          Your phone’s link to the Mac workshop daemon. Provider and model come from the daemon after
+          you connect — adjust them under <span class="text-surface-300">You → Runtime → Controls</span>.
+        {:else}
+          Where Medousa Home reaches the running workshop backend.
+        {/if}
       </p>
       <label class="workshop-label mt-4 block" for="daemon-url">
         Base URL
@@ -167,9 +172,9 @@
 
     {#if mobile && onOpenAdvanced}
       <section class="workshop-inset p-3">
-        <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
+        <h2 class="text-sm font-semibold text-surface-100">Workshop on Mac</h2>
         <p class="workshop-faint mt-1">
-          Model, provider, and API key — essentials only on mobile.
+          Read-only snapshot from the daemon — not saved on the phone.
         </p>
         <button
           type="button"

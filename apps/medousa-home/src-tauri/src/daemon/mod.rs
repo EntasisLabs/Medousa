@@ -82,10 +82,27 @@ fn daemon_http_client() -> Result<Client, String> {
         .map_err(|err| err.to_string())
 }
 
-fn turn_defaults() -> (String, String) {
-    let provider = std::env::var("MEDOUSA_HOME_PROVIDER").unwrap_or_else(|_| "ollama".to_string());
-    let model = std::env::var("MEDOUSA_HOME_MODEL").unwrap_or_else(|_| "qwen2.5:7b".to_string());
-    (provider, model)
+/// Replace bind-only hosts (0.0.0.0, loopback) with the client-configured daemon URL.
+fn rewrite_stream_url_for_client(stream_url: &str, daemon_url: &str) -> String {
+    const UNROUTABLE: [&str; 4] = ["0.0.0.0", "127.0.0.1", "localhost", "[::1]"];
+
+    let Some(after_scheme) = stream_url.split("://").nth(1) else {
+        return stream_url.to_string();
+    };
+    let host_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+    let host_port = &after_scheme[..host_end];
+    let host = host_port.split(':').next().unwrap_or(host_port);
+    if !UNROUTABLE.contains(&host) {
+        return stream_url.to_string();
+    }
+
+    let path = if host_end < after_scheme.len() {
+        &after_scheme[host_end..]
+    } else {
+        ""
+    };
+    let base = daemon_url.trim().trim_end_matches('/');
+    format!("{base}{path}")
 }
 
 fn replace_cancel_slot(slot: &Mutex<Option<watch::Sender<bool>>>) -> watch::Receiver<bool> {
@@ -218,21 +235,24 @@ pub async fn interactive_turn_send(
     stage_routing: Option<StageRoutingMatrix>,
 ) -> Result<InteractiveTurnAccepted, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let (default_provider, default_model) = turn_defaults();
     let provider = provider
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or(default_provider);
+        .unwrap_or_default();
     let model = model
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or(default_model);
+        .unwrap_or_default();
     let response_depth_mode = response_depth_mode
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "standard".to_string());
-    let stage_routing =
-        stage_routing.unwrap_or_else(|| StageRoutingMatrix::default_for(&provider, &model));
+    let stage_routing = stage_routing.unwrap_or_else(|| {
+        StageRoutingMatrix::default_for(
+            if provider.is_empty() { "openai" } else { provider.as_str() },
+            if model.is_empty() { "gpt-4o-mini" } else { model.as_str() },
+        )
+    });
 
     let request = InteractiveTurnRequest {
         session_id,
@@ -249,7 +269,7 @@ pub async fn interactive_turn_send(
         }),
     };
 
-    let client = Client::new();
+    let client = daemon_http_client()?;
     let response = client
         .post(format!("{base}/v1/interactive/turn"))
         .json(&request)
@@ -266,7 +286,7 @@ pub async fn interactive_turn_send(
     let parsed: InteractiveTurnResponse = response.json().await.map_err(|err| err.to_string())?;
     Ok(InteractiveTurnAccepted {
         turn_id: parsed.turn_id,
-        stream_url: parsed.stream_url,
+        stream_url: rewrite_stream_url_for_client(&parsed.stream_url, &base),
     })
 }
 
@@ -276,6 +296,8 @@ pub async fn interactive_stream_start(
     state: State<'_, DaemonState>,
     stream_url: String,
 ) -> Result<(), String> {
+    let daemon_url = state.daemon_url.lock().expect("daemon url lock").clone();
+    let stream_url = rewrite_stream_url_for_client(&stream_url, &daemon_url);
     let cancel_rx = replace_cancel_slot(&state.interactive_cancel);
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(5))

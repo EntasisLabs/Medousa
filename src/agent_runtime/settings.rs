@@ -1,5 +1,6 @@
 use crate::daemon_api::InteractiveTurnRequest;
 use crate::session::TuiDefaults;
+use crate::stage_routing::StageRoutingMatrix;
 use crate::tui::settings::RuntimeSettings;
 
 use super::turn_loop_settings::apply_turn_loop_field_defaults;
@@ -165,14 +166,24 @@ pub fn runtime_settings_for_interactive_turn(
     backend: &str,
     request: &InteractiveTurnRequest,
 ) -> RuntimeSettings {
-    let provider = crate::resolve_llm_provider(Some(request.provider.trim()));
-    let model = crate::resolve_llm_model(Some(request.model.trim()));
-    let base_url = crate::resolve_llm_base_url(Some(&provider), None).unwrap_or_default();
+    let saved = crate::session::load_tui_defaults();
+    let provider = if request.provider.trim().is_empty() {
+        crate::resolve_llm_provider(saved.provider.as_deref())
+    } else {
+        crate::resolve_llm_provider(Some(request.provider.trim()))
+    };
+    let model = if request.model.trim().is_empty() {
+        crate::resolve_llm_model(saved.model.as_deref())
+    } else {
+        crate::resolve_llm_model(Some(request.model.trim()))
+    };
+    let base_url = crate::resolve_llm_base_url(
+        Some(&provider),
+        saved.base_url.as_deref().filter(|value| !value.trim().is_empty()),
+    )
+    .unwrap_or_default();
     let mut settings = default_daemon_runtime_settings(backend, &provider, &model, &base_url);
-    apply_tui_defaults_to_runtime_settings(
-        &mut settings,
-        &crate::session::load_tui_defaults(),
-    );
+    apply_tui_defaults_to_runtime_settings(&mut settings, &saved);
     settings.provider = provider;
     settings.model = model;
     settings.base_url = base_url;
@@ -184,4 +195,19 @@ pub fn runtime_settings_for_interactive_turn(
     }
     apply_turn_loop_field_defaults(&mut settings);
     settings
+}
+
+/// Stage routing for an interactive turn — uses workshop defaults when the client omits provider/model (mobile home).
+pub fn stage_routing_for_interactive_turn(request: &InteractiveTurnRequest) -> StageRoutingMatrix {
+    if request.provider.trim().is_empty() && request.model.trim().is_empty() {
+        let saved = crate::session::load_tui_defaults();
+        if let Some(matrix) = saved.stage_routing.clone() {
+            return matrix;
+        }
+        let provider = crate::resolve_llm_provider(saved.provider.as_deref());
+        let model = crate::resolve_llm_model(saved.model.as_deref());
+        return StageRoutingMatrix::default_for(&provider, &model);
+    }
+
+    request.stage_routing.clone()
 }

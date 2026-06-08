@@ -3,6 +3,7 @@ import {
   persistTuiDefaults,
   persistTuiRuntimePrefs,
 } from "$lib/config";
+import { getRuntimeDefaults } from "$lib/daemon";
 import { messagingSecretStatus, messagingSaveSecret, messagingClearSecret } from "$lib/messaging";
 import { runtime } from "$lib/stores/runtime.svelte";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
@@ -14,6 +15,7 @@ import {
   type TuiDefaults,
   type WorkshopDefaultsTab,
 } from "$lib/types/workshopDefaults";
+import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
 
 export class WorkshopDefaultsStore {
@@ -31,14 +33,38 @@ export class WorkshopDefaultsStore {
 
   selectedRouteRole = $state("orchestrator");
 
-  async load() {
+  resetForReconnect() {
+    this.loaded = false;
+    this.message = null;
+  }
+
+  async load(force = false) {
     if (!isTauri()) {
       this.loaded = true;
       return;
     }
+    if (this.loaded && !force) return;
     this.loading = true;
     this.message = null;
     try {
+      if (isTauriMobilePlatform()) {
+        const defaults = await getRuntimeDefaults();
+        this.draft = normalizeWorkshopDefaults({
+          backend: defaults.backend,
+          provider: defaults.provider,
+          model: defaults.model,
+          baseUrl: defaults.base_url,
+          responseDepthMode: defaults.response_depth_mode,
+          stageRouting: defaults.stage_routing,
+        });
+        this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
+        this.apiKeySet = false;
+        this.apiKeyDraft = "";
+        this.clearApiKey = false;
+        this.loaded = true;
+        return;
+      }
+
       const raw = await loadTuiDefaults();
       this.draft = normalizeWorkshopDefaults(raw);
       this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
@@ -54,7 +80,7 @@ export class WorkshopDefaultsStore {
       this.loaded = true;
     } catch (err) {
       this.message = err instanceof Error ? err.message : String(err);
-      this.loaded = true;
+      this.loaded = false;
     } finally {
       this.loading = false;
     }
@@ -95,6 +121,11 @@ export class WorkshopDefaultsStore {
 
   async save() {
     if (!isTauri()) return;
+    if (isTauriMobilePlatform()) {
+      this.message =
+        "Workshop defaults live on the Mac daemon. Change model in You → Runtime → Controls, or edit tui_defaults.json on the Mac.";
+      return;
+    }
     this.saving = true;
     this.message = null;
     try {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -68,6 +69,17 @@
     }
   });
 
+  $effect(() => {
+    if (!mobile || !visible || !chat.historyNotice) return;
+    const notice = chat.historyNotice;
+    const timer = setTimeout(() => {
+      if (chat.historyNotice === notice) {
+        chat.clearHistoryNotice();
+      }
+    }, 4000);
+    return () => clearTimeout(timer);
+  });
+
   function parseDaemonAskPrompt(value: string): string | null {
     const trimmed = value.trim();
     if (trimmed.startsWith("/ask ")) return trimmed.slice(5).trim();
@@ -109,12 +121,11 @@
 
     try {
       await stopInteractiveStream();
-      const accepted = await sendInteractiveTurn(chat.sessionId, prompt, {
-        provider: runtime.provider,
-        model: runtime.model,
-        responseDepthMode: runtime.depthMode,
-        stageRouting: runtime.stageRouting,
-      });
+      const accepted = await sendInteractiveTurn(
+        chat.sessionId,
+        prompt,
+        buildInteractiveTurnOptions(),
+      );
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
@@ -204,6 +215,10 @@
     </div>
     {#if chat.streamError}
       <p class="mt-1 text-[11px] text-error-400">{chat.streamError}</p>
+    {:else if chat.historyNotice}
+      <p class="mt-1 text-[11px] text-primary-300">{chat.historyNotice}</p>
+    {:else if chat.historyLoading}
+      <p class="mt-1 text-[11px] text-surface-400">Loading conversation from Mac…</p>
     {/if}
   </header>
 

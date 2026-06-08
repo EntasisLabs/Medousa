@@ -328,9 +328,7 @@ async fn main() -> Result<()> {
     let explicit_session = find_arg_value(&args, "--session");
     let defaults = load_tui_defaults();
 
-    if let Some(raw) = defaults.env_overrides.as_deref() {
-        apply_env_overrides(raw);
-    }
+    medousa::apply_workshop_llm_env();
     medousa::runtime::stasis_otel::apply_stasis_otel_from_defaults(&defaults);
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
