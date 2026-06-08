@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CronCreateForm from "$lib/components/cron/CronCreateForm.svelte";
   import { cronDraft } from "$lib/stores/cron.svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -93,7 +94,11 @@
   }
 </script>
 
-<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+<section
+  class="cron-panel flex h-full min-h-0 min-w-0 flex-1 flex-col {mobile
+    ? 'cron-panel-mobile'
+    : ''} {visible ? '' : 'hidden'}"
+>
   {#if !mobileDetailOpen}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       {#if !embedded}
@@ -127,14 +132,19 @@
         </div>
       {/if}
 
-      <label class="mt-3 block">
+      <label class="cron-search mt-3 block">
         <span class="sr-only">Search cron jobs</span>
-        <input
-          class="input w-full text-sm"
-          type="search"
-          placeholder="Search cron jobs…"
-          bind:value={search}
-        />
+        <div class="composer-bar cron-search-bar {mobile ? 'composer-bar-mobile' : ''}">
+          <input
+            class="cron-search-input"
+            type="search"
+            placeholder="Search cron jobs…"
+            bind:value={search}
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+          />
+        </div>
       </label>
     </header>
   {/if}
@@ -228,61 +238,18 @@
         </button>
       {/if}
       {#if cronDraft.showCreate}
-        <h2 class="workshop-section-title">New cron</h2>
-        <form
-          class="mt-3 space-y-3"
-          onsubmit={(event) => {
-            event.preventDefault();
-            void submitCreate();
-          }}
-        >
-          <label class="block">
-            <span class="workshop-label">Prompt</span>
-            <textarea
-              class="textarea mt-1 w-full text-sm"
-              rows="3"
-              bind:value={createPrompt}
-              placeholder="What should run on schedule?"
-            ></textarea>
-          </label>
-          <label class="block">
-            <span class="workshop-label">Cron</span>
-            <input
-              class="input mt-1 w-full font-mono text-[11px]"
-              bind:value={createCron}
-              placeholder="0 9 * * *"
-            />
-          </label>
-          <label class="block">
-            <span class="workshop-label">Timezone</span>
-            <input
-              class="input mt-1 w-full font-mono text-[11px]"
-              bind:value={createTimezone}
-              placeholder="UTC"
-            />
-          </label>
-          {#if createManuscript}
-            <p class="workshop-faint">
-              Skill manuscript · <span class="font-mono">{createManuscript}</span>
-            </p>
-          {/if}
-          <div class="flex gap-2 pt-1">
-            <button
-              type="submit"
-              class="btn btn-sm variant-filled-primary"
-              disabled={recurring.registering}
-            >
-              {recurring.registering ? "Saving…" : "Create"}
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm variant-ghost-surface"
-              onclick={() => cronDraft.clearCreate()}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+        <h2 class="workshop-section-title">New schedule</h2>
+        <p class="workshop-faint mt-1 text-xs">Describe what should run and when.</p>
+        <CronCreateForm
+          {mobile}
+          bind:prompt={createPrompt}
+          bind:cronExpr={createCron}
+          bind:timezone={createTimezone}
+          manuscript={createManuscript}
+          registering={recurring.registering}
+          onCancel={() => cronDraft.clearCreate()}
+          onSubmit={submitCreate}
+        />
       {:else if selected}
         <h2 class="workshop-section-title">Job detail</h2>
         <p class="mt-2 font-medium text-surface-100">{recurring.labelFor(selected)}</p>

@@ -13,6 +13,17 @@
     --mobile-bottom-chrome-height: 5.5rem;
   }
 
+  /* iOS WKWebView auto-zooms focused inputs below 16px — enforce minimum app-wide. */
+  html[data-native-shell="ios"] :is(
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not(
+          [type="file"]
+        ),
+      textarea,
+      select
+    ) {
+    font-size: 16px;
+  }
+
   html.dark body {
     @apply antialiased text-surface-50;
   }
@@ -800,6 +811,67 @@
 
   .composer-bar-send-text {
     @apply h-8 w-auto min-w-[3.25rem] px-3.5 text-xs font-semibold;
+  }
+
+  /* Cron — composer-style fields; 16px inputs on mobile prevent iOS focus zoom */
+  .cron-create-form {
+    @apply mt-3 space-y-4;
+  }
+
+  .cron-field-label {
+    @apply mb-1.5 block text-[10px] uppercase tracking-wide text-surface-500;
+  }
+
+  .cron-field-bar {
+    @apply rounded-[14px];
+  }
+
+  .cron-field-bar-compact {
+    @apply px-2.5 py-0.5;
+  }
+
+  .cron-field-input,
+  .cron-search-input {
+    @apply min-h-[36px] w-full border-0 bg-transparent py-2 pl-1 pr-1 text-base leading-snug text-surface-50 shadow-none placeholder:text-surface-400 focus:border-0 focus:outline-none focus:ring-0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .cron-search-bar {
+    @apply rounded-[14px] px-2.5 py-0.5;
+  }
+
+  .cron-search-input {
+    @apply pl-2;
+  }
+
+  .cron-field-row {
+    @apply grid gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)];
+  }
+
+  .cron-field-hint {
+    @apply text-xs text-surface-500;
+  }
+
+  .cron-form-actions {
+    @apply flex flex-wrap gap-2 border-t border-surface-500/30 pt-4;
+  }
+
+  .cron-create-form-mobile :is(.cron-field-input, .composer-bar-input),
+  .cron-panel-mobile :is(.cron-search-input, .composer-bar-input) {
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .cron-panel-mobile .cron-create-form {
+    @apply pb-8;
+  }
+
+  .cron-panel-mobile .cron-form-actions {
+    @apply flex-col gap-2.5;
+  }
+
+  .cron-panel-mobile .cron-form-submit {
+    @apply w-full;
   }
 
   .mobile-you-header {
