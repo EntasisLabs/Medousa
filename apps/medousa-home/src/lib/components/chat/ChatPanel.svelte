@@ -8,7 +8,7 @@
   import { runtime } from "$lib/stores/runtime.svelte";
   import {
     cancelActiveSessionTurn,
-    enqueueDaemonAsk,
+    createTurnTicket,
     sendInteractiveTurn,
     startInteractiveStream,
     stopInteractiveStream,
@@ -111,15 +111,21 @@
         { id: crypto.randomUUID(), role: "user", content: prompt },
       ];
       try {
-        const accepted = await enqueueDaemonAsk(askPrompt, runtime.model);
-        chat.messages = [
-          ...chat.messages,
-          {
-            id: crypto.randomUUID(),
-            role: "system",
-            content: `Queued background ask · job ${accepted.job_id}. Watch Work — card appears on the board; you'll get a prompt when it finishes.`,
-          },
-        ];
+        await cancelActiveSessionTurn(chat.sessionId).catch(() => {});
+        await stopInteractiveStream();
+        const opts = buildInteractiveTurnOptions();
+        const accepted = await createTurnTicket({
+          sessionId: chat.sessionId,
+          prompt: askPrompt,
+          mode: "background",
+          provider: opts.provider,
+          model: opts.model,
+          responseDepthMode: opts.responseDepthMode,
+          stageRouting: opts.stageRouting,
+          channelSurface: opts.channelSurface,
+        });
+        chat.beginBackgroundTurn(accepted);
+        await startInteractiveStream(accepted.stream_url);
       } catch (err) {
         chat.setError(err instanceof Error ? err.message : String(err));
       }
@@ -136,7 +142,7 @@
         prompt,
         buildInteractiveTurnOptions(),
       );
-      chat.noteTurnStarted(accepted.turn_id);
+      chat.registerTurn(accepted, chat.messages.at(-1)?.id ?? null);
       await startInteractiveStream(accepted.stream_url);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));

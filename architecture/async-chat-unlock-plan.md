@@ -65,7 +65,7 @@ session_id → { turn_id, stream_url, phase, composer_handoff, started_at }
 
 ---
 
-## Tier 2 — Unified TurnTicket (sprint)
+## Tier 2 — Unified TurnTicket (sprint) — in progress
 
 Collapse interactive turn + ask job into one durable **TurnTicket**:
 
@@ -77,6 +77,10 @@ Collapse interactive turn + ask job into one durable **TurnTicket**:
 Chat store becomes turn-centric (`Map<turnId, TurnState>`), composer always accepts input (queue or fork per session policy).
 
 **`/ask`** becomes `mode: background` on the same ticket type.
+
+See [async-chat-tier2-plan.md](async-chat-tier2-plan.md) for phased rollout (**2a–2d**).
+
+**Done this sprint:** 2a daemon + 2b Home turn map + background `/ask` via `POST /v1/turns`.
 
 ---
 
@@ -105,7 +109,8 @@ Durable host/worker tickets across adapters. Chat observes **workspace + session
 |------|--------|--------|
 | **0** | Composer handoff + pulse + stuck-state fixes | ✅ |
 | **1** | Session registry, reconnect, daemon cancel | ✅ |
-| **2–3** | TurnTicket, worker bus | Planned |
+| **2** | TurnTicket — 2a daemon + 2b Home (2c queue, 2d legacy) | 🚧 |
+| **3** | Turn worker bus | Planned |
 
 ---
 
@@ -114,7 +119,7 @@ Durable host/worker tickets across adapters. Chat observes **workspace + session
 | Area | Path |
 |------|------|
 | Chat state | `apps/medousa-home/src/lib/stores/chat.svelte.ts` |
-| Session registry | `src/session_active_turn.rs` |
+| Session registry | `src/session_active_turn.rs`, `src/turn_ticket.rs` |
 | Chat UI | `apps/medousa-home/src/lib/components/chat/ChatPanel.svelte` |
 | SSE wiring | `apps/medousa-home/src/lib/workshopConnection.ts` |
 | Stream events | `src/interactive_turn_runtime.rs` |

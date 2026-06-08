@@ -89,6 +89,34 @@ export async function cancelActiveSessionTurn(
   });
 }
 
+export async function createTurnTicket(
+  request: import("$lib/types/session").CreateTurnTicketRequest,
+): Promise<import("$lib/types/session").TurnTicketResponse> {
+  return invoke<import("$lib/types/session").TurnTicketResponse>("turn_create", {
+    sessionId: request.sessionId,
+    prompt: request.prompt,
+    mode: request.mode ?? "interactive",
+    provider: request.provider ?? null,
+    model: request.model ?? null,
+    responseDepthMode: request.responseDepthMode ?? null,
+    stageRouting: request.stageRouting ?? null,
+    channelSurface: request.channelSurface ?? null,
+  });
+}
+
+export async function listSessionTurns(
+  sessionId: string,
+  activeOnly = true,
+): Promise<import("$lib/types/session").SessionTurnsResponse> {
+  return invoke<import("$lib/types/session").SessionTurnsResponse>(
+    "turn_list_session",
+    {
+      sessionId,
+      activeOnly,
+    },
+  );
+}
+
 export async function listManuscripts(options?: {
   prefix?: string;
   limit?: number;

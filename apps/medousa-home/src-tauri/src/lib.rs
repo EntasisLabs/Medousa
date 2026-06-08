@@ -71,6 +71,8 @@ pub fn run() {
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,
             daemon::session::session_cancel_active_turn,
+            daemon::session::turn_create,
+            daemon::session::turn_list_session,
             daemon::catalog::catalog_list_manuscripts,
             daemon::catalog::catalog_list_capabilities,
             daemon::catalog::catalog_get_capability,

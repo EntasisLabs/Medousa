@@ -15,7 +15,8 @@ use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session::{ConversationTurn, append_turn, load_history};
-use crate::session_active_turn::{self, ActiveSessionTurnRegistry};
+use crate::session_active_turn::{self, TurnTicketRegistry};
+use crate::workspace::ask_job_store::{self, AskJobStore};
 
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
 
@@ -59,7 +60,9 @@ impl InteractiveTurnDeliveryContext {
 #[derive(Clone, Default)]
 pub struct InteractiveTurnSessionHooks {
     pub cancelled_turns: Option<Arc<RwLock<HashSet<String>>>>,
-    pub active_turn_registry: Option<ActiveSessionTurnRegistry>,
+    pub turn_ticket_registry: Option<TurnTicketRegistry>,
+    /// When set, mirror terminal/interim outcomes into ask job store + workspace cards.
+    pub ask_job_id: Option<String>,
 }
 
 struct InteractiveTurnStreamSink {
@@ -102,22 +105,51 @@ impl InteractiveTurnStreamSink {
 
     fn publish_tracked(&self, event: anyhow::Result<InteractiveTurnStreamEvent>) {
         if let Ok(payload) = event {
-            if let Some(registry) = &self.session_hooks.active_turn_registry {
+            if let Some(registry) = &self.session_hooks.turn_ticket_registry {
                 let registry = registry.clone();
                 let turn_id = self.turn_id.clone();
                 let event_type = payload.event_type.clone();
                 let phase = payload.phase.clone();
+                let terminal = payload.terminal;
                 tokio::spawn(async move {
                     session_active_turn::note_stream_event(
                         &registry,
                         &turn_id,
                         &event_type,
                         &phase,
+                        terminal,
                     )
                     .await;
                 });
             }
             let _ = self.stream_tx.send(payload);
+        }
+    }
+
+    async fn sync_ask_job_interim(&self, text: String) {
+        let Some(job_id) = self.session_hooks.ask_job_id.as_deref() else {
+            return;
+        };
+        if AskJobStore::is_ask_job_id(job_id) {
+            ask_job_store::ask_job_store().set_interim_text(job_id, text);
+        }
+    }
+
+    async fn sync_ask_job_succeeded(&self, text: String) {
+        let Some(job_id) = self.session_hooks.ask_job_id.as_deref() else {
+            return;
+        };
+        if AskJobStore::is_ask_job_id(job_id) {
+            ask_job_store::ask_job_store().mark_succeeded(job_id, text);
+        }
+    }
+
+    async fn sync_ask_job_failed(&self, message: String) {
+        let Some(job_id) = self.session_hooks.ask_job_id.as_deref() else {
+            return;
+        };
+        if AskJobStore::is_ask_job_id(job_id) {
+            ask_job_store::ask_job_store().mark_failed(job_id, message);
         }
     }
 }
@@ -165,6 +197,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 tool_names,
             ),
         );
+        self.sync_ask_job_interim(text).await;
     }
 
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
@@ -186,6 +219,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &text,
             tool_names,
         ));
+        self.sync_ask_job_succeeded(text).await;
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -247,6 +281,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &self.turn_id,
             &message,
         ));
+        self.sync_ask_job_failed(message.clone()).await;
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(Some(message)).await;

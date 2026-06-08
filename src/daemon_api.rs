@@ -623,6 +623,81 @@ pub struct InteractiveTurnResponse {
     pub daemon_notice: Option<String>,
 }
 
+/// Unified turn ticket — interactive chat or background `/ask` on the same SSE contract.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTurnTicketRequest {
+    pub session_id: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub mode: TurnTicketMode,
+    #[serde(default = "default_persist_user_turn")]
+    pub persist_user_turn: bool,
+    #[serde(default = "default_response_depth_mode")]
+    pub response_depth_mode: String,
+    #[serde(default)]
+    pub provider: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub stage_routing: Option<StageRoutingMatrix>,
+    #[serde(default)]
+    pub surface: Option<TurnSurfaceContext>,
+    #[serde(default)]
+    pub model_hint: Option<String>,
+    #[serde(default)]
+    pub manuscript_id: Option<String>,
+    #[serde(default)]
+    pub additional_manuscript_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub suggested_capability_ids: Option<Vec<String>>,
+}
+
+fn default_persist_user_turn() -> bool {
+    true
+}
+
+fn default_response_depth_mode() -> String {
+    "standard".to_string()
+}
+
+pub use crate::turn_ticket::{TurnTicketMode, TurnTicketPhase};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnTicketResponse {
+    pub turn_id: String,
+    pub session_id: String,
+    pub mode: TurnTicketMode,
+    pub phase: TurnTicketPhase,
+    pub accepted_at_utc: DateTime<Utc>,
+    pub stream_url: String,
+    pub stream_ready: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_card_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daemon_notice: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionActiveTurnsResponse {
+    pub session_id: String,
+    pub turns: Vec<TurnTicketRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnTicketRecord {
+    pub turn_id: String,
+    pub session_id: String,
+    pub mode: TurnTicketMode,
+    pub phase: TurnTicketPhase,
+    pub stream_url: String,
+    pub prompt_preview: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_card_id: Option<String>,
+    pub composer_handoff: bool,
+    pub started_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractiveTurnStreamEvent {
     pub turn_id: String,

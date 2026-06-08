@@ -1,4 +1,6 @@
-use crate::daemon::types::{SessionHistoryListResponse, SessionHistoryResponse};
+use crate::daemon::types::{
+    SessionHistoryListResponse, SessionHistoryResponse, StageRoutingMatrix, TurnSurfaceContext,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -129,6 +131,205 @@ pub async fn session_cancel_active_turn(
     }
     response
         .json::<CancelActiveSessionTurnResponse>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnTicketMode {
+    #[default]
+    Interactive,
+    Background,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnTicketPhase {
+    Accepted,
+    Streaming,
+    WorkerHandoff,
+    BudgetBlocked,
+    Done,
+    Error,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnTicketResponse {
+    pub turn_id: String,
+    pub session_id: String,
+    pub mode: TurnTicketMode,
+    pub phase: TurnTicketPhase,
+    pub accepted_at_utc: chrono::DateTime<chrono::Utc>,
+    pub stream_url: String,
+    pub stream_ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_card_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon_notice: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnTicketRecord {
+    pub turn_id: String,
+    pub session_id: String,
+    pub mode: TurnTicketMode,
+    pub phase: TurnTicketPhase,
+    pub stream_url: String,
+    pub prompt_preview: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_card_id: Option<String>,
+    pub composer_handoff: bool,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTurnsResponse {
+    pub session_id: String,
+    pub turns: Vec<TurnTicketRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreateTurnTicketBody {
+    session_id: String,
+    prompt: String,
+    #[serde(default)]
+    mode: TurnTicketMode,
+    #[serde(default = "default_persist_user_turn")]
+    persist_user_turn: bool,
+    #[serde(default = "default_response_depth_mode")]
+    response_depth_mode: String,
+    #[serde(default)]
+    provider: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    stage_routing: Option<StageRoutingMatrix>,
+    #[serde(default)]
+    surface: Option<TurnSurfaceContext>,
+}
+
+fn default_persist_user_turn() -> bool {
+    true
+}
+
+fn default_response_depth_mode() -> String {
+    "standard".to_string()
+}
+
+#[tauri::command]
+pub async fn turn_create(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    prompt: String,
+    mode: Option<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    response_depth_mode: Option<String>,
+    stage_routing: Option<StageRoutingMatrix>,
+    channel_surface: Option<String>,
+) -> Result<TurnTicketResponse, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let trimmed_session = session_id.trim();
+    if trimmed_session.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    if prompt.trim().is_empty() {
+        return Err("prompt is required".to_string());
+    }
+
+    let ticket_mode = match mode.as_deref().map(str::trim).unwrap_or("interactive") {
+        "background" => TurnTicketMode::Background,
+        "interactive" => TurnTicketMode::Interactive,
+        other => return Err(format!("unknown turn mode '{other}'")),
+    };
+
+    let provider = provider
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let model = model
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let response_depth_mode = response_depth_mode
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "standard".to_string());
+    let stage_routing = stage_routing.unwrap_or_else(|| {
+        StageRoutingMatrix::default_for(
+            if provider.is_empty() { "openai" } else { provider.as_str() },
+            if model.is_empty() { "gpt-4o-mini" } else { model.as_str() },
+        )
+    });
+    let channel_surface = channel_surface
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let surface = channel_surface.map(|channel_surface| TurnSurfaceContext {
+        channel_surface: Some(channel_surface),
+        channel_id: Some(trimmed_session.to_string()),
+        user_id: Some(trimmed_session.to_string()),
+    });
+
+    let body = CreateTurnTicketBody {
+        session_id: trimmed_session.to_string(),
+        prompt,
+        mode: ticket_mode,
+        persist_user_turn: true,
+        response_depth_mode,
+        provider,
+        model,
+        stage_routing: Some(stage_routing),
+        surface,
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(format!("{base}/v1/turns"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("turn create failed ({status}): {body}"));
+    }
+    response
+        .json::<TurnTicketResponse>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn turn_list_session(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    active_only: Option<bool>,
+) -> Result<SessionTurnsResponse, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let active = active_only.unwrap_or(true);
+    let url = format!("{base}/v1/sessions/{trimmed}/turns?active={active}");
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("session turns failed ({status}): {body}"));
+    }
+    response
+        .json::<SessionTurnsResponse>()
         .await
         .map_err(|err| err.to_string())
 }

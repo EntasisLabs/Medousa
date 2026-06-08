@@ -6,8 +6,12 @@ import {
   startInteractiveStream,
   stopInteractiveStream,
 } from "$lib/daemon";
-import type { ChatMessage, InteractiveTurnStreamEvent } from "$lib/types/chat";
-import type { SessionHistoryResponse, SessionSummary } from "$lib/types/session";
+import type { ChatMessage, InteractiveTurnStreamEvent, TurnTicketState } from "$lib/types/chat";
+import type {
+  SessionHistoryResponse,
+  SessionSummary,
+  TurnTicketResponse,
+} from "$lib/types/session";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 
 const SESSION_KEY = "medousa-home-session-id";
@@ -30,6 +34,8 @@ export class ChatStore {
   historyNotice = $state<string | null>(null);
   /** Daemon turn id for the live interactive stream, if any. */
   activeTurnId = $state<string | null>(null);
+  /** Turn-centric state keyed by daemon turn id. */
+  turns = $state<Map<string, TurnTicketState>>(new Map());
   private assistantId: string | null = null;
   /** Bumps when the local transcript changes; stale daemon reloads must not overwrite it. */
   private transcriptEpoch = 0;
@@ -96,6 +102,7 @@ export class ChatStore {
     this.historyNotice = null;
     this.backgroundActivity = 0;
     this.activeTurnId = null;
+    this.turns = new Map();
     await this.refreshSessions();
   }
 
@@ -149,6 +156,7 @@ export class ChatStore {
     this.messages = [];
     this.backgroundActivity = 0;
     this.activeTurnId = null;
+    this.turns = new Map();
     this.historyLoading = true;
     const epoch = this.transcriptEpoch;
     try {
@@ -175,6 +183,52 @@ export class ChatStore {
     this.activeTurnId = turnId;
   }
 
+  registerTurn(ticket: TurnTicketResponse, messageId: string | null) {
+    this.activeTurnId = ticket.turn_id;
+    if (messageId && this.assistantId) {
+      const idx = this.messages.findIndex((m) => m.id === this.assistantId);
+      if (idx >= 0) {
+        const current = this.messages[idx];
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          { ...current, turnId: ticket.turn_id },
+          ...this.messages.slice(idx + 1),
+        ];
+      }
+    }
+    const next = new Map(this.turns);
+    next.set(ticket.turn_id, {
+      turnId: ticket.turn_id,
+      mode: ticket.mode,
+      phase: ticket.phase,
+      messageId: messageId ?? this.assistantId,
+      streamAttached: true,
+      terminal: false,
+      workspaceCardId: ticket.workspace_card_id ?? null,
+    });
+    this.turns = next;
+  }
+
+  beginBackgroundTurn(ticket: TurnTicketResponse) {
+    this.historyNotice = null;
+    const assistantId = crypto.randomUUID();
+    this.messages = [
+      ...this.messages,
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        streaming: true,
+        turnId: ticket.turn_id,
+        statusLine: "Background turn started",
+      },
+    ];
+    this.registerTurn(ticket, assistantId);
+    this.liveStreamActive = false;
+    this.backgroundActivity += 1;
+    this.streamError = null;
+  }
+
   clearActiveTurn() {
     this.activeTurnId = null;
   }
@@ -198,6 +252,19 @@ export class ChatStore {
 
       const turn = active.turn;
       this.activeTurnId = turn.turn_id;
+      this.registerTurn(
+        {
+          turn_id: turn.turn_id,
+          session_id: turn.session_id,
+          mode: "interactive",
+          phase: "streaming",
+          accepted_at_utc: turn.started_at,
+          stream_url: turn.stream_url,
+          stream_ready: true,
+          workspace_card_id: null,
+        },
+        this.assistantId,
+      );
 
       await stopInteractiveStream();
       await startInteractiveStream(turn.stream_url);
@@ -268,6 +335,8 @@ export class ChatStore {
   }
 
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
+    this.syncTurnFromEvent(event);
+
     if (!this.assistantId) {
       if (event.content_delta || event.final_text || event.event_type === "content_delta") {
         this.attachOrphanStream(event);
@@ -464,6 +533,27 @@ export class ChatStore {
   setError(message: string) {
     this.streamError = message;
     this.finishStream();
+  }
+
+  private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {
+    const existing = this.turns.get(event.turn_id);
+    if (!existing) return;
+
+    const next = new Map(this.turns);
+    if (event.terminal) {
+      next.delete(event.turn_id);
+      if (this.activeTurnId === event.turn_id) {
+        this.activeTurnId = null;
+      }
+    } else {
+      next.set(event.turn_id, {
+        ...existing,
+        phase: event.phase || existing.phase,
+        streamAttached: true,
+        terminal: false,
+      });
+    }
+    this.turns = next;
   }
 }
 

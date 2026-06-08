@@ -13,6 +13,18 @@ export interface ChatMessage {
   reasoning?: string | null;
   /** Verifier / turn lifecycle state from session history. */
   answerState?: string | null;
+  /** Turn ticket that produced this bubble. */
+  turnId?: string | null;
+}
+
+export interface TurnTicketState {
+  turnId: string;
+  mode: "interactive" | "background";
+  phase: string;
+  messageId: string | null;
+  streamAttached: boolean;
+  terminal: boolean;
+  workspaceCardId?: string | null;
 }
 
 export interface InteractiveTurnStreamEvent {

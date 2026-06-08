@@ -39,7 +39,8 @@ use medousa::daemon_api::{
     HeartbeatDeliveryPolicyResponse, HeartbeatPolicyResponse, HeartbeatStatusResponse,
     IngestRequest, IngestResponse, DeliverPollResponse, DeliveryHealthResponse,
     ContinuationStatusResponse, TurnContinuationLineageResponse, ReplayAndResumeResponse,
-    InteractiveTurnRequest, InteractiveTurnResponse,
+    InteractiveTurnRequest, InteractiveTurnResponse, CreateTurnTicketRequest,
+    TurnTicketResponse, SessionActiveTurnsResponse, TurnTicketRecord,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent, RuntimeDefaultsResponse,
     DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
@@ -55,7 +56,7 @@ use medousa::{
 };
 use medousa::agent_runtime::stream_sink::AgentStreamSink;
 use async_trait::async_trait;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
@@ -101,7 +102,7 @@ struct AppState {
     default_runtime_config: session_mapping::IngestSessionRuntimeConfig,
     cancelled_ingest_streams: Arc<RwLock<HashSet<String>>>,
     cancelled_interactive_turns: Arc<RwLock<HashSet<String>>>,
-    active_session_turns: medousa::session_active_turn::ActiveSessionTurnRegistry,
+    turn_tickets: medousa::turn_ticket::TurnTicketRegistry,
     session_runtime_configs:
         Arc<RwLock<HashMap<String, medousa::session_mapping::IngestSessionRuntimeConfig>>>,
     backend: String,
@@ -400,7 +401,7 @@ async fn main() -> Result<()> {
         default_runtime_config,
         cancelled_ingest_streams: Arc::new(RwLock::new(HashSet::new())),
         cancelled_interactive_turns: Arc::new(RwLock::new(HashSet::new())),
-        active_session_turns: medousa::session_active_turn::new_registry(),
+        turn_tickets: medousa::turn_ticket::new_registry(),
         session_runtime_configs: Arc::new(RwLock::new(HashMap::new())),
         backend: backend_name,
         worker_id: worker_id.clone(),
@@ -436,6 +437,12 @@ async fn main() -> Result<()> {
             "/v1/sessions/{session_id}/active-turn",
             get(get_active_session_turn).post(cancel_active_session_turn),
         )
+        .route(
+            "/v1/sessions/{session_id}/turns",
+            get(list_session_turns),
+        )
+        .route("/v1/turns", post(create_turn_ticket))
+        .route("/v1/turns/{turn_id}", get(get_turn_ticket))
         .route("/v1/heartbeat/status", get(heartbeat_status))
         .route("/v1/jobs/{job_id}/result", get(get_job_result))
         .route("/v1/jobs/{job_id}/report", get(get_job_report))
@@ -1740,65 +1747,129 @@ async fn register_recurring_prompt(
     }))
 }
 
-async fn start_interactive_turn(
-    State(state): State<AppState>,
-    Json(request): Json<InteractiveTurnRequest>,
-) -> Result<Json<InteractiveTurnResponse>, (StatusCode, String)> {
-    let session_id = request.session_id.trim().to_string();
+fn ticket_record_from_ticket(ticket: &medousa::turn_ticket::TurnTicket) -> TurnTicketRecord {
+    TurnTicketRecord {
+        turn_id: ticket.turn_id.clone(),
+        session_id: ticket.session_id.clone(),
+        mode: ticket.mode,
+        phase: ticket.phase,
+        stream_url: ticket.stream_url.clone(),
+        prompt_preview: ticket.prompt_preview.clone(),
+        workspace_card_id: ticket.workspace_card_id.clone(),
+        composer_handoff: ticket.composer_handoff(),
+        started_at: ticket.started_at,
+        updated_at: ticket.updated_at,
+    }
+}
+
+fn build_interactive_request_from_ticket(
+    request: &CreateTurnTicketRequest,
+    provider: String,
+    model: String,
+    stage_routing: medousa::stage_routing::StageRoutingMatrix,
+) -> InteractiveTurnRequest {
+    InteractiveTurnRequest {
+        session_id: request.session_id.clone(),
+        prompt: request.prompt.clone(),
+        persist_user_turn: request.persist_user_turn,
+        response_depth_mode: request.response_depth_mode.clone(),
+        provider,
+        model,
+        stage_routing,
+        surface: request.surface.clone(),
+        max_tool_rounds: None,
+        retry_runtime_max_rounds: None,
+        manuscript_id: request.manuscript_id.clone(),
+        additional_manuscript_ids: request.additional_manuscript_ids.clone(),
+        suggested_capability_ids: request.suggested_capability_ids.clone(),
+        scheduled_tool_allowlist: None,
+    }
+}
+
+async fn spawn_turn_ticket(
+    state: &AppState,
+    turn_id: String,
+    mode: medousa::turn_ticket::TurnTicketMode,
+    interactive_request: InteractiveTurnRequest,
+    workspace_card_id: Option<String>,
+) -> Result<TurnTicketResponse, (StatusCode, String)> {
+    let session_id = interactive_request.session_id.trim().to_string();
     if session_id.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
     }
 
-    if state
-        .active_session_turns
-        .read()
-        .await
-        .contains_key(&session_id)
-    {
-        return Err((
-            StatusCode::CONFLICT,
-            "session already has an active interactive turn".to_string(),
-        ));
-    }
-
-    let turn_id = format!("daemon-turn-{}", Uuid::new_v4().simple());
     let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
-
     {
         let mut guard = state.interactive_turn_streams.write().await;
         guard.insert(turn_id.clone(), stream_tx.clone());
     }
 
-    let response = medousa::interactive_turn_runtime::build_interactive_turn_response(
-        &request,
-        &state.daemon_base_url,
-        &turn_id,
-        true,
-        false,
-        None,
-        Some("interactive turn accepted; daemon agent runtime streaming active".to_string()),
-    )
-    .map_err(internal_error)?;
+    let stream_url = format!(
+        "{}/v1/interactive/turn/{}/stream",
+        state.daemon_base_url.trim_end_matches('/'),
+        turn_id
+    );
+    let now = Utc::now();
+    let prompt_preview = medousa::turn_ticket::prompt_preview(&interactive_request.prompt);
+    let ticket = medousa::turn_ticket::TurnTicket {
+        turn_id: turn_id.clone(),
+        session_id: session_id.clone(),
+        mode,
+        phase: medousa::turn_ticket::TurnTicketPhase::Accepted,
+        stream_url: stream_url.clone(),
+        prompt_preview: prompt_preview.clone(),
+        workspace_card_id: workspace_card_id.clone(),
+        started_at: now,
+        updated_at: now,
+    };
 
-    medousa::session_active_turn::register_active_turn(
-        &state.active_session_turns,
-        &session_id,
-        &turn_id,
-        &response.stream_url,
-    )
-    .await;
+    if let Err(conflict) = medousa::turn_ticket::register_turn(&state.turn_tickets, ticket).await {
+        let mut guard = state.interactive_turn_streams.write().await;
+        guard.remove(&turn_id);
+        return Err((StatusCode::CONFLICT, conflict.message));
+    }
+
+    if mode == medousa::turn_ticket::TurnTicketMode::Background {
+        if let Some(job_id) = workspace_card_id.as_deref() {
+            medousa::workspace::ask_job_store::ask_job_store().register_pending(
+                medousa::workspace::ask_job_store::AskJobRecord {
+                    job_id: job_id.to_string(),
+                    prompt: interactive_request.prompt.clone(),
+                    status: medousa::workspace::ask_job_store::AskJobStatus::Pending,
+                    output_text: None,
+                    interim_text: None,
+                    error: None,
+                    session_id: session_id.clone(),
+                    manuscript_id: interactive_request.manuscript_id.clone(),
+                    additional_manuscript_ids: interactive_request.additional_manuscript_ids.clone(),
+                    suggested_capability_ids: interactive_request
+                        .suggested_capability_ids
+                        .clone(),
+                    model_hint: None,
+                    created_at_utc: now,
+                    updated_at_utc: now,
+                    finished_at_utc: None,
+                    archived: false,
+                    journal_path: None,
+                    notified_channel: None,
+                },
+            );
+            medousa::workspace::ask_job_store::ask_job_store().mark_running(job_id);
+        }
+    }
 
     let delivery_target =
-        channel_delivery::delivery_target_from_interactive_turn(&request, &turn_id);
+        channel_delivery::delivery_target_from_interactive_turn(&interactive_request, &turn_id);
     state.channel_deliveries.write().await.insert(
         turn_id.clone(),
         delivery_target.clone(),
     );
-    record_job_delivery_pending(&state, &turn_id).await;
+    record_job_delivery_pending(state, &turn_id).await;
 
     let stream_registry = state.interactive_turn_streams.clone();
-    let active_session_turns = state.active_session_turns.clone();
+    let turn_tickets = state.turn_tickets.clone();
     let cancelled_interactive_turns = state.cancelled_interactive_turns.clone();
+    let composition = state.composition().clone();
     let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let delivery_records = state.job_delivery_records.clone();
@@ -1815,23 +1886,26 @@ async fn start_interactive_turn(
     };
     let continuation_scope = medousa::turn_continuation::TurnContinuationScope {
         turn_correlation_id: turn_id.clone(),
-        session_id: request.session_id.clone(),
-        original_prompt: request.prompt.clone(),
+        session_id: interactive_request.session_id.clone(),
+        original_prompt: interactive_request.prompt.clone(),
         delivery_target: Some(delivery_target),
-        provider: request.provider.clone(),
-        model: request.model.clone(),
-        response_depth_mode: request.response_depth_mode.clone(),
+        provider: interactive_request.provider.clone(),
+        model: interactive_request.model.clone(),
+        response_depth_mode: interactive_request.response_depth_mode.clone(),
     };
+    let ask_job_id = workspace_card_id.clone();
     let session_hooks = medousa::agent_runtime::InteractiveTurnSessionHooks {
         cancelled_turns: Some(cancelled_interactive_turns),
-        active_turn_registry: Some(active_session_turns.clone()),
+        turn_ticket_registry: Some(turn_tickets.clone()),
+        ask_job_id,
     };
+
+    let turn_id_for_task = turn_id.clone();
     tokio::spawn(async move {
-        // Give the client a brief window to subscribe before first deltas.
         tokio::time::sleep(Duration::from_millis(120)).await;
         medousa::agent_runtime::run_daemon_interactive_turn(
-            &turn_id,
-            request,
+            &turn_id_for_task,
+            interactive_request,
             &backend,
             agent_runtime.as_ref(),
             stream_tx,
@@ -1841,43 +1915,196 @@ async fn start_interactive_turn(
         )
         .await;
 
-        medousa::session_active_turn::clear_active_turn_by_turn_id(
-            &active_session_turns,
-            &turn_id,
-        )
-        .await;
+        medousa::turn_ticket::clear_turn(&turn_tickets, &turn_id_for_task).await;
+        let _ = medousa::workspace::WorkspaceService::sync_runtime(&composition, true).await;
 
-        // Keep stream available briefly for reconnect/debug then clean up.
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut guard = stream_registry.write().await;
-        guard.remove(&turn_id);
+        guard.remove(&turn_id_for_task);
     });
 
-    Ok(Json(response))
+    let notice = match mode {
+        medousa::turn_ticket::TurnTicketMode::Interactive => {
+            Some("interactive turn accepted; daemon agent runtime streaming active".to_string())
+        }
+        medousa::turn_ticket::TurnTicketMode::Background => {
+            Some("background turn accepted; streaming to attached clients".to_string())
+        }
+    };
+
+    Ok(TurnTicketResponse {
+        turn_id,
+        session_id,
+        mode,
+        phase: medousa::turn_ticket::TurnTicketPhase::Accepted,
+        accepted_at_utc: now,
+        stream_url,
+        stream_ready: true,
+        workspace_card_id,
+        daemon_notice: notice,
+    })
+}
+
+async fn create_turn_ticket(
+    State(state): State<AppState>,
+    Json(request): Json<CreateTurnTicketRequest>,
+) -> Result<Json<TurnTicketResponse>, (StatusCode, String)> {
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+    if request.prompt.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
+    }
+
+    let (provider, model) = if request.provider.trim().is_empty() || request.model.trim().is_empty()
+    {
+        resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config)
+    } else {
+        (request.provider.clone(), request.model.clone())
+    };
+    let stage_routing = request.stage_routing.clone().unwrap_or_else(|| {
+        medousa::stage_routing::StageRoutingMatrix::default_for(
+            if provider.is_empty() {
+                "openai"
+            } else {
+                provider.as_str()
+            },
+            if model.is_empty() {
+                "gpt-4o-mini"
+            } else {
+                model.as_str()
+            },
+        )
+    });
+
+    let interactive_request =
+        build_interactive_request_from_ticket(&request, provider, model, stage_routing);
+
+    let (turn_id, workspace_card_id) = match request.mode {
+        medousa::turn_ticket::TurnTicketMode::Interactive => {
+            (format!("daemon-turn-{}", Uuid::new_v4().simple()), None)
+        }
+        medousa::turn_ticket::TurnTicketMode::Background => {
+            let now = Utc::now();
+            let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+            (job_id.clone(), Some(job_id))
+        }
+    };
+
+    spawn_turn_ticket(
+        &state,
+        turn_id,
+        request.mode,
+        interactive_request,
+        workspace_card_id,
+    )
+    .await
+    .map(Json)
+}
+
+async fn get_turn_ticket(
+    State(state): State<AppState>,
+    AxumPath(turn_id): AxumPath<String>,
+) -> Result<Json<TurnTicketRecord>, (StatusCode, String)> {
+    let ticket = medousa::turn_ticket::get_turn(&state.turn_tickets, &turn_id)
+        .await
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("unknown turn id '{turn_id}'")))?;
+    Ok(Json(ticket_record_from_ticket(&ticket)))
+}
+
+#[derive(Debug, Deserialize)]
+struct ListSessionTurnsQuery {
+    active: Option<bool>,
+}
+
+async fn list_session_turns(
+    State(state): State<AppState>,
+    AxumPath(session_id): AxumPath<String>,
+    Query(query): Query<ListSessionTurnsQuery>,
+) -> Json<SessionActiveTurnsResponse> {
+    let turns = if query.active.unwrap_or(false) {
+        medousa::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await
+    } else {
+        medousa::turn_ticket::list_active_for_session(&state.turn_tickets, &session_id).await
+    };
+
+    Json(SessionActiveTurnsResponse {
+        session_id,
+        turns: turns.iter().map(ticket_record_from_ticket).collect(),
+    })
+}
+
+async fn start_interactive_turn(
+    State(state): State<AppState>,
+    Json(request): Json<InteractiveTurnRequest>,
+) -> Result<Json<InteractiveTurnResponse>, (StatusCode, String)> {
+    let ticket_request = CreateTurnTicketRequest {
+        session_id: request.session_id.clone(),
+        prompt: request.prompt.clone(),
+        mode: medousa::turn_ticket::TurnTicketMode::Interactive,
+        persist_user_turn: request.persist_user_turn,
+        response_depth_mode: request.response_depth_mode.clone(),
+        provider: request.provider.clone(),
+        model: request.model.clone(),
+        stage_routing: Some(request.stage_routing.clone()),
+        surface: request.surface.clone(),
+        model_hint: None,
+        manuscript_id: request.manuscript_id.clone(),
+        additional_manuscript_ids: request.additional_manuscript_ids.clone(),
+        suggested_capability_ids: request.suggested_capability_ids.clone(),
+    };
+
+    let (provider, model) = (ticket_request.provider.clone(), ticket_request.model.clone());
+    let stage_routing = ticket_request
+        .stage_routing
+        .clone()
+        .unwrap_or_else(|| request.stage_routing.clone());
+    let interactive_request =
+        build_interactive_request_from_ticket(&ticket_request, provider, model, stage_routing);
+    let turn_id = format!("daemon-turn-{}", Uuid::new_v4().simple());
+
+    let ticket = spawn_turn_ticket(
+        &state,
+        turn_id,
+        medousa::turn_ticket::TurnTicketMode::Interactive,
+        interactive_request,
+        None,
+    )
+    .await?;
+
+    Ok(Json(InteractiveTurnResponse {
+        turn_id: ticket.turn_id,
+        accepted_at_utc: ticket.accepted_at_utc,
+        stream_url: ticket.stream_url,
+        stream_ready: ticket.stream_ready,
+        fallback_to_local: false,
+        fallback_reason: None,
+        daemon_notice: ticket.daemon_notice,
+    }))
 }
 
 async fn get_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
-) -> Json<medousa::session_active_turn::ActiveSessionTurnResponse> {
+) -> Json<medousa::turn_ticket::ActiveSessionTurnResponse> {
     Json(
-        medousa::session_active_turn::get_active_turn(&state.active_session_turns, &session_id)
-            .await,
+        medousa::turn_ticket::get_active_interactive_turn(&state.turn_tickets, &session_id).await,
     )
 }
 
 async fn cancel_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
-) -> Json<medousa::session_active_turn::CancelActiveSessionTurnResponse> {
-    let active = state
-        .active_session_turns
-        .write()
-        .await
-        .remove(&session_id);
+) -> Json<medousa::turn_ticket::CancelActiveSessionTurnResponse> {
+    let active = medousa::turn_ticket::cancel_interactive_for_session(
+        &state.turn_tickets,
+        &session_id,
+    )
+    .await;
 
     let Some(active) = active else {
-        return Json(medousa::session_active_turn::CancelActiveSessionTurnResponse {
+        return Json(medousa::turn_ticket::CancelActiveSessionTurnResponse {
             cancelled: false,
             turn_id: None,
             message: "no active turn for session".to_string(),
@@ -1889,6 +2116,7 @@ async fn cancel_active_session_turn(
         .write()
         .await
         .insert(active.turn_id.clone());
+    medousa::turn_ticket::mark_cancelled(&state.turn_tickets, &active.turn_id).await;
 
     if let Some(stream_tx) = state
         .interactive_turn_streams
@@ -1917,7 +2145,7 @@ async fn cancel_active_session_turn(
         .await
         .remove(&active.turn_id);
 
-    Json(medousa::session_active_turn::CancelActiveSessionTurnResponse {
+    Json(medousa::turn_ticket::CancelActiveSessionTurnResponse {
         cancelled: true,
         turn_id: Some(active.turn_id),
         message: "interactive turn cancelled".to_string(),
