@@ -54,7 +54,7 @@ Memory:
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
 - Do not emit operator-facing prose until work is done — the host synthesizes your receipts.
-- When finished, call cognition_turn_prepare_final once, then send one complete result message on the next turn without further tools.
+- When finished, prefer cognition_turn_finish with the complete result. Alternatively call cognition_turn_prepare_final once, then send one complete result message on the next turn without further tools.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
 - On every cognition_memory_* tool call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;

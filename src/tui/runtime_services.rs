@@ -52,7 +52,7 @@ use crate::bridge_tools::{
 };
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
-use crate::turn_control_tools::CognitionTurnPrepareFinalTool;
+use crate::turn_control_tools::{CognitionTurnFinishTool, CognitionTurnPrepareFinalTool};
 use crate::turn_continuation::TurnContinuationScope;
 use crate::workflow;
 use tokio::sync::RwLock;
@@ -275,6 +275,7 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
 
     tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
+    tool_registry.register_tool(CognitionTurnFinishTool)?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;

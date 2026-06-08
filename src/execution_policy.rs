@@ -201,7 +201,9 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_grapheme_modules"
         | "cognition_grapheme_template_run"
         | "cognition_turn_prepare_final"
-        | "cognition.turn.prepare_final" => StepExecutionClass::ReadOnly,
+        | "cognition.turn.prepare_final"
+        | "cognition_turn_finish"
+        | "cognition.turn.finish" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {
             StepExecutionClass::ReadOnly
         }

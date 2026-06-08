@@ -31,7 +31,10 @@ use crate::agent_runtime::turn_ledger::{
     record_stuck, record_tool_round, stuck_turn_user_message,
 };
 use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_batch_allowed};
-use crate::turn_control_tools::is_prepare_final_tool_name;
+use crate::turn_control_tools::{
+    finish_turn_from_invocations, is_finish_turn_tool_name, is_prepare_final_tool_name,
+    COGNITION_TURN_FINISH,
+};
 pub(crate) use crate::turn_text_heuristics::{
     should_finalize_on_text_only_response, termination_reason_for_text_only_finalize,
 };
@@ -489,9 +492,10 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if pending_final_answer
-                    && tool_calls
-                        .iter()
-                        .any(|call| !is_prepare_final_tool_name(&call.fn_name))
+                    && tool_calls.iter().any(|call| {
+                        !is_prepare_final_tool_name(&call.fn_name)
+                            && !is_finish_turn_tool_name(&call.fn_name)
+                    })
                 {
                     pending_final_answer = false;
                 }
@@ -630,6 +634,35 @@ impl MedousaToolLoopPipeline {
                             &turn_ctx.scratchpad,
                         ),
                     );
+                }
+
+                if let Some(message) = finish_turn_from_invocations(&invocations) {
+                    if let Some(gate) = completion_gate.as_ref() {
+                        let tools = collect_tool_names(&invocations);
+                        persist_ledger_record(
+                            gate.session_id.as_deref(),
+                            &record_finalized(
+                                gate.stream_turn_id,
+                                "cognition_turn_finish",
+                                rounds_executed,
+                                &tools,
+                            ),
+                        );
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: COGNITION_TURN_FINISH.to_string(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text: message,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: "cognition_turn_finish".to_string(),
+                    });
                 }
 
                 if let Some((work_id, ack)) =
@@ -857,6 +890,7 @@ fn build_fallback_synthesis_prompt(
 
 #[cfg(test)]
 mod tests {
+    use crate::turn_control_tools::finish_turn_from_invocations;
     use super::{
         recoverable_tool_error_value, should_finalize_on_text_only_response,
         termination_reason_for_text_only_finalize, tool_output_from_invoke,
@@ -957,6 +991,20 @@ mod tests {
         assert_eq!(
             termination_reason_for_text_only_finalize(false, 3, 10),
             "heuristic_substantive"
+        );
+    }
+
+    #[test]
+    fn finish_turn_from_invocations_is_detected_for_loop_exit() {
+        use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+        let invocations = vec![ToolInvocation {
+            tool_name: "cognition_turn_finish".to_string(),
+            tool_input: serde_json::json!({"message": "Final answer ready."}),
+            tool_output: serde_json::json!({"ok": true, "finish_turn": true}),
+        }];
+        assert_eq!(
+            finish_turn_from_invocations(&invocations).as_deref(),
+            Some("Final answer ready.")
         );
     }
 

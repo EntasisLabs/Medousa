@@ -33,6 +33,7 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_turn_worker_status",
     "cognition_turn_worker_cancel",
     "cognition_turn_prepare_final",
+    "cognition_turn_finish",
     "cognition_runtime_recurring_preview",
     "cognition_runtime_jobs_status",
     "cognition_runtime_jobs_list",

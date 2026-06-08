@@ -483,7 +483,7 @@ fn default_worker_constraints() -> Vec<String> {
         "Read HOST_TOOL_DIGESTS before capability_search, resolve, or grapheme modules search".to_string(),
         "Use session_id on all cognition_memory_* tools".to_string(),
         "Ground final worker text in tool receipts; do not invent results".to_string(),
-        "Call cognition_turn_prepare_final once before final prose; end early when task is done".to_string(),
+        "Prefer cognition_turn_finish with the full reply when done; or call cognition_turn_prepare_final once before final prose; end early when task is done".to_string(),
     ]
 }
 

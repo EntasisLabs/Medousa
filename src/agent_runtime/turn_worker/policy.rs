@@ -56,6 +56,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
         &[
             "cognition_turn_prepare_final",
             "cognition.turn.prepare_final",
+            "cognition_turn_finish",
+            "cognition.turn.finish",
             "cognition_utility_time_now",
             "cognition_utility_day_of_week",
             "cognition_utility_uuid",
@@ -166,6 +168,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         &[
             "cognition_turn_prepare_final",
             "cognition.turn.prepare_final",
+            "cognition_turn_finish",
+            "cognition.turn.finish",
             "cognition_utility_time_now",
             "cognition_utility_day_of_week",
             "cognition_utility_uuid",

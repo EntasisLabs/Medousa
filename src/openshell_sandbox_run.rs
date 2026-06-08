@@ -554,6 +554,7 @@ fn preflight_gateway(gateway_url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::openshell_handoff::ENV_OPENSHELL_GATEWAY_URL;
 
     #[test]
     fn sandbox_name_is_slugged() {
