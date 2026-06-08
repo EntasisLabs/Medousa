@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
+  import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
@@ -77,6 +78,13 @@
   });
 
   $effect(() => {
+    if (!mobile || !visible) return;
+    const onComposerFocus = () => scrollToLatest();
+    window.addEventListener("medousa-chat-composer-focus", onComposerFocus);
+    return () => window.removeEventListener("medousa-chat-composer-focus", onComposerFocus);
+  });
+
+  $effect(() => {
     if (!mobile || !visible || !chat.historyNotice) return;
     const notice = chat.historyNotice;
     const timer = setTimeout(() => {
@@ -137,6 +145,13 @@
       event.preventDefault();
       void submit(event);
     }
+  }
+
+  function scrollToLatest() {
+    if (!scrollEl) return;
+    requestAnimationFrame(() => {
+      scrollEl!.scrollTop = scrollEl!.scrollHeight;
+    });
   }
 
   async function resumeSession(sessionId: string) {
@@ -373,31 +388,27 @@
     {/each}
   </div>
 
-  <form
-    class="{mobile ? 'mobile-chat-composer' : 'workshop-composer'}"
-    onsubmit={submit}
-  >
-    <div class="flex items-end gap-2">
-      <textarea
-        class="textarea {mobile
-          ? 'min-h-[44px] max-h-32 flex-1 resize-none rounded-2xl py-2.5 text-base'
-          : 'min-h-[36px] max-h-28 flex-1 resize-none py-1.5 text-sm'}"
-        placeholder={mobile ? "Message" : "Message · /ask for background jobs"}
-        rows="1"
-        bind:value={chat.draft}
-        disabled={chat.composerBlocked}
-        onkeydown={handleKeydown}
-      ></textarea>
-      <button
-        type="submit"
-        class="{mobile
-          ? 'mobile-chat-send'
-          : 'btn btn-sm variant-filled-primary h-8 w-8 shrink-0 p-0'}"
-        disabled={chat.composerBlocked || !chat.draft.trim()}
-        aria-label="Send message"
-      >
-        {chat.composerBlocked ? "…" : "↑"}
-      </button>
-    </div>
-  </form>
+  {#if !mobile}
+    <form class="workshop-composer" onsubmit={submit}>
+      <div class="composer-bar">
+        <GrowingTextarea
+          bind:value={chat.draft}
+          placeholder="Message · /ask for background jobs"
+          disabled={chat.composerBlocked}
+          maxHeight={128}
+          minHeight={36}
+          onkeydown={handleKeydown}
+          aria-label="Message"
+        />
+        <button
+          type="submit"
+          class="composer-bar-send"
+          disabled={chat.composerBlocked || !chat.draft.trim()}
+          aria-label="Send message"
+        >
+          {chat.composerBlocked ? "…" : "↑"}
+        </button>
+      </div>
+    </form>
+  {/if}
 </section>

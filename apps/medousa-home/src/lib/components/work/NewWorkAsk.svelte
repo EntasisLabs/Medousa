@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ChevronDown, ChevronUp, Search, X } from "@lucide/svelte";
+  import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -279,18 +280,18 @@
         </div>
       {/if}
 
-      <div class="flex items-end gap-2">
-        <textarea
-          class="textarea min-h-[36px] max-h-28 flex-1 resize-none py-1.5 text-sm"
-          placeholder="Describe the ask — skills and tools attach as structured metadata"
-          rows="1"
+      <div class="composer-bar">
+        <GrowingTextarea
           bind:value={prompt}
+          placeholder="Describe the ask — skills and tools attach as structured metadata"
           disabled={workspace.askSubmitting}
+          maxHeight={sheet ? 160 : 128}
           onkeydown={handleKeydown}
-        ></textarea>
+          aria-label="Ask prompt"
+        />
         <button
           type="submit"
-          class="btn btn-sm variant-filled-primary h-8 shrink-0 px-3"
+          class="composer-bar-send composer-bar-send-text"
           disabled={!canSubmit}
           aria-label="Queue ask job"
         >

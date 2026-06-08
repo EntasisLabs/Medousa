@@ -11,7 +11,7 @@
   } from "$lib/daemon";
   import { reconnectWorkshop } from "$lib/workshopConnection";
   import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
-  import { settings } from "$lib/stores/settings.svelte";
+  import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -210,21 +210,35 @@
 
     <section class="workshop-inset p-3">
       <h2 class="text-sm font-semibold text-surface-100">Appearance</h2>
-      <p class="workshop-faint mt-1">Home-only — not shared with TUI or CLI.</p>
-      <div class="mt-4 flex items-center gap-4">
-        <div
-          class="flex h-12 w-28 shrink-0 overflow-hidden rounded-container-token border border-surface-500/30"
-          aria-hidden="true"
-        >
-          <span class="flex-[2] bg-surface-950"></span>
-          <span class="flex-1 bg-primary-500"></span>
-          <span class="flex-[1.5] bg-surface-800"></span>
-        </div>
-        <div class="text-xs">
-          <p class="font-medium text-surface-200">Obsidian</p>
-          <p class="workshop-faint mt-0.5">Near-black canvas, violet accent</p>
-        </div>
+      <p class="workshop-faint mt-1">Home-only — workshop layout stays calm; accent palette swaps.</p>
+
+      <p class="workshop-label mt-4">Color theme</p>
+      <div class="mt-2 grid gap-2 sm:grid-cols-2">
+        {#each COLOR_THEME_OPTIONS as option (option.id)}
+          <button
+            type="button"
+            class="theme-option {settings.colorTheme === option.id
+              ? 'theme-option-active'
+              : ''}"
+            aria-pressed={settings.colorTheme === option.id}
+            onclick={() => settings.setColorTheme(option.id)}
+          >
+            <div
+              class="theme-option-swatches"
+              aria-hidden="true"
+            >
+              {#each option.swatches as swatch, index (index)}
+                <span style:background-color={swatch}></span>
+              {/each}
+            </div>
+            <div class="min-w-0 text-left">
+              <p class="text-sm font-medium text-surface-100">{option.label}</p>
+              <p class="workshop-faint mt-0.5 leading-snug">{option.tagline}</p>
+            </div>
+          </button>
+        {/each}
       </div>
+
       <label class="mt-4 flex cursor-pointer items-center gap-3">
         <input
           type="checkbox"
@@ -233,8 +247,11 @@
           onchange={(event) =>
             settings.setDarkMode((event.currentTarget as HTMLInputElement).checked)}
         />
-        <span class="text-sm text-surface-200">Dark mode (Obsidian theme)</span>
+        <span class="text-sm text-surface-200">Dark mode</span>
       </label>
+      <p class="mt-2 text-xs text-surface-500">
+        Color themes apply in dark mode. Light mode uses the default Obsidian palette.
+      </p>
     </section>
 
     <section class="workshop-inset p-3">

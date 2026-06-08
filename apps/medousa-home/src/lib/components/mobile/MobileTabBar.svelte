@@ -12,10 +12,10 @@
     you: User,
   };
 
-  const iconProps = { size: 20, strokeWidth: 1.75 };
+  const iconProps = { size: 20, strokeWidth: 2 };
 </script>
 
-<nav class="mobile-tab-bar" aria-label="Primary">
+<nav class="mobile-tab-bar-inner" aria-label="Primary">
   {#each MOBILE_TABS as tab (tab.id)}
     {@const Icon = icons[tab.id]}
     <button

@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { Config } from "tailwindcss";
 import forms from "@tailwindcss/forms";
 import { skeleton } from "@skeletonlabs/tw-plugin";
+import { blackLilyTheme } from "./black-lily-theme";
 import { medousaTheme } from "./medousa-theme";
 
 export default {
@@ -20,7 +21,7 @@ export default {
     forms,
     skeleton({
       themes: {
-        custom: [medousaTheme],
+        custom: [medousaTheme, blackLilyTheme],
       },
     }),
   ],

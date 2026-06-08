@@ -5,14 +5,37 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual"
     />
     <title>Medousa Home</title>
+    <script>
+      (function () {
+        try {
+          var dark = localStorage.getItem("medousa-home-dark-mode") !== "0";
+          var stored = localStorage.getItem("medousa-home-color-theme");
+          var theme =
+            dark && (stored === "black-lily" || stored === "medousa")
+              ? stored
+              : "medousa";
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.dataset.theme = theme;
+          if (
+            window.__TAURI_INTERNALS__ &&
+            /iPhone|iPad|iPod/i.test(navigator.userAgent)
+          ) {
+            document.documentElement.dataset.nativeShell = "ios";
+            document.documentElement.style.setProperty(
+              "--mobile-chrome-safe-bottom",
+              "0px",
+            );
+          }
+        } catch (_) {}
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body
     data-sveltekit-preload-data="hover"
-    data-theme="medousa"
     class="h-full overflow-hidden"
   >
     <div style="display: contents">%sveltekit.body%</div>

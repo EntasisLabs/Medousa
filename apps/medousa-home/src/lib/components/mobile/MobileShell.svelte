@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
-  import MobileTabBar from "$lib/components/mobile/MobileTabBar.svelte";
+  import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
   import PulsePanel from "$lib/components/mobile/PulsePanel.svelte";
   import WorkStory from "$lib/components/mobile/WorkStory.svelte";
   import WorkTimeline from "$lib/components/mobile/WorkTimeline.svelte";
@@ -18,6 +18,10 @@
   import { ensureNotificationPermission } from "$lib/notifications";
   import { setMobileBadge } from "$lib/mobileBadge";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
+  import {
+    attachMobileKeyboardViewport,
+    setMobileComposerFocus,
+  } from "$lib/utils/mobileKeyboardViewport";
   import {
     connectWorkshop,
     reconnectWorkshop,
@@ -40,13 +44,24 @@
     }
   });
 
+  $effect(() => {
+    if (layout.mobileTab !== "chat") {
+      setMobileComposerFocus(false);
+    }
+  });
+
   onMount(() => {
     void ensureNotificationPermission();
-    return connectWorkshop({
+    const detachKeyboard = attachMobileKeyboardViewport();
+    const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
         daemonHealth = health;
       },
     });
+    return () => {
+      detachKeyboard();
+      detachWorkshop();
+    };
   });
 
   async function handleOpenNote(path: string) {
@@ -68,7 +83,10 @@
   }
 </script>
 
-<div class="mobile-shell flex h-screen w-screen flex-col bg-surface-950 text-surface-50">
+<div
+  class="mobile-shell flex min-h-0 w-full flex-col bg-surface-950 text-surface-50"
+  data-mobile-tab={layout.mobileTab}
+>
   <main class="min-h-0 flex-1 overflow-hidden">
     {#if layout.mobileTab === "pulse"}
       <PulsePanel
@@ -97,7 +115,7 @@
     {/if}
   </main>
 
-  <MobileTabBar />
+  <MobileBottomChrome />
 
   <SessionSidebar
     variant="sheet"

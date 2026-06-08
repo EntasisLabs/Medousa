@@ -38,3 +38,27 @@ export function watchMobileViewport(onChange: (mobile: boolean) => void): () => 
   query.addEventListener("change", handler);
   return () => query.removeEventListener("change", handler);
 }
+
+/**
+ * Tag native shells for CSS overrides. Tauri iOS only needs bottom-chrome padding
+ * adjusted — do not zero global safe-area vars or change html/body positioning.
+ */
+export function applyNativeMobileShellLayout(): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  const root = document.documentElement;
+  if (!isTauriMobilePlatform()) return () => {};
+
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    root.dataset.nativeShell = "ios";
+    root.style.setProperty("--mobile-chrome-safe-bottom", "0px");
+  } else if (/Android/i.test(ua)) {
+    root.dataset.nativeShell = "android";
+  }
+
+  return () => {
+    delete root.dataset.nativeShell;
+    root.style.removeProperty("--mobile-chrome-safe-bottom");
+  };
+}
