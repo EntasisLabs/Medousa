@@ -13,6 +13,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use super::turn_completion::TurnCompletionVerdict;
 use super::turn_context::TurnScratchpad;
+use crate::agent_runtime::turn_completion_fsm::ContinueReason;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
@@ -31,16 +32,15 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
         "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
-         environment=Up to {max_tool_rounds} model rounds per turn (tool calls and/or assistant text). \
-         Tool call results stay in the tool transcript until the turn ends. \
-         Tool failures appear as JSON receipts (ok=false when applicable). \
-         cognition_turn_prepare_final is available to mark the next text-only message as the intended final reply. \
-         cognition_turn_finish delivers the complete user-facing answer in one tool call and ends the turn immediately (use when the loop would otherwise keep going). \
-         cognition_turn_request_more_rounds pauses the turn and asks the operator for more tool rounds when the budget is too tight. \
-         Text-only replies classified as interim are streamed to the user but not appended to the tool transcript. \
-         You do NOT need to use all {max_tool_rounds} rounds. End early when you have enough evidence, when one \
-         clarifying question is better than more tools, or when the request should pivot (say so plainly). \
-         Prefer one sharp operator-style question over spinning tools on vague intent."
+         environment=This turn has up to {max_tool_rounds} model rounds (tool calls and/or assistant text). \
+         Tool receipts accumulate in the transcript until the turn ends. \
+         Failures return JSON receipts (ok=false when applicable). \
+         cognition_turn_prepare_final marks the next text-only message as the intended final reply. \
+         cognition_turn_finish delivers the complete principal-facing answer in one tool call and ends the turn immediately. \
+         cognition_turn_request_more_rounds pauses for principal approval when the budget is tight. \
+         Interim text may continue the loop; interim drafts stay in the transcript before the next round. \
+         Rounds are a budget, not a quota — end early with cognition_turn_finish or complete prose when the principal is served. \
+         One sharp question beats spinning tools on vague intent."
     )
 }
 
@@ -243,21 +243,16 @@ pub fn developer_message_for_gatekeeper_continue(verdict: &TurnCompletionVerdict
     }
 }
 
-pub fn developer_message_for_heuristic_interim_continue() -> &'static str {
-    "Loop note: last assistant message matched interim heuristics; it was streamed to the user \
-     but not appended to the tool transcript. Prior tool receipts in context are unchanged."
-}
-
 pub fn stuck_turn_user_message(
     text_only_limit: usize,
     max_tool_rounds: usize,
     rounds_executed: usize,
 ) -> String {
     format!(
-        "I hit the turn loop limit: {text_only_limit} consecutive user-visible replies without \
-         running new tools (configured tool-round budget: {max_tool_rounds}; used {rounds_executed} \
-         model round(s) this turn). Say which step you want next (e.g. run calibrate, pull moods, \
-         call cognition_turn_prepare_final then a shorter final answer, or raise max_tool_rounds)."
+        "We hit the turn loop limit: {text_only_limit} consecutive principal-visible replies without \
+         new tool receipts (turn budget: {max_tool_rounds} rounds; used {rounds_executed} this turn). \
+         What should we do next — run the missing ritual (calibrate, moods), call cognition_turn_prepare_final \
+         with a shorter final answer, or extend the budget?"
     )
 }
 
@@ -268,8 +263,16 @@ pub fn record_from_gatekeeper_continue(
     tools_invoked: &[String],
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
+    let reason = if !verdict.missing_tools.is_empty() {
+        ContinueReason::MissingReceipts
+    } else if verdict.reason.contains("prepare_final") {
+        ContinueReason::PrepareFinalInterim
+    } else {
+        ContinueReason::AwaitingTools
+    };
     record_fsm_continue(
         stream_turn_id,
+        reason,
         &verdict.reason,
         &verdict.missing_tools,
         rounds_executed,
@@ -278,23 +281,28 @@ pub fn record_from_gatekeeper_continue(
     )
 }
 
+fn ledger_kind_for_continue(reason: ContinueReason) -> TurnLedgerEventKind {
+    match reason {
+        ContinueReason::MissingReceipts => TurnLedgerEventKind::ReceiptMissing,
+        ContinueReason::AwaitingTools | ContinueReason::PrepareFinalInterim => {
+            TurnLedgerEventKind::TextOnlyContinue
+        }
+    }
+}
+
 pub fn record_fsm_continue(
     stream_turn_id: u64,
+    reason: ContinueReason,
     detail: &str,
     missing_tools: &[String],
     rounds_executed: usize,
     tools_invoked: &[String],
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
-    let kind = if !missing_tools.is_empty() {
-        TurnLedgerEventKind::ReceiptMissing
-    } else {
-        TurnLedgerEventKind::GatekeeperContinue
-    };
     TurnLedgerRecord {
         timestamp: Utc::now(),
         stream_turn_id,
-        kind,
+        kind: ledger_kind_for_continue(reason),
         detail: detail.to_string(),
         tools_invoked: tools_invoked.to_vec(),
         missing_tools: missing_tools.to_vec(),
@@ -436,7 +444,7 @@ mod tests {
         let p = append_tool_loop_policy("hello", 12);
         assert!(p.contains("max_tool_rounds=12"));
         assert!(p.contains("environment="));
-        assert!(p.contains("do NOT need to use all"));
+        assert!(p.contains("budget, not a quota"));
     }
 
     #[test]
@@ -450,8 +458,8 @@ mod tests {
     fn stuck_user_message_uses_configured_limits() {
         let msg = stuck_turn_user_message(10, 10, 7);
         assert!(msg.contains("10"));
-        assert!(msg.contains("configured tool-round budget: 10"));
-        assert!(msg.contains("used 7"));
+        assert!(msg.contains("turn budget: 10"));
+        assert!(msg.contains("used 7 this turn"));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //!
 //! Phase 1: no-tool-debt policy + transcript helpers.
 //! Phase 2: post-tool-debt policy via receipt checklist + interim heuristics.
+//! Phase 3: centralized continue control messages + ledger reason mapping.
 
 use genai::chat::ChatMessage;
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
@@ -33,6 +34,36 @@ pub enum ContinueReason {
     MissingReceipts,
     /// `prepare_final` was invoked but draft still looks interim.
     PrepareFinalInterim,
+}
+
+/// Developer-facing turn-control body for `[MEDOUSA_TURN_CONTROL]`.
+pub fn continue_control_message(reason: ContinueReason, missing_tools: &[String]) -> String {
+    match reason {
+        ContinueReason::AwaitingTools => {
+            "Turn continues: last message looked in-progress; draft kept in transcript — tools or a complete answer next."
+                .to_string()
+        }
+        ContinueReason::MissingReceipts => format!(
+            "Turn continues: ritual receipts still open in this turn — {}.",
+            missing_tools.join(", ")
+        ),
+        ContinueReason::PrepareFinalInterim => {
+            "Turn continues: cognition_turn_prepare_final was called but the draft still looks interim — \
+             send the complete principal-facing answer next."
+                .to_string()
+        }
+    }
+}
+
+fn continue_loop(
+    reason: ContinueReason,
+    missing_tools: Vec<String>,
+) -> TurnRoundAction {
+    TurnRoundAction::ContinueLoop {
+        reason,
+        control_message: continue_control_message(reason, &missing_tools),
+        missing_tools,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,13 +102,7 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
     }
 
     if looks_like_interim_status(&ctx.draft_text) {
-        return TurnRoundAction::ContinueLoop {
-            reason: ContinueReason::AwaitingTools,
-            control_message: "Turn state: awaiting tools or a complete answer. \
-                              Last assistant message looked in-progress; draft kept in transcript."
-                .to_string(),
-            missing_tools: Vec::new(),
-        };
+        return continue_loop(ContinueReason::AwaitingTools, Vec::new());
     }
 
     if looks_like_clarifying_question(&ctx.draft_text) {
@@ -111,25 +136,12 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         let missing_ritual =
             missing_ritual_tools_for_avec(ctx.user_prompt, ctx.invocations);
         if !missing_ritual.is_empty() {
-            return TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::MissingReceipts,
-                control_message: format!(
-                    "Receipt gap (not yet in this turn tool transcript): {}.",
-                    missing_ritual.join(", ")
-                ),
-                missing_tools: missing_ritual,
-            };
+            return continue_loop(ContinueReason::MissingReceipts, missing_ritual);
         }
     }
 
     if ctx.pending_final_answer && looks_like_interim_status(&ctx.draft_text) {
-        return TurnRoundAction::ContinueLoop {
-            reason: ContinueReason::PrepareFinalInterim,
-            control_message: "State: cognition_turn_prepare_final was invoked; last draft still \
-                              matched interim heuristics (not published as final)."
-                .to_string(),
-            missing_tools: Vec::new(),
-        };
+        return continue_loop(ContinueReason::PrepareFinalInterim, Vec::new());
     }
 
     if ctx.pending_final_answer && !draft.is_empty() {
@@ -151,13 +163,7 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
     }
 
     if looks_like_interim_status(&ctx.draft_text) {
-        return TurnRoundAction::ContinueLoop {
-            reason: ContinueReason::AwaitingTools,
-            control_message: "Turn state: awaiting tools or a complete answer. \
-                              Last assistant message looked in-progress; draft kept in transcript."
-                .to_string(),
-            missing_tools: Vec::new(),
-        };
+        return continue_loop(ContinueReason::AwaitingTools, Vec::new());
     }
 
     TurnRoundAction::EndTurn {
@@ -284,6 +290,16 @@ mod tests {
         assert!(messages.is_empty());
         append_assistant_draft_to_tool_lane(&mut messages, "Hello");
         assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn continue_control_message_matches_reason() {
+        let msg = continue_control_message(
+            ContinueReason::MissingReceipts,
+            &["cognition_memory_calibrate".to_string()],
+        );
+        assert!(msg.contains("cognition_memory_calibrate"));
+        assert!(msg.contains("ritual receipts"));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 Replace implicit loop gates (gatekeeper, interim heuristics, scratch reset) with an **explicit turn FSM**. Runtime caps and validates obligations; the model declares completion via tools and prose.
 
-Async chat unlock is **paused** until completion is trustworthy ([async-chat-unlock-plan.md](async-chat-unlock-plan.md)).
+Async chat unlock is **unblocked for Tier 1+ evaluation** now that FSM owns completion ([async-chat-unlock-plan.md](async-chat-unlock-plan.md)).
 
 ---
 
@@ -109,18 +109,34 @@ stateDiagram-v2
 
 ---
 
-### Phase 3 — Loop integration cleanup
+### Phase 3 — Loop integration cleanup ✅ Done
 
-- Remove heuristic interim continue path entirely
-- `reset_scratch` only when starting a **new** visible bubble (UX), not on every continue
-- Ledger control messages aligned with FSM `ContinueReason`
+**Goal:** Single FSM continue path, correct scratch UX, ledger aligned with `ContinueReason`.
+
+**Deliverables:**
+
+- ✅ Unified `apply_fsm_continue_loop` in `medousa_tool_loop.rs` (no duplicated continue blocks)
+- ✅ `reset_scratch` at **next model round start** (`rounds_executed > 1`), not on FSM continue
+- ✅ `continue_control_message` centralized in FSM; ledger uses `TextOnlyContinue` / `ReceiptMissing` by reason
+- ✅ Removed `developer_message_for_heuristic_interim_continue`; legacy heuristic tests moved to `turn_text_heuristics`
+- ✅ Scheduled lane `max_gatekeeper_calls: 0` (all lanes)
+
+**Out of scope:** Host prompt updates (Phase 4).
 
 ---
 
-### Phase 4 — Prompts and docs
+### Phase 4 — Prompts and docs ✅ Done
 
-- Host prompt: no-tool answers should use `cognition_turn_finish` or end in one prose round
-- Deprecate [turn-completion-gatekeeper.md](turn-completion-gatekeeper.md) model layer; keep receipt checklist doc
+**Goal:** Collaborator environment across prompts; FSM-aligned turn completion guidance; deprecate gatekeeper model doc.
+
+**Deliverables:**
+
+- ✅ Host/workshop STTP reframed (principal, runtime environment — preserve warm host tone)
+- ✅ Tool loop policy, FSM control messages, turn control tools — factual not dictatorial
+- ✅ Host bus / worker appendices — workshop vs host lanes
+- ✅ Channel fallbacks unified (`LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT`, Home/TUI/CLI/daemon)
+- ✅ [runtime-collaborator-voice.md](runtime-collaborator-voice.md) — voice principles
+- ✅ [turn-completion-gatekeeper.md](turn-completion-gatekeeper.md) — model layer deprecated; receipt checklist remains in FSM
 
 ---
 
@@ -154,4 +170,4 @@ stateDiagram-v2
 |----------|----------|
 | Patch `should_finalize`? | No — FSM owns policy; heuristics stay pure functions |
 | Phase 1 touch gatekeeper? | No — post-tool path unchanged until Phase 2 |
-| Async chat unlock? | Paused until Phase 3 stable (Phase 2 FSM owns post-tool completion) |
+| Async chat unlock? | Unblocked for Tier 1+ evaluation after Phase 3 (FSM owns all text-only paths) |

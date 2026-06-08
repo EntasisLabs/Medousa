@@ -424,7 +424,7 @@ pub async fn classify_turn_intent_with_model(
         truncate_text_for_budget(recent_context, INTENT_CLASSIFIER_MAX_CONTEXT_CHARS);
     let messages = vec![
         ChatMessage::system(
-            "You are an intent router. Classify intent for tool routing using CURRENT_USER_MESSAGE plus RECENT_CONTEXT. RECENT_CONTEXT is only local grounding for short follow-ups (acknowledgements, confirmations, pivots); do not treat old unresolved tasks as active unless CURRENT_USER_MESSAGE explicitly re-requests them. Return strict JSON only with fields: intent, confidence, reason. intent must be one of: conversational, tool_required, clarify, mixed. Use clarify when the operator should get one direct question back instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
+            "Intent routing for tool-loop turns. Classify CURRENT_USER_MESSAGE with RECENT_CONTEXT as local grounding only. Return strict JSON: intent, confidence, reason. intent ∈ conversational | tool_required | clarify | mixed. Use clarify when the principal should get one direct question instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
         ),
         ChatMessage::user(format!(
             "RECENT_CONTEXT:\n{}\n\nCURRENT_USER_MESSAGE:\n{}\n\nClassify whether this turn should use tools now.",

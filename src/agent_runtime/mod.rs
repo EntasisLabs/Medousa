@@ -66,7 +66,7 @@ pub use runtime::{
 };
 pub use settings::{default_daemon_runtime_settings, runtime_settings_for_interactive_turn};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
-pub use system_prompt::DEFAULT_SYSTEM_PROMPT;
+pub use system_prompt::{DEFAULT_SYSTEM_PROMPT, LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT};
 pub use turn_budget::{
     TurnBudget, TurnOrchestrationState, emit_budget_deny, emit_orchestration_summary,
     try_consume_classifier_budget, try_consume_continuation_budget, try_consume_gatekeeper_budget,
@@ -97,8 +97,7 @@ pub use vibe_signature::{default_handoff_model_avec, derive_vibe_signature};
 pub use turn_ledger::{
     TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness, TurnLoopDiscipline,
     MAX_TEXT_ONLY_STUCK_CONTINUES, USER_RESPONSE_PREVIEW_MAX_CHARS, append_tool_loop_policy,
-    append_turn_ledger_record, developer_message_for_gatekeeper_continue,
-    developer_message_for_heuristic_interim_continue, persist_ledger_record,
+    append_turn_ledger_record, developer_message_for_gatekeeper_continue, persist_ledger_record,
     push_turn_control_message, resolve_max_text_only_stuck_continues, stuck_turn_user_message,
 };
 pub use turn_worker::{

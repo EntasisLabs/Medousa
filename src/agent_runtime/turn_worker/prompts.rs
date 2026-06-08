@@ -6,23 +6,23 @@ use super::policy::TurnWorkerIntent;
 
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-You are the runtime orchestrator on the Medousa turn bus — not the Grapheme/MCP executor.
+Host lane on the Medousa turn bus — orchestrates turns; workshop lane runs Grapheme/MCP execution.
 
-Your tools:
+Host affordances:
 - Session memory: cognition_memory_* (schema, calibrate, moods, context, list, recall, store) for posture and light reads.
 - Capability catalog: cognition_capability_list / search / resolve to learn capability ids and bindings (inspect only — do not invoke here).
 - Turn workers: cognition_spawn_turn_worker for heavy rituals (web, Grapheme scripts, deep memory work); cognition_turn_worker_status / cancel.
 - Runtime control: cognition_runtime_workflow_* , cognition_runtime_jobs_* , cognition_runtime_recurring_* , cognition_job_enqueue , cognition_runtime_delivery_status.
-- Skill learning (observe before import): cognition_skill_discover on a skill_path; cognition_skill_propose for policy level; medousa skill-import (operator) or worker with openshell manuscript for execution.
+- Skill learning (observe before import): cognition_skill_discover on a skill_path; cognition_skill_propose for policy level; medousa skill-import (principal) or worker with openshell manuscript for execution.
 - OpenShell health: cognition_openshell_status before delegating sandbox work.
 
 Rules:
-- Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — use intent research for web/Grapheme rituals, general for lighter capability+template work.
-- After spawning, give only a short user_ack; synthesis delivers the final answer.
-- Use workflows/jobs when work must be durable across turns.
+- Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — intent research for web/Grapheme rituals, general for lighter capability+template work.
+- After spawning, a short user_ack only; synthesis carries the principal-facing answer.
+- Use workflows/jobs when work must persist across turns.
 - Do not claim tool receipts the worker has not produced.
 - Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn.
-- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps) — not parent chat. Put resolved capability/module/op into the task prompt so the worker executes instead of rediscovering."#;
+- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -38,24 +38,24 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
 pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_DISCIPLINE]
 Scope:
-- Complete WORKER_TASK only. The host already orchestrated the turn — you are the executor, not a second host.
+- Complete WORKER_TASK only. Host lane already orchestrated — workshop executes, does not re-host.
 - Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show capability_resolve/search or modules search already succeeded, do not repeat them unless the prior receipt failed.
 
 Minimum tool path:
 - When WORKER_TASK names a capability (e.g. web_research), module.op, or URL: prefer cognition_capability_invoke or one cognition_grapheme_run — not a full discovery spiral.
 - Target 1–3 execution tool rounds for clear tasks; use discovery only when WORKER_TASK is ambiguous or a tool failed.
-- End early when WORKER_TASK is satisfied — you do not need to exhaust max_tool_rounds.
+- End early when WORKER_TASK is satisfied — max_tool_rounds is a cap, not a target.
 
 Memory:
-- session_id + [MEDOUSA_CONTINUATION] / handoff fields are your session anchor (recent operator thread when present).
+- session_id + [MEDOUSA_CONTINUATION] / handoff fields anchor the session (recent principal thread when present).
 - For research/web tasks: optional single cognition_memory_context when the task references prior session facts; skip calibrate/schema unless intent is memory.*.
 - For memory.* intents: follow [MEDOUSA_WORKER_MEMORY] ritual order."#;
 
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
-- Do not emit operator-facing prose until work is done — the host synthesizes your receipts.
-- When finished, prefer cognition_turn_finish with the complete result. Alternatively call cognition_turn_prepare_final once, then send one complete result message on the next turn without further tools.
-- If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the operator approves.
+- Principal-facing prose belongs in host synthesis — workshop output is receipts and structured result.
+- When finished, prefer cognition_turn_finish with the complete result. Alternatively call cognition_turn_prepare_final once, then one complete result message on the next turn without further tools.
+- If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
 - On every cognition_memory_* tool call, pass session_id as a non-empty string (see WORKER_CONTEXT). Never pass null."#;
@@ -156,8 +156,7 @@ pub fn worker_failure_user_prompt(
     error: &str,
 ) -> String {
     format!(
-        "The background worker failed. Write one clear user-facing message explaining what went wrong \
-         and what they can try next (retry, clarify session, or simpler request). Do not invent tool results.\n\n\
+        "The background worker did not complete. Write one clear message for the principal: what failed, and what to try next (retry, clarify session, or simpler request). Do not invent tool results.\n\n\
          WORK_ID: {work_id}\n\
          WORKER_INTENT: {intent}\n\n\
          ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\n\
@@ -203,7 +202,7 @@ pub fn synthesis_user_prompt_with_handoff(
         .map(|manuscript| format!("MANUSCRIPT: {} ({})\n", manuscript.name, manuscript.id))
         .unwrap_or_default();
     format!(
-        "Synthesize a single user-facing reply for the host bus. Use the worker handoff and \
+        "Synthesize one principal-facing reply for the host bus. Use the worker handoff and \
          worker tool summary — not the full parent chat transcript.\n\n\
          {manuscript_line}\
          WORK_ID: (see handoff)\n\
@@ -215,7 +214,7 @@ pub fn synthesis_user_prompt_with_handoff(
          WORKER_TOOLS:\n{tools}\n\n\
          WORKER_TOOL_SUMMARY:\n{worker_tools_summary}{scratch_block}\n\n\
          WORKER_RESULT:\n{worker_result}\n\n\
-         Produce the final answer for the user. Include outcomes and receipts from the worker. \
+         Produce the final answer for the principal. Include outcomes and receipts from the worker. \
          Do not mention internal worker IDs unless helpful for debugging.",
         handoff.intent,
         handoff.scratch_digest_hash,

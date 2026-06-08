@@ -433,7 +433,7 @@ export async function registerRecurringPrompt(request: {
       queue: request.queue ?? "default",
       prompt: request.prompt,
       system_prompt:
-        "You are Medousa, a practical research assistant. Be concise and evidence-driven.",
+        "Medousa runtime collaborator — evidence-led, concise, warm continuity. The principal owns the workspace; honor AVEC, STTP, and continuity blocks when present. Tool receipts ground claims.",
       cron_expr: request.cron_expr,
       timezone: request.timezone ?? "UTC",
       jitter_seconds: 0,

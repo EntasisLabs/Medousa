@@ -131,9 +131,9 @@ impl StasisTool for CognitionTurnPrepareFinalTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Signal that your next text-only message is intended as the user-facing final for this turn. \
+            "Signal that the next text-only message is the intended principal-facing final for this turn. \
              Optional after tool receipts are in context. \
-             The following text-only message is treated as final when substantive.",
+             Substantive prose on the following round ends the turn.",
         )
     }
 
@@ -159,7 +159,7 @@ impl StasisTool for CognitionTurnPrepareFinalTool {
         Ok(json!({
             "ok": true,
             "prepare_final": true,
-            "message": "Send your complete user-facing reply on the next turn without calling other tools.",
+            "message": "Send the complete principal-facing reply on the next turn without calling other tools.",
             "reason": reason,
         }))
     }
@@ -176,9 +176,8 @@ impl StasisTool for CognitionTurnFinishTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Deliver your complete user-facing final answer now and end this turn immediately. \
-             Use when tool work is done but the loop would otherwise keep going. \
-             Prefer this over prepare_final when you already have the full reply ready.",
+            "Deliver the complete principal-facing final answer now and end this turn immediately. \
+             Prefer this when tool work is done and the principal is served — over interim status or prepare_final.",
         )
     }
 
@@ -189,7 +188,7 @@ impl StasisTool for CognitionTurnFinishTool {
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "Complete user-facing final answer for this turn"
+                    "description": "Complete principal-facing final answer for this turn"
                 },
                 "reason": {
                     "type": "string",
@@ -233,8 +232,8 @@ impl StasisTool for CognitionTurnRequestMoreRoundsTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Request additional tool rounds for this turn when the current budget is too tight. \
-             Pauses the turn until the operator approves or denies. Provide a clear reason and progress summary.",
+            "Request additional tool rounds when the current budget is too tight. \
+             Pauses until the principal approves or denies. Include reason and progress summary.",
         )
     }
 
@@ -292,7 +291,7 @@ impl StasisTool for CognitionTurnRequestMoreRoundsTool {
             "requested_rounds": requested_rounds,
             "reason": reason,
             "progress_summary": progress_summary,
-            "message": "Turn paused pending operator approval for additional tool rounds.",
+            "message": "Turn paused — awaiting principal approval for additional tool rounds.",
         }))
     }
 }

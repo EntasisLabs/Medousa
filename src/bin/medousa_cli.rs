@@ -555,8 +555,7 @@ async fn run_daemon_watch_add(
         queue: Some("default".to_string()),
         prompt: prompt.to_string(),
         system_prompt: Some(
-            "You are Medousa, a practical research assistant. Be concise and evidence-driven."
-                .to_string(),
+            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
         ),
         cron_expr: cron_expr.to_string(),
         timezone: Some(timezone.to_string()),
@@ -1548,8 +1547,7 @@ async fn run_llm(
     let payload = PromptJobPayload {
         user_prompt: compile_lane_prompt(EngineExecutionLane::Interactive, prompt),
         system_prompt: Some(
-            "You are Medousa, a practical research assistant. Be concise and structured."
-                .to_string(),
+            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
         ),
         policy_profile: Some(
             default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
@@ -1608,7 +1606,7 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
         participants: vec![AgentSessionParticipantPayload {
             agent_id: "medousa.researcher".to_string(),
             system_prompt: Some(
-                "You are Medousa, a practical research assistant. Use tool evidence and cite findings succinctly.".to_string(),
+                medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
             ),
             tool_name: "stasis.web.search.mock".to_string(),
             tool_input: Some(json!({ "query": prompt })),

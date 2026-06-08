@@ -1455,7 +1455,7 @@ async fn enqueue_prompt(
     let payload = PromptJobPayload {
         user_prompt: compiled_prompt,
         system_prompt: request.system_prompt.or(Some(
-            "You are Medousa, a practical assistant. Be concise and structured.".to_string(),
+            medousa::agent_runtime::LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT.to_string(),
         )),
         policy_profile: Some(effective_policy_profile),
         model_hint: request.model_hint,

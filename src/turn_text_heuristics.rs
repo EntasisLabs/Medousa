@@ -103,6 +103,7 @@ pub fn looks_like_substantive_final_answer(text: &str) -> bool {
     OUTCOME_HINTS.iter().any(|hint| lower.contains(hint))
 }
 
+/// Legacy loop finalize helper. Turn completion FSM owns runtime policy; kept for tests.
 pub fn should_finalize_on_text_only_response(
     has_selected_tool: bool,
     invocations_len: usize,
@@ -158,4 +159,48 @@ pub fn looks_like_clarifying_question(text: &str) -> bool {
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interim_status_before_first_tool_does_not_finalize_legacy_helper() {
+        assert!(looks_like_interim_status("Let me check that for you."));
+        assert!(!should_finalize_on_text_only_response(
+            false,
+            0,
+            "Let me check that for you.",
+            false,
+            1,
+            10
+        ));
+    }
+
+    #[test]
+    fn substantive_answer_after_tools_finalizes_legacy_helper() {
+        let answer = "Your memory profile shows stability at 0.95 and three recent nodes about \
+                      the ingester roadmap. I stored the update in Locus.";
+        assert!(looks_like_substantive_final_answer(answer));
+        assert!(should_finalize_on_text_only_response(
+            false, 2, answer, false, 3, 10
+        ));
+    }
+
+    #[test]
+    fn termination_reason_reflects_finalize_path() {
+        assert_eq!(
+            termination_reason_for_text_only_finalize(true, 2, 10),
+            "prepare_final_then_text"
+        );
+        assert_eq!(
+            termination_reason_for_text_only_finalize(false, 10, 10),
+            "max_rounds_fuse"
+        );
+        assert_eq!(
+            termination_reason_for_text_only_finalize(false, 3, 10),
+            "heuristic_substantive"
+        );
+    }
 }

@@ -1,0 +1,68 @@
+# Runtime collaborator voice
+
+How Medousa prompts shape **environment and continuity**, not identity lectures.
+
+Related: [turn-state-machine-plan.md](turn-state-machine-plan.md) Phase 4, host STTP in `src/agent_runtime/system_prompt.rs`.
+
+---
+
+## Intent
+
+The principal owns the workspace. Medousa is a **runtime collaborator** extended across turns — warm, evidence-led, one step ahead — without repeatedly telling the model what it is.
+
+Prompts describe:
+
+- **Runtime affordances** — tools, lanes, turn FSM, receipts
+- **Relationship context** — principal, workshop vs host, continuity blocks
+- **STTP / AVEC / vibe** — compression and tone unfolding, not decoration
+
+Prompts avoid:
+
+- Cold openers: "You are an AI assistant who must…"
+- Personality scripts and metaphor (no character names)
+- Re-stating identity every turn when `[MEDOUSA_CONTINUATION]` already carries thread
+
+Workshop lane may **call execution shots** (Grapheme, MCP, workers) without claiming workspace ownership. Host lane may **nudge** when the principal is vague — still their call.
+
+---
+
+## Layer map
+
+| Layer | File(s) | Voice |
+|-------|---------|--------|
+| Host STTP | `system_prompt.rs` `DEFAULT_SYSTEM_PROMPT` | Full policy memory; light touch — preserve warmth |
+| Workshop STTP | `system_prompt.rs` `WORKER_STTP_POLICY` | Same thread; receipts not principal prose |
+| Host bus appendix | `turn_worker/prompts.rs` | Orchestration affordances |
+| Tool loop policy | `turn_ledger.rs` `append_tool_loop_policy` | Turn budget + FSM completion tools |
+| Turn control | `turn_control_fsm.rs`, `turn_control_tools.rs` | Factual turn state, not loop-manager tone |
+| Channel fallbacks | `LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT`, Home/TUI/CLI defaults | Short continuity when full STTP not loaded |
+| Ambient | `ambient_context.rs` | Surface tone (telegram vs tui), daypart — not identity |
+
+Channel fallbacks stay **short**. Full host turns always prefer `DEFAULT_SYSTEM_PROMPT` + continuity blocks.
+
+---
+
+## Principal vs operator
+
+In prompts and control messages we use **principal** for the workspace owner. Legacy code and APIs may still say `operator` — same person, warmer collaborator frame in user-visible and model-visible text.
+
+---
+
+## Turn completion (FSM)
+
+After Phases 1–3, completion is runtime-owned:
+
+- Normal prose ends the turn (no hidden loop manager)
+- `cognition_turn_finish` when tool work is done
+- Continue only for receipts, interim, or `prepare_final` gap
+
+Prompts align with that — no "you must finalize" stacking on top of the FSM.
+
+---
+
+## Editing guidelines
+
+1. **Preserve** host STTP warmth when feedback says it works — surgical edits only.
+2. **Reframe** cold imperatives as environment facts ("this turn has N rounds" not "you do NOT need to use all rounds").
+3. **Keep** STTP node structure and AVEC fields — change wording inside nodes, not the compression format.
+4. **Differentiate channels** — mobile surfaces stay concise; TUI can carry more ledger detail; scheduled jobs use lightweight fallback unless a manuscript appendix applies.

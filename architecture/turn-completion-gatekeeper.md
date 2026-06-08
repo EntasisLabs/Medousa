@@ -1,6 +1,8 @@
-# Turn completion gatekeeper
+# Turn completion gatekeeper (legacy)
 
-> **Migration:** Output-side loop control lives in [turn-state-machine-plan.md](turn-state-machine-plan.md). Phase 1–2 FSM owns text-only round decisions; this gatekeeper model layer is **off the tool-loop hot path** (Interactive `max_gatekeeper_calls: 0`). Kept for Scheduled lane fallback and tests until Phase 3 removal.
+> **Status:** The **gatekeeper model layer is deprecated** (Phases 2–4). Turn completion is owned by [turn-state-machine-plan.md](turn-state-machine-plan.md) FSM + receipt checklist in `turn_completion_fsm.rs`. This doc remains for historical wiring and receipt-checklist context only.
+
+> **Voice:** Prompt tone principles live in [runtime-collaborator-voice.md](runtime-collaborator-voice.md).
 
 ## Role
 
@@ -23,4 +25,4 @@ Symmetric to the **input intent classifier**: a small completion pass decides wh
 
 ## Budget
 
-Interactive lane: `max_gatekeeper_calls: 0` (FSM owns completion). Scheduled lane: `1` (legacy fallback in `resolve_turn_completion`).
+Interactive lane: `max_gatekeeper_calls: 0` (FSM owns completion). All lanes: `0` as of Phase 3.
