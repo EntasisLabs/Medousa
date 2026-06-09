@@ -12,6 +12,7 @@ use crate::learning_artifacts::{
     build_grapheme_script_recall_block, build_runtime_learnings_block,
     DEFAULT_LEARNING_RECALL_BLOCK_CHARS, DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
 };
+use crate::tool_bootstrap::{build_tool_hints_block, DEFAULT_TOOL_HINTS_BLOCK_CHARS};
 use crate::turn_slice::{
     build_tool_slices_block, format_cold_history_line, prior_turn_content,
     DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS,
@@ -38,6 +39,7 @@ pub struct PriorMessageBuild {
     pub tool_slices_chars: usize,
     pub script_recall_chars: usize,
     pub learning_recall_chars: usize,
+    pub tool_hints_chars: usize,
     pub total_chars: usize,
 }
 
@@ -133,6 +135,7 @@ pub fn parse_tool_call_mode(value: &str) -> ToolCallMode {
 }
 
 pub fn build_prior_messages(
+    session_id: &str,
     turns: &[ConversationTurn],
     current_prompt: &str,
     current_user_persisted: bool,
@@ -276,6 +279,18 @@ pub fn build_prior_messages(
         accepted.push(ChatMessage::assistant(learning_recall_block));
     }
 
+    let hints_budget = limits
+        .hot_window_char_budget
+        .min(DEFAULT_TOOL_HINTS_BLOCK_CHARS)
+        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+    let tool_hints_block =
+        build_tool_hints_block(session_id, current_prompt, turns, hints_budget);
+    let tool_hints_chars = tool_hints_block.chars().count();
+    if !tool_hints_block.trim().is_empty() {
+        total_chars = total_chars.saturating_add(tool_hints_chars);
+        accepted.push(ChatMessage::assistant(tool_hints_block));
+    }
+
     accepted.reverse();
     PriorMessageBuild {
         messages: accepted,
@@ -288,6 +303,7 @@ pub fn build_prior_messages(
         tool_slices_chars,
         script_recall_chars,
         learning_recall_chars,
+        tool_hints_chars,
         total_chars,
     }
 }
@@ -655,6 +671,7 @@ mod tests {
         }
 
         let built = build_prior_messages(
+            "test-session",
             &turns,
             "new prompt",
             false,
@@ -690,7 +707,7 @@ mod tests {
             },
         ];
 
-        let built = build_prior_messages(&turns, "new prompt", false, 8, 24, sample_limits());
+        let built = build_prior_messages("test-session", &turns, "new prompt", false, 8, 24, sample_limits());
         let has_assistant = built
             .messages
             .iter()
@@ -787,7 +804,7 @@ mod tests {
             },
         ];
 
-        let built = build_prior_messages(&turns, "spin them up", false, 8, 24, sample_limits());
+        let built = build_prior_messages("test-session", &turns, "spin them up", false, 8, 24, sample_limits());
         assert!(built.tool_slices_chars > TOOL_SLICES_PREFIX.len());
         assert!(built.total_chars > built.tool_slices_chars);
     }

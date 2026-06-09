@@ -306,7 +306,7 @@ Storage: `.medousa/grapheme-scripts/` or Surreal table (match vault product choi
 
 **Code:** `system_prompt.rs` (`MEDOUSA_COLLABORATOR_VOICE`), `turn_worker/prompts.rs`, `turn_worker/run.rs` (`worker_synthesis_pass_through`), `apps/medousa-home/.../ToolRunChips.svelte`
 
-### Phase 8E — Grapheme script library + learning artifacts ✅ shipped
+### Phase 8E — Grapheme scripts & runtime learnings ✅ shipped
 
 | Task | Detail |
 |------|--------|
@@ -315,6 +315,18 @@ Storage: `.medousa/grapheme-scripts/` or Surreal table (match vault product choi
 | 8E.3 | Manuscript overlay proposals (operator approve) — not kernel edit ✅ |
 
 **Code:** `grapheme_script/`, `grapheme_script_tools.rs`, `learning_artifacts.rs`, `manuscript_overlay_tools.rs`, `turn_services.rs` (`[MEDOUSA_GRAPHEME_SCRIPTS]`, `[MEDOUSA_RUNTIME_LEARNINGS]`)
+
+### Phase 9 — Tool bootstrap & progressive surface ✅ shipped (9A–9E foundation)
+
+| Task | Detail |
+|------|--------|
+| 9A | STTP diet — intent/momentum in STTP; runtime owns tool names ✅ |
+| 9B | `[MEDOUSA_TOOL_HINTS]` at turn start ✅ |
+| 9C | `cognition_tools_discover` — session-scoped domain unlock ✅ |
+| 9D | `SessionBootstrapToolRegistry` — bootstrap + unlocked schemas only ✅ |
+| 9E | Worker auto-unlock `execute` when handoff has digests ✅ |
+
+**Code:** `tool_bootstrap.rs`, `tool_bootstrap_tools.rs`, `turn_worker/registry.rs`, `turn_services.rs`, `system_prompt.rs`
 
 ---
 

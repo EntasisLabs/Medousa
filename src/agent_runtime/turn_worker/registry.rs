@@ -11,6 +11,7 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
 use super::policy::tool_allowed;
+use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names};
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
@@ -82,6 +83,67 @@ pub struct AllowlistToolRegistry {
 impl AllowlistToolRegistry {
     pub fn new(inner: Arc<dyn ToolRegistry>, allowlist: HashSet<String>) -> Self {
         Self { inner, allowlist }
+    }
+}
+
+#[derive(Clone)]
+pub struct SessionBootstrapToolRegistry {
+    inner: Arc<dyn ToolRegistry>,
+    session_id: String,
+    lane: ToolSurfaceLane,
+    full_allowlist: HashSet<String>,
+}
+
+impl SessionBootstrapToolRegistry {
+    pub fn host(
+        inner: Arc<dyn ToolRegistry>,
+        session_id: impl Into<String>,
+        full_allowlist: HashSet<String>,
+    ) -> Self {
+        Self {
+            inner,
+            session_id: session_id.into(),
+            lane: ToolSurfaceLane::Host,
+            full_allowlist,
+        }
+    }
+
+    pub fn worker(
+        inner: Arc<dyn ToolRegistry>,
+        session_id: impl Into<String>,
+        full_allowlist: HashSet<String>,
+    ) -> Self {
+        Self {
+            inner,
+            session_id: session_id.into(),
+            lane: ToolSurfaceLane::Worker,
+            full_allowlist,
+        }
+    }
+
+    fn effective_allowlist(&self) -> HashSet<String> {
+        effective_tool_names(&self.session_id, self.lane, &self.full_allowlist)
+    }
+}
+
+#[async_trait]
+impl ToolRegistry for SessionBootstrapToolRegistry {
+    async fn list_tools(&self) -> Result<Vec<Tool>> {
+        let allowed = self.effective_allowlist();
+        let tools = self.inner.list_tools().await?;
+        Ok(tools
+            .into_iter()
+            .filter(|tool| tool_allowed(&tool.name, &allowed))
+            .collect())
+    }
+
+    async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
+        if !tool_allowed(tool_name, &self.effective_allowlist()) {
+            return Err(StasisError::PortFailure(format!(
+                "tool not on session surface (call cognition_tools_discover to unlock): {tool_name}"
+            )));
+        }
+        self.inner.invoke_tool(tool_name, input).await
     }
 }
 

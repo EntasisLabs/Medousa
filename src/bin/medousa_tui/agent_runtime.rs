@@ -465,6 +465,7 @@ pub(crate) async fn start_prompt_run(
     )
     .max(hot_window_turns);
     let prior_build = build_prior_messages(
+        &state.session_id,
         &state.conversation,
         &prompt,
         persist_user_turn,
@@ -922,6 +923,7 @@ async fn dispatch_daemon_stream_event(
 }
 
 fn build_prior_messages(
+    session_id: &str,
     turns: &[ConversationTurn],
     current_prompt: &str,
     current_user_persisted: bool,
@@ -929,6 +931,7 @@ fn build_prior_messages(
     cold_window_turns: usize,
 ) -> turn_services::PriorMessageBuild {
     turn_services::build_prior_messages(
+        session_id,
         turns,
         current_prompt,
         current_user_persisted,

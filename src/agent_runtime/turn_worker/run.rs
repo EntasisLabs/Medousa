@@ -39,7 +39,8 @@ use super::prompts::{
     synthesis_user_prompt, synthesis_user_prompt_with_handoff, worker_failure_user_prompt,
     worker_system_prompt,
 };
-use super::registry::{AllowlistToolRegistry, WorkerSessionToolRegistry};
+use super::registry::{AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry};
+use crate::tool_bootstrap::{ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains};
 use super::store::{
     TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
 };
@@ -364,11 +365,18 @@ pub async fn run_worker_turn(
         .map(|manuscript| manuscript.tools_allow.as_slice())
         .unwrap_or(&[] as &[String]);
     let allowlist = super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
+    if handoff_implies_resolved_execution(record.handoff_capsule.as_ref()) {
+        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["execute"]);
+    }
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),
     ));
-    let filtered_registry = Arc::new(AllowlistToolRegistry::new(session_registry, allowlist));
+    let filtered_registry = Arc::new(SessionBootstrapToolRegistry::worker(
+        session_registry,
+        record.session_id.clone(),
+        allowlist,
+    ));
     let worker_pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
         &record.provider,
         &record.model,
@@ -756,10 +764,19 @@ pub fn pipeline_for_turn_profile(
     model: &str,
     base_url: Option<&str>,
     host_bus: bool,
+    session_id: Option<&str>,
 ) -> crate::medousa_tool_loop::MedousaToolLoopPipeline {
     if host_bus {
         let allowlist = super::policy::host_bus_tool_names();
-        let filtered = Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist));
+        let filtered: Arc<dyn ToolRegistry> = if let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) {
+            Arc::new(SessionBootstrapToolRegistry::host(
+                tool_registry,
+                session_id,
+                allowlist,
+            ))
+        } else {
+            Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist))
+        };
         crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
             provider, model, base_url, filtered,
         )

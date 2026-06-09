@@ -316,6 +316,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     .max(hot_window_turns);
 
     let prior_build = turn_services::build_prior_messages(
+        params.session_id,
         params.conversation,
         params.prompt,
         params.persist_user_turn,
@@ -817,6 +818,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             &model,
             base_url.as_deref(),
             true,
+            Some(session_id.as_str()),
         )
     } else {
         default_pipeline

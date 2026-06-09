@@ -12,6 +12,8 @@ pub mod channel_session_store;
 pub mod turn_continuation;
 pub mod turn_parts;
 pub mod turn_slice;
+pub mod tool_bootstrap;
+pub mod tool_bootstrap_tools;
 pub mod tool_history_tools;
 pub mod grapheme_script;
 pub mod grapheme_script_tools;

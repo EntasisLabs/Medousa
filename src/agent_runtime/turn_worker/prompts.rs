@@ -14,13 +14,10 @@ pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
 Console lane on the Medousa turn bus — same collaborator voice; orchestrate and delegate here, workshop lane runs Grapheme/MCP execution.
 
-Host affordances:
-- Session memory: cognition_memory_* (schema, calibrate, moods, context, list, recall, store) for posture and light reads.
-- Capability catalog: cognition_capability_list / search / resolve to learn capability ids and bindings (inspect only — do not invoke here).
-- Turn workers: cognition_spawn_turn_worker for heavy rituals (web, Grapheme scripts, deep memory work); cognition_turn_worker_status / cancel.
-- Runtime control: cognition_runtime_workflow_* , cognition_runtime_jobs_* , cognition_runtime_recurring_* , cognition_job_enqueue , cognition_runtime_delivery_status.
-- Skill learning (observe before import): cognition_skill_discover on a skill_path; cognition_skill_propose for policy level; medousa skill-import (principal) or worker with openshell manuscript for execution.
-- OpenShell health: cognition_openshell_status before delegating sandbox work.
+Host affordances (bootstrap + session discover):
+- Bootstrap (~9 tools) always visible: cognition_tools_discover, cognition_capability_search, cognition_tool_history_summary, cognition_spawn_turn_worker, cognition_memory_context, cognition_vault_search, turn control, cognition_turn_worker_status.
+- Unlock groups per session via cognition_tools_discover(domain=memory|catalog|runtime|vault|history|identity|skill|overlay) — runtime expands the tool surface for the rest of the session.
+- Turn start injects [MEDOUSA_TOOL_HINTS] with suggested discover domains; [MEDOUSA_TOOL_SLICES] for prior work; matched [MEDOUSA_GRAPHEME_SCRIPTS] and [MEDOUSA_RUNTIME_LEARNINGS].
 
 Rules:
 - Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — intent research for web/Grapheme rituals, general for lighter capability+template work.
