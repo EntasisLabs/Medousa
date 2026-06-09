@@ -33,13 +33,13 @@ function configureMarked(): void {
           const safe = text.replace(/<\/pre/gi, "");
           return `<pre class="mermaid">${safe}</pre>`;
         }
-        const label = language
+        const langLabel = language
           ? `<span class="markdown-code-lang">${escapeHtml(language)}</span>`
-          : "";
+          : `<span class="markdown-code-lang markdown-code-lang-muted">code</span>`;
         const className = language
           ? `language-${escapeHtml(language)}`
           : "language-text";
-        return `<div class="markdown-code-block">${label}<pre class="markdown-pre"><code class="markdown-code ${className}">${escapeHtml(text)}</code></pre></div>`;
+        return `<div class="markdown-code-block"><div class="markdown-code-header">${langLabel}</div><pre class="markdown-pre"><code class="markdown-code ${className}">${escapeHtml(text)}</code></pre></div>`;
       },
     },
   });

@@ -175,7 +175,8 @@
 
   /* Markdown body in chat and vault */
   .markdown-content {
-    @apply text-surface-100;
+    @apply min-w-0 max-w-full text-surface-100;
+    overflow-wrap: anywhere;
   }
 
   .markdown-content h1,
@@ -312,7 +313,7 @@
   }
 
   .markdown-inline-code,
-  .markdown-content code {
+  .markdown-content :not(pre) > code {
     @apply rounded bg-surface-700 px-1 font-mono text-[0.9em] text-surface-100;
   }
 
@@ -321,20 +322,135 @@
   }
 
   .markdown-code-block {
-    @apply my-3 overflow-hidden rounded-md border border-surface-500/40 bg-surface-900;
+    @apply my-3 max-w-full min-w-0 overflow-hidden rounded-md border border-surface-500/40 bg-surface-900;
+  }
+
+  .markdown-code-header {
+    @apply flex min-w-0 items-center justify-between gap-2 border-b border-surface-500/35 px-2 py-1;
   }
 
   .markdown-code-lang {
-    @apply block border-b border-surface-500/35 px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-surface-500;
+    @apply min-w-0 truncate px-1 font-mono text-[10px] uppercase tracking-wide text-surface-500;
+  }
+
+  .markdown-code-lang-muted {
+    @apply normal-case tracking-normal text-surface-600;
+  }
+
+  .markdown-code-copy {
+    @apply shrink-0 rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-100;
+  }
+
+  .markdown-code-copy-done {
+    @apply text-success-300;
   }
 
   .markdown-pre {
-    @apply overflow-x-auto px-3 py-2.5;
+    @apply overflow-x-hidden px-3 py-2.5;
   }
 
   .markdown-code {
-    @apply block font-mono text-xs leading-relaxed text-surface-100;
-    white-space: pre;
+    @apply block bg-transparent font-mono text-xs leading-relaxed text-surface-200;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .markdown-code .hljs-comment,
+  .markdown-code .hljs-quote {
+    @apply italic text-surface-500;
+  }
+
+  .markdown-code .hljs-keyword,
+  .markdown-code .hljs-selector-tag,
+  .markdown-code .hljs-built_in,
+  .markdown-code .hljs-meta .hljs-keyword {
+    @apply text-primary-300/90;
+  }
+
+  .markdown-code .hljs-string,
+  .markdown-code .hljs-regexp,
+  .markdown-code .hljs-template-tag,
+  .markdown-code .hljs-template-variable {
+    @apply text-success-300/85;
+  }
+
+  .markdown-code .hljs-number,
+  .markdown-code .hljs-literal {
+    @apply text-warning-300/80;
+  }
+
+  .markdown-code .hljs-title,
+  .markdown-code .hljs-section,
+  .markdown-code .hljs-name,
+  .markdown-code .hljs-type {
+    @apply text-surface-50;
+  }
+
+  .markdown-code .hljs-attr,
+  .markdown-code .hljs-attribute,
+  .markdown-code .hljs-variable,
+  .markdown-code .hljs-params {
+    @apply text-primary-200/85;
+  }
+
+  .markdown-code .hljs-function,
+  .markdown-code .hljs-title.function_ {
+    @apply text-surface-100;
+  }
+
+  .markdown-code .hljs-symbol,
+  .markdown-code .hljs-bullet,
+  .markdown-code .hljs-link,
+  .markdown-code .hljs-meta {
+    @apply text-surface-400;
+  }
+
+  .markdown-code .hljs-emphasis {
+    @apply italic text-surface-300;
+  }
+
+  .markdown-code .hljs-strong {
+    @apply font-semibold text-surface-100;
+  }
+
+  html:not(.dark) .markdown-code {
+    @apply text-surface-800;
+  }
+
+  html:not(.dark) .markdown-code .hljs-comment,
+  html:not(.dark) .markdown-code .hljs-quote {
+    @apply text-surface-500;
+  }
+
+  html:not(.dark) .markdown-code .hljs-keyword,
+  html:not(.dark) .markdown-code .hljs-selector-tag,
+  html:not(.dark) .markdown-code .hljs-built_in,
+  html:not(.dark) .markdown-code .hljs-meta .hljs-keyword {
+    @apply text-primary-700/90;
+  }
+
+  html:not(.dark) .markdown-code .hljs-string,
+  html:not(.dark) .markdown-code .hljs-regexp {
+    @apply text-success-700/85;
+  }
+
+  html:not(.dark) .markdown-code .hljs-number,
+  html:not(.dark) .markdown-code .hljs-literal {
+    @apply text-warning-700/80;
+  }
+
+  html:not(.dark) .markdown-code .hljs-title,
+  html:not(.dark) .markdown-code .hljs-section,
+  html:not(.dark) .markdown-code .hljs-name,
+  html:not(.dark) .markdown-code .hljs-type {
+    @apply text-surface-900;
+  }
+
+  html:not(.dark) .markdown-code .hljs-attr,
+  html:not(.dark) .markdown-code .hljs-attribute,
+  html:not(.dark) .markdown-code .hljs-variable {
+    @apply text-primary-800/85;
   }
 
   /* Mobile shell (M8) */
@@ -708,12 +824,12 @@
   }
 
   .mobile-chat-bubble-user {
-    @apply ml-8 rounded-2xl rounded-br-md px-3.5 py-2.5;
+    @apply ml-8 min-w-0 rounded-2xl rounded-br-md px-3.5 py-2.5;
     background-color: rgb(var(--color-primary-500) / 0.14);
   }
 
   .mobile-chat-bubble-assistant {
-    @apply mr-4 border-l-2 border-surface-500/35 pl-3 py-0.5;
+    @apply mr-4 min-w-0 border-l-2 border-surface-500/35 py-0.5 pl-3;
   }
 
   /* iMessage-style growing composer */

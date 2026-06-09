@@ -1,6 +1,7 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
   import { hydrateMermaid } from "$lib/markdown/mermaid";
   import { renderMarkdownPreview } from "$lib/markdown";
 
@@ -34,6 +35,7 @@
   $effect(() => {
     previewHtml;
     if (!previewContainer) return;
+    void hydrateCodeBlocks(previewContainer);
     void hydrateMermaid(previewContainer);
   });
 
@@ -108,7 +110,7 @@
   {:else}
     <article
       bind:this={previewContainer}
-      class="markdown-content flex-1 overflow-y-auto px-5 py-4 text-sm"
+      class="markdown-content min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 text-sm"
     >
       {@html previewHtml}
     </article>

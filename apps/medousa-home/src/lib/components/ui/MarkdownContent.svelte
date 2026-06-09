@@ -1,5 +1,6 @@
 <script lang="ts">
   import { renderMarkdown } from "$lib/markdown";
+  import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
   import { hydrateMermaid } from "$lib/markdown/mermaid";
 
   interface Props {
@@ -16,10 +17,11 @@
   $effect(() => {
     html;
     if (!container) return;
+    void hydrateCodeBlocks(container);
     void hydrateMermaid(container);
   });
 </script>
 
-<div bind:this={container} class="markdown-content text-sm leading-relaxed">
+<div bind:this={container} class="markdown-content min-w-0 max-w-full text-sm leading-relaxed">
   {@html html}
 </div>
