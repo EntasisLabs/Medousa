@@ -126,6 +126,10 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_vault_list",
                     "cognition_vault_read",
                     "cognition_vault_search",
+                    "cognition_grapheme_script_save",
+                    "cognition_grapheme_script_list",
+                    "cognition_grapheme_script_search",
+                    "cognition_grapheme_script_load",
                 ],
             );
         }
@@ -150,6 +154,10 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_grapheme_modules",
                     "cognition_grapheme_examples",
                     "cognition_grapheme_run",
+                    "cognition_grapheme_script_save",
+                    "cognition_grapheme_script_list",
+                    "cognition_grapheme_script_search",
+                    "cognition_grapheme_script_load",
                 ],
             );
         }
@@ -210,6 +218,10 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_vault_write",
             "cognition_tool_history_summary",
             "cognition_tool_history_detail",
+            "cognition_grapheme_script_list",
+            "cognition_grapheme_script_search",
+            "cognition_manuscript_overlay_propose",
+            "cognition_manuscript_overlay_list",
         ],
     );
 

@@ -306,13 +306,15 @@ Storage: `.medousa/grapheme-scripts/` or Surreal table (match vault product choi
 
 **Code:** `system_prompt.rs` (`MEDOUSA_COLLABORATOR_VOICE`), `turn_worker/prompts.rs`, `turn_worker/run.rs` (`worker_synthesis_pass_through`), `apps/medousa-home/.../ToolRunChips.svelte`
 
-### Phase 8E — Grapheme script library + learning artifacts
+### Phase 8E — Grapheme script library + learning artifacts ✅ shipped
 
 | Task | Detail |
 |------|--------|
-| 8E.1 | Script library CRUD + index |
-| 8E.2 | Vault tags for “runtime learnings”; ranked recall at turn start |
-| 8E.3 | Manuscript overlay proposals (operator approve) — not kernel edit |
+| 8E.1 | Script library CRUD + index ✅ |
+| 8E.2 | Vault tags for “runtime learnings”; ranked recall at turn start ✅ |
+| 8E.3 | Manuscript overlay proposals (operator approve) — not kernel edit ✅ |
+
+**Code:** `grapheme_script/`, `grapheme_script_tools.rs`, `learning_artifacts.rs`, `manuscript_overlay_tools.rs`, `turn_services.rs` (`[MEDOUSA_GRAPHEME_SCRIPTS]`, `[MEDOUSA_RUNTIME_LEARNINGS]`)
 
 ---
 

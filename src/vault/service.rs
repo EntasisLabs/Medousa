@@ -80,16 +80,20 @@ impl VaultService {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) fn vault_integration_test_lock() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::{Mutex, OnceLock};
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("vault test lock")
+}
 
+#[cfg(test)]
+mod tests {
     use super::*;
 
     fn vault_test_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("vault test lock")
+        vault_integration_test_lock()
     }
 
     #[test]

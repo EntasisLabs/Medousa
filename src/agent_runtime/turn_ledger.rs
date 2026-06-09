@@ -35,7 +35,8 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          Serve the principal in this turn: use tools when needed; complete prose ends the turn. \
          When execution belongs in the workshop, call cognition_spawn_turn_worker with resolved context — \
          do not stop on plan prose alone. \
-         Turn start injects [MEDOUSA_TOOL_SLICES]; drill with cognition_tool_history_summary or cognition_tool_history_detail(slice_id=turn:N)."
+         Turn start injects [MEDOUSA_TOOL_SLICES]; drill with cognition_tool_history_summary or cognition_tool_history_detail(slice_id=turn:N). \
+         Saved scripts may appear in [MEDOUSA_GRAPHEME_SCRIPTS] — load with cognition_grapheme_script_load before re-authoring."
     )
 }
 
@@ -414,6 +415,7 @@ mod tests {
         assert!(p.contains("max_tool_rounds=12"));
         assert!(p.contains("[MEDOUSA_TOOL_SLICES]"));
         assert!(p.contains("cognition_tool_history_detail"));
+        assert!(p.contains("cognition_grapheme_script_load"));
         assert!(p.contains("cognition_spawn_turn_worker"));
     }
 

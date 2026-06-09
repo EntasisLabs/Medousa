@@ -8,6 +8,10 @@ use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use crate::session::ConversationTurn;
+use crate::learning_artifacts::{
+    build_grapheme_script_recall_block, build_runtime_learnings_block,
+    DEFAULT_LEARNING_RECALL_BLOCK_CHARS, DEFAULT_SCRIPT_RECALL_BLOCK_CHARS,
+};
 use crate::turn_slice::{
     build_tool_slices_block, format_cold_history_line, prior_turn_content,
     DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS,
@@ -32,6 +36,8 @@ pub struct PriorMessageBuild {
     pub cold_turns_summarized: usize,
     pub cold_summary_chars: usize,
     pub tool_slices_chars: usize,
+    pub script_recall_chars: usize,
+    pub learning_recall_chars: usize,
     pub total_chars: usize,
 }
 
@@ -246,6 +252,30 @@ pub fn build_prior_messages(
         accepted.push(ChatMessage::assistant(tool_slices_block));
     }
 
+    let script_budget = limits
+        .hot_window_char_budget
+        .min(DEFAULT_SCRIPT_RECALL_BLOCK_CHARS)
+        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+    let script_recall_block =
+        build_grapheme_script_recall_block(current_prompt, script_budget);
+    let script_recall_chars = script_recall_block.chars().count();
+    if !script_recall_block.trim().is_empty() {
+        total_chars = total_chars.saturating_add(script_recall_chars);
+        accepted.push(ChatMessage::assistant(script_recall_block));
+    }
+
+    let learning_budget = limits
+        .hot_window_char_budget
+        .min(DEFAULT_LEARNING_RECALL_BLOCK_CHARS)
+        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+    let learning_recall_block =
+        build_runtime_learnings_block(current_prompt, learning_budget);
+    let learning_recall_chars = learning_recall_block.chars().count();
+    if !learning_recall_block.trim().is_empty() {
+        total_chars = total_chars.saturating_add(learning_recall_chars);
+        accepted.push(ChatMessage::assistant(learning_recall_block));
+    }
+
     accepted.reverse();
     PriorMessageBuild {
         messages: accepted,
@@ -256,6 +286,8 @@ pub fn build_prior_messages(
             .min(cold_window_turns),
         cold_summary_chars,
         tool_slices_chars,
+        script_recall_chars,
+        learning_recall_chars,
         total_chars,
     }
 }

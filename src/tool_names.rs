@@ -71,6 +71,12 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_vault_write",
     "cognition_tool_history_summary",
     "cognition_tool_history_detail",
+    "cognition_grapheme_script_save",
+    "cognition_grapheme_script_list",
+    "cognition_grapheme_script_search",
+    "cognition_grapheme_script_load",
+    "cognition_manuscript_overlay_propose",
+    "cognition_manuscript_overlay_list",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.
