@@ -414,6 +414,16 @@
     @apply font-semibold text-surface-100;
   }
 
+  .markdown-code .hljs-addition {
+    @apply text-success-300/90;
+    background-color: rgb(var(--color-success-500) / 0.08);
+  }
+
+  .markdown-code .hljs-deletion {
+    @apply text-error-300/90;
+    background-color: rgb(var(--color-error-500) / 0.08);
+  }
+
   html:not(.dark) .markdown-code {
     @apply text-surface-800;
   }

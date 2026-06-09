@@ -1,5 +1,7 @@
 type HljsCore = typeof import("highlight.js/lib/core").default;
+type LanguageModule = { default: Parameters<HljsCore["registerLanguage"]>[1] };
 
+/** Fence tag aliases → highlight.js language id. */
 const LANG_ALIASES: Record<string, string> = {
   rs: "rust",
   ts: "typescript",
@@ -14,6 +16,56 @@ const LANG_ALIASES: Record<string, string> = {
   md: "markdown",
   toml: "ini",
   ini: "ini",
+  docker: "dockerfile",
+  proto: "protobuf",
+  pb: "protobuf",
+  gql: "graphql",
+  ps1: "powershell",
+  ps: "powershell",
+  make: "makefile",
+  patch: "diff",
+  udiff: "diff",
+  svelte: "xml",
+  vue: "xml",
+  svg: "xml",
+  htm: "html",
+  text: "plaintext",
+  txt: "plaintext",
+  env: "properties",
+  dotenv: "properties",
+};
+
+const LANGUAGE_LOADERS: Record<string, () => Promise<LanguageModule>> = {
+  bash: () => import("highlight.js/lib/languages/bash"),
+  css: () => import("highlight.js/lib/languages/css"),
+  diff: () => import("highlight.js/lib/languages/diff"),
+  dockerfile: () => import("highlight.js/lib/languages/dockerfile"),
+  go: () => import("highlight.js/lib/languages/go"),
+  graphql: () => import("highlight.js/lib/languages/graphql"),
+  http: () => import("highlight.js/lib/languages/http"),
+  ini: () => import("highlight.js/lib/languages/ini"),
+  javascript: () => import("highlight.js/lib/languages/javascript"),
+  json: () => import("highlight.js/lib/languages/json"),
+  kotlin: () => import("highlight.js/lib/languages/kotlin"),
+  latex: () => import("highlight.js/lib/languages/latex"),
+  makefile: () => import("highlight.js/lib/languages/makefile"),
+  markdown: () => import("highlight.js/lib/languages/markdown"),
+  nginx: () => import("highlight.js/lib/languages/nginx"),
+  plaintext: () => import("highlight.js/lib/languages/plaintext"),
+  powershell: () => import("highlight.js/lib/languages/powershell"),
+  properties: () => import("highlight.js/lib/languages/properties"),
+  protobuf: () => import("highlight.js/lib/languages/protobuf"),
+  python: () => import("highlight.js/lib/languages/python"),
+  ruby: () => import("highlight.js/lib/languages/ruby"),
+  rust: () => import("highlight.js/lib/languages/rust"),
+  scss: () => import("highlight.js/lib/languages/scss"),
+  shell: () => import("highlight.js/lib/languages/shell"),
+  sql: () => import("highlight.js/lib/languages/sql"),
+  swift: () => import("highlight.js/lib/languages/swift"),
+  typescript: () => import("highlight.js/lib/languages/typescript"),
+  wasm: () => import("highlight.js/lib/languages/wasm"),
+  xml: () => import("highlight.js/lib/languages/xml"),
+  yaml: () => import("highlight.js/lib/languages/yaml"),
 };
 
 let hljsInstance: HljsCore | null = null;
@@ -22,53 +74,14 @@ async function ensureHljs(): Promise<HljsCore> {
   if (hljsInstance) return hljsInstance;
 
   const hljs = (await import("highlight.js/lib/core")).default;
-  const [
-    bash,
-    css,
-    go,
-    ini,
-    javascript,
-    json,
-    markdown,
-    python,
-    rust,
-    shell,
-    sql,
-    typescript,
-    xml,
-    yaml,
-  ] = await Promise.all([
-    import("highlight.js/lib/languages/bash"),
-    import("highlight.js/lib/languages/css"),
-    import("highlight.js/lib/languages/go"),
-    import("highlight.js/lib/languages/ini"),
-    import("highlight.js/lib/languages/javascript"),
-    import("highlight.js/lib/languages/json"),
-    import("highlight.js/lib/languages/markdown"),
-    import("highlight.js/lib/languages/python"),
-    import("highlight.js/lib/languages/rust"),
-    import("highlight.js/lib/languages/shell"),
-    import("highlight.js/lib/languages/sql"),
-    import("highlight.js/lib/languages/typescript"),
-    import("highlight.js/lib/languages/xml"),
-    import("highlight.js/lib/languages/yaml"),
-  ]);
+  const entries = Object.entries(LANGUAGE_LOADERS);
+  const modules = await Promise.all(entries.map(([, loader]) => loader()));
 
-  hljs.registerLanguage("bash", bash.default);
-  hljs.registerLanguage("css", css.default);
-  hljs.registerLanguage("go", go.default);
-  hljs.registerLanguage("ini", ini.default);
-  hljs.registerLanguage("javascript", javascript.default);
-  hljs.registerLanguage("json", json.default);
-  hljs.registerLanguage("markdown", markdown.default);
-  hljs.registerLanguage("python", python.default);
-  hljs.registerLanguage("rust", rust.default);
-  hljs.registerLanguage("shell", shell.default);
-  hljs.registerLanguage("sql", sql.default);
-  hljs.registerLanguage("typescript", typescript.default);
-  hljs.registerLanguage("html", xml.default);
-  hljs.registerLanguage("xml", xml.default);
-  hljs.registerLanguage("yaml", yaml.default);
+  entries.forEach(([name], index) => {
+    hljs.registerLanguage(name, modules[index].default);
+  });
+
+  hljs.registerLanguage("html", modules[entries.findIndex(([name]) => name === "xml")].default);
 
   hljsInstance = hljs;
   return hljsInstance;
@@ -78,8 +91,7 @@ function resolveLanguage(className: string): string | null {
   const match = className.match(/language-([\w-]+)/i);
   if (!match) return null;
   const raw = match[1].toLowerCase();
-  const canonical = LANG_ALIASES[raw] ?? raw;
-  return canonical;
+  return LANG_ALIASES[raw] ?? raw;
 }
 
 function applyLanguageClass(code: HTMLElement, hljs: HljsCore): boolean {
@@ -116,3 +128,9 @@ export async function highlightCodeBlocks(root: HTMLElement): Promise<void> {
     }
   }
 }
+
+/** Languages registered for fenced blocks (for docs / debugging). */
+export const MARKDOWN_HIGHLIGHT_LANGUAGES = [
+  ...Object.keys(LANGUAGE_LOADERS),
+  "html",
+] as const;
