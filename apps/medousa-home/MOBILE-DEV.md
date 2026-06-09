@@ -189,6 +189,135 @@ medousa://work/<paste-card-id>
 
 ---
 
+## 9. App icons
+
+Source art lives in the repo at `Medousa/assets/`:
+
+| File | Use |
+|------|-----|
+| `medousa-blk.png` | **Default app icon** (1024×1024, dark background — matches Black Lily) |
+| `medousa-cream.png` | Light-background variant |
+| `medousa-transparent.png` | Logo only (avoid for iOS home screen — Apple rejects transparency) |
+
+Regenerate every platform size (desktop, iOS `AppIcon.appiconset`, Android, favicon):
+
+```bash
+cd apps/medousa-home
+npm run icons:generate
+```
+
+This reads `app-icon.json` → `medousa-blk.png` and writes:
+
+- `src-tauri/icons/` — bundle icons referenced in `tauri.conf.json`
+- `src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/` — iOS home-screen sizes
+- `static/favicon.png` — web favicon
+
+To swap art temporarily, edit `app-icon.json` or pass another PNG:
+
+```bash
+npx tauri icon ../../assets/medousa-cream.png -o src-tauri/icons --ios-color "#f5f0e8"
+```
+
+After changing icons, rebuild iOS (`npm run tauri:ios:build:testflight`) — `tauri ios dev` hot-reload does **not** refresh the home-screen icon.
+
+---
+
+## 10. TestFlight install (first time)
+
+TestFlight is Apple’s beta channel. You need the **paid Apple Developer Program** ($99/yr). A free Personal Team works for USB dev (`tauri ios dev`) but **not** for TestFlight.
+
+### One-time Apple setup
+
+1. **Enroll** — [developer.apple.com/programs](https://developer.apple.com/programs/) (same Apple ID as Xcode).
+2. **App Store Connect** — [appstoreconnect.apple.com](https://appstoreconnect.apple.com) → **Apps** → **+** → **New App**.
+   - Platform: iOS  
+   - Name: `Medousa Home` (or your display name)  
+   - Bundle ID: **`com.entasislabs.medousa-home`** (must match `identifier` in `src-tauri/tauri.conf.json`)  
+   - SKU: any unique string, e.g. `medousa-home`
+3. **Xcode signing** — Xcode → Settings → Accounts → your team → **Download Manual Profiles** (or let automatic signing handle it on first build).
+4. **Team ID** — already in `tauri.conf.json` as `bundle.iOS.developmentTeam` (`K5SZ28RN9P`). Change only if you use a different team.
+
+### Bump version before each upload
+
+Apple rejects duplicate **build numbers**. Edit `src-tauri/tauri.conf.json`:
+
+```json
+"version": "0.1.0"
+```
+
+For each TestFlight upload, pass a new build number (timestamp is fine):
+
+```bash
+npm run tauri:ios:build:testflight
+# or explicitly (must fit in 0..4294967295 — unix seconds works):
+npm run tauri ios build -- --export-method release-testing --build-number $(date +%s) --ci
+```
+
+Or use the helper script (runs frontend build + iOS export):
+
+```bash
+./scripts/ios-testflight-build.sh
+# BUILD_NUMBER=2 ./scripts/ios-testflight-build.sh   # optional override
+```
+
+**Output IPA:**
+
+```text
+apps/medousa-home/src-tauri/gen/apple/build/Medousa Home.ipa
+```
+
+Export methods (Tauri `--export-method`):
+
+| Method | Purpose |
+|--------|---------|
+| `release-testing` | **TestFlight** beta (what you want) |
+| `app-store-connect` | App Store / Connect upload variant |
+| `debugging` | Dev install on registered devices only (not TestFlight) |
+
+### Upload to App Store Connect
+
+**Option A — Transporter (easiest)**
+
+1. Install **Transporter** from the Mac App Store.
+2. Sign in with your Apple Developer Apple ID.
+3. Drag `Medousa Home.ipa` into Transporter → **Deliver**.
+4. Wait for processing (usually 5–20 minutes).
+
+```bash
+open -a Transporter "src-tauri/gen/apple/build/Medousa Home.ipa"
+```
+
+**Option B — Xcode Organizer**
+
+1. `npm run tauri ios build -- --open` (or open `src-tauri/gen/apple/medousa-home.xcodeproj`).
+2. Window → Organizer → Archives → Distribute App → App Store Connect.
+
+### Enable TestFlight testers
+
+1. App Store Connect → your app → **TestFlight** tab.
+2. When the build finishes processing, answer **Export Compliance** (typically “No” for encryption beyond standard HTTPS unless you added custom crypto).
+3. **Internal testing** — instant for up to 100 team members on your App Store Connect team.
+4. **External testing** — add emails; first build needs a short Beta App Review.
+
+Testers install the **TestFlight** app from the App Store, accept your invite, then install **Medousa Home**.
+
+### On the phone after TestFlight install
+
+Same as dev: daemon on Mac with `medousa start daemon --public`, then **You → Settings → Connection** → `http://<mac-lan-ip>:7419`. TestFlight builds are release — no Vite dev server on :1420.
+
+### TestFlight troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| **No valid signing identity** | Xcode → Accounts → manage certificates; confirm `developmentTeam` in `tauri.conf.json`. |
+| **Bundle ID not found in Connect** | Create the app in App Store Connect with exact bundle ID before uploading. |
+| **Duplicate build number** | Increase `--build-number` or bump `version` in `tauri.conf.json`. |
+| **Upload stuck / invalid IPA** | Rebuild with `--export-method release-testing`, not `debugging`. |
+| **Processing forever** | Check email from Apple for compliance/metadata issues. |
+| **Old icon on home screen** | Delete app, reinstall from TestFlight after `npm run icons:generate` + rebuild. |
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -207,9 +336,17 @@ medousa://work/<paste-card-id>
 - [ ] Mac: Xcode + CocoaPods + Rust iOS targets
 - [ ] `npm install` in `apps/medousa-home`
 - [ ] `npm run tauri ios init` (once)
+- [ ] `npm run icons:generate` (after icon art changes)
 - [ ] Daemon: `medousa start daemon --public`
 - [ ] iPhone: Developer Mode on, USB trusted
 - [ ] `npm run tauri ios dev`
 - [ ] Settings → Connection → `http://<mac-ip>:7419`
+
+**TestFlight (paid Apple Developer):**
+
+- [ ] App created in App Store Connect (`com.entasislabs.medousa-home`)
+- [ ] `npm run tauri:ios:build:testflight`
+- [ ] Upload `src-tauri/gen/apple/build/Medousa Home.ipa` via Transporter
+- [ ] TestFlight → add testers → install on iPhone
 
 Desktop dev is unchanged: `npm run tauri dev` with daemon on `127.0.0.1:7419`.

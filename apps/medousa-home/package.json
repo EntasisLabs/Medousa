@@ -10,9 +10,11 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
+    "icons:generate": "tauri icon app-icon.json -o src-tauri/icons --ios-color \"#0a0a0b\" && cp src-tauri/icons/128x128.png static/favicon.png",
     "tauri:ios:init": "tauri ios init",
     "tauri:ios:dev": "tauri ios dev",
-    "tauri:ios:build": "tauri ios build"
+    "tauri:ios:build": "tauri ios build",
+    "tauri:ios:build:testflight": "tauri ios build -- --export-method release-testing --build-number $(date +%s) --ci"
   },
   "license": "MIT",
   "dependencies": {
