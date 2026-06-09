@@ -17,6 +17,7 @@
   import type { JobResultResponse } from "$lib/types/job";
   import { columnLabel } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
+  import { formatManifestStatusChip } from "$lib/utils/workHub";
   import { findBlockedGroupForCard } from "$lib/utils/groupWork";
   import {
     filterCardTimeline,
@@ -33,6 +34,7 @@
     onBack?: () => void;
     onClose?: () => void;
     split?: boolean;
+    popover?: boolean;
     /** Full-screen mobile story — stack header actions and hide duplicate back nav. */
     mobile?: boolean;
   }
@@ -43,6 +45,7 @@
     onBack,
     onClose,
     split = false,
+    popover = false,
     mobile = false,
   }: Props = $props();
 
@@ -263,11 +266,13 @@
 </script>
 
 <section
-  class="workshop-rail flex h-full w-full min-w-0 flex-col overflow-hidden"
+  class="{popover
+    ? 'flex h-full min-w-0 flex-col overflow-hidden'
+    : 'workshop-rail flex h-full w-full min-w-0 flex-col overflow-hidden'}"
 >
-  <header class="workshop-header flex min-w-0 flex-col gap-3 py-3">
+  <header class="workshop-header flex min-w-0 flex-col gap-3 py-3 {popover ? 'pr-10' : ''}">
     <div class="min-w-0">
-      {#if !mobile}
+      {#if !mobile && !popover}
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface mb-2"
@@ -277,11 +282,15 @@
         </button>
       {/if}
       <h1 class="break-words text-base font-semibold leading-snug">
-        {detail ? formatCardTitle(detail.card) : "Card inspector"}
+        {detail ? formatCardTitle(detail.card) : "Manifestation"}
       </h1>
-      {#if detail}
+      {#if detail && !popover}
         <p class="workshop-faint mt-1 break-all text-xs leading-relaxed">
           {detail.card.id} · {columnLabel(detail.card.column)} · {detail.kind}
+        </p>
+      {:else if detail}
+        <p class="mt-1 text-[11px] text-surface-500">
+          {formatManifestStatusChip(detail.card).label}
         </p>
       {/if}
     </div>

@@ -3,7 +3,6 @@
     Activity,
     BookOpen,
     Calendar,
-    Home,
     LayoutGrid,
     MessageCircle,
     Radio,
@@ -13,43 +12,97 @@
   import type { Component } from "svelte";
   import type { Surface } from "$lib/types/ui";
 
+  interface NavItem {
+    id: Surface;
+    label: string;
+    icon: Component;
+  }
+
   interface Props {
     active: Surface;
     onSelect: (surface: Surface) => void;
+    chatActivity?: number;
+    workActivity?: number;
   }
 
-  let { active, onSelect }: Props = $props();
+  let {
+    active,
+    onSelect,
+    chatActivity = 0,
+    workActivity = 0,
+  }: Props = $props();
 
-  const items: { id: Surface; label: string; icon: Component }[] = [
-    { id: "home", label: "Home", icon: Home },
+  const lifeOrbit: NavItem[] = [
     { id: "chat", label: "Chat", icon: MessageCircle },
+    { id: "work", label: "Work", icon: LayoutGrid },
     { id: "library", label: "Library", icon: BookOpen },
-    { id: "skills", label: "Skills", icon: Zap },
+  ];
+
+  const capability: NavItem[] = [{ id: "skills", label: "Skills", icon: Zap }];
+
+  const utility: NavItem[] = [
     { id: "cron", label: "Cron", icon: Calendar },
     { id: "messaging", label: "Messaging", icon: Radio },
-    { id: "work", label: "Work", icon: LayoutGrid },
     { id: "runtime", label: "Runtime", icon: Activity },
   ];
 
   const iconProps = { size: 18, strokeWidth: 1.75 };
+  const utilityIconProps = { size: 16, strokeWidth: 1.75 };
+
+  function activityFor(id: Surface): number {
+    if (id === "chat") return chatActivity;
+    if (id === "work") return workActivity;
+    return 0;
+  }
+
+  function railBtnClass(id: Surface, tier: "life" | "utility"): string {
+    const activeClass = active === id ? "workshop-rail-btn-active" : "";
+    const tierClass =
+      tier === "life" ? "workshop-rail-btn-tier-life" : "workshop-rail-btn-tier-utility";
+    return `workshop-rail-btn relative ${tierClass} ${activeClass}`;
+  }
 </script>
 
 <nav class="workshop-icon-rail" aria-label="Primary navigation">
   <button
     type="button"
-    class="workshop-rail-btn mb-3 font-semibold text-[11px] text-surface-300"
-    title="Medousa Home"
-    onclick={() => onSelect("home")}
+    class="workshop-rail-btn mb-3 font-semibold text-[11px] text-surface-300 {active === 'chat'
+      ? 'workshop-rail-btn-active'
+      : ''}"
+    title="Chat"
+    aria-label="Chat"
+    aria-current={active === "chat" ? "page" : undefined}
+    onclick={() => onSelect("chat")}
   >
     M
   </button>
 
   <div class="flex flex-1 flex-col gap-0.5">
-    {#each items as item (item.id)}
+    {#each lifeOrbit as item (item.id)}
+      {@const Icon = item.icon}
+      {@const badge = activityFor(item.id)}
+      <button
+        type="button"
+        class={railBtnClass(item.id, "life")}
+        title={item.label}
+        aria-label={badge > 0 ? `${item.label} (${badge} active)` : item.label}
+        aria-current={active === item.id ? "page" : undefined}
+        onclick={() => onSelect(item.id)}
+      >
+        <Icon {...iconProps} />
+        {#if badge > 0}
+          <span class="workshop-rail-badge" aria-hidden="true"></span>
+        {/if}
+      </button>
+    {/each}
+
+    <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
+
+    {#each capability as item (item.id)}
       {@const Icon = item.icon}
       <button
         type="button"
-        class="workshop-rail-btn {active === item.id ? 'workshop-rail-btn-active' : ''}"
+        class={railBtnClass(item.id, "life")}
         title={item.label}
         aria-label={item.label}
         aria-current={active === item.id ? "page" : undefined}
@@ -58,16 +111,34 @@
         <Icon {...iconProps} />
       </button>
     {/each}
+
+    <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
+
+    {#each utility as item (item.id)}
+      {@const Icon = item.icon}
+      <button
+        type="button"
+        class={railBtnClass(item.id, "utility")}
+        title={item.label}
+        aria-label={item.label}
+        aria-current={active === item.id ? "page" : undefined}
+        onclick={() => onSelect(item.id)}
+      >
+        <Icon {...utilityIconProps} />
+      </button>
+    {/each}
   </div>
 
   <button
     type="button"
-    class="workshop-rail-btn mt-2 {active === 'settings' ? 'workshop-rail-btn-active' : ''}"
+    class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {active === 'settings'
+      ? 'workshop-rail-btn-active'
+      : ''}"
     title="Settings"
     aria-label="Settings"
     aria-current={active === "settings" ? "page" : undefined}
     onclick={() => onSelect("settings")}
   >
-    <Settings {...iconProps} />
+    <Settings {...utilityIconProps} />
   </button>
 </nav>

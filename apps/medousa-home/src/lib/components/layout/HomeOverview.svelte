@@ -75,7 +75,7 @@
 
 <section class="flex flex-1 flex-col items-center justify-center px-6 py-8">
   <div class="w-full max-w-md">
-    <p class="workshop-faint uppercase tracking-widest">{nextAction.label}</p>
+    <p class="workshop-faint uppercase tracking-widest">Briefing</p>
 
     {#if nextAction.metric}
       <p class="workshop-display mt-1">{nextAction.metric}</p>
@@ -84,6 +84,7 @@
       <h2 class="mt-1 text-2xl font-semibold leading-tight tracking-tight text-surface-50">
         {nextAction.title}
       </h2>
+      <p class="mt-1 text-sm text-surface-400">{nextAction.label}</p>
     {:else}
       <p class="workshop-display mt-1 text-3xl">—</p>
       <p class="mt-1 text-lg text-surface-300">Start a conversation</p>

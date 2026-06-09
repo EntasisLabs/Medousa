@@ -150,31 +150,31 @@
 {#if runs.length > 0}
   {#if inspectorCollapsed && !compact}
     <details
-      class="tool-trace group/inspector overflow-hidden rounded-lg border transition-[border-color,background,box-shadow] duration-200 {footnote
-        ? 'footnote border-surface-700/20 bg-surface-900/10'
-        : isDone
+      class="tool-trace group/inspector overflow-hidden transition-[border-color,background,box-shadow] duration-200 {footnote
+        ? 'chat-tool-footnote'
+        : `rounded-lg border ${isDone
           ? 'border-primary-500/20 bg-gradient-to-r from-primary-500/[0.07] via-surface-900/40 to-surface-900/20'
-          : 'border-primary-500/30 bg-gradient-to-r from-primary-500/[0.1] via-surface-900/50 to-surface-900/30 shadow-[inset_0_1px_0_rgba(167,139,250,0.08)]'}"
+          : 'border-primary-500/30 bg-gradient-to-r from-primary-500/[0.1] via-surface-900/50 to-surface-900/30 shadow-[inset_0_1px_0_rgba(167,139,250,0.08)]'}`}"
       title={fullTrace}
     >
       <summary
         class="flex cursor-pointer list-none items-center gap-2 marker:content-none {footnote
-          ? 'px-2 py-1'
+          ? 'py-0.5 text-[10px] text-surface-600 hover:text-surface-400'
           : 'px-2.5 py-1.5'}"
       >
-        <Route
-          class="h-3 w-3 shrink-0 {footnote
-            ? 'text-surface-600'
-            : 'text-primary-400/80'}"
-          strokeWidth={2}
-          aria-hidden="true"
-        />
+        {#if !footnote}
+          <Route
+            class="h-3 w-3 shrink-0 text-primary-400/80"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+        {/if}
         <span
-          class="min-w-0 flex-1 text-[11px] tabular-nums {footnote
-            ? 'text-surface-500'
-            : 'text-surface-200'}"
+          class="min-w-0 flex-1 {footnote
+            ? 'font-normal normal-case tracking-normal'
+            : 'text-[11px] tabular-nums text-surface-200'}"
         >
-          {collapsed.primary}
+          {footnote ? `${toolCount} tools used` : collapsed.primary}
         </span>
         <ChevronDown
           class="h-3 w-3 shrink-0 text-surface-600 transition-transform duration-200 group-open/inspector:rotate-180"
@@ -183,9 +183,9 @@
         />
       </summary>
       <div
-        class="border-t px-2.5 pb-2 pt-2 {footnote
-          ? 'border-surface-700/15'
-          : 'border-primary-500/10'}"
+        class="{footnote
+          ? 'mt-2 border-t border-surface-700/20 pt-2'
+          : 'border-t border-primary-500/10 px-2.5 pb-2 pt-2'}"
       >
         {@render lineageTimeline(lineage)}
       </div>

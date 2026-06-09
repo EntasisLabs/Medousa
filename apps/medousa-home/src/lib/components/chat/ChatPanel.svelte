@@ -8,7 +8,6 @@
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
   import {
     createTurnTicket,
     startInteractiveStream,
@@ -163,7 +162,7 @@
 <section
   class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible
     ? ''
-    : 'hidden'} {mobile ? 'mobile-chat-panel' : ''}"
+    : 'hidden'} {mobile ? 'mobile-chat-panel' : 'chat-pane'}"
 >
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex items-center justify-between gap-3">
@@ -199,13 +198,11 @@
             </h1>
             <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
           {:else}
-            <h1 class="text-sm font-semibold text-surface-50">Chat</h1>
-            <p class="truncate text-[11px] text-surface-400" title={chat.sessionId}>
-              {sessionLabel}
-            </p>
+            <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
+            <p class="truncate text-[11px] text-surface-500">Medousa</p>
           {/if}
         </button>
-        {#if chat.hasTurnActivity}
+        {#if chat.hasTurnActivity && mobile}
           <span
             class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
             title={chat.liveStreamActive
@@ -267,48 +264,53 @@
     </div>
   {/if}
 
-  <div
-    bind:this={scrollEl}
-    class="{mobile
-      ? 'mobile-chat-scroll space-y-3'
-      : 'flex-1 space-y-3 overflow-y-auto px-4 py-3'}"
-  >
-    {#each chat.messages as message (message.id)}
+  <div class="{mobile ? '' : 'chat-body'}">
+    <div
+      bind:this={scrollEl}
+      class="{mobile
+        ? 'mobile-chat-scroll space-y-3'
+        : 'chat-scroll space-y-4'}"
+    >
+    {#each chat.messages as message, index (message.id)}
+      {@const previous = index > 0 ? chat.messages[index - 1] : null}
+      {@const turnBreak = message.role === "user" && previous?.role === "assistant"}
       <article
-        class="{mobile && message.role === 'user'
+        class="{turnBreak ? 'chat-turn-break' : ''} {mobile && message.role === 'user'
           ? 'mobile-chat-bubble-user'
           : mobile && message.role === 'assistant'
             ? 'mobile-chat-bubble-assistant'
-            : ''} max-w-2xl {message.role === 'user'
+            : ''} {message.role === 'user'
           ? mobile
             ? ''
-            : 'user-turn ml-auto max-w-[min(100%,42rem)] rounded-lg border border-primary-500/15 bg-gradient-to-br from-primary-500/10 via-primary-500/[0.06] to-surface-900/40 px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+            : 'chat-user-bubble'
           : message.role === 'system'
             ? 'workshop-faint px-1'
             : mobile
               ? ''
-              : 'assistant-turn border-l-2 border-primary-500/25 pl-3'}"
+              : 'chat-voice'}"
       >
         {#if message.role === "assistant"}
+          {#if message.stageWhisper?.trim()}
+            <p class="duet-stage-whisper mb-2">{message.stageWhisper}</p>
+          {/if}
+
           {#if message.reasoning?.trim()}
             <AssistantThinking
               reasoning={message.reasoning}
               streaming={Boolean(message.streaming)}
               compact={mobile}
             />
-          {:else if message.streaming && !message.content?.trim()}
-            <div
-              class="mb-2 flex items-center gap-2 rounded-lg border border-primary-500/15 bg-gradient-to-r from-primary-500/[0.05] to-surface-900/20 px-2.5 py-1.5"
-            >
+          {:else if message.streaming && !message.content?.trim() && !message.stageWhisper?.trim()}
+            <p class="mb-1 flex items-center gap-2 text-[11px] text-surface-500">
               <span
-                class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary-400"
+                class="inline-block h-1 w-1 animate-pulse rounded-full bg-primary-400/80"
                 aria-hidden="true"
               ></span>
-              <span class="text-[11px] text-primary-200/90">Thinking…</span>
-            </div>
+              Thinking…
+            </p>
           {/if}
 
-          {#if message.statusLine && (message.streaming || message.phase === "worker_ack" || message.phase === "awaiting_operator")}
+          {#if message.statusLine && message.streaming}
             <p
               class="mb-2 flex items-center gap-1.5 text-[11px] {message.phase === 'worker_ack' ||
               message.phase === 'awaiting_operator'
@@ -326,18 +328,20 @@
           {/if}
 
           {@const answer = formatAnswerState(message.answerState)}
-          <div class="text-surface-50">
-            <MarkdownContent content={message.content || "…"} />
-          </div>
+          {#if message.content?.trim() || message.streaming}
+            <div class="chat-voice">
+              <MarkdownContent content={message.content || "…"} />
+            </div>
+          {/if}
 
           {#if answer && !message.streaming}
-            <p class="mt-1.5 text-[10px] {answerStateTextClass(answer.tone)}">
+            <p class="mt-2 text-[10px] {answerStateTextClass(answer.tone)}">
               {answer.label}
             </p>
           {/if}
 
           {#if message.toolRuns && message.toolRuns.length > 0}
-            <div class="mt-3">
+            <div class="mt-4">
               <ToolRunChips
                 runs={message.toolRuns}
                 compact={mobile}
@@ -380,11 +384,9 @@
             </ul>
           {/if}
         {:else}
-          <p class="workshop-faint font-mono text-[11px]">
-            {runtime.modelLabel()} · depth {runtime.depthMode}
-          </p>
+          <p class="mt-8 text-sm text-surface-400">What are you working on?</p>
           {#if recentSessions.length > 0}
-            <ul class="mt-4 space-y-1">
+            <ul class="mt-5 space-y-1.5">
               {#each recentSessions as session (session.session_id)}
                 <li>
                   <button
@@ -403,14 +405,18 @@
         {/if}
       </div>
     {/each}
+    </div>
+    {#if !mobile}
+      <div class="chat-scroll-fade" aria-hidden="true"></div>
+    {/if}
   </div>
 
   {#if !mobile}
-    <form class="workshop-composer" onsubmit={submit}>
-      <div class="composer-bar">
+    <form class="chat-composer" onsubmit={submit}>
+      <div class="composer-bar chat-composer-bar">
         <GrowingTextarea
           bind:value={chat.draft}
-          placeholder="Message · /ask for background jobs"
+          placeholder="Message Medousa…"
           disabled={chat.composerBlocked}
           maxHeight={128}
           minHeight={36}

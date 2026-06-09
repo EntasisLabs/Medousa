@@ -1,13 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import SplitPane from "$lib/components/layout/SplitPane.svelte";
-  import KanbanBoard from "$lib/components/work/KanbanBoard.svelte";
-  import CardInspector from "$lib/components/work/CardInspector.svelte";
+  import WorkHub from "$lib/components/work/WorkHub.svelte";
+  import WorkManifestPopover from "$lib/components/work/WorkManifestPopover.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
   import NewWorkAsk from "$lib/components/work/NewWorkAsk.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { layoutDesktopRails } from "$lib/utils/desktopRails";
 
   interface Props {
     visible: boolean;
@@ -18,43 +15,18 @@
 
   let { visible, onOpenNote, onOpenChat, onSelectCard }: Props = $props();
 
-  const desktopRails = $derived(
-    layoutDesktopRails({
-      viewportWidth: layout.viewportWidth,
-      activityCollapsed: layout.activityCollapsed,
-      activityWidth: layout.activityWidth,
-      workInspectorOpen: workspace.selectedCardId !== null,
-      workInspectorWidth: layout.workInspectorWidth,
-    }),
-  );
-
   onMount(() => {
     void workspace.prefetchCardDetails();
   });
 </script>
 
-<div class="flex h-full min-h-0 min-w-0 flex-1 {visible ? '' : 'hidden'}">
+<div class="relative flex h-full min-h-0 min-w-0 flex-1 {visible ? '' : 'hidden'}">
   <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-    <KanbanBoard onSelectCard={onSelectCard} />
+    <WorkHub {onSelectCard} {onOpenNote} {onOpenChat} />
     <NewWorkAsk {visible} />
   </div>
 
-  {#if workspace.selectedCardId}
-    <SplitPane
-      width={desktopRails.inspectorPaneWidth}
-      side="right"
-      min={280}
-      max={desktopRails.inspectorPaneMax}
-      onResize={(width) => layout.setWorkInspectorWidth(width)}
-    >
-      <CardInspector
-        split={true}
-        {onOpenNote}
-        {onOpenChat}
-        onClose={() => workspace.clearSelection()}
-      />
-    </SplitPane>
-  {/if}
+  <WorkManifestPopover {onOpenNote} {onOpenChat} />
 
   <AskCompletionModal
     pending={workspace.pendingAskCompletion}

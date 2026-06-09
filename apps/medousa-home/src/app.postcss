@@ -173,6 +173,208 @@
     @apply bg-surface-800 text-primary-300 ring-1 ring-inset ring-primary-500/35;
   }
 
+  .workshop-rail-tier-divider {
+    @apply my-1.5 h-px w-6 shrink-0 bg-surface-700/60;
+  }
+
+  .workshop-rail-btn-tier-life {
+    @apply text-surface-300;
+  }
+
+  .workshop-rail-btn-tier-utility {
+    @apply h-8 w-8 text-surface-600 hover:text-surface-400;
+  }
+
+  .workshop-rail-badge {
+    @apply pointer-events-none absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary-400 ring-2 ring-surface-900;
+  }
+
+  .duet-stage-whisper {
+    @apply text-[11px] italic leading-snug text-surface-600/90;
+  }
+
+  .chat-pane {
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col bg-surface-900;
+  }
+
+  .chat-body {
+    @apply relative min-h-0 flex-1;
+  }
+
+  .chat-scroll {
+    @apply h-full overflow-y-auto px-8 py-5;
+    scrollbar-gutter: stable;
+  }
+
+  .chat-scroll-fade {
+    @apply pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-12;
+    background: linear-gradient(
+      to top,
+      rgb(var(--color-surface-900)),
+      rgb(var(--color-surface-900) / 0)
+    );
+  }
+
+  .chat-turn-break {
+    @apply mt-10;
+  }
+
+  .chat-voice {
+    @apply max-w-[min(100%,44rem)] text-[15px] leading-[1.65] text-surface-100;
+  }
+
+  .chat-voice .markdown-content {
+    @apply text-[15px] leading-[1.65];
+  }
+
+  .chat-user-bubble {
+    @apply ml-auto max-w-[min(100%,30rem)] rounded-2xl rounded-br-md border border-surface-600/20 bg-surface-800/50 px-4 py-2.5 text-sm leading-relaxed text-surface-100;
+  }
+
+  .chat-composer {
+    @apply relative z-10 shrink-0 px-8 pb-6 pt-2;
+  }
+
+  .chat-composer-bar {
+    @apply rounded-2xl px-3 py-1.5;
+    border: 1px solid rgb(var(--color-surface-600) / 0.22);
+    background-color: rgb(var(--color-surface-800) / 0.35);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  }
+
+  .chat-composer-bar:focus-within {
+    border-color: rgb(var(--color-surface-500) / 0.35);
+    background-color: rgb(var(--color-surface-800) / 0.5);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.08);
+  }
+
+  .chat-tool-footnote > summary {
+    @apply list-none;
+  }
+
+  .chat-tool-footnote {
+    @apply mt-4 border-0 bg-transparent p-0;
+  }
+
+  .chat-tool-footnote > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .work-hub {
+    @apply min-h-0 bg-surface-900;
+  }
+
+  .work-hub-stage {
+    @apply flex min-h-0 flex-1 flex-col overflow-hidden;
+  }
+
+  .work-hub-stage-header {
+    @apply flex shrink-0 items-end justify-between gap-3 border-b border-surface-700/30 px-6 py-3;
+  }
+
+  .work-hub-grid-wrap {
+    @apply relative min-h-0 flex-1 overflow-hidden;
+  }
+
+  .work-hub-empty {
+    @apply flex h-full items-center justify-center px-6 py-8;
+  }
+
+  .work-hub-grid {
+    @apply grid h-full auto-rows-min grid-flow-col grid-rows-1 gap-3 overflow-x-auto overflow-y-hidden px-6 py-4;
+    grid-auto-columns: minmax(15rem, 18rem);
+  }
+
+  .work-hub-card {
+    @apply flex min-h-[7.5rem] cursor-pointer flex-col rounded-xl border border-surface-600/25 bg-surface-800/35 p-3.5 transition hover:border-surface-500/40 hover:bg-surface-800/55;
+  }
+
+  .work-hub-card-selected {
+    @apply border-primary-500/35 bg-surface-800/70 ring-1 ring-inset ring-primary-500/25;
+  }
+
+  .work-hub-card-compact {
+    @apply min-h-[6.5rem] p-3;
+  }
+
+  .work-hub-card-pulse {
+    @apply animate-pulse;
+  }
+
+  .work-hub-chip {
+    @apply rounded-full px-2 py-0.5 text-[10px] font-medium;
+  }
+
+  .work-hub-chip-muted {
+    @apply bg-surface-700/60 text-surface-400;
+  }
+
+  .work-hub-chip-primary {
+    @apply bg-primary-500/15 text-primary-200;
+  }
+
+  .work-hub-chip-warning {
+    @apply bg-warning-500/15 text-warning-200;
+  }
+
+  .work-hub-chip-danger {
+    @apply bg-error-500/10 text-error-300;
+  }
+
+  .work-hub-chip-success {
+    @apply bg-success-500/10 text-success-300;
+  }
+
+  .work-hub-provenance {
+    @apply truncate rounded-md bg-surface-900/50 px-2 py-0.5 text-[10px] text-surface-400 transition hover:bg-surface-900/80 hover:text-surface-200;
+  }
+
+  .work-hub-trays {
+    @apply shrink-0 border-t border-surface-700/25 px-6 py-2;
+  }
+
+  .work-hub-tray-tabs {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .work-hub-tray-tab {
+    @apply rounded-md px-2.5 py-1 text-[11px] text-surface-400 transition hover:bg-surface-800/60 hover:text-surface-200;
+  }
+
+  .work-hub-tray-tab-open {
+    @apply bg-surface-800/70 text-surface-100;
+  }
+
+  .work-hub-tray-panel {
+    @apply mt-2 rounded-lg border border-surface-700/30 bg-surface-900/40 p-2;
+  }
+
+  .work-hub-tray-grid {
+    @apply grid grid-flow-col auto-cols-[minmax(12rem,14rem)] gap-2 overflow-x-auto;
+  }
+
+  .work-hub-tray-more {
+    @apply mt-2 px-1 text-[10px] text-surface-500;
+  }
+
+  .work-hub-composer {
+    @apply border-t border-surface-700/20;
+  }
+
+  .work-manifest-backdrop {
+    @apply absolute inset-0 z-40 bg-surface-950/55 backdrop-blur-[2px];
+  }
+
+  .work-manifest-popover {
+    @apply absolute inset-x-4 top-[8%] bottom-[8%] z-50 mx-auto flex max-w-3xl flex-col overflow-hidden rounded-2xl border border-surface-600/40 bg-surface-900 shadow-2xl shadow-black/40;
+  }
+
+  .work-manifest-close {
+    @apply absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800 hover:text-surface-100;
+  }
+
   /* Markdown body in chat and vault */
   .markdown-content {
     @apply min-w-0 max-w-full text-surface-100;
@@ -1161,6 +1363,13 @@
     @apply text-primary-300;
     background-color: rgb(var(--color-primary-500) / 0.16);
     border: 1px solid rgb(var(--color-primary-500) / 0.28);
+  }
+
+  html[data-theme="black-lily"] .chat-composer-bar:focus-within {
+    border-color: rgb(var(--color-primary-500) / 0.28);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.12);
   }
 
   html[data-theme="black-lily"] .composer-bar:focus-within {

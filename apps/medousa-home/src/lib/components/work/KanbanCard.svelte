@@ -1,7 +1,7 @@
 <script lang="ts">
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCard } from "$lib/types/workspace";
-  import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
+  import { formatCardTitle, formatCardSubtitle } from "$lib/utils/formatWork";
   import { columnAccentBorder } from "$lib/utils/kanban";
   import { findBlockedGroupForCard } from "$lib/utils/groupWork";
 
@@ -60,8 +60,8 @@
       </span>
     {/if}
   </div>
-  <p class="mt-1 truncate font-mono text-[10px] text-surface-500">
-    {formatStatusLabel(card.status_label)}
+  <p class="mt-1 truncate text-[11px] text-surface-500">
+    {formatCardSubtitle(card)}
   </p>
 
   {#if blockedGroup && blockedGroup.cards.length > 1}

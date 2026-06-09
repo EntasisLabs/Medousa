@@ -125,14 +125,14 @@
   <form
     class="{sheet
       ? 'flex flex-col'
-      : 'workshop-composer shrink-0 border-t border-surface-800/80'}"
+      : 'work-hub-composer shrink-0'}"
     onsubmit={submit}
   >
-    <div class="flex flex-col gap-2 px-3 py-2">
+    <div class="flex flex-col gap-2 px-6 py-3">
       <div class="flex items-center justify-between gap-2">
         <button
           type="button"
-          class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-surface-400 transition hover:text-surface-200"
+          class="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500 transition hover:text-surface-300"
           onclick={() => {
             pickerOpen = !pickerOpen;
             if (!pickerOpen) search = "";
@@ -280,10 +280,10 @@
         </div>
       {/if}
 
-      <div class="composer-bar">
+      <div class="composer-bar chat-composer-bar">
         <GrowingTextarea
           bind:value={prompt}
-          placeholder="Describe the ask — skills and tools attach as structured metadata"
+          placeholder="Ask Medousa to work on something…"
           disabled={workspace.askSubmitting}
           maxHeight={sheet ? 160 : 128}
           onkeydown={handleKeydown}
@@ -291,11 +291,11 @@
         />
         <button
           type="submit"
-          class="composer-bar-send composer-bar-send-text"
+          class="composer-bar-send"
           disabled={!canSubmit}
           aria-label="Queue ask job"
         >
-          {workspace.askSubmitting ? "…" : "Run"}
+          {workspace.askSubmitting ? "…" : "↑"}
         </button>
       </div>
 

@@ -20,6 +20,6 @@
     class="text-[9px] font-medium uppercase tracking-widest text-surface-500"
     style="writing-mode: vertical-rl"
   >
-    Activity
+    Now
   </span>
 </button>

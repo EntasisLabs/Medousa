@@ -106,14 +106,14 @@ export class ChatStore {
   }
 
   currentSessionLabel(): string {
-    const match = this.sessions.find((session) => session.session_id === this.sessionId);
-    if (match) return formatSessionLabel(match);
-
     const firstUser = this.messages.find((message) => message.role === "user");
     if (firstUser?.content.trim()) {
       const line = firstUser.content.trim().split("\n")[0];
       return line.length > 48 ? `${line.slice(0, 47)}…` : line;
     }
+
+    const match = this.sessions.find((session) => session.session_id === this.sessionId);
+    if (match) return formatSessionLabel(match);
 
     return "New conversation";
   }
@@ -426,6 +426,12 @@ export class ChatStore {
       messageId,
       sessionId: this.sessionId,
     });
+    const link = this.workers.get(workId);
+    if (link && link.synthesisMessageId !== messageId) {
+      const nextWorkers = new Map(this.workers);
+      nextWorkers.set(workId, { ...link, synthesisMessageId: messageId });
+      this.workers = nextWorkers;
+    }
   }
 
   onWorkerCardDetail(
@@ -520,6 +526,28 @@ export class ChatStore {
     options?: { statusLine?: string | null; streaming?: boolean },
   ): string {
     const link = this.workers.get(workId);
+    if (link?.messageId) {
+      const idx = this.messages.findIndex((m) => m.id === link.messageId);
+      if (idx >= 0) {
+        const current = this.messages[idx];
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          {
+            ...current,
+            streaming: options?.streaming ?? true,
+            statusLine: options?.statusLine ?? current.statusLine,
+          },
+          ...this.messages.slice(idx + 1),
+        ];
+        if (link.synthesisMessageId !== link.messageId) {
+          const nextWorkers = new Map(this.workers);
+          nextWorkers.set(workId, { ...link, synthesisMessageId: link.messageId });
+          this.workers = nextWorkers;
+        }
+        return link.messageId;
+      }
+    }
+
     if (link?.synthesisMessageId) {
       const existing = this.messages.find((m) => m.id === link.synthesisMessageId);
       if (existing) return link.synthesisMessageId;
@@ -581,9 +609,11 @@ export class ChatStore {
     link: WorkerLink,
     detail?: WorkCardDetail,
   ): Promise<string | null> {
-    const handoffContent = link.messageId
-      ? this.messages.find((message) => message.id === link.messageId)?.content
+    const handoffMessage = link.messageId
+      ? this.messages.find((message) => message.id === link.messageId)
       : null;
+    const handoffContent =
+      handoffMessage?.stageWhisper?.trim() || handoffMessage?.content || null;
     const fromHistory = await this.fetchLatestAssistantTurn(link.sessionId, handoffContent);
     if (fromHistory) return fromHistory;
 
@@ -597,10 +627,11 @@ export class ChatStore {
     const link = this.workers.get(workId);
     if (!link || link.synthesisDelivered) return;
 
-    if (link.synthesisMessageId) {
-      const existing = this.messages.find((m) => m.id === link.synthesisMessageId);
+    const envelopeId = link.messageId ?? link.synthesisMessageId;
+    if (envelopeId) {
+      const existing = this.messages.find((m) => m.id === envelopeId);
       if (existing?.content.trim()) {
-        this.finalizeWorkerHandoffBubble(link.messageId);
+        this.finalizeWorkerHandoffBubble(envelopeId);
         this.markWorkerSynthesisDelivered(workId);
         this.noteBackgroundSettled();
         return;
@@ -617,8 +648,9 @@ export class ChatStore {
       return;
     }
 
-    if (link.synthesisMessageId) {
-      const idx = this.messages.findIndex((m) => m.id === link.synthesisMessageId);
+    const targetId = link.messageId ?? link.synthesisMessageId;
+    if (targetId) {
+      const idx = this.messages.findIndex((m) => m.id === targetId);
       if (idx >= 0) {
         this.messages = [
           ...this.messages.slice(0, idx),
@@ -634,6 +666,13 @@ export class ChatStore {
           },
           ...this.messages.slice(idx + 1),
         ];
+        if (
+          link.synthesisMessageId &&
+          link.messageId &&
+          link.synthesisMessageId !== link.messageId
+        ) {
+          this.removeMessageById(link.synthesisMessageId);
+        }
         this.finalizeWorkerHandoffBubble(link.messageId);
         this.markWorkerSynthesisDelivered(workId);
         this.noteBackgroundSettled();
@@ -641,7 +680,6 @@ export class ChatStore {
       }
     }
 
-    this.finalizeWorkerHandoffBubble(link.messageId);
     this.appendWorkerSynthesisMessage(workId, link.parentTurnId, content, detail?.tool_names);
     this.markWorkerSynthesisDelivered(workId);
     this.noteBackgroundSettled();
@@ -670,6 +708,32 @@ export class ChatStore {
     content: string,
     toolNames?: string[] | null,
   ) {
+    const link = this.workers.get(workId);
+    const targetId = link?.messageId;
+    if (targetId) {
+      const idx = this.messages.findIndex((m) => m.id === targetId);
+      if (idx >= 0) {
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          {
+            ...this.messages[idx],
+            content,
+            streaming: false,
+            phase: null,
+            statusLine: null,
+            tools: toolNames?.length ? [...toolNames] : this.messages[idx].tools,
+          },
+          ...this.messages.slice(idx + 1),
+        ];
+        if (link) {
+          const nextWorkers = new Map(this.workers);
+          nextWorkers.set(workId, { ...link, synthesisMessageId: targetId });
+          this.workers = nextWorkers;
+        }
+        return;
+      }
+    }
+
     const id = crypto.randomUUID();
     this.messages = [
       ...this.messages,
@@ -681,7 +745,6 @@ export class ChatStore {
         tools: toolNames?.length ? [...toolNames] : undefined,
       },
     ];
-    const link = this.workers.get(workId);
     if (link) {
       const nextWorkers = new Map(this.workers);
       nextWorkers.set(workId, { ...link, synthesisMessageId: id });
@@ -757,16 +820,12 @@ export class ChatStore {
 
   private messageIdForTurn(turnId: string): string | null {
     const turn = this.turns.get(turnId);
-    if (turn?.messageId) return turn.messageId;
     const workerLink = this.workerLinkForTurn(turnId);
+    if (workerLink?.messageId && !workerLink.synthesisDelivered) {
+      return workerLink.messageId;
+    }
+    if (turn?.messageId) return turn.messageId;
     if (workerLink?.synthesisMessageId) return workerLink.synthesisMessageId;
-    // Worker handoff ack bubble must not receive synthesis stream events.
-    if (workerLink && !workerLink.synthesisDelivered) {
-      return null;
-    }
-    if (turn?.phase === "worker_handoff" || turn?.phase === "worker_ack") {
-      return null;
-    }
     return (
       this.messages.find(
         (message) => message.turnId === turnId && message.role === "assistant",
@@ -774,12 +833,12 @@ export class ChatStore {
     );
   }
 
-  /** Route worker tool receipts to the synthesis bubble, not the handoff ack. */
+  /** Route worker tool receipts into the same turn envelope as synthesis. */
   private messageIdForToolStream(turnId: string): string | null {
     const workerLink = this.workerLinkForTurn(turnId);
     if (workerLink && !workerLink.synthesisDelivered) {
-      if (workerLink.synthesisMessageId) {
-        return workerLink.synthesisMessageId;
+      if (workerLink.messageId) {
+        return workerLink.messageId;
       }
       return this.ensureWorkerFollowUpBubble(workerLink.workId, turnId, {
         statusLine: "Working in background…",
@@ -911,11 +970,16 @@ export class ChatStore {
         event.event_type === "needs_input" ||
         event.event_type === "error";
       const workerLink = this.workerLinkForTurn(event.turn_id);
+      const isWorkerSynthesisOnEnvelope =
+        workerLink != null &&
+        messageId === workerLink.messageId &&
+        terminal &&
+        Boolean(event.final_text?.trim());
       const isWorkerSynthesisTarget =
         workerLink != null && messageId !== workerLink.messageId;
       content =
-        isWorkerSynthesisTarget && terminal
-          ? event.final_text
+        (isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope) && terminal
+          ? event.final_text!
           : resolveTurnContent(current.content, event.final_text, terminal);
     }
 
@@ -977,6 +1041,12 @@ export class ChatStore {
 
   /** Resume stream after handoff (e.g. budget approved) with no active assistant bubble. */
   private attachOrphanStream(event: InteractiveTurnStreamEvent) {
+    const workerLink = this.workerLinkForTurn(event.turn_id);
+    if (workerLink?.messageId) {
+      this.applyStreamEventToMessage(workerLink.messageId, event);
+      return;
+    }
+
     const content = event.final_text ?? event.content_delta ?? "";
     if (!content && !event.terminal && event.event_type !== "budget_approval") {
       return;
@@ -1002,7 +1072,6 @@ export class ChatStore {
       next.set(event.turn_id, { ...turn, messageId: id });
       this.turns = next;
     }
-    const workerLink = this.workerLinkForTurn(event.turn_id);
     if (workerLink && !workerLink.synthesisMessageId) {
       const nextWorkers = new Map(this.workers);
       nextWorkers.set(workerLink.workId, {
@@ -1059,7 +1128,8 @@ export class ChatStore {
           streaming: false,
           phase: phase === "worker_ack" ? null : phase,
           statusLine: phase === "worker_ack" ? null : statusLine,
-          content: ackText,
+          stageWhisper: phase === "worker_ack" ? ackText : current.stageWhisper,
+          content: phase === "worker_ack" ? "" : ackText,
         },
         ...this.messages.slice(idx + 1),
       ];

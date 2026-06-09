@@ -34,6 +34,8 @@ export interface ChatMessage {
   answerState?: string | null;
   /** Turn ticket that produced this bubble. */
   turnId?: string | null;
+  /** Stage-direction whisper (e.g. worker handoff ack) above the main voice. */
+  stageWhisper?: string | null;
 }
 
 export interface TurnTicketState {
