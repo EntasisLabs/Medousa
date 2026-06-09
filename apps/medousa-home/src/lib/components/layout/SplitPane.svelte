@@ -47,7 +47,7 @@
 </script>
 
 <div
-  class="relative flex h-full shrink-0 flex-col"
+  class="relative flex h-full min-w-0 max-w-full shrink-0 flex-col overflow-hidden"
   style="width: {width}px"
 >
   {#if side === "left"}

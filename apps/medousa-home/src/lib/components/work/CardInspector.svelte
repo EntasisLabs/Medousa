@@ -33,9 +33,18 @@
     onBack?: () => void;
     onClose?: () => void;
     split?: boolean;
+    /** Full-screen mobile story — stack header actions and hide duplicate back nav. */
+    mobile?: boolean;
   }
 
-  let { onOpenNote, onOpenChat, onBack, onClose, split = false }: Props = $props();
+  let {
+    onOpenNote,
+    onOpenChat,
+    onBack,
+    onClose,
+    split = false,
+    mobile = false,
+  }: Props = $props();
 
   let jobResult = $state<JobResultResponse | null>(null);
   let jobResultError = $state<string | null>(null);
@@ -254,27 +263,29 @@
 </script>
 
 <section
-  class="workshop-rail flex h-full w-full min-w-0 flex-col"
+  class="workshop-rail flex h-full w-full min-w-0 flex-col overflow-hidden"
 >
-  <header class="workshop-header flex items-center justify-between gap-3 py-3">
+  <header class="workshop-header flex min-w-0 flex-col gap-3 py-3">
     <div class="min-w-0">
-      <button
-        type="button"
-        class="btn btn-sm variant-ghost-surface mb-2"
-        onclick={handleClose}
-      >
-        {split ? "Close" : "← Board"}
-      </button>
-      <h1 class="truncate text-base font-semibold">
+      {#if !mobile}
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface mb-2"
+          onclick={handleClose}
+        >
+          {split ? "Close" : "← Board"}
+        </button>
+      {/if}
+      <h1 class="break-words text-base font-semibold leading-snug">
         {detail ? formatCardTitle(detail.card) : "Card inspector"}
       </h1>
       {#if detail}
-        <p class="workshop-faint">
+        <p class="workshop-faint mt-1 break-all text-xs leading-relaxed">
           {detail.card.id} · {columnLabel(detail.card.column)} · {detail.kind}
         </p>
       {/if}
     </div>
-    <div class="flex shrink-0 flex-wrap gap-2">
+    <div class="flex min-w-0 flex-wrap gap-2">
       {#if isPendingBudgetRequest}
         <button
           type="button"
@@ -376,48 +387,48 @@
       Select a card from the board or work rail.
     </div>
   {:else}
-    <div class="flex-1 space-y-4 overflow-y-auto px-5 py-4 text-sm">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div class="workshop-inset p-3">
+    <div class="min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-5 py-4 text-sm">
+      <div class="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div class="workshop-inset min-w-0 p-3">
           <p class="workshop-label">Status</p>
           <p class="mt-1 font-medium {wrappingUp ? 'text-warning-300' : ''}">
             {formatStatusLabel(detail.card.status_label)}
           </p>
         </div>
-        <div class="workshop-inset p-3">
+        <div class="workshop-inset min-w-0 p-3">
           <p class="workshop-label">Column</p>
           <p class="mt-1 font-medium capitalize">
             {columnLabel(detail.card.column)}
           </p>
         </div>
         {#if detail.subtitle}
-          <div class="workshop-inset p-3">
+          <div class="workshop-inset min-w-0 p-3">
             <p class="workshop-label">Subtitle</p>
-            <p class="mt-1">{detail.subtitle}</p>
+            <p class="mt-1 break-words">{detail.subtitle}</p>
           </div>
         {/if}
         {#if detail.manuscript_id}
-          <div class="workshop-inset p-3">
+          <div class="workshop-inset min-w-0 p-3">
             <p class="workshop-label">Manuscript</p>
-            <p class="mt-1">{detail.manuscript_id}</p>
+            <p class="mt-1 break-all font-mono text-xs">{detail.manuscript_id}</p>
           </div>
         {/if}
         {#if detail.session_id}
-          <div class="workshop-inset p-3">
+          <div class="workshop-inset min-w-0 p-3">
             <p class="workshop-label">Session</p>
-            <p class="mt-1 truncate">{detail.session_id}</p>
+            <p class="mt-1 break-all font-mono text-xs">{detail.session_id}</p>
           </div>
         {/if}
         {#if detail.job_id}
-          <div class="workshop-inset p-3">
+          <div class="workshop-inset min-w-0 p-3">
             <p class="workshop-label">Job</p>
-            <p class="mt-1 truncate">{detail.job_id}</p>
+            <p class="mt-1 break-all font-mono text-xs">{detail.job_id}</p>
           </div>
         {/if}
         {#if detail.work_id}
-          <div class="workshop-inset p-3">
+          <div class="workshop-inset min-w-0 p-3">
             <p class="workshop-label">Worker</p>
-            <p class="mt-1 truncate">{detail.work_id}</p>
+            <p class="mt-1 break-all font-mono text-xs">{detail.work_id}</p>
           </div>
         {/if}
       </div>
@@ -440,10 +451,10 @@
       {/if}
 
       {#if timeline.length > 0 || detail.tool_names?.length}
-        <div class="workshop-inset p-4">
+        <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Worker timeline</p>
           {#if detail.tool_names?.length}
-            <p class="mt-2 font-mono text-[10px] text-surface-500">
+            <p class="mt-2 break-all font-mono text-[10px] text-surface-500">
               {detail.tool_names.map((tool) => formatToolName(tool)).join(" · ")}
             </p>
           {/if}
@@ -451,7 +462,7 @@
             <ul class="mt-3 space-y-2">
               {#each timeline as event (event.id)}
                 <li class="border-l border-surface-500/30 pl-3">
-                  <p class="text-xs text-surface-300">{event.summary}</p>
+                  <p class="break-words text-xs text-surface-300">{event.summary}</p>
                   <p class="workshop-faint mt-0.5">
                     {formatWorkspaceEventKind(event.kind)} ·
                     {formatTimestamp(event.timestamp_utc)}
@@ -464,10 +475,10 @@
       {/if}
 
       {#if detail.job_id}
-        <div class="workshop-inset p-4">
-          <div class="flex items-center justify-between gap-3">
-            <p class="workshop-label">Job result</p>
-            <div class="flex items-center gap-2">
+        <div class="workshop-inset min-w-0 p-4">
+          <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <p class="workshop-label shrink-0">Job result</p>
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
               {#if jobResult?.output_text}
                 <button
                   type="button"
@@ -478,7 +489,7 @@
                 </button>
               {/if}
               {#if jobResult}
-                <span class="workshop-faint font-mono">
+                <span class="workshop-faint break-words font-mono text-xs">
                   {jobResult.status}{#if jobResult.is_terminal} · terminal{/if}
                 </span>
               {/if}
@@ -495,12 +506,12 @@
             {#if jobResult.interim_text && jobResult.output_text && jobResult.interim_text.trim() !== jobResult.output_text.trim()}
               <p class="workshop-faint mt-2 text-xs">Follow-up</p>
               <pre
-                class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-surface-300"
+                class="mt-1 max-h-40 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-surface-300"
               >{jobResult.interim_text}</pre>
               <p class="workshop-faint mt-3 text-xs">Result</p>
             {/if}
             <pre
-              class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-surface-100"
+              class="mt-2 max-h-80 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-surface-100"
             >{jobResult.output_text ?? jobResult.interim_text}</pre>
           {:else if jobResult}
             <p class="workshop-faint mt-2">
@@ -512,23 +523,23 @@
           {/if}
         </div>
       {:else if detail.result_excerpt}
-        <div class="workshop-inset p-4">
+        <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Result</p>
           <pre
-            class="mt-2 whitespace-pre-wrap font-mono text-xs leading-relaxed text-surface-100"
+            class="mt-2 overflow-x-hidden whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-surface-100"
           >{detail.result_excerpt}</pre>
         </div>
       {/if}
 
       {#if detail.error}
-        <div class="rounded-container-token border border-error-500/30 bg-error-500/10 p-4">
+        <div class="min-w-0 rounded-container-token border border-error-500/30 bg-error-500/10 p-4">
           <p class="text-xs text-error-300">Error</p>
-          <p class="mt-2 text-error-100">{detail.error}</p>
+          <p class="mt-2 break-words text-sm leading-relaxed text-error-100">{detail.error}</p>
         </div>
       {/if}
 
       {#if detail.associations.artifact_ids.length > 0}
-        <div class="workshop-inset p-4">
+        <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">
             Artifacts · {detail.associations.artifact_ids.length}
           </p>
@@ -538,12 +549,12 @@
             <ul class="mt-3 space-y-3">
               {#each artifactPreviews as preview (preview.artifact_id)}
                 <li class="rounded-container-token border border-surface-500/15 p-3">
-                  <p class="font-mono text-[11px] text-primary-300">{preview.artifact_id}</p>
+                  <p class="break-all font-mono text-[11px] text-primary-300">{preview.artifact_id}</p>
                   {#if preview.error}
                     <p class="mt-1 text-xs text-warning-400">{preview.error}</p>
                   {:else}
                     <pre
-                      class="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-surface-300"
+                      class="mt-2 max-h-48 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-surface-300"
                     >{preview.rendered_output}</pre>
                   {/if}
                 </li>
@@ -554,14 +565,14 @@
       {/if}
 
       {#if detail.associations.vault_paths.length > 0}
-        <div class="workshop-inset p-4">
+        <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Linked vault notes</p>
           <ul class="mt-2 space-y-1">
             {#each detail.associations.vault_paths as path (path)}
-              <li>
+              <li class="min-w-0">
                 <button
                   type="button"
-                  class="text-left text-primary-400 hover:underline"
+                  class="break-all text-left text-primary-400 hover:underline"
                   onclick={() => onOpenNote(path)}
                 >
                   {path}

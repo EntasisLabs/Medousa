@@ -12,6 +12,7 @@
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { layoutDesktopRails } from "$lib/utils/desktopRails";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
@@ -38,12 +39,27 @@
   });
 
   onMount(() => {
-    return connectWorkshop({
+    const detachViewport = layout.attachViewportTracking();
+    const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
         daemonHealth = health;
       },
     });
+    return () => {
+      detachViewport();
+      detachWorkshop();
+    };
   });
+
+  const desktopRails = $derived(
+    layoutDesktopRails({
+      viewportWidth: layout.viewportWidth,
+      activityCollapsed: layout.activityCollapsed,
+      activityWidth: layout.activityWidth,
+      workInspectorOpen: activeSurface === "work" && workspace.selectedCardId !== null,
+      workInspectorWidth: layout.workInspectorWidth,
+    }),
+  );
 
   function handleSurfaceSelect(surface: Surface) {
     if (surface === "work") {
@@ -76,8 +92,8 @@
     <NavSidebar active={activeSurface} onSelect={handleSurfaceSelect} />
 
     <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
-      <div class="flex min-h-0 flex-1">
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {#if activeSurface === "home"}
           <HomeOverview
             onOpenWork={() => (activeSurface = "work")}
@@ -134,17 +150,17 @@
         {/if}
         </div>
 
-        {#if layout.activityCollapsed}
+        {#if layout.activityCollapsed || desktopRails.showActivityStrip}
           <ActivityCollapsedStrip
             onExpand={() => layout.setActivityCollapsed(false)}
           />
         {:else}
-          <div class="workshop-rail flex h-full shrink-0">
+          <div class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden">
           <SplitPane
-            width={layout.activityWidth}
+            width={desktopRails.activityPaneWidth}
             side="right"
             min={220}
-            max={520}
+            max={desktopRails.activityPaneMax}
             onResize={(width) => layout.setActivityWidth(width)}
           >
             <ActivityPanel
@@ -160,7 +176,6 @@
               cardError={workspace.cardDetailError}
               noteDiffChip={vault.diffChip()}
               onOpenNote={handleOpenNote}
-              showCollapse={activeSurface === "work"}
               onCollapse={() => layout.setActivityCollapsed(true)}
             />
           </SplitPane>

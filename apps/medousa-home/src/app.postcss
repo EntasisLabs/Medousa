@@ -636,7 +636,7 @@
   }
 
   .mobile-story-overlay {
-    @apply fixed inset-0 z-40 flex flex-col;
+    @apply fixed inset-0 z-40 flex min-w-0 flex-col overflow-hidden;
     background-color: rgb(var(--color-surface-950));
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);

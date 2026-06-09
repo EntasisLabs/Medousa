@@ -7,6 +7,7 @@
   import NewWorkAsk from "$lib/components/work/NewWorkAsk.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { layoutDesktopRails } from "$lib/utils/desktopRails";
 
   interface Props {
     visible: boolean;
@@ -16,6 +17,16 @@
   }
 
   let { visible, onOpenNote, onOpenChat, onSelectCard }: Props = $props();
+
+  const desktopRails = $derived(
+    layoutDesktopRails({
+      viewportWidth: layout.viewportWidth,
+      activityCollapsed: layout.activityCollapsed,
+      activityWidth: layout.activityWidth,
+      workInspectorOpen: workspace.selectedCardId !== null,
+      workInspectorWidth: layout.workInspectorWidth,
+    }),
+  );
 
   onMount(() => {
     void workspace.prefetchCardDetails();
@@ -30,10 +41,10 @@
 
   {#if workspace.selectedCardId}
     <SplitPane
-      width={layout.workInspectorWidth}
+      width={desktopRails.inspectorPaneWidth}
       side="right"
       min={280}
-      max={560}
+      max={desktopRails.inspectorPaneMax}
       onResize={(width) => layout.setWorkInspectorWidth(width)}
     >
       <CardInspector

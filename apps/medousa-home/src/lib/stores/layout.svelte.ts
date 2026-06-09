@@ -23,6 +23,19 @@ export class LayoutStore {
   sessionDrawerOpen = $state(loadFlag(SESSION_DRAWER_KEY, false));
   identityDrawerOpen = $state(loadFlag(IDENTITY_DRAWER_KEY, false));
   activityCollapsed = $state(loadFlag(ACTIVITY_COLLAPSED_KEY, false));
+  viewportWidth = $state(
+    typeof window !== "undefined" ? window.innerWidth : 1280,
+  );
+
+  attachViewportTracking(): () => void {
+    if (typeof window === "undefined") return () => {};
+    const update = () => {
+      this.viewportWidth = window.innerWidth;
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }
 
   setActivityWidth(width: number) {
     this.activityWidth = clamp(width, 220, 520);

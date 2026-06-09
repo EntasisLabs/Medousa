@@ -42,7 +42,10 @@
 </script>
 
 {#if hasCardContext || hasNoteContext}
-  <section class="border-b border-surface-500/45 bg-surface-800/40 px-4 py-3" aria-label="Context">
+  <section
+    class="min-w-0 shrink-0 border-b border-surface-500/45 bg-surface-800/40 px-4 py-3"
+    aria-label="Context"
+  >
     <h3 class="workshop-section-title">Context</h3>
 
     {#if cardDetail}

@@ -20,7 +20,6 @@
     cardError: string | null;
     noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
-    showCollapse?: boolean;
     onCollapse?: () => void;
   }
 
@@ -35,7 +34,6 @@
     cardError,
     noteDiffChip,
     onOpenNote,
-    showCollapse = false,
     onCollapse,
   }: Props = $props();
 
@@ -56,7 +54,10 @@
   });
 </script>
 
-<aside class="flex h-full w-full flex-col" aria-label="Activity and context">
+<aside
+  class="activity-panel flex h-full min-w-0 w-full flex-col overflow-hidden"
+  aria-label="Activity and context"
+>
   <ContextPanel
     {notePath}
     {noteTitle}
@@ -68,15 +69,17 @@
     {onOpenNote}
   />
 
-  <header class="border-b border-surface-500/45 bg-surface-800/40 px-4 py-3">
-    <div class="flex items-center justify-between gap-2">
-      <h2 class="text-sm font-semibold tracking-wide text-surface-100">Activity</h2>
-      {#if showCollapse && onCollapse}
+  <header class="shrink-0 border-b border-surface-500/45 bg-surface-800/40 px-4 py-3">
+    <div class="flex min-w-0 items-center justify-between gap-2">
+      <h2 class="min-w-0 truncate text-sm font-semibold tracking-wide text-surface-100">
+        Activity
+      </h2>
+      {#if onCollapse}
         <button
           type="button"
-          class="flex h-8 w-8 items-center justify-center rounded-container-token text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-200"
-          aria-label="Collapse activity"
-          title="Collapse activity"
+          class="workshop-rail-btn shrink-0"
+          aria-label="Collapse activity panel"
+          title="Collapse activity panel"
           onclick={onCollapse}
         >
           <PanelRightClose size={20} strokeWidth={1.75} />
@@ -88,7 +91,7 @@
     {/if}
   </header>
 
-  <ol class="flex-1 space-y-2 overflow-y-auto p-3">
+  <ol class="min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden p-3">
     {#each [...visibleEvents].reverse() as event (event.id)}
       {@const enrichment = resolveActivityEnrichment(
         event,
@@ -96,14 +99,14 @@
         workspace.cardDetailsCache,
       )}
       {@const item = presentActivityEvent(event, enrichment)}
-      <li class="workshop-inset p-3 text-sm">
-        <div class="flex items-center justify-between gap-2 text-xs text-surface-300">
-          <span class="font-medium uppercase tracking-wide">{item.label}</span>
-          <time datetime={event.timestamp_utc}>{item.time}</time>
+      <li class="workshop-inset min-w-0 p-3 text-sm">
+        <div class="flex min-w-0 items-center justify-between gap-2 text-xs text-surface-300">
+          <span class="min-w-0 truncate font-medium uppercase tracking-wide">{item.label}</span>
+          <time class="shrink-0 tabular-nums" datetime={event.timestamp_utc}>{item.time}</time>
         </div>
-        <p class="mt-1 leading-snug text-surface-50">{item.summary}</p>
+        <p class="mt-1 break-words leading-snug text-surface-50">{item.summary}</p>
         {#if item.context}
-          <p class="mt-1 text-xs leading-snug text-surface-400">{item.context}</p>
+          <p class="mt-1 break-words text-xs leading-snug text-surface-400">{item.context}</p>
         {/if}
       </li>
     {:else}
