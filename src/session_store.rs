@@ -22,9 +22,14 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD timestamp ON TABLE session_turn TYPE datetime",
     "DEFINE FIELD tool_names ON TABLE session_turn TYPE array<string>",
     "DEFINE FIELD answer_state ON TABLE session_turn TYPE option<string>",
-    "DEFINE FIELD parts ON TABLE session_turn TYPE option<object>",
+    // JSON-serialized TurnPart[] — kept as string so SCHEMAFULL does not reject nested arrays.
+    "DEFINE FIELD parts ON TABLE session_turn TYPE option<string>",
     "DEFINE INDEX idx_session_turn_session_id ON TABLE session_turn COLUMNS session_id",
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
+];
+
+const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
+    "DEFINE FIELD OVERWRITE parts ON TABLE session_turn TYPE option<string>",
 ];
 
 /// Initialize the session store based on the runtime composition.
@@ -58,15 +63,15 @@ struct SessionTurnRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     answer_state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    parts: Option<serde_json::Value>,
+    parts: Option<String>,
 }
 
-fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<serde_json::Value> {
-    parts.map(|items| serde_json::to_value(items).unwrap_or(serde_json::Value::Null))
+fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<String> {
+    parts.and_then(|items| serde_json::to_string(items).ok())
 }
 
-fn parts_from_json(value: Option<serde_json::Value>) -> Option<Vec<TurnPart>> {
-    value.and_then(|raw| serde_json::from_value(raw).ok())
+fn parts_from_json(value: Option<String>) -> Option<Vec<TurnPart>> {
+    value.and_then(|raw| serde_json::from_str(&raw).ok())
 }
 
 impl From<SessionTurnRecord> for ConversationTurn {
@@ -163,6 +168,9 @@ impl SurrealSessionStore {
                 }
             }
         }
+        for statement in SESSION_SCHEMA_MIGRATIONS {
+            db.query(*statement).await?;
+        }
         Ok(())
     }
 }
@@ -201,21 +209,30 @@ impl SessionStore for SurrealSessionStore {
         record.session_id = session_id.to_string();
 
         let sql = "CREATE type::table($table) CONTENT $data";
-        if let Err(err) = block_on(
+        let mut response = match block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_TURN_TABLE))
                 .bind(("data", record)),
         ) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!("SurrealSessionStore::append_turn query error: {err}");
+                return;
+            }
+        };
+
+        if let Err(err) = response.check() {
             eprintln!("SurrealSessionStore::append_turn error: {err}");
         }
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
         // time::max (not math::max) — Surreal 3 GROUP BY returns -Infinity for math::max(datetime).
+        // type::datetime(...) keeps last_timestamp as datetime when the aggregate is numeric.
         let sql = "SELECT session_id, \
                            count() AS turns, \
-                           time::max(timestamp) AS last_timestamp \
+                           type::datetime(time::max(timestamp)) AS last_timestamp \
                     FROM type::table($table) \
                     GROUP BY session_id \
                     ORDER BY last_timestamp DESC \

@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use medousa::events::TuiEvent;
 use medousa::turn_text_heuristics::{
-    looks_like_interim_status, looks_like_substantive_final_answer,
+    looks_like_interim_status,
 };
 
 use super::{ConversationTurn, JobHistoryEntry, TuiState};
@@ -560,25 +560,14 @@ fn resolve_agent_turn_content(streamed_body: &str, final_body: &str, terminal: b
         return final_body.to_string();
     }
 
-    if looks_like_substantive_final_answer(final_trimmed)
-        && (looks_like_interim_status(streamed_trimmed)
-            || !looks_like_substantive_final_answer(streamed_trimmed))
+    if looks_like_interim_status(streamed_trimmed)
+        && !looks_like_interim_status(final_trimmed)
     {
         return final_body.to_string();
     }
 
-    merge_streamed_and_final_body(streamed_body, final_body)
-}
-
-fn merge_streamed_and_final_body(streamed_body: &str, final_body: &str) -> String {
-    let streamed_trimmed = streamed_body.trim();
-    let final_trimmed = final_body.trim();
-
-    if final_trimmed.is_empty() {
+    if final_trimmed == streamed_trimmed {
         return streamed_body.to_string();
-    }
-    if streamed_trimmed.is_empty() {
-        return final_body.to_string();
     }
     if final_trimmed.starts_with(streamed_trimmed) {
         return final_body.to_string();
@@ -595,7 +584,7 @@ fn merge_streamed_and_final_body(streamed_body: &str, final_body: &str) -> Strin
         return merged;
     }
 
-    format!("{streamed_body}\n\n[final synthesis]\n{final_body}")
+    streamed_body.to_string()
 }
 
 #[cfg(test)]
@@ -603,12 +592,19 @@ mod resolve_content_tests {
     use super::resolve_agent_turn_content;
 
     #[test]
-    fn terminal_drops_interim_stream_pile_for_substantive_final() {
-        let streamed = "Let me dig into memory for you.Looks like we found some hits!";
+    fn terminal_keeps_substantive_stream_over_divergent_final() {
+        let streamed = "Here is what I found about locus: STTP nodes under session medousa-ux.";
+        let final_answer = "Different rewrite from a synthesis pass that the user never saw stream.";
+        let merged = resolve_agent_turn_content(streamed, final_answer, true);
+        assert_eq!(merged, streamed);
+    }
+
+    #[test]
+    fn terminal_replaces_interim_stream_with_substantive_final() {
+        let streamed = "Let me dig into memory for you.";
         let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
         let merged = resolve_agent_turn_content(streamed, final_answer, true);
         assert_eq!(merged, final_answer);
-        assert!(!merged.contains("Let me dig"));
     }
 
     #[test]

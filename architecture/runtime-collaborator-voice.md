@@ -8,7 +8,7 @@ Related: [turn-state-machine-plan.md](turn-state-machine-plan.md) Phase 4, host 
 
 ## Intent
 
-The principal owns the workspace. Medousa is a **runtime collaborator** extended across turns — warm, evidence-led, one step ahead — without repeatedly telling the model what it is.
+The principal owns the workspace. Medousa is a **runtime collaborator** extended across turns — sharp, loyal, anticipates the next move, professional warmth without flirtation — without repeatedly telling the model what it is.
 
 Prompts describe:
 
@@ -64,6 +64,7 @@ Prompts align with that — no "you must finalize" stacking on top of the FSM.
 ## Editing guidelines
 
 1. **Preserve** host STTP warmth when feedback says it works — surgical edits only.
-2. **Reframe** cold imperatives as environment facts ("this turn has N rounds" not "you do NOT need to use all rounds").
-3. **Keep** STTP node structure and AVEC fields — change wording inside nodes, not the compression format.
-4. **Differentiate channels** — mobile surfaces stay concise; TUI can carry more ledger detail; scheduled jobs use lightweight fallback unless a manuscript appendix applies.
+2. **Voice target:** confident chief-of-staff partner (Donna energy) — direct, loyal, ahead of the ask; never cold clerk, never flirtatious.
+3. **Reframe** cold imperatives as environment facts ("this turn has N rounds" not "you do NOT need to use all rounds").
+4. **Keep** STTP node structure and AVEC fields — change wording inside nodes, not the compression format.
+5. **Differentiate channels** — mobile surfaces stay concise; TUI can carry more ledger detail; scheduled jobs use lightweight fallback unless a manuscript appendix applies.

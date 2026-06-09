@@ -5,6 +5,7 @@
 use chrono::{Duration, TimeZone, Utc};
 use medousa::session::ConversationTurn;
 use medousa::session_store::{SessionStore, SurrealSessionStore};
+use medousa::turn_parts::user_conversation_turn;
 use surrealdb::engine::any::Any;
 use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
@@ -45,6 +46,23 @@ async fn surreal_session_store_append_and_load_history() {
     assert_eq!(turns.len(), 2);
     assert_eq!(turns[0].content, "first");
     assert_eq!(turns[1].content, "second");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn surreal_session_store_persists_turns_with_parts_timeline() {
+    let store = setup_store().await;
+    store.append_turn(
+        "medousa-home-parts",
+        &user_conversation_turn("hello with structured parts"),
+    );
+
+    let turns = store.load_history("medousa-home-parts");
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].content, "hello with structured parts");
+    assert!(
+        turns[0].parts.as_ref().is_some_and(|parts| !parts.is_empty()),
+        "user turns should round-trip timeline parts"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

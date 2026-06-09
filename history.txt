@@ -14,3 +14,14 @@ SELECT count() FROM temporal_node;
 exit
 close
 INFO FOR DB
+SELECT count() AS c FROM session_turn WHERE session_id = 'medousa-home-c580923c-9774-44d1-a6bb-35c8a180a6b1' GROUP ALL;
+SELECT session_id, role, timestamp FROM session_turn WHERE session_id CONTAINS 'c580923c' ORDER BY timestamp DESC LIMIT 5;
+SELECT count() AS total FROM session_turn GROUP ALL;
+SELECT session_id, role, timestamp FROM session_turn ORDER BY timestamp DESC LIMIT 10;
+SELECT session_id, count() AS c FROM session_turn WHERE timestamp > d'2026-06-08T20:00:00Z' GROUP BY session_id;
+SELECT id, session_id, role, parts FROM session_turn WHERE session_id IN ['test-parts-array','test-persist-probe'];
+CREATE session_turn CONTENT { session_id: 'schema-test-array', role: 'user', content: 'x', timestamp: time::now(), tool_names: [], parts: [{kind: 'text', markdown: 'x'}] };
+CREATE session_turn CONTENT { session_id: 'schema-test-obj', role: 'user', content: 'x', timestamp: time::now(), tool_names: [], parts: { items: [{kind: 'text', markdown: 'x'}] } };
+SELECT session_id, time::max(timestamp) AS raw_max, type::datetime(time::max(timestamp)) AS fixed_max FROM session_turn GROUP BY session_id LIMIT 3;
+DEFINE FIELD OVERWRITE parts ON TABLE session_turn TYPE option<array>;
+CREATE session_turn CONTENT { session_id: 'schema-test-fixed', role: 'user', content: 'x', timestamp: time::now(), tool_names: [], parts: [{kind: 'text', markdown: 'x'}] };

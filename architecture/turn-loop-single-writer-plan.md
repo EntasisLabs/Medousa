@@ -107,6 +107,21 @@ finish(message)      →  terminal commit (existing)
 
 ---
 
+## Phase 6 — Stream-first UX & partner voice (2026-06-08)
+
+**Goal:** Keep streamed prose authoritative; cleaner worker synthesis; warmer collaborator voice.
+
+| Change | Detail |
+|--------|--------|
+| Terminal merge | Prefer streamed body; replace only when stream was status-only or final extends it |
+| Worker synthesis (Home) | One bubble — synthesis updates handoff message |
+| Synthesis prompts | Same-thread integration; not cold rewrite |
+| STTP | Sharp loyal partner tone — professional warmth, not flirtatious |
+
+Async paths unchanged: `turn_progress`, `scratch_reset`, worker card delivery, background turns.
+
+---
+
 ## Key files
 
 | Area | Path |

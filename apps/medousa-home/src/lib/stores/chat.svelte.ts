@@ -473,12 +473,21 @@ export class ChatStore {
 
   private noteWorkerSynthesizing(workId: string) {
     const link = this.workers.get(workId);
-    if (!link) return;
-    this.finalizeWorkerHandoffBubble(link.messageId);
-    this.ensureWorkerFollowUpBubble(workId, link.parentTurnId, {
-      statusLine: "Synthesizing answer…",
-      streaming: true,
-    });
+    if (!link?.messageId) return;
+
+    const idx = this.messages.findIndex((m) => m.id === link.messageId);
+    if (idx < 0) return;
+
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        streaming: true,
+        statusLine: "Pulling that together…",
+      },
+      ...this.messages.slice(idx + 1),
+    ];
   }
 
   private finalizeWorkerHandoffBubble(messageId: string | null) {
@@ -558,6 +567,16 @@ export class ChatStore {
     );
   }
 
+  private removeMessageById(messageId: string | null | undefined) {
+    if (!messageId) return;
+    const idx = this.messages.findIndex((m) => m.id === messageId);
+    if (idx < 0) return;
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
   private async deliverWorkerSynthesis(workId: string, detail?: WorkCardDetail) {
     const link = this.workers.get(workId);
     if (!link || link.synthesisDelivered) return;
@@ -575,6 +594,33 @@ export class ChatStore {
     }
     if (!content) return;
 
+    const targetId = link.messageId;
+    if (targetId) {
+      const idx = this.messages.findIndex((m) => m.id === targetId);
+      if (idx >= 0) {
+        const prior = this.messages[idx].content;
+        const merged = resolveTurnContent(prior, content, true);
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          {
+            ...this.messages[idx],
+            content: merged,
+            streaming: false,
+            phase: null,
+            statusLine: null,
+            tools: detail?.tool_names?.length
+              ? [...detail.tool_names]
+              : this.messages[idx].tools,
+          },
+          ...this.messages.slice(idx + 1),
+        ];
+        this.removeMessageById(link.synthesisMessageId);
+        this.markWorkerSynthesisDelivered(workId);
+        this.noteBackgroundSettled();
+        return;
+      }
+    }
+
     if (this.hasFollowUpSynthesis(link.messageId, content)) {
       this.finalizeWorkerHandoffBubble(link.messageId);
       this.markWorkerSynthesisDelivered(workId);
@@ -582,29 +628,7 @@ export class ChatStore {
     }
 
     this.finalizeWorkerHandoffBubble(link.messageId);
-
-    if (link.synthesisMessageId) {
-      const idx = this.messages.findIndex((m) => m.id === link.synthesisMessageId);
-      if (idx >= 0) {
-        this.messages = [
-          ...this.messages.slice(0, idx),
-          {
-            ...this.messages[idx],
-            content,
-            streaming: false,
-            phase: null,
-            statusLine: null,
-            tools: detail?.tool_names?.length ? [...detail.tool_names] : this.messages[idx].tools,
-          },
-          ...this.messages.slice(idx + 1),
-        ];
-      } else {
-        this.appendWorkerSynthesisMessage(workId, link.parentTurnId, content, detail?.tool_names);
-      }
-    } else {
-      this.appendWorkerSynthesisMessage(workId, link.parentTurnId, content, detail?.tool_names);
-    }
-
+    this.appendWorkerSynthesisMessage(workId, link.parentTurnId, content, detail?.tool_names);
     this.markWorkerSynthesisDelivered(workId);
     this.noteBackgroundSettled();
   }

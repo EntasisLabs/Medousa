@@ -70,7 +70,12 @@ pub fn build_continuation_prompt(
     let draft = truncate_text_for_budget(draft_text, CONTINUATION_MAX_DRAFT_CHARS);
     let user_request = truncate_text_for_budget(original_prompt, 3000);
     let prompt = format!(
-        "You have an initial draft answer plus additional tool context that may have arrived in chunks. Rewrite one coherent final answer that integrates the tool evidence. Preserve substantiated details, remove contradictions, and mark uncertainty explicitly. Prefer concise structure with clear takeaways.\n\n[USER_REQUEST]\n{user_request}\n\n[DRAFT_ANSWER]\n{draft}\n\n[ADDITIONAL_TOOL_CONTEXT]\n{}\n\nReturn only the final answer body.",
+        "You have an initial draft answer plus additional tool context that may have arrived in chunks. \
+         Rewrite one coherent reply that integrates the tool evidence into the same conversational thread. \
+         Preserve substantiated details, remove contradictions, and mark uncertainty explicitly. \
+         Voice: sharp loyal partner — warm and professional, never cold, never flirtatious.\n\n\
+         [USER_REQUEST]\n{user_request}\n\n[DRAFT_ANSWER]\n{draft}\n\n[ADDITIONAL_TOOL_CONTEXT]\n{}\n\n\
+         Return only the final answer body.",
         summaries.join("\n")
     );
 

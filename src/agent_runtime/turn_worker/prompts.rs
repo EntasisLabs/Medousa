@@ -4,6 +4,12 @@ use crate::agent_runtime::system_prompt::WORKER_STTP_POLICY;
 
 use super::policy::TurnWorkerIntent;
 
+const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
+- Same thread as the host ack and [MEDOUSA_CONTINUATION] — one Medousa, not a second author.
+- Sharp, loyal, professional warmth: confident partner who already has their back (never cold report tone, never flirtatious).
+- Integrate worker receipts into natural prose; do not re-introduce yourself or reset the conversation.
+- Lead with what matters to the principal; cite evidence inline, not as a separate "based on tool output" lecture."#;
+
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
 Host lane on the Medousa turn bus — orchestrates turns; workshop lane runs Grapheme/MCP execution.
@@ -203,8 +209,8 @@ pub fn synthesis_user_prompt_with_handoff(
         .map(|manuscript| format!("MANUSCRIPT: {} ({})\n", manuscript.name, manuscript.id))
         .unwrap_or_default();
     format!(
-        "Synthesize one principal-facing reply for the host bus. Use the worker handoff and \
-         worker tool summary — not the full parent chat transcript.\n\n\
+        "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread — do not rewrite from scratch.\n\n\
+         {SYNTHESIS_VOICE_GUIDANCE}\n\n\
          {manuscript_line}\
          WORK_ID: (see handoff)\n\
          WORKER_INTENT: {}\n\
@@ -215,8 +221,7 @@ pub fn synthesis_user_prompt_with_handoff(
          WORKER_TOOLS:\n{tools}\n\n\
          WORKER_TOOL_SUMMARY:\n{worker_tools_summary}{scratch_block}\n\n\
          WORKER_RESULT:\n{worker_result}\n\n\
-         Produce the final answer for the principal. Include outcomes and receipts from the worker. \
-         Do not mention internal worker IDs unless helpful for debugging.",
+         Deliver the integrated answer for the principal. Include outcomes and receipts from the worker without internal jargon.",
         handoff.intent,
         handoff.scratch_digest_hash,
         handoff.parent_user_prompt,
@@ -239,15 +244,15 @@ pub fn synthesis_user_prompt(
         tool_names.join(", ")
     };
     format!(
-        "Synthesize a single user-facing reply for the host bus.\n\n\
+        "Synthesize one principal-facing reply for the host bus. Continue the same conversation thread.\n\n\
+         {SYNTHESIS_VOICE_GUIDANCE}\n\n\
          WORK_ID: {work_id}\n\
          WORKER_INTENT: {intent}\n\n\
          ORIGINAL_USER_MESSAGE:\n{parent_user_prompt}\n\n\
          WORKER_TASK:\n{task_prompt}\n\n\
          WORKER_TOOLS: {tools}\n\n\
          WORKER_RESULT:\n{worker_result}\n\n\
-         Produce the final answer for the user. Include outcomes and receipts from the worker. \
-         Do not mention internal worker IDs unless helpful for debugging."
+         Deliver the integrated answer for the principal. Include outcomes and receipts without internal jargon."
     )
 }
 
