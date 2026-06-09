@@ -1,6 +1,15 @@
 <script lang="ts">
+  import { ChevronDown, Route } from "@lucide/svelte";
   import type { ToolRunState } from "$lib/types/chat";
-  import { formatToolName } from "$lib/utils/formatTurn";
+  import type { ToolLineageSegment } from "$lib/utils/toolRunLineage";
+  import {
+    buildToolLineage,
+    formatCollapsedLabel,
+    formatLineagePreview,
+    formatSegmentLabel,
+    segmentAccentClass,
+    segmentLabelClass,
+  } from "$lib/utils/toolRunLineage";
 
   interface Props {
     runs: ToolRunState[];
@@ -11,129 +20,202 @@
 
   let { runs, compact = false, inspectorCollapsed = true }: Props = $props();
 
-  const grouped = $derived(groupRunsByRound(runs));
-  const roundCount = $derived(grouped.size);
+  const lineage = $derived(buildToolLineage(runs));
   const toolCount = $derived(runs.length);
-  const latestRound = $derived(
-    grouped.size > 0 ? Math.max(...grouped.keys()) : 1,
+  const collapsed = $derived(formatCollapsedLabel(lineage, toolCount));
+  const fullTrace = $derived(formatLineagePreview(lineage));
+  const hasRunning = $derived(runs.some((run) => run.status === "running"));
+  const activeSegment = $derived(
+    hasRunning ? lineage.find((segment) => segment.status === "running") : null,
   );
+  const isDone = $derived(!hasRunning && runs.every((run) => run.status !== "failed"));
+  const footnote = $derived(inspectorCollapsed && isDone && !compact);
 
-  function groupRunsByRound(items: ToolRunState[]): Map<number, ToolRunState[]> {
-    const map = new Map<number, ToolRunState[]>();
-    for (const run of items) {
-      const bucket = map.get(run.round) ?? [];
-      bucket.push(run);
-      map.set(run.round, bucket);
+  function segmentHasDetail(segment: ToolLineageSegment): boolean {
+    if (segment.count > 1) return true;
+    const run = segment.runs[0];
+    return Boolean(
+      run.inputSummary?.trim() ||
+        run.outputSummary?.trim() ||
+        (run.artifactRefs?.length ?? 0) > 0,
+    );
+  }
+
+  function formatLabelParts(segment: ToolLineageSegment): { name: string; count: string | null } {
+    if (segment.count === 1) {
+      return { name: segment.displayName, count: null };
     }
-    return new Map([...map.entries()].sort(([a], [b]) => a - b));
-  }
-
-  function statusClass(status: ToolRunState["status"]): string {
-    switch (status) {
-      case "running":
-        return "border-primary-500/40 bg-primary-500/10 text-primary-200";
-      case "failed":
-        return "border-rose-500/40 bg-rose-500/10 text-rose-200";
-      default:
-        return "border-surface-600 bg-surface-800/80 text-surface-200";
-    }
-  }
-
-  function statusDot(status: ToolRunState["status"]): string {
-    switch (status) {
-      case "running":
-        return "bg-primary-400 animate-pulse";
-      case "failed":
-        return "bg-rose-400";
-      default:
-        return "bg-emerald-400";
-    }
-  }
-
-  function roundLabel(round: number, roundRuns: ToolRunState[]): string {
-    const names = roundRuns.map((run) => formatToolName(run.toolName)).join(" · ");
-    return `Round ${round} · ${roundRuns.length} tool${roundRuns.length === 1 ? "" : "s"} · ${names}`;
-  }
-
-  function inspectorSummary(): string {
-    const roundWord = roundCount === 1 ? "round" : "rounds";
-    const toolWord = toolCount === 1 ? "tool" : "tools";
-    return `Tools · ${roundCount} ${roundWord} · ${toolCount} ${toolWord}`;
+    return { name: segment.displayName, count: `×${segment.count}` };
   }
 </script>
 
-{#snippet chipList(roundRuns: ToolRunState[])}
-  <div class="flex flex-wrap gap-1.5">
-    {#each roundRuns as run (run.runId)}
-      <details class="group rounded-full border px-2 py-1 {statusClass(run.status)}">
-        <summary
-          class="flex cursor-pointer list-none items-center gap-1.5 marker:content-none"
-        >
-          <span class="inline-block h-1.5 w-1.5 rounded-full {statusDot(run.status)}"></span>
-          <span class="font-medium">{formatToolName(run.toolName)}</span>
-          {#if run.outputSummary && !compact}
-            <span class="workshop-faint hidden max-w-[12rem] truncate sm:inline">
-              · {run.outputSummary}
-            </span>
-          {/if}
-        </summary>
-        {#if run.inputSummary || run.outputSummary || (run.artifactRefs?.length ?? 0) > 0}
-          <div class="mt-2 space-y-1 border-t border-white/10 pt-2 text-[11px] leading-relaxed">
-            {#if run.inputSummary}
-              <p><span class="text-surface-500">In:</span> {run.inputSummary}</p>
-            {/if}
-            {#if run.outputSummary}
-              <p><span class="text-surface-500">Out:</span> {run.outputSummary}</p>
-            {/if}
-            {#if run.artifactRefs && run.artifactRefs.length > 0}
-              <p class="text-surface-500">
-                {run.artifactRefs.length} artifact receipt{run.artifactRefs.length === 1
-                  ? ""
-                  : "s"}
-              </p>
-            {/if}
-          </div>
-        {/if}
-      </details>
-    {/each}
+{#snippet segmentDetail(run: ToolRunState)}
+  <div class="space-y-1 text-[11px] leading-relaxed text-surface-400">
+    {#if run.inputSummary?.trim()}
+      <p class="break-words">
+        <span class="text-primary-400/50">in</span>
+        {run.inputSummary}
+      </p>
+    {/if}
+    {#if run.outputSummary?.trim()}
+      <p class="break-words text-surface-300">
+        <span class="text-primary-400/50">out</span>
+        {run.outputSummary}
+      </p>
+    {/if}
+    {#if run.artifactRefs && run.artifactRefs.length > 0}
+      <p class="text-surface-500">
+        {run.artifactRefs.length} receipt{run.artifactRefs.length === 1 ? "" : "s"}
+      </p>
+    {/if}
   </div>
 {/snippet}
 
-{#snippet roundGroups(collapsePastRounds: boolean)}
-  <div class="space-y-2 {compact ? 'text-[10px]' : 'text-xs'}">
-    {#each [...grouped.entries()] as [round, roundRuns] (round)}
-      {#if grouped.size > 1 && collapsePastRounds && round !== latestRound}
-        <details class="rounded-md border border-surface-700/60 bg-surface-900/40 px-2 py-1.5">
-          <summary class="workshop-faint cursor-pointer select-none uppercase tracking-wide">
-            {roundLabel(round, roundRuns)}
-          </summary>
-          <div class="mt-2">
-            {@render chipList(roundRuns)}
-          </div>
-        </details>
-      {:else if grouped.size > 1}
-        <div>
-          <p class="workshop-faint mb-1 uppercase tracking-wide">Round {round}</p>
-          {@render chipList(roundRuns)}
+{#snippet lineageTimeline(segments: ToolLineageSegment[])}
+  <ol
+    class="relative m-0 list-none space-y-0 p-0 {compact ? 'text-[10px]' : 'text-[11px]'}"
+    aria-label="Tool lineage"
+  >
+    {#each segments as segment, index (segment.key)}
+      {@const isLast = index === segments.length - 1}
+      {@const detail = segmentHasDetail(segment)}
+      {@const parts = formatLabelParts(segment)}
+      <li class="relative flex gap-2.5 pb-2 last:pb-0">
+        <div class="flex w-3 shrink-0 flex-col items-center pt-1.5">
+          <span
+            class="block h-1.5 w-1.5 shrink-0 rounded-full {segmentAccentClass(segment.toolName, segment.status)} {segment.status === 'running' ? 'animate-pulse' : ''}"
+            aria-hidden="true"
+          ></span>
+          {#if !isLast}
+            <span class="trace-rail mt-0.5 w-px flex-1 min-h-[0.5rem]" aria-hidden="true"></span>
+          {/if}
         </div>
-      {:else}
-        {@render chipList(roundRuns)}
-      {/if}
+
+        <div class="min-w-0 flex-1">
+          {#if detail}
+            <details class="group/lineage min-w-0">
+              <summary
+                class="flex cursor-pointer list-none items-baseline gap-1 marker:content-none transition-colors hover:text-surface-50"
+              >
+                <span class="tracking-tight {segmentLabelClass(segment.toolName)}">
+                  {parts.name}
+                </span>
+                {#if parts.count}
+                  <span class="font-mono text-[10px] text-primary-300/90">{parts.count}</span>
+                {/if}
+              </summary>
+              <div class="mt-1.5 space-y-1.5 border-l border-primary-500/15 pl-2.5">
+                {#if segment.count === 1}
+                  {@render segmentDetail(segment.runs[0])}
+                {:else if segment.count <= 3}
+                  {#each segment.runs as run, runIndex (run.runId)}
+                    <div>
+                      {#if segment.count > 1}
+                        <p class="mb-0.5 font-mono text-[10px] text-surface-500">
+                          {runIndex + 1}/{segment.count}
+                        </p>
+                      {/if}
+                      {@render segmentDetail(run)}
+                    </div>
+                  {/each}
+                {:else}
+                  <div>
+                    <p class="mb-0.5 font-mono text-[10px] text-surface-500">1/{segment.count}</p>
+                    {@render segmentDetail(segment.runs[0])}
+                  </div>
+                  <p class="text-surface-500">… {segment.count - 2} more …</p>
+                  <div>
+                    <p class="mb-0.5 font-mono text-[10px] text-surface-500">
+                      {segment.count}/{segment.count}
+                    </p>
+                    {@render segmentDetail(segment.runs[segment.runs.length - 1])}
+                  </div>
+                {/if}
+              </div>
+            </details>
+          {:else}
+            <p class="flex items-baseline gap-1 tracking-tight">
+              <span class={segmentLabelClass(segment.toolName)}>{parts.name}</span>
+              {#if parts.count}
+                <span class="font-mono text-[10px] text-primary-300/90">{parts.count}</span>
+              {/if}
+            </p>
+          {/if}
+        </div>
+      </li>
     {/each}
-  </div>
+  </ol>
 {/snippet}
 
 {#if runs.length > 0}
   {#if inspectorCollapsed && !compact}
-    <details class="rounded-md border border-surface-700/50 bg-surface-900/30 px-2 py-1.5 text-xs">
-      <summary class="workshop-faint cursor-pointer select-none font-medium text-surface-300">
-        {inspectorSummary()}
+    <details
+      class="tool-trace group/inspector overflow-hidden rounded-lg border transition-[border-color,background,box-shadow] duration-200 {footnote
+        ? 'footnote border-surface-700/20 bg-surface-900/10'
+        : isDone
+          ? 'border-primary-500/20 bg-gradient-to-r from-primary-500/[0.07] via-surface-900/40 to-surface-900/20'
+          : 'border-primary-500/30 bg-gradient-to-r from-primary-500/[0.1] via-surface-900/50 to-surface-900/30 shadow-[inset_0_1px_0_rgba(167,139,250,0.08)]'}"
+      title={fullTrace}
+    >
+      <summary
+        class="flex cursor-pointer list-none items-center gap-2 marker:content-none {footnote
+          ? 'px-2 py-1'
+          : 'px-2.5 py-1.5'}"
+      >
+        <Route
+          class="h-3 w-3 shrink-0 {footnote
+            ? 'text-surface-600'
+            : 'text-primary-400/80'}"
+          strokeWidth={2}
+          aria-hidden="true"
+        />
+        <span
+          class="min-w-0 flex-1 text-[11px] tabular-nums {footnote
+            ? 'text-surface-500'
+            : 'text-surface-200'}"
+        >
+          {collapsed.primary}
+        </span>
+        <ChevronDown
+          class="h-3 w-3 shrink-0 text-surface-600 transition-transform duration-200 group-open/inspector:rotate-180"
+          strokeWidth={2}
+          aria-hidden="true"
+        />
       </summary>
-      <div class="mt-2">
-        {@render roundGroups(true)}
+      <div
+        class="border-t px-2.5 pb-2 pt-2 {footnote
+          ? 'border-surface-700/15'
+          : 'border-primary-500/10'}"
+      >
+        {@render lineageTimeline(lineage)}
       </div>
     </details>
   {:else}
-    {@render roundGroups(!inspectorCollapsed && roundCount > 1)}
+    <div
+      class="tool-trace overflow-hidden rounded-lg border border-primary-500/25 bg-gradient-to-br from-primary-500/[0.08] to-surface-900/30 px-2.5 py-2"
+    >
+      {#if hasRunning && activeSegment}
+        <p class="mb-2 flex items-center gap-1.5 text-[11px] text-primary-200">
+          <span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary-400"></span>
+          {formatSegmentLabel(activeSegment)}
+        </p>
+      {/if}
+      {@render lineageTimeline(lineage)}
+    </div>
   {/if}
 {/if}
+
+<style>
+  .trace-rail {
+    background: linear-gradient(
+      to bottom,
+      rgb(167 139 250 / 0.45),
+      rgb(139 92 246 / 0.2) 55%,
+      rgb(52 211 153 / 0.25)
+    );
+  }
+
+  .tool-trace.group\/inspector[open]:not(.footnote) {
+    box-shadow: inset 0 1px 0 rgb(167 139 250 / 0.12);
+  }
+</style>

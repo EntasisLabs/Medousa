@@ -3,6 +3,7 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
+  import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -85,7 +86,7 @@
   });
 
   $effect(() => {
-    if (!mobile || !visible || !chat.historyNotice) return;
+    if (!visible || !chat.historyNotice) return;
     const notice = chat.historyNotice;
     const timer = setTimeout(() => {
       if (chat.historyNotice === notice) {
@@ -244,12 +245,27 @@
     </div>
     {#if chat.streamError}
       <p class="mt-1 text-[11px] text-error-400">{chat.streamError}</p>
-    {:else if chat.historyNotice}
-      <p class="mt-1 text-[11px] text-primary-300">{chat.historyNotice}</p>
     {:else if chat.historyLoading}
       <p class="mt-1 text-[11px] text-surface-400">Loading conversation from Mac…</p>
     {/if}
   </header>
+
+  {#if chat.historyNotice && visible}
+    <div
+      class="chat-restore-toast {mobile ? 'chat-restore-toast-mobile' : ''}"
+      role="status"
+    >
+      <span class="min-w-0 truncate">{chat.historyNotice}</span>
+      <button
+        type="button"
+        class="chat-restore-toast-dismiss"
+        aria-label="Dismiss"
+        onclick={() => chat.clearHistoryNotice()}
+      >
+        ✕
+      </button>
+    </div>
+  {/if}
 
   <div
     bind:this={scrollEl}
@@ -266,82 +282,79 @@
             : ''} max-w-2xl {message.role === 'user'
           ? mobile
             ? ''
-            : 'ml-auto rounded-md bg-primary-500/12 px-3 py-2'
+            : 'user-turn ml-auto max-w-[min(100%,42rem)] rounded-lg border border-primary-500/15 bg-gradient-to-br from-primary-500/10 via-primary-500/[0.06] to-surface-900/40 px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
           : message.role === 'system'
             ? 'workshop-faint px-1'
             : mobile
               ? ''
-              : 'border-l-2 border-surface-500/35 pl-3'}"
+              : 'assistant-turn border-l-2 border-primary-500/25 pl-3'}"
       >
-        {#if message.role !== "system" && !mobile}
-          <p class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase tracking-wide text-surface-500">
-            <span>{message.role}</span>
-            {#if message.role === "assistant"}
-              {@const answer = formatAnswerState(message.answerState)}
-              {#if answer}
-                <span class="normal-case {answerStateTextClass(answer.tone)}">
-                  · {answer.label}
-                </span>
-              {/if}
-            {/if}
-            {#if message.streaming && message.phase}
-              <span class="normal-case text-primary-300">
-                · {formatTurnPhase(message.phase)}
-              </span>
-            {:else if message.phase === "worker_ack" || message.phase === "awaiting_operator"}
-              <span class="normal-case text-warning-300">
-                · {formatTurnPhase(message.phase)}
-              </span>
-            {:else if message.streaming}
-              <span class="workshop-faint normal-case animate-pulse">· working</span>
-            {/if}
-          </p>
-        {/if}
+        {#if message.role === "assistant"}
+          {#if message.reasoning?.trim()}
+            <AssistantThinking
+              reasoning={message.reasoning}
+              streaming={Boolean(message.streaming)}
+              compact={mobile}
+            />
+          {:else if message.streaming && !message.content?.trim()}
+            <div
+              class="mb-2 flex items-center gap-2 rounded-lg border border-primary-500/15 bg-gradient-to-r from-primary-500/[0.05] to-surface-900/20 px-2.5 py-1.5"
+            >
+              <span
+                class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary-400"
+                aria-hidden="true"
+              ></span>
+              <span class="text-[11px] text-primary-200/90">Thinking…</span>
+            </div>
+          {/if}
 
-        {#if message.role === "assistant" && !mobile && (message.toolRuns?.length || message.tools?.length || message.statusLine || message.reasoning)}
-          <div class="mb-1.5 space-y-1">
-            {#if message.toolRuns && message.toolRuns.length > 0}
+          {#if message.statusLine && (message.streaming || message.phase === "worker_ack" || message.phase === "awaiting_operator")}
+            <p
+              class="mb-2 flex items-center gap-1.5 text-[11px] {message.phase === 'worker_ack' ||
+              message.phase === 'awaiting_operator'
+                ? 'text-warning-300/90'
+                : 'text-primary-200/80'}"
+            >
+              {#if message.streaming}
+                <span
+                  class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary-400"
+                  aria-hidden="true"
+                ></span>
+              {/if}
+              {message.statusLine}
+            </p>
+          {/if}
+
+          {@const answer = formatAnswerState(message.answerState)}
+          <div class="text-surface-50">
+            <MarkdownContent content={message.content || "…"} />
+          </div>
+
+          {#if answer && !message.streaming}
+            <p class="mt-1.5 text-[10px] {answerStateTextClass(answer.tone)}">
+              {answer.label}
+            </p>
+          {/if}
+
+          {#if message.toolRuns && message.toolRuns.length > 0}
+            <div class="mt-3">
               <ToolRunChips
                 runs={message.toolRuns}
                 compact={mobile}
                 inspectorCollapsed={!message.streaming}
               />
-            {:else if message.tools && message.tools.length > 0}
-              <p class="font-mono text-[10px] text-surface-500">
-                {message.tools.map((tool) => formatToolName(tool)).join(" · ")}
-              </p>
-            {/if}
-            {#if message.statusLine && (message.streaming || message.phase === "worker_ack" || message.phase === "awaiting_operator")}
-              <p class="workshop-faint">{message.statusLine}</p>
-            {/if}
-            {#if message.reasoning?.trim()}
-              <details class="workshop-faint">
-                <summary class="cursor-pointer select-none text-surface-400 hover:text-surface-200">
-                  Reasoning
-                </summary>
-                <p class="mt-1 whitespace-pre-wrap leading-relaxed text-surface-300">
-                  {message.reasoning}
-                </p>
-              </details>
-            {/if}
-          </div>
-        {/if}
-
-        {#if message.role === "assistant" && mobile && message.reasoning?.trim() && !message.streaming}
-          <details class="workshop-faint mb-1.5">
-            <summary class="cursor-pointer select-none text-xs text-surface-400">
-              Reasoning
-            </summary>
-            <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-surface-300">
-              {message.reasoning}
+            </div>
+          {:else if message.tools && message.tools.length > 0}
+            <p class="mt-3 font-mono text-[10px] text-surface-500">
+              {message.tools.map((tool) => formatToolName(tool)).join(" · ")}
             </p>
-          </details>
-        {/if}
-
-        {#if message.role === "assistant"}
-          <MarkdownContent content={message.content || "…"} />
-        {:else}
+          {/if}
+        {:else if message.role === "user"}
           <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-100">
+            {message.content}
+          </p>
+        {:else}
+          <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-300">
             {message.content}
           </p>
         {/if}

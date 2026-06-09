@@ -577,34 +577,54 @@ export class ChatStore {
     ];
   }
 
+  private async resolveWorkerSynthesisContent(
+    link: WorkerLink,
+    detail?: WorkCardDetail,
+  ): Promise<string | null> {
+    const handoffContent = link.messageId
+      ? this.messages.find((message) => message.id === link.messageId)?.content
+      : null;
+    const fromHistory = await this.fetchLatestAssistantTurn(link.sessionId, handoffContent);
+    if (fromHistory) return fromHistory;
+
+    const excerpt = detail?.result_excerpt?.trim();
+    if (excerpt) return excerpt;
+
+    return detail?.error?.trim() || null;
+  }
+
   private async deliverWorkerSynthesis(workId: string, detail?: WorkCardDetail) {
     const link = this.workers.get(workId);
     if (!link || link.synthesisDelivered) return;
 
-    let content = detail?.result_excerpt?.trim();
-    if (!content && detail?.error?.trim()) {
-      content = detail.error.trim();
+    if (link.synthesisMessageId) {
+      const existing = this.messages.find((m) => m.id === link.synthesisMessageId);
+      if (existing?.content.trim()) {
+        this.finalizeWorkerHandoffBubble(link.messageId);
+        this.markWorkerSynthesisDelivered(workId);
+        this.noteBackgroundSettled();
+        return;
+      }
     }
-    if (!content) {
-      const handoffContent = link.messageId
-        ? this.messages.find((message) => message.id === link.messageId)?.content
-        : null;
-      content =
-        (await this.fetchLatestAssistantTurn(link.sessionId, handoffContent)) ?? undefined;
-    }
+
+    const content = await this.resolveWorkerSynthesisContent(link, detail);
     if (!content) return;
 
-    const targetId = link.messageId;
-    if (targetId) {
-      const idx = this.messages.findIndex((m) => m.id === targetId);
+    if (this.hasFollowUpSynthesis(link.messageId, content)) {
+      this.finalizeWorkerHandoffBubble(link.messageId);
+      this.markWorkerSynthesisDelivered(workId);
+      this.noteBackgroundSettled();
+      return;
+    }
+
+    if (link.synthesisMessageId) {
+      const idx = this.messages.findIndex((m) => m.id === link.synthesisMessageId);
       if (idx >= 0) {
-        const prior = this.messages[idx].content;
-        const merged = resolveTurnContent(prior, content, true);
         this.messages = [
           ...this.messages.slice(0, idx),
           {
             ...this.messages[idx],
-            content: merged,
+            content,
             streaming: false,
             phase: null,
             statusLine: null,
@@ -614,17 +634,11 @@ export class ChatStore {
           },
           ...this.messages.slice(idx + 1),
         ];
-        this.removeMessageById(link.synthesisMessageId);
+        this.finalizeWorkerHandoffBubble(link.messageId);
         this.markWorkerSynthesisDelivered(workId);
         this.noteBackgroundSettled();
         return;
       }
-    }
-
-    if (this.hasFollowUpSynthesis(link.messageId, content)) {
-      this.finalizeWorkerHandoffBubble(link.messageId);
-      this.markWorkerSynthesisDelivered(workId);
-      return;
     }
 
     this.finalizeWorkerHandoffBubble(link.messageId);
@@ -703,8 +717,14 @@ export class ChatStore {
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
     this.syncTurnFromEvent(event);
 
+    const workerLink = this.workerLinkForTurn(event.turn_id);
+    if (event.terminal && workerLink?.synthesisDelivered) {
+      this.noteTurnTerminal(event);
+      return;
+    }
+
     if (event.event_type === "tool_started" || event.event_type === "tool_finished") {
-      const messageId = this.messageIdForTurn(event.turn_id);
+      const messageId = this.messageIdForToolStream(event.turn_id);
       if (messageId) {
         this.applyToolStreamEvent(messageId, event);
       }
@@ -740,6 +760,10 @@ export class ChatStore {
     if (turn?.messageId) return turn.messageId;
     const workerLink = this.workerLinkForTurn(turnId);
     if (workerLink?.synthesisMessageId) return workerLink.synthesisMessageId;
+    // Worker handoff ack bubble must not receive synthesis stream events.
+    if (workerLink && !workerLink.synthesisDelivered) {
+      return null;
+    }
     if (turn?.phase === "worker_handoff" || turn?.phase === "worker_ack") {
       return null;
     }
@@ -748,6 +772,21 @@ export class ChatStore {
         (message) => message.turnId === turnId && message.role === "assistant",
       )?.id ?? null
     );
+  }
+
+  /** Route worker tool receipts to the synthesis bubble, not the handoff ack. */
+  private messageIdForToolStream(turnId: string): string | null {
+    const workerLink = this.workerLinkForTurn(turnId);
+    if (workerLink && !workerLink.synthesisDelivered) {
+      if (workerLink.synthesisMessageId) {
+        return workerLink.synthesisMessageId;
+      }
+      return this.ensureWorkerFollowUpBubble(workerLink.workId, turnId, {
+        statusLine: "Working in background…",
+        streaming: true,
+      });
+    }
+    return this.messageIdForTurn(turnId);
   }
 
   private applyToolStreamEvent(messageId: string, event: InteractiveTurnStreamEvent) {
@@ -871,7 +910,13 @@ export class ChatStore {
         event.event_type === "final" ||
         event.event_type === "needs_input" ||
         event.event_type === "error";
-      content = resolveTurnContent(current.content, event.final_text, terminal);
+      const workerLink = this.workerLinkForTurn(event.turn_id);
+      const isWorkerSynthesisTarget =
+        workerLink != null && messageId !== workerLink.messageId;
+      content =
+        isWorkerSynthesisTarget && terminal
+          ? event.final_text
+          : resolveTurnContent(current.content, event.final_text, terminal);
     }
 
     let reasoning = current.reasoning ?? "";
@@ -957,16 +1002,14 @@ export class ChatStore {
       next.set(event.turn_id, { ...turn, messageId: id });
       this.turns = next;
     }
-    if (turn?.phase === "worker_handoff") {
-      const workerLink = this.workerLinkForTurn(event.turn_id);
-      if (workerLink) {
-        const nextWorkers = new Map(this.workers);
-        nextWorkers.set(workerLink.workId, {
-          ...workerLink,
-          synthesisMessageId: id,
-        });
-        this.workers = nextWorkers;
-      }
+    const workerLink = this.workerLinkForTurn(event.turn_id);
+    if (workerLink && !workerLink.synthesisMessageId) {
+      const nextWorkers = new Map(this.workers);
+      nextWorkers.set(workerLink.workId, {
+        ...workerLink,
+        synthesisMessageId: id,
+      });
+      this.workers = nextWorkers;
     }
     if (turn?.mode === "interactive" && !event.terminal) {
       this.assistantId = id;

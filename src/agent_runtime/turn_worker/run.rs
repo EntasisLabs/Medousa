@@ -579,18 +579,6 @@ async fn run_worker_failure_notify(
         ),
     };
 
-    crate::session::append_turn(
-        &record.session_id,
-        &crate::turn_parts::conversation_turn_from_parts(
-            "assistant",
-            text.clone(),
-            vec!["turn_worker.failure".to_string()],
-            None,
-            vec![crate::turn_parts::TurnPart::Text {
-                markdown: text.clone(),
-            }],
-        ),
-    );
     sink.agent_response(notify_turn_id, text, vec!["turn_worker.failure".to_string()])
         .await;
 }
@@ -713,18 +701,8 @@ async fn deliver_synthesis_response(
     text: String,
 ) {
     let tool_names = record.tool_names.clone();
-    crate::session::append_turn(
-        &record.session_id,
-        &crate::turn_parts::conversation_turn_from_parts(
-            "assistant",
-            text.clone(),
-            tool_names.clone(),
-            None,
-            vec![crate::turn_parts::TurnPart::Text {
-                markdown: text.clone(),
-            }],
-        ),
-    );
+    // Worker synthesis must commit explicit finish prose, not stale host/worker stream draft.
+    sink.reset_streamed_markdown().await;
     sink.agent_response(synthesis_turn_id, text, tool_names).await;
     turn_worker_store().update(&record.work_id, |worker| {
         worker.synthesis_delivered = true;

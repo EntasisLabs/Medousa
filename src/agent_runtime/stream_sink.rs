@@ -78,6 +78,9 @@ pub trait AgentStreamSink: Send + Sync {
         .await;
     }
 
+    /// Drop accumulated stream draft so the next terminal commit uses explicit text (worker synthesis).
+    async fn reset_streamed_markdown(&self) {}
+
     /// Clear in-flight assistant scratch text before the next model round (TUI replaces draft).
     async fn scratch_reset(&self, turn_id: u64) {
         let _ = turn_id;

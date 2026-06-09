@@ -440,6 +440,10 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id));
     }
 
+    async fn reset_streamed_markdown(&self) {
+        self.clear_streamed_markdown();
+    }
+
     async fn turn_budget_approval_required(
         &self,
         _turn_id: u64,
@@ -916,6 +920,10 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn scratch_reset(&self, turn_id: u64) {
         self.inner.scratch_reset(turn_id).await;
+    }
+
+    async fn reset_streamed_markdown(&self) {
+        self.inner.reset_streamed_markdown().await;
     }
 }
 

@@ -195,6 +195,7 @@
       {/if}
 
       <StatusBar
+        minimal={activeSurface === "chat"}
         health={daemonHealth}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}

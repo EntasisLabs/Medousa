@@ -9,6 +9,8 @@
     cronTotalCount?: number;
     pendingDeliveries?: number | null;
     lastTickAt?: string | null;
+    /** Whisper connection only — for Chat tab focus. */
+    minimal?: boolean;
     onOpenRuntime?: () => void;
     onOpenCron?: () => void;
   }
@@ -21,6 +23,7 @@
     cronTotalCount = 0,
     pendingDeliveries = null,
     lastTickAt = null,
+    minimal = false,
     onOpenRuntime,
     onOpenCron,
   }: Props = $props();
@@ -44,14 +47,25 @@
 </script>
 
 <footer
-  class="workshop-status flex h-8 shrink-0 items-center justify-between gap-4 px-3 text-[11px]"
+  class="workshop-status flex shrink-0 items-center justify-between gap-4 px-3 text-[11px] {minimal
+    ? 'h-5 border-t border-surface-700/20 text-surface-600'
+    : 'h-8'}"
   aria-label="Workshop status"
 >
-  <span class="truncate {health?.ok ? 'text-success-400' : 'text-warning-400'}">
+  <span
+    class="truncate {minimal
+      ? health?.ok
+        ? 'text-surface-600'
+        : 'text-warning-400/90'
+      : health?.ok
+        ? 'text-success-400'
+        : 'text-warning-400'}"
+  >
     {statusLabel}
   </span>
 
-  <div class="flex shrink-0 items-center gap-3">
+  {#if !minimal}
+    <div class="flex shrink-0 items-center gap-3">
     {#if onOpenCron}
       <button
         type="button"
@@ -87,4 +101,5 @@
       </button>
     {/if}
   </div>
+  {/if}
 </footer>
