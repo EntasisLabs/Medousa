@@ -161,6 +161,67 @@ pub fn looks_like_clarifying_question(text: &str) -> bool {
     true
 }
 
+const HOST_DELEGATION_USER_PHRASES: &[&str] = &[
+    "spin up",
+    "spin them",
+    "send it",
+    "go ahead",
+    "do it now",
+    "do it!",
+    "start the worker",
+    "start workers",
+    "spawn worker",
+    "spawn workers",
+    "research worker",
+    "delegate",
+    "run grapheme",
+    "execute",
+    "send them",
+    "lets go",
+    "let's go",
+    "perfect!!",
+    "multi-topic",
+    "research these",
+    "spin workers",
+    "launch worker",
+    "background worker",
+];
+
+const PENDING_SPAWN_DRAFT_PHRASES: &[&str] = &[
+    "spin up",
+    "spawn worker",
+    "spawn workers",
+    "spawn them",
+    "i'll spawn",
+    "i will spawn",
+    "going to spawn",
+    "let me spawn",
+    "delegate to",
+    "background worker",
+    "workshop",
+    "cognition_spawn_turn_worker",
+    "hand off",
+    "handoff",
+    "workers next",
+    "worker next",
+];
+
+/// User message implies host should delegate heavy execution (spawn worker), not stop at plan prose.
+pub fn user_prompt_implies_host_delegation(prompt: &str) -> bool {
+    let lower = prompt.to_ascii_lowercase();
+    HOST_DELEGATION_USER_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+}
+
+/// Assistant draft promises spawn/delegation that has not happened yet.
+pub fn draft_implies_pending_spawn(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    PENDING_SPAWN_DRAFT_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,5 +263,15 @@ mod tests {
             termination_reason_for_text_only_finalize(false, 3, 10),
             "heuristic_substantive"
         );
+    }
+
+    #[test]
+    fn delegation_prompt_and_plan_draft_detected() {
+        assert!(user_prompt_implies_host_delegation(
+            "perfect!! spin them up and lets see what we can get!!"
+        ));
+        assert!(draft_implies_pending_spawn(
+            "I'll spin up five research workers next."
+        ));
     }
 }

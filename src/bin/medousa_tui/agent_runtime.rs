@@ -550,6 +550,8 @@ pub(crate) async fn start_prompt_run(
             None,
         ),
     );
+    let session_scratch_seed =
+        medousa::turn_slice::session_scratch_seed_from_history(&state.conversation, &prompt);
     let sink: Arc<dyn AgentStreamSink> = Arc::new(TuiStreamSink { tx: tx.clone() });
     let turn_scope = tui_rt.turn_scope.clone();
     let worker_scheduler = tui_rt.worker_scheduler.clone();
@@ -608,6 +610,7 @@ pub(crate) async fn start_prompt_run(
                 handoff_vibe_signature,
                 handoff_model_avec,
                 host_continuity_bundle,
+                session_scratch_seed,
             },
         )
         .await;

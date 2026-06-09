@@ -122,6 +122,55 @@ Async paths unchanged: `turn_progress`, `scratch_reset`, worker card delivery, b
 
 ---
 
+## Phase 7 — Actor loop, light touch (2026-06-09)
+
+**Goal:** Principal chat feels like one Medousa — no stream/final dupe, less orchestration fighting the model. Keep host/worker delegation; trim merge heuristics and second-voice rewrites.
+
+### Problem (post–Phase 6)
+
+No-tool and simple turns still had **two body writers**: `content_delta` during LLM stream, then terminal `final` with overlapping or rewritten text. Home/TUI ran `resolveTurnContent` heuristics to pick a winner → visible swap at end of turn.
+
+### Design principles
+
+| Principle | Meaning |
+|-----------|---------|
+| **Stream is canonical** | On principal surfaces, if tokens streamed into the bubble, terminal `final` commits metadata only (tools, terminal flag, persist) — not a second body |
+| **Progress ≠ answer** | `turn_progress` / `begin_work` → `statusLine` (or empty-bubble preview only); never compete with streamed answer |
+| **Tools in structure** | Rich surfaces render tools from `tool_names` / `parts`; no markdown tool footer in canonical body (already P0) |
+| **Host = actor** | Tool loop until `EndTurn` or `worker_spawned`; Medousa declares done via control tools — runtime does not NLP-merge prose |
+| **Worker = delegate** | Spawn + card + synthesis when work ran; synthesis pass-through when worker already `finish`‑ed (Phase 7C, follow-up) |
+
+### Phase 7A — Stream-authoritative terminal ✅
+
+| Layer | Change |
+|-------|--------|
+| **Daemon sink** | Accumulate streamed markdown; persist streamed body; emit terminal `final` without `final_text` when stream delivered the answer |
+| **Home** | Terminal merge: keep streamed bubble when non-empty; ignore redundant `final_text` |
+| **TUI** | Same policy in `resolve_agent_turn_content` |
+
+**Acceptance:** Plain chat turn — one stable bubble from first token through terminal; reload matches what user saw.
+
+### Phase 7B — Orchestrator trim (follow-up)
+
+- Confirm `maybe_append_tools_to_canonical_body` stays off for Home/TUI/interactive (already `RICH_SURFACE`).
+- Gate receipt / AVEC continue loops to workshop lane only on host principal turns.
+
+### Phase 7C — Worker synthesis pass-through (follow-up)
+
+- Skip host synthesis LLM when worker output already terminal via `cognition_turn_finish`.
+- Keep one-bubble handoff update in Home.
+
+### Key files (Phase 7)
+
+| Area | Path |
+|------|------|
+| Stream commit | `src/agent_runtime/daemon_interactive_turn.rs` |
+| SSE final | `src/interactive_turn_runtime.rs` |
+| Home reducer | `apps/medousa-home/src/lib/utils/resolveTurnContent.ts`, `chat.svelte.ts` |
+| TUI reducer | `src/bin/medousa_tui/event_reducer.rs` |
+
+---
+
 ## Key files
 
 | Area | Path |

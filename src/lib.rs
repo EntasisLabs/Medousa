@@ -11,6 +11,8 @@ pub mod artifact_store;
 pub mod channel_session_store;
 pub mod turn_continuation;
 pub mod turn_parts;
+pub mod turn_slice;
+pub mod tool_history_tools;
 pub mod turn_budget_request;
 pub mod turn_budget_handlers;
 pub mod turn_budget_notify;

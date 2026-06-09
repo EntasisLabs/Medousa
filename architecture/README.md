@@ -43,6 +43,7 @@ Start here for product-level usage:
 26. [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) — **Plan:** channel-agnostic turn envelope, surface formatters, Home tool chips + Obsidian markdown, attachment hooks
 27. [media-and-attachments-plan.md](media-and-attachments-plan.md) — **Draft (P5):** user attachments, vision, generated images, voice; blob store + upload + `parts[]` phasing (P5a–P5e)
 28. [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md) — **Done:** tool-call loop gate, `cognition_turn_begin_work`, single-writer commit, FSM/interim cleanup (Phase 5)
+29. [continuity-first-redesign.md](continuity-first-redesign.md) — **Approved plan:** Model 3 continuity pipeline, slice-indexed tool history, runtime-owned limits, phased 8A–8E
 
 ## Primary Code Anchors
 

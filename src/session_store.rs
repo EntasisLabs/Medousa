@@ -10,6 +10,7 @@ use tokio::runtime::Handle;
 
 use crate::session::{ConversationTurn, SessionHistorySummary};
 use crate::turn_parts::TurnPart;
+use crate::turn_slice::TurnSliceSummary;
 use stasis::prelude::RuntimeComposition;
 
 const SESSION_TURN_TABLE: &str = "session_turn";
@@ -24,12 +25,14 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD answer_state ON TABLE session_turn TYPE option<string>",
     // JSON-serialized TurnPart[] — kept as string so SCHEMAFULL does not reject nested arrays.
     "DEFINE FIELD parts ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD slice_summary ON TABLE session_turn TYPE option<string>",
     "DEFINE INDEX idx_session_turn_session_id ON TABLE session_turn COLUMNS session_id",
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
 ];
 
 const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
     "DEFINE FIELD OVERWRITE parts ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD OVERWRITE slice_summary ON TABLE session_turn TYPE option<string>",
 ];
 
 /// Initialize the session store based on the runtime composition.
@@ -64,6 +67,8 @@ struct SessionTurnRecord {
     answer_state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parts: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    slice_summary: Option<String>,
 }
 
 fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<String> {
@@ -72,6 +77,14 @@ fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<String> {
 
 fn parts_from_json(value: Option<String>) -> Option<Vec<TurnPart>> {
     value.and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
+fn slice_summary_from_json(value: Option<String>) -> Option<TurnSliceSummary> {
+    value.and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
+fn slice_summary_to_json(value: Option<&TurnSliceSummary>) -> Option<String> {
+    value.and_then(|summary| serde_json::to_string(summary).ok())
 }
 
 impl From<SessionTurnRecord> for ConversationTurn {
@@ -83,6 +96,7 @@ impl From<SessionTurnRecord> for ConversationTurn {
             tool_names: record.tool_names,
             answer_state: record.answer_state,
             parts: parts_from_json(record.parts),
+            slice_summary: slice_summary_from_json(record.slice_summary),
         }
     }
 }
@@ -97,6 +111,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
             tool_names: turn.tool_names.clone(),
             answer_state: turn.answer_state.clone(),
             parts: parts_to_json(turn.parts.as_deref()),
+            slice_summary: slice_summary_to_json(turn.slice_summary.as_ref()),
         }
     }
 }

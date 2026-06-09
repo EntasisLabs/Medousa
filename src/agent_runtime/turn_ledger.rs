@@ -32,15 +32,10 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
         "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
-         environment=This turn has up to {max_tool_rounds} model rounds (tool calls and/or assistant text). \
-         Tool receipts accumulate in the transcript until the turn ends. \
-         Failures return JSON receipts (ok=false when applicable). \
-         cognition_turn_begin_work tells the principal you are starting tool work (progress line only). \
-         cognition_turn_finish delivers the complete principal-facing answer in one tool call and ends the turn immediately. \
-         cognition_turn_request_more_rounds pauses for principal approval when the budget is tight. \
-         Prose-only with no tools ends the turn; any tool call enters the loop. \
-         Rounds are a budget, not a quota — end early with cognition_turn_finish or complete prose when the principal is served. \
-         One sharp question beats spinning tools on vague intent."
+         Serve the principal in this turn: use tools when needed; complete prose ends the turn. \
+         When execution belongs in the workshop, call cognition_spawn_turn_worker with resolved context — \
+         do not stop on plan prose alone. \
+         Turn start injects [MEDOUSA_TOOL_SLICES]; drill with cognition_tool_history_summary or cognition_tool_history_detail(slice_id=turn:N)."
     )
 }
 
@@ -95,37 +90,10 @@ impl TurnLoopAwareness {
     }
 
     pub fn loop_budget_message(&self, tool_rounds_remaining: usize) -> String {
-        let mut lines = vec![format!(
-            "Tool rounds remaining in this turn: {tool_rounds_remaining}."
-        )];
-        if self.user_responses_sent == 0 {
-            lines.push(
-                "User-visible responses sent this turn: 0 (interim scratch only; not in transcript)."
-                    .to_string(),
-            );
-        } else {
-            let preview = self
-                .last_response_preview
-                .as_deref()
-                .unwrap_or("(empty)");
-            lines.push(format!(
-                "User-visible responses sent this turn: {}. Last response (preview): {preview}",
-                self.user_responses_sent
-            ));
+        if tool_rounds_remaining > 2 {
+            return String::new();
         }
-        if tool_rounds_remaining <= 1 {
-            lines.push(format!(
-                "Final model round in this turn budget (tool_rounds_remaining={tool_rounds_remaining}). \
-                 A tools-only round here ends the turn without a separate final text delivery."
-            ));
-        }
-        lines.push(
-            "Early exit allowed: if you can answer now, call cognition_turn_finish with the full reply. \
-             Use cognition_turn_begin_work when the principal should see progress before tools run. \
-             If intent is unclear, ask one concise clarifying question instead of using remaining rounds."
-                .to_string(),
-        );
-        lines.join("\n")
+        format!("Rounds remaining in this turn: {tool_rounds_remaining}.")
     }
 
     pub fn wrap_control_body(&self, tool_rounds_remaining: usize, body: &str) -> String {
@@ -285,9 +253,9 @@ pub fn record_from_gatekeeper_continue(
 fn ledger_kind_for_continue(reason: ContinueReason) -> TurnLedgerEventKind {
     match reason {
         ContinueReason::MissingReceipts => TurnLedgerEventKind::ReceiptMissing,
-        ContinueReason::AwaitingTools | ContinueReason::PrepareFinalInterim => {
-            TurnLedgerEventKind::TextOnlyContinue
-        }
+        ContinueReason::AwaitingTools
+        | ContinueReason::PrepareFinalInterim
+        | ContinueReason::PendingDelegation => TurnLedgerEventKind::TextOnlyContinue,
     }
 }
 
@@ -444,15 +412,24 @@ mod tests {
     fn tool_loop_policy_includes_configured_rounds() {
         let p = append_tool_loop_policy("hello", 12);
         assert!(p.contains("max_tool_rounds=12"));
-        assert!(p.contains("environment="));
-        assert!(p.contains("budget, not a quota"));
+        assert!(p.contains("[MEDOUSA_TOOL_SLICES]"));
+        assert!(p.contains("cognition_tool_history_detail"));
+        assert!(p.contains("cognition_spawn_turn_worker"));
     }
 
     #[test]
-    fn awareness_message_includes_early_exit_hint() {
+    fn awareness_message_quiet_until_low_rounds() {
         let a = TurnLoopAwareness::default();
-        let msg = a.loop_budget_message(5);
-        assert!(msg.contains("Early exit allowed"));
+        assert!(a.loop_budget_message(5).is_empty());
+        let msg = a.loop_budget_message(2);
+        assert!(msg.contains("Rounds remaining in this turn: 2"));
+    }
+
+    #[test]
+    fn awareness_message_includes_budget_when_low() {
+        let a = TurnLoopAwareness::default();
+        let msg = a.loop_budget_message(1);
+        assert!(msg.contains("Rounds remaining in this turn: 1"));
     }
 
     #[test]
@@ -461,17 +438,6 @@ mod tests {
         assert!(msg.contains("10"));
         assert!(msg.contains("turn budget: 10"));
         assert!(msg.contains("used 7 this turn"));
-    }
-
-    #[test]
-    fn awareness_message_includes_budget_and_last_response() {
-        let mut a = TurnLoopAwareness::default();
-        a.record_user_response("Let me pull memory and calibrate AVEC for you.");
-        let msg = a.loop_budget_message(7);
-        assert!(msg.contains("Tool rounds remaining"));
-        assert!(msg.contains('7'));
-        assert!(msg.contains("User-visible responses sent this turn: 1"));
-        assert!(msg.contains("Let me pull memory"));
     }
 
     #[test]

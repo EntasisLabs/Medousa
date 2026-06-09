@@ -9,8 +9,10 @@ use genai::chat::ChatMessage;
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::agent_runtime::turn_completion::missing_ritual_tools_for_avec;
+use crate::agent_runtime::turn_worker_tools::is_spawn_turn_worker_tool_name;
 use crate::turn_text_heuristics::{
-    looks_like_clarifying_question, looks_like_substantive_final_answer,
+    draft_implies_pending_spawn, looks_like_clarifying_question, looks_like_substantive_final_answer,
+    user_prompt_implies_host_delegation,
 };
 
 /// What the tool loop should do after a text-only model response.
@@ -34,6 +36,8 @@ pub enum ContinueReason {
     MissingReceipts,
     /// `prepare_final` was invoked but draft still looks interim.
     PrepareFinalInterim,
+    /// Host promised delegation (spawn workers) but `cognition_spawn_turn_worker` has not run yet.
+    PendingDelegation,
 }
 
 /// Developer-facing turn-control body for `[MEDOUSA_TURN_CONTROL]`.
@@ -50,6 +54,11 @@ pub fn continue_control_message(reason: ContinueReason, missing_tools: &[String]
         ContinueReason::PrepareFinalInterim => {
             "Turn continues: cognition_turn_prepare_final was called but the draft still looks interim — \
              send the complete principal-facing answer next."
+                .to_string()
+        }
+        ContinueReason::PendingDelegation => {
+            "Turn continues: delegated work is still open — call cognition_spawn_turn_worker with a complete task \
+             (include resolved manuscripts/capabilities from this turn) or finish with cognition_turn_finish when done."
                 .to_string()
         }
     }
@@ -83,6 +92,29 @@ pub struct AfterToolsRoundContext<'a> {
     pub max_tool_rounds: usize,
     pub invocations: &'a [ToolInvocation],
     pub workshop_lane: bool,
+    pub open_gaps: &'a [String],
+}
+
+fn spawn_turn_worker_invoked(invocations: &[ToolInvocation]) -> bool {
+    invocations
+        .iter()
+        .any(|inv| is_spawn_turn_worker_tool_name(&inv.tool_name))
+}
+
+pub fn should_continue_for_pending_delegation(ctx: &AfterToolsRoundContext<'_>) -> bool {
+    if ctx.workshop_lane || spawn_turn_worker_invoked(ctx.invocations) {
+        return false;
+    }
+    if user_prompt_implies_host_delegation(ctx.user_prompt) {
+        return true;
+    }
+    if draft_implies_pending_spawn(&ctx.draft_text) {
+        return true;
+    }
+    ctx.open_gaps.iter().any(|gap| {
+        let lower = gap.to_ascii_lowercase();
+        lower.contains("spawn") || lower.contains("worker") || lower.contains("delegate")
+    })
 }
 
 /// Phase 1 policy: zero tool invocations this turn — default is end, not loop.
@@ -142,6 +174,13 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         };
     }
 
+    if should_continue_for_pending_delegation(ctx) {
+        return continue_loop(
+            ContinueReason::PendingDelegation,
+            vec!["cognition_spawn_turn_worker".to_string()],
+        );
+    }
+
     if looks_like_substantive_final_answer(&ctx.draft_text) {
         return TurnRoundAction::EndTurn {
             termination_reason: "tool_debt_complete",
@@ -195,6 +234,7 @@ mod tests {
             max_tool_rounds: 10,
             invocations,
             workshop_lane: false,
+            open_gaps: &[],
         }
     }
 
@@ -369,6 +409,83 @@ mod tests {
             action,
             TurnRoundAction::EndTurn {
                 termination_reason: "workshop_lane_prepare_final"
+            }
+        ));
+    }
+
+    #[test]
+    fn plan_to_spawn_after_discovery_continues_host_loop() {
+        let invocations = vec![
+            tool("cognition_manuscript_list"),
+            tool("cognition_manuscript_resolve"),
+            tool("cognition_capability_search"),
+        ];
+        let draft = "Perfect — base-researcher is resolved and web_research is available. \
+                     I'll spin up five research workers next.";
+        let action = decide_after_tools_text_round(&AfterToolsRoundContext {
+            user_prompt: "research these topics then spin up workers",
+            draft_text: draft.to_string(),
+            pending_final_answer: false,
+            rounds_executed: 3,
+            max_tool_rounds: 10,
+            invocations: &invocations,
+            workshop_lane: false,
+            open_gaps: &[],
+        });
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PendingDelegation,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn follow_up_spin_them_up_continues_without_spawn() {
+        let invocations = vec![
+            tool("cognition_manuscript_list"),
+            tool("cognition_manuscript_resolve"),
+        ];
+        let action = decide_after_tools_text_round(&AfterToolsRoundContext {
+            user_prompt: "perfect!! spin them up and lets see what we can get!!",
+            draft_text: "On it — I'll delegate to the workshop now.".to_string(),
+            pending_final_answer: false,
+            rounds_executed: 4,
+            max_tool_rounds: 10,
+            invocations: &invocations,
+            workshop_lane: false,
+            open_gaps: &[],
+        });
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PendingDelegation,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn spawn_receipt_allows_turn_to_end() {
+        let invocations = vec![
+            tool("cognition_manuscript_resolve"),
+            tool("cognition_spawn_turn_worker"),
+        ];
+        let action = decide_after_tools_text_round(&AfterToolsRoundContext {
+            user_prompt: "spin them up",
+            draft_text: "Working on that in the background.".to_string(),
+            pending_final_answer: false,
+            rounds_executed: 4,
+            max_tool_rounds: 10,
+            invocations: &invocations,
+            workshop_lane: false,
+            open_gaps: &[],
+        });
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "tool_debt_complete"
             }
         ));
     }

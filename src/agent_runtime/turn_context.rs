@@ -193,6 +193,11 @@ pub struct WorkerHandoffCapsule {
     pub host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manuscript: Option<crate::identity_manuscript::WorkerManuscriptHandoff>,
+    /// Session slice ids with tool history (Phase 8C) — `turn:N` keys for detail drill-down.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relevant_slice_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_history_excerpt: Option<String>,
 }
 
 impl WorkerHandoffCapsule {
@@ -232,6 +237,8 @@ impl WorkerHandoffCapsule {
             model_avec,
             host_continuity,
             manuscript: None,
+            relevant_slice_ids: Vec::new(),
+            tool_history_excerpt: None,
         }
     }
 
@@ -290,6 +297,16 @@ impl WorkerHandoffCapsule {
             self.host_scratch.open_gaps.join(", ")
         };
         let constraints = self.constraints.join("; ");
+        let slice_ids = if self.relevant_slice_ids.is_empty() {
+            "(none)".to_string()
+        } else {
+            self.relevant_slice_ids.join(", ")
+        };
+        let slice_excerpt = self
+            .tool_history_excerpt
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("(see HOST_TOOL_DIGESTS)");
         let parent_corr = self
             .parent_turn_correlation_id
             .as_deref()
@@ -320,6 +337,8 @@ impl WorkerHandoffCapsule {
              constraints={constraints}\n\n\
              HOST_GOAL:\n{host_goal}\n\n\
              HOST_TOOL_DIGESTS (recent host tool rounds, compact):\n{digests}\n\n\
+             HOST_TOOL_SLICES (session index — slice_id turn:N):\n{slice_excerpt}\n\
+             relevant_slice_ids={slice_ids}\n\n\
              HOST_OPEN_GAPS (finish or honor on worker):\n{gaps}\n\n\
              WORKER_TASK:\n{task}\n\n\
              ORIGINAL_USER_MESSAGE:\n{parent}\n\n\

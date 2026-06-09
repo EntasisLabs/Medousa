@@ -297,6 +297,10 @@ impl MedousaToolLoopPipeline {
                             .as_ref()
                             .map(|gate| gate.skip_avec_ritual_check)
                             .unwrap_or(false);
+                        let user_prompt_for_fsm = completion_gate
+                            .as_ref()
+                            .and_then(|gate| gate.handoff_parent_user_prompt.as_deref())
+                            .unwrap_or(shared_inputs.user_prompt.as_ref());
                         let action = if invocations.is_empty() {
                             decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
                                 draft_text: text.clone(),
@@ -306,13 +310,14 @@ impl MedousaToolLoopPipeline {
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
-                                user_prompt: shared_inputs.user_prompt.as_ref(),
+                                user_prompt: user_prompt_for_fsm,
                                 draft_text: text.clone(),
                                 pending_final_answer,
                                 rounds_executed,
                                 max_tool_rounds: effective_max_tool_rounds,
                                 invocations: &invocations,
                                 workshop_lane,
+                                open_gaps: &turn_ctx.scratchpad.open_gaps,
                             })
                         };
 
@@ -626,6 +631,29 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some(payload) = request_more_rounds_from_invocations(&invocations) {
+                    if let Some(gate) = completion_gate.as_ref() {
+                        if !gate.require_operator_budget_gate {
+                            let headroom = gate
+                                .tool_round_budget_ceiling
+                                .saturating_sub(effective_max_tool_rounds);
+                            let granted = payload
+                                .requested_rounds
+                                .max(1)
+                                .min(headroom);
+                            if granted > 0 {
+                                effective_max_tool_rounds =
+                                    effective_max_tool_rounds.saturating_add(granted);
+                                push_turn_control_message(
+                                    &mut turn_ctx.tool_lane.messages,
+                                    &format!(
+                                        "{TURN_CONTROL_PREFIX}\nRuntime extended tool budget by +{granted} (now {effective_max_tool_rounds}). Continue the task."
+                                    ),
+                                );
+                                discipline.on_tool_round();
+                                continue;
+                            }
+                        }
+                    }
                     if let Some(gate) = completion_gate.as_ref() {
                         let create_result = turn_budget_request_store()
                             .create_and_register_wait(CreateTurnBudgetRequest {
@@ -1108,6 +1136,7 @@ mod tests {
             max_tool_rounds: 10,
             invocations: &invocations,
             workshop_lane: false,
+            open_gaps: &[],
         });
         assert!(matches!(
             action,

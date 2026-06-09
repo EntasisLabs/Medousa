@@ -46,6 +46,10 @@ pub struct ToolLoopCompletionGate<'a> {
     pub channel: Option<String>,
     /// Full delivery target for channel push (Telegram chat id, Home session, …).
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
+    /// Hard ceiling for silent tool-round extension (host bus cap).
+    pub tool_round_budget_ceiling: usize,
+    /// When true, `cognition_turn_request_more_rounds` pauses for operator approval.
+    pub require_operator_budget_gate: bool,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -78,6 +82,8 @@ impl ToolLoopCompletionGate<'_> {
             skip_avec_ritual_check: false,
             channel: None,
             delivery_target: None,
+            tool_round_budget_ceiling: max_tool_rounds,
+            require_operator_budget_gate: false,
         }
     }
 }

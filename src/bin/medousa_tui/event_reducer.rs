@@ -2,9 +2,6 @@ use chrono::Utc;
 use serde_json::{Value, json};
 
 use medousa::events::TuiEvent;
-use medousa::turn_text_heuristics::{
-    looks_like_interim_status,
-};
 
 use super::{ConversationTurn, JobHistoryEntry, TuiState};
 
@@ -544,44 +541,18 @@ fn trim_hash(hash: &str) -> &str {
     &hash[..MAX]
 }
 
-/// Mid-turn `AgentResponse` (e.g. worker ack) replaces the draft; terminal merges or drops interim pile.
+/// Mid-turn `AgentResponse` (e.g. worker ack) replaces the draft; terminal keeps streamed body (Phase 7A).
 fn resolve_agent_turn_content(streamed_body: &str, final_body: &str, terminal: bool) -> String {
     if !terminal {
         return final_body.to_string();
     }
 
-    let streamed_trimmed = streamed_body.trim();
-    let final_trimmed = final_body.trim();
-
-    if final_trimmed.is_empty() {
-        return streamed_body.to_string();
-    }
-    if streamed_trimmed.is_empty() {
-        return final_body.to_string();
-    }
-
-    if looks_like_interim_status(streamed_trimmed)
-        && !looks_like_interim_status(final_trimmed)
-    {
-        return final_body.to_string();
-    }
-
-    if final_trimmed == streamed_trimmed {
-        return streamed_body.to_string();
-    }
-    if final_trimmed.starts_with(streamed_trimmed) {
-        return final_body.to_string();
-    }
-    if streamed_trimmed.starts_with(final_trimmed) {
+    if !streamed_body.trim().is_empty() {
         return streamed_body.to_string();
     }
 
-    let overlap = suffix_prefix_overlap(streamed_body, final_body);
-    if overlap > 0 {
-        let mut merged = String::with_capacity(streamed_body.len() + final_body.len() - overlap);
-        merged.push_str(streamed_body);
-        merged.push_str(&final_body[overlap..]);
-        return merged;
+    if !final_body.trim().is_empty() {
+        return final_body.to_string();
     }
 
     streamed_body.to_string()
@@ -600,11 +571,11 @@ mod resolve_content_tests {
     }
 
     #[test]
-    fn terminal_replaces_interim_stream_with_substantive_final() {
+    fn terminal_keeps_stream_even_when_final_differs() {
         let streamed = "Let me dig into memory for you.";
         let final_answer = "Here is what I found about locus: the project uses STTP nodes stored under session medousa-ux with several architecture notes from May.";
         let merged = resolve_agent_turn_content(streamed, final_answer, true);
-        assert_eq!(merged, final_answer);
+        assert_eq!(merged, streamed);
     }
 
     #[test]
@@ -614,18 +585,6 @@ mod resolve_content_tests {
         let out = resolve_agent_turn_content(streamed, ack, false);
         assert_eq!(out, ack);
     }
-}
-
-fn suffix_prefix_overlap(left: &str, right: &str) -> usize {
-    let left_chars = left.chars().collect::<Vec<_>>();
-    let right_chars = right.chars().collect::<Vec<_>>();
-    let max = left_chars.len().min(right_chars.len());
-    for size in (1..=max).rev() {
-        if left_chars[left_chars.len() - size..] == right_chars[..size] {
-            return right_chars[..size].iter().map(|c| c.len_utf8()).sum();
-        }
-    }
-    0
 }
 
 fn apply_agent_chunk_delta(delta: &str, state: &mut TuiState) {

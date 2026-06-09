@@ -301,7 +301,11 @@
         {#if message.role === "assistant" && !mobile && (message.toolRuns?.length || message.tools?.length || message.statusLine || message.reasoning)}
           <div class="mb-1.5 space-y-1">
             {#if message.toolRuns && message.toolRuns.length > 0}
-              <ToolRunChips runs={message.toolRuns} compact={mobile} />
+              <ToolRunChips
+                runs={message.toolRuns}
+                compact={mobile}
+                inspectorCollapsed={!message.streaming}
+              />
             {:else if message.tools && message.tools.length > 0}
               <p class="font-mono text-[10px] text-surface-500">
                 {message.tools.map((tool) => formatToolName(tool)).join(" · ")}

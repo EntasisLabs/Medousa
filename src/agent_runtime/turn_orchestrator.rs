@@ -51,6 +51,7 @@ use super::turn_worker::{
     system_prompt_for_host_profile,
 };
 use crate::turn_continuation::StoredDeliveryTarget;
+use crate::turn_slice::session_scratch_seed_from_history;
 use super::turn_services::{
     self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
     TurnActivationDecision,
@@ -241,6 +242,7 @@ pub struct LocalTurnExecutionParams {
     pub handoff_vibe_signature: String,
     pub handoff_model_avec: MemoryAvecState,
     pub host_continuity_bundle: Option<super::worker_continuity::HostContinuityBundle>,
+    pub session_scratch_seed: TurnScratchpad,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -404,6 +406,10 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
                 params.conversation,
                 None,
             )),
+            session_scratch_seed: session_scratch_seed_from_history(
+                params.conversation,
+                params.prompt,
+            ),
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -675,6 +681,31 @@ pub async fn emit_tool_payload_events(
     }
 }
 
+async fn stage_scratch_for_persist(
+    sink: &SharedAgentStreamSink,
+    scratch: &Option<TurnScratchpad>,
+) {
+    if let Some(scratch) = scratch.clone() {
+        sink.stage_persist_scratch(scratch).await;
+    }
+}
+
+fn host_tool_round_budget_ceiling(settings: &TurnLoopSettings, loop_max_rounds: usize) -> usize {
+    settings
+        .effective_host_bus_max_tool_rounds()
+        .max(loop_max_rounds)
+}
+
+fn require_operator_budget_gate() -> bool {
+    matches!(
+        std::env::var("MEDOUSA_TURN_BUDGET_OPERATOR_GATE")
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
 pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnExecutionParams) {
     let LocalTurnExecutionParams {
         turn_id,
@@ -705,6 +736,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         handoff_vibe_signature,
         handoff_model_avec,
         mut host_continuity_bundle,
+        session_scratch_seed,
     } = params;
 
     sink.notice(format!(
@@ -970,7 +1002,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             scratch_out: Some(&mut last_tool_scratch),
             host_handoff_slot: Some(host_handoff_slot.clone()),
             parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-            initial_worker_scratch: None,
+            initial_worker_scratch: Some(session_scratch_seed.clone()),
             handoff_parent_user_prompt: Some(original_prompt.clone()),
             handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
             handoff_model_avec: Some(handoff_model_avec),
@@ -978,6 +1010,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             skip_avec_ritual_check: false,
             channel: origin_channel.clone(),
             delivery_target: origin_delivery_target.clone(),
+            tool_round_budget_ceiling: host_tool_round_budget_ceiling(
+                &turn_loop_settings,
+                loop_max_rounds,
+            ),
+            require_operator_budget_gate: require_operator_budget_gate(),
         };
         pipeline
             .execute_with_stream_prior_messages_max_rounds(
@@ -1004,6 +1041,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     &combined_invocations,
                 )
                 .map(|(id, _)| id);
+                stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
@@ -1079,7 +1117,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 scratch_out: Some(&mut last_tool_scratch),
                                 host_handoff_slot: Some(host_handoff_slot.clone()),
                                 parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                                initial_worker_scratch: None,
+                                initial_worker_scratch: Some(session_scratch_seed.clone()),
                                 handoff_parent_user_prompt: Some(original_prompt.clone()),
                                 handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                                 handoff_model_avec: Some(handoff_model_avec),
@@ -1087,6 +1125,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 skip_avec_ritual_check: false,
                                 channel: origin_channel.clone(),
                                 delivery_target: origin_delivery_target.clone(),
+                                tool_round_budget_ceiling: host_tool_round_budget_ceiling(
+                                    &turn_loop_settings,
+                                    continuation_max_rounds,
+                                ),
+                                require_operator_budget_gate: require_operator_budget_gate(),
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -1136,6 +1179,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 ),
             )
             .await;
+            stage_scratch_for_persist(&sink, &last_tool_scratch).await;
             super::turn_delivery::deliver_agent_turn_outcome(
                 &sink,
                 turn_id,
@@ -1194,7 +1238,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             scratch_out: Some(&mut last_tool_scratch),
                             host_handoff_slot: Some(host_handoff_slot.clone()),
                             parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                            initial_worker_scratch: None,
+                            initial_worker_scratch: Some(session_scratch_seed.clone()),
                             handoff_parent_user_prompt: Some(original_prompt.clone()),
                             handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                             handoff_model_avec: Some(handoff_model_avec),
@@ -1202,6 +1246,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             skip_avec_ritual_check: false,
                             channel: origin_channel.clone(),
                             delivery_target: origin_delivery_target.clone(),
+                            tool_round_budget_ceiling: host_tool_round_budget_ceiling(
+                                &turn_loop_settings,
+                                retry_rounds,
+                            ),
+                            require_operator_budget_gate: require_operator_budget_gate(),
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(
@@ -1218,6 +1267,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     {
                         Ok(response) => {
                             let tool_names = collect_tool_names(&response.tool_invocations);
+                            stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                             super::turn_delivery::deliver_agent_turn_outcome(
                                 &sink,
                                 turn_id,

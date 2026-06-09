@@ -304,6 +304,7 @@ mod tests {
                 tool_names: vec![],
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             })
             .collect::<Vec<_>>();
 
@@ -323,6 +324,7 @@ mod tests {
                 tool_names: vec![],
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             }],
             Some("turn-abc".to_string()),
         );

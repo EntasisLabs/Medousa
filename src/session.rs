@@ -30,6 +30,9 @@ pub struct ConversationTurn {
     /// Ordered timeline (P3). Surfaces prefer parts; content + tool_names remain for compat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parts: Option<Vec<TurnPart>>,
+    /// Compact tool-history slice for cross-turn continuity (Phase 8A).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice_summary: Option<crate::turn_slice::TurnSliceSummary>,
 }
 
 impl ConversationTurn {
@@ -48,6 +51,7 @@ impl ConversationTurn {
             tool_names,
             answer_state,
             parts: None,
+            slice_summary: None,
         }
     }
 }
@@ -643,7 +647,16 @@ pub fn load_history(session_id: &str) -> Vec<ConversationTurn> {
 }
 
 pub fn append_turn(session_id: &str, turn: &ConversationTurn) {
-    crate::session_store::get_session_store().append_turn(session_id, turn)
+    append_turn_with_scratch(session_id, turn, None)
+}
+
+pub fn append_turn_with_scratch(
+    session_id: &str,
+    turn: &ConversationTurn,
+    scratch: Option<&crate::agent_runtime::turn_context::TurnScratchpad>,
+) {
+    let enriched = crate::turn_slice::ensure_turn_slice_summary(turn, scratch);
+    crate::session_store::get_session_store().append_turn(session_id, &enriched);
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {

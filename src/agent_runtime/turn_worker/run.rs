@@ -193,6 +193,10 @@ impl TurnWorkerScheduler {
             }
         }
         handoff.apply_spawn(intent.as_str(), task, &work_id);
+        crate::turn_slice::enrich_handoff_tool_history(
+            &mut handoff,
+            &crate::session::load_history(&bus.session_id),
+        );
         let handoff_summary = handoff.handoff_summary();
         let scratch_digest = handoff.scratch_digest_hash.clone();
         let parent_corr_log = handoff
@@ -451,6 +455,8 @@ pub async fn run_worker_turn(
             .as_ref()
             .map(|target| target.channel.clone()),
         delivery_target: record.delivery_target.clone(),
+        tool_round_budget_ceiling: worker_max_rounds,
+        require_operator_budget_gate: false,
     };
 
     let result = worker_pipeline
@@ -587,6 +593,20 @@ async fn run_synthesis_turn(
     sink: SharedAgentStreamSink,
     synthesis_turn_id: u64,
 ) {
+    if worker_synthesis_pass_through(&record) {
+        let text = record
+            .result_text
+            .clone()
+            .unwrap_or_else(|| "(worker produced no text)".to_string());
+        sink.notice(format!(
+            "◈ work_synthesis work_id={} pass-through (worker finish)",
+            record.work_id
+        ))
+        .await;
+        deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
+        return;
+    }
+
     let parent_prompt = record
         .parent_user_prompt
         .clone()
@@ -665,8 +685,26 @@ async fn run_synthesis_turn(
         }
     };
 
-    let tool_names = record.tool_names.clone();
     let text = response.text.clone();
+    deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
+}
+
+/// Phase 7C / 8D.2: skip host synthesis LLM when the worker committed via `cognition_turn_finish`.
+pub(crate) fn worker_synthesis_pass_through(record: &TurnWorkRecord) -> bool {
+    record.termination_reason.as_deref() == Some("cognition_turn_finish")
+        && record
+            .result_text
+            .as_ref()
+            .is_some_and(|text| !text.trim().is_empty())
+}
+
+async fn deliver_synthesis_response(
+    record: &TurnWorkRecord,
+    sink: &SharedAgentStreamSink,
+    synthesis_turn_id: u64,
+    text: String,
+) {
+    let tool_names = record.tool_names.clone();
     crate::session::append_turn(
         &record.session_id,
         &crate::turn_parts::conversation_turn_from_parts(
@@ -734,4 +772,58 @@ pub fn pipeline_for_turn_profile(
 
 pub fn system_prompt_for_host_bus(base: &str, host_bus: bool) -> String {
     super::prompts::system_prompt_for_host_profile(base, host_bus, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_runtime::turn_worker::store::{TurnWorkRecord, TurnWorkStatus};
+
+    fn sample_record(termination_reason: Option<&str>, result_text: Option<&str>) -> TurnWorkRecord {
+        TurnWorkRecord {
+            work_id: "w1".to_string(),
+            session_id: "s1".to_string(),
+            parent_turn_correlation_id: None,
+            intent: "general".to_string(),
+            task_prompt: "task".to_string(),
+            status: TurnWorkStatus::Completed,
+            result_text: result_text.map(str::to_string),
+            tool_names: vec!["cognition_grapheme_run".to_string()],
+            termination_reason: termination_reason.map(str::to_string),
+            error: None,
+            user_ack: "On it".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            response_depth_mode: "normal".to_string(),
+            max_tool_rounds: 8,
+            delivery_target: None,
+            parent_user_prompt: None,
+            handoff_capsule: None,
+            worker_scratch: None,
+            synthesis_delivered: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn pass_through_when_worker_finished_with_message() {
+        assert!(worker_synthesis_pass_through(&sample_record(
+            Some("cognition_turn_finish"),
+            Some("Here is the report.")
+        )));
+    }
+
+    #[test]
+    fn no_pass_through_without_finish_or_empty_result() {
+        assert!(!worker_synthesis_pass_through(&sample_record(
+            Some("max_rounds_fuse"),
+            Some("partial")
+        )));
+        assert!(!worker_synthesis_pass_through(&sample_record(
+            Some("cognition_turn_finish"),
+            Some("   ")
+        )));
+        assert!(!worker_synthesis_pass_through(&sample_record(None, Some("done"))));
+    }
 }

@@ -83,6 +83,13 @@ pub trait AgentStreamSink: Send + Sync {
         let _ = turn_id;
     }
 
+    /// Optional scratch snapshot merged into the persisted turn slice (Phase 8A).
+    async fn stage_persist_scratch(
+        &self,
+        _scratch: crate::agent_runtime::turn_context::TurnScratchpad,
+    ) {
+    }
+
     /// Turn paused waiting for operator approval to extend tool-round budget.
     async fn turn_budget_approval_required(
         &self,

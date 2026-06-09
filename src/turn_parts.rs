@@ -223,6 +223,7 @@ pub fn conversation_turn_from_parts(
         } else {
             Some(parts)
         },
+        slice_summary: None,
     }
 }
 

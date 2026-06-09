@@ -8,6 +8,10 @@ use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use crate::session::ConversationTurn;
+use crate::turn_slice::{
+    build_tool_slices_block, format_cold_history_line, prior_turn_content,
+    DEFAULT_SLICE_BLOCK_CHARS, DEFAULT_SLICE_HOT_LINE_CHARS,
+};
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
 use crate::tui::settings::RuntimeSettings;
@@ -27,6 +31,7 @@ pub struct PriorMessageBuild {
     pub hot_turns_included: usize,
     pub cold_turns_summarized: usize,
     pub cold_summary_chars: usize,
+    pub tool_slices_chars: usize,
     pub total_chars: usize,
 }
 
@@ -159,12 +164,12 @@ pub fn build_prior_messages(
     let mut hot_remaining = limits
         .hot_window_char_budget
         .min(limits.max_prior_total_chars);
-    for turn in hot_turns {
+    for turn in &hot_turns {
         if hot_remaining == 0 {
             break;
         }
 
-        let bounded = truncate_text_for_budget(&turn.content, limits.max_single_prior_message_chars);
+        let bounded = prior_turn_content(turn, limits.max_single_prior_message_chars);
         let bounded = truncate_text_for_budget(&bounded, hot_remaining);
         if bounded.trim().is_empty() {
             continue;
@@ -183,21 +188,28 @@ pub fn build_prior_messages(
     let cold_lines = cold_turns
         .iter()
         .rev()
-        .filter_map(|turn| match turn.role.as_str() {
-            "user" | "assistant" | "agent" => {
-                let line = truncate_text_for_budget(&turn.content, limits.cold_summary_line_chars);
-                if line.trim().is_empty() {
-                    None
-                } else {
-                    let role = if turn.role == "agent" {
-                        "assistant"
-                    } else {
-                        turn.role.as_str()
-                    };
-                    Some(format!("{}: {}", role, line.replace('\n', " ")))
+        .filter_map(|turn| {
+            format_cold_history_line(turn, limits.cold_summary_line_chars).or_else(|| {
+                match turn.role.as_str() {
+                    "user" | "assistant" | "agent" => {
+                        let line = truncate_text_for_budget(
+                            &turn.content,
+                            limits.cold_summary_line_chars,
+                        );
+                        if line.trim().is_empty() {
+                            None
+                        } else {
+                            let role = if turn.role == "agent" {
+                                "assistant"
+                            } else {
+                                turn.role.as_str()
+                            };
+                            Some(format!("{}: {}", role, line.replace('\n', " ")))
+                        }
+                    }
+                    _ => None,
                 }
-            }
-            _ => None,
+            })
         })
         .collect::<Vec<_>>();
 
@@ -218,6 +230,22 @@ pub fn build_prior_messages(
         accepted.push(ChatMessage::assistant(cold_summary));
     }
 
+    let slice_budget = limits
+        .hot_window_char_budget
+        .min(DEFAULT_SLICE_BLOCK_CHARS)
+        .min(limits.max_prior_total_chars.saturating_sub(total_chars));
+    let tool_slices_block = build_tool_slices_block(
+        turns,
+        &hot_turns,
+        slice_budget,
+        DEFAULT_SLICE_HOT_LINE_CHARS,
+    );
+    let tool_slices_chars = tool_slices_block.chars().count();
+    if !tool_slices_block.trim().is_empty() {
+        total_chars = total_chars.saturating_add(tool_slices_chars);
+        accepted.push(ChatMessage::assistant(tool_slices_block));
+    }
+
     accepted.reverse();
     PriorMessageBuild {
         messages: accepted,
@@ -227,6 +255,7 @@ pub fn build_prior_messages(
             .saturating_sub(hot_window_turns)
             .min(cold_window_turns),
         cold_summary_chars,
+        tool_slices_chars,
         total_chars,
     }
 }
@@ -589,6 +618,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             });
         }
 
@@ -615,6 +645,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
             ConversationTurn {
                 role: "agent".to_string(),
@@ -623,6 +654,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
         ];
 
@@ -644,6 +676,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
             ConversationTurn {
                 role: "agent".to_string(),
@@ -652,6 +685,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
             ConversationTurn {
                 role: "user".to_string(),
@@ -660,6 +694,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
         ];
 
@@ -679,6 +714,53 @@ mod tests {
     }
 
     #[test]
+    fn prior_messages_include_tool_slices_block() {
+        use crate::turn_parts::TurnPart;
+        use crate::turn_slice::{TurnSliceSummary, TOOL_SLICES_PREFIX};
+
+        let turns = vec![
+            ConversationTurn {
+                role: "user".to_string(),
+                content: "research these topics".to_string(),
+                timestamp: Utc::now(),
+                tool_names: vec![],
+                answer_state: None,
+                parts: None,
+                slice_summary: None,
+            },
+            ConversationTurn {
+                role: "assistant".to_string(),
+                content: "resolved base-researcher".to_string(),
+                timestamp: Utc::now(),
+                tool_names: vec!["cognition_manuscript_list".to_string()],
+                answer_state: None,
+                parts: Some(vec![TurnPart::ToolRun {
+                    run_id: "r1".to_string(),
+                    tool_name: "cognition_manuscript_list".to_string(),
+                    status: "succeeded".to_string(),
+                    input_summary: "list".to_string(),
+                    output_summary: Some("base-researcher".to_string()),
+                    artifact_refs: vec![],
+                    tool_round: Some(1),
+                    started_at: Utc::now(),
+                    finished_at: None,
+                }]),
+                slice_summary: Some(TurnSliceSummary {
+                    goal: "resolve manuscripts".to_string(),
+                    tool_rounds: 1,
+                    tools: vec!["cognition_manuscript_list".to_string()],
+                    outcomes: vec!["base-researcher".to_string()],
+                    ..Default::default()
+                }),
+            },
+        ];
+
+        let built = build_prior_messages(&turns, "spin them up", false, 8, 24, sample_limits());
+        assert!(built.tool_slices_chars > TOOL_SLICES_PREFIX.len());
+        assert!(built.total_chars > built.tool_slices_chars);
+    }
+
+    #[test]
     fn classifier_recent_context_normalizes_agent_role() {
         let turns = vec![
             ConversationTurn {
@@ -688,6 +770,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
             ConversationTurn {
                 role: "user".to_string(),
@@ -696,6 +779,7 @@ mod tests {
                 tool_names: Vec::new(),
                 answer_state: None,
                 parts: None,
+                slice_summary: None,
             },
         ];
 

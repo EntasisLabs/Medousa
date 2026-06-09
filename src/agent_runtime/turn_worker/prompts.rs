@@ -1,6 +1,6 @@
 //! Host / worker / synthesis system prompts (Phase 1).
 
-use crate::agent_runtime::system_prompt::WORKER_STTP_POLICY;
+use crate::agent_runtime::system_prompt::{MEDOUSA_COLLABORATOR_VOICE, WORKER_STTP_POLICY};
 
 use super::policy::TurnWorkerIntent;
 
@@ -12,7 +12,7 @@ const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
 
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-Host lane on the Medousa turn bus — orchestrates turns; workshop lane runs Grapheme/MCP execution.
+Console lane on the Medousa turn bus — same collaborator voice; orchestrate and delegate here, workshop lane runs Grapheme/MCP execution.
 
 Host affordances:
 - Session memory: cognition_memory_* (schema, calibrate, moods, context, list, recall, store) for posture and light reads.
@@ -28,7 +28,8 @@ Rules:
 - Use workflows/jobs when work must persist across turns.
 - Do not claim tool receipts the worker has not produced.
 - Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn.
-- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
+- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps, HOST_TOOL_SLICES excerpt) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
+- Host may call cognition_tool_history_summary / cognition_tool_history_detail(slice_id=turn:N) to verify prior tool receipts without re-running discovery.
 - Turn control: answer in prose when no tools are needed; cognition_turn_begin_work for a progress line before host tools; cognition_turn_finish to commit when done; cognition_turn_request_more_rounds if the round budget is tight."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
@@ -45,7 +46,8 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
 pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_DISCIPLINE]
 Scope:
-- Complete WORKER_TASK only. Host lane already orchestrated — workshop executes, does not re-host.
+- Complete WORKER_TASK only. Console lane already orchestrated — workshop executes, does not re-host.
+- Same Medousa voice as the console; read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] for thread and tone.
 - Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show capability_resolve/search or modules search already succeeded, do not repeat them unless the prior receipt failed.
 
 Minimum tool path:
@@ -60,8 +62,9 @@ Memory:
 
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
-- Principal-facing prose belongs in host synthesis — workshop output is receipts and structured result.
-- When finished, call cognition_turn_finish with the complete result. Use cognition_turn_begin_work only when a progress line helps before heavy tools.
+- When the result is principal-ready, call cognition_turn_finish with complete prose — host may deliver it without rewrite.
+- Otherwise return structured receipts; host synthesis integrates for the principal.
+- Use cognition_turn_begin_work only when a progress line helps before heavy tools.
 - If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
@@ -144,7 +147,9 @@ pub fn worker_system_prompt(
         .map(|block| format!("\n{block}\n"))
         .unwrap_or_default();
     format!(
-        "{WORKER_STTP_POLICY}{manuscript_block}\n\n{WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+        "{WORKER_STTP_POLICY}{manuscript_block}\n\n\
+         [MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n\
+         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
          session_id={session_id}\n\
          worker_intent={}\n\
          Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
@@ -175,7 +180,9 @@ pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_
     if !host_bus_active {
         return base.to_string();
     }
-    let mut out = format!("{base}\n\n{HOST_BUS_TURN_APPENDIX}");
+    let mut out = format!(
+        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}"
+    );
     if let Some(intent) = worker_intent {
         out.push('\n');
         out.push_str(&host_route_appendix(Some(intent)));
@@ -275,5 +282,18 @@ mod tests {
         let prompt = worker_system_prompt("sess-1", TurnWorkerIntent::MemoryAvecCalibrate, None);
         assert!(prompt.contains("cognition_memory_calibrate"));
         assert!(!prompt.contains("[MEDOUSA_WORKER_GRAPHEME]"));
+    }
+
+    #[test]
+    fn host_and_worker_prompts_share_collaborator_voice() {
+        let worker = worker_system_prompt("sess-1", TurnWorkerIntent::General, None);
+        assert!(worker.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
+        assert!(worker.contains("cognition_turn_finish"));
+        assert!(!worker.contains("background specialist"));
+
+        let host = system_prompt_for_host_profile("base-sttp", true, None);
+        assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
+        assert!(host.contains("[MEDOUSA_HOST_BUS]"));
+        assert!(host.contains("Console lane"));
     }
 }

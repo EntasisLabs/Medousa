@@ -153,8 +153,18 @@ pub fn final_stream_event_with_tools_terminal(
     tool_names: Vec<String>,
     terminal: bool,
 ) -> Result<InteractiveTurnStreamEvent> {
+    final_stream_event_terminal_commit(turn_id, Some(final_text), tool_names, terminal)
+}
+
+/// Terminal commit. When `final_text` is `None`, clients keep streamed body (Phase 7A).
+pub fn final_stream_event_terminal_commit(
+    turn_id: &str,
+    final_text: Option<&str>,
+    tool_names: Vec<String>,
+    terminal: bool,
+) -> Result<InteractiveTurnStreamEvent> {
     let mut event = build_event(turn_id, "final", "complete", "interactive turn complete")?;
-    event.final_text = Some(final_text.to_string());
+    event.final_text = final_text.map(str::to_string);
     event.tool_names = Some(tool_names);
     event.terminal = terminal;
     Ok(event)

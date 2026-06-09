@@ -14,7 +14,7 @@ use crate::channel_delivery::{
 use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
-use crate::session::{append_turn, load_history};
+use crate::session::{append_turn, append_turn_with_scratch, load_history};
 use crate::session_active_turn::{self, TurnTicketRegistry};
 use crate::turn_parts::{artifact_refs_from_stream, user_conversation_turn, TurnPartsAccumulator};
 use crate::workspace::ask_job_store::{self, AskJobStore};
@@ -25,6 +25,7 @@ use super::prompt_prep::{truncate_text_for_budget, MAX_REQUEST_PROMPT_CHARS};
 use super::settings::{runtime_settings_for_interactive_turn, stage_routing_for_interactive_turn};
 use super::stream_sink::AgentStreamSink;
 use super::stream_sink::SharedAgentStreamSink;
+use super::turn_context::TurnScratchpad;
 use super::turn_orchestrator::{self, AssembleLocalTurnParams, PrepareTurnPromptParams};
 
 /// Delivery registry hooks for interactive turns (mirrors ingest `channel_deliveries` pattern).
@@ -73,9 +74,51 @@ struct InteractiveTurnStreamSink {
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
     parts: std::sync::Mutex<TurnPartsAccumulator>,
+    /// Principal-facing answer text delivered via content_delta (Phase 7A canonical body).
+    streamed_markdown: std::sync::Mutex<String>,
+    pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
 }
 
 impl InteractiveTurnStreamSink {
+    fn append_stream_delta(&self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        if let Ok(mut body) = self.streamed_markdown.lock() {
+            body.push_str(delta);
+        }
+    }
+
+    fn clear_streamed_markdown(&self) {
+        if let Ok(mut body) = self.streamed_markdown.lock() {
+            body.clear();
+        }
+    }
+
+    fn streamed_markdown(&self) -> String {
+        self.streamed_markdown
+            .lock()
+            .map(|body| body.clone())
+            .unwrap_or_default()
+    }
+
+    fn take_pending_scratch(&self) -> Option<TurnScratchpad> {
+        self.pending_slice_scratch
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+    }
+
+    /// Prefer streamed tokens for persist + terminal commit when the client already saw them.
+    fn canonical_terminal_body(&self, fallback: &str) -> (String, bool) {
+        let streamed = self.streamed_markdown();
+        if streamed.trim().is_empty() {
+            (fallback.to_string(), false)
+        } else {
+            (streamed, true)
+        }
+    }
+
     async fn turn_cancelled(&self) -> bool {
         match &self.session_hooks.cancelled_turns {
             Some(set) => set.read().await.contains(&self.turn_id),
@@ -162,6 +205,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if self.emit_cancelled_if_needed().await {
             return;
         }
+        self.append_stream_delta(&delta);
         if let Ok(mut parts) = self.parts.lock() {
             parts.push_content_delta(&delta);
         }
@@ -200,7 +244,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .lock()
             .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
-        append_turn(&self.session_id, &assistant_turn);
+        append_turn_with_scratch(
+            &self.session_id,
+            &assistant_turn,
+            self.take_pending_scratch().as_ref(),
+        );
 
         self.publish_tracked(
             interactive_turn_runtime::worker_ack_stream_event_with_tools(
@@ -218,31 +266,43 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
+        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+
         let assistant_turn = self
             .parts
             .lock()
             .map(|mut parts| {
-                parts.finalize_assistant_turn(text.clone(), tool_names.clone(), None)
+                parts.finalize_assistant_turn(body.clone(), tool_names.clone(), None)
             })
             .unwrap_or_else(|_| {
                 crate::turn_parts::conversation_turn_from_parts(
                     "assistant",
-                    text.clone(),
+                    body.clone(),
                     tool_names.clone(),
                     None,
                     vec![crate::turn_parts::TurnPart::Text {
-                        markdown: text.clone(),
+                        markdown: body.clone(),
                     }],
                 )
             });
-        append_turn(&self.session_id, &assistant_turn);
+        append_turn_with_scratch(
+            &self.session_id,
+            &assistant_turn,
+            self.take_pending_scratch().as_ref(),
+        );
 
-        self.publish_tracked(interactive_turn_runtime::final_stream_event_with_tools(
-            &self.turn_id,
-            &text,
-            tool_names,
-        ));
-        self.sync_ask_job_succeeded(text).await;
+        let final_event = if stream_authoritative {
+            interactive_turn_runtime::final_stream_event_terminal_commit(
+                &self.turn_id,
+                None,
+                tool_names,
+                true,
+            )
+        } else {
+            interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names)
+        };
+        self.publish_tracked(final_event);
+        self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -254,12 +314,14 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
+        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+
         let assistant_turn = self
             .parts
             .lock()
             .map(|mut parts| {
                 parts.finalize_assistant_turn(
-                    text.clone(),
+                    body.clone(),
                     tool_names.clone(),
                     Some("needs_input".to_string()),
                 )
@@ -267,23 +329,34 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .unwrap_or_else(|_| {
                 crate::turn_parts::conversation_turn_from_parts(
                     "assistant",
-                    text.clone(),
+                    body.clone(),
                     tool_names.clone(),
                     Some("needs_input".to_string()),
                     vec![crate::turn_parts::TurnPart::Text {
-                        markdown: text.clone(),
+                        markdown: body.clone(),
                     }],
                 )
             });
-        append_turn(&self.session_id, &assistant_turn);
+        append_turn_with_scratch(
+            &self.session_id,
+            &assistant_turn,
+            self.take_pending_scratch().as_ref(),
+        );
 
-        self.publish_tracked(
+        let needs_input_event = if stream_authoritative {
             interactive_turn_runtime::needs_input_stream_event_with_tools(
                 &self.turn_id,
-                &text,
+                "",
                 tool_names,
-            ),
-        );
+            )
+        } else {
+            interactive_turn_runtime::needs_input_stream_event_with_tools(
+                &self.turn_id,
+                &body,
+                tool_names,
+            )
+        };
+        self.publish_tracked(needs_input_event);
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -328,7 +401,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     }],
                 )
             });
-        append_turn(&self.session_id, &assistant_turn);
+        append_turn_with_scratch(
+            &self.session_id,
+            &assistant_turn,
+            self.take_pending_scratch().as_ref(),
+        );
 
         self.publish_tracked(interactive_turn_runtime::error_stream_event(
             &self.turn_id,
@@ -341,6 +418,12 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
+    async fn stage_persist_scratch(&self, scratch: TurnScratchpad) {
+        if let Ok(mut slot) = self.pending_slice_scratch.lock() {
+            *slot = Some(scratch);
+        }
+    }
+
     async fn notice(&self, message: String) {
         self.publish_tracked(interactive_turn_runtime::status_stream_event(
             &self.turn_id,
@@ -350,6 +433,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn scratch_reset(&self, _turn_id: u64) {
+        self.clear_streamed_markdown();
         if let Ok(mut parts) = self.parts.lock() {
             parts.scratch_reset();
         }
@@ -863,6 +947,8 @@ pub async fn run_daemon_interactive_turn(
         delivery,
         session_hooks: session_hooks.unwrap_or_default(),
         parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
+        streamed_markdown: std::sync::Mutex::new(String::new()),
+        pending_slice_scratch: std::sync::Mutex::new(None),
     });
 
     run_agent_turn(
