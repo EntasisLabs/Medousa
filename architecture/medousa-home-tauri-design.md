@@ -283,3 +283,4 @@ Env:
 | 2026-05-30 | **M3 shipped:** Split panes, tray, pop-out chat, drag-to-cancel, vault diff chips |
 | 2026-05-30 | **M3+ shipped:** Work kanban+inspector split pane, tray blocked-count badge |
 | 2026-05-30 | **M4 shipped:** Obsidian theme, operator UI, session drawer, Home v2, markdown chat, README |
+| 2026-06-07 | **M7 planned:** [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md) — Library as life garage (8 sprints) |

@@ -8,12 +8,14 @@ export interface VaultNote {
   tags: string[];
   wikilinks_out: string[];
   backlinks: string[];
+  kind?: string;
 }
 
 export interface VaultNoteSummary {
   path: string;
   title: string;
   modified_at_utc: string;
+  kind?: string;
 }
 
 export interface VaultNotesListResponse {
@@ -51,6 +53,11 @@ export interface VaultTreeNode {
   name: string;
   path: string | null;
   title?: string | null;
+  kind?: string | null;
+  displayLabel?: string | null;
+  spaceId?: string | null;
+  noteCount?: number;
+  defaultCollapsed?: boolean;
   children: VaultTreeNode[];
   isFolder: boolean;
 }

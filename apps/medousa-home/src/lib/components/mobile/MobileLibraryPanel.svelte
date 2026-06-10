@@ -3,6 +3,9 @@
   import { ChevronLeft } from "@lucide/svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
+  import VaultSpaceChips from "$lib/components/vault/VaultSpaceChips.svelte";
+  import VaultKindBadge from "$lib/components/vault/VaultKindBadge.svelte";
+  import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import { vault } from "$lib/stores/vault.svelte";
 
   interface Props {
@@ -41,7 +44,7 @@
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if view === "list"}
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto">
-      <div class="border-b border-surface-500/40 p-3">
+      <div class="space-y-2 border-b border-surface-500/40 p-3">
         <input
           class="input w-full text-sm"
           type="search"
@@ -49,6 +52,23 @@
           value={vault.searchQuery}
           oninput={handleSearchInput}
         />
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="btn btn-sm flex-1 variant-filled-primary"
+            onclick={() => void vault.createDailyNote()}
+          >
+            Daily
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm flex-1 variant-soft-surface"
+            onclick={() => vault.openNewNoteDialog()}
+          >
+            New
+          </button>
+        </div>
+        <VaultSpaceChips compact />
       </div>
 
       {#if vault.searchHits.length > 0}
@@ -57,11 +77,14 @@
             <li>
               <button
                 type="button"
-                class="mobile-you-row w-full text-left"
+                class="mobile-you-row flex w-full items-center gap-2 text-left"
                 onclick={() => openNote(hit.note.path)}
               >
-                <span class="font-medium text-surface-100">{hit.note.title}</span>
-                <span class="workshop-faint block truncate text-xs">{hit.note.path}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="font-medium text-surface-100">{hit.note.title}</span>
+                  <span class="workshop-faint block truncate text-xs">{hit.note.path}</span>
+                </span>
+                <VaultKindBadge kind={hit.note.kind} path={hit.note.path} compact />
               </button>
             </li>
           {/each}
@@ -72,6 +95,7 @@
         tree={vault.tree}
         selectedPath={vault.selectedPath}
         labelByPath={vault.labelByPath()}
+        activeSpaceFilter={vault.activeSpaceFilter}
         onSelect={openNote}
       />
     </div>
@@ -90,3 +114,5 @@
     <VaultEditor visible={true} mobile={true} />
   {/if}
 </section>
+
+<VaultNewNoteDialog />

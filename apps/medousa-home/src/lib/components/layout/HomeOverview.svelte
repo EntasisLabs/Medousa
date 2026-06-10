@@ -5,7 +5,10 @@
   import { columnLabel } from "$lib/types/workspace";
   import { KANBAN_COLUMNS } from "$lib/types/work";
   import { formatCardTitle } from "$lib/utils/formatWork";
-  import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import {
+    journalDailyHeroTitle,
+    resolveJournalDailyHeroPath,
+  } from "$lib/utils/vaultNoteBridge";
 
   interface Props {
     onOpenWork: () => void;
@@ -18,6 +21,7 @@
 
   const needsAttention = $derived(workspace.needsAttentionCount());
   const primaryCard = $derived(workspace.primaryInMotionCard());
+  const journalDailyPath = $derived(resolveJournalDailyHeroPath(vault.notes));
 
   const nextAction = $derived.by(() => {
     if (primaryCard) {
@@ -42,17 +46,18 @@
       };
     }
 
-    if (vault.selectedPath) {
-      const title =
-        vault.labelByPath().get(vault.selectedPath) ??
-        vaultDisplayTitle(vault.title, vault.selectedPath);
+    if (journalDailyPath) {
       return {
-        kind: "note" as const,
-        title,
+        kind: "daily" as const,
+        title: journalDailyHeroTitle(
+          journalDailyPath,
+          vault.notes,
+          vault.labelByPath(),
+        ),
         metric: null as string | null,
-        label: "last note",
-        action: "Open",
-        onClick: () => onOpenNote(vault.selectedPath!),
+        label: "journal daily",
+        action: "Open daily",
+        onClick: () => onOpenNote(journalDailyPath),
       };
     }
 

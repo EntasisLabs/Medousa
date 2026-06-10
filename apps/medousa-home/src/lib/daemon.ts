@@ -297,6 +297,17 @@ export async function saveVaultNote(
   });
 }
 
+export async function createVaultNote(
+  path: string,
+  content: string,
+): Promise<VaultWriteResponse> {
+  return invoke<VaultWriteResponse>("vault_create_note", { path, content });
+}
+
+export async function deleteVaultNote(path: string): Promise<{ path: string; deleted: boolean }> {
+  return invoke<{ path: string; deleted: boolean }>("vault_delete_note", { path });
+}
+
 export async function searchVaultNotes(
   query: string,
   limit?: number,

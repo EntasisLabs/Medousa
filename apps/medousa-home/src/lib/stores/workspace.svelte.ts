@@ -294,6 +294,20 @@ export class WorkspaceStore {
     return null;
   }
 
+  inMotionCardsForVaultPath(path: string): WorkCard[] {
+    return this.railCards().filter((card) => {
+      const detail = this.cardDetailsCache.get(card.id);
+      return detail?.associations.vault_paths.includes(path) ?? false;
+    });
+  }
+
+  async prefetchVaultLinkedWork(_notePath: string) {
+    const targets = this.railCards()
+      .filter((card) => !this.cardDetailsCache.has(card.id))
+      .map((card) => card.id);
+    await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
+  }
+
   async selectCard(id: string | null) {
     this.selectedCardId = id;
     this.selectedCardDetail = null;

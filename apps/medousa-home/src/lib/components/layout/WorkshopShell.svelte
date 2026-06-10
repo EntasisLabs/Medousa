@@ -115,7 +115,12 @@
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {#if activeSurface === "library"}
-          <LibraryPanel visible={true} />
+          <LibraryPanel
+            visible={true}
+            onOpenChat={() => goToSurface("chat")}
+            onOpenWork={() => goToSurface("work")}
+            onSelectCard={handleCardSelect}
+          />
         {:else if activeSurface === "skills"}
           <SkillsPanel
             visible={true}
@@ -189,6 +194,7 @@
               cardError={workspace.cardDetailError}
               noteDiffChip={vault.diffChip()}
               onOpenNote={handleOpenNote}
+              onSelectCard={handleCardSelect}
               onCollapse={() => layout.setActivityCollapsed(true)}
             />
           </SplitPane>

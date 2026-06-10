@@ -32,8 +32,8 @@ On Linux, you may see `libayatana-appindicator is deprecated` once at startup wh
 - **Activity** — `feed_appended` events from the same stream
 
 ### M1 (Library)
-- **Vault tree** — `GET /v1/vault/notes`
-- **Editor** — raw/preview toggle, `PUT /v1/vault/notes/{path}` with `If-Match`
+- **Vault tree** — space roots (Journal, Inbox, …), filter chips, Lucide icons, system noise filter
+- **Editor** — space badge in header, empty state, create note, quick capture, space templates
 - **Search** — `GET /v1/vault/search`
 - **Context panel** — backlinks, wikilinks, card-linked notes (`GET /v1/workspace/cards/{id}`)
 

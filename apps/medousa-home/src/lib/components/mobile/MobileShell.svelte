@@ -52,6 +52,7 @@
 
   onMount(() => {
     void ensureNotificationPermission();
+    void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
@@ -93,6 +94,7 @@
         health={daemonHealth}
         onSelectCard={handleSelectCard}
         onOpenChat={handleOpenChat}
+        onOpenNote={handleOpenNote}
         onOpenSettings={() => layout.openYou("settings")}
         onToggleActivity={() => layout.toggleActivitySheet()}
       />

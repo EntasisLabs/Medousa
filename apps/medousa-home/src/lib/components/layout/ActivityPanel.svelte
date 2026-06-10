@@ -20,6 +20,7 @@
     cardError: string | null;
     noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
+    onSelectCard?: (id: string) => void;
     onCollapse?: () => void;
   }
 
@@ -34,6 +35,7 @@
     cardError,
     noteDiffChip,
     onOpenNote,
+    onSelectCard,
     onCollapse,
   }: Props = $props();
 
@@ -67,6 +69,7 @@
     {cardError}
     {noteDiffChip}
     {onOpenNote}
+    {onSelectCard}
   />
 
   <header class="shrink-0 border-b border-surface-500/45 bg-surface-800/40 px-4 py-3">

@@ -5,12 +5,18 @@
   import { vault } from "$lib/stores/vault.svelte";
   import VaultTree from "./VaultTree.svelte";
   import VaultEditor from "./VaultEditor.svelte";
+  import VaultNewNoteDialog from "./VaultNewNoteDialog.svelte";
+  import VaultSpaceChips from "./VaultSpaceChips.svelte";
+  import VaultKindBadge from "./VaultKindBadge.svelte";
 
   interface Props {
     visible: boolean;
+    onOpenChat: () => void;
+    onOpenWork: () => void;
+    onSelectCard: (id: string) => void | Promise<void>;
   }
 
-  let { visible }: Props = $props();
+  let { visible, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
 
   onMount(() => {
     (async () => {
@@ -39,7 +45,7 @@
       class="workshop-drawer flex h-full w-full flex-col border-r-2"
       aria-label="Vault browser"
     >
-      <div class="workshop-header p-2">
+      <div class="workshop-header space-y-2 p-2">
         <input
           class="input text-sm"
           type="search"
@@ -47,7 +53,46 @@
           value={vault.searchQuery}
           oninput={handleSearchInput}
         />
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-primary"
+            onclick={() => void vault.createDailyNote()}
+            disabled={vault.saving}
+          >
+            Daily
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            onclick={() => void vault.createWeeklyReview()}
+            disabled={vault.saving}
+          >
+            Weekly
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            onclick={() => vault.openNewNoteDialog()}
+          >
+            New
+          </button>
+          <label class="ml-auto flex items-center gap-1.5 text-xs text-surface-400">
+            <input
+              type="checkbox"
+              class="checkbox"
+              checked={vault.showSystemNotes}
+              onchange={(event) =>
+                vault.setShowSystemNotes(
+                  (event.currentTarget as HTMLInputElement).checked,
+                )}
+            />
+            System
+          </label>
+        </div>
       </div>
+
+      <VaultSpaceChips />
 
       {#if vault.searchHits.length > 0}
         <ul class="max-h-40 overflow-y-auto border-b border-surface-500/45 p-2 text-sm">
@@ -55,11 +100,14 @@
             <li>
               <button
                 type="button"
-                class="w-full rounded-container-token px-2 py-1 text-left hover:bg-surface-700/80"
+                class="flex w-full items-center gap-2 rounded-container-token px-2 py-1 text-left hover:bg-surface-700/80"
                 onclick={() => vault.openNote(hit.note.path)}
               >
-                <span class="font-medium">{hit.note.title}</span>
-                <span class="workshop-faint block truncate">{hit.note.path}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="font-medium">{hit.note.title}</span>
+                  <span class="workshop-faint block truncate">{hit.note.path}</span>
+                </span>
+                <VaultKindBadge kind={hit.note.kind} path={hit.note.path} compact />
               </button>
             </li>
           {/each}
@@ -70,10 +118,18 @@
         tree={vault.tree}
         selectedPath={vault.selectedPath}
         labelByPath={vault.labelByPath()}
+        activeSpaceFilter={vault.activeSpaceFilter}
         onSelect={(path) => vault.openNote(path)}
       />
     </aside>
   </SplitPane>
 
-  <VaultEditor visible={true} />
+  <VaultEditor
+    visible={true}
+    {onOpenChat}
+    {onOpenWork}
+    {onSelectCard}
+  />
 </section>
+
+<VaultNewNoteDialog />

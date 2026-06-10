@@ -3,6 +3,7 @@ import { formatCardTitle } from "$lib/utils/formatWork";
 
 export type PulseAction =
   | { kind: "card"; cardId: string }
+  | { kind: "note"; path: string }
   | { kind: "work" }
   | { kind: "chat" }
   | { kind: "settings" };
@@ -78,6 +79,8 @@ export function buildPulsePresentation(input: {
   inMotion: number;
   primaryCard: WorkCard | null;
   motionCounts: { inFlight: number; wrapping: number; backlog: number };
+  journalDailyPath?: string | null;
+  journalDailyTitle?: string | null;
 }): PulsePresentation {
   const { inFlight, wrapping, backlog } = input.motionCounts;
 
@@ -158,6 +161,19 @@ export function buildPulsePresentation(input: {
       actionLabel: "See work",
       action: { kind: "work" },
       motionSummary,
+    };
+  }
+
+  if (input.journalDailyPath && input.journalDailyTitle) {
+    return {
+      alive: true,
+      mood: "quiet",
+      statusLine: "All clear",
+      eyebrow: "Journal",
+      headline: input.journalDailyTitle,
+      subline: "Pick up today’s note when you’re ready.",
+      actionLabel: "Open daily",
+      action: { kind: "note", path: input.journalDailyPath },
     };
   }
 

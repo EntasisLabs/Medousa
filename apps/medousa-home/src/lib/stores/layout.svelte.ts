@@ -7,6 +7,9 @@ const LANDING_SURFACES: Surface[] = ["chat", "work", "library", "skills"];
 
 const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
+const VAULT_EDITOR_PANE_WIDTH_KEY = "medousa-home-vault-editor-pane-width";
+const VAULT_SPLIT_ENABLED_KEY = "medousa-home-vault-split-enabled";
+const VAULT_LINKS_PANEL_KEY = "medousa-home-vault-links-panel";
 const WORK_INSPECTOR_WIDTH_KEY = "medousa-home-work-inspector-width";
 const SESSION_DRAWER_KEY = "medousa-home-session-drawer";
 const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
@@ -23,6 +26,9 @@ export class LayoutStore {
   askSheetOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
   vaultTreeWidth = $state(loadWidth(VAULT_TREE_WIDTH_KEY, 224));
+  vaultEditorPaneWidth = $state(loadWidth(VAULT_EDITOR_PANE_WIDTH_KEY, 420));
+  vaultSplitEnabled = $state(loadFlag(VAULT_SPLIT_ENABLED_KEY, true));
+  vaultLinksPanelOpen = $state(loadFlag(VAULT_LINKS_PANEL_KEY, true));
   workInspectorWidth = $state(loadWidth(WORK_INSPECTOR_WIDTH_KEY, 360));
   sessionDrawerOpen = $state(loadFlag(SESSION_DRAWER_KEY, false));
   identityDrawerOpen = $state(loadFlag(IDENTITY_DRAWER_KEY, false));
@@ -49,6 +55,29 @@ export class LayoutStore {
   setVaultTreeWidth(width: number) {
     this.vaultTreeWidth = clamp(width, 180, 420);
     localStorage.setItem(VAULT_TREE_WIDTH_KEY, String(this.vaultTreeWidth));
+  }
+
+  setVaultEditorPaneWidth(width: number) {
+    this.vaultEditorPaneWidth = clamp(width, 280, 720);
+    localStorage.setItem(VAULT_EDITOR_PANE_WIDTH_KEY, String(this.vaultEditorPaneWidth));
+  }
+
+  setVaultSplitEnabled(enabled: boolean) {
+    this.vaultSplitEnabled = enabled;
+    localStorage.setItem(VAULT_SPLIT_ENABLED_KEY, enabled ? "1" : "0");
+  }
+
+  toggleVaultSplitEnabled() {
+    this.setVaultSplitEnabled(!this.vaultSplitEnabled);
+  }
+
+  setVaultLinksPanelOpen(open: boolean) {
+    this.vaultLinksPanelOpen = open;
+    localStorage.setItem(VAULT_LINKS_PANEL_KEY, open ? "1" : "0");
+  }
+
+  toggleVaultLinksPanel() {
+    this.setVaultLinksPanelOpen(!this.vaultLinksPanelOpen);
   }
 
   setWorkInspectorWidth(width: number) {

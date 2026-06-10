@@ -26,6 +26,8 @@ pub struct VaultIndexEntry {
     pub created_at_utc: DateTime<Utc>,
     pub tags: Vec<String>,
     pub wikilinks_out: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub source: VaultNoteSource,
 }
 
@@ -40,6 +42,10 @@ impl VaultIndexEntry {
             created_at_utc: self.created_at_utc,
             tags: self.tags.clone(),
             wikilinks_out: self.wikilinks_out.clone(),
+            kind: self
+                .kind
+                .clone()
+                .unwrap_or_else(|| resolve_kind_from_path(&self.path)),
             backlinks,
         }
     }
@@ -111,6 +117,54 @@ pub fn parse_frontmatter_tags(frontmatter: &str) -> Vec<String> {
     tags
 }
 
+pub fn normalize_kind(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "daily" | "journal" => "daily".to_string(),
+        "project" | "projects" => "project".to_string(),
+        "ledger" | "finance" => "ledger".to_string(),
+        "inbox" | "capture" => "inbox".to_string(),
+        "bug" | "bugs" => "bug".to_string(),
+        "note" | "notes" => "note".to_string(),
+        other if !other.is_empty() => other.to_string(),
+        _ => "note".to_string(),
+    }
+}
+
+pub fn parse_frontmatter_kind(frontmatter: &str) -> Option<String> {
+    for line in frontmatter.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("kind:") {
+            let raw = rest.trim().trim_matches('"').trim_matches('\'');
+            if !raw.is_empty() {
+                return Some(normalize_kind(raw));
+            }
+        }
+    }
+    None
+}
+
+pub fn resolve_kind_from_path(path: &str) -> String {
+    if path.starts_with("journal/") {
+        "daily".to_string()
+    } else if path.starts_with("projects/") {
+        "project".to_string()
+    } else if path.starts_with("finance/") {
+        "ledger".to_string()
+    } else if path.starts_with("inbox/") {
+        "inbox".to_string()
+    } else if path.starts_with("bugs/") {
+        "bug".to_string()
+    } else {
+        "note".to_string()
+    }
+}
+
+pub fn resolve_kind(path: &str, frontmatter: Option<&str>) -> String {
+    frontmatter
+        .and_then(parse_frontmatter_kind)
+        .unwrap_or_else(|| resolve_kind_from_path(path))
+}
+
 pub fn resolve_wikilinks_for_body(
     path: &str,
     body: &str,
@@ -142,6 +196,7 @@ pub fn build_index_entry(
         .map(parse_frontmatter_tags)
         .unwrap_or_default();
     let tags = merge_tags(frontmatter_tags, parse_inline_tags(body));
+    let kind = resolve_kind(path, frontmatter);
     VaultIndexEntry {
         path: path.to_string(),
         title: extract_title(body, path),
@@ -151,6 +206,7 @@ pub fn build_index_entry(
         created_at_utc: created_at,
         tags,
         wikilinks_out: resolve_wikilinks_for_body(path, body, known_paths, entries),
+        kind: Some(kind),
         source,
     }
 }
@@ -163,6 +219,21 @@ mod tests {
     fn extract_title_from_heading() {
         let body = "# Weekly Review\n\nSome text";
         assert_eq!(extract_title(body, "journal/x.md"), "Weekly Review");
+    }
+
+    #[test]
+    fn parse_kind_from_frontmatter() {
+        let body = "---\nkind: ledger\n---\n# Expenses";
+        let (_, fm) = strip_frontmatter(body);
+        let fm = fm.expect("frontmatter");
+        assert_eq!(parse_frontmatter_kind(fm), Some("ledger".to_string()));
+        assert_eq!(resolve_kind("finance/x.md", Some(fm)), "ledger");
+    }
+
+    #[test]
+    fn infer_kind_from_path_when_frontmatter_missing() {
+        assert_eq!(resolve_kind_from_path("journal/2026-06-08.md"), "daily");
+        assert_eq!(resolve_kind_from_path("projects/plan.md"), "project");
     }
 
     #[test]
@@ -183,6 +254,7 @@ mod tests {
             created_at_utc: Utc::now(),
             tags: vec![],
             wikilinks_out: vec![],
+            kind: Some("project".to_string()),
             source: VaultNoteSource::User,
         }];
         assert!(resolve_wikilinks_for_body("journal/note.md", body, &known, &entries)

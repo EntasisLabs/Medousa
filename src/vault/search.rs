@@ -105,6 +105,10 @@ pub fn search_vault(query: &str, limit: usize) -> anyhow::Result<VaultSearchResp
                 path: entry.path.clone(),
                 title: entry.title.clone(),
                 modified_at_utc: entry.modified_at_utc,
+                kind: entry
+                    .kind
+                    .clone()
+                    .unwrap_or_else(|| crate::vault::note::resolve_kind_from_path(&entry.path)),
             },
             score,
             matched_terms,

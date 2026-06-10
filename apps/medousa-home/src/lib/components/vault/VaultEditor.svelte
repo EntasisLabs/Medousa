@@ -1,17 +1,41 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import SplitPane from "$lib/components/layout/SplitPane.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { workspace } from "$lib/stores/workspace.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
-  import { hydrateMermaid } from "$lib/markdown/mermaid";
-  import { renderMarkdownPreview } from "$lib/markdown";
+  import { formatCardTitle } from "$lib/utils/formatWork";
+  import {
+    buildAskAboutNoteDraft,
+    buildWorkAskFromNote,
+  } from "$lib/utils/vaultNoteBridge";
+  import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
+  import { findLedgerTable } from "$lib/utils/markdownTable";
+  import VaultEmptyState from "./VaultEmptyState.svelte";
+  import VaultKindBadge from "./VaultKindBadge.svelte";
+  import LedgerTableEditor from "./LedgerTableEditor.svelte";
+  import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
+  import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
+  import VaultConflictBar from "./VaultConflictBar.svelte";
 
   interface Props {
     visible: boolean;
     /** Mobile reader: preview-only, no edit chrome. */
     mobile?: boolean;
+    onOpenChat?: () => void;
+    onOpenWork?: () => void;
+    onSelectCard?: (id: string) => void | Promise<void>;
   }
 
-  let { visible, mobile = false }: Props = $props();
+  let {
+    visible,
+    mobile = false,
+    onOpenChat,
+    onOpenWork,
+    onSelectCard,
+  }: Props = $props();
 
   const displayTitle = $derived(
     vault.selectedPath
@@ -24,57 +48,294 @@
     vault.selectedPath ? vaultBreadcrumb(vault.selectedPath) : null,
   );
 
-  const previewHtml = $derived(
-    vault.content
-      ? renderMarkdownPreview(vault.content, vault.labelByPath())
-      : "",
+  const activeSpace = $derived(vault.activeSpace);
+  const SpaceIcon = $derived(
+    activeSpace ? iconForSpace(activeSpace.id) : null,
   );
 
-  let previewContainer: HTMLElement | undefined = $state();
+  const labelByPath = $derived(vault.labelByPath());
+  const hasLedgerTable = $derived(Boolean(findLedgerTable(vault.content)));
+
+  const showLedgerTable = $derived(
+    !mobile &&
+      vault.editorMode === "edit" &&
+      vault.selectedKind === "ledger" &&
+      vault.ledgerEditMode === "table" &&
+      hasLedgerTable,
+  );
+
+  const showMarkdownEditor = $derived(
+    !mobile && vault.editorMode === "edit" && !showLedgerTable,
+  );
+
+  const showSplitEditor = $derived(
+    showMarkdownEditor && layout.vaultSplitEnabled,
+  );
+
+  const showPreviewOnly = $derived(
+    mobile ||
+      vault.editorMode === "preview" ||
+      (!showMarkdownEditor && !showLedgerTable),
+  );
+
+  const showLinksPanel = $derived(
+    !mobile &&
+      layout.vaultLinksPanelOpen &&
+      vault.selectedPath &&
+      (vault.wikilinksOut.length > 0 || vault.backlinks.length > 0),
+  );
+
+  const previewFirstKind = $derived(
+    vault.selectedKind === "daily" || vault.selectedKind === "note",
+  );
+
+  const linkedWork = $derived(
+    vault.selectedPath && !mobile
+      ? workspace.inMotionCardsForVaultPath(vault.selectedPath)
+      : [],
+  );
 
   $effect(() => {
-    previewHtml;
-    if (!previewContainer) return;
-    void hydrateCodeBlocks(previewContainer);
-    void hydrateMermaid(previewContainer);
+    if (vault.selectedPath && !mobile) {
+      void workspace.prefetchVaultLinkedWork(vault.selectedPath);
+    }
   });
 
-  async function handleSave(event: Event) {
-    event.preventDefault();
-    await vault.save();
+  async function handleAskAboutNote() {
+    if (!vault.selectedPath || !onOpenChat) return;
+    if (vault.dirty) await vault.flushSave();
+    chat.prefillDraft(
+      buildAskAboutNoteDraft(vault.selectedPath, vault.title, vault.content),
+    );
+    onOpenChat();
   }
+
+  async function handleSendToWork() {
+    if (!vault.selectedPath || !onOpenWork) return;
+    if (vault.dirty) await vault.flushSave();
+    try {
+      await workspace.submitAsk({
+        prompt: buildWorkAskFromNote(
+          vault.selectedPath,
+          vault.title,
+          vault.content,
+        ),
+      });
+      onOpenWork();
+    } catch {
+      // workspace.submitAsk surfaces askError on Work surface.
+    }
+  }
+
+  async function handleSave(event?: Event) {
+    event?.preventDefault();
+    await vault.flushSave();
+  }
+
+  const saveWhisper = $derived(vault.saveWhisper());
+  const showDiffChip = $derived(vault.diffChip());
+
+  function handleWikilink(target: string) {
+    vault.openWikilink(target);
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!vault.selectedPath || mobile) return;
+
+    const tag = (event.target as HTMLElement).tagName;
+    const typing = tag === "TEXTAREA" || tag === "INPUT";
+
+    if (typing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void handleSave();
+      return;
+    }
+
+    if (typing) return;
+
+    if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (vault.editorMode === "preview") {
+        event.preventDefault();
+        vault.enterEditMode();
+      }
+      return;
+    }
+
+    if (event.key === "Escape" && vault.editorMode === "edit" && previewFirstKind) {
+      event.preventDefault();
+      vault.enterPreviewMode();
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  });
 </script>
 
-<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+<section
+  class="vault-editor flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
+>
   {#if !mobile}
-    <header class="workshop-header flex items-center justify-between gap-3 py-3">
+    <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
       <div class="min-w-0" title={vault.selectedPath ?? undefined}>
+        {#if activeSpace && SpaceIcon}
+          <p class="mb-1 flex items-center gap-1.5 text-xs font-medium text-primary-300">
+            <SpaceIcon size={13} strokeWidth={2} />
+            {activeSpace.label}
+          </p>
+        {/if}
         {#if breadcrumb}
           <p class="workshop-faint truncate">{breadcrumb}</p>
         {/if}
-        <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
+        <div class="flex min-w-0 items-center gap-2">
+          <h1 class="truncate text-base font-semibold">{displayTitle}</h1>
+          {#if vault.selectedPath}
+            <VaultKindBadge
+              kind={vault.selectedKind}
+              path={vault.selectedPath}
+            />
+          {/if}
+        </div>
+        {#if vault.selectedPath && vault.editorMode === "preview" && previewFirstKind}
+          <p class="mt-1 text-[11px] text-surface-500">
+            Press <kbd class="vault-kbd">E</kbd> to edit
+          </p>
+        {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-2">
-        {#if vault.diffChip()}
+
+      <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {#if vault.selectedPath && !mobile && onOpenChat}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-primary"
+            disabled={vault.loading}
+            onclick={() => void handleAskAboutNote()}
+          >
+            Ask about note
+          </button>
+        {/if}
+        {#if vault.selectedPath && !mobile && onOpenWork}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            disabled={vault.loading || workspace.askSubmitting}
+            onclick={() => void handleSendToWork()}
+          >
+            {workspace.askSubmitting ? "Sending…" : "Send to Work"}
+          </button>
+        {/if}
+        {#if linkedWork.length > 0 && onSelectCard}
+          {#each linkedWork.slice(0, 2) as card (card.id)}
+            <button
+              type="button"
+              class="badge variant-soft-secondary cursor-pointer text-[10px] font-medium"
+              onclick={() => void onSelectCard(card.id)}
+            >
+              Linked · {formatCardTitle(card)}
+            </button>
+          {/each}
+        {/if}
+        {#if vault.selectedKind === "inbox" && vault.selectedPath}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            disabled={vault.saving}
+            onclick={() => void vault.promoteNote("journal")}
+          >
+            → Journal
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            disabled={vault.saving}
+            onclick={() => void vault.promoteNote("projects")}
+          >
+            → Project
+          </button>
+        {/if}
+        {#if vault.selectedKind === "daily" && vault.editorMode === "edit"}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-primary"
+            onclick={() => vault.insertWeeklyReviewLink()}
+          >
+            Link weekly review
+          </button>
+        {/if}
+        {#if vault.selectedKind === "ledger" && vault.editorMode === "edit"}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={() => vault.toggleLedgerEditMode()}
+          >
+            {vault.ledgerEditMode === "table" ? "Raw markdown" : "Table view"}
+          </button>
+        {/if}
+
+        {#if showMarkdownEditor}
+          <button
+            type="button"
+            class="btn btn-sm {layout.vaultSplitEnabled
+              ? 'variant-soft-primary'
+              : 'variant-ghost-surface'}"
+            onclick={() => layout.toggleVaultSplitEnabled()}
+            title="Split edit and preview"
+          >
+            Split
+          </button>
+        {/if}
+
+        {#if vault.selectedPath && (vault.wikilinksOut.length > 0 || vault.backlinks.length > 0)}
+          <button
+            type="button"
+            class="btn btn-sm {layout.vaultLinksPanelOpen
+              ? 'variant-soft-surface'
+              : 'variant-ghost-surface'}"
+            onclick={() => layout.toggleVaultLinksPanel()}
+          >
+            Links
+          </button>
+        {/if}
+
+        {#if saveWhisper}
+          <span
+            class="vault-save-whisper text-xs {saveWhisper === 'Saved'
+              ? 'text-success-400'
+              : 'text-surface-400'}"
+          >
+            {saveWhisper}
+          </span>
+        {:else if showDiffChip}
           <span class="badge variant-soft-warning text-xs font-mono">
-            {vault.diffChip()}
+            {showDiffChip}
           </span>
         {/if}
-        <button
-          type="button"
-          class="btn btn-sm variant-ghost-surface"
-          onclick={() => vault.toggleEditorMode()}
-        >
-          {vault.editorMode === "edit" ? "Preview" : "Edit"}
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-filled-primary"
-          disabled={!vault.selectedPath || !vault.dirty || vault.saving}
-          onclick={handleSave}
-        >
-          {vault.saving ? "Saving…" : "Save"}
-        </button>
+
+        {#if vault.dirty && vault.saveStatus !== "conflict"}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            disabled={vault.saving}
+            onclick={handleSave}
+            title="Save now (⌘S)"
+          >
+            Save now
+          </button>
+        {/if}
+
+        {#if vault.selectedPath}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={() =>
+              vault.editorMode === "edit"
+                ? vault.enterPreviewMode()
+                : vault.enterEditMode()}
+          >
+            {vault.editorMode === "edit" ? "Preview" : "Edit"}
+          </button>
+        {/if}
       </div>
     </header>
   {:else}
@@ -92,27 +353,70 @@
     </p>
   {/if}
 
+  <VaultConflictBar />
+
   {#if !vault.selectedPath}
-    <div class="flex flex-1 items-center justify-center p-8 text-sm text-surface-400">
-      Select a note from the tree or search results.
-    </div>
+    <VaultEmptyState />
   {:else if vault.loading}
     <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
       Loading note…
     </div>
-  {:else if !mobile && vault.editorMode === "edit"}
-    <textarea
-      class="textarea flex-1 resize-none rounded-none border-0 bg-surface-950 font-mono text-sm leading-relaxed"
-      value={vault.content}
-      oninput={(event) =>
-        vault.markDirty((event.currentTarget as HTMLTextAreaElement).value)}
-    ></textarea>
   {:else}
-    <article
-      bind:this={previewContainer}
-      class="markdown-content min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto px-5 py-4 text-sm"
-    >
-      {@html previewHtml}
-    </article>
+    <div class="flex min-h-0 flex-1">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        {#if showLedgerTable}
+          <LedgerTableEditor
+            content={vault.content}
+            disabled={vault.saving}
+            onchange={(next) => vault.markDirty(next)}
+          />
+        {:else if showSplitEditor}
+          <div class="flex min-h-0 flex-1">
+            <SplitPane
+              width={layout.vaultEditorPaneWidth}
+              side="left"
+              min={280}
+              max={720}
+              onResize={(width) => layout.setVaultEditorPaneWidth(width)}
+            >
+              <textarea
+                class="vault-editor-textarea textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 font-mono text-sm leading-relaxed"
+                value={vault.content}
+                oninput={(event) =>
+                  vault.markDirty((event.currentTarget as HTMLTextAreaElement).value)}
+              ></textarea>
+            </SplitPane>
+            <VaultMarkdownPreview
+              content={vault.content}
+              {labelByPath}
+              compact
+              onWikilink={handleWikilink}
+            />
+          </div>
+        {:else if showMarkdownEditor}
+          <textarea
+            class="vault-editor-textarea textarea flex-1 resize-none rounded-none border-0 bg-surface-950 font-mono text-sm leading-relaxed"
+            value={vault.content}
+            oninput={(event) =>
+              vault.markDirty((event.currentTarget as HTMLTextAreaElement).value)}
+          ></textarea>
+        {:else if showPreviewOnly}
+          <VaultMarkdownPreview
+            content={vault.content}
+            {labelByPath}
+            onWikilink={handleWikilink}
+          />
+        {/if}
+      </div>
+
+      {#if showLinksPanel}
+        <VaultNoteLinksPanel
+          wikilinksOut={vault.wikilinksOut}
+          backlinks={vault.backlinks}
+          {labelByPath}
+          onOpenNote={(path) => vault.openNote(path)}
+        />
+      {/if}
+    </div>
   {/if}
 </section>

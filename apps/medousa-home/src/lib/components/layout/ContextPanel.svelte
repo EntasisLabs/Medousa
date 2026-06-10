@@ -1,8 +1,10 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
+  import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCardDetail } from "$lib/types/card";
   import { formatCardTitle } from "$lib/utils/formatWork";
   import { vaultDisplayTitle, wikilinkLabel } from "$lib/utils/formatVault";
+  import { columnLabel } from "$lib/types/workspace";
 
   interface Props {
     notePath: string | null;
@@ -13,6 +15,7 @@
     cardError: string | null;
     noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
+    onSelectCard?: (id: string) => void;
   }
 
   let {
@@ -24,12 +27,19 @@
     cardError,
     noteDiffChip,
     onOpenNote,
+    onSelectCard,
   }: Props = $props();
 
   const cardVaultPaths = $derived(cardDetail?.associations.vault_paths ?? []);
+  const linkedWork = $derived(
+    notePath ? workspace.inMotionCardsForVaultPath(notePath) : [],
+  );
   const hasNoteContext = $derived(
     notePath !== null &&
-      (wikilinksOut.length > 0 || backlinks.length > 0 || noteDiffChip !== null),
+      (wikilinksOut.length > 0 ||
+        backlinks.length > 0 ||
+        noteDiffChip !== null ||
+        linkedWork.length > 0),
   );
   const titleByPath = $derived(vault.labelByPath());
 
@@ -39,6 +49,12 @@
         Boolean(cardDetail.result_excerpt) ||
         Boolean(cardDetail.subtitle)),
   );
+
+  $effect(() => {
+    if (notePath) {
+      void workspace.prefetchVaultLinkedWork(notePath);
+    }
+  });
 </script>
 
 {#if hasCardContext || hasNoteContext}
@@ -88,7 +104,7 @@
 
     {#if notePath}
       <div class="mt-3 space-y-2 text-sm">
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <p class="workshop-faint">
             {vaultDisplayTitle(noteTitle ?? notePath, notePath)}
           </p>
@@ -98,6 +114,26 @@
             </span>
           {/if}
         </div>
+
+        {#if linkedWork.length > 0 && onSelectCard}
+          <div>
+            <p class="workshop-label mb-1">Linked work</p>
+            <ul class="flex flex-wrap gap-1.5">
+              {#each linkedWork as card (card.id)}
+                <li>
+                  <button
+                    type="button"
+                    class="badge variant-soft-secondary cursor-pointer text-[10px] font-medium"
+                    onclick={() => onSelectCard(card.id)}
+                  >
+                    {formatCardTitle(card)} · {columnLabel(card.column)}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
         {#if wikilinksOut.length > 0}
           <div>
             <p class="workshop-label mb-1">Links out</p>

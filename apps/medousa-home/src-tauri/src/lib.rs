@@ -72,6 +72,8 @@ pub fn run() {
             daemon::vault::vault_list_notes,
             daemon::vault::vault_get_note,
             daemon::vault::vault_save_note,
+            daemon::vault::vault_create_note,
+            daemon::vault::vault_delete_note,
             daemon::vault::vault_search,
             daemon::vault::vault_backlinks,
             daemon::workspace_card::workspace_get_card,

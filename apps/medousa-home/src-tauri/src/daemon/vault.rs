@@ -104,6 +104,49 @@ pub async fn vault_save_note(
 }
 
 #[tauri::command]
+pub async fn vault_create_note(
+    state: State<'_, DaemonState>,
+    path: String,
+    content: String,
+) -> Result<VaultWriteResponse, String> {
+    let base = daemon_base(&state)?;
+    let client = Client::new();
+    let body = serde_json::json!({
+        "path": path.trim(),
+        "content": content,
+    });
+    let response = client
+        .post(format!("{base}/v1/vault/notes"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(map_http_error(response).await);
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn vault_delete_note(
+    state: State<'_, DaemonState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let base = daemon_base(&state)?;
+    let encoded = encode_note_path(path.trim());
+    let client = Client::new();
+    let response = client
+        .delete(format!("{base}/v1/vault/notes/{encoded}"))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(map_http_error(response).await);
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn vault_search(
     state: State<'_, DaemonState>,
     query: String,

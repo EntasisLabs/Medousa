@@ -260,6 +260,7 @@ mod tests {
             created_at_utc: Utc::now(),
             tags: Vec::new(),
             wikilinks_out: Vec::new(),
+            kind: None,
             source: crate::vault::note::VaultNoteSource::User,
         }];
         crate::vault::note::build_index_entry(
@@ -313,6 +314,7 @@ mod tests {
                 created_at_utc: Utc::now(),
                 tags: Vec::new(),
                 wikilinks_out: Vec::new(),
+                kind: None,
                 source: crate::vault::note::VaultNoteSource::User,
             })
             .collect();

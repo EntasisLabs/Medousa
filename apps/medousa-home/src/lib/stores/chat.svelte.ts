@@ -1441,6 +1441,10 @@ export class ChatStore {
     }
   }
 
+  prefillDraft(text: string) {
+    this.draft = text;
+  }
+
   private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {
     let existing = this.turns.get(event.turn_id);
     if (!existing && (event.content_delta || event.final_text || event.terminal)) {

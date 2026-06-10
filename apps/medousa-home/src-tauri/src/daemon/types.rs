@@ -215,6 +215,8 @@ pub struct VaultNote {
     pub tags: Vec<String>,
     pub wikilinks_out: Vec<String>,
     pub backlinks: Vec<String>,
+    #[serde(default)]
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,6 +250,8 @@ pub struct VaultNoteSummary {
     pub path: String,
     pub title: String,
     pub modified_at_utc: DateTime<Utc>,
+    #[serde(default)]
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

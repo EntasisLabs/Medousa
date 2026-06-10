@@ -1,6 +1,7 @@
 <script lang="ts">
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import {
     archiveAskJob,
@@ -17,6 +18,7 @@
   import type { JobResultResponse } from "$lib/types/job";
   import { columnLabel } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { formatManifestStatusChip } from "$lib/utils/workHub";
   import { buildWorkManifestation } from "$lib/utils/workManifestation";
   import ManifestProvenanceBar from "$lib/components/work/ManifestProvenanceBar.svelte";
@@ -680,16 +682,24 @@
       {#if detail.associations.vault_paths.length > 0}
         <div class="workshop-inset min-w-0 p-4">
           <p class="workshop-label">Linked vault notes</p>
-          <ul class="mt-2 space-y-1">
+          <ul class="mt-2 space-y-2">
             {#each detail.associations.vault_paths as path (path)}
               <li class="min-w-0">
-                <button
-                  type="button"
-                  class="break-all text-left text-primary-400 hover:underline"
-                  onclick={() => onOpenNote(path)}
-                >
-                  {path}
-                </button>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="truncate text-sm text-surface-200">
+                    {vaultDisplayTitle(
+                      vault.labelByPath().get(path) ?? path,
+                      path,
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-sm variant-soft-primary shrink-0"
+                    onclick={() => onOpenNote(path)}
+                  >
+                    Open in Library
+                  </button>
+                </div>
               </li>
             {/each}
           </ul>

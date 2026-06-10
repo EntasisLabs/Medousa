@@ -1,26 +1,39 @@
 <script lang="ts">
   import { Bell } from "@lucide/svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { buildPulsePresentation, motionColumnCounts } from "$lib/utils/mobilePulse";
+  import {
+    journalDailyHeroTitle,
+    resolveJournalDailyHeroPath,
+  } from "$lib/utils/vaultNoteBridge";
 
   interface Props {
     health: DaemonHealth | null;
     onSelectCard: (id: string) => void | Promise<void>;
     onOpenChat: () => void;
+    onOpenNote: (path: string) => void | Promise<void>;
     onOpenSettings: () => void;
     onToggleActivity: () => void;
   }
 
-  let { health, onSelectCard, onOpenChat, onOpenSettings, onToggleActivity }: Props =
-    $props();
+  let {
+    health,
+    onSelectCard,
+    onOpenChat,
+    onOpenNote,
+    onOpenSettings,
+    onToggleActivity,
+  }: Props = $props();
 
   const blocked = $derived(workspace.needsAttentionCount());
   const inMotion = $derived(workspace.inMotionCount());
   const primaryCard = $derived(workspace.primaryInMotionCard());
   const nextSchedule = $derived(recurring.soonestEnabled());
+  const journalDailyPath = $derived(resolveJournalDailyHeroPath(vault.notes));
 
   const pulse = $derived(
     buildPulsePresentation({
@@ -29,6 +42,14 @@
       inMotion,
       primaryCard,
       motionCounts: motionColumnCounts(workspace.cards),
+      journalDailyPath,
+      journalDailyTitle: journalDailyPath
+        ? journalDailyHeroTitle(
+            journalDailyPath,
+            vault.notes,
+            vault.labelByPath(),
+          )
+        : null,
     }),
   );
 
@@ -36,6 +57,9 @@
     switch (pulse.action.kind) {
       case "card":
         void onSelectCard(pulse.action.cardId);
+        break;
+      case "note":
+        void onOpenNote(pulse.action.path);
         break;
       case "work":
         layout.setMobileTab("work");

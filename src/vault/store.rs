@@ -140,6 +140,7 @@ impl VaultStore {
                 created_at_utc: draft.created_at,
                 tags: Vec::new(),
                 wikilinks_out: Vec::new(),
+                kind: None,
                 source: draft.source.clone(),
             })
             .collect();

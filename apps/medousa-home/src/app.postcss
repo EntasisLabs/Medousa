@@ -574,7 +574,39 @@
   }
 
   .markdown-wikilink {
-    @apply cursor-default rounded bg-primary-500/15 px-1 text-primary-200;
+    @apply cursor-pointer rounded bg-primary-500/15 px-1 text-primary-200 transition-colors;
+  }
+
+  .markdown-wikilink:hover {
+    @apply bg-primary-500/25 text-primary-100 underline decoration-primary-400/60;
+  }
+
+  .vault-editor-header {
+    @apply border-b border-surface-500/35 bg-surface-900/30;
+  }
+
+  .vault-editor-textarea {
+    @apply focus:ring-0;
+  }
+
+  .vault-markdown-preview {
+    background-color: rgb(var(--color-surface-950) / 0.5);
+  }
+
+  .vault-kbd {
+    @apply rounded border border-surface-500/50 bg-surface-800/80 px-1.5 py-0.5 font-mono text-[10px] text-surface-300;
+  }
+
+  .vault-link-chip {
+    @apply rounded-container-token px-2 py-1.5 text-xs text-primary-300 transition-colors hover:bg-primary-500/10 hover:text-primary-200;
+  }
+
+  .vault-links-panel {
+    @apply backdrop-blur-sm;
+  }
+
+  .vault-save-whisper {
+    @apply min-w-[4.5rem] text-right font-medium tracking-wide transition-opacity duration-300;
   }
 
   .markdown-callout {

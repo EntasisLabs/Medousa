@@ -717,6 +717,17 @@ See [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md).
 - **M6b:** Runtime drawer (stats, delivery, model/depth controls)
 - **M6c–M6f:** Job drill-down, recurring, identity, TUI repositioning
 
+### M7 — Library as life garage (planned)
+
+See [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md).
+
+- **M7a (S1):** Tree honesty, spaces roots, empty states, new note from UI
+- **M7b (S2):** Journal / Projects / Finance / Inbox navigation
+- **M7c (S3–S4):** Frontmatter kinds, templates, ledger table view
+- **M7d (S5–S6):** Split editor, wikilink navigation, autosave
+- **M7e (S7):** Vault ↔ Work ↔ Chat bridges
+- **M7f (S8):** Agent vault proposals (accept / discard)
+
 ### Deferred
 
 - Full TUI feature parity without daemon API projections first
