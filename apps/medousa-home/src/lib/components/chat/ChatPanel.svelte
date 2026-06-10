@@ -2,8 +2,10 @@
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
+  import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
+  import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import {
@@ -14,6 +16,11 @@
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
+  import {
+    parseChatSlashInput,
+    runSlashCommand,
+  } from "$lib/utils/runSlashCommand";
+  import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
   import { isTauri, showChatPopout } from "$lib/window";
 
   interface Props {
@@ -93,11 +100,18 @@
   });
 
   function parseDaemonAskPrompt(value: string): string | null {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("/ask ")) return trimmed.slice(5).trim();
-    if (trimmed.startsWith("/daemon ask ")) return trimmed.slice(12).trim();
+    const slash = parseChatSlashInput(value);
+    if (slash?.kind === "ask") return slash.prompt;
     return null;
   }
+
+  const slashHint = $derived.by(() => {
+    const draft = chat.draft.trim();
+    if (!draft.startsWith("/")) return null;
+    return SLASH_COMMAND_HINTS.filter((hint) =>
+      hint.toLowerCase().startsWith(draft.toLowerCase()),
+    ).slice(0, 4);
+  });
 
   async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
     const opts = buildInteractiveTurnOptions();
@@ -122,9 +136,15 @@
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
+    const slash = parseChatSlashInput(prompt);
     chat.draft = "";
 
     try {
+      if (slash && slash.kind !== "ask") {
+        await runSlashCommand(slash);
+        return;
+      }
+
       if (askPrompt) {
         await submitTurn(prompt, askPrompt, "background");
         return;
@@ -362,7 +382,21 @@
   </div>
 
   {#if !mobile}
+    <BudgetApprovalBar
+      onOpenWork={() => {
+        workspace.workView = "kanban";
+        const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
+        if (pending) void workspace.selectCard(pending.requestId);
+      }}
+    />
     <form class="chat-composer" onsubmit={submit}>
+      {#if slashHint?.length}
+        <ul class="mx-4 mb-1 space-y-0.5 text-[11px] text-surface-500">
+          {#each slashHint as hint (hint)}
+            <li>{hint}</li>
+          {/each}
+        </ul>
+      {/if}
       <div class="composer-bar chat-composer-bar">
         <GrowingTextarea
           bind:value={chat.draft}

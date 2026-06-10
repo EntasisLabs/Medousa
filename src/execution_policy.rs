@@ -200,6 +200,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_capability_search"
         | "cognition_grapheme_modules"
         | "cognition_grapheme_template_run"
+        | "cognition_web_search"
         | "cognition_turn_prepare_final"
         | "cognition.turn.prepare_final"
         | "cognition_turn_finish"

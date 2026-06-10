@@ -354,6 +354,35 @@ export async function denyTurnBudgetRequest(
   });
 }
 
+export interface TurnBudgetRequestRecord {
+  request_id: string;
+  turn_correlation_id?: string | null;
+  stream_turn_id: number;
+  session_id: string;
+  channel?: string | null;
+  rounds_executed: number;
+  max_tool_rounds: number;
+  requested_rounds: number;
+  granted_rounds?: number | null;
+  reason: string;
+  progress_summary?: string | null;
+  status: string;
+  resolved_by?: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+  resolved_at_utc?: string | null;
+}
+
+export async function listTurnBudgetRequests(
+  pendingOnly = true,
+): Promise<TurnBudgetRequestRecord[]> {
+  const response = await invoke<{ requests: TurnBudgetRequestRecord[] }>(
+    "turn_budget_list",
+    { pendingOnly },
+  );
+  return response.requests ?? [];
+}
+
 export interface TurnBudgetRequestResponse {
   request: {
     request_id: string;

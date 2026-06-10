@@ -104,6 +104,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 &[
                     "cognition_memory_context",
                     "cognition_memory_recall",
+                    "cognition_memory_store",
                     "cognition_identity_recall",
                     "cognition_capability_invoke",
                     "cognition_capability_search",
@@ -127,6 +128,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_vault_read",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_web_search",
                     "cognition_grapheme_script_save",
                     "cognition_grapheme_script_list",
                     "cognition_grapheme_script_search",
@@ -146,6 +148,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_memory_recall",
                     "cognition_memory_store",
                     "cognition_identity_recall",
+                    "cognition_web_search",
                     "cognition_capability_invoke",
                     "cognition_capability_search",
                     "cognition_capability_resolve",
@@ -221,6 +224,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_vault_read",
             "cognition_vault_search",
             "cognition_vault_write",
+            "cognition_web_search",
             "cognition_tool_history_summary",
             "cognition_tool_history_detail",
             "cognition_grapheme_script_list",
@@ -342,6 +346,7 @@ mod tests {
         assert!(names.contains("cognition_skill_discover"));
         assert!(names.contains("cognition_skill_probe"));
         assert!(names.contains("cognition_vault_write"));
+        assert!(names.contains("cognition_memory_store"));
     }
 
     #[test]

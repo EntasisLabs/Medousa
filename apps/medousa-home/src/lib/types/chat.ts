@@ -40,6 +40,17 @@ export interface ChatMessage {
   lane?: "chat" | "ask" | null;
   /** Workspace card / job id for ask-lane messages. */
   askJobId?: string | null;
+  /** Turn paused for operator tool-round budget approval. */
+  budgetRequestId?: string | null;
+  requestedRounds?: number | null;
+}
+
+export interface PendingBudgetApproval {
+  turnId: string;
+  messageId: string | null;
+  requestId: string;
+  requestedRounds: number | null;
+  message: string;
 }
 
 export interface TurnTicketState {
@@ -50,6 +61,8 @@ export interface TurnTicketState {
   streamAttached: boolean;
   terminal: boolean;
   workspaceCardId?: string | null;
+  budgetRequestId?: string | null;
+  requestedRounds?: number | null;
 }
 
 export interface InteractiveTurnStreamEvent {

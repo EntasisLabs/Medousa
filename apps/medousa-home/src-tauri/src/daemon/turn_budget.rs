@@ -1,5 +1,6 @@
 use crate::daemon::types::{
-    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestResponse,
+    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
+    TurnBudgetRequestResponse,
 };
 use reqwest::Client;
 use tauri::State;
@@ -71,6 +72,30 @@ pub async fn turn_budget_deny(
     Client::new()
         .post(format!("{base}/v1/turns/budget-requests/{encoded}/deny"))
         .json(&body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?
+        .error_for_status()
+        .map_err(|err| err.to_string())?
+        .json()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn turn_budget_list(
+    state: State<'_, DaemonState>,
+    pending_only: Option<bool>,
+) -> Result<TurnBudgetRequestListResponse, String> {
+    let base = state.daemon_url.lock().map_err(|_| "daemon url lock poisoned")?.clone();
+    let pending = pending_only.unwrap_or(true);
+    let url = if pending {
+        format!("{base}/v1/turns/budget-requests?status=pending&limit=20")
+    } else {
+        format!("{base}/v1/turns/budget-requests?limit=20")
+    };
+    Client::new()
+        .get(url)
         .send()
         .await
         .map_err(|err| err.to_string())?

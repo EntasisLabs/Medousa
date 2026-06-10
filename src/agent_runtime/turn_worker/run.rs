@@ -371,6 +371,7 @@ pub async fn run_worker_turn(
     if worker_should_unlock_vault(&record.task_prompt, intent) {
         let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["vault"]);
     }
+    let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["memory"]);
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),

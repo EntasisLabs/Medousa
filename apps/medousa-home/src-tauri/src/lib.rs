@@ -79,6 +79,7 @@ pub fn run() {
             daemon::workspace_card::workspace_retry_card,
             daemon::turn_budget::turn_budget_approve,
             daemon::turn_budget::turn_budget_deny,
+            daemon::turn_budget::turn_budget_list,
             daemon::session::session_list,
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,

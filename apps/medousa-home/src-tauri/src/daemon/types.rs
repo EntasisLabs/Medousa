@@ -839,3 +839,8 @@ pub struct TurnBudgetRequestResponse {
     pub request: TurnBudgetRequestRecord,
     pub message: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnBudgetRequestListResponse {
+    pub requests: Vec<TurnBudgetRequestRecord>,
+}

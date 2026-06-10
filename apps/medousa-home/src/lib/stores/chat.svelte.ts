@@ -10,6 +10,7 @@ import {
 import type {
   ChatMessage,
   InteractiveTurnStreamEvent,
+  PendingBudgetApproval,
   ToolRunState,
   TurnTicketState,
 } from "$lib/types/chat";
@@ -30,6 +31,7 @@ import {
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
+import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
@@ -58,6 +60,8 @@ export class ChatStore {
   historyLoading = $state(false);
   /** Brief banner after reloading turns from the Mac daemon (e.g. after WebView refresh). */
   historyNotice = $state<string | null>(null);
+  /** Desktop in-app alert when a turn pauses for budget approval. */
+  budgetAlert = $state<PendingBudgetApproval | null>(null);
   /** Daemon turn id for the live interactive stream, if any. */
   activeTurnId = $state<string | null>(null);
   /** Turn-centric state keyed by daemon turn id. */
@@ -100,6 +104,56 @@ export class ChatStore {
   /** Live stream and/or background worker / approval work in flight. */
   get hasTurnActivity(): boolean {
     return this.liveStreamActive || this.backgroundActivity > 0;
+  }
+
+  /** Turns waiting for operator tool-round budget approval. */
+  get pendingBudgetApprovals(): PendingBudgetApproval[] {
+    const items: PendingBudgetApproval[] = [];
+    for (const [turnId, turn] of this.turns) {
+      if (turn.terminal) continue;
+      if (
+        turn.phase !== "budget_blocked" &&
+        turn.phase !== "budget_approval" &&
+        !turn.budgetRequestId
+      ) {
+        continue;
+      }
+      const requestId = turn.budgetRequestId?.trim();
+      if (!requestId) continue;
+      items.push({
+        turnId,
+        messageId: turn.messageId,
+        requestId,
+        requestedRounds: turn.requestedRounds ?? null,
+        message: "Medousa needs more tool rounds to finish this task.",
+      });
+    }
+    return items;
+  }
+
+  clearBudgetAlert() {
+    this.budgetAlert = null;
+  }
+
+  noteBudgetResolved(requestId: string) {
+    if (this.budgetAlert?.requestId === requestId) {
+      this.budgetAlert = null;
+    }
+    const next = new Map(this.turns);
+    for (const [turnId, turn] of next) {
+      if (turn.budgetRequestId === requestId) {
+        next.set(turnId, {
+          ...turn,
+          phase: "tool_loop",
+          budgetRequestId: null,
+          requestedRounds: null,
+        });
+      }
+    }
+    this.turns = next;
+    if (this.backgroundActivity > 0) {
+      this.backgroundActivity -= 1;
+    }
   }
 
   /** Back-compat alias for live stream only (not background handoffs). */
@@ -1283,6 +1337,11 @@ export class ChatStore {
         ? "Background worker started"
         : "Waiting for operator approval");
 
+    const budgetRequestId =
+      phase === "budget_approval" ? budgetRequestIdFromStreamEvent(event) : null;
+    const requestedRounds =
+      phase === "budget_approval" ? (event.requested_rounds ?? null) : null;
+
     const idx = this.messages.findIndex((m) => m.id === messageId);
     if (idx >= 0) {
       const current = this.messages[idx];
@@ -1295,10 +1354,12 @@ export class ChatStore {
         {
           ...current,
           streaming: false,
-          phase: phase === "worker_ack" ? null : phase,
+          phase: phase === "worker_ack" ? null : "budget_blocked",
           statusLine: phase === "worker_ack" ? null : statusLine,
           stageWhisper: phase === "worker_ack" ? ackText : current.stageWhisper,
           content: phase === "worker_ack" ? "" : ackText,
+          budgetRequestId,
+          requestedRounds,
         },
         ...this.messages.slice(idx + 1),
       ];
@@ -1309,8 +1370,14 @@ export class ChatStore {
       const next = new Map(this.turns);
       next.set(event.turn_id, {
         ...turn,
-        phase: phase === "worker_ack" ? "worker_handoff" : phase,
+        phase: phase === "worker_ack" ? "worker_handoff" : "budget_blocked",
         messageId: phase === "worker_ack" ? null : messageId,
+        workspaceCardId:
+          phase === "budget_approval" && budgetRequestId
+            ? budgetRequestId
+            : turn.workspaceCardId,
+        budgetRequestId,
+        requestedRounds,
       });
       this.turns = next;
     }
@@ -1325,6 +1392,18 @@ export class ChatStore {
 
     if (phase === "worker_ack") {
       this.linkWorkerFromStream(event, messageId);
+      return;
+    }
+
+    if (budgetRequestId) {
+      const alert: PendingBudgetApproval = {
+        turnId: event.turn_id,
+        messageId,
+        requestId: budgetRequestId,
+        requestedRounds,
+        message: statusLine,
+      };
+      this.budgetAlert = alert;
     }
   }
 

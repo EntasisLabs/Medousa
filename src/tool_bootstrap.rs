@@ -24,6 +24,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_tool_history_summary",
     "cognition_spawn_turn_worker",
     "cognition_memory_context",
+    "cognition_memory_store",
+    "cognition_web_search",
     "cognition_vault_search",
     "cognition_turn_begin_work",
     "cognition_turn_finish",
@@ -36,9 +38,11 @@ pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_begin_work",
     "cognition_turn_finish",
     "cognition_capability_invoke",
+    "cognition_web_search",
     "cognition_grapheme_script_load",
     "cognition_grapheme_template_run",
     "cognition_memory_context",
+    "cognition_memory_store",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,6 +184,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 summary: "Run resolved capabilities, Grapheme scripts, MCP invokes",
                 tools: &[
                     "cognition_capability_invoke",
+                    "cognition_web_search",
                     "cognition_grapheme_run",
                     "cognition_grapheme_cli_run",
                     "cognition_mcp_invoke",
@@ -257,7 +262,9 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_tool_history_detail" => "Full tool receipt for slice_id=turn:N",
         "cognition_spawn_turn_worker" => "Delegate execution to workshop lane",
         "cognition_memory_context" => "Load Locus AVEC + session memory context",
+        "cognition_memory_store" => "Store episodic STTP node in Locus memory",
         "cognition_vault_search" => "Search vault notes",
+        "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_turn_begin_work" => "Progress line before heavy tools",
         "cognition_turn_finish" => "Commit principal-ready answer",
         "cognition_turn_worker_status" => "Pending worker status",

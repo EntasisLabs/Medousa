@@ -8,6 +8,13 @@
 # src/capability_catalog.rs. Entries with the same `id` replace the built-in
 # definition; new ids are appended.
 #
+# Optional first-class web search defaults (cognition_web_search tool).
+# [web_search]
+# preferred_provider = "tavily"
+# try_fallbacks = true
+#
+# Env override: MEDOUSA_WEB_SEARCH_PROVIDER=duckduckgo
+#
 # Priority: lower number = preferred default in cognition_capability_resolve /
 # cognition_capability_invoke (when try_fallbacks walks bindings).
 #

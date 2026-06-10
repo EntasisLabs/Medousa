@@ -47,7 +47,7 @@ use crate::tools::{
     PolicyAwareToolRegistry, TuiRuntime,
 };
 use crate::bridge_tools::{
-    CognitionCapabilityInvokeTool, CognitionGraphemeTemplateRunTool,
+    CognitionCapabilityInvokeTool, CognitionGraphemeTemplateRunTool, CognitionWebSearchTool,
     CognitionMcpPromoteToJobTool,
 };
 use crate::capability_catalog::CapabilityRegistry;
@@ -374,6 +374,13 @@ pub(crate) async fn assemble_tui_runtime(
     ))?;
     tool_registry.register_tool(CognitionGraphemeTemplateRunTool::new(
         runtime.clone(),
+        event_tx.clone(),
+    ))?;
+    tool_registry.register_tool(CognitionWebSearchTool::new(
+        capability_registry.clone(),
+        runtime.clone(),
+        mcp_gateway_client.clone(),
+        session_id.to_string(),
         event_tx.clone(),
     ))?;
 

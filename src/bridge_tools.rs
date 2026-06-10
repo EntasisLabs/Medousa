@@ -861,6 +861,206 @@ impl StasisTool for CognitionGraphemeTemplateRunTool {
     }
 }
 
+// ── cognition_web_search ──────────────────────────────────────────────────────
+
+fn web_search_binding_reference(mode: &str, provider: Option<&str>) -> Option<(CapabilitySource, String)> {
+    let mode = mode.trim().to_ascii_lowercase();
+    if mode == "research_materials" {
+        return Some((CapabilitySource::Grapheme, "websearch.research_materials".to_string()));
+    }
+    if mode == "research_report" {
+        return Some((CapabilitySource::Grapheme, "websearch.research_report".to_string()));
+    }
+    if mode == "facade" || mode == "websearch" {
+        return Some((CapabilitySource::Grapheme, "websearch.search".to_string()));
+    }
+    if let Some(provider) = provider.map(str::trim).filter(|value| !value.is_empty()) {
+        let normalized = provider
+            .strip_prefix("web.")
+            .unwrap_or(provider)
+            .to_string();
+        return Some((CapabilitySource::Grapheme, format!("web.{normalized}")));
+    }
+    None
+}
+
+pub struct CognitionWebSearchTool {
+    capability_registry: Arc<RwLock<CapabilityRegistry>>,
+    runtime: Arc<RuntimeComposition>,
+    gateway_client: Arc<McpGatewayClient>,
+    session_id: String,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionWebSearchTool {
+    pub fn new(
+        capability_registry: Arc<RwLock<CapabilityRegistry>>,
+        runtime: Arc<RuntimeComposition>,
+        gateway_client: Arc<McpGatewayClient>,
+        session_id: impl Into<String>,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            capability_registry,
+            runtime,
+            gateway_client,
+            session_id: session_id.into(),
+            event_tx,
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionWebSearchTool {
+    fn name(&self) -> &'static str {
+        "cognition_web_search"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Search the public web with one call. Uses configured provider preference and binding \
+             fallbacks (web.<provider>, then websearch.search). For deep reports use mode=research_report.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": { "type": "string", "description": "Search query or research topic" },
+                "mode": {
+                    "type": "string",
+                    "enum": ["search", "facade", "research_materials", "research_report"],
+                    "default": "search",
+                    "description": "search = provider-native web lookup; research_* = websearch facade pipelines"
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Optional web provider id (duckduckgo, google, tavily, …). Defaults to capabilities.toml [web_search].preferred_provider or MEDOUSA_WEB_SEARCH_PROVIDER"
+                },
+                "try_fallbacks": {
+                    "type": "boolean",
+                    "description": "Try lower-priority bindings when the preferred provider fails"
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let query = input
+            .get("query")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                StasisError::PortFailure("cognition_web_search: query is required".to_string())
+            })?;
+
+        let mode = input
+            .get("mode")
+            .and_then(|value| value.as_str())
+            .unwrap_or("search");
+        let settings = crate::capability_catalog::web_search_settings();
+        let provider = input
+            .get("provider")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or(settings.preferred_provider.as_deref());
+        let try_fallbacks = input
+            .get("try_fallbacks")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(settings.try_fallbacks);
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: self.name().to_string(),
+                input_summary: query.to_string(),
+            })
+            .await;
+
+        let mut invoke_input = json!({
+            "capability": "web_research",
+            "input": { "query": query },
+            "try_fallbacks": try_fallbacks
+        });
+        if let Some((source, reference)) = web_search_binding_reference(mode, provider) {
+            invoke_input["binding"] = json!({
+                "source": source.as_str(),
+                "reference": reference
+            });
+        }
+
+        let registry = self.capability_registry.read().await;
+        let resolved = resolve_capability_from_input(&registry, Some("web_research"), None)?;
+        let (primary, mut fallbacks) = select_binding_for_invoke(&resolved, &invoke_input)?;
+        let mut candidates = vec![primary];
+        if try_fallbacks {
+            candidates.append(&mut fallbacks);
+        }
+
+        let tool_input = json!({ "query": query });
+        let mut last_error = None;
+        for (index, binding) in candidates.iter().enumerate() {
+            let result = match binding.source {
+                CapabilitySource::Mcp => {
+                    invoke_mcp_binding(
+                        &self.gateway_client,
+                        &self.session_id,
+                        binding,
+                        &tool_input,
+                    )
+                    .await
+                }
+                CapabilitySource::Grapheme => {
+                    invoke_grapheme_binding(&self.runtime, binding, &tool_input).await
+                }
+            };
+
+            match result {
+                Ok(result) if invoke_succeeded(binding, &result) => {
+                    let remaining = candidates.iter().skip(index + 1).cloned().collect::<Vec<_>>();
+                    return Ok(json!({
+                        "query": query,
+                        "mode": mode,
+                        "provider_requested": provider,
+                        "binding_used": binding_ref_json(binding),
+                        "decision": "allow",
+                        "effect_class": effect_class_from_result(binding, &result, "web_research"),
+                        "result": result,
+                        "fallback_available": fallback_bindings_json(&remaining)
+                    }));
+                }
+                Ok(result) => {
+                    last_error = Some(json!({
+                        "binding": binding_ref_json(binding),
+                        "result": result
+                    }));
+                }
+                Err(error) => {
+                    last_error = Some(json!({
+                        "binding": binding_ref_json(binding),
+                        "error": error.to_string()
+                    }));
+                }
+            }
+        }
+
+        Ok(json!({
+            "query": query,
+            "mode": mode,
+            "provider_requested": provider,
+            "binding_used": binding_ref_json(&candidates[0]),
+            "decision": "deny",
+            "effect_class": effect_class_for_capability("web_research"),
+            "result": last_error,
+            "fallback_available": fallback_bindings_json(&candidates[1..])
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

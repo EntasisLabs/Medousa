@@ -147,6 +147,7 @@ export class WorkspaceStore {
       card.status_label !== "needs approval"
     ) {
       chat.noteBackgroundSettled();
+      chat.noteBudgetResolved(card.id);
     }
     this.previousColumns.set(card.id, card.column);
 

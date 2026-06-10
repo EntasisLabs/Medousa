@@ -1,17 +1,23 @@
 <script lang="ts">
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
+  import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
+  import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket, startInteractiveStream } from "$lib/daemon";
+  import {
+    parseChatSlashInput,
+    runSlashCommand,
+  } from "$lib/utils/runSlashCommand";
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
 
   let composerBlurTimer: ReturnType<typeof setTimeout> | undefined;
 
   function parseDaemonAskPrompt(value: string): string | null {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("/ask ")) return trimmed.slice(5).trim();
-    if (trimmed.startsWith("/daemon ask ")) return trimmed.slice(12).trim();
+    const slash = parseChatSlashInput(value);
+    if (slash?.kind === "ask") return slash.prompt;
     return null;
   }
 
@@ -42,9 +48,15 @@
     haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
+    const slash = parseChatSlashInput(prompt);
     chat.draft = "";
 
     try {
+      if (slash && slash.kind !== "ask") {
+        await runSlashCommand(slash);
+        return;
+      }
+
       if (askPrompt) {
         await submitTurn(prompt, askPrompt, "background");
         return;
@@ -82,6 +94,14 @@
 </script>
 
 <form class="mobile-chat-composer" onsubmit={submit}>
+  <BudgetApprovalBar
+    mobile
+    onOpenWork={() => {
+      layout.setMobileTab("work");
+      const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
+      if (pending) void workspace.selectCard(pending.requestId);
+    }}
+  />
   <div class="composer-bar composer-bar-mobile">
     <GrowingTextarea
       bind:value={chat.draft}

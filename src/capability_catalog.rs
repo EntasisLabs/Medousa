@@ -95,10 +95,27 @@ pub struct CapabilityManifestBindings {
     pub mcp: Vec<McpCapabilityBindingSpec>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Operator preferences for first-class `cognition_web_search` (optional overlay in capabilities.toml).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WebSearchSettings {
+    /// Preferred `web.<provider>` binding when the model omits `provider` (e.g. duckduckgo, tavily, google).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_provider: Option<String>,
+    /// When true, try lower-priority bindings after the preferred one fails.
+    #[serde(default = "default_web_search_try_fallbacks")]
+    pub try_fallbacks: bool,
+}
+
+fn default_web_search_try_fallbacks() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CapabilityManifest {
     #[serde(default)]
     pub capabilities: Vec<CapabilityManifestEntry>,
+    #[serde(default)]
+    pub web_search: WebSearchSettings,
 }
 
 /// Resolved binding ready for agent consumption.
@@ -609,6 +626,22 @@ fn merge_capability_manifests(base: &mut CapabilityManifest, overlay: Capability
             base.capabilities.push(entry);
         }
     }
+    if overlay.web_search.preferred_provider.is_some() {
+        base.web_search.preferred_provider = overlay.web_search.preferred_provider;
+    }
+}
+
+/// Resolved web-search operator prefs (capabilities.toml + env override).
+pub fn web_search_settings() -> WebSearchSettings {
+    let (manifest, _) = load_capability_manifest();
+    let mut settings = manifest.web_search;
+    if let Ok(from_env) = std::env::var("MEDOUSA_WEB_SEARCH_PROVIDER") {
+        let trimmed = from_env.trim();
+        if !trimmed.is_empty() {
+            settings.preferred_provider = Some(trimmed.to_string());
+        }
+    }
+    settings
 }
 
 /// Embedded seed manifest — overridden/extended by `~/.config/medousa/capabilities.toml`.
@@ -759,6 +792,7 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                 },
             },
         ],
+        web_search: WebSearchSettings::default(),
     }
 }
 
@@ -810,6 +844,7 @@ mod tests {
                 keywords: vec!["custom".to_string()],
                 bindings: CapabilityManifestBindings::default(),
             }],
+            web_search: WebSearchSettings::default(),
         };
         merge_capability_manifests(&mut manifest, file_manifest);
 
