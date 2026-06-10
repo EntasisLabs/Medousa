@@ -103,6 +103,7 @@ pub(crate) async fn handle_settings_key_event(
                 | SettingsRowId::BaseUrl
                 | SettingsRowId::ApiKey
                 | SettingsRowId::AllowedModules
+                | SettingsRowId::WebSearchPreferredProvider
                 | SettingsRowId::RouteProvider
                 | SettingsRowId::RouteModel => {
                     state.settings_editing = true;
@@ -337,6 +338,18 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
             } else {
                 state.settings_draft.allowed_modules.clone()
             }
+        ),
+        format!(
+            "Web search provider: {}  [edit]",
+            if state.settings_draft.web_search_preferred_provider.trim().is_empty() {
+                "Auto (capability order)".to_string()
+            } else {
+                state.settings_draft.web_search_preferred_provider.clone()
+            }
+        ),
+        format!(
+            "Try other search providers: {}  [toggle]",
+            state.settings_draft.web_search_try_fallbacks
         ),
         format!(
             "When the AI uses tools: {}  [toggle]",

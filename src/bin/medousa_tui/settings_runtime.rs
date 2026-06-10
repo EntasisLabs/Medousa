@@ -165,6 +165,15 @@ pub(crate) async fn apply_settings(
         0.0,
         1.0,
     );
+    let web_search_preferred_provider = state
+        .settings_draft
+        .web_search_preferred_provider
+        .trim()
+        .to_string();
+    let web_search_try_fallbacks = super::parse_bool_with_default(
+        &state.settings_draft.web_search_try_fallbacks,
+        true,
+    );
     let provider = if state.settings_draft.provider.trim().is_empty() {
         super::resolve_llm_provider(None)
     } else {
@@ -215,6 +224,8 @@ pub(crate) async fn apply_settings(
         verifier_min_avg_support_strength,
         verifier_min_supported_claim_ratio,
         verifier_min_claim_support_strength,
+        web_search_preferred_provider,
+        web_search_try_fallbacks,
         stage_routing: state.stage_routing_draft.clone(),
         api_key,
     };
@@ -355,6 +366,10 @@ pub(crate) async fn finalize_settings_apply_if_ready(
                 format!("{:.2}", snapshot.verifier_min_supported_claim_ratio);
             state.settings.verifier_min_claim_support_strength =
                 format!("{:.2}", snapshot.verifier_min_claim_support_strength);
+            state.settings.web_search_preferred_provider =
+                snapshot.web_search_preferred_provider.clone();
+            state.settings.web_search_try_fallbacks =
+                snapshot.web_search_try_fallbacks.to_string();
             state.stage_routing = snapshot.stage_routing.clone();
             state.settings.api_key = snapshot.api_key.clone();
             state.provider_model = format!("{}:{}", snapshot.provider, snapshot.model);
@@ -417,6 +432,13 @@ pub(crate) async fn finalize_settings_apply_if_ready(
                 Some(snapshot.verifier_min_supported_claim_ratio);
             defaults.verifier_min_claim_support_strength =
                 Some(snapshot.verifier_min_claim_support_strength);
+            defaults.web_search_preferred_provider =
+                if snapshot.web_search_preferred_provider.trim().is_empty() {
+                    None
+                } else {
+                    Some(snapshot.web_search_preferred_provider.clone())
+                };
+            defaults.web_search_try_fallbacks = Some(snapshot.web_search_try_fallbacks);
             defaults.response_depth_mode = Some(state.response_depth_mode.clone());
             defaults.stage_routing = Some(state.stage_routing.clone());
             defaults.command_usage_counts = if state.command_usage_counts.is_empty() {

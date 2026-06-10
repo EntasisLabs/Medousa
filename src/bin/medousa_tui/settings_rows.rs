@@ -11,6 +11,8 @@ pub(crate) enum SettingsRowId {
     BaseUrl,
     ApiKey,
     AllowedModules,
+    WebSearchPreferredProvider,
+    WebSearchTryFallbacks,
     ToolCallMode,
     MaxToolRounds,
     HostBusMaxToolRounds,
@@ -54,22 +56,24 @@ pub(crate) enum SettingsRowId {
 
 pub(crate) const SETTINGS_TABS: [(&str, usize, usize); 8] = [
     ("Setup", 0, 5),
-    ("Tools", 6, 14),
-    ("Memory", 15, 19),
-    ("Diagnostics", 20, 22),
-    ("Quality", 23, 28),
-    ("Secrets", 29, 32),
-    ("Specialists", 33, 40),
-    ("Save", 41, 44),
+    ("Tools", 6, 16),
+    ("Memory", 17, 21),
+    ("Diagnostics", 22, 24),
+    ("Quality", 25, 30),
+    ("Secrets", 31, 34),
+    ("Specialists", 35, 42),
+    ("Save", 43, 46),
 ];
 
-pub(crate) const ALL_SETTINGS_ROWS: [SettingsRowId; 45] = [
+pub(crate) const ALL_SETTINGS_ROWS: [SettingsRowId; 47] = [
     SettingsRowId::Backend,
     SettingsRowId::Provider,
     SettingsRowId::Model,
     SettingsRowId::BaseUrl,
     SettingsRowId::ApiKey,
     SettingsRowId::AllowedModules,
+    SettingsRowId::WebSearchPreferredProvider,
+    SettingsRowId::WebSearchTryFallbacks,
     SettingsRowId::ToolCallMode,
     SettingsRowId::MaxToolRounds,
     SettingsRowId::HostBusMaxToolRounds,
@@ -157,6 +161,7 @@ pub(crate) fn is_toggle_row(id: SettingsRowId) -> bool {
             | SettingsRowId::HostTurnBusMode
             | SettingsRowId::ThinkingCapture
             | SettingsRowId::StasisOtelEnabled
+            | SettingsRowId::WebSearchTryFallbacks
     )
 }
 
@@ -179,6 +184,8 @@ pub(crate) fn selected_settings_field_mut<'a>(
         SettingsRowId::BaseUrl => &mut draft.base_url,
         SettingsRowId::ApiKey => &mut draft.api_key,
         SettingsRowId::AllowedModules => &mut draft.allowed_modules,
+        SettingsRowId::WebSearchPreferredProvider => &mut draft.web_search_preferred_provider,
+        SettingsRowId::WebSearchTryFallbacks => &mut draft.web_search_try_fallbacks,
         SettingsRowId::ToolCallMode => &mut draft.tool_call_mode,
         SettingsRowId::MaxToolRounds => &mut draft.max_tool_rounds,
         SettingsRowId::HostBusMaxToolRounds => &mut draft.host_bus_max_tool_rounds,
@@ -240,6 +247,13 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
                 forward,
             );
         }
+        SettingsRowId::WebSearchPreferredProvider => {
+            state.settings_draft.web_search_preferred_provider =
+                super::cycle_web_search_provider(
+                    &state.settings_draft.web_search_preferred_provider,
+                    forward,
+                );
+        }
         SettingsRowId::ThinkingCapture => {
             let value = super::parse_bool_with_default(&state.settings_draft.thinking_capture, true);
             state.settings_draft.thinking_capture = (!value).to_string();
@@ -248,6 +262,13 @@ pub(crate) fn quick_adjust_setting(state: &mut TuiState, id: SettingsRowId, forw
             let value =
                 super::parse_bool_with_default(&state.settings_draft.stasis_otel_enabled, false);
             state.settings_draft.stasis_otel_enabled = (!value).to_string();
+        }
+        SettingsRowId::WebSearchTryFallbacks => {
+            let value = super::parse_bool_with_default(
+                &state.settings_draft.web_search_try_fallbacks,
+                true,
+            );
+            state.settings_draft.web_search_try_fallbacks = (!value).to_string();
         }
         SettingsRowId::MaxToolRounds => adjust_max_tool_rounds(state, forward),
         SettingsRowId::HostBusMaxToolRounds => adjust_round_field(

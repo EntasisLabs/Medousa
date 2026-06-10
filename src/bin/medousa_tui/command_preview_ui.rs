@@ -34,7 +34,7 @@ const CATEGORY_ORDER: [PaletteCategory; 5] = [
     PaletteCategory::SafetyKeys,
 ];
 
-const PALETTE_ACTIONS: [PaletteAction; 18] = [
+const PALETTE_ACTIONS: [PaletteAction; 21] = [
     PaletteAction {
         category: PaletteCategory::QuickActions,
         title: "Start New Chat",
@@ -124,6 +124,33 @@ const PALETTE_ACTIONS: [PaletteAction; 18] = [
         risk: ActionRisk::Safe,
         key_hint: "Ctrl+G",
         aliases: &["stop", "cancel", "interrupt"],
+    },
+    PaletteAction {
+        category: PaletteCategory::QuickActions,
+        title: "List Budget Approvals",
+        subtitle: "Show pending turn round extensions",
+        command: "/budget list",
+        risk: ActionRisk::Safe,
+        key_hint: "/budget list",
+        aliases: &["budget", "rounds", "approval"],
+    },
+    PaletteAction {
+        category: PaletteCategory::QuickActions,
+        title: "Approve Budget Request",
+        subtitle: "Grant more tool rounds for the active turn",
+        command: "/budget approve",
+        risk: ActionRisk::Caution,
+        key_hint: "/budget approve",
+        aliases: &["approve budget", "more rounds", "extend budget"],
+    },
+    PaletteAction {
+        category: PaletteCategory::QuickActions,
+        title: "Deny Budget Request",
+        subtitle: "Stop the turn waiting for round approval",
+        command: "/budget deny",
+        risk: ActionRisk::Caution,
+        key_hint: "/budget deny",
+        aliases: &["deny budget", "reject rounds"],
     },
     PaletteAction {
         category: PaletteCategory::Session,
@@ -533,6 +560,16 @@ fn record_palette_usage(state: &mut TuiState, command: &str) {
         0.65,
         0.0,
         1.0,
+    ));
+    defaults.web_search_preferred_provider =
+        if state.settings.web_search_preferred_provider.trim().is_empty() {
+            None
+        } else {
+            Some(state.settings.web_search_preferred_provider.trim().to_string())
+        };
+    defaults.web_search_try_fallbacks = Some(parse_bool_with_default(
+        &state.settings.web_search_try_fallbacks,
+        true,
     ));
     defaults.response_depth_mode = Some(state.response_depth_mode.clone());
     defaults.stage_routing = Some(state.stage_routing.clone());

@@ -92,6 +92,10 @@ pub struct TuiDefaults {
     pub response_depth_mode: Option<String>,
     pub stage_routing: Option<crate::stage_routing::StageRoutingMatrix>,
     pub command_usage_counts: Option<std::collections::HashMap<String, u64>>,
+    /// Preferred web search provider for `cognition_web_search` (e.g. duckduckgo, tavily).
+    pub web_search_preferred_provider: Option<String>,
+    /// When false, only the preferred provider binding is tried.
+    pub web_search_try_fallbacks: Option<bool>,
     pub surreal_endpoint: Option<String>,
     pub surreal_username: Option<String>,
     pub surreal_password: Option<String>,

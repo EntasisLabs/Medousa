@@ -12,6 +12,10 @@ use medousa::{
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
+use medousa::daemon_api::{
+    TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
+    TurnBudgetRequestResponse,
+};
 
 use super::{
     EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs, queue_worker_command,
@@ -319,6 +323,54 @@ pub(crate) async fn daemon_set_session_display_name(
         .await?
         .error_for_status()?;
     Ok(response.json::<SessionSetDisplayNameResponse>().await?)
+}
+
+pub(crate) async fn daemon_list_budget_requests(
+    daemon_url: &str,
+    pending_only: bool,
+) -> Result<TurnBudgetRequestListResponse> {
+    let client = Client::new();
+    let url = if pending_only {
+        format!("{daemon_url}/v1/turns/budget-requests?status=pending&limit=20")
+    } else {
+        format!("{daemon_url}/v1/turns/budget-requests?limit=20")
+    };
+    let response = client.get(url).send().await?.error_for_status()?;
+    Ok(response.json::<TurnBudgetRequestListResponse>().await?)
+}
+
+pub(crate) async fn daemon_approve_budget_request(
+    daemon_url: &str,
+    request_id: &str,
+    body: &TurnBudgetApproveRequest,
+) -> Result<TurnBudgetRequestResponse> {
+    let client = Client::new();
+    let request_id = request_id.trim();
+    let response = client
+        .post(format!(
+            "{daemon_url}/v1/turns/budget-requests/{request_id}/approve"
+        ))
+        .json(body)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<TurnBudgetRequestResponse>().await?)
+}
+
+pub(crate) async fn daemon_deny_budget_request(
+    daemon_url: &str,
+    request_id: &str,
+    body: &TurnBudgetDenyRequest,
+) -> Result<TurnBudgetRequestResponse> {
+    let client = Client::new();
+    let request_id = request_id.trim();
+    let response = client
+        .post(format!("{daemon_url}/v1/turns/budget-requests/{request_id}/deny"))
+        .json(body)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<TurnBudgetRequestResponse>().await?)
 }
 
 pub(crate) async fn daemon_append_session_turn(

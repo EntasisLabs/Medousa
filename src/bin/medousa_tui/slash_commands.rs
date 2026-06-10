@@ -301,6 +301,11 @@ pub(crate) async fn handle_slash_command(
         "/daemon" => {
             return handle_daemon_command(&mut parts, state);
         }
+        "/budget" => {
+            let sub = parts.next().unwrap_or("list");
+            let rest = parts.collect::<Vec<_>>().join(" ");
+            return budget_slash_services::handle_budget_command(sub, &rest, state).await;
+        }
         "/watch" => {
             return handle_watch_command(&mut parts, state);
         }
@@ -328,7 +333,7 @@ pub(crate) async fn handle_slash_command(
         _ => {
             push_obs(
                 state,
-                "⚠ unknown command. try /new /history /settings /skills /skill /edit /open /save /run /run-current /artifact /artifact-chunks /artifact-list /artifact-maintain /artifact-extract /artifact-extractions /artifact-pack /artifact-packs /artifact-pack-use /artifact-pack-auto /artifact-verify /artifact-verifications /artifact-verification /verify-policy /stage-routes /stage-route-set /stage-route-reset /close /allowlist-preview /clear-key /rotate-key /model /depth /stop /regen /export /perf /daemon /watch"
+                "⚠ unknown command. try /new /history /settings /budget /skills /skill /edit /open /save /run /run-current /artifact /artifact-chunks /artifact-list /artifact-maintain /artifact-extract /artifact-extractions /artifact-pack /artifact-packs /artifact-pack-use /artifact-pack-auto /artifact-verify /artifact-verifications /artifact-verification /verify-policy /stage-routes /stage-route-set /stage-route-reset /close /allowlist-preview /clear-key /rotate-key /model /depth /stop /regen /export /perf /daemon /watch"
                     .to_string(),
             );
         }

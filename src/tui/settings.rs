@@ -40,6 +40,8 @@ pub struct RuntimeSettings {
     pub verifier_min_avg_support_strength: String,
     pub verifier_min_supported_claim_ratio: String,
     pub verifier_min_claim_support_strength: String,
+    pub web_search_preferred_provider: String,
+    pub web_search_try_fallbacks: String,
 }
 
 pub fn settings_validation_errors(settings: &RuntimeSettings) -> Vec<String> {
@@ -327,6 +329,11 @@ pub fn cycle_host_turn_bus_mode(current: &str, forward: bool) -> String {
     cycle_choice(current, &choices, forward)
 }
 
+pub fn cycle_web_search_provider(current: &str, forward: bool) -> String {
+    let choices = ["", "duckduckgo", "google", "tavily"];
+    cycle_choice(current.trim(), &choices, forward)
+}
+
 fn cycle_choice(current: &str, choices: &[&str], forward: bool) -> String {
     if choices.is_empty() {
         return current.to_string();
@@ -460,6 +467,8 @@ mod tests {
             verifier_min_avg_support_strength: "0.7".to_string(),
             verifier_min_supported_claim_ratio: "0.6".to_string(),
             verifier_min_claim_support_strength: "0.65".to_string(),
+            web_search_preferred_provider: String::new(),
+            web_search_try_fallbacks: "true".to_string(),
         };
 
         let errors = settings_validation_errors(&settings);

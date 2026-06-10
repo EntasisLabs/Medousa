@@ -695,6 +695,8 @@ mod tests {
             verifier_min_avg_support_strength: "0.66".to_string(),
             verifier_min_supported_claim_ratio: "0.77".to_string(),
             verifier_min_claim_support_strength: "0.88".to_string(),
+            web_search_preferred_provider: String::new(),
+            web_search_try_fallbacks: "true".to_string(),
         };
 
         let policy = verifier_policy_from_settings_and_route(&settings, None);
@@ -738,6 +740,8 @@ mod tests {
             verifier_min_avg_support_strength: "0.66".to_string(),
             verifier_min_supported_claim_ratio: "0.57".to_string(),
             verifier_min_claim_support_strength: "0.61".to_string(),
+            web_search_preferred_provider: String::new(),
+            web_search_try_fallbacks: "true".to_string(),
         };
         let route = StageRoute {
             role: "verifier".to_string(),

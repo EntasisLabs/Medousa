@@ -110,6 +110,12 @@ fn apply_tui_defaults_to_runtime_settings(settings: &mut RuntimeSettings, defaul
     if let Some(value) = defaults.verifier_min_claim_support_strength {
         settings.verifier_min_claim_support_strength = format!("{value:.2}");
     }
+    if let Some(value) = defaults.web_search_preferred_provider.as_ref() {
+        settings.web_search_preferred_provider = value.clone();
+    }
+    if let Some(value) = defaults.web_search_try_fallbacks {
+        settings.web_search_try_fallbacks = value.to_string();
+    }
 }
 
 /// Default runtime settings for daemon-hosted agent turns.
@@ -158,6 +164,8 @@ pub fn default_daemon_runtime_settings(
         verifier_min_avg_support_strength: "0.70".to_string(),
         verifier_min_supported_claim_ratio: "0.60".to_string(),
         verifier_min_claim_support_strength: "0.65".to_string(),
+        web_search_preferred_provider: String::new(),
+        web_search_try_fallbacks: "true".to_string(),
     }
 }
 

@@ -5,6 +5,7 @@
     DEPTH_OPTIONS,
     HOST_TURN_BUS_OPTIONS,
     TOOL_CALL_MODE_OPTIONS,
+    WEB_SEARCH_PROVIDER_OPTIONS,
     WORKSHOP_DEFAULTS_TABS,
     type WorkshopDefaultsTab,
   } from "$lib/types/workshopDefaults";
@@ -223,6 +224,33 @@
               <option value={option}>{option}</option>
             {/each}
           </select>
+        </label>
+        <label class="block">
+          <span class="workshop-label">Web search provider</span>
+          <select
+            class="select mt-1 w-full"
+            value={workshopDefaults.draft.webSearchPreferredProvider ?? ""}
+            disabled={mobile}
+            onchange={(e) => textField("webSearchPreferredProvider", e)}
+          >
+            {#each WEB_SEARCH_PROVIDER_OPTIONS as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+          <p class="workshop-faint mt-1 text-xs">
+            Used by <span class="font-mono">cognition_web_search</span> before fallback bindings.
+          </p>
+        </label>
+        <label class="flex cursor-pointer items-center gap-3 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={workshopDefaults.draft.webSearchTryFallbacks ?? true}
+            disabled={mobile}
+            onchange={(e) => boolField("webSearchTryFallbacks", e)}
+          />
+          <span class="text-sm text-surface-200">
+            Try other web providers when the preferred one fails
+          </span>
         </label>
         {#each [
           ["Max tool rounds", "maxToolRounds"],

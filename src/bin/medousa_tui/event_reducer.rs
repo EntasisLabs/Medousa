@@ -43,6 +43,8 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
             reason,
             progress_summary,
         } => {
+            state.pending_budget_request_id = Some(request_id.clone());
+            state.pending_budget_requested_rounds = Some(requested_rounds);
             let progress = progress_summary
                 .map(|value| format!(" — {value}"))
                 .unwrap_or_default();
@@ -51,7 +53,7 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 format!(
                     "⏸ turn budget request {request_id}: at {rounds_executed}/{max_tool_rounds}, \
                      asking +{requested_rounds} rounds — {reason}{progress}. \
-                     Approve in Home work board or POST /v1/turns/budget-requests/{request_id}/approve"
+                     Approve: /budget approve  Deny: /budget deny  List: /budget list"
                 ),
             );
         }

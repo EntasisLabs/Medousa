@@ -641,6 +641,18 @@ pub fn web_search_settings() -> WebSearchSettings {
             settings.preferred_provider = Some(trimmed.to_string());
         }
     }
+    let defaults = crate::session::load_tui_defaults();
+    if settings.preferred_provider.is_none() {
+        settings.preferred_provider = defaults
+            .web_search_preferred_provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+    }
+    if let Some(try_fallbacks) = defaults.web_search_try_fallbacks {
+        settings.try_fallbacks = try_fallbacks;
+    }
     settings
 }
 

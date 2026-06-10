@@ -42,6 +42,8 @@ export interface TuiDefaults {
   verifierMinClaimSupportStrength?: number | null;
   responseDepthMode?: string | null;
   stageRouting?: StageRoutingMatrix | null;
+  webSearchPreferredProvider?: string | null;
+  webSearchTryFallbacks?: boolean | null;
 }
 
 export const WORKSHOP_DEFAULTS_TABS: {
@@ -61,6 +63,13 @@ export const BACKEND_OPTIONS = ["surreal-mem", "in-memory", "surreal-kv"] as con
 export const TOOL_CALL_MODE_OPTIONS = ["auto", "strict"] as const;
 export const HOST_TURN_BUS_OPTIONS = ["auto", "force", "off"] as const;
 export const DEPTH_OPTIONS: DepthMode[] = ["concise", "standard", "deep"];
+
+export const WEB_SEARCH_PROVIDER_OPTIONS = [
+  { value: "", label: "Auto (capability order)" },
+  { value: "duckduckgo", label: "DuckDuckGo" },
+  { value: "google", label: "Google" },
+  { value: "tavily", label: "Tavily" },
+] as const;
 
 export function defaultWorkshopDefaults(): Required<
   Pick<
@@ -177,6 +186,8 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
       raw.verifierMinClaimSupportStrength ?? defaults.verifierMinClaimSupportStrength,
     responseDepthMode: raw.responseDepthMode?.trim() || defaults.responseDepthMode,
     stageRouting: raw.stageRouting ?? null,
+    webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
+    webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,
   };
 }
 

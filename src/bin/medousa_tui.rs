@@ -38,6 +38,7 @@ use medousa::{
     tui::editor_buffer::TextBuffer,
     tui::settings::{
         RuntimeSettings, cycle_backend, cycle_host_turn_bus_mode, cycle_tool_call_mode,
+        cycle_web_search_provider,
         env_overrides_validation_errors,
         parse_bool_with_default, parse_env_overrides, parse_f32_with_bounds,
         parse_usize_with_bounds, resolve_backend_name, resolve_bool_arg, resolve_f32_arg,
@@ -47,6 +48,8 @@ use medousa::{
 };
 #[path = "medousa_tui/agent_runtime.rs"]
 mod agent_runtime;
+#[path = "medousa_tui/budget_slash_services.rs"]
+mod budget_slash_services;
 #[path = "medousa_tui/cli_helpers.rs"]
 mod cli_helpers;
 #[path = "medousa_tui/command_preview_ui.rs"]
@@ -219,6 +222,8 @@ struct TuiState {
     latest_daemon_health_request_id: u64,
     latest_daemon_ask_request_id: u64,
     latest_watch_add_request_id: u64,
+    pending_budget_request_id: Option<String>,
+    pending_budget_requested_rounds: Option<usize>,
     markdown_cache: RefCell<HashMap<MarkdownCacheKey, Vec<Line<'static>>>>,
     markdown_cache_order: RefCell<VecDeque<MarkdownCacheKey>>,
     perf_baseline: Option<PerfSnapshot>,
@@ -285,6 +290,8 @@ struct SettingsApplySnapshot {
     verifier_min_avg_support_strength: f32,
     verifier_min_supported_claim_ratio: f32,
     verifier_min_claim_support_strength: f32,
+    web_search_preferred_provider: String,
+    web_search_try_fallbacks: bool,
     stage_routing: StageRoutingMatrix,
     api_key: String,
 }
@@ -490,6 +497,14 @@ async fn main() -> Result<()> {
         0.0,
         1.0,
     );
+    let resolved_web_search_preferred_provider = defaults
+        .web_search_preferred_provider
+        .clone()
+        .unwrap_or_default();
+    let resolved_web_search_try_fallbacks = resolve_bool_arg(
+        None,
+        defaults.web_search_try_fallbacks.unwrap_or(true),
+    );
     let resolved_base_url = resolve_llm_base_url(
         Some(&resolved_provider),
         base_url.or(defaults.base_url.as_deref()),
@@ -615,6 +630,8 @@ async fn main() -> Result<()> {
             "{:.2}",
             resolved_verifier_min_claim_support_strength
         ),
+        web_search_preferred_provider: resolved_web_search_preferred_provider,
+        web_search_try_fallbacks: resolved_web_search_try_fallbacks.to_string(),
     };
 
     let mut state = TuiState {
@@ -704,6 +721,8 @@ async fn main() -> Result<()> {
         latest_daemon_health_request_id: 0,
         latest_daemon_ask_request_id: 0,
         latest_watch_add_request_id: 0,
+        pending_budget_request_id: None,
+        pending_budget_requested_rounds: None,
         markdown_cache: RefCell::new(HashMap::new()),
         markdown_cache_order: RefCell::new(VecDeque::new()),
         perf_baseline: None,
@@ -1267,6 +1286,8 @@ mod tests {
             verifier_min_avg_support_strength: "0.70".to_string(),
             verifier_min_supported_claim_ratio: "0.60".to_string(),
             verifier_min_claim_support_strength: "0.65".to_string(),
+            web_search_preferred_provider: String::new(),
+            web_search_try_fallbacks: "true".to_string(),
         }
     }
 
@@ -1360,6 +1381,8 @@ mod tests {
             latest_daemon_health_request_id: 0,
             latest_daemon_ask_request_id: 0,
             latest_watch_add_request_id: 0,
+            pending_budget_request_id: None,
+            pending_budget_requested_rounds: None,
             markdown_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             markdown_cache_order: std::cell::RefCell::new(VecDeque::new()),
             perf_baseline: None,
