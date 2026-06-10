@@ -1,7 +1,124 @@
 import { invoke } from "@tauri-apps/api/core";
+import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
 import { renderMarkdownPreview } from "$lib/markdown";
 import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 import { isTauri } from "$lib/window";
+
+const PDF_EXPORT_CSS = `
+  .vault-pdf-export-mount,
+  .vault-pdf-export-mount * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .vault-pdf-export-mount {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    font-size: 14px !important;
+    line-height: 1.65 !important;
+  }
+
+  .vault-pdf-export-mount h1,
+  .vault-pdf-export-mount h2,
+  .vault-pdf-export-mount h3,
+  .vault-pdf-export-mount h4,
+  .vault-pdf-export-mount h5,
+  .vault-pdf-export-mount h6 {
+    color: #111827 !important;
+    font-weight: 600 !important;
+  }
+
+  .vault-pdf-export-mount h1 { font-size: 1.5rem !important; margin: 0 0 1rem !important; }
+  .vault-pdf-export-mount h2 { font-size: 1.25rem !important; margin: 1.25rem 0 0.5rem !important; }
+  .vault-pdf-export-mount h3 { font-size: 1.1rem !important; margin: 1rem 0 0.5rem !important; }
+
+  .vault-pdf-export-mount p,
+  .vault-pdf-export-mount li,
+  .vault-pdf-export-mount td,
+  .vault-pdf-export-mount th,
+  .vault-pdf-export-mount blockquote,
+  .vault-pdf-export-mount span,
+  .vault-pdf-export-mount strong,
+  .vault-pdf-export-mount em,
+  .vault-pdf-export-mount div {
+    color: #111827 !important;
+  }
+
+  .vault-pdf-export-mount a {
+    color: #2563eb !important;
+    text-decoration: underline !important;
+  }
+
+  .vault-pdf-export-mount blockquote {
+    border-left: 3px solid #d1d5db !important;
+    padding-left: 12px !important;
+    color: #374151 !important;
+  }
+
+  .vault-pdf-export-mount ul { list-style: disc !important; padding-left: 1.25rem !important; }
+  .vault-pdf-export-mount ol { list-style: decimal !important; padding-left: 1.25rem !important; }
+
+  .vault-pdf-export-mount table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 12px 0 !important;
+  }
+
+  .vault-pdf-export-mount th,
+  .vault-pdf-export-mount td {
+    border: 1px solid #d1d5db !important;
+    padding: 6px 10px !important;
+  }
+
+  .vault-pdf-export-mount th {
+    background: #f3f4f6 !important;
+    font-weight: 600 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-code-block,
+  .vault-pdf-export-mount pre,
+  .vault-pdf-export-mount .markdown-pre {
+    background: #f3f4f6 !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 6px !important;
+  }
+
+  .vault-pdf-export-mount code,
+  .vault-pdf-export-mount .markdown-code {
+    background: #f3f4f6 !important;
+    color: #111827 !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  }
+
+  .vault-pdf-export-mount :not(pre) > code {
+    padding: 0.1rem 0.35rem !important;
+    border-radius: 4px !important;
+  }
+
+  .vault-pdf-export-mount .markdown-code-copy,
+  .vault-pdf-export-mount .markdown-wikilink {
+    display: none !important;
+  }
+
+  .vault-pdf-export-mount mark.markdown-highlight {
+    background: #fef08a !important;
+    color: #422006 !important;
+  }
+
+  .vault-pdf-export-mount .markdown-callout {
+    border: 1px solid #d1d5db !important;
+    background: #f9fafb !important;
+    border-radius: 6px !important;
+    padding: 12px !important;
+    margin: 12px 0 !important;
+  }
+
+  .vault-pdf-export-mount pre.mermaid {
+    background: #f9fafb !important;
+    color: #111827 !important;
+  }
+`;
 
 function slugifyFilename(title: string): string {
   const slug = title
@@ -12,14 +129,40 @@ function slugifyFilename(title: string): string {
   return slug || "note";
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+async function waitForPaint(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+function buildPdfExportDom(title: string, html: string): {
+  shell: HTMLElement;
+  mount: HTMLElement;
+  bodyEl: HTMLElement;
+} {
+  const shell = document.createElement("div");
+  shell.className = "vault-pdf-export-shell";
+  shell.style.cssText =
+    "position:fixed;inset:0;z-index:2147483646;background:#ffffff;overflow:auto;pointer-events:none;";
+
+  const mount = document.createElement("div");
+  mount.className = "vault-pdf-export-mount";
+  mount.style.cssText = "width:720px;max-width:720px;margin:0 auto;padding:48px 40px 64px;";
+
+  const styleEl = document.createElement("style");
+  styleEl.textContent = PDF_EXPORT_CSS;
+
+  const titleEl = document.createElement("h1");
+  titleEl.textContent = title;
+
+  const bodyEl = document.createElement("div");
+  bodyEl.className = "vault-pdf-export-body markdown-content";
+  bodyEl.innerHTML = html;
+
+  mount.append(styleEl, titleEl, bodyEl);
+  shell.appendChild(mount);
+
+  return { shell, mount, bodyEl };
 }
 
 export async function exportVaultNotePdf(options: {
@@ -29,33 +172,35 @@ export async function exportVaultNotePdf(options: {
 }): Promise<void> {
   const body = stripFrontmatter(options.content).content;
   const html = renderMarkdownPreview(body, options.labelByPath);
-  const filename = `${slugifyFilename(options.title)}.pdf`;
+  if (!html.trim()) {
+    throw new Error("Nothing to export — note preview is empty.");
+  }
 
-  const mount = document.createElement("div");
-  mount.style.cssText =
-    "position: fixed; left: -10000px; top: 0; width: 720px; background: white; color: #111827;";
-  const titleEl = document.createElement("h1");
-  titleEl.textContent = options.title;
-  titleEl.style.cssText = "margin: 0 0 1rem; font-size: 1.5rem; font-weight: 600;";
-  const bodyEl = document.createElement("div");
-  bodyEl.className = "markdown-content vault-pdf-export-root";
-  bodyEl.innerHTML = html;
-  mount.appendChild(titleEl);
-  mount.appendChild(bodyEl);
-  document.body.appendChild(mount);
+  const filename = `${slugifyFilename(options.title)}.pdf`;
+  const { shell, mount, bodyEl } = buildPdfExportDom(options.title, html);
+  document.body.appendChild(shell);
 
   try {
+    await hydrateCodeBlocks(bodyEl);
+    await waitForPaint();
+
     const html2pdf = (await import("html2pdf.js")).default;
-    const worker = html2pdf()
-      .set({
-        margin: [0.55, 0.6, 0.55, 0.6],
-        filename,
-        image: { type: "jpeg", quality: 0.96 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-        jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
-        pagebreak: { mode: ["css", "legacy"] },
-      })
-      .from(mount);
+    const worker = html2pdf().set({
+      margin: [0.55, 0.6, 0.55, 0.6],
+      filename,
+      image: { type: "jpeg", quality: 0.96 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        windowWidth: mount.scrollWidth,
+        logging: false,
+      },
+      jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
+    }).from(mount);
 
     if (isTauri()) {
       const blob = (await worker.outputPdf("blob")) as Blob;
@@ -73,7 +218,7 @@ export async function exportVaultNotePdf(options: {
 
     await worker.save();
   } finally {
-    mount.remove();
+    shell.remove();
   }
 }
 
