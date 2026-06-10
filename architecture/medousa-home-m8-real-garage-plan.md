@@ -1,6 +1,6 @@
 # Medousa Home — M8 Plan (The Real Garage)
 
-> **Status:** **Sprint 2 (M8b) shipped** — Write-first daily/journal · Sprint 3 next  
+> **Status:** **Sprint 5–6 (M8d) shipped** — External desk · Sprint 7 next  
 > **Date:** 2026-06-07  
 > **Epic:** **M8 — Library as *your* garage**  
 > **Builds on:** [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md) (M7 complete)  
@@ -122,37 +122,63 @@ flowchart LR
 
 ---
 
-## M8c — Attachments lane (Sprints 3–4) ← **NEXT**
+## M8c — Attachments lane (Sprints 3–4) ✅
 
 *Garage stores pointers to mess, not only copies.*
 
 | # | Work | Touch |
 |---|------|-------|
-| C1 | Frontmatter `attachments:` array (`path`, `label`, `mime`) | `vaultFrontmatter.ts`, Rust indexer |
-| C2 | "Link file…" → Tauri file picker → ref in note | `VaultAttachDialog.svelte`, `vault.rs` |
-| C3 | Attachment chips in editor header | `VaultAttachmentChips.svelte` |
-| C4 | PDF inline preview (iframe / pdf.js) | `VaultPdfPreview.svelte` |
-| C5 | Agent reads attachment paths via vault context | `cognition_vault_read` metadata |
+| C1 | Frontmatter `attachments:` array | `vaultAttachments.ts` |
+| C2 | **Link file** → native file picker | `vaultAttachmentPicker.ts`, dialog plugin |
+| C3 | Attachment chips + remove | `VaultAttachmentBar.svelte` |
+| C4 | PDF / image inline preview | `VaultAttachmentPreview.svelte`, asset protocol |
 
-**Backend:** optional `GET /v1/vault/files/preview?path=` for sandboxed read — or Tauri-only first.
+### Exit criteria
+
+1. Link a PDF from disk into a daily note without retyping.
+2. Preview opens inside Library; **Open in app** for everything else.
+
+### Sprint 3–4 progress (M8c)
+
+| Item | Status |
+|------|--------|
+| C1 Frontmatter attachments | ✅ |
+| C2 Link file picker | ✅ |
+| C3 Attachment chips | ✅ |
+| C4 PDF/image preview | ✅ |
 
 ---
 
-## M8d — External desk (Sprints 5–6)
+## M8d — External desk (Sprints 5–6) ✅
 
 *Meet my mess where it already is.*
 
 | # | Work | Touch |
 |---|------|-------|
-| D1 | Settings: pin up to N filesystem roots | `settings.svelte.ts`, daemon persist |
-| D2 | Index pinned roots (name, ext, mtime) — no full import | new `external_files` module |
-| D3 | Sidebar tab: **Vault** \| **Your files** | `LibraryPanel.svelte` |
-| D4 | Open in default app; drag to link into note | Tauri opener + attach flow |
-| D5 | Search spans vault + pinned files | unified search API |
+| D1 | Pin up to 5 filesystem roots (localStorage) | `externalDesk.svelte.ts` |
+| D2 | Index pinned roots via Tauri scan | `external_desk.rs` |
+| D3 | Sidebar **Vault** \| **Your files** | `LibraryPanel.svelte` |
+| D4 | Open in app + link to open note | `ExternalFilesBrowser.svelte` |
+| D5 | Unified search (vault + pinned files) | `LibraryPanel.svelte` |
+
+### Exit criteria
+
+1. Pin `~/Documents` and browse files without import.
+2. Link a file from Your files into the open note in one click.
+
+### Sprint 5–6 progress (M8d)
+
+| Item | Status |
+|------|--------|
+| D1 Pin folders | ✅ |
+| D2 File index scan | ✅ |
+| D3 Sidebar tabs | ✅ |
+| D4 Open + link | ✅ |
+| D5 Unified search | ✅ |
 
 ---
 
-## M8e — Spreadsheet preview (Sprint 7)
+## M8e — Spreadsheet preview (Sprint 7) ← **NEXT**
 
 *Excel usefulness without Excel engine.*
 

@@ -20,6 +20,8 @@
   import VaultConflictBar from "./VaultConflictBar.svelte";
   import VaultProposalBar from "./VaultProposalBar.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
+  import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
+  import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
 
   interface Props {
     visible: boolean;
@@ -377,6 +379,8 @@
 
   <VaultProposalBar />
   <VaultConflictBar />
+  <VaultAttachmentBar disabled={vault.noteLoading || vault.saving} />
+  <VaultAttachmentPreview />
 
   {#if !vault.selectedPath}
     <VaultEmptyState />

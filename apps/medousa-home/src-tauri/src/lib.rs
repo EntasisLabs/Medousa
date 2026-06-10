@@ -1,4 +1,5 @@
 mod badge;
+mod external_desk;
 mod daemon;
 mod messaging;
 mod medousa_paths;
@@ -30,6 +31,7 @@ pub fn run() {
 
     builder = builder
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(DaemonState::new())
@@ -122,6 +124,8 @@ pub fn run() {
             messaging::messaging_secret_status,
             messaging::messaging_save_secret,
             messaging::messaging_clear_secret,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            external_desk::external_desk_scan_root,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

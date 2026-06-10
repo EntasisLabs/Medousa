@@ -51,6 +51,14 @@ import {
 import { formatDiffChip, lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
 import { resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
 import {
+  addAttachments,
+  guessMimeFromPath,
+  listAttachments,
+  removeAttachment as dropAttachment,
+  type VaultAttachment,
+} from "$lib/utils/vaultAttachments";
+import { pickAttachmentFiles } from "$lib/utils/vaultAttachmentPicker";
+import {
   isWriteFirstKind,
   defaultAuthoringMode,
   type VaultAuthoringMode,
@@ -103,6 +111,7 @@ export class VaultStore {
   proposalSource = $state<VaultProposalSource>("agent");
   showAgentReviewFilter = $state(false);
   agentWrittenAt = $state<Record<string, string>>({});
+  previewingAttachmentPath = $state<string | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,6 +126,25 @@ export class VaultStore {
 
   get isAuthoringSource(): boolean {
     return this.authoringMode === "source";
+  }
+
+  get attachments(): VaultAttachment[] {
+    return listAttachments(this.content);
+  }
+
+  get previewingAttachment(): VaultAttachment | null {
+    if (!this.previewingAttachmentPath) return null;
+    const attached = this.attachments.find(
+      (row) => row.path === this.previewingAttachmentPath,
+    );
+    if (attached) return attached;
+    const path = this.previewingAttachmentPath;
+    const name = path.split(/[/\\]/).pop() ?? path;
+    return {
+      path,
+      label: name,
+      mime: guessMimeFromPath(path),
+    };
   }
 
   labelByPath(): Map<string, string> {
@@ -411,6 +439,7 @@ export class VaultStore {
     }
     if (this.selectedPath !== path) {
       this.clearProposal();
+      this.previewingAttachmentPath = null;
     }
     this.noteLoading = true;
     this.loading = true;
@@ -511,6 +540,14 @@ export class VaultStore {
   markDirty(nextContent: string) {
     this.content = nextContent;
     this.dirty = true;
+    if (
+      this.previewingAttachmentPath &&
+      !listAttachments(nextContent).some(
+        (row) => row.path === this.previewingAttachmentPath,
+      )
+    ) {
+      this.previewingAttachmentPath = null;
+    }
     if (this.saveStatus === "conflict") {
       return;
     }
@@ -769,6 +806,45 @@ export class VaultStore {
 
   toggleLedgerEditMode() {
     this.ledgerEditMode = this.ledgerEditMode === "table" ? "raw" : "table";
+  }
+
+  async linkAttachmentFiles() {
+    if (!this.selectedPath) return;
+    const picked = await pickAttachmentFiles();
+    if (picked.length === 0) return;
+    this.markDirty(addAttachments(this.content, picked));
+  }
+
+  linkExternalFile(path: string) {
+    if (!this.selectedPath) return false;
+    const name = path.split(/[/\\]/).pop() ?? path;
+    this.markDirty(
+      addAttachments(this.content, [
+        {
+          path,
+          label: name,
+          mime: guessMimeFromPath(path),
+        },
+      ]),
+    );
+    return true;
+  }
+
+  removeAttachment(path: string) {
+    if (!this.selectedPath) return;
+    this.markDirty(dropAttachment(this.content, path));
+    if (this.previewingAttachmentPath === path) {
+      this.previewingAttachmentPath = null;
+    }
+  }
+
+  previewAttachment(path: string) {
+    if (!path.trim()) return;
+    this.previewingAttachmentPath = path;
+  }
+
+  closeAttachmentPreview() {
+    this.previewingAttachmentPath = null;
   }
 
   openNewNoteDialog() {

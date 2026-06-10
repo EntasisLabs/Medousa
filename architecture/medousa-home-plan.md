@@ -729,8 +729,8 @@ See [medousa-home-m8-real-garage-plan.md](medousa-home-m8-real-garage-plan.md).
 
 - **M8a (S1):** Format bar + slash blocks — write without markdown syntax ✅
 - **M8b (S2):** Write-first daily/journal UX ✅
-- **M8c (S3–S4):** Attachments + PDF preview
-- **M8d (S5–S6):** External desk — pinned folders, your files
+- **M8c (S3–S4):** Attachments + PDF preview ✅
+- **M8d (S5–S6):** External desk — pinned folders, your files ✅
 - **M8e (S7):** Spreadsheet preview
 - **M8f (S8):** Onboarding — bring your mess
 
