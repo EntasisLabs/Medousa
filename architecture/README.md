@@ -45,6 +45,7 @@ Start here for product-level usage:
 28. [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md) — **Done:** tool-call loop gate, `cognition_turn_begin_work`, single-writer commit, FSM/interim cleanup (Phase 5)
 29. [continuity-first-redesign.md](continuity-first-redesign.md) — **Approved plan:** Model 3 continuity pipeline, slice-indexed tool history, runtime-owned limits, phased 8A–8E
 30. [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md) — **Epic M7:** Library as life garage — spaces, typed notes, premium editor, Vault↔Work↔Chat bridges (8 sprints)
+31. [medousa-home-m8-real-garage-plan.md](medousa-home-m8-real-garage-plan.md) — **Epic M8:** The real garage — formatting affordances, attachments, external desk, spreadsheet preview (8 sprints)
 
 ## Primary Code Anchors
 

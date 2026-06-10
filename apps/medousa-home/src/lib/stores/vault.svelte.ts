@@ -51,8 +51,15 @@ import {
 import { formatDiffChip, lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
 import { resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
 import {
+  isWriteFirstKind,
+  defaultAuthoringMode,
+  type VaultAuthoringMode,
+} from "$lib/utils/vaultAuthoring";
+import {
   isVaultConflictError,
   VAULT_AUTOSAVE_MS,
+  VAULT_NOTES_REFRESH_MS,
+  VAULT_SAVE_ECHO_MS,
   VAULT_SAVED_WHISPER_MS,
   type VaultSaveStatus,
 } from "$lib/utils/vaultSave";
@@ -75,12 +82,16 @@ export class VaultStore {
   dirty = $state(false);
   saveStatus = $state<VaultSaveStatus>("idle");
   conflictMessage = $state<string | null>(null);
+  /** True while fetching note content (open/reload) — not list refresh. */
+  noteLoading = $state(false);
   loading = $state(false);
   saving = $state(false);
   error = $state<string | null>(null);
   searchQuery = $state("");
   searchHits = $state<VaultSearchHit[]>([]);
   editorMode = $state<"edit" | "preview">("edit");
+  /** M8b: human write surface vs markdown source (write-first kinds). */
+  authoringMode = $state<VaultAuthoringMode>("write");
   /** Ledger notes: table-first editing (M7c.2). */
   ledgerEditMode = $state<"table" | "raw">("table");
   showSystemNotes = $state(loadShowSystemNotes());
@@ -95,6 +106,18 @@ export class VaultStore {
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
+  private notesRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private compositionHold = $state(false);
+  private saveEchoPath: string | null = null;
+  private saveEchoUntil = 0;
+
+  get isWriteFirstKind(): boolean {
+    return isWriteFirstKind(this.selectedKind);
+  }
+
+  get isAuthoringSource(): boolean {
+    return this.authoringMode === "source";
+  }
 
   labelByPath(): Map<string, string> {
     return buildVaultLabelMap(this.notes);
@@ -185,13 +208,52 @@ export class VaultStore {
       !this.selectedPath ||
       !this.dirty ||
       this.saveStatus === "conflict" ||
-      this.proposalActive
+      this.proposalActive ||
+      this.compositionHold
     ) {
       return;
     }
     this.autosaveTimer = setTimeout(() => {
       void this.save({ source: "autosave" });
     }, VAULT_AUTOSAVE_MS);
+  }
+
+  /** Pause autosave while slash menu or similar editor UI is active. */
+  setCompositionHold(active: boolean) {
+    if (this.compositionHold === active) return;
+    this.compositionHold = active;
+    if (active) {
+      this.clearAutosaveTimer();
+      return;
+    }
+    if (this.dirty) {
+      this.scheduleAutosave();
+    }
+  }
+
+  scheduleNotesRefresh() {
+    if (this.notesRefreshTimer) {
+      clearTimeout(this.notesRefreshTimer);
+    }
+    this.notesRefreshTimer = setTimeout(() => {
+      this.notesRefreshTimer = null;
+      void this.refreshNotes();
+    }, VAULT_NOTES_REFRESH_MS);
+  }
+
+  private markSaveEcho(path: string) {
+    this.saveEchoPath = path;
+    this.saveEchoUntil = Date.now() + VAULT_SAVE_ECHO_MS;
+  }
+
+  private shouldIgnoreSaveEcho(event: WorkspaceEvent, path: string): boolean {
+    return (
+      event.actor === "operator" &&
+      path === this.saveEchoPath &&
+      Date.now() < this.saveEchoUntil &&
+      path === this.selectedPath &&
+      !this.dirty
+    );
   }
 
   flashSavedWhisper() {
@@ -246,7 +308,12 @@ export class VaultStore {
     if (event.actor === "agent") {
       this.recordAgentWrite(path, event.timestamp_utc);
     }
+    if (this.shouldIgnoreSaveEcho(event, path)) {
+      this.scheduleNotesRefresh();
+      return;
+    }
     void this.ingestRemoteUpdate(event);
+    this.scheduleNotesRefresh();
   }
 
   async ingestRemoteUpdate(event: WorkspaceEvent) {
@@ -260,7 +327,7 @@ export class VaultStore {
       const isAgent = event.actor === "agent";
 
       if (serverContent === this.content && !this.dirty) {
-        this.applyNote(response, { preserveProposal: true });
+        this.syncNoteMetadata(response);
         return;
       }
 
@@ -327,7 +394,6 @@ export class VaultStore {
   }
 
   async refreshNotes() {
-    this.loading = true;
     this.error = null;
     try {
       const response = await listVaultNotes(undefined, 500);
@@ -335,8 +401,6 @@ export class VaultStore {
       this.rebuildTree();
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
-    } finally {
-      this.loading = false;
     }
   }
 
@@ -348,6 +412,7 @@ export class VaultStore {
     if (this.selectedPath !== path) {
       this.clearProposal();
     }
+    this.noteLoading = true;
     this.loading = true;
     this.error = null;
     try {
@@ -360,8 +425,17 @@ export class VaultStore {
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
+      this.noteLoading = false;
       this.loading = false;
     }
+  }
+
+  private syncNoteMetadata(response: VaultNoteContentResponse) {
+    this.contentHash = response.note.content_hash;
+    this.title = response.note.title;
+    this.selectedKind = resolveKind(response.note.path, response.note.kind);
+    this.wikilinksOut = response.note.wikilinks_out;
+    this.backlinks = response.note.backlinks;
   }
 
   applyNote(
@@ -380,10 +454,8 @@ export class VaultStore {
     this.wikilinksOut = response.note.wikilinks_out;
     this.backlinks = response.note.backlinks;
     this.dirty = false;
-    this.editorMode = this.defaultEditorMode(
-      response.note.path,
-      response.note.kind,
-    );
+    this.authoringMode = defaultAuthoringMode(this.selectedKind);
+    this.editorMode = "edit";
     if (this.selectedKind === "ledger") {
       this.ledgerEditMode = "table";
     }
@@ -391,8 +463,19 @@ export class VaultStore {
 
   defaultEditorMode(path: string, kind?: string): "edit" | "preview" {
     const resolved = resolveKind(path, kind);
-    if (resolved === "daily" || resolved === "note") return "preview";
+    if (isWriteFirstKind(resolved)) return "edit";
     return "edit";
+  }
+
+  setAuthoringMode(mode: VaultAuthoringMode) {
+    this.authoringMode = mode;
+    if (mode === "write") {
+      this.editorMode = "edit";
+    }
+  }
+
+  toggleAuthoringMode() {
+    this.setAuthoringMode(this.authoringMode === "write" ? "source" : "write");
   }
 
   setEditorMode(mode: "edit" | "preview") {
@@ -464,9 +547,10 @@ export class VaultStore {
       );
       this.applySaveResponse(response.note);
       this.clearProposal();
+      this.markSaveEcho(this.selectedPath);
       this.flashSavedWhisper();
-      await this.refreshNotes();
-      await this.refreshBacklinks(this.selectedPath);
+      this.scheduleNotesRefresh();
+      void this.refreshBacklinks(this.selectedPath);
       return true;
     } catch (err) {
       if (isVaultConflictError(err)) {
@@ -490,7 +574,7 @@ export class VaultStore {
 
   async reloadFromServer() {
     if (!this.selectedPath) return;
-    this.loading = true;
+    this.noteLoading = true;
     this.error = null;
     try {
       const response = await getVaultNote(this.selectedPath);
@@ -498,7 +582,7 @@ export class VaultStore {
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
-      this.loading = false;
+      this.noteLoading = false;
     }
   }
 

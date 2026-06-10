@@ -717,16 +717,22 @@ See [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md).
 - **M6b:** Runtime drawer (stats, delivery, model/depth controls)
 - **M6c–M6f:** Job drill-down, recurring, identity, TUI repositioning
 
-### M7 — Library as life garage (planned)
+### M7 — Library as life garage (shipped)
 
 See [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md).
 
-- **M7a (S1):** Tree honesty, spaces roots, empty states, new note from UI
-- **M7b (S2):** Journal / Projects / Finance / Inbox navigation
-- **M7c (S3–S4):** Frontmatter kinds, templates, ledger table view
-- **M7d (S5–S6):** Split editor, wikilink navigation, autosave
-- **M7e (S7):** Vault ↔ Work ↔ Chat bridges
-- **M7f (S8):** Agent vault proposals (accept / discard)
+- **M7a–M7f:** Spaces, typed notes, premium editor, bridges, agent proposals ✅
+
+### M8 — The real garage (in progress)
+
+See [medousa-home-m8-real-garage-plan.md](medousa-home-m8-real-garage-plan.md).
+
+- **M8a (S1):** Format bar + slash blocks — write without markdown syntax ✅
+- **M8b (S2):** Write-first daily/journal UX ✅
+- **M8c (S3–S4):** Attachments + PDF preview
+- **M8d (S5–S6):** External desk — pinned folders, your files
+- **M8e (S7):** Spreadsheet preview
+- **M8f (S8):** Onboarding — bring your mess
 
 ### Deferred
 

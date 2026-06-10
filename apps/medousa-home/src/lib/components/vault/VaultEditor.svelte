@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -20,6 +19,7 @@
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
   import VaultProposalBar from "./VaultProposalBar.svelte";
+  import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
 
   interface Props {
     visible: boolean;
@@ -70,7 +70,13 @@
   );
 
   const showSplitEditor = $derived(
-    showMarkdownEditor && layout.vaultSplitEnabled,
+    showMarkdownEditor &&
+      layout.vaultSplitEnabled &&
+      (!vault.isWriteFirstKind || vault.isAuthoringSource),
+  );
+
+  const editorSurface = $derived(
+    vault.isWriteFirstKind && !vault.isAuthoringSource ? "write" : "source",
   );
 
   const showPreviewOnly = $derived(
@@ -87,7 +93,8 @@
   );
 
   const previewFirstKind = $derived(
-    vault.selectedKind === "daily" || vault.selectedKind === "note",
+    !vault.isWriteFirstKind &&
+      (vault.selectedKind === "daily" || vault.selectedKind === "note"),
   );
 
   const linkedWork = $derived(
@@ -200,7 +207,8 @@
         </div>
         {#if vault.selectedPath && vault.editorMode === "preview" && previewFirstKind}
           <p class="mt-1 text-[11px] text-surface-500">
-            Press <kbd class="vault-kbd">E</kbd> to edit
+            Press <kbd class="vault-kbd">E</kbd> to edit · type <kbd class="vault-kbd">/</kbd> on a
+            new line for blocks
           </p>
         {/if}
       </div>
@@ -210,7 +218,7 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-primary"
-            disabled={vault.loading}
+            disabled={vault.noteLoading}
             onclick={() => void handleAskAboutNote()}
           >
             Ask about note
@@ -220,7 +228,7 @@
           <button
             type="button"
             class="btn btn-sm variant-soft-surface"
-            disabled={vault.loading || workspace.askSubmitting}
+            disabled={vault.noteLoading || workspace.askSubmitting}
             onclick={() => void handleSendToWork()}
           >
             {workspace.askSubmitting ? "Sending…" : "Send to Work"}
@@ -274,7 +282,7 @@
           </button>
         {/if}
 
-        {#if showMarkdownEditor}
+        {#if showMarkdownEditor && (!vault.isWriteFirstKind || vault.isAuthoringSource)}
           <button
             type="button"
             class="btn btn-sm {layout.vaultSplitEnabled
@@ -325,7 +333,20 @@
           </button>
         {/if}
 
-        {#if vault.selectedPath}
+        {#if vault.isWriteFirstKind && showMarkdownEditor}
+          <button
+            type="button"
+            class="btn btn-sm {vault.isAuthoringSource
+              ? 'variant-soft-primary'
+              : 'variant-ghost-surface'}"
+            onclick={() => vault.toggleAuthoringMode()}
+            title={vault.isAuthoringSource
+              ? "Return to write mode"
+              : "Show markdown source and split preview"}
+          >
+            {vault.isAuthoringSource ? "Write" : "Markdown"}
+          </button>
+        {:else if vault.selectedPath}
           <button
             type="button"
             class="btn btn-sm variant-ghost-surface"
@@ -359,7 +380,7 @@
 
   {#if !vault.selectedPath}
     <VaultEmptyState />
-  {:else if vault.loading}
+  {:else if vault.noteLoading}
     <div class="flex flex-1 items-center justify-center text-sm text-surface-400">
       Loading note…
     </div>
@@ -372,36 +393,26 @@
             disabled={vault.saving}
             onchange={(next) => vault.markDirty(next)}
           />
-        {:else if showSplitEditor}
-          <div class="flex min-h-0 flex-1">
-            <SplitPane
-              width={layout.vaultEditorPaneWidth}
-              side="left"
-              min={280}
-              max={720}
-              onResize={(width) => layout.setVaultEditorPaneWidth(width)}
-            >
-              <textarea
-                class="vault-editor-textarea textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 font-mono text-sm leading-relaxed"
-                value={vault.content}
-                oninput={(event) =>
-                  vault.markDirty((event.currentTarget as HTMLTextAreaElement).value)}
-              ></textarea>
-            </SplitPane>
-            <VaultMarkdownPreview
-              content={vault.content}
-              {labelByPath}
-              compact
-              onWikilink={handleWikilink}
-            />
-          </div>
         {:else if showMarkdownEditor}
-          <textarea
-            class="vault-editor-textarea textarea flex-1 resize-none rounded-none border-0 bg-surface-950 font-mono text-sm leading-relaxed"
-            value={vault.content}
-            oninput={(event) =>
-              vault.markDirty((event.currentTarget as HTMLTextAreaElement).value)}
-          ></textarea>
+          <VaultMarkdownEditor
+            content={vault.content}
+            disabled={vault.noteLoading}
+            class="flex-1"
+            surface={editorSurface}
+            split={showSplitEditor}
+            splitWidth={layout.vaultEditorPaneWidth}
+            onSplitResize={(width) => layout.setVaultEditorPaneWidth(width)}
+            onchange={(next) => vault.markDirty(next)}
+          >
+            {#snippet preview()}
+              <VaultMarkdownPreview
+                content={vault.content}
+                {labelByPath}
+                compact
+                onWikilink={handleWikilink}
+              />
+            {/snippet}
+          </VaultMarkdownEditor>
         {:else if showPreviewOnly}
           <VaultMarkdownPreview
             content={vault.content}

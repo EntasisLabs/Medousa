@@ -40,9 +40,10 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
       workspace.applyEvent(event);
       const kind = event.feed_event?.kind;
       if (kind === "vault_note_created" || kind === "vault_note_updated") {
-        void vault.refreshNotes();
         if (event.feed_event) {
           vault.noteFromFeedEvent(event.feed_event);
+        } else {
+          vault.scheduleNotesRefresh();
         }
       }
     }),
