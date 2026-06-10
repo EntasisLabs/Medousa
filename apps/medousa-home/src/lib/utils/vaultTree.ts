@@ -11,6 +11,20 @@ export interface BuildVaultTreeOptions {
   showSystemNotes: boolean;
   /** When set, only render this space root (M7b). */
   spaceFilter?: string | null;
+  /** M7f: only notes the agent touched in the last 24h. */
+  agentReviewOnly?: boolean;
+  agentWrittenAt?: Record<string, string>;
+}
+
+const AGENT_WRITE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function isRecentAgentWrite(
+  path: string,
+  agentWrittenAt: Record<string, string>,
+): boolean {
+  const writtenAt = agentWrittenAt[path];
+  if (!writtenAt) return false;
+  return Date.now() - Date.parse(writtenAt) < AGENT_WRITE_TTL_MS;
 }
 
 export function buildVaultTree(
@@ -18,6 +32,10 @@ export function buildVaultTree(
   options: BuildVaultTreeOptions,
 ): VaultTreeNode[] {
   const visible = notes.filter((note) => {
+    if (options.agentReviewOnly) {
+      const map = options.agentWrittenAt ?? {};
+      if (!isRecentAgentWrite(note.path, map)) return false;
+    }
     if (options.showSystemNotes) return true;
     return !isSystemNoiseNote(note.path, note.title);
   });

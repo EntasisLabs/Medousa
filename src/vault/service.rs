@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::daemon_api::{
     VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultWriteRequest, VaultWriteResponse,
+    VaultNotesListResponse, VaultWriteRequest, VaultWriteResponse, WorkspaceEventActor,
 };
 use crate::vault::search::search_vault;
 use crate::vault::store::vault_store;
@@ -40,6 +40,16 @@ impl VaultService {
         request: &VaultWriteRequest,
         if_match: Option<&str>,
     ) -> Result<VaultWriteResponse> {
+        Self::write_note_with_actor(path, request, if_match, WorkspaceEventActor::Operator, None)
+    }
+
+    pub fn write_note_with_actor(
+        path: Option<&str>,
+        request: &VaultWriteRequest,
+        if_match: Option<&str>,
+        actor: WorkspaceEventActor,
+        tool_name: Option<&str>,
+    ) -> Result<VaultWriteResponse> {
         let target_path = request
             .path
             .as_deref()
@@ -49,7 +59,7 @@ impl VaultService {
             .ok_or_else(|| anyhow::anyhow!("path is required"))?;
         let existed = vault_store().get_entry(target_path).is_some();
         let entry = vault_store().write_content(target_path, &request.content, if_match)?;
-        append_vault_feed_event(&entry.path, &entry.title);
+        append_vault_feed_event(&entry.path, &entry.title, !existed, actor, tool_name);
         Ok(VaultWriteResponse {
             note: entry.to_vault_note(vault_store().backlinks_for(&entry.path)),
             created: !existed,
@@ -152,24 +162,40 @@ mod tests {
     }
 }
 
-fn append_vault_feed_event(path: &str, title: &str) {
+fn append_vault_feed_event(
+    path: &str,
+    title: &str,
+    created: bool,
+    actor: WorkspaceEventActor,
+    tool_name: Option<&str>,
+) {
     let mut refs = Vec::new();
     refs.push(crate::daemon_api::WorkspaceEventRef {
         ref_type: "vault_path".to_string(),
         ref_id: path.to_string(),
     });
     let detail_line = title.trim().to_string();
+    let kind = if created {
+        crate::daemon_api::WorkspaceEventKind::VaultNoteCreated
+    } else {
+        crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated
+    };
+    let summary = match actor {
+        WorkspaceEventActor::Agent => format!("Agent updated vault — {detail_line}"),
+        _ => format!("Vault updated — {detail_line}"),
+    };
+    let tool_names = tool_name.map(|name| vec![name.to_string()]).unwrap_or_default();
     let event = crate::daemon_api::WorkspaceEvent {
         id: crate::workspace::event::new_event_id(),
         timestamp_utc: chrono::Utc::now(),
-        kind: crate::daemon_api::WorkspaceEventKind::VaultNoteUpdated,
-        actor: crate::daemon_api::WorkspaceEventActor::Operator,
-        summary: format!("Vault updated — {detail_line}"),
+        kind,
+        actor,
+        summary,
         refs,
         detail_line: Some(detail_line),
         context_line: Some(path.to_string()),
         intent: None,
-        tool_names: Vec::new(),
+        tool_names,
     };
     workspace_store().append_event(event);
 }

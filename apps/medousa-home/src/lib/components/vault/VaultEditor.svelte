@@ -19,6 +19,7 @@
   import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
+  import VaultProposalBar from "./VaultProposalBar.svelte";
 
   interface Props {
     visible: boolean;
@@ -353,6 +354,7 @@
     </p>
   {/if}
 
+  <VaultProposalBar />
   <VaultConflictBar />
 
   {#if !vault.selectedPath}

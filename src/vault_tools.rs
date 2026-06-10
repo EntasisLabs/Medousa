@@ -228,8 +228,14 @@ impl StasisTool for CognitionVaultWriteTool {
             path: Some(path.to_string()),
             content: content.to_string(),
         };
-        let response = VaultService::write_note(Some(path), &request, if_match)
-            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        let response = VaultService::write_note_with_actor(
+            Some(path),
+            &request,
+            if_match,
+            crate::daemon_api::WorkspaceEventActor::Agent,
+            Some("cognition_vault_write"),
+        )
+        .map_err(|err| StasisError::PortFailure(err.to_string()))?;
         serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }

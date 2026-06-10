@@ -17,12 +17,14 @@ import {
   saveLastSpace,
   saveShowSystemNotes,
 } from "$lib/config/vaultSpaces";
+import type { WorkspaceEvent } from "$lib/types/workspace";
+import { vaultRefPath } from "$lib/utils/activityEnrichment";
 import type {
   VaultNote,
   VaultNoteContentResponse,
   VaultSearchHit,
+  VaultTreeNode,
 } from "$lib/types/vault";
-import type { VaultTreeNode } from "$lib/types/vault";
 import { buildVaultLabelMap } from "$lib/utils/formatVault";
 import { buildVaultTree } from "$lib/utils/vaultTree";
 import {
@@ -57,6 +59,8 @@ import {
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
+export type VaultProposalSource = "agent" | "operator";
+
 export class VaultStore {
   notes = $state<VaultNote[]>([]);
   tree = $state<VaultTreeNode[]>([]);
@@ -82,6 +86,12 @@ export class VaultStore {
   showSystemNotes = $state(loadShowSystemNotes());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
+  /** M7f: agent/server edit waiting for accept/discard. */
+  proposalActive = $state(false);
+  proposalContent = $state<string | null>(null);
+  proposalSource = $state<VaultProposalSource>("agent");
+  showAgentReviewFilter = $state(false);
+  agentWrittenAt = $state<Record<string, string>>({});
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -171,7 +181,12 @@ export class VaultStore {
 
   scheduleAutosave() {
     this.clearAutosaveTimer();
-    if (!this.selectedPath || !this.dirty || this.saveStatus === "conflict") {
+    if (
+      !this.selectedPath ||
+      !this.dirty ||
+      this.saveStatus === "conflict" ||
+      this.proposalActive
+    ) {
       return;
     }
     this.autosaveTimer = setTimeout(() => {
@@ -198,7 +213,96 @@ export class VaultStore {
     this.tree = buildVaultTree(this.notes, {
       showSystemNotes: this.showSystemNotes,
       spaceFilter: this.activeSpaceFilter,
+      agentReviewOnly: this.showAgentReviewFilter,
+      agentWrittenAt: this.agentWrittenAt,
     });
+  }
+
+  setShowAgentReviewFilter(value: boolean) {
+    this.showAgentReviewFilter = value;
+    this.rebuildTree();
+  }
+
+  private clearProposal() {
+    this.proposalActive = false;
+    this.proposalContent = null;
+  }
+
+  proposalDiffStats(): LineDiffStats | null {
+    if (!this.proposalContent) return null;
+    return lineDiffStats(this.content, this.proposalContent);
+  }
+
+  private recordAgentWrite(path: string, timestampUtc?: string) {
+    this.agentWrittenAt = {
+      ...this.agentWrittenAt,
+      [path]: timestampUtc ?? new Date().toISOString(),
+    };
+  }
+
+  noteFromFeedEvent(event: WorkspaceEvent) {
+    const path = vaultRefPath(event);
+    if (!path) return;
+    if (event.actor === "agent") {
+      this.recordAgentWrite(path, event.timestamp_utc);
+    }
+    void this.ingestRemoteUpdate(event);
+  }
+
+  async ingestRemoteUpdate(event: WorkspaceEvent) {
+    const path = vaultRefPath(event);
+    if (!path || path !== this.selectedPath) return;
+
+    this.clearAutosaveTimer();
+    try {
+      const response = await getVaultNote(path);
+      const serverContent = response.content;
+      const isAgent = event.actor === "agent";
+
+      if (serverContent === this.content && !this.dirty) {
+        this.applyNote(response, { preserveProposal: true });
+        return;
+      }
+
+      if (isAgent || this.dirty || this.proposalActive) {
+        this.proposalActive = true;
+        this.proposalContent = serverContent;
+        this.proposalSource = isAgent ? "agent" : "operator";
+        this.contentHash = response.note.content_hash;
+        this.title = response.note.title;
+        this.wikilinksOut = response.note.wikilinks_out;
+        this.backlinks = response.note.backlinks;
+        if (this.dirty && this.saveStatus !== "conflict") {
+          this.saveStatus = "unsaved";
+        }
+        return;
+      }
+
+      this.applyNote(response);
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async acceptProposal() {
+    if (!this.selectedPath || !this.proposalActive) return false;
+    this.clearProposal();
+    return this.save({ force: true, source: "manual" });
+  }
+
+  async discardProposal() {
+    if (!this.selectedPath || !this.proposalContent) return;
+    this.clearAutosaveTimer();
+    this.content = this.proposalContent;
+    this.baselineContent = this.proposalContent;
+    this.dirty = false;
+    this.resetSaveState();
+    this.clearProposal();
+    await this.reloadFromServer();
+  }
+
+  editProposal() {
+    this.proposalActive = false;
   }
 
   setShowSystemNotes(value: boolean) {
@@ -241,6 +345,9 @@ export class VaultStore {
       this.clearAutosaveTimer();
       await this.save({ source: "autosave" });
     }
+    if (this.selectedPath !== path) {
+      this.clearProposal();
+    }
     this.loading = true;
     this.error = null;
     try {
@@ -257,7 +364,13 @@ export class VaultStore {
     }
   }
 
-  applyNote(response: VaultNoteContentResponse) {
+  applyNote(
+    response: VaultNoteContentResponse,
+    options?: { preserveProposal?: boolean },
+  ) {
+    if (!options?.preserveProposal) {
+      this.clearProposal();
+    }
     this.resetSaveState();
     this.content = response.content;
     this.baselineContent = response.content;
@@ -336,6 +449,7 @@ export class VaultStore {
   async save(options?: { force?: boolean; source?: "manual" | "autosave" }) {
     if (!this.selectedPath) return false;
     if (!this.dirty && !options?.force) return true;
+    if (this.proposalActive && !options?.force) return false;
 
     this.clearAutosaveTimer();
     this.saving = true;
@@ -349,6 +463,7 @@ export class VaultStore {
         options?.force ? undefined : (this.contentHash ?? undefined),
       );
       this.applySaveResponse(response.note);
+      this.clearProposal();
       this.flashSavedWhisper();
       await this.refreshNotes();
       await this.refreshBacklinks(this.selectedPath);

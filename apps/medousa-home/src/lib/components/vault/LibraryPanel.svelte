@@ -45,15 +45,18 @@
       class="workshop-drawer flex h-full w-full flex-col border-r-2"
       aria-label="Vault browser"
     >
-      <div class="workshop-header space-y-2 p-2">
-        <input
-          class="input text-sm"
-          type="search"
-          placeholder="Search vault…"
-          value={vault.searchQuery}
-          oninput={handleSearchInput}
-        />
-        <div class="flex flex-wrap items-center gap-2">
+      <div class="vault-browser-chrome shrink-0 border-b border-surface-500/45 bg-surface-800/50">
+        <div class="px-3 pt-3">
+          <input
+            class="input w-full text-sm"
+            type="search"
+            placeholder="Search vault…"
+            value={vault.searchQuery}
+            oninput={handleSearchInput}
+          />
+        </div>
+
+        <div class="flex flex-wrap gap-2 px-3 pt-2.5">
           <button
             type="button"
             class="btn btn-sm variant-filled-primary"
@@ -77,22 +80,37 @@
           >
             New
           </button>
-          <label class="ml-auto flex items-center gap-1.5 text-xs text-surface-400">
-            <input
-              type="checkbox"
-              class="checkbox"
-              checked={vault.showSystemNotes}
-              onchange={(event) =>
-                vault.setShowSystemNotes(
-                  (event.currentTarget as HTMLInputElement).checked,
-                )}
-            />
-            System
-          </label>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center gap-2 px-3 pb-2.5 pt-2"
+          role="group"
+          aria-label="Vault view options"
+        >
+          <button
+            type="button"
+            aria-pressed={vault.showAgentReviewFilter}
+            class="vault-filter-chip {vault.showAgentReviewFilter
+              ? 'vault-filter-chip-active'
+              : ''}"
+            onclick={() => vault.setShowAgentReviewFilter(!vault.showAgentReviewFilter)}
+          >
+            Agent review
+          </button>
+          <button
+            type="button"
+            aria-pressed={vault.showSystemNotes}
+            class="vault-filter-chip {vault.showSystemNotes ? 'vault-filter-chip-active' : ''}"
+            onclick={() => vault.setShowSystemNotes(!vault.showSystemNotes)}
+          >
+            System notes
+          </button>
+        </div>
+
+        <div class="border-t border-surface-500/35 px-3 py-2.5">
+          <VaultSpaceChips embedded />
         </div>
       </div>
-
-      <VaultSpaceChips />
 
       {#if vault.searchHits.length > 0}
         <ul class="max-h-40 overflow-y-auto border-b border-surface-500/45 p-2 text-sm">

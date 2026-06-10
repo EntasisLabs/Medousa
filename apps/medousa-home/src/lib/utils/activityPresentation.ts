@@ -23,6 +23,7 @@ const TONE_BY_KIND: Record<string, ActivityTone> = {
   job_succeeded: "success",
   work_completed: "success",
   work_unblocked: "success",
+  vault_note_created: "vault",
   vault_note_updated: "vault",
   job_failed: "attention",
   work_delegated: "motion",
@@ -42,13 +43,30 @@ function simplifyFragment(text: string): string {
     .trim();
 }
 
+function vaultActivitySummary(
+  event: WorkspaceEvent,
+  detailLine: string,
+): string {
+  const title = detailLine.trim();
+  if (event.actor === "agent") {
+    if (event.kind === "vault_note_created") {
+      return `Agent created ${title}`;
+    }
+    return `Agent updated ${title}`;
+  }
+  if (event.kind === "vault_note_created") {
+    return `You created ${title}`;
+  }
+  return `You updated ${title}`;
+}
+
 function humanizeVaultPath(path: string): string {
   const name = path.split("/").pop() ?? path;
   return name.replace(/\.md$/i, "").replaceAll("-", " ");
 }
 
-function summaryForDetailLine(kind: string, detailLine: string): string {
-  switch (kind) {
+function summaryForDetailLine(event: WorkspaceEvent, detailLine: string): string {
+  switch (event.kind) {
     case "job_succeeded":
     case "work_completed":
       return `Finished ${detailLine}`;
@@ -64,8 +82,9 @@ function summaryForDetailLine(kind: string, detailLine: string): string {
       return `Wrapping up ${detailLine}`;
     case "work_unblocked":
       return `Ready for you — ${detailLine}`;
+    case "vault_note_created":
     case "vault_note_updated":
-      return `Linked ${detailLine}`;
+      return vaultActivitySummary(event, detailLine);
     default:
       return detailLine;
   }
@@ -74,7 +93,7 @@ function summaryForDetailLine(kind: string, detailLine: string): string {
 function presentationFromServer(event: WorkspaceEvent): string | null {
   const detailLine = event.detail_line?.trim();
   if (!detailLine) return null;
-  return summaryForDetailLine(event.kind, detailLine);
+  return summaryForDetailLine(event, detailLine);
 }
 
 function enrichedSummary(
@@ -88,9 +107,17 @@ function enrichedSummary(
 
   const taskTitle = resolveTaskTitle(enrichment, event.detail_line);
 
-  if (event.kind === "vault_note_updated") {
+  if (event.kind === "vault_note_created" || event.kind === "vault_note_updated") {
     const vaultPath = vaultRefPath(event);
-    if (vaultPath) return `Linked ${humanizeVaultPath(vaultPath)}`;
+    if (vaultPath && event.detail_line?.trim()) {
+      return vaultActivitySummary(event, event.detail_line);
+    }
+    if (vaultPath) {
+      const label = humanizeVaultPath(vaultPath);
+      return event.actor === "agent"
+        ? `Agent updated ${label}`
+        : `You updated ${label}`;
+    }
     if (taskTitle) return taskTitle;
     return null;
   }
@@ -139,8 +166,15 @@ function humanizeSummary(event: WorkspaceEvent): string {
       return tail ? `Wrapping up ${tail}` : "Finishing up";
     case "work_unblocked":
       return tail ? `Ready for you — ${tail}` : "Needs your input";
+    case "vault_note_created":
     case "vault_note_updated":
-      return tail || parts[0] || "Vault updated";
+      if (event.detail_line?.trim()) {
+        return vaultActivitySummary(event, event.detail_line);
+      }
+      if (event.actor === "agent") {
+        return tail ? `Agent updated ${tail}` : "Agent updated vault";
+      }
+      return tail ? `You updated ${tail}` : "Vault updated";
     default:
       if (parts.length > 1 && tail) {
         return `${parts[0]} · ${tail}`;

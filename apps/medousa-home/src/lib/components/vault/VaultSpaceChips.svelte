@@ -9,9 +9,11 @@
 
   interface Props {
     compact?: boolean;
+    /** When true, parent supplies padding (Library chrome). */
+    embedded?: boolean;
   }
 
-  let { compact = false }: Props = $props();
+  let { compact = false, embedded = false }: Props = $props();
 
   const counts = $derived(
     countNotesBySpace(vault.notes, vault.showSystemNotes),
@@ -34,7 +36,7 @@
 </script>
 
 <div
-  class="flex flex-wrap gap-1.5 {compact ? '' : 'px-2 pb-2'}"
+  class="flex flex-wrap gap-x-1.5 gap-y-2 {compact || embedded ? '' : 'px-2 pb-2'}"
   role="tablist"
   aria-label="Vault spaces"
 >

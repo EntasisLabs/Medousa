@@ -73,6 +73,19 @@
     @apply border-b border-surface-500/45 bg-surface-800/50 px-4 py-2.5;
   }
 
+  /* Library sidebar filter toggles — matches space chips */
+  .vault-filter-chip {
+    @apply inline-flex items-center rounded-full border border-surface-500/40 bg-surface-800/60 px-2.5 py-1 text-xs font-medium text-surface-300 transition-colors hover:bg-surface-700/80;
+  }
+
+  .vault-filter-chip-active {
+    @apply border-primary-500/50 bg-primary-500/15 text-primary-200;
+  }
+
+  .vault-browser-chrome {
+    @apply shrink-0;
+  }
+
   /* Inset cards and settings blocks */
   .workshop-inset {
     @apply rounded-md border border-surface-500/40 bg-surface-800/80;

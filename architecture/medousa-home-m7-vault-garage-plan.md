@@ -1,6 +1,6 @@
 # Medousa Home — M7 Plan (The Garage)
 
-> **Status:** **Sprint 7 (M7e) shipped** — Vault bridges · Sprint 8 next  
+> **Status:** **Sprint 8 (M7f) shipped** — Agent vault proposals · M7 epic complete  
 > **Date:** 2026-06-07  
 > **Epic:** **M7 — Library as life garage**  
 > **Related:** [medousa-home-plan.md](medousa-home-plan.md), [medousa-home-tauri-design.md](medousa-home-tauri-design.md), [medousa-home-m5-plan.md](medousa-home-m5-plan.md), [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md), [continuity-first-redesign.md](continuity-first-redesign.md)
