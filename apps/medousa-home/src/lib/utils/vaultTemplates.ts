@@ -170,6 +170,8 @@ export function financeLedgerTemplate(title: string): string {
     "ledger",
     `# ${trimmed}
 
+> Type entries in the table below, or use **Link spreadsheet** to preview your Excel budget here — read-only, your file stays on disk.
+
 | Date | Payee | Amount | Category |
 | ---- | ----- | ------ | -------- |
 |      |       |        |          |

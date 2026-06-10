@@ -3,7 +3,7 @@ import {
   VAULT_OTHER_SPACE,
   VAULT_SPACES,
   VAULT_SYSTEM_BUCKET,
-  isSystemNoiseNote,
+  shouldHideGarageNote,
   resolveSpaceForPath,
 } from "$lib/config/vaultSpaces";
 
@@ -37,7 +37,7 @@ export function buildVaultTree(
       if (!isRecentAgentWrite(note.path, map)) return false;
     }
     if (options.showSystemNotes) return true;
-    return !isSystemNoiseNote(note.path, note.title);
+    return !shouldHideGarageNote(note.path, note.title, options.showSystemNotes);
   });
 
   const buckets = new Map<string, VaultNote[]>();
@@ -58,6 +58,7 @@ export function buildVaultTree(
   const roots: VaultTreeNode[] = [];
   for (const space of spaceOrder) {
     if (options.spaceFilter && space.id !== options.spaceFilter) continue;
+    if (space.devOnly && !options.showSystemNotes) continue;
     const bucket = buckets.get(space.id) ?? [];
     if (bucket.length === 0 && !space.alwaysShow) continue;
     if (

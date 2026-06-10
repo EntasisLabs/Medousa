@@ -1,6 +1,6 @@
 # Medousa Home — M8 Plan (The Real Garage)
 
-> **Status:** **Sprint 5–6 (M8d) shipped** — External desk · Sprint 7 next  
+> **Status:** **M8 complete** — Real garage shipped (M8a–M8f)  
 > **Date:** 2026-06-07  
 > **Epic:** **M8 — Library as *your* garage**  
 > **Builds on:** [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md) (M7 complete)  
@@ -178,7 +178,7 @@ flowchart LR
 
 ---
 
-## M8e — Spreadsheet preview (Sprint 7) ← **NEXT**
+## M8e — Spreadsheet preview (Sprint 7) ✅
 
 *Excel usefulness without Excel engine.*
 
@@ -190,9 +190,23 @@ flowchart LR
 
 **Rule:** preview + link only; no formula engine in M8.
 
+### Exit criteria
+
+1. Link a CSV or XLSX from disk into a ledger note.
+2. Preview shows read-only table inside Library (first sheet for XLSX).
+3. **Open in app** still works for the real file.
+
+### Sprint 7 progress (M8e)
+
+| Item | Status |
+|------|--------|
+| E1 CSV parser + table | ✅ |
+| E2 XLSX first sheet | ✅ |
+| E3 Link spreadsheet + template | ✅ |
+
 ---
 
-## M8f — Garage onboarding (Sprint 8)
+## M8f — Garage onboarding (Sprint 8) ✅
 
 *Stop feeling like our workshop.*
 
@@ -200,8 +214,29 @@ flowchart LR
 |---|------|-------|
 | F1 | Empty state: "What belongs here" + "Link existing folder" | `VaultEmptyState.svelte` |
 | F2 | First-run: hide `bugs/` and system paths until opted in | default `showSystemNotes: false` |
-| F3 | Import wizard: pick folder → offer daily template + pin | onboarding flow |
-| F4 | Demo seed separate from user vault (dev only) | settings flag |
+| F3 | Import wizard: pick folder → offer daily template + pin | `VaultGarageImportWizard.svelte` |
+| F4 | Demo seed separate from user vault (dev only) | Settings dev flag |
+
+### Exit criteria
+
+1. First Library visit opens a friendly setup wizard (skippable).
+2. Empty state explains life spaces — not dev jargon.
+3. `bugs/` and system notes hidden until **Developer notes** is enabled.
+
+### Sprint 8 progress (M8f)
+
+| Item | Status |
+|------|--------|
+| F1 Empty state | ✅ |
+| F2 Hide dev notes | ✅ |
+| F3 Import wizard | ✅ |
+| F4 Dev settings | ✅ |
+
+---
+
+## Epic complete 🎀
+
+M8 delivers the **real garage**: human-first writing, attachments, external desk, spreadsheet preview, and onboarding that welcomes mess instead of markdown exams.
 
 ---
 

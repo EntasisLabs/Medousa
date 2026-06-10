@@ -10,7 +10,7 @@ import {
 import {
   countNotesBySpace,
   getSpaceById,
-  isSystemNoiseNote,
+  shouldHideGarageNote,
   loadLastSpace,
   loadShowSystemNotes,
   resolveSpaceForPath,
@@ -57,7 +57,7 @@ import {
   removeAttachment as dropAttachment,
   type VaultAttachment,
 } from "$lib/utils/vaultAttachments";
-import { pickAttachmentFiles } from "$lib/utils/vaultAttachmentPicker";
+import { pickAttachmentFiles, pickSpreadsheetFiles } from "$lib/utils/vaultAttachmentPicker";
 import {
   isWriteFirstKind,
   defaultAuthoringMode,
@@ -71,6 +71,10 @@ import {
   VAULT_SAVED_WHISPER_MS,
   type VaultSaveStatus,
 } from "$lib/utils/vaultSave";
+import {
+  completeGarageOnboarding,
+  shouldShowGarageWizard,
+} from "$lib/utils/garageOnboarding";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -112,6 +116,7 @@ export class VaultStore {
   showAgentReviewFilter = $state(false);
   agentWrittenAt = $state<Record<string, string>>({});
   previewingAttachmentPath = $state<string | null>(null);
+  garageWizardOpen = $state(false);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -791,7 +796,7 @@ export class VaultStore {
       }
       if (!this.showSystemNotes) {
         hits = hits.filter(
-          (hit) => !isSystemNoiseNote(hit.note.path, hit.note.title),
+          (hit) => !shouldHideGarageNote(hit.note.path, hit.note.title, this.showSystemNotes),
         );
       }
       this.searchHits = hits.slice(0, 12);
@@ -811,6 +816,13 @@ export class VaultStore {
   async linkAttachmentFiles() {
     if (!this.selectedPath) return;
     const picked = await pickAttachmentFiles();
+    if (picked.length === 0) return;
+    this.markDirty(addAttachments(this.content, picked));
+  }
+
+  async linkSpreadsheetFiles() {
+    if (!this.selectedPath) return;
+    const picked = await pickSpreadsheetFiles();
     if (picked.length === 0) return;
     this.markDirty(addAttachments(this.content, picked));
   }
@@ -845,6 +857,23 @@ export class VaultStore {
 
   closeAttachmentPreview() {
     this.previewingAttachmentPath = null;
+  }
+
+  openGarageWizard() {
+    this.garageWizardOpen = true;
+  }
+
+  closeGarageWizard() {
+    this.garageWizardOpen = false;
+  }
+
+  finishGarageOnboarding() {
+    completeGarageOnboarding();
+    this.garageWizardOpen = false;
+  }
+
+  shouldPromptGarageWizard(): boolean {
+    return shouldShowGarageWizard();
   }
 
   openNewNoteDialog() {

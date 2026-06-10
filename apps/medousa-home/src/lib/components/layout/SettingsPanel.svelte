@@ -12,7 +12,11 @@
   import { reconnectWorkshop } from "$lib/workshopConnection";
   import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
+  import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { isTauri } from "$lib/window";
+
+  const isDevBuild = import.meta.env.DEV;
 
   interface Props {
     visible: boolean;
@@ -291,6 +295,36 @@
         </span>
       </label>
     </section>
+
+    {#if isDevBuild && !mobile}
+      <section class="workshop-inset p-3">
+        <h2 class="text-sm font-semibold text-surface-100">Library (developer build)</h2>
+        <p class="workshop-faint mt-1">
+          Demo seed notes and QA paths live under <span class="font-mono text-surface-400">bugs/</span>
+          and system folders. They stay hidden until you opt in.
+        </p>
+        <label class="mt-4 flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            class="checkbox"
+            checked={vault.showSystemNotes}
+            onchange={(event) =>
+              vault.setShowSystemNotes((event.currentTarget as HTMLInputElement).checked)}
+          />
+          <span class="text-sm text-surface-200">Show developer vault notes</span>
+        </label>
+        <button
+          type="button"
+          class="workshop-text-action mt-3 text-sm"
+          onclick={() => {
+            resetGarageOnboarding();
+            vault.openGarageWizard();
+          }}
+        >
+          Reset garage onboarding wizard
+        </button>
+      </section>
+    {/if}
 
     {#if workshopFiles.length > 0 && !mobile}
       <section class="workshop-inset p-3">

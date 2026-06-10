@@ -15,6 +15,10 @@
 
   let { compact = false, embedded = false }: Props = $props();
 
+  const visibleSpaces = $derived(
+    VAULT_FILTER_SPACES.filter((space) => !space.devOnly || vault.showSystemNotes),
+  );
+
   const counts = $derived(
     countNotesBySpace(vault.notes, vault.showSystemNotes),
   );
@@ -52,7 +56,7 @@
     All
   </button>
 
-  {#each VAULT_FILTER_SPACES as space (space.id)}
+  {#each visibleSpaces as space (space.id)}
     {@const Icon = iconForSpace(space.id)}
     {@const count = renderCount(space)}
     <button

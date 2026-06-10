@@ -14,6 +14,7 @@ const WORK_INSPECTOR_WIDTH_KEY = "medousa-home-work-inspector-width";
 const SESSION_DRAWER_KEY = "medousa-home-session-drawer";
 const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
 const ACTIVITY_COLLAPSED_KEY = "medousa-home-activity-collapsed";
+const VAULT_SIDEBAR_COLLAPSED_KEY = "medousa-home-vault-sidebar-collapsed";
 const MOBILE_TAB_KEY = "medousa-home-mobile-tab";
 
 export class LayoutStore {
@@ -33,6 +34,7 @@ export class LayoutStore {
   sessionDrawerOpen = $state(loadFlag(SESSION_DRAWER_KEY, false));
   identityDrawerOpen = $state(loadFlag(IDENTITY_DRAWER_KEY, false));
   activityCollapsed = $state(loadFlag(ACTIVITY_COLLAPSED_KEY, false));
+  vaultSidebarCollapsed = $state(loadFlag(VAULT_SIDEBAR_COLLAPSED_KEY, false));
   viewportWidth = $state(
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
@@ -110,6 +112,15 @@ export class LayoutStore {
 
   toggleActivityCollapsed() {
     this.setActivityCollapsed(!this.activityCollapsed);
+  }
+
+  setVaultSidebarCollapsed(collapsed: boolean) {
+    this.vaultSidebarCollapsed = collapsed;
+    localStorage.setItem(VAULT_SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+  }
+
+  toggleVaultSidebarCollapsed() {
+    this.setVaultSidebarCollapsed(!this.vaultSidebarCollapsed);
   }
 
   setMobile(mobile: boolean) {

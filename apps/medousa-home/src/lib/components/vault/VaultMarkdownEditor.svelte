@@ -6,9 +6,11 @@
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
   import {
     applyMarkdownFormat,
+    applyMarkdownColor,
     insertSlashBlock,
     shouldOpenSlashMenu,
     type MarkdownFormatAction,
+    type MarkdownColorId,
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
 
@@ -96,6 +98,13 @@
     void applyEdit(result);
   }
 
+  function handleColor(color: MarkdownColorId) {
+    if (!textareaEl) return;
+    captureSelection();
+    const result = applyMarkdownColor(editorValue(), selectionStart, selectionEnd, color);
+    void applyEdit(result);
+  }
+
   function handleInput(event: Event) {
     const target = event.currentTarget as HTMLTextAreaElement;
     onchange(target.value);
@@ -133,7 +142,7 @@
 <div
   class="vault-markdown-editor vault-markdown-editor--{surface} relative flex min-h-0 flex-1 flex-col {className}"
 >
-  <VaultFormatBar {disabled} onFormat={handleFormat} />
+  <VaultFormatBar {disabled} onFormat={handleFormat} onColor={handleColor} />
   <VaultSlashMenu
     bind:this={slashMenuEl}
     open={slashOpen}

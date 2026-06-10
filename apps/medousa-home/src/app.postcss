@@ -704,6 +704,125 @@
     @apply text-primary-300 hover:underline;
   }
 
+  .markdown-highlight,
+  .markdown-content mark.markdown-highlight {
+    @apply rounded-sm px-0.5;
+    background-color: rgb(250 204 21 / 0.35);
+    color: inherit;
+  }
+
+  html:not(.dark) .markdown-highlight,
+  html:not(.dark) .markdown-content mark.markdown-highlight {
+    background-color: rgb(254 240 138 / 0.85);
+    color: rgb(66 32 6);
+  }
+
+  .markdown-color-red,
+  .markdown-content .markdown-color-red,
+  .markdown-content span.markdown-color-red {
+    color: #f87171 !important;
+  }
+
+  .markdown-color-orange,
+  .markdown-content .markdown-color-orange,
+  .markdown-content span.markdown-color-orange {
+    color: #fb923c !important;
+  }
+
+  .markdown-color-yellow,
+  .markdown-content .markdown-color-yellow,
+  .markdown-content span.markdown-color-yellow {
+    color: #facc15 !important;
+  }
+
+  .markdown-color-green,
+  .markdown-content .markdown-color-green,
+  .markdown-content span.markdown-color-green {
+    color: #4ade80 !important;
+  }
+
+  .markdown-color-blue,
+  .markdown-content .markdown-color-blue,
+  .markdown-content span.markdown-color-blue {
+    color: #60a5fa !important;
+  }
+
+  .markdown-color-purple,
+  .markdown-content .markdown-color-purple,
+  .markdown-content span.markdown-color-purple {
+    color: #c084fc !important;
+  }
+
+  .markdown-color-pink,
+  .markdown-content .markdown-color-pink,
+  .markdown-content span.markdown-color-pink {
+    color: #f472b6 !important;
+  }
+
+  html:not(.dark) .markdown-color-red,
+  html:not(.dark) .markdown-content .markdown-color-red,
+  html:not(.dark) .markdown-content span.markdown-color-red {
+    color: #dc2626 !important;
+  }
+
+  html:not(.dark) .markdown-color-orange,
+  html:not(.dark) .markdown-content .markdown-color-orange,
+  html:not(.dark) .markdown-content span.markdown-color-orange {
+    color: #ea580c !important;
+  }
+
+  html:not(.dark) .markdown-color-yellow,
+  html:not(.dark) .markdown-content .markdown-color-yellow,
+  html:not(.dark) .markdown-content span.markdown-color-yellow {
+    color: #ca8a04 !important;
+  }
+
+  html:not(.dark) .markdown-color-green,
+  html:not(.dark) .markdown-content .markdown-color-green,
+  html:not(.dark) .markdown-content span.markdown-color-green {
+    color: #16a34a !important;
+  }
+
+  html:not(.dark) .markdown-color-blue,
+  html:not(.dark) .markdown-content .markdown-color-blue,
+  html:not(.dark) .markdown-content span.markdown-color-blue {
+    color: #2563eb !important;
+  }
+
+  html:not(.dark) .markdown-color-purple,
+  html:not(.dark) .markdown-content .markdown-color-purple,
+  html:not(.dark) .markdown-content span.markdown-color-purple {
+    color: #9333ea !important;
+  }
+
+  html:not(.dark) .markdown-color-pink,
+  html:not(.dark) .markdown-content .markdown-color-pink,
+  html:not(.dark) .markdown-content span.markdown-color-pink {
+    color: #db2777 !important;
+  }
+
+  .vault-color-swatch {
+    @apply h-5 w-5 rounded-full border border-surface-600/80 transition hover:scale-110 hover:ring-2 hover:ring-primary-400/50 disabled:opacity-40;
+  }
+
+  .vault-pdf-export-root {
+    @apply text-sm leading-relaxed text-surface-900;
+    background: white;
+    color: #111827;
+  }
+
+  .vault-pdf-export-root h1,
+  .vault-pdf-export-root h2,
+  .vault-pdf-export-root h3 {
+    color: #111827;
+  }
+
+  .vault-pdf-export-root .markdown-highlight,
+  .vault-pdf-export-root mark.markdown-highlight {
+    background-color: rgb(254 240 138);
+    color: rgb(66 32 6);
+  }
+
   .markdown-code-block {
     @apply my-3 max-w-full min-w-0 overflow-hidden rounded-md border border-surface-500/40 bg-surface-900;
   }

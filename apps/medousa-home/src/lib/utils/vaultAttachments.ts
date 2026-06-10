@@ -1,5 +1,6 @@
 /** M8c — vault note attachments in frontmatter (paths to external files). */
 
+import { isSpreadsheetPath } from "$lib/utils/spreadsheetPreview";
 import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
 export interface VaultAttachment {
@@ -11,6 +12,7 @@ export interface VaultAttachment {
 const MIME_BY_EXT: Record<string, string> = {
   pdf: "application/pdf",
   csv: "text/csv",
+  tsv: "text/tab-separated-values",
   txt: "text/plain",
   md: "text/markdown",
   doc: "application/msword",
@@ -44,8 +46,20 @@ export function isImageAttachment(attachment: VaultAttachment): boolean {
   return mime.startsWith("image/");
 }
 
+export function isSpreadsheetAttachment(attachment: VaultAttachment): boolean {
+  const mime = attachment.mime ?? guessMimeFromPath(attachment.path);
+  if (mime.includes("spreadsheet") || mime.includes("csv") || mime.includes("tab-separated")) {
+    return true;
+  }
+  return isSpreadsheetPath(attachment.path);
+}
+
 export function canPreviewAttachment(attachment: VaultAttachment): boolean {
-  return isPdfAttachment(attachment) || isImageAttachment(attachment);
+  return (
+    isPdfAttachment(attachment) ||
+    isImageAttachment(attachment) ||
+    isSpreadsheetAttachment(attachment)
+  );
 }
 
 function yamlQuote(value: string): string {

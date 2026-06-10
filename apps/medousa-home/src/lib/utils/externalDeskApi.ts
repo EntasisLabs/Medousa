@@ -7,6 +7,19 @@ export async function scanExternalRoot(path: string): Promise<ExternalFileEntry[
   return invoke<ExternalFileEntry[]>("external_desk_scan_root", { path });
 }
 
+export interface ExternalFilePayload {
+  kind: "text" | "base64";
+  content: string;
+  size_bytes: number;
+}
+
+export async function readExternalFile(path: string): Promise<ExternalFilePayload> {
+  if (!isTauri()) {
+    throw new Error("File read needs the Medousa Home desktop app.");
+  }
+  return invoke<ExternalFilePayload>("external_desk_read_file", { path });
+}
+
 export async function pickExternalFolder(): Promise<string | null> {
   if (!isTauri()) return null;
   try {

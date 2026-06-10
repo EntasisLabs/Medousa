@@ -28,10 +28,46 @@ export async function pickAttachmentFiles(): Promise<VaultAttachment[]> {
     }
   }
 
+  return pickAttachmentFilesWeb();
+}
+
+export async function pickSpreadsheetFiles(): Promise<VaultAttachment[]> {
+  if (isTauri()) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        multiple: true,
+        title: "Link spreadsheet to note",
+        filters: [
+          {
+            name: "Spreadsheets",
+            extensions: ["csv", "tsv", "xlsx", "xls", "xlsm"],
+          },
+        ],
+      });
+      if (!selected) return [];
+      const paths = Array.isArray(selected) ? selected : [selected];
+      return paths.map((path) => ({
+        path,
+        label: fileNameFromPath(path),
+        mime: guessMimeFromPath(path),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  return pickAttachmentFilesWeb([".csv", ".tsv", ".xlsx", ".xls", ".xlsm"]);
+}
+
+function pickAttachmentFilesWeb(accept?: string[]): Promise<VaultAttachment[]> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
+    if (accept?.length) {
+      input.accept = accept.join(",");
+    }
     input.style.display = "none";
     input.addEventListener("change", () => {
       const files = [...(input.files ?? [])];

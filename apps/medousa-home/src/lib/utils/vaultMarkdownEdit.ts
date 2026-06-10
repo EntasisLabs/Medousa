@@ -1,3 +1,9 @@
+import {
+  MARKDOWN_COLOR_CLOSE_TAG,
+  markdownColorOpenTag,
+  type MarkdownColorId,
+} from "$lib/utils/vaultMarkdownColors";
+
 export type MarkdownFormatAction =
   | "bold"
   | "italic"
@@ -8,7 +14,10 @@ export type MarkdownFormatAction =
   | "h3"
   | "bullet"
   | "numbered"
-  | "checkbox";
+  | "checkbox"
+  | "highlight";
+
+export type { MarkdownColorId };
 
 export type SlashBlockId =
   | "h1"
@@ -144,9 +153,27 @@ export function applyMarkdownFormat(
       return prefixLines(content, selectionStart, selectionEnd, "", true);
     case "checkbox":
       return prefixLines(content, selectionStart, selectionEnd, "- [ ] ");
+    case "highlight":
+      return wrapSelection(content, selectionStart, selectionEnd, "==", "==");
     default:
       return { content, selectionStart, selectionEnd };
   }
+}
+
+export function applyMarkdownColor(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+  color: MarkdownColorId,
+): EditResult {
+  return wrapSelection(
+    content,
+    selectionStart,
+    selectionEnd,
+    markdownColorOpenTag(color),
+    MARKDOWN_COLOR_CLOSE_TAG,
+    "text",
+  );
 }
 
 export function insertSlashBlock(

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { PanelLeftClose } from "@lucide/svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -10,7 +11,10 @@
   import VaultSpaceChips from "./VaultSpaceChips.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
+  import VaultGarageImportWizard from "./VaultGarageImportWizard.svelte";
+  import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
+  import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
 
   interface Props {
     visible: boolean;
@@ -32,6 +36,9 @@
       }
       if (externalDesk.sidebarMode === "files" && externalDesk.pinnedRoots.length > 0) {
         await externalDesk.refreshAllRoots();
+      }
+      if (shouldShowGarageWizard() && !vault.selectedPath) {
+        vault.openGarageWizard();
       }
     })();
   });
@@ -55,42 +62,56 @@
 </script>
 
 <section class="flex h-full min-w-0 flex-1 {visible ? '' : 'hidden'}">
-  <SplitPane
-    width={layout.vaultTreeWidth}
-    side="left"
-    min={180}
-    max={420}
-    onResize={(width) => layout.setVaultTreeWidth(width)}
-  >
-    <aside
-      class="workshop-drawer flex h-full w-full flex-col border-r-2"
-      aria-label="Library browser"
+  {#if layout.vaultSidebarCollapsed}
+    <VaultSidebarCollapsedStrip onExpand={() => layout.setVaultSidebarCollapsed(false)} />
+  {:else}
+    <SplitPane
+      width={layout.vaultTreeWidth}
+      side="left"
+      min={180}
+      max={420}
+      onResize={(width) => layout.setVaultTreeWidth(width)}
     >
-      <div class="vault-browser-chrome shrink-0 border-b border-surface-500/45 bg-surface-800/50">
-        <div class="flex gap-0 border-b border-surface-500/35 px-3 pt-3">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={externalDesk.sidebarMode === "vault"}
-            class="vault-sidebar-tab {externalDesk.sidebarMode === 'vault'
-              ? 'vault-sidebar-tab-active'
-              : ''}"
-            onclick={() => externalDesk.setSidebarMode("vault")}
-          >
-            Vault
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={externalDesk.sidebarMode === "files"}
-            class="vault-sidebar-tab {externalDesk.sidebarMode === 'files'
-              ? 'vault-sidebar-tab-active'
-              : ''}"
-            onclick={() => externalDesk.setSidebarMode("files")}
-          >
-            Your files
-          </button>
-        </div>
+      <aside
+        class="workshop-drawer flex h-full w-full flex-col border-r-2"
+        aria-label="Library browser"
+      >
+        <div class="vault-browser-chrome shrink-0 border-b border-surface-500/45 bg-surface-800/50">
+          <div class="flex items-start gap-1 border-b border-surface-500/35 px-2 pt-2">
+            <div class="flex min-w-0 flex-1 gap-0 pl-1 pt-1">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={externalDesk.sidebarMode === "vault"}
+                class="vault-sidebar-tab {externalDesk.sidebarMode === 'vault'
+                  ? 'vault-sidebar-tab-active'
+                  : ''}"
+                onclick={() => externalDesk.setSidebarMode("vault")}
+              >
+                Vault
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={externalDesk.sidebarMode === "files"}
+                class="vault-sidebar-tab {externalDesk.sidebarMode === 'files'
+                  ? 'vault-sidebar-tab-active'
+                  : ''}"
+                onclick={() => externalDesk.setSidebarMode("files")}
+              >
+                Your files
+              </button>
+            </div>
+            <button
+              type="button"
+              class="btn btn-xs variant-ghost-surface mt-1 shrink-0"
+              title="Hide library browser"
+              aria-label="Hide library browser"
+              onclick={() => layout.setVaultSidebarCollapsed(true)}
+            >
+              <PanelLeftClose size={14} strokeWidth={2} />
+            </button>
+          </div>
 
         <div class="px-3 pt-3">
           <input
@@ -150,7 +171,7 @@
               class="vault-filter-chip {vault.showSystemNotes ? 'vault-filter-chip-active' : ''}"
               onclick={() => vault.setShowSystemNotes(!vault.showSystemNotes)}
             >
-              System notes
+              Developer notes
             </button>
           </div>
 
@@ -230,7 +251,8 @@
         <ExternalFilesBrowser />
       {/if}
     </aside>
-  </SplitPane>
+    </SplitPane>
+  {/if}
 
   <VaultEditor
     visible={true}
@@ -241,3 +263,4 @@
 </section>
 
 <VaultNewNoteDialog />
+<VaultGarageImportWizard />

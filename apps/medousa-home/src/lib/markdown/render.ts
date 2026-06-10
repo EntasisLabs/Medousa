@@ -50,8 +50,18 @@ function sanitizeHtml(html: string): string {
     return html;
   }
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ["target", "rel", "data-callout", "data-wikilink", "class", "type", "disabled", "checked"],
-    ADD_TAGS: ["input"],
+    ADD_ATTR: [
+      "target",
+      "rel",
+      "data-callout",
+      "data-wikilink",
+      "class",
+      "style",
+      "type",
+      "disabled",
+      "checked",
+    ],
+    ADD_TAGS: ["input", "mark", "span"],
   });
 }
 

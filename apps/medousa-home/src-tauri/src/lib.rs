@@ -1,5 +1,6 @@
 mod badge;
 mod external_desk;
+mod files;
 mod daemon;
 mod messaging;
 mod medousa_paths;
@@ -126,6 +127,8 @@ pub fn run() {
             messaging::messaging_clear_secret,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             external_desk::external_desk_scan_root,
+            external_desk::external_desk_read_file,
+            files::write_file_bytes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

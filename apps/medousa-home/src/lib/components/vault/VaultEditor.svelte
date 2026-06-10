@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { FileDown, PanelLeftOpen } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -22,6 +23,7 @@
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
   import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
+  import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
 
   interface Props {
     visible: boolean;
@@ -32,13 +34,9 @@
     onSelectCard?: (id: string) => void | Promise<void>;
   }
 
-  let {
-    visible,
-    mobile = false,
-    onOpenChat,
-    onOpenWork,
-    onSelectCard,
-  }: Props = $props();
+  let { visible, mobile = false, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
+
+  let exportingPdf = $state(false);
 
   const displayTitle = $derived(
     vault.selectedPath
@@ -149,6 +147,24 @@
     vault.openWikilink(target);
   }
 
+  async function handleExportPdf() {
+    if (!vault.selectedPath || exportingPdf) return;
+    if (vault.dirty) await vault.flushSave();
+    exportingPdf = true;
+    vault.error = null;
+    try {
+      await exportVaultNotePdf({
+        title: displayTitle,
+        content: vault.content,
+        labelByPath: vault.labelByPath(),
+      });
+    } catch (err) {
+      vault.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      exportingPdf = false;
+    }
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (!vault.selectedPath || mobile) return;
 
@@ -171,9 +187,16 @@
       return;
     }
 
-    if (event.key === "Escape" && vault.editorMode === "edit" && previewFirstKind) {
-      event.preventDefault();
-      vault.enterPreviewMode();
+    if (event.key === "Escape" && vault.editorMode === "edit" && !typing) {
+      if (vault.isWriteFirstKind && !vault.isAuthoringSource) {
+        event.preventDefault();
+        vault.enterPreviewMode();
+        return;
+      }
+      if (previewFirstKind) {
+        event.preventDefault();
+        vault.enterPreviewMode();
+      }
     }
   }
 
@@ -207,7 +230,7 @@
             />
           {/if}
         </div>
-        {#if vault.selectedPath && vault.editorMode === "preview" && previewFirstKind}
+        {#if vault.selectedPath && vault.editorMode === "preview"}
           <p class="mt-1 text-[11px] text-surface-500">
             Press <kbd class="vault-kbd">E</kbd> to edit · type <kbd class="vault-kbd">/</kbd> on a
             new line for blocks
@@ -216,6 +239,17 @@
       </div>
 
       <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {#if layout.vaultSidebarCollapsed}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            title="Show library browser"
+            aria-label="Show library browser"
+            onclick={() => layout.setVaultSidebarCollapsed(false)}
+          >
+            <PanelLeftOpen size={14} strokeWidth={2} />
+          </button>
+        {/if}
         {#if vault.selectedPath && !mobile && onOpenChat}
           <button
             type="button"
@@ -335,6 +369,19 @@
           </button>
         {/if}
 
+        {#if vault.selectedPath}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            disabled={exportingPdf || vault.noteLoading}
+            title="Export rendered note as PDF"
+            onclick={() => void handleExportPdf()}
+          >
+            <FileDown size={14} strokeWidth={2} />
+            {exportingPdf ? "Exporting…" : "PDF"}
+          </button>
+        {/if}
+
         {#if vault.isWriteFirstKind && showMarkdownEditor}
           <button
             type="button"
@@ -348,14 +395,21 @@
           >
             {vault.isAuthoringSource ? "Write" : "Markdown"}
           </button>
-        {:else if vault.selectedPath}
+        {/if}
+
+        {#if vault.selectedPath}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface"
+            class="btn btn-sm {vault.editorMode === 'preview'
+              ? 'variant-soft-primary'
+              : 'variant-ghost-surface'}"
             onclick={() =>
               vault.editorMode === "edit"
                 ? vault.enterPreviewMode()
                 : vault.enterEditMode()}
+            title={vault.editorMode === "edit"
+              ? "View rendered note"
+              : "Return to editing"}
           >
             {vault.editorMode === "edit" ? "Preview" : "Edit"}
           </button>

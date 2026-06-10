@@ -22,6 +22,8 @@ export interface VaultSpaceConfig {
   defaultCollapsed?: boolean;
   /** Shown in space chip row (M7b). */
   filterChip?: boolean;
+  /** Hidden until developer notes are enabled (M8f). */
+  devOnly?: boolean;
 }
 
 export const VAULT_SPACES: VaultSpaceConfig[] = [
@@ -66,6 +68,7 @@ export const VAULT_SPACES: VaultSpaceConfig[] = [
     sort: 4,
     icon: "bug",
     filterChip: true,
+    devOnly: true,
   },
 ];
 
@@ -90,6 +93,20 @@ export const VAULT_SYSTEM_BUCKET: VaultSpaceConfig = {
 export const VAULT_FILTER_SPACES: VaultSpaceConfig[] = VAULT_SPACES.filter(
   (space) => space.filterChip,
 );
+
+export function isDevSpaceNote(path: string): boolean {
+  return path.startsWith("bugs/");
+}
+
+/** Notes hidden from the default garage view (system paths + dev spaces). */
+export function shouldHideGarageNote(
+  path: string,
+  title: string,
+  showDeveloperNotes: boolean,
+): boolean {
+  if (showDeveloperNotes) return false;
+  return isSystemNoiseNote(path, title) || isDevSpaceNote(path);
+}
 
 export function isSystemNoiseNote(path: string, title: string): boolean {
   const lowerPath = path.toLowerCase();
@@ -153,7 +170,7 @@ export function countNotesBySpace(
 ): Map<string, number> {
   const counts = new Map<string, number>();
   for (const note of notes) {
-    if (!showSystemNotes && isSystemNoiseNote(note.path, note.title)) continue;
+    if (shouldHideGarageNote(note.path, note.title, showSystemNotes)) continue;
     const space = resolveSpaceForPath(note.path, note.title);
     counts.set(space.id, (counts.get(space.id) ?? 0) + 1);
   }

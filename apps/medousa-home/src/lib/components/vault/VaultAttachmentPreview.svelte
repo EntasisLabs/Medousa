@@ -8,10 +8,15 @@
     attachmentFileName,
     isImageAttachment,
     isPdfAttachment,
+    isSpreadsheetAttachment,
   } from "$lib/utils/vaultAttachments";
+  import { loadSpreadsheetPreview } from "$lib/utils/spreadsheetPreviewLoader";
+  import type { SpreadsheetPreviewData } from "$lib/utils/spreadsheetPreview";
+  import VaultSpreadsheetPreview from "./VaultSpreadsheetPreview.svelte";
 
   let previewUrl = $state<string | null>(null);
   let previewError = $state<string | null>(null);
+  let spreadsheetData = $state<SpreadsheetPreviewData | null>(null);
 
   const attachment = $derived(vault.previewingAttachment);
 
@@ -19,7 +24,20 @@
     const current = attachment;
     previewUrl = null;
     previewError = null;
+    spreadsheetData = null;
     if (!current) return;
+
+    if (isSpreadsheetAttachment(current)) {
+      void (async () => {
+        try {
+          spreadsheetData = await loadSpreadsheetPreview(current.path);
+        } catch (err) {
+          previewError = err instanceof Error ? err.message : String(err);
+        }
+      })();
+      return;
+    }
+
     void (async () => {
       try {
         previewUrl = await attachmentPreviewUrl(current.path);
@@ -80,6 +98,8 @@
             Open file
           </button>
         </div>
+      {:else if spreadsheetData}
+        <VaultSpreadsheetPreview data={spreadsheetData} />
       {:else if previewUrl && isPdfAttachment(attachment)}
         <iframe
           class="h-full min-h-[320px] w-full bg-surface-950"

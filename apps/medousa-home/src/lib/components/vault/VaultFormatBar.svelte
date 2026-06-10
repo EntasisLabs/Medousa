@@ -10,15 +10,21 @@
     Link,
     Code,
     SquareCheck,
+    Highlighter,
   } from "@lucide/svelte";
   import type { MarkdownFormatAction } from "$lib/utils/vaultMarkdownEdit";
+  import {
+    MARKDOWN_COLOR_OPTIONS,
+    type MarkdownColorId,
+  } from "$lib/utils/vaultMarkdownColors";
 
   interface Props {
     disabled?: boolean;
     onFormat: (action: MarkdownFormatAction) => void;
+    onColor: (color: MarkdownColorId) => void;
   }
 
-  let { disabled = false, onFormat }: Props = $props();
+  let { disabled = false, onFormat, onColor }: Props = $props();
 
   const groups: {
     label: string;
@@ -30,6 +36,7 @@
         { action: "bold", title: "Bold", Icon: Bold },
         { action: "italic", title: "Italic", Icon: Italic },
         { action: "code", title: "Inline code", Icon: Code },
+        { action: "highlight", title: "Highlight", Icon: Highlighter },
       ],
     },
     {
@@ -77,6 +84,22 @@
       </button>
     {/each}
   {/each}
+
+  <span class="mx-0.5 h-5 w-px bg-surface-600/80" aria-hidden="true"></span>
+
+  <div class="flex items-center gap-1" role="group" aria-label="Text color">
+    {#each MARKDOWN_COLOR_OPTIONS as color (color.id)}
+      <button
+        type="button"
+        class="vault-color-swatch"
+        title={color.label}
+        aria-label={`Color: ${color.label}`}
+        style:background-color={color.swatch}
+        {disabled}
+        onclick={() => onColor(color.id)}
+      ></button>
+    {/each}
+  </div>
 
   <p class="ml-auto hidden text-[11px] text-surface-500 sm:block">
     Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks

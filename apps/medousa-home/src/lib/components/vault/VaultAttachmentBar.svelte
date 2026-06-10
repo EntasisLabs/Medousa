@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Paperclip, X } from "@lucide/svelte";
+  import { Paperclip, Table2, X } from "@lucide/svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { attachmentFileName } from "$lib/utils/vaultAttachments";
 
@@ -9,8 +9,14 @@
 
   let { disabled = false }: Props = $props();
 
+  const showSpreadsheetLink = $derived(vault.selectedKind === "ledger");
+
   async function handleLinkFiles() {
     await vault.linkAttachmentFiles();
+  }
+
+  async function handleLinkSpreadsheet() {
+    await vault.linkSpreadsheetFiles();
   }
 </script>
 
@@ -26,8 +32,26 @@
       Link file
     </button>
 
+    {#if showSpreadsheetLink}
+      <button
+        type="button"
+        class="btn btn-sm variant-soft-primary"
+        {disabled}
+        onclick={() => void handleLinkSpreadsheet()}
+      >
+        <Table2 size={14} strokeWidth={2} />
+        Link spreadsheet
+      </button>
+    {/if}
+
     {#if vault.attachments.length === 0}
-      <span class="text-xs text-surface-500">Attach PDFs, docs, or spreadsheets from your desk</span>
+      <span class="text-xs text-surface-500">
+        {#if showSpreadsheetLink}
+          Attach your budget sheet or other files from your desk
+        {:else}
+          Attach PDFs, docs, or spreadsheets from your desk
+        {/if}
+      </span>
     {:else}
       {#each vault.attachments as attachment (attachment.path)}
         <div class="inline-flex max-w-full items-center gap-1 rounded-full border border-surface-500/45 bg-surface-800/80 pl-2.5 pr-1">
