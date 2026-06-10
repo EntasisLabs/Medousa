@@ -97,7 +97,12 @@
         onToggleActivity={() => layout.toggleActivitySheet()}
       />
     {:else if layout.mobileTab === "work"}
-      <WorkTimeline visible={true} onSelectCard={handleSelectCard} />
+      <WorkTimeline
+        visible={true}
+        onSelectCard={handleSelectCard}
+        onOpenNote={handleOpenNote}
+        onOpenChat={handleOpenChat}
+      />
     {:else if layout.mobileTab === "chat"}
       <ChatPanel visible={true} showPopout={false} mobile={true} />
     {:else}

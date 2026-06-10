@@ -192,6 +192,5 @@ function sortByUpdated(cards: WorkCard[]): WorkCard[] {
 }
 
 export function hubCardsForPrefetch(cards: WorkCard[]): WorkCard[] {
-  const { living, settled, failed, stopped, stuck } = partitionWorkHub(cards);
-  return [...living, ...settled, ...failed.slice(0, 8), ...stopped.slice(0, 8), ...stuck.slice(0, 8)];
+  return partitionWorkHub(cards).living;
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { ProvenanceChip } from "$lib/utils/workHub";
   import { partitionWorkHub } from "$lib/utils/workHub";
@@ -16,12 +17,17 @@
   const partition = $derived(partitionWorkHub(workspace.cards));
   const living = $derived(partition.living);
 
-  function handleProvenance(chip: ProvenanceChip, cardId: string) {
+  async function handleProvenance(chip: ProvenanceChip, cardId: string) {
     if (chip.kind === "vault" && chip.href) {
       onOpenNote(chip.href);
       return;
     }
     if (chip.kind === "chat") {
+      const detail = workspace.cardDetailsCache.get(cardId);
+      const sessionId = detail?.session_id?.trim();
+      if (sessionId && sessionId !== chat.sessionId) {
+        await chat.switchSession(sessionId);
+      }
       onOpenChat();
       return;
     }

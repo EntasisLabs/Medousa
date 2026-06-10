@@ -33,3 +33,17 @@ export function defaultJournalPathForToday(): string {
 export function isAskJobId(id: string): boolean {
   return id.startsWith("medousa-daemon-ask-");
 }
+
+/** Matches [`ask_job_session_id`] in the Rust ask job store. */
+export function askSessionId(jobId: string): string {
+  return `medousa-ask:${jobId.trim()}`;
+}
+
+export function isAskSessionId(sessionId: string): boolean {
+  return sessionId.startsWith("medousa-ask:");
+}
+
+export function askJobIdFromSession(sessionId: string): string | null {
+  if (!isAskSessionId(sessionId)) return null;
+  return sessionId.slice("medousa-ask:".length);
+}

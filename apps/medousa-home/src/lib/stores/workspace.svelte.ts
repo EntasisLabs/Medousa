@@ -1,4 +1,5 @@
 import {
+  archiveAskJob,
   cancelWorkspaceCard,
   enqueueDaemonAsk,
   getWorkspaceCard,
@@ -24,6 +25,13 @@ import type {
   WorkspaceEvent,
   WorkspaceStreamEvent,
 } from "$lib/types/workspace";
+
+const LIVING_DETAIL_COLUMNS = new Set([
+  "backlog",
+  "in_flight",
+  "wrapping_up",
+  "blocked",
+]);
 
 export class WorkspaceStore {
   revision = $state(0);
@@ -106,9 +114,18 @@ export class WorkspaceStore {
           jobId: card.id,
           title: card.title,
         };
+        chat.noteAskTurnSettled(card.id);
       } else {
         void notifyCardDone(card.title, card.status_label, card.id);
       }
+    }
+    if (
+      isAskJobId(card.id) &&
+      previous !== "blocked" &&
+      card.column === "blocked" &&
+      card.status_label !== "needs approval"
+    ) {
+      chat.noteAskTurnSettled(card.id);
     }
     if (
       isTauriMobilePlatform() &&
@@ -120,7 +137,8 @@ export class WorkspaceStore {
     }
     if (
       previous === "in_flight" &&
-      (card.column === "wrapping_up" || card.column === "done")
+      card.column === "done" &&
+      !isAskJobId(card.id)
     ) {
       chat.noteBackgroundSettled();
     }
@@ -146,7 +164,9 @@ export class WorkspaceStore {
       void this.refreshSelectedCard();
     }
 
-    void this.cacheCardDetail(card.id, previous);
+    if (this.shouldPrefetchDetail(card)) {
+      void this.cacheCardDetail(card.id, previous);
+    }
   }
 
   /** Tier 3 — scan cached turn_worker cards and deliver pending syntheses to chat. */
@@ -193,8 +213,14 @@ export class WorkspaceStore {
   }
 
   async prefetchCardDetails() {
-    const targets = hubCardsForPrefetch(this.cards).map((card) => card.id);
-    await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
+    const targets = hubCardsForPrefetch(this.cards)
+      .map((card) => card.id)
+      .filter((id) => !this.cardDetailsCache.has(id));
+    const concurrency = 3;
+    for (let i = 0; i < targets.length; i += concurrency) {
+      const batch = targets.slice(i, i + concurrency);
+      await Promise.all(batch.map((id) => this.cacheCardDetail(id)));
+    }
   }
 
   activityCardIds(): string[] {
@@ -204,6 +230,12 @@ export class WorkspaceStore {
   async prefetchActivityCardDetails() {
     const targets = this.activityCardIds();
     await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
+  }
+
+  private shouldPrefetchDetail(card: WorkCard): boolean {
+    return (
+      LIVING_DETAIL_COLUMNS.has(card.column) || card.id === this.selectedCardId
+    );
   }
 
   private async cacheCardDetail(id: string, previousColumn?: string) {
@@ -394,12 +426,70 @@ export class WorkspaceStore {
       }
     }
 
-    this.cardActionMessage = `Dismissed ${ok} of ${group.cards.length}${
+    this.cardActionMessage = `Hidden ${ok} of ${group.cards.length}${
       skipped ? ` · ${skipped} already terminal or not cancelable` : ""
     }${failed ? ` · ${failed} failed` : ""}`;
     if (this.selectedCardId) {
       await this.refreshSelectedCard();
     }
+  }
+
+  async archiveCard(
+    id: string,
+    purgeOutput = true,
+  ): Promise<{ ok: boolean; message: string }> {
+    const detail =
+      this.cardDetailsCache.get(id) ??
+      (await getWorkspaceCard(id).catch(() => null));
+    if (detail?.job_id && isAskJobId(detail.job_id)) {
+      const response = await archiveAskJob(detail.job_id, purgeOutput);
+      return { ok: response.archived, message: response.message };
+    }
+    const response = await cancelWorkspaceCard(id);
+    return { ok: response.ok, message: response.message };
+  }
+
+  async archiveSelectedCard() {
+    if (!this.selectedCardId) return;
+    this.cardActionMessage = null;
+    this.cardDetailError = null;
+    try {
+      const response = await this.archiveCard(this.selectedCardId, true);
+      this.cardActionMessage = response.message;
+      if (!response.ok) {
+        this.cardDetailError = response.message;
+      } else {
+        this.clearSelection();
+      }
+    } catch (err) {
+      this.cardDetailError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async archiveTrayCards(cards: WorkCard[], limit = 24) {
+    this.cardActionMessage = null;
+    this.cardDetailError = null;
+    let ok = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const card of cards.slice(0, limit)) {
+      if (!isAskJobId(card.id) && card.column !== "done") {
+        skipped += 1;
+        continue;
+      }
+      try {
+        const response = await this.archiveCard(card.id, true);
+        if (response.ok) ok += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    this.cardActionMessage = `Archived ${ok}${skipped ? ` · ${skipped} skipped` : ""}${
+      failed ? ` · ${failed} failed` : ""
+    }`;
   }
 }
 

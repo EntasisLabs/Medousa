@@ -222,6 +222,21 @@ pub async fn clear_turn(registry: &TurnTicketRegistry, turn_id: &str) {
     }
 }
 
+/// Drop the turn ticket after the orchestrator returns unless handoff is still active.
+pub async fn clear_turn_after_run(registry: &TurnTicketRegistry, turn_id: &str) {
+    let keep = get_turn(registry, turn_id)
+        .await
+        .is_some_and(|ticket| {
+            matches!(
+                ticket.phase,
+                TurnTicketPhase::WorkerHandoff | TurnTicketPhase::BudgetBlocked
+            )
+        });
+    if !keep {
+        clear_turn(registry, turn_id).await;
+    }
+}
+
 pub async fn get_turn(
     registry: &TurnTicketRegistry,
     turn_id: &str,
@@ -414,5 +429,50 @@ mod tests {
 
         let active = list_active_for_session(&registry, "session-a").await;
         assert_eq!(active.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn worker_ack_stream_event_is_non_terminal_handoff() {
+        let event = crate::interactive_turn_runtime::worker_ack_stream_event_with_tools(
+            "turn-1",
+            "On it.",
+            vec!["cognition_spawn_turn_worker".to_string()],
+            Some("work-1"),
+        )
+        .expect("event");
+        assert_eq!(event.event_type, "worker_ack");
+        assert_eq!(event.phase, "worker_ack");
+        assert!(!event.terminal);
+        assert_eq!(event.work_id.as_deref(), Some("work-1"));
+    }
+
+    #[tokio::test]
+    async fn clear_turn_after_run_keeps_worker_handoff_ticket() {
+        let registry = new_registry();
+        register_turn(
+            &registry,
+            TurnTicket {
+                turn_id: "turn-1".to_string(),
+                session_id: "session-a".to_string(),
+                mode: TurnTicketMode::Interactive,
+                phase: TurnTicketPhase::Streaming,
+                stream_url: "http://localhost/stream".to_string(),
+                prompt_preview: "hello".to_string(),
+                workspace_card_id: None,
+                started_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+        )
+        .await
+        .expect("register");
+
+        note_stream_event(&registry, "turn-1", "worker_ack", "worker_ack", false).await;
+        clear_turn_after_run(&registry, "turn-1").await;
+
+        let active = get_active_interactive_turn(&registry, "session-a").await;
+        assert!(active.active);
+        let turn = active.turn.expect("turn");
+        assert_eq!(turn.phase, "worker_handoff");
+        assert!(turn.composer_handoff);
     }
 }

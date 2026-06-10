@@ -21,6 +21,11 @@ pub fn ask_job_store() -> &'static AskJobStore {
     &STORE
 }
 
+/// Isolated session ledger for one ask job — concurrent asks do not share transcript.
+pub fn ask_job_session_id(job_id: &str) -> String {
+    format!("medousa-ask:{}", job_id.trim())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AskJobStatus {
@@ -326,6 +331,14 @@ impl AskJobStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ask_job_session_id_is_isolated_per_job() {
+        assert_eq!(
+            ask_job_session_id("medousa-daemon-ask-123"),
+            "medousa-ask:medousa-daemon-ask-123"
+        );
+    }
 
     #[test]
     fn reset_for_retry_only_failed_or_canceled() {

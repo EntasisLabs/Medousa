@@ -1,9 +1,7 @@
 <script lang="ts">
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
-  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
-  import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
-  import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
+  import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -13,12 +11,9 @@
     startInteractiveStream,
   } from "$lib/daemon";
 
-  import {
-    answerStateTextClass,
-    formatAnswerState,
-  } from "$lib/utils/formatAnswer";
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
+  import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { isTauri, showChatPopout } from "$lib/window";
 
   interface Props {
@@ -31,6 +26,8 @@
 
   let scrollEl: HTMLDivElement | undefined = $state();
 
+  const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
+  const askThreads = $derived(groupAskThreads(chat.messages));
   const sessionLabel = $derived(chat.currentSessionLabel());
   const recentSessions = $derived(
     chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
@@ -72,7 +69,7 @@
   });
 
   $effect(() => {
-    if (scrollEl && (chat.messages.length || chat.hasTurnActivity)) {
+    if (scrollEl && (chatMessages.length || askThreads.length || chat.hasTurnActivity)) {
       scrollEl.scrollTop = scrollEl.scrollHeight;
     }
   });
@@ -271,99 +268,52 @@
         ? 'mobile-chat-scroll space-y-3'
         : 'chat-scroll space-y-4'}"
     >
-    {#each chat.messages as message, index (message.id)}
-      {@const previous = index > 0 ? chat.messages[index - 1] : null}
-      {@const turnBreak = message.role === "user" && previous?.role === "assistant"}
-      <article
-        class="{turnBreak ? 'chat-turn-break' : ''} {mobile && message.role === 'user'
-          ? 'mobile-chat-bubble-user'
-          : mobile && message.role === 'assistant'
-            ? 'mobile-chat-bubble-assistant'
-            : ''} {message.role === 'user'
-          ? mobile
-            ? ''
-            : 'chat-user-bubble'
-          : message.role === 'system'
-            ? 'workshop-faint px-1'
-            : mobile
-              ? ''
-              : 'chat-voice'}"
-      >
-        {#if message.role === "assistant"}
-          {#if message.stageWhisper?.trim()}
-            <p class="duet-stage-whisper mb-2">{message.stageWhisper}</p>
-          {/if}
-
-          {#if message.reasoning?.trim()}
-            <AssistantThinking
-              reasoning={message.reasoning}
-              streaming={Boolean(message.streaming)}
-              compact={mobile}
-            />
-          {:else if message.streaming && !message.content?.trim() && !message.stageWhisper?.trim()}
-            <p class="mb-1 flex items-center gap-2 text-[11px] text-surface-500">
-              <span
-                class="inline-block h-1 w-1 animate-pulse rounded-full bg-primary-400/80"
-                aria-hidden="true"
-              ></span>
-              Thinking…
+      {#if askThreads.length > 0}
+        <section class="chat-ask-rail space-y-3">
+          <div class="chat-ask-rail-header">
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-surface-500">
+              Asks
             </p>
-          {/if}
-
-          {#if message.statusLine && message.streaming}
-            <p
-              class="mb-2 flex items-center gap-1.5 text-[11px] {message.phase === 'worker_ack' ||
-              message.phase === 'awaiting_operator'
-                ? 'text-warning-300/90'
-                : 'text-primary-200/80'}"
-            >
-              {#if message.streaming}
-                <span
-                  class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary-400"
-                  aria-hidden="true"
-                ></span>
-              {/if}
-              {message.statusLine}
+            <p class="mt-0.5 text-[11px] text-surface-500">
+              Scoped work — separate from this conversation
             </p>
-          {/if}
+          </div>
+          {#each askThreads as thread (thread.jobId)}
+            <article class="chat-ask-thread">
+              <header class="chat-ask-thread-header">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-surface-100">
+                    {thread.promptPreview}
+                  </p>
+                  <p class="mt-0.5 text-[10px] text-surface-500">
+                    {#if thread.active}
+                      In progress
+                    {:else}
+                      Settled
+                    {/if}
+                  </p>
+                </div>
+                {#if !thread.active}
+                  <button
+                    type="button"
+                    class="workshop-text-action shrink-0 text-[11px]"
+                    onclick={() => chat.promoteAskToChat(thread.jobId)}
+                  >
+                    Move to chat
+                  </button>
+                {/if}
+              </header>
+              <div class="chat-ask-thread-body space-y-3">
+                <ChatMessageList messages={thread.messages} {mobile} compact={true} />
+              </div>
+            </article>
+          {/each}
+        </section>
+      {/if}
 
-          {@const answer = formatAnswerState(message.answerState)}
-          {#if message.content?.trim() || message.streaming}
-            <div class="chat-voice">
-              <MarkdownContent content={message.content || "…"} />
-            </div>
-          {/if}
-
-          {#if answer && !message.streaming}
-            <p class="mt-2 text-[10px] {answerStateTextClass(answer.tone)}">
-              {answer.label}
-            </p>
-          {/if}
-
-          {#if message.toolRuns && message.toolRuns.length > 0}
-            <div class="mt-4">
-              <ToolRunChips
-                runs={message.toolRuns}
-                compact={mobile}
-                inspectorCollapsed={!message.streaming}
-              />
-            </div>
-          {:else if message.tools && message.tools.length > 0}
-            <p class="mt-3 font-mono text-[10px] text-surface-500">
-              {message.tools.map((tool) => formatToolName(tool)).join(" · ")}
-            </p>
-          {/if}
-        {:else if message.role === "user"}
-          <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-100">
-            {message.content}
-          </p>
-        {:else}
-          <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-300">
-            {message.content}
-          </p>
-        {/if}
-      </article>
-    {:else}
+      {#if chatMessages.length > 0}
+        <ChatMessageList messages={chatMessages} {mobile} />
+      {:else if askThreads.length === 0}
       <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
         {#if mobile}
           <p class="text-sm text-surface-300">Say one thing.</p>
@@ -404,7 +354,7 @@
           {/if}
         {/if}
       </div>
-    {/each}
+      {/if}
     </div>
     {#if !mobile}
       <div class="chat-scroll-fade" aria-hidden="true"></div>

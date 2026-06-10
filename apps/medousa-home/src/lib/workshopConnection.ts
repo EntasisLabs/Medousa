@@ -12,6 +12,7 @@ import {
   notifyTurnTicketTerminal,
   notifyWorkerHandoff,
 } from "$lib/notifications";
+import { isWorkerHandoffStreamEvent } from "$lib/utils/streamEvents";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { haptic } from "$lib/haptics";
 import {
@@ -69,7 +70,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
         return;
       }
 
-      if (event.event_type === "worker_ack") {
+      if (isWorkerHandoffStreamEvent(event)) {
         void notifyWorkerHandoff(event, turnBefore?.workspaceCardId);
         haptic("light");
         return;
@@ -91,6 +92,8 @@ async function startWorkshopStreams(): Promise<void> {
   await chat.refreshSessions();
   await chat.ensureSessionHydrated({ notice: true });
   await chat.tryReattachActiveTurn();
+  await chat.hydrateAskThreads(workspace.cards);
+  await chat.tryReattachAskTurns(workspace.cards);
   await workspace.syncTurnWorkerCardsToChat();
 }
 

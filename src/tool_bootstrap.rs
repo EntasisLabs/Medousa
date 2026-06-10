@@ -215,11 +215,12 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "vault",
-                summary: "Vault read/search for workshop context",
+                summary: "Vault read/search/write for workshop notes and journal articles",
                 tools: &[
                     "cognition_vault_list",
                     "cognition_vault_read",
                     "cognition_vault_search",
+                    "cognition_vault_write",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -527,6 +528,30 @@ pub fn handoff_implies_resolved_execution(
     capsule.is_some_and(|handoff| {
         !handoff.host_tool_digests.is_empty() || !handoff.relevant_slice_ids.is_empty()
     })
+}
+
+/// Workers that may write journal/vault notes should start with the vault domain unlocked.
+pub fn worker_should_unlock_vault(
+    task_prompt: &str,
+    intent: crate::agent_runtime::turn_worker::TurnWorkerIntent,
+) -> bool {
+    use crate::agent_runtime::turn_worker::TurnWorkerIntent;
+    if matches!(intent, TurnWorkerIntent::Research | TurnWorkerIntent::General) {
+        return true;
+    }
+    let prompt_lower = task_prompt.to_ascii_lowercase();
+    contains_any(
+        &prompt_lower,
+        &[
+            "vault",
+            "journal",
+            "article",
+            "write",
+            "note",
+            "learning",
+            "runtime-learning",
+        ],
+    )
 }
 
 fn session_surface_path(session_id: &str) -> PathBuf {

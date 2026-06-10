@@ -292,7 +292,8 @@ impl MedousaToolLoopPipeline {
                         break;
                     }
 
-                    if let Some(text) = maybe_text {
+                    if !invocations.is_empty() || maybe_text.is_some() {
+                        let text = maybe_text.unwrap_or_default();
                         let workshop_lane = completion_gate
                             .as_ref()
                             .map(|gate| gate.skip_avec_ritual_check)
@@ -381,11 +382,11 @@ impl MedousaToolLoopPipeline {
                                 continue;
                             }
                         }
+                    } else {
+                        return Err(StasisError::PortFailure(
+                            "chat response was empty after tool loop".to_string(),
+                        ));
                     }
-
-                    return Err(StasisError::PortFailure(
-                        "chat response was empty after tool loop".to_string(),
-                    ));
                 }
 
                 if pending_final_answer

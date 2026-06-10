@@ -138,6 +138,7 @@ pub fn worker_ack_stream_event_with_tools(
     work_id: Option<&str>,
 ) -> Result<InteractiveTurnStreamEvent> {
     let mut event = final_stream_event_with_tools_terminal(turn_id, ack_text, tool_names, false)?;
+    event.event_type = "worker_ack".to_string();
     event.phase = "worker_ack".to_string();
     event.message = "background worker started".to_string();
     event.work_id = work_id

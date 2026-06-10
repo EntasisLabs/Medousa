@@ -36,6 +36,10 @@ export interface ChatMessage {
   turnId?: string | null;
   /** Stage-direction whisper (e.g. worker handoff ack) above the main voice. */
   stageWhisper?: string | null;
+  /** `ask` = background /ask lane; `chat` = principal conversation (default). */
+  lane?: "chat" | "ask" | null;
+  /** Workspace card / job id for ask-lane messages. */
+  askJobId?: string | null;
 }
 
 export interface TurnTicketState {

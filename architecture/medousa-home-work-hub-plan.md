@@ -172,8 +172,8 @@ Built from existing `WorkCard`, `WorkCardDetail`, `WorkspaceEvent[]`, `cardDetai
 | Milestone | Scope | Exit |
 |-----------|-------|------|
 | **W1** | Hub UI: grid, trays, pop-out, composer polish; kanban retired from WorkPanel | Work opens to grid + trays; card pop-out animates |
-| **W2** | Archive/dismiss persistence; tray actions honest | Dismiss removes from hub permanently (retrievable in tray/history) |
-| **W3** | `WorkManifestation` store; provenance chips navigate for real | Tap vault → Library; tap chat → session |
+| **W2** | Archive/dismiss persistence; tray actions honest | Archive ask jobs from settled tray; hide stuck uses cancel |
+| **W3** | `WorkManifestation` projection; timeline spine in pop-out; provenance navigates | Pop-out leads with timeline + links; mobile hub grid |
 | **W4** | Mobile Work hub parity; kill kanban components | Single work surface mobile + desktop |
 | **W5** | Activity rail + status bar link into hub trays | "74 need attention" → Stuck tray |
 
@@ -210,4 +210,5 @@ Built from existing `WorkCard`, `WorkCardDetail`, `WorkspaceEvent[]`, `cardDetai
 
 | Date | Note |
 |------|------|
-| 2026-06-07 | Initial plan — graph-as-navigation, grid + trays + pop-out; W1 started |
+| 2026-06-07 | W1 shipped — grid, trays, pop-out, composer |
+| 2026-06-07 | W3 shipped — ManifestTimeline, workManifestation projection, mobile hub grid |

@@ -2,7 +2,7 @@
 //!
 //! Phase 1: no-tool-debt policy + transcript helpers.
 //! Phase 2: post-tool-debt policy via receipt checklist.
-//! Phase 5: no interim-heuristic continues — tool call = loop; prose-only = EndTurn.
+//! Phase 5: after tools, continue until `cognition_turn_finish`, substantive answer, or ritual complete — not on every prose-only round.
 //! Phase 3: centralized continue control messages + ledger reason mapping.
 
 use genai::chat::ChatMessage;
@@ -10,6 +10,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::agent_runtime::turn_completion::missing_ritual_tools_for_avec;
 use crate::agent_runtime::turn_worker_tools::is_spawn_turn_worker_tool_name;
+use crate::turn_control_tools::{is_begin_work_tool_name, is_finish_turn_tool_name};
 use crate::turn_text_heuristics::{
     draft_implies_pending_spawn, looks_like_clarifying_question, looks_like_substantive_final_answer,
     user_prompt_implies_host_delegation,
@@ -99,6 +100,34 @@ fn spawn_turn_worker_invoked(invocations: &[ToolInvocation]) -> bool {
     invocations
         .iter()
         .any(|inv| is_spawn_turn_worker_tool_name(&inv.tool_name))
+}
+
+fn finish_turn_invoked(invocations: &[ToolInvocation]) -> bool {
+    invocations
+        .iter()
+        .any(|inv| is_finish_turn_tool_name(&inv.tool_name))
+}
+
+fn begin_work_invoked(invocations: &[ToolInvocation]) -> bool {
+    invocations
+        .iter()
+        .any(|inv| is_begin_work_tool_name(&inv.tool_name))
+}
+
+/// Host AVEC ritual tools ran and receipt checklist is closed — prose can end without `finish_turn`.
+fn host_avec_ritual_receipts_satisfied(ctx: &AfterToolsRoundContext<'_>) -> bool {
+    if ctx.workshop_lane || begin_work_invoked(ctx.invocations) {
+        return false;
+    }
+    if !missing_ritual_tools_for_avec(ctx.user_prompt, ctx.invocations).is_empty() {
+        return false;
+    }
+    ctx.invocations.iter().any(|inv| {
+        matches!(
+            inv.tool_name.as_str(),
+            "cognition_memory_moods" | "cognition_memory_calibrate"
+        )
+    })
 }
 
 pub fn should_continue_for_pending_delegation(ctx: &AfterToolsRoundContext<'_>) -> bool {
@@ -191,6 +220,26 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         return TurnRoundAction::EndTurn {
             termination_reason: "clarifying_question",
         };
+    }
+
+    if begin_work_invoked(ctx.invocations) && !finish_turn_invoked(ctx.invocations) {
+        return continue_loop(ContinueReason::AwaitingTools, vec![]);
+    }
+
+    if spawn_turn_worker_invoked(ctx.invocations) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "tool_debt_complete",
+        };
+    }
+
+    if host_avec_ritual_receipts_satisfied(ctx) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "tool_debt_complete",
+        };
+    }
+
+    if !finish_turn_invoked(ctx.invocations) && !ctx.pending_final_answer {
+        return continue_loop(ContinueReason::AwaitingTools, vec![]);
     }
 
     TurnRoundAction::EndTurn {
@@ -461,6 +510,43 @@ mod tests {
             action,
             TurnRoundAction::ContinueLoop {
                 reason: ContinueReason::PendingDelegation,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn begin_work_without_finish_continues_host_loop() {
+        let invocations = vec![
+            tool("cognition_memory_context"),
+            tool("cognition_turn_begin_work"),
+        ];
+        let action = decide_after_tools_text_round(&after_tools(
+            "pull memory and write a journal article",
+            "Pulling context — next I'll draft the vault note.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::AwaitingTools,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn discovery_without_finish_continues_host_loop() {
+        let invocations = vec![tool("cognition_tool_history_summary")];
+        let action = decide_after_tools_text_round(&after_tools(
+            "finish writing the article",
+            "",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::AwaitingTools,
                 ..
             }
         ));

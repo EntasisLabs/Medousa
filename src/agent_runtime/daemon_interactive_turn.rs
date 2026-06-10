@@ -148,24 +148,17 @@ impl InteractiveTurnStreamSink {
         true
     }
 
-    fn publish_tracked(&self, event: anyhow::Result<InteractiveTurnStreamEvent>) {
+    async fn publish_tracked(&self, event: anyhow::Result<InteractiveTurnStreamEvent>) {
         if let Ok(payload) = event {
             if let Some(registry) = &self.session_hooks.turn_ticket_registry {
-                let registry = registry.clone();
-                let turn_id = self.turn_id.clone();
-                let event_type = payload.event_type.clone();
-                let phase = payload.phase.clone();
-                let terminal = payload.terminal;
-                tokio::spawn(async move {
-                    session_active_turn::note_stream_event(
-                        &registry,
-                        &turn_id,
-                        &event_type,
-                        &phase,
-                        terminal,
-                    )
-                    .await;
-                });
+                session_active_turn::note_stream_event(
+                    registry,
+                    &self.turn_id,
+                    &payload.event_type,
+                    &payload.phase,
+                    payload.terminal,
+                )
+                .await;
             }
             let _ = self.stream_tx.send(payload);
         }
@@ -212,7 +205,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         self.publish_tracked(interactive_turn_runtime::content_delta_stream_event(
             &self.turn_id,
             &delta,
-        ));
+        ))
+        .await;
     }
 
     async fn reasoning_chunk(&self, _turn_id: u64, delta: String) {
@@ -225,7 +219,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         self.publish_tracked(interactive_turn_runtime::reasoning_delta_stream_event(
             &self.turn_id,
             &delta,
-        ));
+        ))
+        .await;
     }
 
     async fn agent_worker_ack(
@@ -257,7 +252,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 tool_names,
                 work_id.as_deref(),
             ),
-        );
+        )
+        .await;
         self.sync_ask_job_interim(text).await;
     }
 
@@ -301,7 +297,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         } else {
             interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names)
         };
-        self.publish_tracked(final_event);
+        self.publish_tracked(final_event).await;
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -356,7 +352,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 tool_names,
             )
         };
-        self.publish_tracked(needs_input_event);
+        self.publish_tracked(needs_input_event).await;
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -376,7 +372,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &self.turn_id,
             &message,
             tool_names,
-        ));
+        ))
+        .await;
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
@@ -410,7 +407,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         self.publish_tracked(interactive_turn_runtime::error_stream_event(
             &self.turn_id,
             &message,
-        ));
+        ))
+        .await;
         self.sync_ask_job_failed(message.clone()).await;
 
         if let Some(delivery) = &self.delivery {
@@ -429,7 +427,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &self.turn_id,
             "orchestration",
             &message,
-        ));
+        ))
+        .await;
     }
 
     async fn scratch_reset(&self, _turn_id: u64) {
@@ -437,7 +436,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         if let Ok(mut parts) = self.parts.lock() {
             parts.scratch_reset();
         }
-        self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id));
+        self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id))
+            .await;
     }
 
     async fn reset_streamed_markdown(&self) {
@@ -466,7 +466,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             requested_rounds,
             &reason,
             progress_summary.as_deref(),
-        ));
+        ))
+        .await;
     }
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
@@ -474,7 +475,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &self.turn_id,
             "tool",
             &format!("tool={tool_name} {input_summary}"),
-        ));
+        ))
+        .await;
     }
 
     async fn tool_run_started(
@@ -496,7 +498,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &tool_name,
             &input_summary,
             tool_round,
-        ));
+        ))
+        .await;
     }
 
     async fn tool_run_finished(
@@ -550,7 +553,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             output_summary.as_deref(),
             tool_round,
             artifact_refs,
-        ));
+        ))
+        .await;
         let _ = (tool_input, tool_output, input_receipt, output_receipt);
     }
 
@@ -566,7 +570,8 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             &self.turn_id,
             "tool",
             &format!("tool_payload={tool_name}"),
-        ));
+        ))
+        .await;
     }
 }
 

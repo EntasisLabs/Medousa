@@ -20,16 +20,26 @@ pub struct WorkspaceService;
 
 impl WorkspaceService {
     pub async fn sync_runtime(runtime: &RuntimeComposition, include_terminal: bool) {
-        let Ok(items) = project_workspace_items(runtime, include_terminal).await else {
-            return;
-        };
+        let _ = Self::sync_and_project(runtime, include_terminal).await;
+    }
+
+    async fn sync_and_project(
+        runtime: &RuntimeComposition,
+        include_terminal: bool,
+    ) -> anyhow::Result<Vec<ProjectedWorkItem>> {
+        let items = project_workspace_items(runtime, include_terminal).await?;
+        Self::apply_projection_to_store(&items);
+        Ok(items)
+    }
+
+    fn apply_projection_to_store(items: &[ProjectedWorkItem]) {
         let store = workspace_store();
         let active_ids = items
             .iter()
             .map(|item| item.card.id.0.clone())
             .collect::<std::collections::HashSet<_>>();
 
-        for item in &items {
+        for item in items {
             let previous = store.previous_column(&item.card.id.0);
             if previous != Some(item.card.column) {
                 if let Some(event) =
@@ -59,10 +69,8 @@ impl WorkspaceService {
         query: &WorkspaceCardsQuery,
     ) -> anyhow::Result<WorkspaceCardsResponse> {
         let include_terminal = query.include_terminal.unwrap_or(false);
-        Self::sync_runtime(runtime.as_ref(), include_terminal).await;
-
         let limit = query.limit.unwrap_or(50).clamp(1, 200);
-        let mut items = project_workspace_items(runtime.as_ref(), include_terminal).await?;
+        let mut items = Self::sync_and_project(runtime.as_ref(), include_terminal).await?;
         items = apply_card_filters(items, query);
         items.truncate(limit);
 
@@ -76,8 +84,7 @@ impl WorkspaceService {
         runtime: Arc<RuntimeComposition>,
         card_id: &str,
     ) -> anyhow::Result<Option<WorkCardDetail>> {
-        Self::sync_runtime(runtime.as_ref(), true).await;
-        let items = project_workspace_items(runtime.as_ref(), true).await?;
+        let items = Self::sync_and_project(runtime.as_ref(), true).await?;
         Ok(items
             .into_iter()
             .find(|item| item.card.id.0 == card_id)
@@ -116,10 +123,8 @@ impl WorkspaceService {
         query: &WorkspaceSnapshotQuery,
     ) -> anyhow::Result<WorkspaceSnapshot> {
         let feed_tail_limit = query.feed_tail_limit.unwrap_or(20).clamp(1, 100);
-        Self::sync_runtime(runtime.as_ref(), true).await;
-
-        let items = project_workspace_items(runtime.as_ref(), true).await?;
-        let cards = items.into_iter().map(|item| item.card).collect::<Vec<_>>();
+        let items = Self::sync_and_project(runtime.as_ref(), true).await?;
+        let cards = items.iter().map(|item| item.card.clone()).collect::<Vec<_>>();
         let revision = workspace_store().revision();
 
         if query.since_revision.is_some_and(|since| since >= revision) {

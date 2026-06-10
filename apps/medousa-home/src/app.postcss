@@ -231,6 +231,38 @@
     @apply ml-auto max-w-[min(100%,30rem)] rounded-2xl rounded-br-md border border-surface-600/20 bg-surface-800/50 px-4 py-2.5 text-sm leading-relaxed text-surface-100;
   }
 
+  .chat-user-bubble-compact {
+    @apply max-w-[min(100%,26rem)] px-3 py-2 text-[13px];
+  }
+
+  .chat-voice-compact {
+    @apply max-w-[min(100%,36rem)] text-sm leading-relaxed;
+  }
+
+  .chat-ask-rail {
+    @apply mb-8 border-b pb-8;
+    border-color: rgb(var(--color-surface-700) / 0.4);
+  }
+
+  .chat-ask-rail-header {
+    @apply mb-4;
+  }
+
+  .chat-ask-thread {
+    @apply rounded-2xl border p-4;
+    border-color: rgb(var(--color-surface-700) / 0.35);
+    background-color: rgb(var(--color-surface-950) / 0.4);
+  }
+
+  .chat-ask-thread-header {
+    @apply mb-4 flex items-start justify-between gap-3 border-b pb-3;
+    border-color: rgb(var(--color-surface-800) / 0.8);
+  }
+
+  .chat-ask-thread-body {
+    @apply pt-1;
+  }
+
   .chat-composer {
     @apply relative z-10 shrink-0 px-8 pb-6 pt-2;
   }
@@ -271,7 +303,8 @@
   }
 
   .work-hub-stage-header {
-    @apply flex shrink-0 items-end justify-between gap-3 border-b border-surface-700/30 px-6 py-3;
+    @apply flex shrink-0 items-end justify-between gap-3 border-b px-6 py-3;
+    border-color: rgb(var(--color-surface-700) / 0.3);
   }
 
   .work-hub-grid-wrap {
@@ -288,11 +321,21 @@
   }
 
   .work-hub-card {
-    @apply flex min-h-[7.5rem] cursor-pointer flex-col rounded-xl border border-surface-600/25 bg-surface-800/35 p-3.5 transition hover:border-surface-500/40 hover:bg-surface-800/55;
+    @apply flex min-h-[7.5rem] cursor-pointer flex-col rounded-xl border p-3.5 transition;
+    border-color: rgb(var(--color-surface-600) / 0.25);
+    background-color: rgb(var(--color-surface-800) / 0.35);
+  }
+
+  .work-hub-card:hover {
+    border-color: rgb(var(--color-surface-500) / 0.4);
+    background-color: rgb(var(--color-surface-800) / 0.55);
   }
 
   .work-hub-card-selected {
-    @apply border-primary-500/35 bg-surface-800/70 ring-1 ring-inset ring-primary-500/25;
+    @apply ring-1 ring-inset;
+    border-color: rgb(var(--color-primary-500) / 0.35);
+    background-color: rgb(var(--color-surface-800) / 0.7);
+    --tw-ring-color: rgb(var(--color-primary-500) / 0.25);
   }
 
   .work-hub-card-compact {
@@ -312,27 +355,37 @@
   }
 
   .work-hub-chip-primary {
-    @apply bg-primary-500/15 text-primary-200;
+    background-color: rgb(var(--color-primary-500) / 0.15);
+    @apply text-primary-200;
   }
 
   .work-hub-chip-warning {
-    @apply bg-warning-500/15 text-warning-200;
+    background-color: rgb(var(--color-warning-500) / 0.15);
+    @apply text-warning-200;
   }
 
   .work-hub-chip-danger {
-    @apply bg-error-500/10 text-error-300;
+    background-color: rgb(var(--color-error-500) / 0.1);
+    @apply text-error-300;
   }
 
   .work-hub-chip-success {
-    @apply bg-success-500/10 text-success-300;
+    background-color: rgb(var(--color-success-500) / 0.1);
+    @apply text-success-300;
   }
 
   .work-hub-provenance {
-    @apply truncate rounded-md bg-surface-900/50 px-2 py-0.5 text-[10px] text-surface-400 transition hover:bg-surface-900/80 hover:text-surface-200;
+    @apply truncate rounded-md px-2 py-0.5 text-[10px] text-surface-400 transition hover:text-surface-200;
+    background-color: rgb(var(--color-surface-900) / 0.5);
+  }
+
+  .work-hub-provenance:hover {
+    background-color: rgb(var(--color-surface-900) / 0.8);
   }
 
   .work-hub-trays {
-    @apply shrink-0 border-t border-surface-700/25 px-6 py-2;
+    @apply shrink-0 border-t px-6 py-2;
+    border-color: rgb(var(--color-surface-700) / 0.25);
   }
 
   .work-hub-tray-tabs {
@@ -340,15 +393,22 @@
   }
 
   .work-hub-tray-tab {
-    @apply rounded-md px-2.5 py-1 text-[11px] text-surface-400 transition hover:bg-surface-800/60 hover:text-surface-200;
+    @apply rounded-md px-2.5 py-1 text-[11px] text-surface-400 transition hover:text-surface-200;
+  }
+
+  .work-hub-tray-tab:hover {
+    background-color: rgb(var(--color-surface-800) / 0.6);
   }
 
   .work-hub-tray-tab-open {
-    @apply bg-surface-800/70 text-surface-100;
+    @apply text-surface-100;
+    background-color: rgb(var(--color-surface-800) / 0.7);
   }
 
   .work-hub-tray-panel {
-    @apply mt-2 rounded-lg border border-surface-700/30 bg-surface-900/40 p-2;
+    @apply mt-2 rounded-lg border p-2;
+    border-color: rgb(var(--color-surface-700) / 0.3);
+    background-color: rgb(var(--color-surface-900) / 0.4);
   }
 
   .work-hub-tray-grid {
@@ -360,19 +420,67 @@
   }
 
   .work-hub-composer {
-    @apply border-t border-surface-700/20;
+    @apply border-t;
+    border-color: rgb(var(--color-surface-700) / 0.2);
   }
 
   .work-manifest-backdrop {
-    @apply absolute inset-0 z-40 bg-surface-950/55 backdrop-blur-[2px];
+    @apply absolute inset-0 z-40 backdrop-blur-[2px];
+    background-color: rgb(var(--color-surface-950) / 0.55);
   }
 
   .work-manifest-popover {
-    @apply absolute inset-x-4 top-[8%] bottom-[8%] z-50 mx-auto flex max-w-3xl flex-col overflow-hidden rounded-2xl border border-surface-600/40 bg-surface-900 shadow-2xl shadow-black/40;
+    @apply absolute inset-x-4 top-[8%] bottom-[8%] z-50 mx-auto flex max-w-3xl flex-col overflow-hidden rounded-2xl border bg-surface-900 shadow-2xl;
+    border-color: rgb(var(--color-surface-600) / 0.4);
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.4);
   }
 
   .work-manifest-close {
     @apply absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .manifest-result {
+    @apply text-[15px] leading-relaxed text-surface-100;
+  }
+
+  .manifest-result .markdown-content {
+    @apply text-[15px] leading-relaxed;
+  }
+
+  .manifest-timeline-list {
+    @apply relative m-0 list-none p-0;
+  }
+
+  .manifest-timeline-item {
+    @apply relative flex gap-3 pl-1;
+  }
+
+  .manifest-timeline-item::before {
+    content: "";
+    @apply absolute bottom-0 left-[5px] top-3 w-px;
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--color-primary-500) / 0.35),
+      rgb(var(--color-surface-700) / 0.4)
+    );
+  }
+
+  .manifest-timeline-item-last::before {
+    display: none;
+  }
+
+  .manifest-timeline-dot {
+    @apply relative z-[1] mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full;
+    background-color: rgb(var(--color-primary-500) / 0.55);
+    box-shadow: 0 0 0 3px rgb(var(--color-surface-900) / 0.9);
+  }
+
+  .manifest-details summary {
+    list-style: none;
+  }
+
+  .manifest-details summary::-webkit-details-marker {
+    display: none;
   }
 
   /* Markdown body in chat and vault */

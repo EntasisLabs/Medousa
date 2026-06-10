@@ -2,47 +2,42 @@
   import { Plus } from "@lucide/svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
-  import MobileWorkCard from "$lib/components/mobile/MobileWorkCard.svelte";
+  import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
+  import WorkHubTrays from "$lib/components/work/WorkHubTrays.svelte";
   import { haptic } from "$lib/haptics";
+  import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { retryWorkspaceCard } from "$lib/daemon";
-  import { formatCardTitle } from "$lib/utils/formatWork";
-  import { columnAccentBorder } from "$lib/utils/kanban";
+  import type { ProvenanceChip } from "$lib/utils/workHub";
+  import { partitionWorkHub } from "$lib/utils/workHub";
 
   interface Props {
     visible: boolean;
     onSelectCard: (id: string) => void | Promise<void>;
+    onOpenNote?: (path: string) => void;
+    onOpenChat?: () => void;
   }
 
-  let { visible, onSelectCard }: Props = $props();
+  let {
+    visible,
+    onSelectCard,
+    onOpenNote = () => {},
+    onOpenChat = () => {},
+  }: Props = $props();
 
-  const needsYou = $derived(
-    workspace.cards.filter((card) => card.column === "blocked"),
-  );
-  const inMotion = $derived(
-    workspace.cards.filter((card) =>
-      ["backlog", "in_flight", "wrapping_up"].includes(card.column),
-    ),
-  );
-  const doneToday = $derived(
-    workspace.cards.filter((card) => card.column === "done"),
-  );
+  const partition = $derived(partitionWorkHub(workspace.cards));
+  const living = $derived(partition.living);
   const statusLine = $derived.by(() => {
-    if (needsYou.length > 0) {
-      return needsYou.length === 1
-        ? "1 needs you · pull to refresh"
-        : `${needsYou.length} need you · pull to refresh`;
+    if (living.length > 0) {
+      return living.length === 1 ? "1 in motion · pull to refresh" : `${living.length} in motion · pull to refresh`;
     }
-    if (inMotion.length > 0) {
-      return inMotion.length === 1
-        ? "1 running · pull to refresh"
-        : `${inMotion.length} running · pull to refresh`;
+    if (partition.stuck.length > 0) {
+      return `${partition.stuck.length} stuck · pull to refresh`;
     }
     return "All clear · pull to refresh";
   });
 
-  let doneOpen = $state(false);
   let scrollEl: HTMLDivElement | undefined = $state();
   let pullY = $state(0);
   let refreshing = $state(false);
@@ -118,6 +113,23 @@
       toastTimer = setTimeout(dismissToast, 4000);
     }
   }
+
+  async function handleProvenance(chip: ProvenanceChip, cardId: string) {
+    if (chip.kind === "vault" && chip.href) {
+      onOpenNote(chip.href);
+      return;
+    }
+    if (chip.kind === "chat") {
+      const detail = workspace.cardDetailsCache.get(cardId);
+      const sessionId = detail?.session_id?.trim();
+      if (sessionId && sessionId !== chat.sessionId) {
+        await chat.switchSession(sessionId);
+      }
+      onOpenChat();
+      return;
+    }
+    void onSelectCard(cardId);
+  }
 </script>
 
 <div class="relative flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
@@ -127,9 +139,9 @@
 
   <div
     bind:this={scrollEl}
-    class="mobile-pull-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3"
+    class="mobile-pull-scroll min-h-0 flex-1 overflow-y-auto"
     role="region"
-    aria-label="Work timeline"
+    aria-label="Work hub"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}
@@ -145,81 +157,28 @@
       </div>
     {/if}
 
-    {#if needsYou.length > 0}
-      <section class="mb-5">
-        <h2 class="workshop-section-title text-warning-300">Needs you</h2>
-        <ul class="mt-2 space-y-2">
-          {#each needsYou as card (card.id)}
-            <li>
-              <button
-                type="button"
-                class="workshop-kanban-card w-full {columnAccentBorder(card.column)}"
-                onclick={() => onSelectCard(card.id)}
-              >
-                <p class="text-sm font-medium text-surface-100">
-                  {formatCardTitle(card)}
-                </p>
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
-    <section class="mb-5">
-      <h2 class="workshop-section-title">Running now</h2>
-      {#if inMotion.length === 0}
-        <p class="workshop-faint mt-3">Nothing running.</p>
+    <div class="px-4 py-3">
+      {#if living.length === 0}
+        <EmptyState
+          title="Nothing in motion"
+          description="Tap + to ask Medousa something new."
+        />
       {:else}
-        <ul class="mt-2 space-y-2">
-          {#each inMotion as card (card.id)}
-            <li>
-              <MobileWorkCard
-                {card}
-                swipeCancel={workspace.isCancellable(card)}
-                onSelect={() => onSelectCard(card.id)}
-                onCanceled={showCancelToast}
-              />
-            </li>
+        <div class="work-hub-grid pb-2">
+          {#each living as card (card.id)}
+            <WorkManifestCard
+              {card}
+              detail={workspace.cardDetailsCache.get(card.id)}
+              selected={workspace.selectedCardId === card.id}
+              onSelect={(id) => void onSelectCard(id)}
+              onProvenance={handleProvenance}
+            />
           {/each}
-        </ul>
+        </div>
       {/if}
-    </section>
 
-    {#if doneToday.length > 0}
-      <section>
-        <button
-          type="button"
-          class="flex w-full items-center justify-between text-left"
-          onclick={() => (doneOpen = !doneOpen)}
-        >
-          <h2 class="workshop-section-title">Done today</h2>
-          <span class="workshop-faint">{doneOpen ? "▾" : "▸"} {doneToday.length}</span>
-        </button>
-        {#if doneOpen}
-          <ul class="mt-2 space-y-2">
-            {#each doneToday as card (card.id)}
-              <li>
-                <button
-                  type="button"
-                  class="workshop-kanban-card w-full opacity-80 {columnAccentBorder(card.column)}"
-                  onclick={() => onSelectCard(card.id)}
-                >
-                  <p class="text-sm text-surface-200">{formatCardTitle(card)}</p>
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
-    {/if}
-
-    {#if needsYou.length === 0 && inMotion.length === 0 && doneToday.length === 0}
-      <EmptyState
-        title="All clear"
-        description="Tap + to ask Medousa something new."
-      />
-    {/if}
+      <WorkHubTrays onSelectCard={onSelectCard} />
+    </div>
   </div>
 
   <button

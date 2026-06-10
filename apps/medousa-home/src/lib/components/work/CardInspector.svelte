@@ -18,6 +18,10 @@
   import { columnLabel } from "$lib/types/workspace";
   import { formatCardTitle, formatStatusLabel } from "$lib/utils/formatWork";
   import { formatManifestStatusChip } from "$lib/utils/workHub";
+  import { buildWorkManifestation } from "$lib/utils/workManifestation";
+  import ManifestProvenanceBar from "$lib/components/work/ManifestProvenanceBar.svelte";
+  import ManifestTimeline from "$lib/components/work/ManifestTimeline.svelte";
+  import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import { findBlockedGroupForCard } from "$lib/utils/groupWork";
   import {
     filterCardTimeline,
@@ -56,6 +60,7 @@
   let artifactsLoading = $state(false);
   let actionBusy = $state(false);
   let shareMessage = $state<string | null>(null);
+  let toolsSectionEl: HTMLDivElement | undefined = $state();
 
   async function shareResult() {
     if (!detail?.job_id || !jobResult?.output_text) return;
@@ -101,6 +106,9 @@
   );
   const timeline = $derived(
     detail ? filterCardTimeline(workspace.feed, detail.card.id) : [],
+  );
+  const manifestation = $derived(
+    detail ? buildWorkManifestation(detail.card, detail, workspace.feed) : null,
   );
 
   $effect(() => {
@@ -258,6 +266,18 @@
     }
   }
 
+  async function openLinkedChat() {
+    const sessionId = detail?.session_id?.trim();
+    if (sessionId && sessionId !== chat.sessionId) {
+      await chat.switchSession(sessionId);
+    }
+    onOpenChat();
+  }
+
+  function scrollToTools() {
+    toolsSectionEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function formatTimestamp(value: string): string {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -326,7 +346,7 @@
           class="btn btn-sm variant-ghost-surface"
           onclick={() => workspace.dismissBlockedGroup(blockedGroup)}
         >
-          Dismiss all
+          Hide all
         </button>
       {/if}
       <button
@@ -365,7 +385,16 @@
           disabled={actionBusy}
           onclick={() => void archiveAsk()}
         >
-          Clear
+          Archive
+        </button>
+      {/if}
+      {#if detail?.session_id?.trim()}
+        <button
+          type="button"
+          class="btn btn-sm variant-soft-primary"
+          onclick={() => void openLinkedChat()}
+        >
+          Open chat
         </button>
       {/if}
       <button
@@ -394,6 +423,81 @@
   {#if !detail}
     <div class="workshop-muted flex flex-1 items-center justify-center">
       Select a card from the board or work rail.
+    </div>
+  {:else if popover && manifestation}
+    <div class="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
+      <ManifestProvenanceBar
+        chips={manifestation.provenance}
+        onVault={onOpenNote}
+        onChat={() => void openLinkedChat()}
+        onTools={scrollToTools}
+      />
+
+      {#if manifestation.resultPreview && !jobResult?.output_text}
+        <div class="manifest-result mt-4">
+          <MarkdownContent content={manifestation.resultPreview} />
+        </div>
+      {/if}
+
+      {#if detail.wrapping_up_reasons.length > 0}
+        <div
+          class="mt-4 rounded-lg border p-3 {wrappingUp
+            ? 'border-warning-500/30 bg-warning-500/10 animate-pulse'
+            : 'border-surface-600/30 bg-surface-800/30'}"
+        >
+          <p class="text-[11px] font-medium text-warning-200">Finishing up</p>
+          <ul class="mt-2 space-y-1 text-sm text-surface-200">
+            {#each detail.wrapping_up_reasons as reason (reason)}
+              <li>{reason}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      {#if detail.error}
+        <div class="mt-4 rounded-lg border border-error-500/30 bg-error-500/10 p-3">
+          <p class="text-[11px] font-medium text-error-300">Something went wrong</p>
+          <p class="mt-2 text-sm leading-relaxed text-error-100">{detail.error}</p>
+        </div>
+      {/if}
+
+      {#if detail.job_id && (jobResultLoading || jobResult?.output_text || jobResultError)}
+        <div class="manifest-result mt-4">
+          {#if jobResultLoading}
+            <p class="text-sm text-surface-500">Loading result…</p>
+          {:else if jobResultError}
+            <p class="text-sm text-warning-400">{jobResultError}</p>
+          {:else if jobResult?.output_text || jobResult?.interim_text}
+            <MarkdownContent
+              content={jobResult.output_text ?? jobResult.interim_text ?? ""}
+            />
+          {/if}
+        </div>
+      {/if}
+
+      <div bind:this={toolsSectionEl} class="mt-6">
+        <ManifestTimeline
+          events={manifestation.timeline}
+          toolNames={detail.tool_names}
+          {onOpenNote}
+        />
+      </div>
+
+      <details class="manifest-details mt-6">
+        <summary class="cursor-pointer text-[11px] text-surface-500">Details</summary>
+        <div class="mt-3 grid gap-2 text-[11px] text-surface-400">
+          <p>Status · {formatStatusLabel(detail.card.status_label)}</p>
+          {#if detail.session_id}
+            <p class="break-all">Session · {detail.session_id}</p>
+          {/if}
+          {#if detail.job_id}
+            <p class="break-all">Job · {detail.job_id}</p>
+          {/if}
+          {#if detail.work_id}
+            <p class="break-all">Worker · {detail.work_id}</p>
+          {/if}
+        </div>
+      </details>
     </div>
   {:else}
     <div class="min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-5 py-4 text-sm">

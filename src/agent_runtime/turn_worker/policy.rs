@@ -126,6 +126,7 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_vault_list",
                     "cognition_vault_read",
                     "cognition_vault_search",
+                    "cognition_vault_write",
                     "cognition_grapheme_script_save",
                     "cognition_grapheme_script_list",
                     "cognition_grapheme_script_search",
@@ -158,6 +159,10 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_grapheme_script_list",
                     "cognition_grapheme_script_search",
                     "cognition_grapheme_script_load",
+                    "cognition_vault_list",
+                    "cognition_vault_read",
+                    "cognition_vault_search",
+                    "cognition_vault_write",
                 ],
             );
         }
@@ -336,6 +341,7 @@ mod tests {
         assert!(names.contains("cognition_openshell_sandbox_run"));
         assert!(names.contains("cognition_skill_discover"));
         assert!(names.contains("cognition_skill_probe"));
+        assert!(names.contains("cognition_vault_write"));
     }
 
     #[test]

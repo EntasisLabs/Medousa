@@ -1204,7 +1204,7 @@ async fn enqueue_ask(
     let effective_policy_profile = request.policy_profile.unwrap_or_else(|| {
         default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string()
     });
-    let identity_context = resolve_identity_context_for_request(
+    let _identity_context = resolve_identity_context_for_request(
         &state,
         request.identity_user_id.as_deref(),
         request.identity_persona_id.as_deref(),
@@ -1214,7 +1214,9 @@ async fn enqueue_ask(
     )
     .await?;
 
-    let session_id = format!("daemon-api:{}", identity_context.user_id);
+    let now = Utc::now();
+    let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+    let session_id = medousa::workspace::ask_job_store::ask_job_session_id(&job_id);
     let (provider, model) =
         resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
     let manuscript_id = manuscript_ids.first().cloned();
@@ -1229,8 +1231,6 @@ async fn enqueue_ask(
         Some(suggested_capability_ids)
     };
 
-    let now = Utc::now();
-    let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
     let stage_routing = medousa::stage_routing::StageRoutingMatrix::default_for(
         if provider.is_empty() {
             "openai"
@@ -1918,7 +1918,7 @@ async fn spawn_turn_ticket(
         )
         .await;
 
-        medousa::turn_ticket::clear_turn(&turn_tickets, &turn_id_for_task).await;
+        medousa::turn_ticket::clear_turn_after_run(&turn_tickets, &turn_id_for_task).await;
         let _ = medousa::workspace::WorkspaceService::sync_runtime(&composition, true).await;
 
         tokio::time::sleep(Duration::from_secs(30)).await;
@@ -1981,7 +1981,7 @@ async fn create_turn_ticket(
         )
     });
 
-    let interactive_request =
+    let mut interactive_request =
         build_interactive_request_from_ticket(&request, provider, model, stage_routing);
 
     let (turn_id, workspace_card_id) = match request.mode {
@@ -1994,6 +1994,13 @@ async fn create_turn_ticket(
             (job_id.clone(), Some(job_id))
         }
     };
+
+    if request.mode == medousa::turn_ticket::TurnTicketMode::Background {
+        if let Some(job_id) = workspace_card_id.as_deref() {
+            interactive_request.session_id =
+                medousa::workspace::ask_job_store::ask_job_session_id(job_id);
+        }
+    }
 
     spawn_turn_ticket(
         &state,

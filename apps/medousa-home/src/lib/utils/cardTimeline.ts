@@ -27,3 +27,18 @@ export function filterCardTimeline(
     ),
   );
 }
+
+export function sortTimeline(events: WorkspaceEvent[]): WorkspaceEvent[] {
+  return [...events].sort(
+    (a, b) => Date.parse(b.timestamp_utc) - Date.parse(a.timestamp_utc),
+  );
+}
+
+export function timelineVaultPath(event: WorkspaceEvent): string | null {
+  const pathRef = event.refs.find((ref) => ref.ref_type === "vault_path");
+  return pathRef?.ref_id?.trim() || null;
+}
+
+export function timelineToolNames(event: WorkspaceEvent): string[] {
+  return event.tool_names?.length ? [...event.tool_names] : [];
+}

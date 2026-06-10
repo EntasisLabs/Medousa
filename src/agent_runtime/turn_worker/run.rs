@@ -40,7 +40,7 @@ use super::prompts::{
     worker_system_prompt,
 };
 use super::registry::{AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry};
-use crate::tool_bootstrap::{ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains};
+use crate::tool_bootstrap::{ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains, worker_should_unlock_vault};
 use super::store::{
     TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
 };
@@ -367,6 +367,9 @@ pub async fn run_worker_turn(
     let allowlist = super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
     if handoff_implies_resolved_execution(record.handoff_capsule.as_ref()) {
         let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["execute"]);
+    }
+    if worker_should_unlock_vault(&record.task_prompt, intent) {
+        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["vault"]);
     }
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
