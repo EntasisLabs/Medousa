@@ -1,6 +1,6 @@
 # Medousa Home — Product UX Plan (M7)
 
-> **Status:** Plan — competitive UX closure after M6 runtime authority  
+> **Status:** **M7 surfaces shipped** (Messaging, Cron, Skills, Tools) — Settings premium = [M10 plan](medousa-home-m10-settings-runtime-plan.md)  
 > **Date:** 2026-05-30  
 > **Related:** [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md), [medousa-home-plan.md](medousa-home-plan.md)  
 > **Trigger:** Hermes comparison — messaging settings, cron, skills, tools

@@ -79,4 +79,5 @@ export type RuntimeTab =
   | "schedule"
   | "delivery"
   | "controls"
+  | "workshop"
   | "routing";

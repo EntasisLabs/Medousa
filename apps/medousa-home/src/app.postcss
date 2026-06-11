@@ -1576,6 +1576,83 @@
     @apply block h-full flex-1;
   }
 
+  /* Settings — M10 shell */
+  .settings-panel {
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  .settings-summary-strip {
+    @apply text-surface-400;
+  }
+
+  .settings-shell-nav {
+    @apply w-full lg:w-52 xl:w-56;
+  }
+
+  .settings-nav {
+    @apply flex flex-col gap-1;
+  }
+
+  .settings-nav-item {
+    @apply rounded-container-token px-3 py-2.5 text-left transition hover:bg-surface-800/80;
+  }
+
+  .settings-nav-item-active {
+    @apply bg-primary-500/10 ring-1 ring-inset ring-primary-500/30;
+  }
+
+  .settings-nav-mobile {
+    @apply -mx-1;
+  }
+
+  .settings-nav-chip {
+    @apply shrink-0 rounded-full border border-surface-500/40 px-3 py-1.5 text-xs font-medium text-surface-300;
+  }
+
+  .settings-nav-chip-active {
+    @apply border-primary-500/45 bg-primary-500/10 text-primary-200;
+  }
+
+  .settings-section-header {
+    @apply max-w-2xl;
+  }
+
+  .settings-toggle-list {
+    @apply divide-y divide-surface-500/35 rounded-container-token border border-surface-500/35 bg-surface-900/30;
+  }
+
+  .settings-toggle-row {
+    @apply flex cursor-pointer items-center gap-4 px-4 py-3.5;
+  }
+
+  .settings-connection-card {
+    @apply max-w-xl rounded-container-token border border-surface-500/40 bg-surface-900/40 p-4;
+  }
+
+  .settings-connection-icon {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full;
+  }
+
+  .settings-connection-icon-ok {
+    @apply bg-success-500/15 text-success-400;
+  }
+
+  .settings-connection-icon-off {
+    @apply bg-surface-800 text-surface-400;
+  }
+
+  .settings-hub-list {
+    @apply divide-y divide-surface-500/35 overflow-hidden rounded-container-token border border-surface-500/35;
+  }
+
+  .settings-hub-row {
+    @apply flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-surface-800/60;
+  }
+
+  .settings-hub-icon {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-800 text-surface-300;
+  }
+
   html[data-theme="black-lily"] .workshop-rail-btn-active {
     @apply bg-surface-700 text-primary-300 ring-1 ring-inset ring-primary-400/55;
     box-shadow: 0 0 14px rgb(var(--color-primary-500) / 0.18);

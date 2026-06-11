@@ -156,7 +156,12 @@
             visible={true}
             revision={workspace.revision}
             health={daemonHealth}
-            onOpenRuntime={() => (activeSurface = "runtime")}
+            cronActiveCount={recurring.activeCount().enabled}
+            cronTotalCount={recurring.activeCount().total}
+            onOpenRuntime={() => {
+              runtime.activeTab = "workshop";
+              activeSurface = "runtime";
+            }}
             onOpenMessaging={() => (activeSurface = "messaging")}
             onOpenCron={() => (activeSurface = "cron")}
             onDaemonHealth={async () => {

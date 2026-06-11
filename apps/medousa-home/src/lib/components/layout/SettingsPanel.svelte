@@ -1,32 +1,24 @@
 <script lang="ts">
-  import {
-    getMedousaConfigPaths,
-    openConfigPath,
-    type MedousaConfigPaths,
-  } from "$lib/config";
-  import {
-    getDaemonUrl,
-    setDaemonUrl,
-    type DaemonHealth,
-  } from "$lib/daemon";
-  import { reconnectWorkshop } from "$lib/workshopConnection";
-  import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
+  import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
+  import SettingsGeneralSection from "$lib/components/settings/SettingsGeneralSection.svelte";
+  import SettingsAppearanceSection from "$lib/components/settings/SettingsAppearanceSection.svelte";
+  import SettingsConnectionSection from "$lib/components/settings/SettingsConnectionSection.svelte";
+  import SettingsIntegrationsSection from "$lib/components/settings/SettingsIntegrationsSection.svelte";
+  import SettingsAdvancedSection from "$lib/components/settings/SettingsAdvancedSection.svelte";
+  import type { DaemonHealth } from "$lib/daemon";
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
-  import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
-  import { isTauri } from "$lib/window";
-
-  const isDevBuild = import.meta.env.DEV;
+  import type { SettingsSectionId } from "$lib/types/settings";
 
   interface Props {
     visible: boolean;
     revision: number;
     health: DaemonHealth | null;
+    cronActiveCount: number;
+    cronTotalCount: number;
     onOpenRuntime: () => void;
     onOpenMessaging?: () => void;
-    onOpenCron?: () => void;
-    onOpenAdvanced?: () => void;
-    onDaemonHealth: () => void | Promise<void>;
+  onOpenCron?: () => void;
+  onDaemonHealth: () => void | Promise<void>;
     mobile?: boolean;
     embedded?: boolean;
   }
@@ -35,390 +27,80 @@
     visible,
     revision,
     health,
+    cronActiveCount,
+    cronTotalCount,
     onOpenRuntime,
     onOpenMessaging,
     onOpenCron,
-    onOpenAdvanced,
     onDaemonHealth,
     mobile = false,
     embedded = false,
   }: Props = $props();
 
-  let configPaths = $state<MedousaConfigPaths | null>(null);
-  let advancedOpen = $state(false);
-
-  const workshopFiles = $derived(
-    configPaths
-      ? [
-          {
-            id: "product",
-            label: "product_config.json",
-            hint: "Full product policy — channels live in Messaging",
-            path: configPaths.productConfig,
-          },
-          {
-            id: "workspace",
-            label: "tui_defaults.json",
-            hint: "Workshop defaults — editable above",
-            path: configPaths.tuiDefaults,
-          },
-          {
-            id: "capabilities",
-            label: "capabilities.toml",
-            hint: "Tool bindings — catalog in Skills → Tools",
-            path: configPaths.capabilities,
-          },
-          {
-            id: "gateway",
-            label: "mcp-gateway.toml",
-            hint: "Connected MCP servers",
-            path: configPaths.mcpGateway,
-          },
-        ]
-      : [],
-  );
+  let activeSection = $state<SettingsSectionId>("general");
 
   $effect(() => {
-    if (visible && !settings.daemonUrl) {
-      void loadDaemonUrl();
-    }
-    if (visible && isTauri() && !configPaths) {
-      void loadConfigPaths();
-    }
+    activeSection = mobile ? "connection" : "general";
   });
 
-  async function loadConfigPaths() {
-    try {
-      configPaths = await getMedousaConfigPaths();
-    } catch {
-      configPaths = null;
-    }
-  }
+  const themeLabel = $derived(
+    COLOR_THEME_OPTIONS.find((option) => option.id === settings.colorTheme)?.label ??
+      "Theme",
+  );
 
-  async function loadDaemonUrl() {
-    try {
-      settings.daemonUrl = await getDaemonUrl();
-    } catch (err) {
-      settings.daemonMessage =
-        err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  async function saveDaemonUrl() {
-    settings.savingDaemon = true;
-    settings.daemonMessage = null;
-    try {
-      await setDaemonUrl(settings.daemonUrl);
-      const probe = await reconnectWorkshop(onDaemonHealth);
-      settings.daemonMessage = probe.ok ? "Connected" : probe.message;
-    } catch (err) {
-      settings.daemonMessage =
-        err instanceof Error ? err.message : String(err);
-    } finally {
-      settings.savingDaemon = false;
-    }
-  }
+  const summaryParts = $derived(
+    [
+      health?.ok ? "Connected" : "Offline",
+      `${themeLabel}${settings.darkMode ? " dark" : " light"}`,
+      cronTotalCount > 0 ? `${cronActiveCount} cron active` : null,
+    ].filter(Boolean),
+  );
 </script>
 
-<section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
+<section class="settings-panel flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if !embedded}
     <header class="workshop-header">
-      <h1 class="text-sm font-semibold text-surface-50">Settings</h1>
-      <p class="workshop-faint">Home preferences and daemon connection</p>
+      <h1 class="text-base font-semibold text-surface-50">Settings</h1>
+      <p class="settings-summary-strip mt-1 text-xs text-surface-300">
+        {summaryParts.join(" · ")}
+      </p>
     </header>
+  {:else if mobile}
+    <p class="settings-summary-strip border-b border-surface-500/35 px-4 py-2 text-xs text-surface-400">
+      {summaryParts.join(" · ")}
+    </p>
   {/if}
 
-  <div class="mobile-you-scroll flex-1 space-y-4 overflow-y-auto px-4 py-4">
-    <section class="workshop-inset p-3">
-      <h2 class="text-sm font-semibold text-surface-100">Connection</h2>
-      <p class="workshop-faint mt-1">
-        {#if mobile}
-          Your phone’s link to the Mac workshop daemon. Provider and model come from the daemon after
-          you connect — adjust them under <span class="text-surface-300">You → Runtime → Controls</span>.
-        {:else}
-          Where Medousa Home reaches the running workshop backend.
-        {/if}
-      </p>
-      <label class="workshop-label mt-4 block" for="daemon-url">
-        Base URL
-      </label>
-      <input
-        id="daemon-url"
-        class="input mt-1 w-full max-w-xl"
-        bind:value={settings.daemonUrl}
-        placeholder={mobile ? "http://192.168.1.42:7419" : "http://127.0.0.1:7419"}
+  <div class="settings-shell min-h-0 flex-1 {mobile ? 'flex flex-col' : 'flex'}">
+    <aside class="settings-shell-nav shrink-0 {mobile ? 'px-4 pt-3' : 'border-r border-surface-500/35 p-3'}">
+      <SettingsNav
+        active={activeSection}
+        {mobile}
+        onSelect={(section) => {
+          activeSection = section;
+        }}
       />
-      <div class="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          class="btn variant-filled-primary"
-          disabled={settings.savingDaemon || !settings.daemonUrl.trim()}
-          onclick={saveDaemonUrl}
-        >
-          {settings.savingDaemon ? "Saving…" : "Save & test"}
-        </button>
-        {#if settings.daemonMessage}
-          <p
-            class="text-xs {settings.daemonMessage === 'Connected' ||
-            settings.daemonMessage.includes('connected')
-              ? 'text-success-400'
-              : 'text-warning-400'}"
-          >
-            {settings.daemonMessage}
-          </p>
-        {/if}
-      </div>
-    </section>
+    </aside>
 
-    {#if isTauri() && !mobile}
-      <WorkshopDefaultsPanel visible={visible} />
-    {/if}
-
-    {#if mobile && onOpenAdvanced}
-      <section class="workshop-inset p-3">
-        <h2 class="text-sm font-semibold text-surface-100">Workshop on Mac</h2>
-        <p class="workshop-faint mt-1">
-          Read-only snapshot from the daemon — not saved on the phone.
-        </p>
-        <button
-          type="button"
-          class="workshop-text-action mt-3 text-sm"
-          onclick={onOpenAdvanced}
-        >
-          Open advanced settings →
-        </button>
-      </section>
-    {:else if !mobile}
-      <section class="workshop-inset p-3">
-        <h2 class="text-sm font-semibold text-surface-100">Related views</h2>
-        <p class="workshop-faint mt-1">
-          Telemetry, channels, and schedules live in dedicated surfaces.
-        </p>
-        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <button type="button" class="workshop-text-action" onclick={onOpenRuntime}>
-            Runtime telemetry
-          </button>
-          {#if onOpenMessaging}
-            <button type="button" class="workshop-text-action" onclick={onOpenMessaging}>
-              Messaging
-            </button>
-          {/if}
-          {#if onOpenCron}
-            <button type="button" class="workshop-text-action" onclick={onOpenCron}>
-              Cron
-            </button>
-          {/if}
-        </div>
-      </section>
-    {/if}
-
-    <section class="workshop-inset p-3">
-      <h2 class="text-sm font-semibold text-surface-100">Appearance</h2>
-      <p class="workshop-faint mt-1">
-        Each palette has a light and dark variant — tuned for calm, readable contrast.
-      </p>
-
-      {#each ["workshop", "apple"] as group (group)}
-        <p class="workshop-label mt-4">{group === "workshop" ? "Workshop" : "Apple"}</p>
-        <div class="mt-2 grid gap-2 sm:grid-cols-2">
-          {#each COLOR_THEME_OPTIONS.filter((option) => option.group === group) as option (option.id)}
-            <button
-              type="button"
-              class="theme-option {settings.colorTheme === option.id
-                ? 'theme-option-active'
-                : ''}"
-              aria-pressed={settings.colorTheme === option.id}
-              onclick={() => settings.setColorTheme(option.id)}
-            >
-              <div class="theme-option-swatches" aria-hidden="true">
-                {#each option.swatches as swatch, index (index)}
-                  <span style:background-color={swatch}></span>
-                {/each}
-              </div>
-              <div class="min-w-0 text-left">
-                <p class="text-sm font-medium text-surface-100">{option.label}</p>
-                <p class="workshop-faint mt-0.5 leading-snug">{option.tagline}</p>
-              </div>
-            </button>
-          {/each}
-        </div>
-      {/each}
-
-      <label class="mt-4 flex cursor-pointer items-center gap-3">
-        <input
-          type="checkbox"
-          class="checkbox"
-          checked={settings.darkMode}
-          onchange={(event) =>
-            settings.setDarkMode((event.currentTarget as HTMLInputElement).checked)}
+    <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      {#if activeSection === "general"}
+        <SettingsGeneralSection {mobile} />
+      {:else if activeSection === "appearance"}
+        <SettingsAppearanceSection />
+      {:else if activeSection === "connection"}
+        <SettingsConnectionSection {health} {onDaemonHealth} {mobile} />
+      {:else if activeSection === "integrations"}
+        <SettingsIntegrationsSection
+          {health}
+          {cronActiveCount}
+          {cronTotalCount}
+          {onOpenMessaging}
+          {onOpenCron}
+          {onOpenRuntime}
         />
-        <span class="text-sm text-surface-200">Dark mode</span>
-      </label>
-      <p class="mt-2 text-xs text-surface-500">
-        Try Cupertino light for a clean iOS-style day look, or Obsidian dark for the workshop default.
-      </p>
-    </section>
-
-    <section class="workshop-inset p-3">
-      <h2 class="text-sm font-semibold text-surface-100">Activity feed</h2>
-      <label class="mt-4 flex cursor-pointer items-center gap-3">
-        <input
-          type="checkbox"
-          class="checkbox"
-          checked={settings.showTechnicalActivity}
-          onchange={(event) =>
-            settings.setShowTechnicalActivity(
-              (event.currentTarget as HTMLInputElement).checked,
-            )}
-        />
-        <span class="text-sm text-surface-200">Show technical events</span>
-      </label>
-      <p class="mt-2 text-xs text-surface-500">
-        Includes repeated job failures and internal workflow noise.
-      </p>
-    </section>
-
-    <section class="workshop-inset p-3">
-      <h2 class="text-sm font-semibold text-surface-100">Notifications</h2>
-      <label class="mt-4 flex cursor-pointer items-center gap-3">
-        <input
-          type="checkbox"
-          class="checkbox"
-          checked={settings.notificationsEnabled}
-          onchange={(event) =>
-            settings.setNotificationsEnabled(
-              (event.currentTarget as HTMLInputElement).checked,
-            )}
-        />
-        <span class="text-sm text-surface-200">
-          Notify when work cards reach done
-        </span>
-      </label>
-    </section>
-
-    {#if isDevBuild && !mobile}
-      <section class="workshop-inset p-3">
-        <h2 class="text-sm font-semibold text-surface-100">Library (developer build)</h2>
-        <p class="workshop-faint mt-1">
-          Demo seed notes and QA paths live under <span class="font-mono text-surface-400">bugs/</span>
-          and system folders. They stay hidden until you opt in.
-        </p>
-        <label class="mt-4 flex cursor-pointer items-center gap-3">
-          <input
-            type="checkbox"
-            class="checkbox"
-            checked={vault.showSystemNotes}
-            onchange={(event) =>
-              vault.setShowSystemNotes((event.currentTarget as HTMLInputElement).checked)}
-          />
-          <span class="text-sm text-surface-200">Show developer vault notes</span>
-        </label>
-        <button
-          type="button"
-          class="workshop-text-action mt-3 text-sm"
-          onclick={() => {
-            resetGarageOnboarding();
-            vault.openGarageWizard();
-          }}
-        >
-          Reset garage onboarding wizard
-        </button>
-      </section>
-    {/if}
-
-    {#if workshopFiles.length > 0 && !mobile}
-      <section class="workshop-inset p-3">
-        <button
-          type="button"
-          class="flex w-full items-center justify-between text-left"
-          onclick={() => (advancedOpen = !advancedOpen)}
-        >
-          <div>
-            <h2 class="text-sm font-semibold text-surface-100">Advanced</h2>
-            <p class="workshop-faint mt-0.5">
-              On-disk files shared with TUI and CLI
-            </p>
-          </div>
-          <span class="workshop-faint shrink-0">
-            {advancedOpen ? "▾" : "▸"}
-          </span>
-        </button>
-        {#if advancedOpen}
-          <ul class="mt-3 divide-y divide-surface-500/35">
-            {#each workshopFiles as file (file.id)}
-              <li class="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                <div class="min-w-0">
-                  <p class="font-mono text-[11px] text-surface-200">{file.label}</p>
-                  <p class="workshop-faint">{file.hint}</p>
-                  <p class="mt-0.5 truncate font-mono text-[10px] text-surface-500">
-                    {file.path}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="workshop-text-action shrink-0"
-                  onclick={() => openConfigPath(file.path)}
-                >
-                  Open
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
-    {/if}
-
-    <section class="workshop-inset p-3">
-      <button
-        type="button"
-        class="flex w-full items-center justify-between text-left"
-        onclick={() => (settings.diagnosticsOpen = !settings.diagnosticsOpen)}
-      >
-        <h2 class="text-sm font-semibold text-surface-100">Diagnostics</h2>
-        <span class="workshop-faint">
-          {settings.diagnosticsOpen ? "▾" : "▸"}
-        </span>
-      </button>
-      {#if settings.diagnosticsOpen}
-        <dl class="mt-4 space-y-2 text-xs">
-          <div class="grid grid-cols-[7rem_1fr] gap-2">
-            <dt class="workshop-label">Status</dt>
-            <dd class="font-mono text-surface-300">
-              {health?.ok ? "connected" : "offline"}
-            </dd>
-          </div>
-          <div class="grid grid-cols-[7rem_1fr] gap-2">
-            <dt class="workshop-label">Base URL</dt>
-            <dd class="break-all font-mono text-surface-300">
-              {settings.daemonUrl || "—"}
-            </dd>
-          </div>
-          <div class="grid grid-cols-[7rem_1fr] gap-2">
-            <dt class="workshop-label">Backend</dt>
-            <dd class="font-mono text-surface-300">{health?.backend ?? "—"}</dd>
-          </div>
-          <div class="grid grid-cols-[7rem_1fr] gap-2">
-            <dt class="workshop-label">Revision</dt>
-            <dd class="font-mono text-surface-300">{revision}</dd>
-          </div>
-          <div class="grid grid-cols-[7rem_1fr] gap-2">
-            <dt class="workshop-label">Worker</dt>
-            <dd class="font-mono text-surface-300">{health?.worker_id ?? "—"}</dd>
-          </div>
-          <div class="grid grid-cols-[7rem_1fr] gap-2">
-            <dt class="workshop-label">Tools</dt>
-            <dd class="font-mono text-surface-300">
-              {health?.tool_registry_count ?? "—"}
-            </dd>
-          </div>
-          {#if health && !health.ok}
-            <div class="grid grid-cols-[7rem_1fr] gap-2">
-              <dt class="workshop-label">Detail</dt>
-              <dd class="break-all font-mono text-warning-400">{health.message}</dd>
-            </div>
-          {/if}
-        </dl>
+      {:else}
+        <SettingsAdvancedSection {revision} {health} {mobile} />
       {/if}
-    </section>
+    </div>
   </div>
 </section>

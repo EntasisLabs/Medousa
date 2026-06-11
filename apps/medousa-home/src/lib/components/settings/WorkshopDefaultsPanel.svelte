@@ -13,9 +13,10 @@
   interface Props {
     visible: boolean;
     mobile?: boolean;
+    embedded?: boolean;
   }
 
-  let { visible, mobile = false }: Props = $props();
+  let { visible, mobile = false, embedded = false }: Props = $props();
 
   const visibleTabs = $derived(
     mobile
@@ -72,17 +73,17 @@
   }
 </script>
 
-<section class="workshop-inset p-3">
+<section class="{embedded ? '' : 'workshop-inset p-3'}">
+  {#if !embedded}
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
       <p class="workshop-faint mt-0.5">
         {#if mobile}
-          Read-only view of the Mac workshop — connection URL is under Settings. Change model in
-          <span class="font-medium text-surface-300">You → Runtime → Controls</span>.
+          Read-only snapshot from the Mac — change values on the Mac under Runtime → Workshop.
         {:else}
-          Same fields as TUI <span class="font-mono">/settings</span> — saved to
-          <span class="font-mono">tui_defaults.json</span>.
+          Saved to <span class="font-mono text-surface-400">tui_defaults.json</span> — shared with
+          TUI and CLI.
         {/if}
       </p>
     </div>
@@ -97,8 +98,22 @@
       </button>
     {/if}
   </div>
+  {/if}
 
-  <div class="workshop-tabs mt-3 flex-wrap">
+  {#if embedded && !mobile}
+    <div class="mb-3 flex justify-end">
+      <button
+        type="button"
+        class="btn btn-sm variant-filled-primary"
+        disabled={workshopDefaults.saving || workshopDefaults.loading}
+        onclick={() => workshopDefaults.save()}
+      >
+        {workshopDefaults.saving ? "Saving…" : "Save defaults"}
+      </button>
+    </div>
+  {/if}
+
+  <div class="workshop-tabs {embedded ? 'mt-0' : 'mt-3'} flex-wrap">
     {#each visibleTabs as tab (tab.id)}
       <button
         type="button"

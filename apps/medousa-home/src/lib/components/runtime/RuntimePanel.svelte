@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
   import { untrack } from "svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
@@ -27,12 +28,15 @@
     { id: "schedule", label: "Schedule" },
     { id: "delivery", label: "Delivery" },
     { id: "controls", label: "Controls" },
+    { id: "workshop", label: "Workshop" },
     { id: "routing", label: "Routing" },
   ];
 
   const tabs = $derived(
     mobile
-      ? allTabs.filter((tab) => ["now", "jobs", "delivery"].includes(tab.id))
+      ? allTabs.filter((tab) =>
+          ["now", "jobs", "delivery", "controls", "workshop"].includes(tab.id),
+        )
       : allTabs,
   );
 
@@ -290,7 +294,8 @@
     {:else if runtime.activeTab === "controls"}
       <section class="max-w-xl space-y-4">
         <p class="workshop-faint">
-          Quick model and depth for the next chat turn. Full workshop defaults live in Settings.
+          Quick model and depth for the next chat turn. Full workshop defaults are under the
+          Workshop tab.
         </p>
 
         <div class="workshop-inset p-4">
@@ -356,6 +361,8 @@
           </p>
         {/if}
       </section>
+    {:else if runtime.activeTab === "workshop"}
+      <WorkshopDefaultsPanel visible={visible} {mobile} embedded />
     {:else}
       <section>
         <p class="workshop-faint">

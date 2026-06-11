@@ -7,7 +7,6 @@ export type YouDestination =
   | "cron"
   | "messaging"
   | "settings"
-  | "advanced"
   | "runtime";
 
 export const MOBILE_TABS: { id: MobileTab; label: string }[] = [
@@ -26,9 +25,8 @@ export const YOU_DESTINATIONS: {
   { id: "skills", label: "Skills", hint: "Run in chat" },
   { id: "cron", label: "Schedule", hint: "Recurring prompts" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, more" },
-  { id: "settings", label: "Workshop", hint: "Connection & preferences" },
-  { id: "advanced", label: "Advanced", hint: "Model & API key" },
-  { id: "runtime", label: "Health", hint: "Queue & delivery" },
+  { id: "settings", label: "Preferences", hint: "Theme, connection, alerts" },
+  { id: "runtime", label: "Workshop", hint: "Health, controls & defaults" },
 ];
 
 export const YOU_HUB_SECTIONS: {
@@ -43,7 +41,7 @@ export const YOU_HUB_SECTIONS: {
   },
   {
     title: "Workshop",
-    subtitle: "Schedule, settings, and health",
-    destinations: ["cron", "settings", "advanced", "runtime"],
+    subtitle: "Schedule, preferences, and tuning",
+    destinations: ["cron", "settings", "runtime"],
   },
 ];
