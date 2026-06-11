@@ -95,6 +95,10 @@ pub struct ManuscriptWorkerSpec {
     #[serde(default)]
     pub intent: Option<String>,
     #[serde(default)]
+    pub stage_role: Option<String>,
+    #[serde(default)]
+    pub model_hint: Option<String>,
+    #[serde(default)]
     pub max_tool_rounds: Option<usize>,
     #[serde(default)]
     pub override_sttp: bool,
@@ -153,6 +157,8 @@ pub struct ManuscriptContext {
     pub pinned_contact_ids: Vec<String>,
     pub recall_hints: Vec<String>,
     pub worker_intent: Option<String>,
+    pub worker_stage_role: Option<String>,
+    pub worker_model_hint: Option<String>,
     pub max_tool_rounds: Option<usize>,
     pub tools_allow: Vec<String>,
     pub locus_session_id: Option<String>,
@@ -463,6 +469,14 @@ fn merge_identity_spec(
 fn merge_worker_spec(base: &ManuscriptWorkerSpec, child: &ManuscriptWorkerSpec) -> ManuscriptWorkerSpec {
     ManuscriptWorkerSpec {
         intent: child.intent.clone().or_else(|| base.intent.clone()),
+        stage_role: child
+            .stage_role
+            .clone()
+            .or_else(|| base.stage_role.clone()),
+        model_hint: child
+            .model_hint
+            .clone()
+            .or_else(|| base.model_hint.clone()),
         max_tool_rounds: child.max_tool_rounds.or(base.max_tool_rounds),
         override_sttp: child.override_sttp || base.override_sttp,
     }
@@ -668,6 +682,8 @@ pub fn build_manuscript_context_from_file(
         pinned_contact_ids: file.spec.identity.pins.contacts.clone(),
         recall_hints: file.spec.identity.recall_hints.clone(),
         worker_intent: file.spec.worker.intent.clone(),
+        worker_stage_role: file.spec.worker.stage_role.clone(),
+        worker_model_hint: file.spec.worker.model_hint.clone(),
         max_tool_rounds: file.spec.worker.max_tool_rounds,
         tools_allow: file.spec.tools.allow.clone(),
         locus_session_id: file.spec.locus.session_id.clone(),
@@ -1181,6 +1197,8 @@ spec:
             pinned_contact_ids: Vec::new(),
             recall_hints: Vec::new(),
             worker_intent: Some("research".to_string()),
+            worker_stage_role: None,
+            worker_model_hint: None,
             max_tool_rounds: None,
             tools_allow: vec![
                 "cognition_identity_recall".to_string(),
@@ -1222,6 +1240,8 @@ spec:
             pinned_contact_ids: Vec::new(),
             recall_hints: Vec::new(),
             worker_intent: None,
+            worker_stage_role: None,
+            worker_model_hint: None,
             max_tool_rounds: None,
             tools_allow: Vec::new(),
             locus_session_id: None,
@@ -1253,6 +1273,8 @@ spec:
             pinned_contact_ids: Vec::new(),
             recall_hints: Vec::new(),
             worker_intent: Some("research".to_string()),
+            worker_stage_role: None,
+            worker_model_hint: None,
             max_tool_rounds: None,
             tools_allow: vec![
                 "cognition_identity_recall".to_string(),

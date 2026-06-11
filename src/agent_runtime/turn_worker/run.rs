@@ -29,6 +29,9 @@ use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
+use stasis::prelude::RuntimeComposition;
+
+use super::model_routing::resolve_worker_llm_target;
 use super::policy::{TurnWorkerIntent, max_worker_tool_rounds};
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::agent_runtime::worker_continuity::{
@@ -92,6 +95,7 @@ impl WorkerRuntimeContext {
 pub struct TurnWorkerScheduler {
     store: Arc<TurnWorkerStore>,
     runtime_ctx: RwLock<Option<WorkerRuntimeContext>>,
+    runtime: RwLock<Option<Arc<RuntimeComposition>>>,
     bus_session: RwLock<Option<ActiveWorkerBusSession>>,
 }
 
@@ -100,6 +104,7 @@ impl TurnWorkerScheduler {
         Self {
             store,
             runtime_ctx: RwLock::new(None),
+            runtime: RwLock::new(None),
             bus_session: RwLock::new(None),
         }
     }
@@ -111,6 +116,7 @@ impl TurnWorkerScheduler {
     pub async fn attach_runtime(&self, runtime: Arc<crate::tools::TuiRuntime>) {
         self.set_runtime_context(WorkerRuntimeContext::from_tui_runtime(runtime.as_ref()))
             .await;
+        *self.runtime.write().await = Some(runtime.runtime.clone());
     }
 
     pub async fn set_bus_session(&self, session: ActiveWorkerBusSession) {
@@ -132,6 +138,8 @@ impl TurnWorkerScheduler {
         user_ack: &str,
         parent_user_prompt: Option<&str>,
         manuscript: Option<crate::identity_manuscript::ManuscriptContext>,
+        stage_role: Option<&str>,
+        model_hint: Option<&str>,
     ) -> stasis::prelude::Result<Value> {
         let bus = self
             .bus_session
@@ -217,10 +225,36 @@ impl TurnWorkerScheduler {
             .map(|rounds| rounds.max(1))
             .unwrap_or_else(|| bus.configured_max_tool_rounds.max(1));
 
+        let manuscript_stage_role = manuscript
+            .as_ref()
+            .and_then(|ctx| ctx.worker_stage_role.as_deref());
+        let manuscript_model_hint = manuscript
+            .as_ref()
+            .and_then(|ctx| ctx.worker_model_hint.as_deref());
+        let resolved_stage_role = stage_role
+            .or(manuscript_stage_role)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let resolved_model_hint = model_hint
+            .or(manuscript_model_hint)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let (provider, model) = resolve_worker_llm_target(
+            &bus.provider,
+            &bus.model,
+            intent,
+            resolved_stage_role.as_deref(),
+            resolved_model_hint.as_deref(),
+        );
+        let manuscript_id = manuscript.as_ref().map(|ctx| ctx.id.clone());
+
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
             session_id: bus.session_id.clone(),
             parent_turn_correlation_id,
+            parent_stream_turn_id: bus.stream_turn_id,
             intent: intent.as_str().to_string(),
             task_prompt: task.trim().to_string(),
             status: TurnWorkStatus::Pending,
@@ -229,8 +263,8 @@ impl TurnWorkerScheduler {
             termination_reason: None,
             error: None,
             user_ack: user_ack.trim().to_string(),
-            provider: bus.provider.clone(),
-            model: bus.model.clone(),
+            provider,
+            model,
             response_depth_mode: bus.response_depth_mode.clone(),
             max_tool_rounds,
             delivery_target,
@@ -242,6 +276,13 @@ impl TurnWorkerScheduler {
             handoff_capsule: Some(handoff),
             worker_scratch: None,
             synthesis_delivered: false,
+            stasis_job_id: None,
+            thread_id: None,
+            stage_role: resolved_stage_role.clone(),
+            model_hint: resolved_model_hint,
+            manuscript_id: manuscript_id.clone(),
+            branch_group_id: None,
+            archived: false,
             created_at: now,
             updated_at: now,
         };
@@ -257,7 +298,6 @@ impl TurnWorkerScheduler {
             ),
         );
 
-        let manuscript_id = manuscript.as_ref().map(|ctx| ctx.id.clone());
         record_in_process_delegation(&InProcessDelegationRecord {
             work_id: work_id.clone(),
             session_id: bus.session_id.clone(),
@@ -291,29 +331,38 @@ impl TurnWorkerScheduler {
                 .await;
         }
 
-        let store = self.store.clone();
-        let work_id_spawn = work_id.clone();
-        let sink = bus.sink.clone();
-        let stream_turn_id = bus.stream_turn_id;
-        let ctx = self.runtime_ctx.read().await.clone().expect("runtime ctx");
-        tokio::spawn(async move {
-            run_worker_turn(store, ctx, work_id_spawn, sink, stream_turn_id).await;
-        });
+        let runtime = self.runtime.read().await.clone().ok_or_else(|| {
+            stasis::domain::errors::StasisError::PortFailure(
+                "cognition_spawn_turn_worker: stasis runtime not ready".to_string(),
+            )
+        })?;
+        crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
+            runtime.as_ref(),
+            &work_id,
+            bus.stream_turn_id,
+        )
+        .await?;
 
         Ok(json!({
             "ok": true,
             "worker_spawned": true,
             "work_id": work_id,
+            "stasis_job_id": work_id,
             "intent": intent.as_str(),
             "manuscript_id": manuscript_id,
+            "stage_role": record_stage_role_for_response(resolved_stage_role.as_deref()),
             "status": "pending",
             "user_ack": user_ack,
             "handoff_summary": handoff_summary,
             "scratch_digest": scratch_digest,
-            "message": "Worker started in background; host turn may end with user_ack.",
+            "message": "Worker enqueued on durable bus; host turn may end with user_ack.",
         }))
     }
 
+}
+
+fn record_stage_role_for_response(stage_role: Option<&str>) -> Option<String> {
+    stage_role.map(str::to_string)
 }
 
 impl Clone for TurnWorkerScheduler {
@@ -321,6 +370,7 @@ impl Clone for TurnWorkerScheduler {
         Self {
             store: self.store.clone(),
             runtime_ctx: RwLock::new(None),
+            runtime: RwLock::new(None),
             bus_session: RwLock::new(None),
         }
     }
@@ -526,6 +576,18 @@ pub async fn run_worker_turn(
             }
         }
     }
+}
+
+pub async fn resume_synthesis_if_needed(
+    ctx: &WorkerRuntimeContext,
+    record: TurnWorkRecord,
+    sink: SharedAgentStreamSink,
+) {
+    if record.synthesis_delivered || record.status != TurnWorkStatus::Completed {
+        return;
+    }
+    let stream_turn_id = record.parent_stream_turn_id;
+    run_synthesis_turn(ctx, record, sink, stream_turn_id).await;
 }
 
 async fn run_worker_failure_notify(
@@ -783,6 +845,7 @@ mod tests {
             work_id: "w1".to_string(),
             session_id: "s1".to_string(),
             parent_turn_correlation_id: None,
+            parent_stream_turn_id: 0,
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: TurnWorkStatus::Completed,
@@ -800,6 +863,13 @@ mod tests {
             handoff_capsule: None,
             worker_scratch: None,
             synthesis_delivered: false,
+            stasis_job_id: None,
+            thread_id: None,
+            stage_role: None,
+            model_hint: None,
+            manuscript_id: None,
+            branch_group_id: None,
+            archived: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

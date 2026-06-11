@@ -26,6 +26,7 @@ pub mod turn_ledger;
 pub mod turn_loop_settings;
 pub mod turn_orchestrator;
 pub mod turn_worker;
+pub mod turn_worker_job;
 pub mod turn_worker_tools;
 pub mod turn_services;
 pub mod types;

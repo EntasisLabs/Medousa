@@ -538,9 +538,13 @@ where
         rt.register_handler(MemorySchemaJobHandler::new(operations.clone()))?;
     }
 
-    rt.register_handler(ConcurrentPatternJobHandler::new_with_thread_store(
+    rt.register_handler(ConcurrentPatternJobHandler::new_with_thread_store_and_memory(
         chat_client.clone(),
+        tool_registry.clone(),
         Some(thread_store.clone()),
+        memory_context_reader.clone(),
+        memory_context_writer.clone(),
+        identity_memory_store.clone(),
     ))?;
     rt.register_handler(HandoffPatternJobHandler::new_with_thread_store(
         chat_client.clone(),

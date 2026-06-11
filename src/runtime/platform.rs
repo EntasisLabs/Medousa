@@ -165,6 +165,17 @@ async fn build_platform_inner(
     openshell_sandbox_run::register_openshell_sandbox_run_handler(agent.runtime.as_ref())
         .await
         .context("failed to register openshell sandbox run job handler")?;
+    crate::agent_runtime::turn_worker_job::register_turn_worker_job_handler(
+        agent.runtime.as_ref(),
+        agent.clone(),
+    )
+    .await
+    .context("failed to register durable turn worker job handler")?;
+    crate::agent_runtime::turn_worker_job::reconcile_durable_turn_workers(
+        agent.runtime.as_ref(),
+        agent.clone(),
+    )
+    .await;
 
     Ok(Arc::new(MedousaPlatformRuntime { agent }))
 }

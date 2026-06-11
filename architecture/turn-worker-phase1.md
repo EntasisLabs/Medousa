@@ -1,5 +1,7 @@
 # Turn worker bus — Phase 1 (implemented)
 
+> **Durability track:** [durable-turn-worker-plan.md](durable-turn-worker-plan.md) — Stasis job queue, disk-backed records, restart reconciliation (Phase 1a–1c landing).
+
 Phase 1 of [turn-worker-bus-plan.md](turn-worker-bus-plan.md): in-process **host → worker → synthesis** on the daemon agent runtime (all comms adapters).
 
 ## Behavior (product mode C)

@@ -91,6 +91,14 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 "manuscript_id": {
                     "type": "string",
                     "description": "Optional YAML identity manuscript id (e.g. morning-brief)"
+                },
+                "stage_role": {
+                    "type": "string",
+                    "description": "Optional StageRoutingMatrix role (extractor, verifier, chunker, …)"
+                },
+                "model_hint": {
+                    "type": "string",
+                    "description": "Optional model override (provider:model or bare model id)"
                 }
             },
             "required": ["task", "user_ack"]
@@ -149,8 +157,27 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 )
             })?;
 
+        let stage_role = input
+            .get("stage_role")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let model_hint = input
+            .get("model_hint")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
         self.scheduler
-            .spawn_worker(intent, task, user_ack, None, manuscript)
+            .spawn_worker(
+                intent,
+                task,
+                user_ack,
+                None,
+                manuscript,
+                stage_role,
+                model_hint,
+            )
             .await
     }
 }

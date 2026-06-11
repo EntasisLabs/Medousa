@@ -1,5 +1,6 @@
 //! In-process host/worker turn bus (Phase 1).
 
+mod model_routing;
 mod policy;
 mod prompts;
 mod registry;
@@ -7,6 +8,9 @@ mod routing;
 mod run;
 mod store;
 
+pub use model_routing::{
+    default_stage_role_for_intent, resolve_worker_llm_target,
+};
 pub use policy::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, max_worker_tool_rounds,
     tool_allowed,
@@ -26,6 +30,7 @@ pub use routing::{
 };
 pub use run::{
     ActiveWorkerBusSession, TurnWorkerScheduler, WorkerRuntimeContext, host_bus_mode_enabled,
-    pipeline_for_turn_profile, run_worker_turn, system_prompt_for_host_bus,
+    pipeline_for_turn_profile, resume_synthesis_if_needed, run_worker_turn,
+    system_prompt_for_host_bus,
 };
 pub use store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store};

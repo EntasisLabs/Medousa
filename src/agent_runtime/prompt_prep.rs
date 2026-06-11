@@ -868,6 +868,8 @@ mod tests {
             pinned_contact_ids: Vec::new(),
             recall_hints: Vec::new(),
             worker_intent: Some("research".to_string()),
+            worker_stage_role: None,
+            worker_model_hint: None,
             max_tool_rounds: None,
             tools_allow: Vec::new(),
             locus_session_id: None,

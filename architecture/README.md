@@ -32,9 +32,10 @@ Start here for product-level usage:
 15. [agent-experience-gap-analysis.md](agent-experience-gap-analysis.md)
 16. [turn-completion-gatekeeper.md](turn-completion-gatekeeper.md)
 17. [turn-worker-bus-plan.md](turn-worker-bus-plan.md) — host/worker delegation; **daemon bus**, comms adapters are not the bus
-18. [turn-ledger-phase0.md](turn-ledger-phase0.md) — Phase 0 loop discipline (ledger, stuck detector, control messages)
-19. [turn-worker-phase1.md](turn-worker-phase1.md) — Phase 1 in-process worker bus (spawn / synthesis)
-20. [turn-worker-phase2.md](turn-worker-phase2.md) — Phase 2 host routing + auto slim host
+18. [durable-turn-worker-plan.md](durable-turn-worker-plan.md) — **In progress:** Stasis 0.5 durable workers, restart reconciliation, matrix model routing, Coder-ready orchestrator manuscripts
+19. [turn-ledger-phase0.md](turn-ledger-phase0.md) — Phase 0 loop discipline (ledger, stuck detector, control messages)
+20. [turn-worker-phase1.md](turn-worker-phase1.md) — Phase 1 in-process worker bus (spawn / synthesis)
+21. [turn-worker-phase2.md](turn-worker-phase2.md) — Phase 2 host routing + auto slim host
 21. [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md) — **Planned:** tiered context pools (user / host tool / worker), scratchpad, lane classification; Locus prompt git last
 22. [worker-continuity-plan.md](worker-continuity-plan.md) — worker = same Medousa, workshop hat; continuity bundle + curated STTP (Phase A–E)
 23. [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md) — identity store as relational memory (preferences, contacts, cognitive mode, remember tool); Stasis 0.4.0; Phases 0–5

@@ -1,20 +1,26 @@
-//! In-process turn work records (Phase 1 bus).
+//! Durable turn work records (host/worker bus).
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
+use crate::session;
 use crate::turn_continuation::StoredDeliveryTarget;
 
-static STORE: Lazy<RwLock<Arc<TurnWorkerStore>>> =
-    Lazy::new(|| RwLock::new(Arc::new(TurnWorkerStore::default())));
+const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
+const MAX_ACTIVE_TURN_WORKERS: usize = 500;
+const ARCHIVE_RETENTION_DAYS: i64 = 30;
+
+static STORE: Lazy<Arc<TurnWorkerStore>> = Lazy::new(|| Arc::new(TurnWorkerStore::new()));
 
 pub fn turn_worker_store() -> Arc<TurnWorkerStore> {
-    STORE.read().expect("turn worker store lock").clone()
+    STORE.clone()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,11 +37,17 @@ fn default_worker_max_tool_rounds() -> usize {
     10
 }
 
+fn default_parent_stream_turn_id() -> u64 {
+    0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnWorkRecord {
     pub work_id: String,
     pub session_id: String,
     pub parent_turn_correlation_id: Option<String>,
+    #[serde(default = "default_parent_stream_turn_id")]
+    pub parent_stream_turn_id: u64,
     pub intent: String,
     pub task_prompt: String,
     pub status: TurnWorkStatus,
@@ -59,24 +71,132 @@ pub struct TurnWorkRecord {
     /// Host synthesis delivered the worker result to the parent turn.
     #[serde(default)]
     pub synthesis_delivered: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stasis_job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manuscript_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_group_id: Option<String>,
+    #[serde(default)]
+    pub archived: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Default)]
 pub struct TurnWorkerStore {
-    records: RwLock<HashMap<String, TurnWorkRecord>>,
+    records: Mutex<HashMap<String, TurnWorkRecord>>,
+}
+
+impl Default for TurnWorkerStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TurnWorkerStore {
+    pub fn new() -> Self {
+        let store = Self {
+            records: Mutex::new(HashMap::new()),
+        };
+        store.reload_from_disk();
+        store
+    }
+
+    fn path() -> PathBuf {
+        session::medousa_data_dir().join(
+            TURN_WORKERS_FILE
+                .strip_prefix("workspace/")
+                .unwrap_or(TURN_WORKERS_FILE),
+        )
+    }
+
+    fn reload_from_disk(&self) {
+        let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
+        let Ok(raw) = fs::read_to_string(Self::path()) else {
+            return;
+        };
+        let Ok(map) = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw) else {
+            return;
+        };
+        *self.records.lock().expect("turn worker records") = map;
+    }
+
+    fn write_map(map: &HashMap<String, TurnWorkRecord>) -> std::io::Result<()> {
+        let path = Self::path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let body = serde_json::to_string_pretty(map)?;
+        fs::write(path, body)
+    }
+
+    fn persist(&self) {
+        let mut guard = self.records.lock().expect("turn worker records");
+        Self::prune_map(&mut guard);
+        let snapshot = guard.clone();
+        drop(guard);
+        if let Err(err) = Self::write_map(&snapshot) {
+            eprintln!("turn_worker_store: persist failed: {err}");
+        }
+    }
+
+    fn prune_map(map: &mut HashMap<String, TurnWorkRecord>) {
+        let cutoff = Utc::now() - Duration::days(ARCHIVE_RETENTION_DAYS);
+        map.retain(|_, record| {
+            if record.archived {
+                return record.updated_at >= cutoff;
+            }
+            true
+        });
+
+        let active: Vec<_> = map
+            .values()
+            .filter(|record| !record.archived)
+            .map(|record| record.work_id.clone())
+            .collect();
+        if active.len() > MAX_ACTIVE_TURN_WORKERS {
+            let overflow = active.len().saturating_sub(MAX_ACTIVE_TURN_WORKERS);
+            let mut stale_ids: Vec<_> = map
+                .values()
+                .filter(|record| {
+                    !record.archived
+                        && matches!(
+                            record.status,
+                            TurnWorkStatus::Completed
+                                | TurnWorkStatus::Failed
+                                | TurnWorkStatus::Cancelled
+                        )
+                })
+                .map(|record| (record.updated_at, record.work_id.clone()))
+                .collect();
+            stale_ids.sort_by_key(|(updated, _)| *updated);
+            for (_, work_id) in stale_ids.into_iter().take(overflow) {
+                if let Some(entry) = map.get_mut(&work_id) {
+                    entry.archived = true;
+                    entry.result_text = None;
+                    entry.worker_scratch = None;
+                    entry.updated_at = Utc::now();
+                }
+            }
+        }
+    }
+
     pub fn insert(&self, record: TurnWorkRecord) {
-        let mut guard = self.records.write().expect("turn worker records");
+        let mut guard = self.records.lock().expect("turn worker records");
         guard.insert(record.work_id.clone(), record);
+        drop(guard);
+        self.persist();
     }
 
     pub fn get(&self, work_id: &str) -> Option<TurnWorkRecord> {
         self.records
-            .read()
+            .lock()
             .expect("turn worker records")
             .get(work_id)
             .cloned()
@@ -84,10 +204,10 @@ impl TurnWorkerStore {
 
     pub fn list_for_session(&self, session_id: &str) -> Vec<TurnWorkRecord> {
         self.records
-            .read()
+            .lock()
             .expect("turn worker records")
             .values()
-            .filter(|record| record.session_id == session_id)
+            .filter(|record| record.session_id == session_id && !record.archived)
             .cloned()
             .collect()
     }
@@ -95,9 +215,10 @@ impl TurnWorkerStore {
     pub fn list_all(&self, limit: usize) -> Vec<TurnWorkRecord> {
         let mut records = self
             .records
-            .read()
+            .lock()
             .expect("turn worker records")
             .values()
+            .filter(|record| !record.archived)
             .cloned()
             .collect::<Vec<_>>();
         records.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
@@ -107,9 +228,26 @@ impl TurnWorkerStore {
 
     pub fn list_all_unbounded(&self) -> Vec<TurnWorkRecord> {
         self.records
-            .read()
+            .lock()
             .expect("turn worker records")
             .values()
+            .filter(|record| !record.archived)
+            .cloned()
+            .collect()
+    }
+
+    pub fn list_incomplete(&self) -> Vec<TurnWorkRecord> {
+        self.records
+            .lock()
+            .expect("turn worker records")
+            .values()
+            .filter(|record| {
+                !record.archived
+                    && (matches!(
+                        record.status,
+                        TurnWorkStatus::Pending | TurnWorkStatus::Running
+                    ) || (record.status == TurnWorkStatus::Completed && !record.synthesis_delivered))
+            })
             .cloned()
             .collect()
     }
@@ -118,11 +256,13 @@ impl TurnWorkerStore {
     where
         F: FnOnce(&mut TurnWorkRecord),
     {
-        let mut guard = self.records.write().expect("turn worker records");
+        let mut guard = self.records.lock().expect("turn worker records");
         let record = guard.get_mut(work_id)?;
         update(record);
         record.updated_at = Utc::now();
-        Some(record.clone())
+        let cloned = record.clone();
+        drop(guard);
+        self.persist();
+        Some(cloned)
     }
 }
-

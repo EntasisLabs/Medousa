@@ -7708,9 +7708,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac0f0aa71b7a95c7343dd02ed0d2294b9d5d4823129eba60cdf3fb34221ed992"
+checksum = "2b340c25a3b726d28e7516d420b7175a70cc784132944b1ab6053ee2c7099533"
 dependencies = [
  "anyhow",
  "askama",
