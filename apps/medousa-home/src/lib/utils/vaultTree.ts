@@ -1,8 +1,8 @@
 import type { VaultNote, VaultTreeNode } from "$lib/types/vault";
 import {
   VAULT_OTHER_SPACE,
-  VAULT_SPACES,
   VAULT_SYSTEM_BUCKET,
+  allVaultSpaces,
   shouldHideGarageNote,
   resolveSpaceForPath,
 } from "$lib/config/vaultSpaces";
@@ -40,8 +40,12 @@ export function buildVaultTree(
     return !shouldHideGarageNote(note.path, note.title, options.showSystemNotes);
   });
 
+  const spaceOrder = [...allVaultSpaces(), VAULT_OTHER_SPACE, VAULT_SYSTEM_BUCKET].sort(
+    (a, b) => a.sort - b.sort,
+  );
+
   const buckets = new Map<string, VaultNote[]>();
-  for (const space of [...VAULT_SPACES, VAULT_OTHER_SPACE, VAULT_SYSTEM_BUCKET]) {
+  for (const space of spaceOrder) {
     buckets.set(space.id, []);
   }
 
@@ -50,10 +54,6 @@ export function buildVaultTree(
     const bucket = buckets.get(space.id) ?? buckets.get(VAULT_OTHER_SPACE.id)!;
     bucket.push(note);
   }
-
-  const spaceOrder = [...VAULT_SPACES, VAULT_OTHER_SPACE, VAULT_SYSTEM_BUCKET].sort(
-    (a, b) => a.sort - b.sort,
-  );
 
   const roots: VaultTreeNode[] = [];
   for (const space of spaceOrder) {
@@ -79,6 +79,7 @@ export function buildVaultTree(
       spaceId: space.id,
       defaultCollapsed: space.defaultCollapsed ?? false,
       noteCount: bucket.length,
+      dropPrefix: prefix || null,
     });
   }
 
@@ -113,6 +114,7 @@ function buildPathTree(
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const isLeaf = i === parts.length - 1;
+      const segmentPrefix = `${prefix}${parts.slice(0, i + 1).join("/")}/`;
       let child = current.children.find((node) => node.name === part);
       if (!child) {
         child = {
@@ -122,6 +124,7 @@ function buildPathTree(
           kind: isLeaf ? note.kind ?? null : null,
           children: [],
           isFolder: !isLeaf,
+          dropPrefix: isLeaf ? folderPrefixForNotePath(note.path) : segmentPrefix,
         };
         current.children.push(child);
       } else if (isLeaf) {
@@ -129,6 +132,9 @@ function buildPathTree(
         child.title = note.title;
         child.kind = note.kind ?? null;
         child.isFolder = false;
+        child.dropPrefix = folderPrefixForNotePath(note.path);
+      } else if (!child.dropPrefix) {
+        child.dropPrefix = segmentPrefix;
       }
       current = child;
     }
@@ -136,6 +142,13 @@ function buildPathTree(
 
   sortTree(root);
   return root.children;
+}
+
+function folderPrefixForNotePath(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) return "";
+  parts.pop();
+  return `${parts.join("/")}/`;
 }
 
 function sortTree(node: VaultTreeNode) {

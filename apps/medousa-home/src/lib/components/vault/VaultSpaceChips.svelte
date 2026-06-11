@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-    VAULT_FILTER_SPACES,
-    countNotesBySpace,
-    type VaultSpaceConfig,
-  } from "$lib/config/vaultSpaces";
+  import { allFilterSpaces } from "$lib/config/vaultSpaces";
   import { vault } from "$lib/stores/vault.svelte";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
 
@@ -15,13 +11,9 @@
 
   let { compact = false, embedded = false }: Props = $props();
 
-  const visibleSpaces = $derived(
-    VAULT_FILTER_SPACES.filter((space) => !space.devOnly || vault.showSystemNotes),
-  );
+  const visibleSpaces = $derived(allFilterSpaces(vault.showSystemNotes));
 
-  const counts = $derived(
-    countNotesBySpace(vault.notes, vault.showSystemNotes),
-  );
+  const counts = $derived(vault.spaceCounts());
 
   function chipClass(active: boolean): string {
     return active
@@ -33,7 +25,7 @@
     vault.setActiveSpaceFilter(spaceId);
   }
 
-  function renderCount(space: VaultSpaceConfig): string {
+  function renderCount(space: (typeof visibleSpaces)[number]): string {
     const count = counts.get(space.id) ?? 0;
     return count > 0 ? String(count) : "";
   }

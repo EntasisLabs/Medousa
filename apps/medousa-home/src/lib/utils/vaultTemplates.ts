@@ -1,4 +1,4 @@
-/** M7a — note templates for create / quick capture flows. */
+import { getSpaceById } from "$lib/config/vaultSpaces";
 
 import {
   wrapWithFrontmatter,
@@ -74,16 +74,20 @@ export const VAULT_TEMPLATES_BY_SPACE: Record<string, VaultTemplateOption[]> = {
   bugs: [{ id: "bug", label: "Bug report" }],
 };
 
+export function templatesForSpace(spaceId: string): VaultTemplateOption[] {
+  return VAULT_TEMPLATES_BY_SPACE[spaceId] ?? [{ id: "blank", label: "Blank note" }];
+}
+
 export function defaultTemplateForSpace(spaceId: string): VaultTemplateId {
-  const options = VAULT_TEMPLATES_BY_SPACE[spaceId];
-  return options?.[0]?.id ?? "blank";
+  const options = templatesForSpace(spaceId);
+  return options[0]?.id ?? "blank";
 }
 
 export function resolveTemplateForSpace(
   spaceId: string,
   templateId?: VaultTemplateId,
 ): VaultTemplateId {
-  const options = VAULT_TEMPLATES_BY_SPACE[spaceId] ?? [];
+  const options = templatesForSpace(spaceId);
   if (templateId && options.some((option) => option.id === templateId)) {
     return templateId;
   }
@@ -247,19 +251,8 @@ export function pathForTemplate(
     case "inbox":
       return inboxCapturePath(date);
     default: {
-      const space = spaceId;
-      const prefix =
-        space === "journal"
-          ? "journal/"
-          : space === "projects"
-            ? "projects/"
-            : space === "finance"
-              ? "finance/"
-              : space === "inbox"
-                ? "inbox/"
-                : space === "bugs"
-                  ? "bugs/"
-                  : "";
+      const spaceConfig = getSpaceById(spaceId);
+      const prefix = spaceConfig?.prefix;
       if (!prefix) return undefined;
       return `${prefix}${slugifyTitle(title)}.md`.replace(/\/+/g, "/");
     }

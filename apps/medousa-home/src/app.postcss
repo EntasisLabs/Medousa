@@ -1877,4 +1877,22 @@
     color: #e2e8f0;
     border-color: rgb(255 255 255 / 0.15);
   }
+
+  body.vault-tree-dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  body.vault-tree-dragging .vault-tree-drop-target {
+    cursor: copy;
+  }
+
+  body.vault-tree-dragging .vault-tree-drag-handle {
+    cursor: grabbing;
+  }
+
+  .vault-tree-row--drop-active {
+    background-color: rgb(var(--color-primary-500) / 0.1);
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.6);
+  }
 }

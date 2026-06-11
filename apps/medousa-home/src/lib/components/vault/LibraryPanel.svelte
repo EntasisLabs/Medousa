@@ -12,6 +12,7 @@
   import VaultKindBadge from "./VaultKindBadge.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
   import VaultGarageImportWizard from "./VaultGarageImportWizard.svelte";
+  import VaultNewGroupDialog from "./VaultNewGroupDialog.svelte";
   import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
@@ -148,6 +149,13 @@
             >
               New
             </button>
+            <button
+              type="button"
+              class="btn btn-sm variant-ghost-surface"
+              onclick={() => vault.openNewGroupDialog()}
+            >
+              Group
+            </button>
           </div>
 
           <div
@@ -240,12 +248,20 @@
       {/if}
 
       {#if showVaultChrome}
+        {#if vault.error}
+          <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-error-300">
+            {vault.error}
+          </p>
+        {/if}
         <VaultTree
           tree={vault.tree}
           selectedPath={vault.selectedPath}
           labelByPath={vault.labelByPath()}
           activeSpaceFilter={vault.activeSpaceFilter}
           onSelect={(path) => vault.openNote(path)}
+          onMoveNote={(sourcePath, targetPrefix) => {
+            void vault.moveNoteToFolder(sourcePath, targetPrefix);
+          }}
         />
       {:else}
         <ExternalFilesBrowser />
@@ -263,4 +279,5 @@
 </section>
 
 <VaultNewNoteDialog />
+<VaultNewGroupDialog />
 <VaultGarageImportWizard />

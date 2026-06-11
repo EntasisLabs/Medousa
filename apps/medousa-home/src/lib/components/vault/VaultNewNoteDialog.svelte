@@ -1,8 +1,8 @@
 <script lang="ts">
   import { vault } from "$lib/stores/vault.svelte";
-  import { VAULT_SPACES } from "$lib/config/vaultSpaces";
+  import { creatableVaultSpaces } from "$lib/config/vaultSpaces";
   import {
-    VAULT_TEMPLATES_BY_SPACE,
+    templatesForSpace,
     defaultTemplateForSpace,
     resolveTemplateForSpace,
     type VaultTemplateId,
@@ -13,7 +13,8 @@
   let title = $state("");
   let wasOpen = $state(false);
 
-  const templateOptions = $derived(VAULT_TEMPLATES_BY_SPACE[spaceId] ?? []);
+  const templateOptions = $derived(templatesForSpace(spaceId));
+  const creatableSpaces = $derived(creatableVaultSpaces());
 
   $effect(() => {
     const open = vault.newNoteDialogOpen;
@@ -65,7 +66,7 @@
           bind:value={spaceId}
           onchange={handleSpaceChange}
         >
-          {#each VAULT_SPACES as space (space.id)}
+          {#each creatableSpaces as space (space.id)}
             <option value={space.id}>{space.label}</option>
           {/each}
         </select>

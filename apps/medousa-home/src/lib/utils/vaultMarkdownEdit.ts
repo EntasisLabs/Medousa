@@ -1,5 +1,6 @@
 import {
   MARKDOWN_COLOR_CLOSE_TAG,
+  MARKDOWN_COLOR_IDS,
   markdownColorOpenTag,
   type MarkdownColorId,
 } from "$lib/utils/vaultMarkdownColors";
@@ -36,6 +37,10 @@ export interface EditResult {
   selectionEnd: number;
 }
 
+const COLOR_SYNTAX = /^\{\{(red|orange|yellow|green|blue|purple|pink)\|([\s\S]*)\}\}$/i;
+const LEGACY_COLOR_SPAN =
+  /^<span class="markdown-color markdown-color-(red|orange|yellow|green|blue|purple|pink)">([\s\S]*)<\/span>$/i;
+
 function lineRangeAt(content: string, index: number): { start: number; end: number } {
   const start = content.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
   const nextBreak = content.indexOf("\n", index);
@@ -53,7 +58,68 @@ function lineStartIndex(content: string, index: number): number {
   return lineRangeAt(content, index).start;
 }
 
-function wrapSelection(
+function replaceRange(
+  content: string,
+  start: number,
+  end: number,
+  replacement: string,
+): EditResult {
+  const next = `${content.slice(0, start)}${replacement}${content.slice(end)}`;
+  return {
+    content: next,
+    selectionStart: start,
+    selectionEnd: start + replacement.length,
+  };
+}
+
+function unwrapHighlight(text: string): string | null {
+  if (text.startsWith("==") && text.endsWith("==") && text.length >= 4) {
+    return text.slice(2, -2);
+  }
+  return null;
+}
+
+function stripInlineMarkup(text: string): string {
+  let current = text;
+  for (let pass = 0; pass < 4; pass++) {
+    const colored = unwrapColorMarkup(current);
+    if (colored) {
+      current = colored.inner;
+      continue;
+    }
+    const highlighted = unwrapHighlight(current);
+    if (highlighted != null) {
+      current = highlighted;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
+function unwrapColorMarkup(text: string): { color: MarkdownColorId; inner: string } | null {
+  const syntax = text.match(COLOR_SYNTAX);
+  if (syntax) {
+    const color = syntax[1]!.toLowerCase();
+    if (MARKDOWN_COLOR_IDS.includes(color as MarkdownColorId)) {
+      return { color: color as MarkdownColorId, inner: syntax[2]! };
+    }
+  }
+  const legacy = text.match(LEGACY_COLOR_SPAN);
+  if (legacy) {
+    const color = legacy[1]!.toLowerCase();
+    if (MARKDOWN_COLOR_IDS.includes(color as MarkdownColorId)) {
+      return { color: color as MarkdownColorId, inner: legacy[2]! };
+    }
+  }
+  return null;
+}
+
+function colorMarkup(color: MarkdownColorId, inner: string): string {
+  return `{{${color}|${inner}}}`;
+}
+
+function toggleWrapSelection(
   content: string,
   selectionStart: number,
   selectionEnd: number,
@@ -65,6 +131,37 @@ function wrapSelection(
   const selected = hasSelection
     ? content.slice(selectionStart, selectionEnd)
     : placeholder;
+
+  if (
+    selected.startsWith(before) &&
+    selected.endsWith(after) &&
+    selected.length >= before.length + after.length
+  ) {
+    const inner = selected.slice(before.length, selected.length - after.length);
+    return replaceRange(content, selectionStart, selectionEnd, inner);
+  }
+
+  return wrapSelection(content, selectionStart, selectionEnd, before, after, placeholder);
+}
+
+function wrapSelection(
+  content: string,
+  selectionStart: number,
+  selectionEnd: number,
+  before: string,
+  after: string,
+  placeholder = "text",
+): EditResult {
+  const hasSelection = selectionStart !== selectionEnd;
+  let selected = hasSelection ? content.slice(selectionStart, selectionEnd) : placeholder;
+
+  const wrappedColor = unwrapColorMarkup(selected);
+  if (wrappedColor) {
+    selected = wrappedColor.inner;
+  } else {
+    selected = stripInlineMarkup(selected);
+  }
+
   const next = `${content.slice(0, selectionStart)}${before}${selected}${after}${content.slice(selectionEnd)}`;
   const innerStart = selectionStart + before.length;
   const innerEnd = innerStart + selected.length;
@@ -134,11 +231,11 @@ export function applyMarkdownFormat(
 ): EditResult {
   switch (action) {
     case "bold":
-      return wrapSelection(content, selectionStart, selectionEnd, "**", "**");
+      return toggleWrapSelection(content, selectionStart, selectionEnd, "**", "**");
     case "italic":
-      return wrapSelection(content, selectionStart, selectionEnd, "*", "*");
+      return toggleWrapSelection(content, selectionStart, selectionEnd, "*", "*");
     case "code":
-      return wrapSelection(content, selectionStart, selectionEnd, "`", "`", "code");
+      return toggleWrapSelection(content, selectionStart, selectionEnd, "`", "`", "code");
     case "link":
       return wrapSelection(content, selectionStart, selectionEnd, "[", "](url)", "label");
     case "h1":
@@ -154,7 +251,7 @@ export function applyMarkdownFormat(
     case "checkbox":
       return prefixLines(content, selectionStart, selectionEnd, "- [ ] ");
     case "highlight":
-      return wrapSelection(content, selectionStart, selectionEnd, "==", "==");
+      return toggleWrapSelection(content, selectionStart, selectionEnd, "==", "==");
     default:
       return { content, selectionStart, selectionEnd };
   }
@@ -166,14 +263,26 @@ export function applyMarkdownColor(
   selectionEnd: number,
   color: MarkdownColorId,
 ): EditResult {
-  return wrapSelection(
-    content,
-    selectionStart,
-    selectionEnd,
-    markdownColorOpenTag(color),
-    MARKDOWN_COLOR_CLOSE_TAG,
-    "text",
-  );
+  const hasSelection = selectionStart !== selectionEnd;
+  const selected = hasSelection
+    ? content.slice(selectionStart, selectionEnd)
+    : "text";
+
+  const wrapped = unwrapColorMarkup(selected);
+  if (wrapped) {
+    if (wrapped.color === color) {
+      return replaceRange(content, selectionStart, selectionEnd, wrapped.inner);
+    }
+    return replaceRange(
+      content,
+      selectionStart,
+      selectionEnd,
+      colorMarkup(color, stripInlineMarkup(wrapped.inner)),
+    );
+  }
+
+  const inner = stripInlineMarkup(selected);
+  return replaceRange(content, selectionStart, selectionEnd, colorMarkup(color, inner));
 }
 
 export function insertSlashBlock(

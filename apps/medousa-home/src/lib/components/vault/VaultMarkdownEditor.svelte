@@ -16,6 +16,7 @@
 
   interface Props {
     content: string;
+    contentSyncKey: string;
     disabled?: boolean;
     class?: string;
     onchange: (next: string) => void;
@@ -31,6 +32,7 @@
 
   let {
     content,
+    contentSyncKey,
     disabled = false,
     class: className = "",
     onchange,
@@ -45,17 +47,22 @@
 
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
+  let draft = $state("");
+  let syncedKey = $state("");
   let selectionStart = $state(0);
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
 
   $effect(() => {
-    vault.setCompositionHold(slashOpen);
+    if (contentSyncKey !== syncedKey) {
+      draft = content;
+      syncedKey = contentSyncKey;
+    }
   });
 
-  function editorValue(): string {
-    return textareaEl?.value ?? content;
-  }
+  $effect(() => {
+    vault.setCompositionHold(slashOpen);
+  });
 
   function captureSelection() {
     if (!textareaEl) return;
@@ -76,6 +83,7 @@
     selectionStart: number;
     selectionEnd: number;
   }) {
+    draft = result.content;
     onchange(result.content);
     await tick();
     if (!textareaEl) return;
@@ -89,34 +97,29 @@
   function handleFormat(action: MarkdownFormatAction) {
     if (!textareaEl) return;
     captureSelection();
-    const result = applyMarkdownFormat(
-      editorValue(),
-      selectionStart,
-      selectionEnd,
-      action,
-    );
+    const result = applyMarkdownFormat(draft, selectionStart, selectionEnd, action);
     void applyEdit(result);
   }
 
   function handleColor(color: MarkdownColorId) {
     if (!textareaEl) return;
     captureSelection();
-    const result = applyMarkdownColor(editorValue(), selectionStart, selectionEnd, color);
+    const result = applyMarkdownColor(draft, selectionStart, selectionEnd, color);
     void applyEdit(result);
   }
 
-  function handleInput(event: Event) {
-    const target = event.currentTarget as HTMLTextAreaElement;
-    onchange(target.value);
-    selectionStart = target.selectionStart;
-    selectionEnd = target.selectionEnd;
+  function handleInput() {
+    onchange(draft);
+    if (!textareaEl) return;
+    selectionStart = textareaEl.selectionStart;
+    selectionEnd = textareaEl.selectionEnd;
     syncSlashMenu();
   }
 
   function handleSlashSelect(block: SlashBlockId) {
     if (!textareaEl) return;
     captureSelection();
-    const result = insertSlashBlock(editorValue(), selectionStart, block);
+    const result = insertSlashBlock(draft, selectionStart, block);
     slashOpen = false;
     void applyEdit(result);
   }
@@ -162,7 +165,7 @@
         <textarea
           bind:this={textareaEl}
           class={textareaClass}
-          value={content}
+          bind:value={draft}
           {disabled}
           oninput={handleInput}
           onkeydown={handleKeydown}
@@ -186,7 +189,7 @@
       <textarea
         bind:this={textareaEl}
         class="{textareaClass} flex-1"
-        value={content}
+        bind:value={draft}
         {disabled}
         oninput={handleInput}
         onkeydown={handleKeydown}

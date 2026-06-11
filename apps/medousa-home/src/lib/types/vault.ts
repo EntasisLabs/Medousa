@@ -58,6 +58,8 @@ export interface VaultTreeNode {
   spaceId?: string | null;
   noteCount?: number;
   defaultCollapsed?: boolean;
+  /** Folder prefix when dragging notes onto this tree row. */
+  dropPrefix?: string | null;
   children: VaultTreeNode[];
   isFolder: boolean;
 }

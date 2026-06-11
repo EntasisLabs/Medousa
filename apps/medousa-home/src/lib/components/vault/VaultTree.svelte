@@ -8,9 +8,10 @@
     labelByPath: Map<string, string>;
     activeSpaceFilter?: string | null;
     onSelect: (path: string) => void;
+    onMoveNote?: (sourcePath: string, targetFolderPrefix: string) => void | Promise<void>;
   }
 
-  let { tree, selectedPath, labelByPath, activeSpaceFilter = null, onSelect }: Props =
+  let { tree, selectedPath, labelByPath, activeSpaceFilter = null, onSelect, onMoveNote }: Props =
     $props();
 </script>
 
@@ -22,6 +23,7 @@
       {labelByPath}
       {activeSpaceFilter}
       {onSelect}
+      {onMoveNote}
     />
   {:else}
     <p class="px-2 py-4 text-sm text-surface-400">No notes in vault yet.</p>

@@ -1,5 +1,10 @@
 /** M7a/M7b — space roots for Library tree (folder prefixes, not new storage). */
 
+import {
+  customSpacesAsVaultConfig,
+  loadCustomVaultSpaces,
+} from "$lib/utils/vaultCustomSpaces";
+
 export const SHOW_SYSTEM_NOTES_KEY = "medousa-home-vault-show-system";
 export const LAST_SPACE_KEY = "medousa-home-last-space";
 
@@ -89,10 +94,21 @@ export const VAULT_SYSTEM_BUCKET: VaultSpaceConfig = {
   defaultCollapsed: true,
 };
 
-/** Spaces shown as filter chips above the tree. */
+/** Built-in spaces shown as filter chips above the tree. */
 export const VAULT_FILTER_SPACES: VaultSpaceConfig[] = VAULT_SPACES.filter(
   (space) => space.filterChip,
 );
+
+/** Built-in + user-created groups for tree and filters. */
+export function allVaultSpaces(): VaultSpaceConfig[] {
+  return [...VAULT_SPACES, ...customSpacesAsVaultConfig()];
+}
+
+export function allFilterSpaces(showDeveloperNotes: boolean): VaultSpaceConfig[] {
+  return allVaultSpaces().filter(
+    (space) => space.filterChip && (!space.devOnly || showDeveloperNotes),
+  );
+}
 
 export function isDevSpaceNote(path: string): boolean {
   return path.startsWith("bugs/");
@@ -134,6 +150,21 @@ export function resolveSpaceForPath(path: string, title: string): VaultSpaceConf
   for (const space of VAULT_SPACES) {
     if (space.prefix && path.startsWith(space.prefix)) {
       return space;
+    }
+  }
+  for (const custom of loadCustomVaultSpaces()) {
+    if (path.startsWith(custom.prefix)) {
+      return (
+        customSpacesAsVaultConfig().find((space) => space.id === custom.id) ?? {
+          id: custom.id,
+          prefix: custom.prefix,
+          label: custom.label,
+          sort: 20,
+          icon: "folder",
+          filterChip: true,
+          alwaysShow: true,
+        }
+      );
     }
   }
   return VAULT_OTHER_SPACE;
@@ -180,7 +211,14 @@ export function countNotesBySpace(
 export function getSpaceById(id: string): VaultSpaceConfig | undefined {
   return (
     VAULT_SPACES.find((space) => space.id === id) ??
+    customSpacesAsVaultConfig().find((space) => space.id === id) ??
     (id === VAULT_OTHER_SPACE.id ? VAULT_OTHER_SPACE : undefined) ??
     (id === VAULT_SYSTEM_BUCKET.id ? VAULT_SYSTEM_BUCKET : undefined)
+  );
+}
+
+export function creatableVaultSpaces(): VaultSpaceConfig[] {
+  return allVaultSpaces().filter(
+    (space) => space.id !== "system_bucket" && space.id !== "other",
   );
 }

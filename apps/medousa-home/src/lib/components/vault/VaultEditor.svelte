@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { FileDown, PanelLeftOpen } from "@lucide/svelte";
+  import { FileDown, MoreHorizontal, PanelLeftOpen } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -21,6 +21,7 @@
   import VaultConflictBar from "./VaultConflictBar.svelte";
   import VaultProposalBar from "./VaultProposalBar.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
+  import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
   import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
   import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
   import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
@@ -373,6 +374,18 @@
           <button
             type="button"
             class="btn btn-sm variant-ghost-surface"
+            title="Rename, move, or delete note"
+            aria-label="Note actions"
+            disabled={vault.noteLoading}
+            onclick={() => vault.openNoteActions()}
+          >
+            <MoreHorizontal size={14} strokeWidth={2} />
+          </button>
+        {/if}
+        {#if vault.selectedPath}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
             disabled={exportingPdf || vault.noteLoading}
             title="Export rendered note as PDF"
             onclick={() => void handleExportPdf()}
@@ -454,6 +467,7 @@
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor
             content={vault.content}
+            contentSyncKey={vault.contentSyncKey}
             disabled={vault.noteLoading}
             class="flex-1"
             surface={editorSurface}
@@ -491,3 +505,5 @@
     </div>
   {/if}
 </section>
+
+<VaultNoteActionsMenu />

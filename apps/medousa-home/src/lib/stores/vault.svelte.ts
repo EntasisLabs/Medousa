@@ -75,6 +75,11 @@ import {
   completeGarageOnboarding,
   shouldShowGarageWizard,
 } from "$lib/utils/garageOnboarding";
+import { addCustomVaultSpace } from "$lib/utils/vaultCustomSpaces";
+import {
+  normalizeVaultNotePath,
+  setNoteTitleInContent,
+} from "$lib/utils/vaultNoteTitle";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -117,6 +122,10 @@ export class VaultStore {
   agentWrittenAt = $state<Record<string, string>>({});
   previewingAttachmentPath = $state<string | null>(null);
   garageWizardOpen = $state(false);
+  newGroupDialogOpen = $state(false);
+  noteActionsOpen = $state(false);
+  /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
+  contentRevision = $state(0);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -167,6 +176,10 @@ export class VaultStore {
 
   get isDirty(): boolean {
     return this.dirty;
+  }
+
+  get contentSyncKey(): string {
+    return `${this.selectedPath ?? ""}:${this.contentRevision}`;
   }
 
   get lastNotePath(): string | null {
@@ -304,6 +317,10 @@ export class VaultStore {
     this.conflictMessage = null;
   }
 
+  private bumpContentSync() {
+    this.contentRevision += 1;
+  }
+
   rebuildTree() {
     this.tree = buildVaultTree(this.notes, {
       showSystemNotes: this.showSystemNotes,
@@ -426,6 +443,17 @@ export class VaultStore {
     saveLastSpace(space.id);
   }
 
+  /** After a move, show the destination space in the sidebar filter. */
+  focusSpaceForPath(path: string, title: string) {
+    const space = resolveSpaceForPath(path, title);
+    if (space.id === "system_bucket" || space.id === "other") {
+      this.setActiveSpaceFilter(null);
+      return;
+    }
+    this.setActiveSpaceFilter(space.id);
+    saveLastSpace(space.id);
+  }
+
   async refreshNotes() {
     this.error = null;
     try {
@@ -493,6 +521,7 @@ export class VaultStore {
     if (this.selectedKind === "ledger") {
       this.ledgerEditMode = "table";
     }
+    this.bumpContentSync();
   }
 
   defaultEditorMode(path: string, kind?: string): "edit" | "preview" {
@@ -770,10 +799,124 @@ export class VaultStore {
         this.selectedKind = "note";
         this.dirty = false;
         this.resetSaveState();
+        this.bumpContentSync();
       }
       await this.refreshNotes();
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  openNewGroupDialog() {
+    this.newGroupDialogOpen = true;
+  }
+
+  closeNewGroupDialog() {
+    this.newGroupDialogOpen = false;
+  }
+
+  openNoteActions() {
+    this.noteActionsOpen = true;
+  }
+
+  closeNoteActions() {
+    this.noteActionsOpen = false;
+  }
+
+  addCustomGroup(label: string) {
+    const space = addCustomVaultSpace(label);
+    if (space) {
+      this.rebuildTree();
+      this.setActiveSpaceFilter(space.id);
+    }
+    return space;
+  }
+
+  async renameNoteTitle(newTitle: string) {
+    if (!this.selectedPath || !newTitle.trim()) return false;
+    this.error = null;
+    const nextContent = setNoteTitleInContent(this.content, newTitle.trim());
+    this.markDirty(nextContent);
+    const ok = await this.save({ source: "manual" });
+    if (ok) {
+      await this.refreshNotes();
+    }
+    return ok;
+  }
+
+  async relocateNote(newPathInput: string) {
+    if (!this.selectedPath) return null;
+    const sourcePath = this.selectedPath;
+    const newPath = normalizeVaultNotePath(newPathInput);
+    if (newPath === sourcePath) return newPath;
+
+    if (this.notes.some((note) => note.path === newPath)) {
+      this.error = "A note already exists at that path.";
+      return null;
+    }
+
+    this.saving = true;
+    this.error = null;
+    try {
+      if (this.dirty) {
+        const saved = await this.save({ source: "manual" });
+        if (!saved) return null;
+      }
+      const response = await getVaultNote(sourcePath);
+      await createVaultNote(newPath, response.content);
+      await deleteVaultNote(sourcePath);
+      await this.refreshNotes();
+      this.focusSpaceForPath(newPath, response.note.title);
+      await this.openNote(newPath);
+      return newPath;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      return null;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  async moveNoteToFolder(sourcePath: string, targetFolderPrefix: string) {
+    let prefix = targetFolderPrefix.trim().replace(/\\/g, "/");
+    if (!prefix) {
+      this.error = "Pick a folder to move this note into.";
+      return null;
+    }
+    if (!prefix.endsWith("/")) {
+      prefix = `${prefix}/`;
+    }
+
+    const fileName = sourcePath.split("/").pop();
+    if (!fileName) return null;
+    const newPath = `${prefix}${fileName}`.replace(/\/+/g, "/");
+    if (newPath === sourcePath) return sourcePath;
+
+    if (this.selectedPath === sourcePath) {
+      return this.relocateNote(newPath);
+    }
+
+    this.saving = true;
+    this.error = null;
+    try {
+      if (this.notes.some((note) => note.path === newPath)) {
+        this.error = "A note already exists at that path.";
+        return null;
+      }
+      const response = await getVaultNote(sourcePath);
+      await createVaultNote(newPath, response.content);
+      await deleteVaultNote(sourcePath);
+      await this.refreshNotes();
+      this.focusSpaceForPath(newPath, response.note.title);
+      if (this.selectedPath === sourcePath) {
+        await this.openNote(newPath);
+      }
+      return newPath;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      return null;
+    } finally {
+      this.saving = false;
     }
   }
 

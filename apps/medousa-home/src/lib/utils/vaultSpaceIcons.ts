@@ -26,6 +26,7 @@ export function iconForSpace(spaceId: string | null | undefined): Component {
     case "other":
       return Layers;
     default:
+      if (spaceId?.startsWith("custom_")) return Folder;
       return Layers;
   }
 }
