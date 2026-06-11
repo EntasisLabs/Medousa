@@ -1,14 +1,19 @@
 <script lang="ts">
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import WizardMigrationScreen from "$lib/components/wizard/WizardMigrationScreen.svelte";
   import WizardWelcomeScreen from "$lib/components/wizard/WizardWelcomeScreen.svelte";
+  import WizardWelcomeScreenMobile from "$lib/components/wizard/WizardWelcomeScreenMobile.svelte";
   import WizardAccountScreen from "$lib/components/wizard/WizardAccountScreen.svelte";
   import WizardPhoneScreen from "$lib/components/wizard/WizardPhoneScreen.svelte";
+  import WizardPhoneScreenMobile from "$lib/components/wizard/WizardPhoneScreenMobile.svelte";
   import WizardCompletionScreen from "$lib/components/wizard/WizardCompletionScreen.svelte";
 
   const reducedMotion =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const mobileShell = isTauriMobilePlatform();
 </script>
 
 <div
@@ -16,7 +21,9 @@
   role="presentation"
 >
   <div
-    class="flex h-[min(720px,92vh)] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl border border-surface-500/40 bg-surface-900 shadow-2xl"
+    class="flex flex-col overflow-hidden border border-surface-500/40 bg-surface-900 shadow-2xl {mobileShell
+      ? 'h-full w-full rounded-none border-0'
+      : 'h-[min(720px,92vh)] w-full max-w-[640px] rounded-2xl'}"
     role="dialog"
     aria-modal="true"
     aria-labelledby="product-wizard-title"
@@ -35,11 +42,19 @@
         {#if wizard.screen === "migration"}
           <WizardMigrationScreen />
         {:else if wizard.screen === "screen1"}
-          <WizardWelcomeScreen />
+          {#if mobileShell}
+            <WizardWelcomeScreenMobile />
+          {:else}
+            <WizardWelcomeScreen />
+          {/if}
         {:else if wizard.screen === "screen2"}
           <WizardAccountScreen />
         {:else if wizard.screen === "screen3"}
-          <WizardPhoneScreen />
+          {#if mobileShell}
+            <WizardPhoneScreenMobile />
+          {:else}
+            <WizardPhoneScreen />
+          {/if}
         {:else}
           <WizardCompletionScreen />
         {/if}

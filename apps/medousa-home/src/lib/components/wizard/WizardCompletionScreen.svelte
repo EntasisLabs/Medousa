@@ -4,6 +4,7 @@
   import { wizard } from "$lib/stores/wizard.svelte";
   import { checkDaemonHealth, type DaemonHealth } from "$lib/daemon";
   import { startDaemonCore, waitForDaemonCore } from "$lib/utils/providersApi";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
 
   let health = $state<DaemonHealth | null>(null);
@@ -20,6 +21,14 @@
     try {
       if (!isTauri()) {
         statusLine = "Dev browser mode — start medousa_daemon separately.";
+        checking = false;
+        return;
+      }
+      if (isTauriMobilePlatform()) {
+        health = await checkDaemonHealth();
+        statusLine = health.ok
+          ? health.message
+          : "Check your Mac workshop URL in You → Settings → Basement if chat doesn't connect.";
         checking = false;
         return;
       }
@@ -50,8 +59,12 @@
   <h2 class="mt-4 text-2xl font-semibold text-surface-50">You're ready!</h2>
   <p class="mt-3 max-w-sm text-sm leading-relaxed text-surface-300">
     {#if health?.ok}
-      Medousa Core is running. Your brain is online. Ask me anything when you're back in the
-      workshop.
+      {#if isTauriMobilePlatform()}
+        Connected to your Mac workshop. Your brain is online — open Chat when you're ready.
+      {:else}
+        Medousa Core is running. Your brain is online. Ask me anything when you're back in the
+        workshop.
+      {/if}
     {:else}
       Your model is configured. Medousa Core may still be starting — you can retry from Settings if
       chat doesn't connect.
