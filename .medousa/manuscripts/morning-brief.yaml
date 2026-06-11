@@ -22,6 +22,7 @@ spec:
     recall_hints: [priorities, team]
   worker:
     intent: research
+    stage_role: summarizer
     max_tool_rounds: 8
   tools:
     allow:

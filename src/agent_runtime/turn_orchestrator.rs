@@ -167,6 +167,11 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         resolved_prompt = append_suggested_capabilities_hint(&resolved_prompt, ids);
     }
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
+    resolved_prompt =
+        crate::agent_runtime::turn_worker::append_active_workers_hint(
+            &resolved_prompt,
+            params.session_id,
+        );
     let recall_readiness = derive_recall_readiness(
         verification_state,
         recall_probe.attempted,

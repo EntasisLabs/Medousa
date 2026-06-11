@@ -6,6 +6,7 @@ mod prompts;
 mod registry;
 mod routing;
 mod run;
+mod status;
 mod store;
 
 pub use model_routing::{
@@ -33,4 +34,5 @@ pub use run::{
     pipeline_for_turn_profile, resume_synthesis_if_needed, run_worker_turn,
     system_prompt_for_host_bus,
 };
+pub use status::{append_active_workers_hint, format_active_workers_block};
 pub use store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store};

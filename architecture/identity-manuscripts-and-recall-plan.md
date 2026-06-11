@@ -246,6 +246,8 @@ spec:
     recall_hints: [priorities, team]
   worker:
     intent: research  # maps to TurnWorkerIntent
+    stage_role: extractor  # optional — StageRoutingMatrix role for spawned workers
+    model_hint: null  # optional — provider:model or bare model; overrides matrix route
     max_tool_rounds: 8
   tools:
     allow:  # optional narrowing; default = host bus or worker intent set

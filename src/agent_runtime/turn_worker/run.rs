@@ -127,6 +127,14 @@ impl TurnWorkerScheduler {
         *self.bus_session.write().await = None;
     }
 
+    pub async fn active_bus_session_id(&self) -> Option<String> {
+        self.bus_session
+            .read()
+            .await
+            .as_ref()
+            .map(|session| session.session_id.clone())
+    }
+
     pub fn store(&self) -> Arc<TurnWorkerStore> {
         self.store.clone()
     }

@@ -172,6 +172,7 @@ export class WorkspaceStore {
 
   /** Tier 3 — scan cached turn_worker cards and deliver pending syntheses to chat. */
   async syncTurnWorkerCardsToChat() {
+    chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
     await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
   }
 

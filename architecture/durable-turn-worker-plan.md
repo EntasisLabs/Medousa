@@ -103,7 +103,7 @@ Persisted to `workspace/turn_workers.json` (same pattern as ask jobs). **Running
 4. Intent default role (`research` → `extractor`, `general` → `final_response`, memory intents → `summarizer`)
 5. Host turn provider/model via `StageRoutingMatrix::default_for`
 
-Orchestrator manuscript (future Coder app) declares a **role catalog**; host passes `stage_role` per delegation.
+Spawn-time args override manuscript defaults. Multi-role orchestrator catalogs are deferred.
 
 ## Restart reconciliation (boot)
 
@@ -127,24 +127,18 @@ Durability ≠ clean chat. Still required:
 | Thread events → notifications | Mobile/home pairing |
 | Terminal-only on parent stream | `user_ack` + synthesis bubble |
 
-## Manuscript extension (Phase 3–4)
+## Manuscript worker routing (Phase 3)
 
 ```yaml
 spec:
   worker:
     intent: research
-    stage_role: extractor
-    model_hint: null
+    stage_role: extractor   # StageRoutingMatrix role — validated at load
+    model_hint: null        # optional provider:model override
     max_tool_rounds: 12
-  delegation:            # orchestrator manuscripts (Coder)
-    allow_spawn: true
-    default_stage_role: orchestrator
-    role_catalog:
-      - role: extractor
-        label: Deep read
-      - role: verifier
-        label: Review
 ```
+
+Validated roles: `orchestrator`, `chunker`, `extractor`, `summarizer`, `verifier`, `packer`, `final_response`.
 
 ## Phased delivery
 
@@ -154,9 +148,9 @@ spec:
 | **1a** | Persist `TurnWorkRecord` + reload without failing Running | Done in code |
 | **1b** | `TurnWorkerJobHandler` + enqueue on spawn | Done in code |
 | **1c** | Boot reconciliation + synthesis resume | Done in code |
-| **2** | Worker lane + stream decoupling | Planned |
-| **3** | Manuscript `stage_role` / `model_hint` fields + spawn args | Partial (schema + routing) |
-| **4** | Orchestrator manuscript + Coder role catalog | Planned |
+| **2** | Worker lane + stream decoupling | **Done in code** — worker rail, status default session, `[MEDOUSA_ACTIVE_WORKERS]` |
+| **3** | Manuscript `stage_role` / `model_hint` + spawn args | **Done** — validate, catalog, handoff blocks, example YAML |
+| **4** | *(reserved)* multi-role orchestrator catalogs | Deferred |
 | **5** | `branch_group_id` + Stasis concurrent fan-out | Expansion hook only |
 
 ## Code map

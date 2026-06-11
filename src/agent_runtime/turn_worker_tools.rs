@@ -67,6 +67,8 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
              Returns immediately; the worker runs tools with a focused policy, then a synthesis pass \
              delivers the final user-facing answer. Intents: memory.avec_calibrate | memory.context | research | general. \
              Optional manuscript_id loads a YAML specialty (voice, tool allowlist, identity pins, OpenShell/skill tools). \
+             Manuscript spec.worker.stage_role selects a StageRoutingMatrix route (extractor, verifier, …); \
+             spec.worker.model_hint overrides provider/model. Spawn-time stage_role/model_hint win over manuscript defaults. \
              Use manuscript_id=echo-skill or openshell-researcher for sandbox script execution. \
              Put resolved capability/module/op and any host evidence into task — workers do not see parent chat.",
         )
@@ -90,7 +92,7 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
                 },
                 "manuscript_id": {
                     "type": "string",
-                    "description": "Optional YAML identity manuscript id (e.g. morning-brief)"
+                    "description": "Optional YAML specialty (voice, tools, worker intent, spec.worker.stage_role, spec.worker.model_hint)."
                 },
                 "stage_role": {
                     "type": "string",
@@ -182,7 +184,15 @@ impl StasisTool for CognitionSpawnTurnWorkerTool {
     }
 }
 
-pub struct CognitionTurnWorkerStatusTool;
+pub struct CognitionTurnWorkerStatusTool {
+    scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+}
+
+impl CognitionTurnWorkerStatusTool {
+    pub fn new(scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>) -> Self {
+        Self { scheduler }
+    }
+}
 
 #[async_trait]
 impl StasisTool for CognitionTurnWorkerStatusTool {
@@ -191,7 +201,9 @@ impl StasisTool for CognitionTurnWorkerStatusTool {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some("List or fetch status of background turn workers for the current session.")
+        Some(
+            "List or fetch status of background turn workers. On an active host turn, omit session_id to use the current session.",
+        )
     }
 
     fn input_schema(&self) -> Option<Value> {
@@ -212,17 +224,40 @@ impl StasisTool for CognitionTurnWorkerStatusTool {
             })?;
             return Ok(json!({ "ok": true, "record": record }));
         }
-        let session_id = input
+        let session_id = match input
             .get("session_id")
             .and_then(|v| v.as_str())
             .map(str::trim)
-            .filter(|s| !s.is_empty());
-        let records = if let Some(session_id) = session_id {
-            store.list_for_session(session_id)
-        } else {
-            Vec::new()
+            .filter(|s| !s.is_empty())
+        {
+            Some(session_id) => session_id.to_string(),
+            None => self
+                .scheduler
+                .active_bus_session_id()
+                .await
+                .ok_or_else(|| {
+                    StasisError::PortFailure(
+                        "cognition_turn_worker_status: session_id required when no host turn is active"
+                            .to_string(),
+                    )
+                })?,
         };
-        Ok(json!({ "ok": true, "records": records }))
+        let records = store.list_for_session(&session_id);
+        let active = records
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                )
+            })
+            .count();
+        Ok(json!({
+            "ok": true,
+            "session_id": session_id,
+            "active_count": active,
+            "records": records,
+        }))
     }
 }
 
@@ -274,8 +309,8 @@ pub fn register_turn_worker_tools(
     registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler))?;
-    registry.register_tool(CognitionTurnWorkerStatusTool)?;
+    registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
+    registry.register_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
     registry.register_tool(CognitionTurnWorkerCancelTool)?;
     Ok(())
 }

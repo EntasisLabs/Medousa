@@ -16,6 +16,7 @@
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
+  import { groupWorkerThreads } from "$lib/utils/workerThreads";
   import {
     parseChatSlashInput,
     runSlashCommand,
@@ -36,6 +37,7 @@
 
   const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(chat.messages));
+  const workerThreads = $derived(groupWorkerThreads(chat.messages));
   const sessionLabel = $derived(chat.currentSessionLabel());
   const recentSessions = $derived(
     chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
@@ -77,7 +79,7 @@
   });
 
   $effect(() => {
-    if (scrollEl && (chatMessages.length || askThreads.length || chat.hasTurnActivity)) {
+    if (scrollEl && (chatMessages.length || askThreads.length || workerThreads.length || chat.hasTurnActivity)) {
       scrollEl.scrollTop = scrollEl.scrollHeight;
     }
   });
@@ -332,9 +334,43 @@
         </section>
       {/if}
 
+      {#if workerThreads.length > 0}
+        <section class="chat-ask-rail space-y-3">
+          <div class="chat-ask-rail-header">
+            <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-surface-500">
+              Workers
+            </p>
+            <p class="mt-0.5 text-[11px] text-surface-500">
+              Workshop lane — progress stays off the main thread
+            </p>
+          </div>
+          {#each workerThreads as thread (thread.workId)}
+            <article class="chat-ask-thread">
+              <header class="chat-ask-thread-header">
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-surface-100">
+                    {thread.workId}
+                  </p>
+                  <p class="mt-0.5 text-[10px] text-surface-500">
+                    {#if thread.active}
+                      {thread.statusLine}
+                    {:else}
+                      Settled
+                    {/if}
+                  </p>
+                </div>
+              </header>
+              <div class="chat-ask-thread-body space-y-3">
+                <ChatMessageList messages={thread.messages} {mobile} compact={true} />
+              </div>
+            </article>
+          {/each}
+        </section>
+      {/if}
+
       {#if chatMessages.length > 0}
         <ChatMessageList messages={chatMessages} {mobile} />
-      {:else if askThreads.length === 0}
+      {:else if askThreads.length === 0 && workerThreads.length === 0}
       <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
         {#if mobile}
           <p class="text-sm text-surface-300">Say one thing.</p>

@@ -31,6 +31,7 @@ import {
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
+import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
 
 const SESSION_KEY = "medousa-home-session-id";
@@ -556,6 +557,10 @@ export class ChatStore {
     if (!trimmed) return false;
     if (trimmed === this.sessionId) return true;
 
+    for (const link of this.workers.values()) {
+      if (link.sessionId === trimmed) return true;
+    }
+
     const jobId = askJobIdFromSession(trimmed);
     if (!jobId) return false;
 
@@ -691,6 +696,45 @@ export class ChatStore {
     }
   }
 
+  /** Keep worker-lane bubbles in sync with workspace card columns (no parent SSE). */
+  syncWorkerLaneFromCards(
+    cards: WorkCard[],
+    details: Map<string, WorkCardDetail>,
+  ) {
+    for (const card of cards) {
+      const detail = details.get(card.id);
+      if (!detail || detail.kind !== "turn_worker") continue;
+      if (!this.isRelevantSession(detail.session_id?.trim())) continue;
+      const workId = detail.work_id?.trim() || card.id;
+      const statusLine = workerStatusLineForColumn(card.column);
+      const streaming = card.column !== "done" && card.column !== "blocked";
+      this.updateWorkerLaneBubble(workId, { statusLine, streaming });
+    }
+  }
+
+  private updateWorkerLaneBubble(
+    workId: string,
+    options: { statusLine: string; streaming: boolean },
+  ) {
+    const link = this.workers.get(workId);
+    const targetId = link?.synthesisMessageId;
+    if (!targetId) return;
+    const idx = this.messages.findIndex((message) => message.id === targetId);
+    if (idx < 0) return;
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        lane: "worker",
+        workId,
+        statusLine: options.statusLine,
+        streaming: options.streaming && !current.content.trim(),
+      },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
   private noteWorkerSynthesizing(workId: string) {
     const link = this.workers.get(workId);
     if (!link?.messageId) return;
@@ -764,9 +808,6 @@ export class ChatStore {
       ? this.messages.find((message) => message.id === link.messageId)
       : null;
     const turn = turnId ? this.turns.get(turnId) : null;
-    const lane = handoffMessage?.lane ?? "chat";
-    const askJobId =
-      handoffMessage?.askJobId ?? turn?.workspaceCardId ?? null;
 
     const id = crypto.randomUUID();
     this.messages = [
@@ -777,8 +818,8 @@ export class ChatStore {
         content: "",
         streaming: options?.streaming ?? true,
         turnId,
-        lane,
-        askJobId,
+        lane: "worker",
+        workId,
         statusLine: options?.statusLine ?? null,
       },
     ];
@@ -870,6 +911,8 @@ export class ChatStore {
             streaming: false,
             phase: null,
             statusLine: null,
+            lane: "worker",
+            workId,
             tools: detail?.tool_names?.length
               ? [...detail.tool_names]
               : this.messages[idx].tools,

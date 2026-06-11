@@ -7,6 +7,7 @@ metadata:
 spec:
   worker:
     intent: research
+    stage_role: extractor
     max_tool_rounds: 10
   tools:
     allow:

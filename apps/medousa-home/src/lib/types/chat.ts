@@ -36,10 +36,12 @@ export interface ChatMessage {
   turnId?: string | null;
   /** Stage-direction whisper (e.g. worker handoff ack) above the main voice. */
   stageWhisper?: string | null;
-  /** `ask` = background /ask lane; `chat` = principal conversation (default). */
-  lane?: "chat" | "ask" | null;
+  /** `ask` = background /ask lane; `worker` = delegated workshop lane; `chat` = principal conversation (default). */
+  lane?: "chat" | "ask" | "worker" | null;
   /** Workspace card / job id for ask-lane messages. */
   askJobId?: string | null;
+  /** Turn worker id for worker-lane messages. */
+  workId?: string | null;
   /** Turn paused for operator tool-round budget approval. */
   budgetRequestId?: string | null;
   requestedRounds?: number | null;

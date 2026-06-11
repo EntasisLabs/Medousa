@@ -11,6 +11,7 @@ use crate::cognitive_identity::DigestCompileOptions;
 use crate::openshell_sandbox_run::resolve_policy_template_path;
 use crate::openshell_tools::is_openshell_cognition_tool;
 use crate::skill_tools::is_skill_cognition_tool;
+use crate::stage_routing::{StageRoutingMatrix, normalize_role};
 
 pub const MANUSCRIPT_API_VERSION: &str = "medousa.dev/v1";
 pub const MANUSCRIPT_KIND: &str = "IdentityManuscript";
@@ -586,6 +587,16 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
         }
     }
 
+    if let Some(role) = file.spec.worker.stage_role.as_deref() {
+        validate_worker_stage_role(role)?;
+    }
+
+    if let Some(hint) = file.spec.worker.model_hint.as_deref() {
+        if hint.trim().is_empty() {
+            bail!("spec.worker.model_hint must not be blank when set");
+        }
+    }
+
     if let Some(mode) = file.spec.delivery.mode.as_deref() {
         match mode.trim().to_ascii_lowercase().as_str() {
             "telegram" | "webhook" | "linked_channel" | "store_only" => {}
@@ -606,6 +617,21 @@ pub fn validate_manuscript(file: &IdentityManuscriptFile, path: &Path) -> Result
     validate_openshell_spec(&file.spec.openshell, &file.spec.tools.allow)?;
 
     Ok(())
+}
+
+/// Validates `spec.worker.stage_role` against [`StageRoutingMatrix`] role names.
+pub fn validate_worker_stage_role(role: &str) -> Result<()> {
+    let normalized = normalize_role(role);
+    if StageRoutingMatrix::roles()
+        .iter()
+        .any(|known| *known == normalized.as_str())
+    {
+        return Ok(());
+    }
+    bail!(
+        "spec.worker.stage_role '{role}' is invalid (expected one of: {})",
+        StageRoutingMatrix::roles().join(", ")
+    )
 }
 
 fn validate_openshell_spec(openshell: &ManuscriptOpenshellSpec, tools_allow: &[String]) -> Result<()> {
@@ -714,6 +740,8 @@ pub fn manuscript_catalog_entry(manuscript: &ManuscriptContext) -> serde_json::V
         "extends_from": manuscript.extends_from,
         "display_name": manuscript.display_name,
         "worker_intent": manuscript.worker_intent,
+        "worker_stage_role": manuscript.worker_stage_role,
+        "worker_model_hint": manuscript.worker_model_hint,
         "max_tool_rounds": manuscript.max_tool_rounds,
         "tools_allow": manuscript.tools_allow,
         "pinned_preferences": manuscript.pinned_preferences,
@@ -888,6 +916,9 @@ pub fn digest_options_for_manuscript(
 pub struct WorkerManuscriptHandoff {
     pub id: String,
     pub name: String,
+    pub worker_intent: Option<String>,
+    pub stage_role: Option<String>,
+    pub model_hint: Option<String>,
     pub voice_appendix: Option<String>,
     pub system_appendix: Option<String>,
     pub tools_allow: Vec<String>,
@@ -901,6 +932,9 @@ impl From<&ManuscriptContext> for WorkerManuscriptHandoff {
         Self {
             id: manuscript.id.clone(),
             name: manuscript.name.clone(),
+            worker_intent: manuscript.worker_intent.clone(),
+            stage_role: manuscript.worker_stage_role.clone(),
+            model_hint: manuscript.worker_model_hint.clone(),
             voice_appendix: manuscript.voice_appendix.clone(),
             system_appendix: manuscript.system_appendix.clone(),
             tools_allow: manuscript.tools_allow.clone(),
@@ -917,6 +951,15 @@ pub fn format_worker_manuscript_block(manuscript: &WorkerManuscriptHandoff) -> S
         format!("id={}", manuscript.id),
         format!("name={}", manuscript.name),
     ];
+    if let Some(intent) = manuscript.worker_intent.as_deref().filter(|v| !v.is_empty()) {
+        lines.push(format!("worker_intent={intent}"));
+    }
+    if let Some(role) = manuscript.stage_role.as_deref().filter(|v| !v.is_empty()) {
+        lines.push(format!("worker_stage_role={role}"));
+    }
+    if let Some(hint) = manuscript.model_hint.as_deref().filter(|v| !v.is_empty()) {
+        lines.push(format!("worker_model_hint={hint}"));
+    }
     if !manuscript.tools_allow.is_empty() {
         lines.push(format!("tools_allow={}", manuscript.tools_allow.join(",")));
     }
@@ -975,6 +1018,20 @@ pub fn format_manuscript_prompt_block(manuscript: &ManuscriptContext) -> String 
     if let Some(task) = manuscript.task_template.as_deref().filter(|v| !v.is_empty()) {
         lines.push("task_template:".to_string());
         lines.push(task.trim().to_string());
+    }
+    if let Some(intent) = manuscript.worker_intent.as_deref().filter(|v| !v.is_empty()) {
+        lines.push(format!("worker_intent={intent}"));
+    }
+    if let Some(role) = manuscript.worker_stage_role.as_deref().filter(|v| !v.is_empty()) {
+        lines.push(format!(
+            "worker_stage_role={role} (maps to StageRoutingMatrix for spawned workers)"
+        ));
+    }
+    if let Some(hint) = manuscript.worker_model_hint.as_deref().filter(|v| !v.is_empty()) {
+        lines.push(format!("worker_model_hint={hint}"));
+    }
+    if !manuscript.tools_allow.is_empty() {
+        lines.push(format!("tools_allow={}", manuscript.tools_allow.join(",")));
     }
     if manuscript.openshell_enabled {
         lines.push("openshell=enabled".to_string());
@@ -1293,5 +1350,82 @@ spec:
             source_path: PathBuf::from("openshell-brief.yaml"),
         };
         assert!(validate_manuscript_for_scheduled_lane(&manuscript).is_err());
+    }
+
+    #[test]
+    fn validate_worker_stage_role_accepts_matrix_roles() {
+        validate_worker_stage_role("extractor").expect("extractor");
+        validate_worker_stage_role("final-response").expect("hyphen alias");
+    }
+
+    #[test]
+    fn validate_worker_stage_role_rejects_unknown() {
+        let err = validate_worker_stage_role("coder-fast").unwrap_err();
+        assert!(err.to_string().contains("stage_role"));
+    }
+
+    #[test]
+    fn prompt_block_includes_worker_stage_role() {
+        let manuscript = ManuscriptContext {
+            id: "brief".to_string(),
+            name: "Brief".to_string(),
+            description: None,
+            display_name: None,
+            voice_appendix: None,
+            system_appendix: None,
+            task_template: None,
+            pinned_preferences: Vec::new(),
+            pinned_contact_ids: Vec::new(),
+            recall_hints: Vec::new(),
+            worker_intent: Some("research".to_string()),
+            worker_stage_role: Some("summarizer".to_string()),
+            worker_model_hint: Some("openai:gpt-4o-mini".to_string()),
+            max_tool_rounds: Some(8),
+            tools_allow: vec!["cognition_memory_context".to_string()],
+            locus_session_id: None,
+            delivery_mode: None,
+            delivery_on_complete: None,
+            schedule_cron: None,
+            schedule_execution_mode: None,
+            openshell_enabled: false,
+            openshell_policy_template: None,
+            openshell_sandbox_from: None,
+            openshell_allow_scheduled: false,
+            extends_from: None,
+            source_path: PathBuf::from("brief.yaml"),
+        };
+        let block = format_manuscript_prompt_block(&manuscript);
+        assert!(block.contains("worker_stage_role=summarizer"));
+        assert!(block.contains("worker_model_hint=openai:gpt-4o-mini"));
+
+        let worker = WorkerManuscriptHandoff::from(&manuscript);
+        let handoff = format_worker_manuscript_block(&worker);
+        assert!(handoff.contains("worker_stage_role=summarizer"));
+    }
+
+    #[test]
+    fn merge_worker_spec_prefers_child_stage_role() {
+        let merged = merge_worker_spec(
+            &ManuscriptWorkerSpec {
+                intent: Some("research".to_string()),
+                stage_role: Some("extractor".to_string()),
+                model_hint: None,
+                max_tool_rounds: Some(10),
+                override_sttp: false,
+            },
+            &ManuscriptWorkerSpec {
+                intent: None,
+                stage_role: Some("summarizer".to_string()),
+                model_hint: Some("anthropic:claude-sonnet-4".to_string()),
+                max_tool_rounds: Some(6),
+                override_sttp: false,
+            },
+        );
+        assert_eq!(merged.stage_role.as_deref(), Some("summarizer"));
+        assert_eq!(
+            merged.model_hint.as_deref(),
+            Some("anthropic:claude-sonnet-4")
+        );
+        assert_eq!(merged.max_tool_rounds, Some(6));
     }
 }
