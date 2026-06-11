@@ -1,6 +1,13 @@
 <script lang="ts">
-  import { Smartphone } from "@lucide/svelte";
+  import PhonePairPanel from "$lib/components/pairing/PhonePairPanel.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import type { PairedDeviceSummary } from "$lib/utils/pairingApi";
+
+  let paired = $state(false);
+
+  function handlePaired(_device: PairedDeviceSummary) {
+    paired = true;
+  }
 </script>
 
 <div class="flex h-full flex-col">
@@ -19,18 +26,11 @@
     Talk to Medousa from anywhere in your home — your phone becomes a second portal to your brain.
   </p>
 
-  <div
-    class="mt-6 flex flex-col items-center rounded-xl border border-dashed border-surface-500/45 bg-surface-950/50 px-6 py-10 text-center"
-  >
-    <Smartphone class="h-10 w-10 text-surface-500" aria-hidden="true" />
-    <p class="mt-4 text-sm text-surface-300">
-      QR pairing lands in Phase D — live <span class="font-mono text-xs">GET /qr</span> from Medousa
-      Core is already wired.
-    </p>
-    <p class="workshop-faint mt-2 text-xs">Same Wi‑Fi makes discovery instant.</p>
+  <div class="mt-5 min-h-0 flex-1 overflow-y-auto">
+    <PhonePairPanel mode="wizard" onPaired={handlePaired} />
   </div>
 
-  <div class="mt-auto flex flex-wrap items-center justify-between gap-3 pt-8">
+  <div class="mt-auto flex flex-wrap items-center justify-between gap-3 pt-6">
     <button
       type="button"
       class="btn variant-ghost min-h-11"
@@ -45,7 +45,7 @@
       disabled={wizard.busy}
       onclick={() => void wizard.continue()}
     >
-      Finish setup
+      {paired ? "Continue" : "Finish setup"}
     </button>
   </div>
 </div>

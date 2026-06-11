@@ -5,6 +5,7 @@
   import SettingsMemorySection from "$lib/components/settings/SettingsMemorySection.svelte";
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
+  import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
@@ -96,6 +97,8 @@
         <SettingsVoiceSection {mobile} />
       {:else if activeSection === "reach"}
         <SettingsReachSection {mobile} />
+      {:else if activeSection === "phone"}
+        <SettingsPhoneSection {mobile} />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

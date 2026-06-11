@@ -5,6 +5,7 @@ mod files;
 mod daemon;
 mod messaging;
 mod medousa_paths;
+mod pairing;
 mod providers;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -73,6 +74,11 @@ pub fn run() {
             daemon_service::daemon_wait_healthy,
             providers::providers_probe,
             providers::providers_validate_key,
+            pairing::pairing_fetch_qr,
+            pairing::pairing_fetch_qr_image,
+            pairing::pairing_fetch_status,
+            pairing::pairing_revoke,
+            pairing::bonjour_status,
             daemon::workspace_stream_start,
             daemon::workspace_stream_stop,
             daemon::interactive_turn_send,

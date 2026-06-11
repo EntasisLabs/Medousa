@@ -393,14 +393,14 @@ Race: first `/pair/init` wins; second gets **409** (token single-use). Verify mu
 
 **Exit:** Clean macOS VM: pick Ollama or paste OpenAI key → chat works, no terminal.
 
-### Phase D — Screen 3 + Settings phone (~3 days)
+### Phase D — Screen 3 + Settings phone (~3 days) — **Landed**
 
 **Goal:** QR in wizard and Settings.
 
-- [ ] PhonePairScreen.svelte — poll `/qr`, countdown, short code, pairing_success
-- [ ] Settings Phone panel — pair / forget / device list
-- [ ] `bonjour_status` IPC
-- [ ] Network diagnostics link (pairing troubleshooting copy)
+- [x] PhonePairScreen.svelte — poll `/qr`, countdown, short code, pairing_success
+- [x] Settings Phone panel — pair / forget / device list
+- [x] `bonjour_status` IPC
+- [x] Network diagnostics link (pairing troubleshooting copy)
 
 **Exit:** Phone simulator or curl harness completes pair; wizard skip + Settings re-entry works.
 

@@ -4,6 +4,7 @@ export type SettingsSectionId =
   | "memory"
   | "voice"
   | "reach"
+  | "phone"
   | "basement";
 
 export const SETTINGS_SECTIONS: {
@@ -16,6 +17,7 @@ export const SETTINGS_SECTIONS: {
   { id: "memory", label: "Memory", hint: "What stays vivid" },
   { id: "voice", label: "Voice", hint: "How she answers" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
+  { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "basement", label: "Basement", hint: "Connection & power tools" },
 ];
 
