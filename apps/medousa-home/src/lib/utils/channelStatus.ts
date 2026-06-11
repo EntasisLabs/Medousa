@@ -3,6 +3,7 @@ import type {
   ChannelStatus,
   ProductConfigSummary,
 } from "$lib/types/messaging";
+import type { LivelinessVariant } from "$lib/types/liveliness";
 
 export function channelStatus(
   channelId: ChannelId,
@@ -37,10 +38,7 @@ export function channelStatus(
     }
     case "whatsapp": {
       const channel = summary.whatsapp;
-      if (
-        !channel.deliverBind.trim() ||
-        channel.allowedUserIds.length === 0
-      ) {
+      if (!channel.deliverBind.trim() || channel.allowedUserIds.length === 0) {
         return "needs_setup";
       }
       return daemonOk ? "connected" : "ready";
@@ -53,9 +51,9 @@ export function channelStatus(
 export function statusLabel(status: ChannelStatus): string {
   switch (status) {
     case "connected":
-      return "Connected";
+      return "Live";
     case "ready":
-      return "Ready";
+      return "Configured";
     default:
       return "Needs setup";
   }
@@ -64,10 +62,42 @@ export function statusLabel(status: ChannelStatus): string {
 export function statusClass(status: ChannelStatus): string {
   switch (status) {
     case "connected":
-      return "text-success-400";
     case "ready":
       return "text-primary-300";
     default:
       return "text-surface-500";
+  }
+}
+
+export function statusDotClass(status: ChannelStatus): string {
+  switch (status) {
+    case "connected":
+      return "messaging-status-dot messaging-status-dot-live";
+    case "ready":
+      return "messaging-status-dot messaging-status-dot-ready";
+    default:
+      return "messaging-status-dot messaging-status-dot-setup";
+  }
+}
+
+export function statusChipVariant(status: ChannelStatus): LivelinessVariant {
+  switch (status) {
+    case "connected":
+      return "live";
+    case "ready":
+      return "ready";
+    default:
+      return "setup";
+  }
+}
+
+export function statusChipClass(status: ChannelStatus): string {
+  switch (status) {
+    case "connected":
+      return "workshop-liveliness-chip workshop-liveliness-chip-live";
+    case "ready":
+      return "workshop-liveliness-chip workshop-liveliness-chip-ready";
+    default:
+      return "workshop-liveliness-chip workshop-liveliness-chip-setup";
   }
 }

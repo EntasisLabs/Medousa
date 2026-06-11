@@ -52,6 +52,7 @@
   <header class="workshop-header flex flex-wrap items-center justify-between gap-3">
     <div>
       <h1 class="text-sm font-semibold">Work</h1>
+      <p class="workshop-header-line mt-0.5">Cards in motion across the workshop</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <label class="flex items-center gap-2 text-xs text-surface-300">

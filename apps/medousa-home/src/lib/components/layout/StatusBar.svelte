@@ -32,6 +32,24 @@
     health?.ok ? "Connected" : health ? "Offline" : "Connecting…",
   );
 
+  const statusDotClass = $derived(
+    health?.ok
+      ? "workshop-status-dot workshop-status-dot-live"
+      : health
+        ? "workshop-status-dot workshop-status-dot-warning"
+        : "workshop-status-dot workshop-status-dot-muted",
+  );
+
+  const statusTextClass = $derived(
+    minimal
+      ? health?.ok
+        ? "text-surface-600"
+        : "text-warning-400/90"
+      : health?.ok
+        ? "text-primary-300"
+        : "text-warning-400",
+  );
+
   const deliveryLabel = $derived.by(() => {
     if (pendingDeliveries === null) return null;
     if (pendingDeliveries > 0) return `${pendingDeliveries} pending delivery`;
@@ -52,16 +70,9 @@
     : 'h-8'}"
   aria-label="Workshop status"
 >
-  <span
-    class="truncate {minimal
-      ? health?.ok
-        ? 'text-surface-600'
-        : 'text-warning-400/90'
-      : health?.ok
-        ? 'text-success-400'
-        : 'text-warning-400'}"
-  >
-    {statusLabel}
+  <span class="workshop-status-whisper {statusTextClass}">
+    <span class={statusDotClass} aria-hidden="true"></span>
+    <span class="truncate">{statusLabel}</span>
   </span>
 
   {#if !minimal}

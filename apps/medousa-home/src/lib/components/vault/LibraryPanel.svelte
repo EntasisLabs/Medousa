@@ -114,7 +114,12 @@
             </button>
           </div>
 
-        <div class="px-3 pt-3">
+        <div class="px-3 pb-2 pt-3">
+          <h2 class="text-sm font-semibold text-surface-50">Library</h2>
+          <p class="workshop-header-line mt-0.5">Memory on the page — vault and your files</p>
+        </div>
+
+        <div class="px-3 pt-1">
           <input
             class="input w-full text-sm"
             type="search"

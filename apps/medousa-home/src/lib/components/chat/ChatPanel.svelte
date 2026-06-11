@@ -216,7 +216,7 @@
             <p class="truncate text-[11px] text-surface-400">{mobileChatSubtitle}</p>
           {:else}
             <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
-            <p class="truncate text-[11px] text-surface-500">Medousa</p>
+            <p class="workshop-header-line truncate">Talk with her in this session</p>
           {/if}
         </button>
         {#if chat.hasTurnActivity && mobile}

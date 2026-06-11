@@ -122,11 +122,11 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 class="text-base font-semibold text-surface-50">Skills &amp; Tools</h1>
-            <p class="text-xs text-surface-300">
+            <p class="workshop-header-line mt-1">
               {#if activeTab === "skills"}
-                {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
+                Manuscripts she can run · {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
               {:else}
-                {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+                Tools she can reach · {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
               {/if}
             </p>
           </div>
@@ -222,7 +222,7 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div
-      class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
+      class="workshop-list-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
         ? 'hidden'
         : ''}"
     >
@@ -249,7 +249,7 @@
                     <div
                       class="flex items-center gap-3 px-2 py-2 transition hover:bg-surface-800/70 {selectedSkillId ===
                       entry.id
-                        ? 'bg-surface-800/80'
+                        ? 'workshop-list-row-active'
                         : ''}"
                     >
                       <button
@@ -331,7 +331,7 @@
                     type="button"
                     class="flex w-full items-start gap-3 px-2 py-2.5 text-left transition hover:bg-surface-800/70 {selectedToolId ===
                     entry.id
-                      ? 'bg-surface-800/80'
+                      ? 'workshop-list-row-active'
                       : ''}"
                     onclick={() => selectTool(entry)}
                   >
@@ -379,7 +379,7 @@
         ? mobileDetailOpen
           ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-y-auto'
           : 'hidden'
-        : 'w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40 bg-surface-800/40'} px-4 py-4"
+        : 'workshop-detail-pane w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40'} px-4 py-4"
     >
       {#if mobileDetailOpen}
         <button

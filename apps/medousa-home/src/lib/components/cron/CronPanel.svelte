@@ -1,5 +1,6 @@
 <script lang="ts">
   import CronCreateForm from "$lib/components/cron/CronCreateForm.svelte";
+  import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { cronDraft } from "$lib/stores/cron.svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
@@ -105,8 +106,8 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 class="text-base font-semibold text-surface-50">Cron jobs</h1>
-            <p class="text-xs text-surface-300">
-              {counts.enabled}/{counts.total} active · sorted by next run
+            <p class="workshop-header-line mt-1">
+              Rhythm — what fires on the clock · {counts.enabled}/{counts.total} active
             </p>
           </div>
           <button
@@ -151,7 +152,7 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div
-      class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
+      class="workshop-list-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
         ? 'hidden'
         : ''}"
     >
@@ -173,7 +174,7 @@
                 type="button"
                 class="flex w-full items-start gap-3 px-2 py-2.5 text-left transition hover:bg-surface-800/70 {selectedId ===
                 entry.recurring_id
-                  ? 'bg-surface-800/80'
+                  ? 'workshop-list-row-active'
                   : ''}"
                 onclick={() => selectEntry(entry)}
               >
@@ -182,13 +183,9 @@
                     <p class="truncate font-medium text-surface-100">
                       {recurring.labelFor(entry)}
                     </p>
-                    <span
-                      class="text-[10px] uppercase tracking-wide {entry.enabled
-                        ? 'text-primary-300'
-                        : 'text-surface-500'}"
-                    >
-                      {entry.enabled ? "Scheduled" : "Paused"}
-                    </span>
+                    <WorkshopLivelinessChip
+                      variant={entry.enabled ? "scheduled" : "paused"}
+                    />
                     <span class="workshop-faint">{recurring.originFor(entry)}</span>
                   </div>
                   <p class="workshop-faint mt-0.5 truncate font-mono text-[11px]">
@@ -222,7 +219,7 @@
         ? mobileDetailOpen
           ? 'mobile-you-scroll flex min-h-0 flex-1 flex-col overflow-y-auto'
           : 'hidden'
-        : 'w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40 bg-surface-800/40'} px-4 py-4"
+        : 'workshop-detail-pane w-[min(360px,40%)] shrink-0 overflow-y-auto border-l border-surface-500/40'} px-4 py-4"
     >
       {#if mobileDetailOpen}
         <button
@@ -258,8 +255,10 @@
         <dl class="mt-4 space-y-2 text-xs">
           <div>
             <dt class="workshop-label">Status</dt>
-            <dd class="mt-0.5 text-surface-200">
-              {selected.enabled ? "Scheduled" : "Paused"}
+            <dd class="mt-0.5">
+              <WorkshopLivelinessChip
+                variant={selected.enabled ? "scheduled" : "paused"}
+              />
             </dd>
           </div>
           <div>

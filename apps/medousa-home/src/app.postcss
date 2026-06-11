@@ -48,6 +48,21 @@
         transparent 55%
       );
   }
+
+  html.dark[data-theme="medousa"] body {
+    background-color: rgb(var(--color-surface-950));
+    background-image:
+      radial-gradient(
+        ellipse 55% 42% at 88% 6%,
+        rgb(var(--color-primary-500) / 0.09) 0%,
+        transparent 58%
+      ),
+      radial-gradient(
+        ellipse 48% 38% at 10% 94%,
+        rgb(var(--color-secondary-500) / 0.07) 0%,
+        transparent 54%
+      );
+  }
 }
 
 @layer components {
@@ -71,6 +86,55 @@
   /* Repeated panel header pattern */
   .workshop-header {
     @apply border-b border-surface-500/45 bg-surface-800/50 px-4 py-2.5;
+  }
+
+  .workshop-header-line {
+    @apply text-xs;
+    color: rgb(var(--color-surface-300) / 0.88);
+  }
+
+  .workshop-list-pane {
+    background-color: rgb(var(--color-surface-900) / 0.72);
+  }
+
+  .workshop-detail-pane {
+    background-color: rgb(var(--color-surface-800) / 0.38);
+  }
+
+  .workshop-list-row-active {
+    background-color: rgb(var(--color-primary-500) / 0.1);
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.25);
+  }
+
+  .workshop-status-whisper {
+    @apply inline-flex min-w-0 items-center gap-1.5 truncate;
+  }
+
+  .workshop-status-dot {
+    @apply h-1.5 w-1.5 shrink-0 rounded-full;
+  }
+
+  .workshop-status-dot-live {
+    background-color: rgb(var(--color-primary-400));
+    animation: workshop-status-pulse 2.4s ease-in-out infinite;
+  }
+
+  .workshop-status-dot-warning {
+    background-color: rgb(var(--color-warning-400));
+  }
+
+  .workshop-status-dot-muted {
+    @apply bg-surface-600;
+  }
+
+  @keyframes workshop-status-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(var(--color-primary-500) / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgb(var(--color-primary-500) / 0);
+    }
   }
 
   /* Library sidebar filter toggles — matches space chips */
@@ -189,7 +253,8 @@
   }
 
   .workshop-faint {
-    @apply text-xs text-surface-400;
+    @apply text-xs;
+    color: rgb(var(--color-surface-300) / 0.78);
   }
 
   /* Side drawers (sessions, identity) */
@@ -211,7 +276,8 @@
   }
 
   .workshop-rail-btn-active {
-    @apply bg-surface-800 text-primary-300 ring-1 ring-inset ring-primary-500/35;
+    background-color: rgb(var(--color-primary-500) / 0.1);
+    @apply text-primary-300 ring-1 ring-inset ring-primary-500/25;
   }
 
   .workshop-rail-tier-divider {
@@ -223,7 +289,12 @@
   }
 
   .workshop-rail-btn-tier-utility {
-    @apply h-8 w-8 text-surface-600 hover:text-surface-400;
+    @apply h-8 w-8 hover:text-surface-300;
+    color: rgb(var(--color-primary-400) / 0.42);
+  }
+
+  .workshop-rail-btn-tier-utility:hover {
+    color: rgb(var(--color-primary-300) / 0.88);
   }
 
   .workshop-rail-badge {
@@ -1556,6 +1627,142 @@
   .mobile-channel-chip-active {
     @apply border-primary-500/45 text-surface-100;
     background-color: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  /* Messaging — workshop-native channel accents */
+  .messaging-channel-icon {
+    @apply flex shrink-0 items-center justify-center rounded-lg ring-1 ring-inset;
+  }
+
+  .messaging-channel-icon-lg {
+    @apply h-11 w-11 rounded-xl;
+  }
+
+  .messaging-channel-icon:not(.messaging-channel-icon-lg) {
+    @apply h-9 w-9;
+  }
+
+  .messaging-channel-icon-primary {
+    background-color: rgb(var(--color-primary-500) / 0.2);
+    color: rgb(var(--color-primary-300));
+    --tw-ring-color: rgb(var(--color-primary-500) / 0.34);
+  }
+
+  .messaging-channel-icon-secondary {
+    background-color: rgb(var(--color-secondary-500) / 0.2);
+    color: rgb(var(--color-secondary-300));
+    --tw-ring-color: rgb(var(--color-secondary-500) / 0.34);
+  }
+
+  .messaging-channel-icon-tertiary {
+    background-color: rgb(var(--color-tertiary-500) / 0.18);
+    color: rgb(var(--color-tertiary-300));
+    --tw-ring-color: rgb(var(--color-tertiary-500) / 0.32);
+  }
+
+  .messaging-channel-icon-success {
+    background-color: rgb(var(--color-success-500) / 0.16);
+    color: rgb(var(--color-success-400));
+    --tw-ring-color: rgb(var(--color-success-500) / 0.28);
+  }
+
+  .messaging-status-dot {
+    @apply mt-1.5 h-2 w-2 shrink-0 rounded-full;
+  }
+
+  .messaging-status-dot-live {
+    background-color: rgb(var(--color-primary-400));
+    box-shadow: 0 0 10px rgb(var(--color-primary-500) / 0.45);
+  }
+
+  .messaging-status-dot-ready {
+    background-color: rgb(var(--color-primary-500) / 0.55);
+  }
+
+  .messaging-status-dot-setup {
+    @apply bg-surface-600;
+  }
+
+  .workshop-liveliness-chip,
+  .messaging-liveliness-chip {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide;
+  }
+
+  .workshop-liveliness-chip-live,
+  .messaging-liveliness-chip-live {
+    background-color: rgb(var(--color-primary-500) / 0.16);
+    color: rgb(var(--color-primary-300));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.28);
+  }
+
+  .workshop-liveliness-chip-ready,
+  .messaging-liveliness-chip-ready {
+    background-color: rgb(var(--color-primary-500) / 0.1);
+    color: rgb(var(--color-primary-300));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.2);
+  }
+
+  .workshop-liveliness-chip-setup,
+  .messaging-liveliness-chip-setup {
+    @apply bg-surface-800 text-surface-500;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.35);
+  }
+
+  .workshop-liveliness-chip-muted,
+  .messaging-liveliness-chip-muted {
+    @apply bg-surface-800 text-surface-400;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.3);
+  }
+
+  .workshop-liveliness-chip-scheduled {
+    background-color: rgb(var(--color-primary-500) / 0.12);
+    color: rgb(var(--color-primary-300));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.22);
+  }
+
+  .workshop-liveliness-chip-paused {
+    @apply bg-surface-800 text-surface-500;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.32);
+  }
+
+  .workshop-liveliness-chip-warning {
+    background-color: rgb(var(--color-warning-500) / 0.14);
+    color: rgb(var(--color-warning-300));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-warning-500) / 0.28);
+  }
+
+  .messaging-guide-link {
+    @apply mt-3 inline-flex items-center gap-1.5 rounded-container-token px-3 py-2 text-sm font-medium transition;
+    background-color: rgb(var(--color-primary-500) / 0.1);
+    color: rgb(var(--color-primary-300));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.22);
+  }
+
+  .messaging-guide-link:hover {
+    background-color: rgb(var(--color-primary-500) / 0.16);
+    color: rgb(var(--color-primary-200));
+  }
+
+  .messaging-credentials-inset {
+    @apply workshop-inset p-4;
+    border-left-width: 3px;
+    border-left-color: rgb(var(--color-primary-500) / 0.35);
+  }
+
+  .messaging-credentials-inset-tertiary {
+    border-left-color: rgb(var(--color-tertiary-500) / 0.4);
+  }
+
+  .messaging-credentials-inset-secondary {
+    border-left-color: rgb(var(--color-secondary-500) / 0.4);
+  }
+
+  .messaging-credentials-inset-primary {
+    border-left-color: rgb(var(--color-primary-500) / 0.45);
+  }
+
+  .messaging-credentials-inset-success {
+    border-left-color: rgb(var(--color-success-500) / 0.38);
   }
 
   /* Settings — color theme picker */

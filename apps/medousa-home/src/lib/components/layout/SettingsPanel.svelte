@@ -64,7 +64,7 @@
   {#if !embedded}
     <header class="workshop-header">
       <h1 class="text-base font-semibold text-surface-50">Settings</h1>
-      <p class="settings-charter-line mt-1 text-xs text-surface-300">
+      <p class="workshop-header-line mt-1">
         {charterLine}
       </p>
     </header>

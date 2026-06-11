@@ -83,7 +83,7 @@
       {#if !embedded}
         <div>
           <h1 class="text-sm font-semibold text-surface-50">Runtime</h1>
-          <p class="workshop-faint">Live workshop telemetry</p>
+          <p class="workshop-header-line mt-0.5">Live workshop telemetry</p>
         </div>
       {:else}
         <p class="workshop-faint text-xs">Live telemetry</p>

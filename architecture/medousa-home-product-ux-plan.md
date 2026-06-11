@@ -1,6 +1,6 @@
 # Medousa Home — Product UX Plan (M7)
 
-> **Status:** **M7 surfaces shipped** — Settings charter = [M11 plan](medousa-home-m11-settings-charter-plan.md) (supersedes [M10](medousa-home-m10-settings-runtime-plan.md))  
+> **Status:** **M7 surfaces shipped** — Settings charter = [M11 plan](medousa-home-m11-settings-charter-plan.md); Messaging polish = [messaging polish plan](medousa-home-messaging-polish-plan.md)  
 > **Date:** 2026-05-30  
 > **Related:** [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md), [medousa-home-plan.md](medousa-home-plan.md)  
 > **Trigger:** Hermes comparison — messaging settings, cron, skills, tools
