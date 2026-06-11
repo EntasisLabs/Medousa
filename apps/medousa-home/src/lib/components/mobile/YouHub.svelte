@@ -5,10 +5,12 @@
     Calendar,
     ChevronLeft,
     ChevronRight,
+    Orbit,
     Radio,
     Settings,
     Sparkles,
   } from "@lucide/svelte";
+  import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import CronPanel from "$lib/components/cron/CronPanel.svelte";
   import MobileLibraryPanel from "$lib/components/mobile/MobileLibraryPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
@@ -30,7 +32,7 @@
     visible: boolean;
     health: DaemonHealth | null;
     revision: number;
-    onOpenChat: () => void;
+    onOpenChat: (sessionId?: string) => void | Promise<void>;
     onDaemonHealth: () => void | Promise<void>;
   }
 
@@ -38,6 +40,7 @@
 
   const destinationIcons: Record<Exclude<YouDestination, "hub">, Component> = {
     library: BookOpen,
+    context: Orbit,
     skills: Sparkles,
     cron: Calendar,
     messaging: Radio,
@@ -113,6 +116,15 @@
     <div class="min-h-0 flex-1 overflow-hidden">
       {#if layout.youDestination === "library"}
         <MobileLibraryPanel visible={true} />
+      {:else if layout.youDestination === "context"}
+        <ContextPanel
+          visible={true}
+          embedded={true}
+          mobile={true}
+          onOpenChat={async (sessionId) => {
+            await onOpenChat(sessionId);
+          }}
+        />
       {:else if layout.youDestination === "skills"}
         <SkillsPanel
           visible={true}

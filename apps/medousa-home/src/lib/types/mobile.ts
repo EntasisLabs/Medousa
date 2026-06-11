@@ -3,6 +3,7 @@ export type MobileTab = "pulse" | "work" | "chat" | "you";
 export type YouDestination =
   | "hub"
   | "library"
+  | "context"
   | "skills"
   | "cron"
   | "messaging"
@@ -22,6 +23,7 @@ export const YOU_DESTINATIONS: {
   hint: string;
 }[] = [
   { id: "library", label: "Notes", hint: "Your vault" },
+  { id: "context", label: "Context", hint: "What she remembers about you" },
   { id: "skills", label: "Skills", hint: "Run in chat" },
   { id: "cron", label: "Schedule", hint: "Recurring prompts" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
@@ -36,8 +38,8 @@ export const YOU_HUB_SECTIONS: {
 }[] = [
   {
     title: "Stay in touch",
-    subtitle: "Notes, skills, and channels",
-    destinations: ["library", "skills", "messaging"],
+    subtitle: "Notes, memory, skills, and channels",
+    destinations: ["library", "context", "skills", "messaging"],
   },
   {
     title: "Workshop",

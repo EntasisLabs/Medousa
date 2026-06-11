@@ -6,14 +6,14 @@ export class IdentityStore {
   loading = $state(false);
   error = $state<string | null>(null);
 
-  async refreshForSession(sessionId: string) {
+  async refresh(options?: { sessionId?: string; relationshipLimit?: number }) {
     this.loading = true;
     this.error = null;
     try {
       this.context = await getIdentityContext({
-        channel_id: sessionId,
+        channel_id: options?.sessionId,
         mode: "cognitive",
-        relationship_limit: 8,
+        relationship_limit: options?.relationshipLimit ?? 24,
       });
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -21,6 +21,10 @@ export class IdentityStore {
     } finally {
       this.loading = false;
     }
+  }
+
+  async refreshForSession(sessionId: string) {
+    await this.refresh({ sessionId, relationshipLimit: 8 });
   }
 
   clear() {

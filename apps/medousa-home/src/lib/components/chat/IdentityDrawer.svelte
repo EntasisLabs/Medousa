@@ -7,10 +7,11 @@
   interface Props {
     open: boolean;
     onClose?: () => void;
+    onOpenFullContext?: () => void;
     variant?: "drawer" | "sheet";
   }
 
-  let { open, onClose, variant = "drawer" }: Props = $props();
+  let { open, onClose, onOpenFullContext, variant = "drawer" }: Props = $props();
 
   $effect(() => {
     if (open) {
@@ -168,6 +169,19 @@
         <p class="workshop-faint">
           Graph depth {identity.context.graph_depth_used}
         </p>
+
+        {#if onOpenFullContext}
+          <button
+            type="button"
+            class="workshop-text-action mt-2 text-sm"
+            onclick={() => {
+              close();
+              onOpenFullContext();
+            }}
+          >
+            Open in Context →
+          </button>
+        {/if}
       </dl>
     {/if}
   </div>

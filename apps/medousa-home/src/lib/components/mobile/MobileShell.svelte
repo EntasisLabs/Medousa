@@ -75,8 +75,11 @@
     await workspace.selectCard(id);
   }
 
-  function handleOpenChat() {
+  async function handleOpenChat(sessionId?: string) {
     layout.setMobileTab("chat");
+    if (sessionId) {
+      await chat.switchSession(sessionId);
+    }
   }
 
   function closeWorkStory() {
@@ -106,7 +109,15 @@
         onOpenChat={handleOpenChat}
       />
     {:else if layout.mobileTab === "chat"}
-      <ChatPanel visible={true} showPopout={false} mobile={true} />
+      <ChatPanel
+        visible={true}
+        showPopout={false}
+        mobile={true}
+        onOpenContext={() => {
+          layout.setIdentityDrawerOpen(false);
+          layout.openYou("context");
+        }}
+      />
     {:else}
       <YouHub
         visible={true}
@@ -134,6 +145,10 @@
     variant="sheet"
     open={layout.mobileTab === "chat" && layout.identityDrawerOpen}
     onClose={() => layout.setIdentityDrawerOpen(false)}
+    onOpenFullContext={() => {
+      layout.setIdentityDrawerOpen(false);
+      layout.openYou("context");
+    }}
   />
 
   <ActivitySheet onOpenNote={handleOpenNote} />

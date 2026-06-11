@@ -5,6 +5,7 @@
     Calendar,
     LayoutGrid,
     MessageCircle,
+    Orbit,
     Radio,
     Settings,
     Zap,
@@ -36,6 +37,7 @@
     { id: "chat", label: "Chat", icon: MessageCircle },
     { id: "work", label: "Work", icon: LayoutGrid },
     { id: "library", label: "Library", icon: BookOpen },
+    { id: "context", label: "Context", icon: Orbit },
   ];
 
   const capability: NavItem[] = [{ id: "skills", label: "Skills", icon: Zap }];

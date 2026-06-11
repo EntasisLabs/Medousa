@@ -1263,3 +1263,40 @@ pub struct ManuscriptCatalogResponse {
     pub count: usize,
     pub manuscripts: Vec<ManuscriptCatalogEntry>,
 }
+
+// ── Locus / STTP (read-only context view) ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocusNodeSummary {
+    pub sync_key: String,
+    pub session_id: String,
+    pub tier: String,
+    pub timestamp: DateTime<Utc>,
+    pub context_summary: String,
+    pub psi: f64,
+    pub rho: f64,
+    pub kappa: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_avec: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_avec: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocusNodesListResponse {
+    pub retrieved: usize,
+    pub nodes: Vec<LocusNodeSummary>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LocusNodesQuery {
+    pub session_id: Option<String>,
+    pub limit: Option<usize>,
+    pub q: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocusNodeDetailResponse {
+    pub node: LocusNodeSummary,
+    pub raw: String,
+}

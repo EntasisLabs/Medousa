@@ -15,6 +15,7 @@
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
+  import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import CronPanel from "$lib/components/cron/CronPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
@@ -121,6 +122,14 @@
             onOpenWork={() => goToSurface("work")}
             onSelectCard={handleCardSelect}
           />
+        {:else if activeSurface === "context"}
+          <ContextPanel
+            visible={true}
+            onOpenChat={async (sessionId) => {
+              goToSurface("chat");
+              await chat.switchSession(sessionId);
+            }}
+          />
         {:else if activeSurface === "skills"}
           <SkillsPanel
             visible={true}
@@ -161,7 +170,13 @@
             }}
           />
         {:else}
-          <ChatPanel visible={activeSurface === "chat"} />
+          <ChatPanel
+            visible={activeSurface === "chat"}
+            onOpenContext={() => {
+              layout.setIdentityDrawerOpen(false);
+              goToSurface("context");
+            }}
+          />
         {/if}
         </div>
 
@@ -207,6 +222,10 @@
         <IdentityDrawer
           open={layout.identityDrawerOpen}
           onClose={() => layout.setIdentityDrawerOpen(false)}
+          onOpenFullContext={() => {
+            layout.setIdentityDrawerOpen(false);
+            goToSurface("context");
+          }}
         />
       {/if}
 

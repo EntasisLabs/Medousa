@@ -15,6 +15,10 @@ import type {
 } from "$lib/types/session";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
 import type { IdentityContextResponse } from "$lib/types/identity";
+import type {
+  LocusNodeDetailResponse,
+  LocusNodesListResponse,
+} from "$lib/types/locus";
 import type { EnqueueResponse, JobResultResponse } from "$lib/types/job";
 import type {
   DeleteRecurringResponse,
@@ -474,6 +478,22 @@ export async function getIdentityContext(request: {
   mode?: string;
 }): Promise<IdentityContextResponse> {
   return invoke<IdentityContextResponse>("identity_get_context", { request });
+}
+
+export async function listLocusNodes(options?: {
+  sessionId?: string;
+  limit?: number;
+  q?: string;
+}): Promise<LocusNodesListResponse> {
+  return invoke<LocusNodesListResponse>("locus_list_nodes", {
+    sessionId: options?.sessionId,
+    limit: options?.limit,
+    q: options?.q,
+  });
+}
+
+export async function getLocusNode(syncKey: string): Promise<LocusNodeDetailResponse> {
+  return invoke<LocusNodeDetailResponse>("locus_get_node", { syncKey });
 }
 
 export async function lookupArtifact(

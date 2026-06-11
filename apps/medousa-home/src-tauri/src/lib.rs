@@ -109,6 +109,8 @@ pub fn run() {
             daemon::recurring::recurring_update,
             daemon::recurring::recurring_delete,
             daemon::identity::identity_get_context,
+            daemon::locus::locus_list_nodes,
+            daemon::locus::locus_get_node,
             daemon::artifact::artifact_command,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,

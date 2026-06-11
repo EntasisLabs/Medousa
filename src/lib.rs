@@ -61,6 +61,7 @@ pub mod identity_memory;
 pub mod identity_store_ext;
 pub mod identity_tools;
 pub mod identity_write_policy;
+pub mod locus_handlers;
 pub mod locus_memory;
 pub mod memory_tools;
 pub mod tool_aliases;

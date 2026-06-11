@@ -603,6 +603,9 @@ async fn main() -> Result<()> {
         .merge(capability_router)
         .merge(policy_router)
         .merge(vault_router)
+        .merge(medousa::locus_handlers::locus_router(
+            state.platform.agent_handle().locus_store.clone(),
+        ))
         .merge(workspace_router)
         .merge(budget_router);
 

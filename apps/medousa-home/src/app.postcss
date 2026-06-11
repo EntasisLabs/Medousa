@@ -106,6 +106,534 @@
     box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.25);
   }
 
+  .context-layer-toggle {
+    @apply flex w-full items-center justify-between rounded-md border border-surface-500/35 bg-surface-900/50 px-3 py-2 text-left text-sm text-surface-200 transition hover:bg-surface-800/70;
+  }
+
+  .context-layer-body {
+    @apply workshop-inset space-y-2 p-3;
+  }
+
+  .context-layer-raw {
+    @apply workshop-inset max-h-64 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-surface-300;
+  }
+
+  .context-witness-hero {
+    @apply max-w-xl;
+  }
+
+  .context-witness-title {
+    @apply text-lg font-semibold leading-snug tracking-tight text-surface-50;
+  }
+
+  .context-witness-meta {
+    @apply mt-2 text-sm text-surface-400;
+  }
+
+  .context-witness-lead {
+    @apply mt-4 text-[15px] leading-relaxed text-surface-200;
+  }
+
+  .context-plumbing {
+    @apply mt-8 border-t border-surface-500/30 pt-5;
+  }
+
+  .context-plumbing-label {
+    @apply text-[11px] uppercase tracking-[0.14em] text-surface-500;
+  }
+
+  .context-cross-links {
+    @apply mt-5 flex flex-wrap gap-2;
+  }
+
+  .context-nav-link {
+    @apply inline-flex items-center rounded-full border border-surface-500/40 bg-surface-900/60 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-500/35 hover:bg-primary-500/10 hover:text-surface-50;
+  }
+
+  .context-related-memory {
+    @apply w-full rounded-lg border border-surface-500/35 bg-surface-900/45 px-3 py-2.5 text-left transition hover:border-primary-500/30 hover:bg-surface-800/70;
+  }
+
+  .context-related-memory-title {
+    @apply line-clamp-2 text-sm leading-snug text-surface-100;
+  }
+
+  .context-related-memory-meta {
+    @apply mt-1 truncate text-[11px] text-surface-500;
+  }
+
+  .context-list-whisper {
+    @apply mb-2 px-2 text-[11px] text-surface-500;
+  }
+
+  .context-map-view {
+    @apply flex h-full min-h-0 flex-1 flex-col;
+    background-color: rgb(var(--color-surface-950) / 0.4);
+  }
+
+  .context-map-whisper {
+    @apply shrink-0 border-b border-surface-500/35 px-4 py-2 text-[11px] leading-relaxed text-surface-400;
+  }
+
+  .context-map-stage {
+    @apply relative min-h-0 flex-1 overflow-hidden;
+  }
+
+  .context-map-viewport {
+    @apply relative h-full w-full touch-none select-none;
+    cursor: grab;
+  }
+
+  .context-map-viewport-dragging {
+    cursor: grabbing;
+  }
+
+  .context-map-controls {
+    @apply absolute right-3 top-3 z-10 flex flex-col gap-1;
+  }
+
+  .context-map-control-btn {
+    @apply flex h-7 w-7 items-center justify-center rounded-md border border-surface-500/45 bg-surface-900/85 text-sm text-surface-200 transition hover:bg-surface-800/90;
+  }
+
+  .context-map-control-clear {
+    @apply border-primary-400/50 text-primary-200 hover:bg-primary-500/20;
+  }
+
+  .context-map-clear-link {
+    @apply mt-2 text-left text-[10px] text-surface-500 underline-offset-2 hover:text-surface-300 hover:underline;
+  }
+
+  .context-map-hover-kind {
+    @apply text-[10px] font-medium uppercase tracking-wide text-surface-500;
+  }
+
+  .context-map-hover-card-pinned {
+    border-color: rgb(var(--color-primary-400) / 0.35);
+  }
+
+  .context-map-legend {
+    @apply absolute bottom-3 left-3 z-10 flex flex-wrap gap-x-3 gap-y-1 rounded-lg border border-surface-500/40 px-3 py-2;
+    background-color: rgb(var(--color-surface-900) / 0.88);
+  }
+
+  .context-map-legend-item {
+    @apply flex items-center gap-1.5 text-[10px] text-surface-300;
+  }
+
+  .context-map-legend-item-planned {
+    @apply text-surface-600;
+  }
+
+  .context-map-legend-swatch {
+    @apply inline-block shrink-0;
+  }
+
+  .context-map-legend-swatch-session {
+    @apply h-2.5 w-2.5 rounded-full;
+    background: rgb(var(--color-primary-400) / 0.95);
+    box-shadow: 0 0 0 1px rgb(var(--color-primary-300) / 0.75);
+  }
+
+  .context-map-legend-swatch-thread {
+    @apply h-2 w-2 rounded-sm;
+    background: rgb(var(--color-tertiary-400, var(--color-tertiary-500)) / 0.95);
+    box-shadow: 0 0 0 1px rgb(var(--color-tertiary-300, var(--color-tertiary-500)) / 0.65);
+  }
+
+  .context-map-legend-swatch-claim {
+    @apply h-2.5 w-2.5 rotate-45 rounded-[1px];
+    background: rgb(var(--color-warning-400) / 0.72);
+    box-shadow: 0 0 0 1px rgb(var(--color-warning-300) / 0.45);
+  }
+
+  .context-map-legend-swatch-note {
+    @apply h-2 w-2 rounded-[2px];
+    background: rgb(var(--color-secondary-400) / 0.72);
+    box-shadow: 0 0 0 1px rgb(var(--color-secondary-300) / 0.45);
+  }
+
+  .context-map-svg {
+    @apply block h-full w-full;
+  }
+
+  .context-map-backdrop {
+    fill: rgb(var(--color-surface-900) / 0.32);
+    pointer-events: none;
+  }
+
+  .context-map-edge {
+    pointer-events: none;
+  }
+
+  .context-map-edge-session_chain {
+    stroke: rgb(var(--color-surface-400) / 0.38);
+    stroke-width: 1.15;
+  }
+
+  .context-map-edge-membership {
+    stroke: rgb(var(--color-tertiary-400, var(--color-tertiary-500)) / 0.58);
+    stroke-width: 1.35;
+  }
+
+  .context-map-edge-sequence {
+    stroke: rgb(var(--color-primary-300) / 0.62);
+    stroke-dasharray: 5 4;
+    stroke-width: 1.25;
+  }
+
+  .context-map-edge-highlight {
+    stroke: rgb(var(--color-primary-200) / 0.95) !important;
+    stroke-width: 2.1 !important;
+  }
+
+  .context-map-edge-ghost {
+    stroke-width: 1;
+    opacity: 0.28;
+  }
+
+  .context-map-edge-dimmed {
+    opacity: 0.12;
+  }
+
+  .context-map-edge-neighbor {
+    opacity: 1;
+  }
+
+  .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-membership {
+    stroke: rgb(var(--color-tertiary-300) / 0.82);
+    stroke-width: 1.55;
+  }
+
+  .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-sequence {
+    stroke: rgb(var(--color-primary-200) / 0.88);
+    stroke-width: 1.5;
+  }
+
+  .context-map-viewport-focused .context-map-edge-neighbor.context-map-edge-session_chain {
+    stroke: rgb(var(--color-surface-300) / 0.72);
+    stroke-width: 1.35;
+  }
+
+  .context-map-hover-card {
+    @apply pointer-events-none absolute left-3 top-3 z-10 max-w-[16rem] rounded-lg border border-surface-500/45 px-3 py-2;
+    background-color: rgb(var(--color-surface-900) / 0.92);
+  }
+
+  .context-map-hover-title {
+    @apply text-[12px] font-medium leading-snug text-surface-50;
+  }
+
+  .context-map-hover-meta {
+    @apply mt-1 text-[10px] text-surface-400;
+  }
+
+  .context-map-hover-hint {
+    @apply mt-1 text-[10px] text-surface-500;
+  }
+
+  .context-map-node {
+    cursor: pointer;
+    transition: opacity 160ms ease;
+  }
+
+  .context-map-node-dimmed .context-map-node-dot {
+    opacity: 0.62;
+  }
+
+  .context-map-node-dimmed .context-map-node-glow {
+    opacity: 0.4;
+  }
+
+  .context-map-node-neighbor .context-map-node-dot,
+  .context-map-node-neighbor .context-map-node-glow {
+    opacity: 1;
+  }
+
+  .context-map-node-ghost .context-map-node-dot-session {
+    fill: rgb(var(--color-primary-400, var(--color-primary-500)) / 0.62);
+    stroke: rgb(var(--color-primary-300, var(--color-primary-500)) / 0.55);
+  }
+
+  .context-map-node-ghost .context-map-node-dot-thread {
+    fill: rgb(var(--color-tertiary-400, var(--color-tertiary-500)) / 0.58);
+    stroke: rgb(var(--color-tertiary-300, var(--color-tertiary-500)) / 0.5);
+  }
+
+  .context-map-viewport-focused .context-map-node-neighbor.context-map-node-ghost .context-map-node-dot {
+    opacity: 0.78;
+  }
+
+  .context-map-node-hovered .context-map-node-dot,
+  .context-map-node-selected .context-map-node-dot,
+  .context-map-node-hovered .context-map-node-glow,
+  .context-map-node-selected .context-map-node-glow {
+    opacity: 1;
+  }
+
+  .context-map-node-glow {
+    stroke: transparent;
+  }
+
+  .context-map-node-glow-session {
+    fill: rgb(var(--color-primary-400) / 0.22);
+  }
+
+  .context-map-node-glow-thread {
+    fill: rgb(var(--color-tertiary-400) / 0.2);
+  }
+
+  .context-map-node-glow-selected {
+    stroke: rgb(var(--color-primary-300) / 0.55);
+    stroke-width: 1.5;
+    fill: rgb(var(--color-primary-500) / 0.24);
+  }
+
+  .context-map-node-kind-thread .context-map-node-glow-selected {
+    stroke: rgb(var(--color-tertiary-300) / 0.55);
+    fill: rgb(var(--color-tertiary-500) / 0.22);
+  }
+
+  .context-map-node-glow-hover {
+    stroke: rgb(var(--color-primary-300) / 0.42);
+    stroke-width: 1;
+    fill: rgb(var(--color-primary-500) / 0.18);
+  }
+
+  .context-map-node-kind-thread .context-map-node-glow-hover {
+    stroke: rgb(var(--color-tertiary-300) / 0.42);
+    fill: rgb(var(--color-tertiary-500) / 0.16);
+  }
+
+  .context-map-node-glow-expanded {
+    stroke: rgb(var(--color-primary-300) / 0.38);
+    stroke-width: 1;
+    fill: rgb(var(--color-primary-500) / 0.14);
+  }
+
+  .context-map-node-dot {
+    stroke-width: 1.75;
+    transition: fill 160ms ease, stroke 160ms ease, opacity 160ms ease;
+  }
+
+  .context-map-node-dot-session {
+    fill: rgb(var(--color-primary-400) / 0.96);
+    stroke: rgb(var(--color-primary-300) / 0.92);
+    stroke-width: 2.25;
+  }
+
+  .context-map-node-kind-session[data-accent="1"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 82%,
+      rgb(var(--color-secondary-300, var(--color-secondary-500))) 18%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 76%,
+      rgb(var(--color-secondary-200, var(--color-secondary-500))) 24%
+    );
+  }
+
+  .context-map-node-kind-session[data-accent="2"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 68%,
+      rgb(var(--color-secondary-300, var(--color-secondary-500))) 32%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 62%,
+      rgb(var(--color-secondary-200, var(--color-secondary-500))) 38%
+    );
+  }
+
+  .context-map-node-kind-session[data-accent="3"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 58%,
+      rgb(var(--color-secondary-400, var(--color-secondary-500))) 42%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 52%,
+      rgb(var(--color-secondary-300, var(--color-secondary-500))) 48%
+    );
+  }
+
+  .context-map-node-kind-session[data-accent="4"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 64%,
+      rgb(var(--color-tertiary-300, var(--color-tertiary-500))) 36%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 58%,
+      rgb(var(--color-tertiary-200, var(--color-tertiary-500))) 42%
+    );
+  }
+
+  .context-map-node-kind-session[data-accent="5"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 54%,
+      rgb(var(--color-tertiary-400, var(--color-tertiary-500))) 46%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 48%,
+      rgb(var(--color-tertiary-300, var(--color-tertiary-500))) 52%
+    );
+  }
+
+  .context-map-node-kind-session[data-accent="6"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 72%,
+      rgb(var(--color-success-300, var(--color-success-500))) 28%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 66%,
+      rgb(var(--color-success-200, var(--color-success-500))) 34%
+    );
+  }
+
+  .context-map-node-kind-session[data-accent="7"] .context-map-node-dot-session {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-primary-400, var(--color-primary-500))) 62%,
+      rgb(var(--color-warning-300, var(--color-warning-500))) 38%
+    );
+    stroke: color-mix(
+      in srgb,
+      rgb(var(--color-primary-200, var(--color-primary-400))) 56%,
+      rgb(var(--color-warning-200, var(--color-warning-500))) 44%
+    );
+  }
+
+  .context-map-node-dot-thread {
+    fill: color-mix(
+      in srgb,
+      rgb(var(--color-tertiary-400, var(--color-tertiary-500))) 76%,
+      rgb(var(--color-surface-50)) 24%
+    );
+    stroke: rgb(var(--color-tertiary-200, var(--color-tertiary-500)) / 0.88);
+    stroke-width: 1.5;
+  }
+
+  .context-map-node-dot-selected.context-map-node-dot-session {
+    fill: rgb(var(--color-primary-300) / 0.98);
+    stroke: rgb(var(--color-primary-100) / 0.95);
+  }
+
+  .context-map-node-dot-selected.context-map-node-dot-thread {
+    fill: rgb(var(--color-tertiary-300) / 0.98);
+    stroke: rgb(var(--color-tertiary-100) / 0.92);
+  }
+
+  .context-map-node-dot-hover {
+    stroke-width: 2;
+  }
+
+  .context-map-node-dot-expanded {
+    stroke-width: 2.5;
+  }
+
+  .context-map-node-label {
+    @apply text-[10px];
+    pointer-events: none;
+    transition: opacity 140ms ease, fill 140ms ease;
+  }
+
+  .context-map-node-label-session {
+    @apply text-[10px];
+    font-family: inherit;
+    font-weight: 500;
+    paint-order: stroke fill;
+    stroke: rgb(var(--color-surface-950) / 0.88);
+    stroke-width: 2px;
+  }
+
+  .context-map-node-label-thread {
+    @apply text-[10px] font-normal;
+    font-family: inherit;
+    paint-order: stroke fill;
+    stroke: rgb(var(--color-surface-950) / 0.88);
+    stroke-width: 2px;
+  }
+
+  .context-map-node-label-whisper {
+    @apply fill-surface-300;
+    opacity: 0.86;
+  }
+
+  .context-map-node-label-neighbor {
+    @apply fill-surface-100;
+    opacity: 0.94;
+  }
+
+  .context-map-node-label-hovered {
+    @apply fill-surface-50 text-[11px];
+    font-weight: 600;
+    opacity: 1;
+    stroke-width: 2.5px;
+  }
+
+  .context-map-node-label-selected {
+    @apply fill-surface-50 text-[11px];
+    font-weight: 600;
+    opacity: 1;
+    stroke-width: 3px;
+  }
+
+  .context-map-node-label-hidden {
+    opacity: 0;
+  }
+
+  .context-posture-fingerprint {
+    @apply workshop-inset p-4;
+  }
+
+  .context-posture-fingerprint-compact {
+    @apply p-3;
+  }
+
+  .context-posture-psi-chip {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide;
+    background-color: rgb(var(--color-primary-500) / 0.14);
+    color: rgb(var(--color-primary-300));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.24);
+  }
+
+  .context-posture-dim {
+    @apply grid items-center gap-2;
+    grid-template-columns: minmax(4.5rem, 5.5rem) 1fr 2.25rem;
+  }
+
+  .context-posture-dim-label {
+    @apply text-[11px] text-surface-400;
+  }
+
+  .context-posture-dim-track {
+    @apply h-1.5 overflow-hidden rounded-full bg-surface-800;
+    box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .context-posture-dim-fill {
+    @apply block h-full rounded-full;
+    background: linear-gradient(
+      90deg,
+      rgb(var(--color-primary-500) / 0.55),
+      rgb(var(--color-primary-300) / 0.95)
+    );
+  }
+
+  .context-posture-dim-value {
+    @apply text-right font-mono text-[11px] text-surface-300;
+  }
+
   .workshop-status-whisper {
     @apply inline-flex min-w-0 items-center gap-1.5 truncate;
   }

@@ -69,7 +69,7 @@ Charter one-liner (derived): e.g. *Remembers 8 turns hot · answers deep · qwen
 | **M11b** | Memory + Voice | Human controls wired to `workshopDefaults.save()` |
 | **M11c** | Reach + Routes | Allowed tools, web search, simplified routing posture |
 | **M11d** | Runtime diet | Controls tab → “quick override”; Workshop tab = terminal mirror only |
-| **M11e** | Context view | Separate nav — read-only STTP + identity (not Settings) |
+| **M11e** | Context view | **M12** — [context view plan](medousa-home-context-view-plan.md); M12a Recall shipped |
 
 **Next epic after M11:** Context view + Messaging polish pass.
 

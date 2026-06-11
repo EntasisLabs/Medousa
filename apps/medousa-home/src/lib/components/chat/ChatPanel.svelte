@@ -27,9 +27,10 @@
     visible: boolean;
     showPopout?: boolean;
     mobile?: boolean;
+    onOpenContext?: () => void;
   }
 
-  let { visible, showPopout = true, mobile = false }: Props = $props();
+  let { visible, showPopout = true, mobile = false, onOpenContext }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
 
