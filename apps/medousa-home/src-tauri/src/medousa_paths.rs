@@ -156,11 +156,11 @@ fn medousa_config_dir() -> PathBuf {
         .join("medousa")
 }
 
-fn tui_defaults_path() -> PathBuf {
+pub(crate) fn tui_defaults_path() -> PathBuf {
     medousa_data_dir().join("tui_defaults.json")
 }
 
-fn read_tui_defaults_file() -> TuiDefaultsFile {
+pub(crate) fn read_tui_defaults_file() -> TuiDefaultsFile {
     let path = tui_defaults_path();
     std::fs::read_to_string(path)
         .ok()

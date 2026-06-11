@@ -7,6 +7,7 @@ mod medousa_paths;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
+mod wizard;
 
 use daemon::DaemonState;
 
@@ -131,6 +132,10 @@ pub fn run() {
             external_desk::external_desk_scan_root,
             external_desk::external_desk_read_file,
             files::write_file_bytes,
+            wizard::wizard_bootstrap,
+            wizard::wizard_begin_rerun,
+            wizard::wizard_advance,
+            wizard::wizard_complete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,8 +3,10 @@
   import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
   import MobileShell from "$lib/components/mobile/MobileShell.svelte";
   import CommandPalette from "$lib/components/layout/CommandPalette.svelte";
+  import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
+  import { wizard } from "$lib/stores/wizard.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { applyNativeMobileShellLayout, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
 
@@ -20,6 +22,7 @@
   }
 
   onMount(() => {
+    void wizard.bootstrap();
     const stopNativeLayout = applyNativeMobileShellLayout();
     const stopViewport = isTauriMobilePlatform()
       ? () => {
@@ -45,7 +48,13 @@
   });
 </script>
 
-{#if layout.isMobile}
+{#if wizard.loading}
+  <div class="flex h-screen items-center justify-center bg-surface-950 text-surface-400">
+    <p class="text-sm">Opening your workshop…</p>
+  </div>
+{:else if wizard.visible}
+  <WizardContainer />
+{:else if layout.isMobile}
   <MobileShell />
 {:else}
   <WorkshopShell />

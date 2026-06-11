@@ -10,6 +10,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
+  import { wizard } from "$lib/stores/wizard.svelte";
   import { isTauri } from "$lib/window";
 
   const isDevBuild = import.meta.env.DEV;
@@ -222,6 +223,20 @@
         </div>
       </div>
     {/if}
+  </div>
+
+  <div class="mt-6">
+    <h3 class="text-sm font-semibold text-surface-100">First-run setup</h3>
+    <p class="workshop-faint mt-1 text-xs">
+      Re-open the welcome wizard — model, account, and phone pairing steps.
+    </p>
+    <button
+      type="button"
+      class="workshop-text-action mt-3 text-sm"
+      onclick={() => void wizard.beginRerun()}
+    >
+      Re-run first-run wizard
+    </button>
   </div>
 
   {#if isDevBuild && !mobile}

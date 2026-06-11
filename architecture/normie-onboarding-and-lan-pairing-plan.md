@@ -369,15 +369,15 @@ Race: first `/pair/init` wins; second gets **409** (token single-use). Verify mu
 
 **Exit:** `curl localhost:7419/qr` returns signed URL; `dns-sd -B _medousa._tcp` sees service when public.
 
-### Phase B — Wizard shell + migration (~3–4 days)
+### Phase B — Wizard shell + migration (~3–4 days) — **Landed (shell)**
 
 **Goal:** First-run gate without full Screen 1 logic.
 
-- [ ] `wizard.json` state machine
-- [ ] `WizardContainer.svelte` + routing + crossfade
-- [ ] Fresh install detection + upgrade migration splash
-- [ ] Settings → Re-run wizard
-- [ ] Link doc in architecture README ✅
+- [x] `wizard.json` state machine (`src-tauri/src/wizard.rs`)
+- [x] `WizardContainer.svelte` + routing + crossfade
+- [x] Fresh install detection + upgrade migration splash
+- [x] Settings → Re-run wizard
+- [x] Link doc in architecture README ✅
 
 **Exit:** Fresh VM opens wizard; completed state skips to Home; migration from TUI install shows splash once.
 
