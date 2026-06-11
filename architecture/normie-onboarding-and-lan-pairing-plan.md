@@ -381,15 +381,15 @@ Race: first `/pair/init` wins; second gets **409** (token single-use). Verify mu
 
 **Exit:** Fresh VM opens wizard; completed state skips to Home; migration from TUI install shows splash once.
 
-### Phase C — Screen 1 BYOM path (~4 days)
+### Phase C — Screen 1 BYOM path (~4 days) — **Landed**
 
 **Goal:** 90-second path without cloud.
 
-- [ ] `providers_probe` + `providers_validate_key` Tauri IPC (extract from TUI)
-- [ ] WelcomeScreen.svelte — three cards; BYOM expand with Ollama auto-detect
-- [ ] Wire `persist_tui_defaults` + keyring save
-- [ ] `daemon_start` IPC + Core health wait loop
-- [ ] CompletionScreen → main chat
+- [x] `providers_probe` + `providers_validate_key` Tauri IPC (extract from TUI)
+- [x] WelcomeScreen.svelte — three cards; BYOM expand with Ollama auto-detect
+- [x] Wire `persist_tui_defaults` + keyring save
+- [x] `daemon_start` IPC + Core health wait loop
+- [x] CompletionScreen → main chat
 
 **Exit:** Clean macOS VM: pick Ollama or paste OpenAI key → chat works, no terminal.
 

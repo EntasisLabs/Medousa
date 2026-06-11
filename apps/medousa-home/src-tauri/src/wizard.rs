@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::medousa_paths::{load_tui_defaults_summary, tui_defaults_path};
+use crate::daemon_service::{daemon_start, daemon_wait_healthy, DaemonWaitHealthRequest};
+use crate::medousa_paths::{load_tui_defaults_summary, persist_tui_defaults, tui_defaults_path, TuiDefaultsDto};
+use crate::messaging::messaging_save_secret;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +55,33 @@ pub struct WizardBootstrap {
     pub screen: WizardScreen,
     pub existing_provider: Option<String>,
     pub existing_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WizardApplyScreen1Request {
+    pub path: String,
+    pub provider: String,
+    pub model: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default = "default_start_core")]
+    pub start_core: bool,
+}
+
+fn default_start_core() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WizardApplyScreen1Result {
+    pub core_ready: bool,
+    pub core_message: String,
+    pub provider: String,
+    pub model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +311,118 @@ pub fn wizard_advance(request: WizardAdvanceRequest) -> Result<WizardBootstrap, 
 
     write_wizard_file(&file)?;
     Ok(bootstrap_from_file(&file))
+}
+
+#[tauri::command]
+pub async fn wizard_apply_screen1(
+    request: WizardApplyScreen1Request,
+) -> Result<WizardApplyScreen1Result, String> {
+    let provider = request.provider.trim().to_ascii_lowercase();
+    let model = request.model.trim().to_string();
+    if provider.is_empty() || model.is_empty() {
+        return Err("provider and model are required".to_string());
+    }
+
+    let base_url = request
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let mut dto = TuiDefaultsDto {
+        backend: Some("surreal-mem".to_string()),
+        provider: Some(provider.clone()),
+        model: Some(model.clone()),
+        base_url: base_url.clone(),
+        response_depth_mode: Some("standard".to_string()),
+        ..Default::default()
+    };
+
+    if let Ok(raw) = std::fs::read_to_string(tui_defaults_path()) {
+        if let Ok(existing) = serde_json::from_str::<TuiDefaultsDto>(&raw) {
+            dto = TuiDefaultsDto {
+                backend: existing.backend.or(dto.backend),
+                theme_id: existing.theme_id,
+                allowed_modules: existing.allowed_modules,
+                tool_call_mode: existing.tool_call_mode,
+                max_tool_rounds: existing.max_tool_rounds,
+                host_bus_max_tool_rounds: existing.host_bus_max_tool_rounds,
+                host_turn_bus_mode: existing.host_turn_bus_mode,
+                activation_tool_intent_max_rounds: existing.activation_tool_intent_max_rounds,
+                activation_short_turn_max_tool_rounds: existing.activation_short_turn_max_tool_rounds,
+                continuation_max_tool_rounds: existing.continuation_max_tool_rounds,
+                max_text_only_stuck_continues: existing.max_text_only_stuck_continues,
+                classifier_restricted_max_tool_rounds: existing.classifier_restricted_max_tool_rounds,
+                thinking_capture: existing.thinking_capture,
+                stasis_otel_enabled: existing.stasis_otel_enabled,
+                thinking_max_lines: existing.thinking_max_lines,
+                activation_direct_answer_max_prompt_chars: existing
+                    .activation_direct_answer_max_prompt_chars,
+                activation_long_session_turn_threshold: existing
+                    .activation_long_session_turn_threshold,
+                activation_long_session_max_prompt_chars: existing
+                    .activation_long_session_max_prompt_chars,
+                slice_hot_window_turns: existing.slice_hot_window_turns,
+                slice_cold_window_turns: existing.slice_cold_window_turns,
+                retry_runtime_max_retries: existing.retry_runtime_max_retries,
+                retry_runtime_max_rounds: existing.retry_runtime_max_rounds,
+                verifier_min_citation_coverage: existing.verifier_min_citation_coverage,
+                verifier_min_avg_support_strength: existing.verifier_min_avg_support_strength,
+                verifier_min_supported_claim_ratio: existing.verifier_min_supported_claim_ratio,
+                verifier_min_claim_support_strength: existing.verifier_min_claim_support_strength,
+                web_search_preferred_provider: existing.web_search_preferred_provider,
+                web_search_try_fallbacks: existing.web_search_try_fallbacks,
+                stage_routing: existing.stage_routing,
+                env_overrides: existing.env_overrides,
+                provider: Some(provider.clone()),
+                model: Some(model.clone()),
+                base_url: base_url.or(existing.base_url),
+                response_depth_mode: existing.response_depth_mode.or(dto.response_depth_mode),
+            };
+        }
+    }
+
+    persist_tui_defaults(dto)?;
+
+    if provider != "ollama" {
+        if let Some(key) = request
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            messaging_save_secret("api_key".to_string(), Some(key.to_string()))?;
+        }
+    }
+
+    let mut core_ready = true;
+    let mut core_message = "Provider saved".to_string();
+
+    if request.start_core {
+        let start = daemon_start().await?;
+        core_message = if start.already_running {
+            start.message
+        } else {
+            start.message
+        };
+        let wait = daemon_wait_healthy(Some(DaemonWaitHealthRequest {
+            timeout_seconds: 30,
+            poll_ms: 2000,
+        }))
+        .await?;
+        core_ready = wait.ok;
+        core_message = wait.message;
+    }
+
+    let _path = request.path.trim();
+
+    Ok(WizardApplyScreen1Result {
+        core_ready,
+        core_message,
+        provider,
+        model,
+    })
 }
 
 #[tauri::command]

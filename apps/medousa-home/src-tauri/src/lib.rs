@@ -1,9 +1,11 @@
 mod badge;
+mod daemon_service;
 mod external_desk;
 mod files;
 mod daemon;
 mod messaging;
 mod medousa_paths;
+mod providers;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
@@ -67,6 +69,10 @@ pub fn run() {
             daemon::daemon_url,
             daemon::set_daemon_url,
             daemon::daemon_health,
+            daemon_service::daemon_start,
+            daemon_service::daemon_wait_healthy,
+            providers::providers_probe,
+            providers::providers_validate_key,
             daemon::workspace_stream_start,
             daemon::workspace_stream_stop,
             daemon::interactive_turn_send,
@@ -135,6 +141,7 @@ pub fn run() {
             wizard::wizard_bootstrap,
             wizard::wizard_begin_rerun,
             wizard::wizard_advance,
+            wizard::wizard_apply_screen1,
             wizard::wizard_complete,
         ])
         .run(tauri::generate_context!())

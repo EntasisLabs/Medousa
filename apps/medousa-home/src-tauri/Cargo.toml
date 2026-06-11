@@ -33,6 +33,9 @@ dirs = "6"
 keyring = "2.3"
 base64 = "0.22"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
 tauri-plugin-ios-webview-insets = "0.1"

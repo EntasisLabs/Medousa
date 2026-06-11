@@ -4,6 +4,10 @@ import {
   bootstrapWizard,
   completeWizard,
 } from "$lib/utils/wizardApi";
+import {
+  applyWizardScreen1,
+  type WizardApplyScreen1Request,
+} from "$lib/utils/providersApi";
 import type { WizardBootstrap, WizardMode, WizardScreen } from "$lib/types/wizard";
 
 class WizardStore {
@@ -63,6 +67,24 @@ class WizardStore {
       this.applyBootstrap(await completeWizard());
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  async applyScreen1Setup(request: WizardApplyScreen1Request) {
+    this.busy = true;
+    this.error = null;
+    try {
+      const result = await applyWizardScreen1(request);
+      if (!result.coreReady) {
+        this.error = result.coreMessage;
+      }
+      await this.continue(request.path);
+      return result;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      throw err;
     } finally {
       this.busy = false;
     }

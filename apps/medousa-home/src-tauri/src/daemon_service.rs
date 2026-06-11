@@ -1,0 +1,267 @@
+use crate::daemon::types::DEFAULT_DAEMON_URL;
+use crate::medousa_paths::{load_tui_defaults_summary, tui_defaults_path};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::fs::{self, OpenOptions};
+use std::io;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+const DEFAULT_BIND: &str = "127.0.0.1:7419";
+const DEFAULT_BACKEND: &str = "surreal-mem";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonStartResult {
+    pub started: bool,
+    pub already_running: bool,
+    pub pid: Option<u32>,
+    pub log_path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonWaitHealthResult {
+    pub ok: bool,
+    pub message: String,
+    pub attempts: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonWaitHealthRequest {
+    #[serde(default = "default_wait_seconds")]
+    pub timeout_seconds: u64,
+    #[serde(default = "default_poll_ms")]
+    pub poll_ms: u64,
+}
+
+fn default_wait_seconds() -> u64 {
+    30
+}
+
+fn default_poll_ms() -> u64 {
+    2000
+}
+
+fn medousa_data_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("medousa")
+}
+
+fn daemon_log_path() -> PathBuf {
+    medousa_data_dir().join("logs").join("daemon.log")
+}
+
+fn resolve_backend() -> String {
+    if let Ok(raw) = fs::read_to_string(tui_defaults_path()) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(backend) = json.get("backend").and_then(|value| value.as_str()) {
+                let trimmed = backend.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    DEFAULT_BACKEND.to_string()
+}
+
+struct ComponentCommand {
+    program: String,
+    pre_args: Vec<String>,
+}
+
+fn find_command_in_path(command: &str) -> Option<PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    std::env::split_paths(&path_var)
+        .map(|path| path.join(command))
+        .find(|candidate| candidate.exists())
+}
+
+fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_DAEMON_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.exists() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name("medousa_daemon");
+        if sibling.exists() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if find_command_in_path("medousa_daemon").is_some() {
+        return Ok(ComponentCommand {
+            program: "medousa_daemon".to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err(
+        "Could not find medousa_daemon. Build it (cargo build -p medousa --bin medousa_daemon) or set MEDOUSA_MEDOUSA_DAEMON_BIN.".to_string(),
+    )
+}
+
+fn is_bind_reachable(bind: &str) -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    if let Ok(mut addrs) = bind.to_socket_addrs() {
+        if let Some(addr) = addrs.next() {
+            return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
+        }
+    }
+    false
+}
+
+async fn daemon_http_healthy(base_url: &str) -> bool {
+    let client = match Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    client
+        .get(url)
+        .send()
+        .await
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn detach_new_session(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn detach_new_session(_command: &mut Command) {}
+
+fn spawn_daemon_background(backend: &str, bind: &str) -> Result<(u32, PathBuf), String> {
+    let daemon = resolve_daemon_binary()?;
+    let log_path = daemon_log_path();
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let summary = load_tui_defaults_summary();
+    let mut command = Command::new(&daemon.program);
+    command.args(&daemon.pre_args);
+    command.arg("--backend").arg(backend);
+    command.arg("--bind").arg(bind);
+    if let Some(provider) = summary.provider.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        command.arg("--provider").arg(provider);
+    }
+    if let Some(model) = summary.model.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        command.arg("--model").arg(model);
+    }
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let child = command.spawn().map_err(|err| {
+        format!(
+            "Failed to spawn medousa_daemon ({}): {err}",
+            daemon.program
+        )
+    })?;
+    Ok((child.id(), log_path))
+}
+
+#[tauri::command]
+pub async fn daemon_start() -> Result<DaemonStartResult, String> {
+    let base_url = DEFAULT_DAEMON_URL;
+    if daemon_http_healthy(base_url).await {
+        return Ok(DaemonStartResult {
+            started: false,
+            already_running: true,
+            pid: None,
+            log_path: daemon_log_path().to_string_lossy().to_string(),
+            message: format!("Medousa Core already running at {base_url}"),
+        });
+    }
+
+    if is_bind_reachable(DEFAULT_BIND) {
+        return Err(format!(
+            "Port {DEFAULT_BIND} is open but Core /health is not responding. Try restarting Medousa Core from Settings."
+        ));
+    }
+
+    let backend = resolve_backend();
+    let (pid, log_path) = spawn_daemon_background(&backend, DEFAULT_BIND)?;
+
+    Ok(DaemonStartResult {
+        started: true,
+        already_running: false,
+        pid: Some(pid),
+        log_path: log_path.to_string_lossy().to_string(),
+        message: format!("Starting Medousa Core (pid {pid})"),
+    })
+}
+
+#[tauri::command]
+pub async fn daemon_wait_healthy(
+    request: Option<DaemonWaitHealthRequest>,
+) -> Result<DaemonWaitHealthResult, String> {
+    let request = request.unwrap_or(DaemonWaitHealthRequest {
+        timeout_seconds: default_wait_seconds(),
+        poll_ms: default_poll_ms(),
+    });
+    let base_url = DEFAULT_DAEMON_URL;
+    let timeout = Duration::from_secs(request.timeout_seconds.max(1));
+    let poll = Duration::from_millis(request.poll_ms.clamp(250, 10_000));
+    let started = Instant::now();
+    let mut attempts = 0u32;
+
+    while started.elapsed() < timeout {
+        attempts += 1;
+        if daemon_http_healthy(base_url).await {
+            return Ok(DaemonWaitHealthResult {
+                ok: true,
+                message: format!("Medousa Core is ready at {base_url}"),
+                attempts,
+            });
+        }
+        tokio::time::sleep(poll).await;
+    }
+
+    Ok(DaemonWaitHealthResult {
+        ok: false,
+        message: format!(
+            "Medousa Core did not become ready within {}s — check {}",
+            request.timeout_seconds,
+            daemon_log_path().display()
+        ),
+        attempts,
+    })
+}
