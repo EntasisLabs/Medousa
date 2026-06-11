@@ -80,10 +80,10 @@
       <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
       <p class="workshop-faint mt-0.5">
         {#if mobile}
-          Read-only snapshot from the Mac — change values on the Mac under Runtime → Workshop.
+          Read-only snapshot from the Mac — day-to-day charter is in Settings → Memory & Voice.
         {:else}
-          Saved to <span class="font-mono text-surface-400">tui_defaults.json</span> — shared with
-          TUI and CLI.
+          Terminal view of <span class="font-mono text-surface-400">tui_defaults.json</span> — day-to-day
+          charter is in Settings; edit everything here when you need the full matrix.
         {/if}
       </p>
     </div>

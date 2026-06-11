@@ -123,7 +123,7 @@ export class WorkshopDefaultsStore {
     if (!isTauri()) return;
     if (isTauriMobilePlatform()) {
       this.message =
-        "Workshop defaults live on the Mac daemon. Change model in You → Runtime → Controls, or edit tui_defaults.json on the Mac.";
+        "Workshop charter lives on the Mac daemon. Change Memory and Voice in Settings on the Mac, or edit tui_defaults.json.";
       return;
     }
     this.saving = true;

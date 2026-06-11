@@ -1625,6 +1625,26 @@
     @apply flex cursor-pointer items-center gap-4 px-4 py-3.5;
   }
 
+  .settings-charter-line {
+    @apply max-w-2xl leading-relaxed;
+  }
+
+  .settings-depth-card {
+    @apply rounded-container-token border border-surface-500/40 bg-surface-900/30 px-3 py-3 text-left transition;
+  }
+
+  .settings-depth-card:hover:not(:disabled) {
+    @apply border-surface-400/50 bg-surface-800/50;
+  }
+
+  .settings-depth-card-active {
+    @apply border-primary-500/45 bg-primary-500/10 ring-1 ring-inset ring-primary-500/25;
+  }
+
+  .settings-depth-card:disabled {
+    @apply cursor-not-allowed opacity-70;
+  }
+
   .settings-connection-card {
     @apply max-w-xl rounded-container-token border border-surface-500/40 bg-surface-900/40 p-4;
   }

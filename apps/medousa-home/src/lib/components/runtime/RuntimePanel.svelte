@@ -294,8 +294,8 @@
     {:else if runtime.activeTab === "controls"}
       <section class="max-w-xl space-y-4">
         <p class="workshop-faint">
-          Quick model and depth for the next chat turn. Full workshop defaults are under the
-          Workshop tab.
+          Session override only — tweaks the next turns without rewriting your charter. Voice lives
+          in Settings → Voice; tools and delegation in Settings → Reach.
         </p>
 
         <div class="workshop-inset p-4">
@@ -362,11 +362,19 @@
         {/if}
       </section>
     {:else if runtime.activeTab === "workshop"}
+      <div class="mb-3 rounded-container-token border border-surface-500/35 bg-surface-900/30 px-3 py-2">
+        <p class="text-xs text-surface-300">
+          <span class="font-medium text-surface-200">Terminal mirror.</span>
+          Day-to-day charter is in Settings (Memory, Voice, Reach). Edit everything here when you
+          need the full matrix — verifier thresholds, secrets, all tool round limits.
+        </p>
+      </div>
       <WorkshopDefaultsPanel visible={visible} {mobile} embedded />
     {:else}
       <section>
         <p class="workshop-faint">
-          Per-stage provider and model routing (read-only).
+          Live view of configured stage routing — edit posture in Settings → Reach; change
+          individual specialists in Workshop → Specialists.
         </p>
         <div class="mt-4 overflow-x-auto">
           <table class="w-full min-w-[32rem] text-left text-xs">

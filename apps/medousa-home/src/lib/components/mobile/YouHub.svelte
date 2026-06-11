@@ -17,8 +17,6 @@
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { cronDraft } from "$lib/stores/cron.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { recurring } from "$lib/stores/recurring.svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
   import {
     YOU_DESTINATIONS,
     YOU_HUB_SECTIONS,
@@ -62,8 +60,6 @@
     YOU_DESTINATIONS.find((dest) => dest.id === layout.youDestination)?.label ??
       layout.youDestination,
   );
-
-  const cronCounts = $derived(recurring.activeCount());
 </script>
 
 <div class="flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
@@ -143,14 +139,6 @@
           mobile={true}
           {revision}
           {health}
-          cronActiveCount={cronCounts.enabled}
-          cronTotalCount={cronCounts.total}
-          onOpenRuntime={() => {
-            runtime.activeTab = "workshop";
-            layout.openYou("runtime");
-          }}
-          onOpenMessaging={() => layout.openYou("messaging")}
-          onOpenCron={() => layout.openYou("cron")}
           {onDaemonHealth}
         />
       {:else if layout.youDestination === "runtime"}

@@ -25,8 +25,8 @@ export const YOU_DESTINATIONS: {
   { id: "skills", label: "Skills", hint: "Run in chat" },
   { id: "cron", label: "Schedule", hint: "Recurring prompts" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, more" },
-  { id: "settings", label: "Preferences", hint: "Theme, connection, alerts" },
-  { id: "runtime", label: "Workshop", hint: "Health, controls & defaults" },
+  { id: "settings", label: "Preferences", hint: "Charter — memory, voice, reach" },
+  { id: "runtime", label: "Workshop", hint: "Live pulse, jobs & delivery" },
 ];
 
 export const YOU_HUB_SECTIONS: {

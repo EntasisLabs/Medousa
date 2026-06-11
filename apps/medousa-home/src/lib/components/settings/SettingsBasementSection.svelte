@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { Wifi, WifiOff } from "@lucide/svelte";
   import {
     getMedousaConfigPaths,
     openConfigPath,
     type MedousaConfigPaths,
   } from "$lib/config";
-  import type { DaemonHealth } from "$lib/daemon";
+  import { getDaemonUrl, setDaemonUrl, type DaemonHealth } from "$lib/daemon";
+  import { reconnectWorkshop } from "$lib/workshopConnection";
   import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
@@ -15,12 +17,18 @@
   interface Props {
     revision: number;
     health: DaemonHealth | null;
+    onDaemonHealth: () => void | Promise<void>;
     mobile?: boolean;
   }
 
-  let { revision, health, mobile = false }: Props = $props();
+  let { revision, health, onDaemonHealth, mobile = false }: Props = $props();
 
   let configPaths = $state<MedousaConfigPaths | null>(null);
+  let connectionEditing = $state(false);
+
+  const connected = $derived(Boolean(health?.ok));
+  const connectionLabel = $derived(connectionHumanLabel(settings.daemonUrl));
+  const backendLabel = $derived(health?.backend ?? "unknown backend");
 
   const workshopFiles = $derived(
     configPaths
@@ -34,7 +42,7 @@
           {
             id: "workspace",
             label: "tui_defaults.json",
-            hint: "Workshop defaults — edit under Runtime → Workshop",
+            hint: "Full charter — Memory & Voice edit the human fields above",
             path: configPaths.tuiDefaults,
           },
           {
@@ -53,11 +61,40 @@
       : [],
   );
 
+  function connectionHumanLabel(url: string): string {
+    const trimmed = url.trim();
+    if (!trimmed) return "Not configured";
+    try {
+      const parsed = new URL(trimmed);
+      const host = parsed.hostname;
+      if (host === "127.0.0.1" || host === "localhost") {
+        return mobile ? "Mac workshop (local)" : "Local workshop";
+      }
+      return `Remote · ${host}`;
+    } catch {
+      return trimmed;
+    }
+  }
+
+  $effect(() => {
+    if (!settings.daemonUrl) {
+      void loadDaemonUrl();
+    }
+  });
+
   $effect(() => {
     if (isTauri() && !mobile && !configPaths) {
       void loadConfigPaths();
     }
   });
+
+  async function loadDaemonUrl() {
+    try {
+      settings.daemonUrl = await getDaemonUrl();
+    } catch (err) {
+      settings.daemonMessage = err instanceof Error ? err.message : String(err);
+    }
+  }
 
   async function loadConfigPaths() {
     try {
@@ -66,18 +103,129 @@
       configPaths = null;
     }
   }
+
+  async function saveDaemonUrl() {
+    settings.savingDaemon = true;
+    settings.daemonMessage = null;
+    try {
+      await setDaemonUrl(settings.daemonUrl);
+      const probe = await reconnectWorkshop(onDaemonHealth);
+      settings.daemonMessage = probe.ok ? "Connected" : probe.message;
+      if (probe.ok) {
+        connectionEditing = false;
+      }
+    } catch (err) {
+      settings.daemonMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      settings.savingDaemon = false;
+    }
+  }
 </script>
 
 <section class="settings-section">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Advanced</h2>
+    <h2 class="text-base font-semibold text-surface-50">Basement</h2>
     <p class="workshop-faint mt-1 text-sm">
-      On-disk workshop files, diagnostics, and developer options.
+      Workshop address, on-disk files, and diagnostics — for when the charter isn’t enough.
     </p>
   </header>
 
+  <div class="settings-connection-card mt-5">
+    <div class="flex items-start gap-3">
+      <span
+        class="settings-connection-icon {connected
+          ? 'settings-connection-icon-ok'
+          : 'settings-connection-icon-off'}"
+        aria-hidden="true"
+      >
+        {#if connected}
+          <Wifi size={18} strokeWidth={2} />
+        {:else}
+          <WifiOff size={18} strokeWidth={2} />
+        {/if}
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-semibold text-surface-50">
+          {connected ? "Connected" : "Offline"}
+        </p>
+        <p class="mt-0.5 text-sm text-surface-200">{connectionLabel}</p>
+        <p class="workshop-faint mt-1 text-xs">{backendLabel}</p>
+        <p class="workshop-faint mt-2 text-xs">
+          Connection status also lives in the status bar — change the address here only when you
+          need to.
+        </p>
+        {#if settings.daemonMessage && !connectionEditing}
+          <p
+            class="mt-2 text-xs {settings.daemonMessage === 'Connected' ||
+            settings.daemonMessage.toLowerCase().includes('connected')
+              ? 'text-success-400'
+              : 'text-warning-400'}"
+          >
+            {settings.daemonMessage}
+          </p>
+        {/if}
+      </div>
+    </div>
+
+    {#if !connectionEditing}
+      <button
+        type="button"
+        class="btn btn-sm variant-soft-surface mt-4"
+        onclick={() => {
+          connectionEditing = true;
+          settings.daemonMessage = null;
+        }}
+      >
+        Change workshop address…
+      </button>
+    {:else}
+      <div class="mt-4 space-y-3 border-t border-surface-500/35 pt-4">
+        <label class="block" for="daemon-url">
+          <span class="workshop-label">Workshop address</span>
+          <input
+            id="daemon-url"
+            class="input mt-1 w-full"
+            bind:value={settings.daemonUrl}
+            placeholder={mobile ? "http://192.168.1.42:7419" : "http://127.0.0.1:7419"}
+          />
+        </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-primary"
+            disabled={settings.savingDaemon || !settings.daemonUrl.trim()}
+            onclick={() => void saveDaemonUrl()}
+          >
+            {settings.savingDaemon ? "Saving…" : "Save & test"}
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            disabled={settings.savingDaemon}
+            onclick={() => {
+              connectionEditing = false;
+              settings.daemonMessage = null;
+            }}
+          >
+            Cancel
+          </button>
+          {#if settings.daemonMessage}
+            <p
+              class="text-xs {settings.daemonMessage === 'Connected' ||
+              settings.daemonMessage.toLowerCase().includes('connected')
+                ? 'text-success-400'
+                : 'text-warning-400'}"
+            >
+              {settings.daemonMessage}
+            </p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+  </div>
+
   {#if isDevBuild && !mobile}
-    <div class="settings-toggle-list mt-5">
+    <div class="settings-toggle-list mt-6">
       <label class="settings-toggle-row">
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-medium text-surface-100">Developer vault notes</span>
@@ -126,6 +274,9 @@
           </li>
         {/each}
       </ul>
+      <p class="workshop-faint mt-2 text-xs">
+        Terminal view of all defaults: Runtime → Workshop tab.
+      </p>
     </div>
   {/if}
 

@@ -4,9 +4,9 @@
 
 <section class="settings-section">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Appearance</h2>
+    <h2 class="text-base font-semibold text-surface-50">Room</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Each palette has a light and dark variant — tuned for calm, readable contrast.
+      The atmosphere of your workshop — palette and light.
     </p>
   </header>
 

@@ -1,6 +1,6 @@
 # Medousa Home — M10 Plan (Settings & Workshop Controls)
 
-> **Status:** **M10a–M10e shipped** in repo (2026-06-07)  
+> **Status:** **M10a–M10e shipped** — boundary rules superseded by [M11](medousa-home-m11-settings-charter-plan.md)  
 > **Date:** 2026-06-07  
 > **Epic:** **M10 — Settings premium + workshop controls home**  
 > **Builds on:** M8 (Real Garage), shipped M7 product surfaces (Cron, Messaging, Skills)  

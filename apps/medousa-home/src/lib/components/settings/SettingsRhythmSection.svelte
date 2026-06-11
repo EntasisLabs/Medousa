@@ -10,9 +10,9 @@
 
 <section class="settings-section">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">General</h2>
+    <h2 class="text-base font-semibold text-surface-50">Rhythm</h2>
     <p class="workshop-faint mt-1 text-sm">
-      How Medousa Home behaves on this device{mobile ? " — saved locally" : ""}.
+      How Medousa interrupts your day on this device{mobile ? " — saved locally" : ""}.
     </p>
   </header>
 
