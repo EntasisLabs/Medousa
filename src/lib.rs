@@ -70,6 +70,8 @@ pub mod adapter_heartbeat;
 pub mod product_config;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;
+pub mod pairing;
+pub mod pairing_handlers;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
 pub mod session;

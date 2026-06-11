@@ -598,7 +598,64 @@ async fn main() -> Result<()> {
         )
         .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState);
 
-    let app = app
+    let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
+    let pairing_router = if medousa::pairing::pairing_enabled_from_env() {
+        let identity = medousa::pairing::DeviceIdentity::load_or_create()
+            .context("failed to load pairing device identity")?;
+        let pairing_service = Arc::new(medousa::pairing::PairingService::new(
+            identity,
+            medousa::pairing::resolve_advertise_address(&bind),
+            medousa::pairing::resolve_peer_name(),
+            model.map(|value| value.to_string()),
+        ));
+        if medousa::pairing::mdns_should_advertise(&bind) {
+            let mut txt = std::collections::HashMap::new();
+            txt.insert("dv".to_string(), pairing_service.device_id().to_string());
+            txt.insert("pn".to_string(), pairing_service.peer_name().to_string());
+            txt.insert(
+                "pv".to_string(),
+                medousa::pairing::PROTOCOL_VERSION.to_string(),
+            );
+            txt.insert("pf".to_string(), pairing_service.capability_flags());
+            txt.insert(
+                "ar".to_string(),
+                pairing_service.auth_required_flag().to_string(),
+            );
+            if let Some(model_name) = pairing_service.model_descriptor() {
+                txt.insert("md".to_string(), model_name.to_string());
+            }
+            match medousa::pairing::mdns::MdnsAdvertiser::register(
+                pairing_service.peer_name(),
+                "medousa-core.local.",
+                pairing_service.parse_advertise_port(),
+                txt,
+            ) {
+                Ok(advertiser) => {
+                    eprintln!(
+                        "medousa-daemon: mDNS pairing service _medousa._tcp on port {}",
+                        pairing_service.parse_advertise_port()
+                    );
+                    mdns_advertiser = Some(advertiser);
+                }
+                Err(err) => {
+                    eprintln!("medousa-daemon: mDNS pairing advertise failed: {err:#}");
+                }
+            }
+        }
+        eprintln!(
+            "medousa-daemon: LAN pairing ready (device_id={}, GET /qr)",
+            pairing_service.device_id()
+        );
+        Some(
+            medousa::pairing_handlers::routes().with_state(medousa::pairing_handlers::PairingApiState {
+                service: pairing_service,
+            }),
+        )
+    } else {
+        None
+    };
+
+    let mut app = app
         .merge(catalog_router)
         .merge(capability_router)
         .merge(policy_router)
@@ -608,6 +665,10 @@ async fn main() -> Result<()> {
         ))
         .merge(workspace_router)
         .merge(budget_router);
+    if let Some(pairing_router) = pairing_router {
+        app = app.merge(pairing_router);
+    }
+    let _mdns_advertiser = mdns_advertiser;
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
         state.composition().clone(),
@@ -654,7 +715,10 @@ async fn main() -> Result<()> {
         )
     );
 
-    axum::serve(listener, app)
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
         .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
             let _ = shutdown_tx.send(true);

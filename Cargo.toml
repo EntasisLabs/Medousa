@@ -74,6 +74,12 @@ libc = "0.2"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+qrcode = "0.14"
+mdns-sd = "0.11"
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+urlencoding = "2"
 
 [dev-dependencies]
 surrealdb-types = { version = "3" }

@@ -124,7 +124,7 @@ Durability ≠ clean chat. Still required:
 |------|---------|
 | `lane: "worker"` + isolated sink | Host chat stays clean |
 | Fix `cognition_turn_worker_status` default session | Host sees active workers |
-| Thread events → notifications | Mobile/home pairing |
+| Thread events → notifications | Mobile/home pairing — see [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) |
 | Terminal-only on parent stream | `user_ack` + synthesis bubble |
 
 ## Manuscript worker routing (Phase 3)

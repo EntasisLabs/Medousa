@@ -31,6 +31,9 @@ const DEFAULT_OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434/v1/";
 #[path = "medousa/onboard_wizard/mod.rs"]
 mod onboard_wizard;
 
+#[path = "medousa/pair_cli.rs"]
+mod pair_cli;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OnboardProfile {
     daemon_url: Option<String>,
@@ -71,6 +74,7 @@ fn main() -> Result<()> {
         "openshell-probe" => run_openshell_probe(&args[1..]),
         "workspace" => run_workspace(&args[1..]),
         "vault" => run_vault(&args[1..]),
+        "pair" => pair_cli::run_pair(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -3212,6 +3216,7 @@ fn print_help() {
     println!("  medousa openshell-probe [<manuscript-id>] [--script scripts/echo.sh] [--from medousa-openshell-sandbox:local] [--policy skill-sandbox] [--skip-grapheme]");
     println!("  medousa workspace [snapshot|cards|feed|stream|card <id>|cancel <id>|retry <id>|link-vault <id> --path <vault-path>] [--daemon-url <url>] [--limit N] [--include-terminal] [--column backlog|in_flight|wrapping_up|done|blocked] [--since-revision N] [--max-events N]");
     println!("  medousa vault [list|read <path>|write <path> --content <md>|--stdin|search <q>|delete <path>|backlinks <path>] [--daemon-url <url>] [--prefix <dir/>] [--limit N]");
+    println!("  medousa pair status|list|qr [--term] [--open]|remove <pairing_id> [--daemon-url <url>]");
     println!();
     println!("EXAMPLES:");
     println!("  medousa onboard");
