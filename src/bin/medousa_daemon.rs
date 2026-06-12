@@ -647,6 +647,12 @@ async fn main() -> Result<()> {
             "medousa-daemon: LAN pairing ready (device_id={}, GET /qr)",
             pairing_service.device_id()
         );
+        let warm_service = pairing_service.clone();
+        tokio::spawn(async move {
+            if let Err(err) = warm_service.current_qr().await {
+                eprintln!("medousa-daemon: pairing QR warm-up failed: {err:#}");
+            }
+        });
         Some(
             medousa::pairing_handlers::routes().with_state(medousa::pairing_handlers::PairingApiState {
                 service: pairing_service,

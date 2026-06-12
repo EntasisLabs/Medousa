@@ -1,5 +1,4 @@
 use crate::daemon::DaemonState;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -108,37 +107,33 @@ pub async fn pairing_fetch_qr_image(
 ) -> Result<PairingQrImage, String> {
     let base = daemon_base(&state)?;
     let client = pairing_client()?;
-    let qr_response = client
-        .get(format!("{base}/qr"))
+    let response = client
+        .get(format!("{base}/qr/image"))
         .send()
         .await
         .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if !qr_response.status().is_success() {
-        let status = qr_response.status();
-        let body = qr_response.text().await.unwrap_or_default();
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
         return Err(pairing_unavailable_message(status, &body));
     }
-    let qr = qr_response
-        .json::<PairingQrResponse>()
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct QrImagePayload {
+        url: String,
+        expires_at: String,
+        short_code: String,
+        png_base64: String,
+    }
+    let payload = response
+        .json::<QrImagePayload>()
         .await
         .map_err(|err| err.to_string())?;
-    let png = client
-        .get(format!("{base}/qr.png"))
-        .send()
-        .await
-        .map_err(|err| format!("cannot load QR image from {base}: {err}"))?;
-    if !png.status().is_success() {
-        let status = png.status();
-        let body = png.text().await.unwrap_or_default();
-        return Err(pairing_unavailable_message(status, &body));
-    }
-    let bytes = png.bytes().await.map_err(|err| err.to_string())?;
-    let encoded = STANDARD.encode(bytes);
     Ok(PairingQrImage {
-        data_url: format!("data:image/png;base64,{encoded}"),
-        url: qr.url,
-        expires_at: qr.expires_at,
-        short_code: qr.short_code,
+        data_url: format!("data:image/png;base64,{}", payload.png_base64),
+        url: payload.url,
+        expires_at: payload.expires_at,
+        short_code: payload.short_code,
     })
 }
 

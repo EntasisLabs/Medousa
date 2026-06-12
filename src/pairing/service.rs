@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand::RngCore;
@@ -32,6 +33,15 @@ pub struct QrResponse {
     pub url: String,
     pub expires_at: DateTime<Utc>,
     pub short_code: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QrImageResponse {
+    pub url: String,
+    pub expires_at: DateTime<Utc>,
+    pub short_code: String,
+    pub png_base64: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -241,6 +251,17 @@ impl PairingService {
         Ok(self.current_qr().await?.short_code)
     }
 
+    pub async fn current_qr_image(&self) -> Result<QrImageResponse> {
+        let qr = self.current_qr().await?;
+        let png = self.render_qr_png(&qr.url)?;
+        Ok(QrImageResponse {
+            url: qr.url,
+            expires_at: qr.expires_at,
+            short_code: qr.short_code,
+            png_base64: base64::engine::general_purpose::STANDARD.encode(png),
+        })
+    }
+
     pub async fn pair_init(
         &self,
         request: PairInitRequest,
@@ -401,9 +422,12 @@ impl PairingService {
 
     pub fn render_qr_png(&self, url: &str) -> Result<Vec<u8>> {
         use image::Luma;
+        use qrcode::EcLevel;
         use qrcode::QrCode;
 
-        let code = QrCode::new(url.as_bytes()).context("build qr code")?;
+        let code = QrCode::with_error_correction_level(url.as_bytes(), EcLevel::M)
+            .or_else(|_| QrCode::new(url.as_bytes()))
+            .with_context(|| format!("build qr code ({} bytes)", url.len()))?;
         let image = code.render::<Luma<u8>>().min_dimensions(256, 256).build();
         let mut buffer = Vec::new();
         let mut cursor = std::io::Cursor::new(&mut buffer);

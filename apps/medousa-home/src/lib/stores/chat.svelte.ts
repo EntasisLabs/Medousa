@@ -462,10 +462,12 @@ export class ChatStore {
     const trimmed = jobId.trim();
     if (!trimmed) return;
 
+    let settledTurn = false;
     for (const [turnId, turn] of this.turns) {
       if (turn.mode !== "background") continue;
       if (turn.workspaceCardId !== trimmed && turnId !== trimmed) continue;
       this.settleTurn(turnId);
+      settledTurn = true;
     }
 
     this.messages = this.messages.map((message) =>
@@ -473,6 +475,9 @@ export class ChatStore {
         ? { ...message, streaming: false, phase: null, statusLine: null }
         : message,
     );
+    if (!settledTurn) {
+      this.noteBackgroundSettled();
+    }
   }
 
   /** Move a finished ask thread into the principal chat transcript. */
@@ -707,7 +712,8 @@ export class ChatStore {
       if (!this.isRelevantSession(detail.session_id?.trim())) continue;
       const workId = detail.work_id?.trim() || card.id;
       const statusLine = workerStatusLineForColumn(card.column);
-      const streaming = card.column !== "done" && card.column !== "blocked";
+      const streaming =
+        card.column === "backlog" || card.column === "in_flight";
       this.updateWorkerLaneBubble(workId, { statusLine, streaming });
     }
   }
@@ -1086,6 +1092,7 @@ export class ChatStore {
 
     if (event.terminal) {
       this.noteTurnTerminal(event);
+      this.finishAskLaneTurn(event.turn_id);
     }
   }
 
@@ -1292,11 +1299,22 @@ export class ChatStore {
 
     if (event.terminal) {
       this.finishMessage(messageId);
+      this.finishAskLaneTurn(event.turn_id);
       if (this.shouldSettleTurnFromStream(event.turn_id)) {
         this.settleTurn(event.turn_id);
         void this.refreshSessions();
       }
     }
+  }
+
+  private finishAskLaneTurn(turnId: string) {
+    this.messages = this.messages.map((message) =>
+      message.turnId === turnId &&
+      message.lane === "ask" &&
+      message.streaming
+        ? { ...message, streaming: false, phase: null, statusLine: null }
+        : message,
+    );
   }
 
   private noteTurnTerminal(event: InteractiveTurnStreamEvent) {
@@ -1362,6 +1380,7 @@ export class ChatStore {
 
     if (event.terminal) {
       this.finishMessage(id);
+      this.finishAskLaneTurn(event.turn_id);
       if (this.shouldSettleTurnFromStream(event.turn_id)) {
         this.settleTurn(event.turn_id);
         void this.refreshSessions();

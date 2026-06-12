@@ -48,6 +48,7 @@ export function groupWorkerThreads(messages: ChatMessage[]): WorkerThread[] {
 
 export function workerStatusLineForColumn(column: string): string {
   switch (column) {
+    case "in_flight":
     case "running":
       return "Running tools…";
     case "wrapping_up":

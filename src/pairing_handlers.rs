@@ -18,6 +18,7 @@ pub fn routes() -> Router<PairingApiState> {
     Router::new()
         .route("/pair/status", get(pair_status))
         .route("/qr", get(get_qr))
+        .route("/qr/image", get(get_qr_image))
         .route("/qr.png", get(get_qr_png))
         .route("/pair/code", get(get_pair_code))
         .route("/pair/init", post(pair_init))
@@ -61,6 +62,17 @@ async fn get_qr_png(
         .render_qr_png(&qr.url)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], png))
+}
+
+async fn get_qr_image(
+    State(state): State<PairingApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    state
+        .service
+        .current_qr_image()
+        .await
+        .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn get_pair_code(

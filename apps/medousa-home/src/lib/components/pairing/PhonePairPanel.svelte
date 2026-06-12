@@ -33,6 +33,7 @@
 
   let loading = $state(true);
   let refreshing = $state(false);
+  let qrLoading = $state(false);
   let error = $state<string | null>(null);
   let qr = $state<PairingQrImage | null>(null);
   let countdown = $state(0);
@@ -81,6 +82,7 @@
       error = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
+      qrLoading = false;
     }
   }
 
@@ -90,14 +92,14 @@
       if (!qr) return;
       countdown = secondsUntil(qr.expiresAt);
       if (countdown <= 0) {
-        void refreshQr();
+        void refreshQr({ silent: true });
       }
     }, 1000);
     pollTimer = setInterval(() => {
       void pollStatus();
     }, 3000);
     qrRefreshTimer = setInterval(() => {
-      void refreshQr();
+      void refreshQr({ silent: true });
     }, 25_000);
   }
 
@@ -108,7 +110,7 @@
       devices = status.pairedDevices;
       knownPairingIds = status.pairedDevices.map((device) => device.pairingId);
       bonjour = await fetchBonjourStatus();
-      await refreshQr();
+      await refreshQr({ retries: 5 });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -116,13 +118,31 @@
     }
   }
 
-  async function refreshQr() {
-    try {
-      qr = await fetchPairingQrImage();
-      countdown = secondsUntil(qr.expiresAt);
-      error = null;
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+  async function refreshQr(options?: { silent?: boolean; retries?: number }) {
+    const silent = options?.silent ?? false;
+    const maxAttempts = options?.retries ?? 4;
+    if (!silent) {
+      qrLoading = true;
+    }
+    let lastError: string | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      }
+      try {
+        qr = await fetchPairingQrImage();
+        countdown = secondsUntil(qr.expiresAt);
+        error = null;
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+    if (!silent && !qr) {
+      error = lastError;
+    }
+    if (!silent) {
+      qrLoading = false;
     }
   }
 
@@ -190,6 +210,13 @@
             width="176"
             height="176"
           />
+        </div>
+      {:else if qrLoading}
+        <div
+          class="flex h-44 w-44 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-surface-500/45 bg-surface-950/50"
+        >
+          <LoaderCircle class="h-8 w-8 animate-spin text-surface-400" aria-hidden="true" />
+          <span class="text-xs text-surface-400">Generating QR…</span>
         </div>
       {:else}
         <div
