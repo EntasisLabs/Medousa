@@ -63,6 +63,8 @@ pub mod identity_tools;
 pub mod identity_write_policy;
 pub mod locus_handlers;
 pub mod locus_memory;
+pub mod local_inference;
+pub mod local_inference_handlers;
 pub mod memory_tools;
 pub mod tool_aliases;
 pub mod tool_names;
@@ -193,6 +195,7 @@ pub use tools::{TuiRuntime, build_tui_runtime};
 const DEFAULT_LLM_MODEL: &str = "gpt-4o-mini";
 const DEFAULT_LLM_PROVIDER: &str = "openai";
 const DEFAULT_SURREALKV_FILENAME: &str = "runtime.surrealkv";
+pub const DEFAULT_MEDOUSA_LOCAL_BASE_URL: &str = "http://127.0.0.1:7421/v1";
 
 fn provider_base_url_env_keys(provider: &str) -> (String, String) {
     let normalized = provider.trim().to_ascii_uppercase().replace('-', "_");
@@ -279,6 +282,14 @@ pub fn resolve_llm_base_url(
 
     let provider = resolve_llm_provider(explicit_provider);
     let (medousa_provider_key, stasis_provider_key) = provider_base_url_env_keys(&provider);
+
+    if provider.eq_ignore_ascii_case("medousa-local") {
+        return std::env::var(&medousa_provider_key)
+            .ok()
+            .or_else(|| std::env::var(&stasis_provider_key).ok())
+            .or_else(|| std::env::var("MEDOUSA_LOCAL_ENGINE_BASE_URL").ok())
+            .or_else(|| Some(DEFAULT_MEDOUSA_LOCAL_BASE_URL.to_string()));
+    }
 
     std::env::var(&medousa_provider_key)
         .ok()

@@ -47,7 +47,8 @@ Start here for product-level usage:
 29. [continuity-first-redesign.md](continuity-first-redesign.md) — **Approved plan:** Model 3 continuity pipeline, slice-indexed tool history, runtime-owned limits, phased 8A–8E
 30. [medousa-home-m7-vault-garage-plan.md](medousa-home-m7-vault-garage-plan.md) — **Epic M7:** Library as life garage — spaces, typed notes, premium editor, Vault↔Work↔Chat bridges (8 sprints)
 31. [medousa-home-m8-real-garage-plan.md](medousa-home-m8-real-garage-plan.md) — **Epic M8:** The real garage — formatting affordances, attachments, external desk, spreadsheet preview (8 sprints)
-32. [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) — **Epic (Phase 1 LAN Magic):** first-run GUI wizard, mDNS + QR LAN pairing, TOFU Ed25519 protocol, prod packaging path — **Phase A next**
+32. [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) — **Epic (Phase 1 LAN Magic):** first-run GUI wizard, mDNS + QR LAN pairing, TOFU Ed25519 protocol — Phases A–D landed
+33. [embedded-local-inference-plan.md](embedded-local-inference-plan.md) — **Planned:** in-daemon mistral.rs engine, **Gemma 4 curated catalog** (12B Unified hero, Jun 2026), hardware tiers A–E
 
 ## Primary Code Anchors
 

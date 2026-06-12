@@ -269,6 +269,7 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(1000);
     let once = args.iter().any(|arg| arg == "--once");
+    let local_engine = args.iter().any(|arg| arg == "--local-engine");
     let worker_id = find_arg_value(&args, "--worker-id")
         .unwrap_or("medousa-daemon")
         .to_string();
@@ -668,6 +669,7 @@ async fn main() -> Result<()> {
     if let Some(pairing_router) = pairing_router {
         app = app.merge(pairing_router);
     }
+    app = app.merge(medousa::local_inference_handlers::routes());
     let _mdns_advertiser = mdns_advertiser;
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
@@ -714,6 +716,29 @@ async fn main() -> Result<()> {
             heartbeat_delivery_policy,
         )
     );
+
+    if local_engine {
+        let engine_bind = std::env::var("MEDOUSA_LOCAL_ENGINE_BIND")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        tokio::spawn(async move {
+            eprintln!("medousa-daemon loading local Gemma engine (this may take several minutes)…");
+            match medousa::local_inference::load_recommended_engine(engine_bind).await {
+                Ok(status) => {
+                    println!(
+                        "medousa local engine ready at {} ({})",
+                        status.base_url,
+                        status
+                            .model_alias
+                            .unwrap_or_else(|| "gemma".to_string())
+                    );
+                }
+                Err(err) => {
+                    eprintln!("medousa local engine failed to start: {err}");
+                }
+            }
+        });
+    }
 
     axum::serve(
         listener,
@@ -4586,7 +4611,7 @@ fn build_operator_first_run_guide(
 
 fn print_usage() {
     println!(
-        "medousa_daemon\n\nusage:\n  cargo run -p medousa --bin medousa_daemon -- [options]\n\ncore options:\n  --backend <backend>                       Runtime backend: in-memory|surreal-mem|surreal-kv:<path>\n  --provider <provider>                     Optional LLM provider override\n  --model <model>                           Optional LLM model override\n  --base-url <url>                          Optional provider base URL override\n  --bind <host:port>                        HTTP bind address (default: 127.0.0.1:7419)\n  --interval-ms <n>                         Scheduler tick interval ms (default: 1000)\n  --worker-id <id>                          Scheduler worker id (default: medousa-daemon)\n  --once                                    Run a single scheduler tick and exit\n\nheartbeat options:\n  --heartbeat-min-significance <0..1>       Notify threshold (default: 0.65)\n  --heartbeat-dead-letter-weight <f32>      Dead-letter contribution weight\n  --heartbeat-failed-weight <f32>           Failed-jobs contribution weight\n  --heartbeat-outbox-weight <f32>           Pending-outbox contribution weight\n  --heartbeat-activity-weight <f32>         Runtime activity contribution weight\n  --heartbeat-min-notify-interval-secs <n>  Min notify interval seconds (default: 0)\n  --heartbeat-quiet-start-hour-utc <0..23>  Quiet-hours start hour UTC\n  --heartbeat-quiet-end-hour-utc <0..23>    Quiet-hours end hour UTC\n  --heartbeat-webhook-url <url>             Optional outbound heartbeat webhook\n  --heartbeat-jsonl <path>                  Optional heartbeat JSONL sink path\n\ndashboard action auth options:\n  --dashboard-action-bearer-token <token>       Require bearer token on /action/* routes\n  --dashboard-action-required-role <role>       Require role claim on /action/* routes\n  --dashboard-action-role-claim-header <name>   Role header (default: x-stasis-role)\n\nfirst-run flow:\n  1) start daemon\n  2) run: cargo run -p medousa --bin medousa_cli -- daemon-first-run --daemon-url http://127.0.0.1:7419\n  3) run report flow from the printed guidance\n"
+        "medousa_daemon\n\nusage:\n  cargo run -p medousa --bin medousa_daemon -- [options]\n\ncore options:\n  --backend <backend>                       Runtime backend: in-memory|surreal-mem|surreal-kv:<path>\n  --provider <provider>                     Optional LLM provider override\n  --model <model>                           Optional LLM model override\n  --base-url <url>                          Optional provider base URL override\n  --bind <host:port>                        HTTP bind address (default: 127.0.0.1:7419)\n  --interval-ms <n>                         Scheduler tick interval ms (default: 1000)\n  --worker-id <id>                          Scheduler worker id (default: medousa-daemon)\n  --once                                    Run a single scheduler tick and exit\n  --local-engine                            Load tier-recommended Gemma model on :7421 (requires --features embedded-inference)\n\nheartbeat options:\n  --heartbeat-min-significance <0..1>       Notify threshold (default: 0.65)\n  --heartbeat-dead-letter-weight <f32>      Dead-letter contribution weight\n  --heartbeat-failed-weight <f32>           Failed-jobs contribution weight\n  --heartbeat-outbox-weight <f32>           Pending-outbox contribution weight\n  --heartbeat-activity-weight <f32>         Runtime activity contribution weight\n  --heartbeat-min-notify-interval-secs <n>  Min notify interval seconds (default: 0)\n  --heartbeat-quiet-start-hour-utc <0..23>  Quiet-hours start hour UTC\n  --heartbeat-quiet-end-hour-utc <0..23>    Quiet-hours end hour UTC\n  --heartbeat-webhook-url <url>             Optional outbound heartbeat webhook\n  --heartbeat-jsonl <path>                  Optional heartbeat JSONL sink path\n\ndashboard action auth options:\n  --dashboard-action-bearer-token <token>       Require bearer token on /action/* routes\n  --dashboard-action-required-role <role>       Require role claim on /action/* routes\n  --dashboard-action-role-claim-header <name>   Role header (default: x-stasis-role)\n\nfirst-run flow:\n  1) start daemon\n  2) run: cargo run -p medousa --bin medousa_cli -- daemon-first-run --daemon-url http://127.0.0.1:7419\n  3) run report flow from the printed guidance\n"
     );
 }
 

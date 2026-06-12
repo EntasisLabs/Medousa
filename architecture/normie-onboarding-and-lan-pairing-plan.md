@@ -4,7 +4,7 @@
 > **Date:** 2026-06-11  
 > **Epic target:** Phase 1 LAN Magic (4–6 weeks)  
 > **Supersedes:** informal `strategy/medousa-normie-onboarding-strategy.md` references (strategy doc not yet in repo)  
-> **Related:** [medousa-home-plan.md](medousa-home-plan.md), [medousa-home-mobile-plan.md](medousa-home-mobile-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md), [component-daemon.md](component-daemon.md)
+> **Related:** [medousa-home-plan.md](medousa-home-plan.md), [medousa-home-mobile-plan.md](medousa-home-mobile-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md), [embedded-local-inference-plan.md](embedded-local-inference-plan.md), [component-daemon.md](component-daemon.md)
 
 ## Product promise
 
@@ -101,9 +101,9 @@ Replaces TUI `medousa setup` for normie installs. TUI wizard remains for power u
 
 | Path | Default | v1 ship |
 |------|---------|---------|
-| **A — Recommended (Managed AI)** | Highlighted card | Stub: “Coming soon” or waitlist; network failure → highlight Offline/BYOM |
+| **A — Recommended (Managed AI)** | Highlighted card | Stub: “Coming soon” or waitlist; **offline default = Gemma 4 12B** via [embedded-local-inference-plan.md](embedded-local-inference-plan.md) |
 | **B — Bring your own model** | OpenAI, Anthropic, Gemini, Ollama | **P0** — probe Ollama `:11434`, validate key via lightweight API call, store in keyring |
-| **C — Offline** | Bundled / local model | **P1** — Ollama-first; Gemma download-on-demand deferred |
+| **C — Offline** | **Gemma 4** (tier-sized: E2B / E4B / **12B Unified**) | **P0** — Core download + embedded engine; Ollama optional fallback |
 
 **Extract from TUI wizard (shared Rust, not ratatui UI):**
 
