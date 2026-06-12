@@ -63,7 +63,8 @@ Repo paths like `apps/medousa-home` stay for now — **user-facing copy is alway
 ### Release / packaging gaps (still open)
 
 - [ ] Ship `medousa_daemon` with `embedded-inference-metal` in Home bundle (no cargo flags for end users).
-- [ ] `install.sh` / README primary CTA = **Open Medousa**, not `cargo run`.
+- [ ] README = product only; dev/engine content lives in `docs/` — **done** ([docs/README.md](../docs/README.md))
+- [ ] `install.sh` / README primary CTA = **Download Medousa** from Releases
 - [ ] Wizard: Gemma license gate before first download; cache in `wizard.json`.
 - [ ] Settings Voice: hide provider/model text fields behind **Advanced**.
 - [ ] Optional: `medousa onboard --gui` opens Medousa (TUI stays for `--advanced`).

@@ -1,6 +1,8 @@
-# Medousa
+# Medousa (app source)
 
-Native desktop and mobile app for Medousa — chat, vault, pairing, and your private brain.
+Native desktop and mobile shell for **Medousa**. User-facing product docs: [../../README.md](../../README.md).
+
+Developer build instructions: [../../docs/cookbook/build-from-source.md](../../docs/cookbook/build-from-source.md).
 
 Tauri v2 + SvelteKit + Skeleton UI v2 workshop shell for Medousa.
 

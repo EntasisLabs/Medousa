@@ -9,9 +9,13 @@ It focuses on:
 - runtime composition and orchestration behavior
 - operational interaction flows across local and daemon modes
 
-Start here for product-level usage:
+Start here for product (download the app):
 
 - [../README.md](../README.md)
+
+Developers, self-hosters, and integrators:
+
+- [../docs/README.md](../docs/README.md)
 
 ## Documents
 
