@@ -9,27 +9,18 @@
 
 <p align="center"><strong>Turn chaotic life into stone.</strong></p>
 
-<p align="center"><em>Your second brain — always here, always yours, always private.</em></p>
-
 Medousa is a permanent AI workspace that lives on your devices. It remembers everything you tell it, verifies what it tells you, and keeps working even when you close the window.
 
-One brain. Your Mac, your phone, your scheduled work, your memory — not four apps pretending to be one.
+
+You talk to it from the App,Discord, Telegram, Slack, or WhatsApp if you want them. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
 
 
-You talk to it from **Medousa**, from Discord, Telegram, Slack, or WhatsApp if you want them. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
 
-**No cloud, no subscription, no hallucinated answers that you cannot trace.**
-
-
----
-
-## How it works
-
-**Medousa** is what you open. **Medousa Engine** is what keeps running when you close it — history, memory, recurring tasks, the question you sent at midnight.
-
-Same engine on every device. Same engine if you plug in Telegram, or call it from your own code. Same history. Same rules. Until you say `/new`.
+<p align="center"><em>One brain, your PC, your phone, your scheduled work, your memory — always here, always yours, always private.</em></p>
+<p align="center"><strong>No cloud, no subscription, no hallucinated answers that you cannot trace.</strong></p>
 
 ---
+
 
 ## What you can do with it
 
