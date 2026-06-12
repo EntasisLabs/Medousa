@@ -53,7 +53,7 @@ Developers, self-hosters, and integrators:
 31. [medousa-home-m8-real-garage-plan.md](medousa-home-m8-real-garage-plan.md) — **Epic M8:** The real garage — formatting affordances, attachments, external desk, spreadsheet preview (8 sprints)
 32. [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) — **Epic (Phase 1 LAN Magic):** first-run GUI wizard, mDNS + QR LAN pairing, TOFU Ed25519 protocol — Phases A–D landed
 33. [embedded-local-inference-plan.md](embedded-local-inference-plan.md) — **Planned:** in-daemon mistral.rs engine, **Gemma 4 curated catalog** (12B Unified hero, Jun 2026), hardware tiers A–E
-34. [session-catalog-index-plan.md](session-catalog-index-plan.md) — **In progress (Phase 1):** read-optimized `session_catalog` for `GET /v1/sessions`; write-time index, backfill, no transcript fan-out on list
+35. [normie-product-gap-analysis.md](normie-product-gap-analysis.md) — **Active:** Steve Jobs gap analysis; Phase A “it just works” (bundle engine, wizard fail-closed, offline gate, vocabulary)
 
 ## Primary Code Anchors
 

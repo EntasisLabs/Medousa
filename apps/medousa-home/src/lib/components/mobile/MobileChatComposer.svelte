@@ -4,6 +4,7 @@
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
+  import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket, startInteractiveStream } from "$lib/daemon";
@@ -43,6 +44,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
+    if (connection.offline) return;
     const prompt = chat.draft.trim();
     if (!prompt) return;
     haptic("medium");
@@ -106,7 +108,7 @@
     <GrowingTextarea
       bind:value={chat.draft}
       placeholder="Message"
-      disabled={chat.composerBlocked}
+      disabled={connection.offline || chat.composerBlocked}
       maxHeight={144}
       minHeight={34}
       onkeydown={handleKeydown}
@@ -117,7 +119,7 @@
     <button
       type="submit"
       class="composer-bar-send"
-      disabled={chat.composerBlocked || !chat.draft.trim()}
+      disabled={connection.offline || chat.composerBlocked || !chat.draft.trim()}
       aria-label="Send message"
       onmousedown={(event) => event.preventDefault()}
     >

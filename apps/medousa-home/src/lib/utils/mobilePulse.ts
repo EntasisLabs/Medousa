@@ -94,11 +94,11 @@ export function buildPulsePresentation(input: {
     return {
       alive: false,
       mood: "offline",
-      statusLine: "Workshop offline",
+      statusLine: "Not connected",
       eyebrow: "Can't reach Medousa",
       headline: "Check your connection",
-      subline: "The daemon may be stopped or on another machine.",
-      actionLabel: "Workshop settings",
+      subline: "Medousa may be stopped on your computer or on another network.",
+      actionLabel: "Connection settings",
       action: { kind: "settings" },
     };
   }
@@ -109,7 +109,7 @@ export function buildPulsePresentation(input: {
       mood: "quiet",
       statusLine: "Connecting…",
       eyebrow: "One moment",
-      headline: "Finding your workshop",
+      headline: "Finding Medousa",
       actionLabel: "Open chat",
       action: { kind: "chat" },
     };

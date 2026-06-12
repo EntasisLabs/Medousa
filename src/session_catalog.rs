@@ -20,9 +20,11 @@ use tokio::runtime::Handle;
 use crate::session::{
     atomic_write, medousa_data_dir, ConversationTurn, SessionHistorySummary,
 };
+use crate::turn_parts::TurnPart;
 use crate::verification_store::VerificationRunRecord;
 
 pub const PREVIEW_MAX_CHARS: usize = 72;
+pub const AUTO_TITLE_MAX_CHARS: usize = 48;
 
 const SESSION_CATALOG_TABLE: &str = "session_catalog";
 
@@ -133,7 +135,46 @@ pub fn preview_line_from_content(content: &str) -> Option<String> {
 }
 
 pub fn preview_from_turn(turn: &ConversationTurn) -> Option<String> {
-    preview_line_from_content(&turn.content)
+    turn_text_line(turn, PREVIEW_MAX_CHARS)
+}
+
+pub fn auto_title_from_turn(turn: &ConversationTurn) -> Option<String> {
+    if turn.role != "user" {
+        return None;
+    }
+    turn_text_line(turn, AUTO_TITLE_MAX_CHARS)
+}
+
+pub fn auto_title_from_preview(preview: &str) -> Option<String> {
+    preview_line_from_content(preview).map(|line| truncate_chars(&line, AUTO_TITLE_MAX_CHARS))
+}
+
+fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
+    if let Some(line) = preview_line_from_content(&turn.content) {
+        return Some(truncate_chars(&line, max_chars));
+    }
+
+    turn.parts.as_ref().and_then(|parts| {
+        for part in parts {
+            let text = match part {
+                TurnPart::Text { markdown } | TurnPart::Reasoning { markdown } => markdown,
+                TurnPart::Handoff { text, .. } => text,
+                TurnPart::ToolRun { .. } => continue,
+            };
+            if let Some(line) = preview_line_from_content(text) {
+                return Some(truncate_chars(&line, max_chars));
+            }
+        }
+        None
+    })
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let truncated: String = value.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{truncated}…")
 }
 
 trait SessionCatalogStore: Send + Sync {
@@ -542,6 +583,13 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
         row.preview = "(empty session)".to_string();
     }
 
+    if row.display_name.is_none() {
+        if let Some(title) = auto_title_from_turn(turn) {
+            row.display_name = Some(title.clone());
+            let _ = crate::session_meta_store::set_session_display_name(session_id, &title);
+        }
+    }
+
     catalog_store().upsert_row(&row);
 }
 
@@ -731,6 +779,10 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
             row.last_verification_verified = Some(record.is_verified);
         }
 
+        if row.display_name.is_none() {
+            row.display_name = auto_title_from_preview(&row.preview);
+        }
+
         catalog_store().upsert_row(&row);
         count += 1;
     }
@@ -815,5 +867,41 @@ mod tests {
         let summary = get_summary("sess-a").expect("summary");
         assert_eq!(summary.turns, 2);
         assert_eq!(summary.preview, "hello world");
+        assert_eq!(summary.display_name.as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn preview_from_turn_reads_text_parts() {
+        use crate::turn_parts::TurnPart;
+
+        let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
+        let turn = ConversationTurn {
+            role: "assistant".into(),
+            content: String::new(),
+            timestamp: at,
+            tool_names: vec![],
+            answer_state: None,
+            parts: Some(vec![TurnPart::Text {
+                markdown: "From parts timeline".into(),
+            }]),
+            slice_summary: None,
+        };
+        assert_eq!(
+            preview_from_turn(&turn).as_deref(),
+            Some("From parts timeline")
+        );
+    }
+
+    #[test]
+    fn auto_title_skips_assistant_turns() {
+        let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
+        let turn = ConversationTurn::plain(
+            "assistant",
+            "I can help".to_string(),
+            at,
+            vec![],
+            None,
+        );
+        assert!(auto_title_from_turn(&turn).is_none());
     }
 }

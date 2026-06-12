@@ -67,7 +67,7 @@
     error = null;
     try {
       if (!isTauri()) {
-        error = "Phone pairing runs in the Medousa desktop app with the engine online.";
+        error = "Phone pairing needs Medousa running on this computer. Finish setup or open Connection settings.";
         return;
       }
       const health = await checkDaemonHealth();
@@ -185,8 +185,7 @@
     </div>
   {:else if !coreOnline}
     <div class="rounded-xl border border-warning-500/35 bg-warning-500/10 px-4 py-4 text-sm text-warning-100">
-      The engine is offline. Finish setup or start it from Settings → Connection before pairing
-      your phone.
+      Medousa isn't running. Finish setup or open Settings → Connection before pairing your phone.
     </div>
   {:else if connectedDevice}
     <div
@@ -329,17 +328,11 @@
       <ul class="list-disc space-y-2 pl-5 text-xs">
         <li>Phone and computer must be on the same Wi‑Fi (guest networks often block LAN discovery).</li>
         <li>
-          For automatic discovery, start the engine with
-          <span class="font-mono text-surface-200">medousa start daemon --public</span>.
+          For automatic discovery, enable public LAN binding in Connection settings (advanced).
         </li>
         <li>QR pairing works even when Bonjour is blocked — scan or use the short code.</li>
         <li>
-          Firewall: allow incoming connections for
-          <span class="font-mono">medousa_daemon</span> on the computer running Medousa.
-        </li>
-        <li>
-          Test from terminal:
-          <span class="font-mono text-surface-200">curl http://127.0.0.1:7419/qr</span>
+          Firewall: allow incoming connections for Medousa on the computer running the app.
         </li>
       </ul>
     </div>

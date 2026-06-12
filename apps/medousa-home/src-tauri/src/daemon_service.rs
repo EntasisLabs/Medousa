@@ -111,7 +111,7 @@ fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
     }
 
     Err(
-        "Could not find medousa_daemon. Build it (cargo build -p medousa --bin medousa_daemon) or set MEDOUSA_MEDOUSA_DAEMON_BIN.".to_string(),
+        "Medousa could not start — the app bundle may be incomplete. Reinstall Medousa, or set MEDOUSA_MEDOUSA_DAEMON_BIN for development.".to_string(),
     )
 }
 
@@ -236,7 +236,7 @@ pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonS
 
     if is_bind_reachable(DEFAULT_BIND) {
         return Err(format!(
-            "Port {DEFAULT_BIND} is open but the engine is not responding. Try restarting from Settings → Basement."
+            "Port {DEFAULT_BIND} is open but the engine is not responding. Try restarting from Settings → Connection."
         ));
     }
 

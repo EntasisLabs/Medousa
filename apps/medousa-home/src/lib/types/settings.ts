@@ -18,7 +18,7 @@ export const SETTINGS_SECTIONS: {
   { id: "voice", label: "Voice", hint: "How she answers" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
-  { id: "basement", label: "Basement", hint: "Connection & power tools" },
+  { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },
 ];
 
 export const DEPTH_CHARTER_OPTIONS = [

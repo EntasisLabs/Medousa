@@ -10,6 +10,7 @@ source "${SCRIPT_DIR}/common.sh"
 TARGET=""
 OUTPUT=""
 PRINT_TARGET_ONLY=0
+WITH_INFERENCE=0
 
 usage() {
   cat <<'EOF'
@@ -19,6 +20,7 @@ Options:
   --target <triple>   Rust target triple (default: host)
   --output <dir>      Staging directory (default: dist/build/<target>)
   --print-target      Print resolved target triple and exit
+  --with-inference    Build medousa_daemon with embedded-inference-metal on Apple hosts
   -h, --help          Show this help
 
 Builds root workspace binaries + medousa_whatsapp, copies into <output>/bin/.
@@ -37,6 +39,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --print-target)
       PRINT_TARGET_ONLY=1
+      shift
+      ;;
+    --with-inference)
+      WITH_INFERENCE=1
       shift
       ;;
     -h | --help)
@@ -84,8 +90,16 @@ if [[ -n "${TARGET}" ]]; then
   CARGO_TARGET_ARGS=(--target "${TARGET}")
 fi
 
+CARGO_FEATURE_ARGS=()
+if [[ "${WITH_INFERENCE}" -eq 1 ]] && [[ "${TARGET}" == *-apple-* ]]; then
+  CARGO_FEATURE_ARGS=(--features embedded-inference-metal)
+  medousa_log "embedded inference enabled (embedded-inference-metal)"
+elif [[ "${WITH_INFERENCE}" -eq 1 ]]; then
+  medousa_log "note: --with-inference only applies embedded-inference-metal on Apple targets"
+fi
+
 medousa_log "cargo build (root workspace, release, all bins)…"
-cargo build --release --bins "${CARGO_TARGET_ARGS[@]}"
+cargo build --release --bins "${CARGO_FEATURE_ARGS[@]}" "${CARGO_TARGET_ARGS[@]}"
 
 medousa_log "cargo build (medousa_whatsapp)…"
 cargo build --release --manifest-path "${MEDOUSA_WHATSAPP_MANIFEST}" "${CARGO_TARGET_ARGS[@]}"

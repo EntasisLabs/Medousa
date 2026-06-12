@@ -22,7 +22,7 @@
       class="mt-5 rounded-xl border border-surface-500/35 bg-surface-950/50 px-4 py-5 text-sm leading-relaxed text-surface-300"
     >
       Pairing is managed on your Mac. Open Medousa → Settings → Phone to
-      scan the QR code, then connect this app under Settings → Basement using your Mac's LAN address.
+      scan the QR code, then connect this app under Settings → Connection using your computer's LAN address.
     </div>
   {:else}
     <div class="mt-5">

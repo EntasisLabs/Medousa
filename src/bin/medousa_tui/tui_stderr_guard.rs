@@ -5,10 +5,8 @@
 
 use std::fs::{self, OpenOptions};
 use std::io;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::PathBuf;
-
-use medousa::session::medousa_data_dir;
 
 pub struct TuiStderrGuard {
     restored: Option<OwnedFd>,
@@ -50,5 +48,9 @@ impl Drop for TuiStderrGuard {
 }
 
 fn log_path() -> PathBuf {
-    medousa_data_dir().join("logs").join("tui-runtime.log")
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("medousa")
+        .join("logs")
+        .join("tui-runtime.log")
 }

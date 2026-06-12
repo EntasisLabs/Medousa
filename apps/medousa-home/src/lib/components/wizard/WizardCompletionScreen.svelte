@@ -80,14 +80,15 @@
 
   <div
     class="mt-8 w-full max-w-md rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-5 text-left"
+    aria-hidden="true"
   >
-    <p class="text-sm text-surface-400">Ask me anything…</p>
+    <p class="text-sm text-surface-500">Preview — you'll type in chat next</p>
   </div>
 
   <button
     type="button"
     class="btn variant-filled-primary mt-10 min-h-11 px-8"
-    disabled={wizard.busy || checking || starting}
+    disabled={wizard.busy || checking || starting || (!isTauriMobilePlatform() && !health?.ok && isTauri())}
     onclick={() => void wizard.finish()}
   >
     Start talking →

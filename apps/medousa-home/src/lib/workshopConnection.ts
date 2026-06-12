@@ -1,4 +1,5 @@
 import { chat } from "$lib/stores/chat.svelte";
+import { connection } from "$lib/stores/connection.svelte";
 import { recurring } from "$lib/stores/recurring.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { settings } from "$lib/stores/settings.svelte";
@@ -114,6 +115,7 @@ export async function reconnectWorkshop(
 ): Promise<DaemonHealth> {
   await ensureMobileDaemonUrl();
   const health = await checkDaemonHealth();
+  connection.setHealth(health);
   onHealthChange(health);
 
   await stopWorkspaceStream();
@@ -142,9 +144,11 @@ export function connectWorkshop(options: {
 
   void (async () => {
     try {
+      connection.setHealth(null);
       options.onHealthChange(null);
       await ensureMobileDaemonUrl();
       const health = await checkDaemonHealth();
+      connection.setHealth(health);
       options.onHealthChange(health);
 
       void loadWorkshopDefaults(health.ok);
@@ -153,10 +157,12 @@ export function connectWorkshop(options: {
         await startWorkshopStreams();
       }
     } catch (err) {
-      options.onHealthChange({
+      const failed = {
         ok: false,
         message: err instanceof Error ? err.message : String(err),
-      });
+      };
+      connection.setHealth(failed);
+      options.onHealthChange(failed);
     }
   })();
 

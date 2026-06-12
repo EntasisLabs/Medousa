@@ -238,7 +238,7 @@
               Rename session
             </p>
             <p class="workshop-faint mt-0.5 text-xs">
-              Saved on the engine — searchable in this list and via /history in TUI.
+              Saved on this device — searchable in your session list.
             </p>
           </div>
           <button

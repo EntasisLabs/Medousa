@@ -1,0 +1,2 @@
+# Tauri sidecars — populated by `npm run prepare:sidecar` before app bundle.
+# Files are named `medousa_daemon-<target-triple>` (gitignored).

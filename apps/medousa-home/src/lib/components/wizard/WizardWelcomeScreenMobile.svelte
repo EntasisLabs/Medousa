@@ -1,11 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ChevronRight, Laptop, LoaderCircle, Wifi } from "@lucide/svelte";
+  import { ChevronRight, Laptop, LoaderCircle, QrCode, Wifi } from "@lucide/svelte";
   import { checkDaemonHealth, getDaemonUrl, setDaemonUrl } from "$lib/daemon";
   import { inferDevDaemonUrl, isLoopbackDaemonUrl } from "$lib/daemonConnection";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 
+  type ConnectMode = "address" | "pair";
+
+  let connectMode = $state<ConnectMode>("address");
   let daemonUrl = $state("");
+  let pairLink = $state("");
   let testing = $state(false);
   let statusMessage = $state<string | null>(null);
   let connected = $state(false);
@@ -43,10 +48,37 @@
     }
   }
 
+  function applyPairLink(raw: string): boolean {
+    const parsed = parsePairQrUrl(raw);
+    if (!parsed) return false;
+    daemonUrl = parsed.daemonUrl;
+    pairLink = raw.trim();
+    return true;
+  }
+
+  function onPairLinkInput() {
+    if (applyPairLink(pairLink)) {
+      statusMessage = null;
+    }
+  }
+
   async function testConnection(showErrors = true) {
+    if (connectMode === "pair" && pairLink.trim() && !urlLooksValid(daemonUrl)) {
+      if (!applyPairLink(pairLink)) {
+        if (showErrors) {
+          statusMessage = "Paste the full medousa:// pairing link from your computer.";
+        }
+        connected = false;
+        return;
+      }
+    }
+
     if (!urlLooksValid(daemonUrl)) {
       if (showErrors) {
-        statusMessage = "Enter your computer's address — e.g. http://192.168.1.42:7419";
+        statusMessage =
+          connectMode === "pair"
+            ? "Paste the pairing link from your Mac, or switch to Enter address."
+            : "Enter your computer's address — e.g. http://192.168.1.42:7419";
       }
       connected = false;
       return;
@@ -71,8 +103,15 @@
   }
 
   async function continueSetup() {
+    if (connectMode === "pair" && pairLink.trim()) {
+      applyPairLink(pairLink);
+    }
+
     if (!urlLooksValid(daemonUrl)) {
-      statusMessage = "Enter a valid address before continuing.";
+      statusMessage =
+        connectMode === "pair"
+          ? "Paste a valid pairing link before continuing."
+          : "Enter a valid address before continuing.";
       return;
     }
 
@@ -95,9 +134,13 @@
     }
   }
 
-  const canContinue = $derived.by(
-    () => !wizard.busy && !testing && urlLooksValid(daemonUrl),
-  );
+  const canContinue = $derived.by(() => {
+    if (wizard.busy || testing) return false;
+    if (connectMode === "pair") {
+      return pairLink.trim().length > 0 || urlLooksValid(daemonUrl);
+    }
+    return urlLooksValid(daemonUrl);
+  });
 </script>
 
 <div class="flex h-full flex-col">
@@ -116,34 +159,85 @@
       <div class="min-w-0 text-sm text-surface-300">
         <p class="font-medium text-surface-50">On your computer first</p>
         <p class="mt-2 leading-relaxed">
-          Open Medousa there and finish setup. Note the network address it shows — not
-          <span class="font-mono text-xs text-surface-200">127.0.0.1</span>.
+          Open Medousa there and finish setup. On the Pair phone step you'll see a QR code — scan
+          it with your phone camera, or paste the link below.
         </p>
       </div>
     </div>
   </div>
 
-  <label class="mt-6 block">
-    <span class="block text-sm font-medium text-surface-100">Computer address</span>
-    <span class="workshop-faint mt-0.5 block text-xs">Same Wi‑Fi as this phone</span>
-    <input
-      class="input mt-2 w-full font-mono text-sm"
-      type="url"
-      inputmode="url"
-      autocapitalize="off"
-      autocorrect="off"
-      spellcheck="false"
-      placeholder="http://192.168.1.42:7419"
-      bind:value={daemonUrl}
+  <div class="mt-6 flex gap-2">
+    <button
+      type="button"
+      class="btn min-h-10 flex-1 text-sm {connectMode === 'pair'
+        ? 'variant-filled-primary'
+        : 'variant-soft'}"
       disabled={wizard.busy || testing}
-    />
-  </label>
+      onclick={() => (connectMode = "pair")}
+    >
+      <QrCode class="mr-2 inline h-4 w-4" aria-hidden="true" />
+      Pairing link
+    </button>
+    <button
+      type="button"
+      class="btn min-h-10 flex-1 text-sm {connectMode === 'address'
+        ? 'variant-filled-primary'
+        : 'variant-soft'}"
+      disabled={wizard.busy || testing}
+      onclick={() => (connectMode = "address")}
+    >
+      Enter address
+    </button>
+  </div>
+
+  {#if connectMode === "pair"}
+    <label class="mt-6 block">
+      <span class="block text-sm font-medium text-surface-100">Pairing link</span>
+      <span class="workshop-faint mt-0.5 block text-xs">
+        Scan the QR on your Mac with the Camera app, then paste the medousa:// link here
+      </span>
+      <input
+        class="input mt-2 w-full font-mono text-sm"
+        type="text"
+        inputmode="url"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="medousa://pair/1.0?a=…"
+        bind:value={pairLink}
+        oninput={onPairLinkInput}
+        onchange={onPairLinkInput}
+        disabled={wizard.busy || testing}
+      />
+    </label>
+    {#if daemonUrl && urlLooksValid(daemonUrl)}
+      <p class="workshop-faint mt-2 text-xs">
+        Computer address: <span class="font-mono text-surface-300">{daemonUrl}</span>
+      </p>
+    {/if}
+  {:else}
+    <label class="mt-6 block">
+      <span class="block text-sm font-medium text-surface-100">Computer address</span>
+      <span class="workshop-faint mt-0.5 block text-xs">Same Wi‑Fi as this phone</span>
+      <input
+        class="input mt-2 w-full font-mono text-sm"
+        type="url"
+        inputmode="url"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="http://192.168.1.42:7419"
+        bind:value={daemonUrl}
+        disabled={wizard.busy || testing}
+      />
+    </label>
+  {/if}
 
   <div class="mt-4 flex flex-wrap gap-3">
     <button
       type="button"
       class="btn variant-soft min-h-11"
-      disabled={wizard.busy || testing || !daemonUrl.trim()}
+      disabled={wizard.busy || testing || (connectMode === "address" && !daemonUrl.trim())}
       onclick={() => void testConnection()}
     >
       {#if testing}
@@ -171,6 +265,10 @@
     <ul class="workshop-faint mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed">
       <li>Phone and computer must be on the same Wi‑Fi (guest networks often block this).</li>
       <li>Medousa must be running on the computer before you connect.</li>
+      <li>
+        Pairing link: open the Camera app, scan the QR on your Mac, tap the banner, copy the link
+        if needed.
+      </li>
       <li>You can change this address later in Settings → Connection.</li>
     </ul>
   {/if}

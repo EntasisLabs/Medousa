@@ -68,7 +68,7 @@
   class="workshop-status flex shrink-0 items-center justify-between gap-4 px-3 text-[11px] {minimal
     ? 'h-5 border-t border-surface-700/20 text-surface-600'
     : 'h-8'}"
-  aria-label="Workshop status"
+  aria-label="Medousa status"
 >
   <span class="workshop-status-whisper {statusTextClass}">
     <span class={statusDotClass} aria-hidden="true"></span>

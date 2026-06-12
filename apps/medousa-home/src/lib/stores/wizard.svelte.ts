@@ -4,10 +4,12 @@ import {
   bootstrapWizard,
   completeWizard,
 } from "$lib/utils/wizardApi";
+import { layout } from "$lib/stores/layout.svelte";
 import {
   applyWizardScreen1,
   type WizardApplyScreen1Request,
 } from "$lib/utils/providersApi";
+import { layout, saveLastSurface } from "$lib/stores/layout.svelte";
 import type { WizardBootstrap, WizardMode, WizardScreen } from "$lib/types/wizard";
 
 class WizardStore {
@@ -65,6 +67,8 @@ class WizardStore {
     this.error = null;
     try {
       this.applyBootstrap(await completeWizard());
+      layout.setMobileTab("chat");
+      saveLastSurface("chat");
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -79,6 +83,7 @@ class WizardStore {
       const result = await applyWizardScreen1(request);
       if (!result.coreReady) {
         this.error = result.coreMessage;
+        return result;
       }
       await this.continue(request.path);
       return result;

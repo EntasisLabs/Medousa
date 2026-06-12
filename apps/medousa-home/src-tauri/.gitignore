@@ -7,3 +7,6 @@
 /gen/schemas
 /gen/apple
 /gen/android
+
+# Built sidecars (see scripts/prepare-engine-sidecar.sh)
+/binaries/medousa_daemon-*

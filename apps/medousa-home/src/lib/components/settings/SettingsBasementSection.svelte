@@ -228,7 +228,7 @@
   <div class="mt-6">
     <h3 class="text-sm font-semibold text-surface-100">First-run setup</h3>
     <p class="workshop-faint mt-1 text-xs">
-      Re-open the welcome wizard — model, account, and phone pairing steps.
+      Re-open the welcome wizard — model choice and optional phone pairing.
     </p>
     <button
       type="button"

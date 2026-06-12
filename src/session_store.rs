@@ -356,7 +356,7 @@ impl SessionStore for SurrealSessionStore {
 
 impl SurrealSessionStore {
     fn preview_for_session(&self, session_id: &str) -> Option<String> {
-        let sql = "SELECT content FROM type::table($table) \
+        let sql = "SELECT role, content, parts FROM type::table($table) \
                    WHERE session_id = $session_id \
                    ORDER BY timestamp DESC \
                    LIMIT 8";
@@ -369,13 +369,24 @@ impl SurrealSessionStore {
         .ok()?;
 
         #[derive(Debug, Deserialize, SurrealValue)]
-        struct ContentRow {
+        struct TurnPreviewRow {
+            role: String,
             content: String,
+            parts: Option<String>,
         }
 
-        let rows: Vec<ContentRow> = response.take(0).ok()?;
+        let rows: Vec<TurnPreviewRow> = response.take(0).ok()?;
         for row in rows {
-            if let Some(preview) = crate::session_catalog::preview_line_from_content(&row.content) {
+            let turn = ConversationTurn {
+                role: row.role,
+                content: row.content,
+                timestamp: chrono::Utc::now(),
+                tool_names: Vec::new(),
+                answer_state: None,
+                parts: parts_from_json(row.parts),
+                slice_summary: None,
+            };
+            if let Some(preview) = crate::session_catalog::preview_from_turn(&turn) {
                 return Some(preview);
             }
         }

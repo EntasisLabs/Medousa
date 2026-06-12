@@ -1,6 +1,6 @@
 # Normie onboarding + LAN pairing
 
-> **Status:** Approved for implementation — Phase A next  
+> **Status:** Approved — Phase A in progress ([gap analysis](normie-product-gap-analysis.md))  
 > **Date:** 2026-06-11  
 > **Epic target:** Phase 1 LAN Magic (4–6 weeks)  
 > **Supersedes:** informal `strategy/medousa-normie-onboarding-strategy.md` references (strategy doc not yet in repo)  

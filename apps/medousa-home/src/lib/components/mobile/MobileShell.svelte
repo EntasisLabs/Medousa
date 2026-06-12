@@ -117,6 +117,7 @@
           layout.setIdentityDrawerOpen(false);
           layout.openYou("context");
         }}
+        onOpenConnection={() => layout.openYou("settings")}
       />
     {:else}
       <YouHub

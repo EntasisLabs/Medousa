@@ -246,7 +246,7 @@
       if (selectedPath === "offline" && downloadProgress) {
         return `Downloading ${Math.round(downloadProgress.percent)}%`;
       }
-      return "Starting the engine…";
+      return "Starting Medousa…";
     }
     if (selectedPath === "offline") return "Download Gemma 4 & continue";
     return "Continue";

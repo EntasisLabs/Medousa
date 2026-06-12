@@ -46,6 +46,8 @@ use medousa::{
         settings_validation_errors,
     },
 };
+#[path = "medousa_tui/agent_runtime.rs"]
+mod agent_runtime;
 #[path = "medousa_tui/tui_stderr_guard.rs"]
 mod tui_stderr_guard;
 #[path = "medousa_tui/budget_slash_services.rs"]
@@ -325,7 +327,6 @@ enum UiMode {
 #[tokio::main]
 async fn main() -> Result<()> {
     let _stderr_guard = tui_stderr_guard::TuiStderrGuard::attach().ok();
-    let _stderr_guard = tui_stderr_guard::attach().ok();
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     let provider = find_arg_value(&args, "--provider");

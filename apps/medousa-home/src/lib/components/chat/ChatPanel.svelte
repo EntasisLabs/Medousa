@@ -7,6 +7,7 @@
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import {
     createTurnTicket,
@@ -14,6 +15,7 @@
   } from "$lib/daemon";
 
   import { formatSessionLabel } from "$lib/utils/formatSession";
+  import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
   import { groupWorkerThreads } from "$lib/utils/workerThreads";
@@ -23,15 +25,23 @@
   } from "$lib/utils/runSlashCommand";
   import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
   import { isTauri, showChatPopout } from "$lib/window";
+  import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
 
   interface Props {
     visible: boolean;
     showPopout?: boolean;
     mobile?: boolean;
     onOpenContext?: () => void;
+    onOpenConnection?: () => void;
   }
 
-  let { visible, showPopout = true, mobile = false, onOpenContext }: Props = $props();
+  let {
+    visible,
+    showPopout = true,
+    mobile = false,
+    onOpenContext,
+    onOpenConnection,
+  }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let stickToBottom = $state(true);
@@ -149,6 +159,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
+    if (connection.offline) return;
     const prompt = chat.draft.trim();
     if (!prompt) return;
     if (mobile) haptic("medium");
@@ -201,6 +212,17 @@
 
   async function resumeSession(sessionId: string) {
     await chat.switchSession(sessionId);
+  }
+
+  async function sendStarterPrompt(prompt: string) {
+    if (connection.offline || chat.composerBlocked) return;
+    if (mobile) haptic("light");
+    try {
+      const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
+      await submitTurn(prompt, prompt, mode);
+    } catch (err) {
+      chat.setError(err instanceof Error ? err.message : String(err));
+    }
   }
 </script>
 
@@ -401,6 +423,18 @@
         {#if mobile}
           <p class="text-sm text-surface-300">Say one thing.</p>
           <p class="workshop-faint mt-2 text-xs">Medousa remembers this conversation.</p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            {#each STARTER_PROMPTS as prompt (prompt)}
+              <button
+                type="button"
+                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
+                disabled={connection.offline || chat.composerBlocked}
+                onclick={() => void sendStarterPrompt(prompt)}
+              >
+                {prompt}
+              </button>
+            {/each}
+          </div>
           {#if recentSessions.length > 0}
             <ul class="mt-6 space-y-2">
               {#each recentSessions as session (session.session_id)}
@@ -418,6 +452,18 @@
           {/if}
         {:else}
           <p class="mt-8 text-sm text-surface-400">What are you working on?</p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            {#each STARTER_PROMPTS as prompt (prompt)}
+              <button
+                type="button"
+                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
+                disabled={connection.offline || chat.composerBlocked}
+                onclick={() => void sendStarterPrompt(prompt)}
+              >
+                {prompt}
+              </button>
+            {/each}
+          </div>
           {#if recentSessions.length > 0}
             <ul class="mt-5 space-y-1.5">
               {#each recentSessions as session (session.session_id)}
@@ -464,7 +510,7 @@
         <GrowingTextarea
           bind:value={chat.draft}
           placeholder="Message Medousa…"
-          disabled={chat.composerBlocked}
+          disabled={connection.offline || chat.composerBlocked}
           maxHeight={128}
           minHeight={36}
           onkeydown={handleKeydown}
@@ -473,12 +519,16 @@
         <button
           type="submit"
           class="composer-bar-send"
-          disabled={chat.composerBlocked || !chat.draft.trim()}
+          disabled={connection.offline || chat.composerBlocked || !chat.draft.trim()}
           aria-label="Send message"
         >
           {chat.composerBlocked ? "…" : "↑"}
         </button>
       </div>
     </form>
+  {/if}
+
+  {#if visible && connection.offline}
+    <OfflineChatGate {mobile} {onOpenConnection} />
   {/if}
 </section>

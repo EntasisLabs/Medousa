@@ -176,6 +176,7 @@
               layout.setIdentityDrawerOpen(false);
               goToSurface("context");
             }}
+            onOpenConnection={() => goToSurface("settings")}
           />
         {/if}
         </div>
