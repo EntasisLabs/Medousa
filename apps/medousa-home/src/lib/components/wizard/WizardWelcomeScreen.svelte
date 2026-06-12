@@ -2,10 +2,10 @@
   import { onMount } from "svelte";
   import {
     Brain,
+    ChevronDown,
     ChevronRight,
-    Cloud,
     LoaderCircle,
-    WifiOff,
+    Sparkles,
   } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import {
@@ -27,7 +27,7 @@
     type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
 
-  type WizardPath = "managed" | "byok" | "offline";
+  type WizardPath = "byok" | "offline";
   type ByokProvider = "openai" | "anthropic" | "google" | "ollama";
 
   const BYOK_PROVIDERS: { id: ByokProvider; label: string; keyHint: string }[] = [
@@ -37,7 +37,8 @@
     { id: "ollama", label: "Ollama (local)", keyHint: "" },
   ];
 
-  let selectedPath = $state<WizardPath | null>(null);
+  let showAdvanced = $state(false);
+  let selectedPath = $state<WizardPath | null>("offline");
   let byokProvider = $state<ByokProvider>("ollama");
   let apiKey = $state("");
   let model = $state("llama3.2");
@@ -52,7 +53,6 @@
   let localLoading = $state(false);
   let downloadProgress = $state<ModelDownloadProgress | null>(null);
 
-  const networkOnline = $derived(probe?.networkOnline ?? true);
   const ollamaReady = $derived(probe?.ollamaDetected ?? false);
   const recommendedOfflineModel = $derived.by(() => {
     const catalog = localCatalog;
@@ -67,6 +67,7 @@
 
   onMount(() => {
     void refreshProbe();
+    void refreshLocalInference();
   });
 
   async function refreshProbe() {
@@ -76,9 +77,6 @@
       probe = await probeProviders();
       if (byokProvider === "ollama" && selectedPath === "byok") {
         model = probe.suggestedOllamaModel ?? "llama3.2";
-      }
-      if (!probe.networkOnline && selectedPath === "managed") {
-        selectedPath = null;
       }
     } catch (err) {
       statusMessage = err instanceof Error ? err.message : String(err);
@@ -111,8 +109,11 @@
     selectedPath = path;
     statusMessage = null;
     downloadProgress = null;
-    if (path === "byok" && byokProvider === "ollama") {
-      model = probe?.suggestedOllamaModel ?? "llama3.2";
+    if (path === "byok") {
+      showAdvanced = true;
+      if (byokProvider === "ollama") {
+        model = probe?.suggestedOllamaModel ?? "llama3.2";
+      }
     }
     if (path === "offline") {
       void refreshLocalInference();
@@ -184,7 +185,7 @@
   }
 
   async function continueSetup() {
-    if (!selectedPath || selectedPath === "managed") return;
+    if (!selectedPath) return;
     if (selectedPath === "offline") {
       await continueOfflineSetup();
       return;
@@ -226,7 +227,7 @@
 
   const canContinue = $derived.by(() => {
     if (wizard.busy || validating || probing || localLoading) return false;
-    if (!selectedPath || selectedPath === "managed") return false;
+    if (!selectedPath) return false;
     if (selectedPath === "offline") {
       return Boolean(
         localCatalog &&
@@ -253,54 +254,108 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">Step 1 of 3</p>
+  <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">Step 1 of 2</p>
   <h1 id="product-wizard-title" class="mt-2 text-2xl font-semibold text-surface-50">
     Welcome to Medousa
   </h1>
   <p class="mt-3 text-sm leading-relaxed text-surface-300">
-    I'm your second brain — always here, always yours, always private. First, let's decide how I
-    should think.
+    Let's get you talking. Pick how Medousa thinks on this computer — you can change it later in
+    Settings.
   </p>
 
-  {#if probing}
+  {#if probing || localLoading}
     <div class="mt-6 flex items-center gap-2 text-sm text-surface-400">
       <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
-      Checking your machine…
+      Checking this computer…
     </div>
   {/if}
 
-  <div class="mt-6 space-y-3">
-    <button
-      type="button"
-      class="wizard-path-card {selectedPath === 'managed' ? 'wizard-path-card-active' : ''} {!networkOnline
-        ? 'opacity-50'
-        : ''}"
-      disabled={!networkOnline || wizard.busy}
-      onclick={() => selectPath("managed")}
-    >
-      <div class="flex items-start gap-3">
-        <Cloud class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
-        <div class="min-w-0 text-left">
-          <p class="font-semibold text-surface-50">Recommended — Managed AI</p>
-          <p class="mt-1 text-sm text-surface-300">
-            {#if networkOnline}
-              Medousa Cloud provisioning lands in a future update — use your own key or Gemma 4
-              offline today.
-            {:else}
-              <span class="inline-flex items-center gap-1 text-warning-200">
-                <WifiOff class="h-3.5 w-3.5" aria-hidden="true" />
-                Offline — pick Bring your own model or Offline below.
-              </span>
-            {/if}
-          </p>
-        </div>
-      </div>
-    </button>
+  <button
+    type="button"
+    class="wizard-path-card mt-6 text-left {selectedPath === 'offline'
+      ? 'wizard-path-card-active'
+      : ''}"
+    disabled={wizard.busy}
+    onclick={() => selectPath("offline")}
+  >
+    <div class="flex items-start gap-3">
+      <Sparkles class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
+      <div class="min-w-0 flex-1">
+        <p class="font-semibold text-surface-50">Recommended — private on this computer</p>
+        <p class="mt-1 text-sm text-surface-300">
+          {#if localLoading}
+            Finding the right local model for your hardware…
+          {:else if localHardware && recommendedOfflineModel}
+            We'll use
+            <strong class="text-surface-100">{recommendedOfflineModel.displayName}</strong>
+            (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
+            device unless you choose cloud later.
+          {:else if localHardware && !localHardware.engineAvailable}
+            Local models aren't available in this build yet. Use Advanced options below.
+          {:else}
+            Download a local model once — chat without sending data to the cloud.
+          {/if}
+        </p>
 
+        {#if selectedPath === "offline" && localCatalog}
+          <div class="mt-4 space-y-2 border-t border-surface-500/30 pt-4">
+            {#each localCatalog.models as entry (entry.id)}
+              <button
+                type="button"
+                class="settings-depth-card w-full text-left {(offlineModelId ?? localCatalog.recommendedModelId) === entry.id
+                  ? 'settings-depth-card-active'
+                  : ''}"
+                disabled={wizard.busy || validating}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  selectOfflineModel(entry);
+                }}
+              >
+                <span class="block text-sm font-medium text-surface-100">{entry.displayName}</span>
+                <span class="workshop-faint mt-1 block text-xs">
+                  ~{formatBytes(entry.sizeBytes)}
+                  {#if entry.tierRecommended}
+                    · recommended
+                  {/if}
+                </span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+
+        {#if downloadProgress && selectedPath === "offline"}
+          <div class="mt-3">
+            <div class="h-2 overflow-hidden rounded-full bg-surface-800">
+              <div
+                class="h-full rounded-full bg-primary-500 transition-all duration-300"
+                style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
+              ></div>
+            </div>
+            <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </button>
+
+  <button
+    type="button"
+    class="workshop-text-action mt-4 inline-flex items-center gap-1 text-sm"
+    onclick={() => (showAdvanced = !showAdvanced)}
+  >
+    {#if showAdvanced}
+      <ChevronDown class="h-4 w-4" aria-hidden="true" />
+    {:else}
+      <ChevronRight class="h-4 w-4" aria-hidden="true" />
+    {/if}
+    Advanced — use your own API key
+  </button>
+
+  {#if showAdvanced}
     <div
-      class="wizard-path-card {selectedPath === 'byok' ? 'wizard-path-card-active' : ''}"
+      class="wizard-path-card mt-3 {selectedPath === 'byok' ? 'wizard-path-card-active' : ''}"
       role="group"
-      aria-label="Bring your own model"
+      aria-label="Use your own model provider"
     >
       <button
         type="button"
@@ -311,9 +366,10 @@
         <div class="flex items-start gap-3">
           <Brain class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
           <div class="min-w-0">
-            <p class="font-semibold text-surface-50">Bring your own model</p>
+            <p class="font-semibold text-surface-50">Your API key or Ollama</p>
             <p class="mt-1 text-sm text-surface-300">
-              OpenAI, Anthropic, Gemini, or Ollama on this Mac — keys stay in your keychain.
+              OpenAI, Anthropic, Gemini, or Ollama on this computer. Keys stay in your system
+              keychain.
             </p>
           </div>
         </div>
@@ -334,7 +390,7 @@
                 <span class="block text-sm font-medium text-surface-100">{option.label}</span>
                 {#if option.id === "ollama"}
                   <span class="workshop-faint mt-1 block text-xs">
-                    {ollamaReady ? "Detected on :11434" : "Not running — install ollama.com"}
+                    {ollamaReady ? "Ollama is running" : "Install ollama.com and start it"}
                   </span>
                 {/if}
               </button>
@@ -374,70 +430,7 @@
         </div>
       {/if}
     </div>
-
-    <button
-      type="button"
-      class="wizard-path-card {selectedPath === 'offline' ? 'wizard-path-card-active' : ''}"
-      disabled={wizard.busy}
-      onclick={() => selectPath("offline")}
-    >
-      <div class="flex items-start gap-3 text-left">
-        <WifiOff class="mt-0.5 h-5 w-5 shrink-0 text-surface-300" aria-hidden="true" />
-        <div class="min-w-0 flex-1">
-          <p class="font-semibold text-surface-50">Offline — Gemma 4 on this Mac</p>
-          <p class="mt-1 text-sm text-surface-300">
-            {#if localLoading}
-              Probing hardware and picking the right Gemma 4 size…
-            {:else if localHardware && recommendedOfflineModel}
-              Your Mac is <strong class="text-surface-100">{localHardware.profile.tierLabel}</strong>
-              — we recommend
-              <strong class="text-surface-100">{recommendedOfflineModel.displayName}</strong>
-              (~{formatBytes(recommendedOfflineModel.sizeBytes)} download).
-            {:else if localHardware && !localHardware.engineAvailable}
-              Rebuild Medousa Engine with embedded inference enabled, then try again.
-            {:else}
-              Private inference on this machine — no cloud, no Ollama required.
-            {/if}
-          </p>
-
-          {#if selectedPath === "offline" && localCatalog}
-            <div class="mt-4 space-y-2 border-t border-surface-500/30 pt-4">
-              {#each localCatalog.models as entry (entry.id)}
-                <button
-                  type="button"
-                  class="settings-depth-card w-full text-left {(offlineModelId ?? localCatalog.recommendedModelId) === entry.id
-                    ? 'settings-depth-card-active'
-                    : ''}"
-                  disabled={wizard.busy || validating}
-                  onclick={() => selectOfflineModel(entry)}
-                >
-                  <span class="block text-sm font-medium text-surface-100">{entry.displayName}</span>
-                  <span class="workshop-faint mt-1 block text-xs">
-                    ~{formatBytes(entry.sizeBytes)} · tier {entry.tierMin}–{entry.tierMax}
-                    {#if entry.tierRecommended}
-                      · recommended
-                    {/if}
-                  </span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-
-          {#if downloadProgress && selectedPath === "offline"}
-            <div class="mt-3">
-              <div class="h-2 overflow-hidden rounded-full bg-surface-800">
-                <div
-                  class="h-full rounded-full bg-primary-500 transition-all duration-300"
-                  style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
-                ></div>
-              </div>
-              <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
-            </div>
-          {/if}
-        </div>
-      </div>
-    </button>
-  </div>
+  {/if}
 
   {#if statusMessage}
     <p class="mt-4 text-sm text-warning-200">{statusMessage}</p>

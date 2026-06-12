@@ -65,7 +65,7 @@ function localAdvance(request: WizardAdvanceRequest): WizardBootstrap {
       mode: "fresh",
     } satisfies WizardLocalState);
 
-  const nextScreen = advanceScreen(current.screen, request.action);
+  const nextScreen = advanceScreen(current.screen, request.action, request);
   const next: WizardLocalState = {
     ...current,
     screen: nextScreen,
@@ -104,10 +104,13 @@ function localAdvance(request: WizardAdvanceRequest): WizardBootstrap {
   };
 }
 
-function advanceScreen(screen: WizardScreen, action: WizardAdvanceRequest["action"]): WizardScreen {
+function advanceScreen(
+  screen: WizardScreen,
+  action: WizardAdvanceRequest["action"],
+  request?: WizardAdvanceRequest,
+): WizardScreen {
   if (action === "back") {
-    if (screen === "screen2") return "screen1";
-    if (screen === "screen3") return "screen2";
+    if (screen === "screen2" || screen === "screen3") return "screen1";
     return screen;
   }
   if (action === "skip") {
@@ -119,7 +122,8 @@ function advanceScreen(screen: WizardScreen, action: WizardAdvanceRequest["actio
     case "migration":
       return "completion";
     case "screen1":
-      return "screen2";
+      if (request?.screen1Model?.trim() === "mobile-client") return "completion";
+      return "screen3";
     case "screen2":
       return "screen3";
     case "screen3":

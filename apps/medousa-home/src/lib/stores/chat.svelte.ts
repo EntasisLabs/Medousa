@@ -59,7 +59,7 @@ export class ChatStore {
   sessionsError = $state<string | null>(null);
   pinnedIds = $state<string[]>(loadPinnedIds());
   historyLoading = $state(false);
-  /** Brief banner after reloading turns from the Mac daemon (e.g. after WebView refresh). */
+  /** Brief banner after reloading turns from the engine (e.g. after WebView refresh). */
   historyNotice = $state<string | null>(null);
   /** Desktop in-app alert when a turn pauses for budget approval. */
   budgetAlert = $state<PendingBudgetApproval | null>(null);
@@ -221,7 +221,7 @@ export class ChatStore {
     await this.reloadCurrentSession(options);
   }
 
-  /** Fetch current session history from the Mac daemon (survives WebView refresh). */
+  /** Fetch current session history from the engine (survives WebView refresh). */
   async reloadCurrentSession(options?: { notice?: boolean }) {
     const sessionId = this.sessionId.trim();
     if (!sessionId) return;
@@ -232,10 +232,10 @@ export class ChatStore {
     try {
       const history = await getSessionHistory(sessionId);
       if (epoch !== this.transcriptEpoch) return;
-      this.messages = mapTurns(history.turns);
+      this.messages = mapTurns(history.turns, { sessionId });
       if (options?.notice !== false && history.turns.length > 0) {
         const count = history.turns.length;
-        this.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"} from Mac`;
+        this.historyNotice = `Restored ${count} turn${count === 1 ? "" : "s"}`;
       }
     } catch (err) {
       if (epoch === this.transcriptEpoch) {
@@ -268,8 +268,7 @@ export class ChatStore {
     try {
       const history = await getSessionHistory(sessionId);
       if (epoch !== this.transcriptEpoch) return;
-      this.messages = mapTurns(history.turns);
-      await this.tryReattachActiveTurn();
+      this.messages = mapTurns(history.turns, { sessionId });
     } catch (err) {
       if (epoch === this.transcriptEpoch) {
         this.streamError = err instanceof Error ? err.message : String(err);
@@ -279,6 +278,7 @@ export class ChatStore {
         this.historyLoading = false;
       }
     }
+    void this.tryReattachActiveTurn();
   }
 
   clearHistoryNotice() {
@@ -494,21 +494,36 @@ export class ChatStore {
   /** Load isolated ask session transcripts into the Asks rail. */
   async hydrateAskThreads(cards: WorkCard[]) {
     const epoch = this.transcriptEpoch;
-    for (const card of cards) {
-      if (!isAskJobId(card.id)) continue;
-      if (this.messages.some((message) => message.askJobId === card.id)) continue;
+    const targets = cards.filter(
+      (card) =>
+        isAskJobId(card.id) &&
+        !this.messages.some((message) => message.askJobId === card.id),
+    );
+    if (targets.length === 0) return;
 
-      try {
-        const history = await getSessionHistory(askSessionId(card.id));
-        if (epoch !== this.transcriptEpoch || history.turns.length === 0) continue;
-        const hydrated = mapTurns(history.turns, {
-          lane: "ask",
-          askJobId: card.id,
-        });
-        this.messages = [...this.messages, ...hydrated];
-      } catch {
-        // Ask session may not exist yet for freshly queued jobs.
-      }
+    const batches = await Promise.all(
+      targets.map(async (card) => {
+        try {
+          const sessionId = askSessionId(card.id);
+          const history = await getSessionHistory(sessionId);
+          if (epoch !== this.transcriptEpoch || history.turns.length === 0) {
+            return [] as ChatMessage[];
+          }
+          return mapTurns(history.turns, {
+            lane: "ask",
+            askJobId: card.id,
+            sessionId,
+          });
+        } catch {
+          return [] as ChatMessage[];
+        }
+      }),
+    );
+
+    if (epoch !== this.transcriptEpoch) return;
+    const hydrated = batches.flat();
+    if (hydrated.length > 0) {
+      this.messages = [...this.messages, ...hydrated];
     }
   }
 
@@ -1569,12 +1584,17 @@ function normalizeRole(role: string): ChatMessage["role"] {
 
 function mapTurns(
   turns: SessionHistoryResponse["turns"],
-  options?: { lane?: ChatMessage["lane"]; askJobId?: string | null },
+  options?: {
+    lane?: ChatMessage["lane"];
+    askJobId?: string | null;
+    sessionId?: string;
+  },
 ): ChatMessage[] {
   const lane = options?.lane ?? "chat";
   const askJobId = options?.askJobId ?? null;
-  return turns.map((turn) => ({
-    id: crypto.randomUUID(),
+  const sessionId = options?.sessionId?.trim() || "session";
+  return turns.map((turn, index) => ({
+    id: `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
     role: normalizeRole(turn.role),
     content: turn.content,
     lane,

@@ -34,6 +34,9 @@
   let { visible, showPopout = true, mobile = false, onOpenContext }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
+  let stickToBottom = $state(true);
+
+  const SCROLL_PIN_THRESHOLD_PX = 96;
 
   const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(chat.messages));
@@ -79,14 +82,26 @@
   });
 
   $effect(() => {
-    if (scrollEl && (chatMessages.length || askThreads.length || workerThreads.length || chat.hasTurnActivity)) {
-      scrollEl.scrollTop = scrollEl.scrollHeight;
-    }
+    void chat.sessionId;
+    stickToBottom = true;
+  });
+
+  $effect(() => {
+    if (!scrollEl) return;
+    void chatMessages.map((message) => message.content).join("\0");
+    void askThreads
+      .flatMap((thread) => thread.messages.map((message) => message.content))
+      .join("\0");
+    void workerThreads
+      .flatMap((thread) => thread.messages.map((message) => message.content))
+      .join("\0");
+    void chat.hasTurnActivity;
+    scrollToLatest(false);
   });
 
   $effect(() => {
     if (!mobile || !visible) return;
-    const onComposerFocus = () => scrollToLatest();
+    const onComposerFocus = () => scrollToLatest(true);
     window.addEventListener("medousa-chat-composer-focus", onComposerFocus);
     return () => window.removeEventListener("medousa-chat-composer-focus", onComposerFocus);
   });
@@ -167,10 +182,20 @@
     }
   }
 
-  function scrollToLatest() {
+  function onScroll() {
     if (!scrollEl) return;
+    const distanceFromBottom =
+      scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    stickToBottom = distanceFromBottom <= SCROLL_PIN_THRESHOLD_PX;
+  }
+
+  function scrollToLatest(force = false) {
+    if (!scrollEl) return;
+    if (!force && !stickToBottom) return;
     requestAnimationFrame(() => {
-      scrollEl!.scrollTop = scrollEl!.scrollHeight;
+      if (!scrollEl) return;
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+      stickToBottom = true;
     });
   }
 
@@ -263,7 +288,7 @@
     {#if chat.streamError}
       <p class="mt-1 text-[11px] text-error-400">{chat.streamError}</p>
     {:else if chat.historyLoading}
-      <p class="mt-1 text-[11px] text-surface-400">Loading conversation from Mac…</p>
+      <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
     {/if}
   </header>
 
@@ -284,9 +309,10 @@
     </div>
   {/if}
 
-  <div class="{mobile ? '' : 'chat-body'}">
+  <div class="{mobile ? 'mobile-chat-body' : 'chat-body'}">
     <div
       bind:this={scrollEl}
+      onscroll={onScroll}
       class="{mobile
         ? 'mobile-chat-scroll space-y-3'
         : 'chat-scroll space-y-4'}"

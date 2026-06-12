@@ -9,6 +9,7 @@
   let testing = $state(false);
   let statusMessage = $state<string | null>(null);
   let connected = $state(false);
+  let showHelp = $state(false);
 
   onMount(() => {
     void loadInitialUrl();
@@ -45,7 +46,7 @@
   async function testConnection(showErrors = true) {
     if (!urlLooksValid(daemonUrl)) {
       if (showErrors) {
-        statusMessage = "Enter your Mac's workshop address — e.g. http://192.168.1.42:7419";
+        statusMessage = "Enter your computer's address — e.g. http://192.168.1.42:7419";
       }
       connected = false;
       return;
@@ -59,8 +60,8 @@
       const health = await checkDaemonHealth();
       connected = health.ok;
       statusMessage = health.ok
-        ? health.message
-        : health.message || "Could not reach Medousa Engine on your Mac";
+        ? "Connected — you're ready to talk."
+        : health.message || "Could not reach Medousa on that computer yet.";
     } catch (err) {
       connected = false;
       statusMessage = err instanceof Error ? err.message : String(err);
@@ -71,7 +72,7 @@
 
   async function continueSetup() {
     if (!urlLooksValid(daemonUrl)) {
-      statusMessage = "Enter a valid Mac workshop URL before continuing.";
+      statusMessage = "Enter a valid address before continuing.";
       return;
     }
 
@@ -85,7 +86,8 @@
       if (!connected) {
         wizard.error =
           statusMessage ??
-          "Could not reach your Mac yet — fix the URL or start the engine with `medousa start daemon --public`.";
+          "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
+        return;
       }
       await wizard.continue("mobile-client");
     } finally {
@@ -99,31 +101,30 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">Step 1 of 3</p>
+  <p class="text-[11px] font-semibold uppercase tracking-wide text-primary-300">Connect</p>
   <h1 id="product-wizard-title" class="mt-2 text-2xl font-semibold text-surface-50">
-    Connect to your Mac
+    Link to your computer
   </h1>
   <p class="mt-3 text-sm leading-relaxed text-surface-300">
-    Your phone is a window into the brain on your Mac. Models and memory live there — this app talks
-    to Medousa Engine over your home Wi‑Fi.
+    Medousa on your phone talks to Medousa on your computer over home Wi‑Fi. Models and memory
+    stay on the computer — this app is your window in.
   </p>
 
   <div class="mt-6 rounded-xl border border-primary-500/35 bg-primary-500/10 p-5">
     <div class="flex items-start gap-3">
       <Laptop class="mt-0.5 h-5 w-5 shrink-0 text-primary-300" aria-hidden="true" />
       <div class="min-w-0 text-sm text-surface-300">
-        <p class="font-medium text-surface-50">On your Mac first</p>
+        <p class="font-medium text-surface-50">On your computer first</p>
         <p class="mt-2 leading-relaxed">
-          Run
-          <span class="font-mono text-xs text-surface-200">medousa start daemon --public</span>
-          and note the LAN address it prints (not 127.0.0.1).
+          Open Medousa there and finish setup. Note the network address it shows — not
+          <span class="font-mono text-xs text-surface-200">127.0.0.1</span>.
         </p>
       </div>
     </div>
   </div>
 
   <label class="mt-6 block">
-    <span class="block text-sm font-medium text-surface-100">Mac workshop URL</span>
+    <span class="block text-sm font-medium text-surface-100">Computer address</span>
     <span class="workshop-faint mt-0.5 block text-xs">Same Wi‑Fi as this phone</span>
     <input
       class="input mt-2 w-full font-mono text-sm"
@@ -158,9 +159,21 @@
     <p class="mt-4 text-sm {connected ? 'text-success-200' : 'text-warning-200'}">{statusMessage}</p>
   {/if}
 
-  <p class="workshop-faint mt-4 text-xs leading-relaxed">
-    Ollama and API keys are configured on the Mac workshop — not on your phone.
-  </p>
+  <button
+    type="button"
+    class="workshop-text-action mt-4 self-start text-xs"
+    onclick={() => (showHelp = !showHelp)}
+  >
+    {showHelp ? "Hide" : "Connection not working?"}
+  </button>
+
+  {#if showHelp}
+    <ul class="workshop-faint mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed">
+      <li>Phone and computer must be on the same Wi‑Fi (guest networks often block this).</li>
+      <li>Medousa must be running on the computer before you connect.</li>
+      <li>You can change this address later in Settings → Connection.</li>
+    </ul>
+  {/if}
 
   <div class="mt-auto flex justify-end pt-8">
     <button

@@ -89,10 +89,10 @@ async function startWorkshopStreams(): Promise<void> {
   void recurring.refresh();
   await chat.refreshSessions();
   await chat.ensureSessionHydrated({ notice: true });
-  await chat.tryReattachActiveTurn();
-  await chat.hydrateAskThreads(workspace.cards);
-  await chat.tryReattachAskTurns(workspace.cards);
-  await workspace.syncTurnWorkerCardsToChat();
+  void chat.tryReattachActiveTurn();
+  void chat.hydrateAskThreads(workspace.cards);
+  void chat.tryReattachAskTurns(workspace.cards);
+  void workspace.syncTurnWorkerCardsToChat();
 }
 
 async function loadWorkshopDefaults(connected: boolean): Promise<void> {

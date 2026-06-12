@@ -4,9 +4,7 @@
   import WizardMigrationScreen from "$lib/components/wizard/WizardMigrationScreen.svelte";
   import WizardWelcomeScreen from "$lib/components/wizard/WizardWelcomeScreen.svelte";
   import WizardWelcomeScreenMobile from "$lib/components/wizard/WizardWelcomeScreenMobile.svelte";
-  import WizardAccountScreen from "$lib/components/wizard/WizardAccountScreen.svelte";
   import WizardPhoneScreen from "$lib/components/wizard/WizardPhoneScreen.svelte";
-  import WizardPhoneScreenMobile from "$lib/components/wizard/WizardPhoneScreenMobile.svelte";
   import WizardCompletionScreen from "$lib/components/wizard/WizardCompletionScreen.svelte";
 
   const reducedMotion =
@@ -47,14 +45,8 @@
           {:else}
             <WizardWelcomeScreen />
           {/if}
-        {:else if wizard.screen === "screen2"}
-          <WizardAccountScreen />
         {:else if wizard.screen === "screen3"}
-          {#if mobileShell}
-            <WizardPhoneScreenMobile />
-          {:else}
-            <WizardPhoneScreen />
-          {/if}
+          <WizardPhoneScreen />
         {:else}
           <WizardCompletionScreen />
         {/if}
