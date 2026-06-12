@@ -122,7 +122,24 @@ pub fn persist_verification(
     let raw = serde_json::to_vec_pretty(&run).map_err(|err| err.to_string())?;
     std::fs::write(&output_path, raw).map_err(|err| err.to_string())?;
     append_index_record(&run.record)?;
+    crate::session_catalog::record_verification(
+        session_id,
+        &run.record,
+        run.report.citation_coverage,
+    );
     Ok(run.record)
+}
+
+pub fn read_all_index_records_for_backfill() -> Vec<VerificationRunRecord> {
+    read_index_records()
+}
+
+pub fn read_verification_coverage(record: &VerificationRunRecord) -> f32 {
+    std::fs::read_to_string(&record.output_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<VerificationRun>(&raw).ok())
+        .map(|run| run.report.citation_coverage)
+        .unwrap_or(0.0)
 }
 
 pub fn list_verifications(session_id: &str, limit: usize) -> Vec<VerificationRunRecord> {

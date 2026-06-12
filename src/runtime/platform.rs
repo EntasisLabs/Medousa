@@ -125,9 +125,10 @@ async fn build_platform_inner(
     eprintln!("medousa-daemon: initializing session and delivery stores…");
     session_store::init_session_store_with_runtime(&composition).await;
     session_meta_store::init_session_meta_store_with_runtime(&composition).await;
+    verification_store::init_verification_store_with_runtime(&composition).await;
+    crate::session_catalog::init_session_catalog_with_runtime(&composition).await;
     channel_session_store::init_channel_session_store_with_runtime(&composition).await;
     artifact_store::init_artifact_store_with_runtime(&composition).await;
-    verification_store::init_verification_store_with_runtime(&composition).await;
     turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
     recurring_delivery::init_recurring_delivery_store_with_runtime(&composition).await;
 

@@ -83,6 +83,7 @@ pub mod turn_ticket;
 pub mod service_launch;
 pub mod session_mapping;
 pub mod session_store;
+pub mod session_catalog;
 pub mod session_meta_store;
 pub mod surreal_config;
 pub mod settings_guard;

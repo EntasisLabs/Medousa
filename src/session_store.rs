@@ -120,6 +120,8 @@ pub trait SessionStore: Send + Sync + 'static {
     fn load_history(&self, session_id: &str) -> Vec<ConversationTurn>;
     fn append_turn(&self, session_id: &str, turn: &ConversationTurn);
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
+    fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
+    fn has_persisted_sessions(&self) -> bool;
 }
 
 /// Helper: run an `IntoFuture` on the current Tokio runtime from a sync context.
@@ -146,11 +148,30 @@ impl SessionStore for FileSessionStore {
     }
 
     fn append_turn(&self, session_id: &str, turn: &ConversationTurn) {
-        crate::session::file_append_turn(session_id, turn)
+        crate::session::file_append_turn(session_id, turn);
+        crate::session_catalog::record_turn_appended(session_id, turn);
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        crate::session::file_list_history_sessions(limit)
+        crate::session_catalog::list_sessions(limit)
+    }
+
+    fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
+        crate::session::file_build_history_summaries_from_files(limit)
+    }
+
+    fn has_persisted_sessions(&self) -> bool {
+        let history_dir = crate::session::medousa_data_dir().join("history");
+        std::fs::read_dir(history_dir).ok().is_some_and(|mut entries| {
+            entries.any(|entry| {
+                entry.ok().is_some_and(|item| {
+                    item.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        == Some("jsonl")
+                })
+            })
+        })
     }
 }
 
@@ -224,7 +245,7 @@ impl SessionStore for SurrealSessionStore {
         record.session_id = session_id.to_string();
 
         let sql = "CREATE type::table($table) CONTENT $data";
-        let mut response = match block_on(
+        let response = match block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_TURN_TABLE))
@@ -239,12 +260,17 @@ impl SessionStore for SurrealSessionStore {
 
         if let Err(err) = response.check() {
             eprintln!("SurrealSessionStore::append_turn error: {err}");
+            return;
         }
+
+        crate::session_catalog::record_turn_appended(session_id, turn);
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
-        // time::max (not math::max) — Surreal 3 GROUP BY returns -Infinity for math::max(datetime).
-        // type::datetime(...) keeps last_timestamp as datetime when the aggregate is numeric.
+        crate::session_catalog::list_sessions(limit)
+    }
+
+    fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary> {
         let sql = "SELECT session_id, \
                            count() AS turns, \
                            type::datetime(time::max(timestamp)) AS last_timestamp \
@@ -256,11 +282,11 @@ impl SessionStore for SurrealSessionStore {
             self.db
                 .query(sql)
                 .bind(("table", SESSION_TURN_TABLE))
-                .bind(("limit", limit as i64)),
+                .bind(("limit", limit.max(1) as i64)),
         ) {
             Ok(r) => r,
             Err(err) => {
-                eprintln!("SurrealSessionStore::list_history_sessions query error: {err}");
+                eprintln!("SurrealSessionStore::build_backfill_summaries query error: {err}");
                 return Vec::new();
             }
         };
@@ -275,7 +301,9 @@ impl SessionStore for SurrealSessionStore {
         let aggregates: Vec<SessionAggregate> = match response.take(0) {
             Ok(rows) => rows,
             Err(err) => {
-                eprintln!("SurrealSessionStore::list_history_sessions deserialize error: {err}");
+                eprintln!(
+                    "SurrealSessionStore::build_backfill_summaries deserialize error: {err}"
+                );
                 return Vec::new();
             }
         };
@@ -283,44 +311,75 @@ impl SessionStore for SurrealSessionStore {
         aggregates
             .into_iter()
             .map(|agg| {
-                let turns = self.load_history(&agg.session_id);
-                let preview = turns
-                    .iter()
-                    .rev()
-                    .find(|t| !t.content.trim().is_empty())
-                    .and_then(|t| t.content.lines().next())
-                    .unwrap_or("(empty session)")
-                    .chars()
-                    .take(72)
-                    .collect::<String>();
-
-                let verifications =
-                    crate::verification_store::list_verifications(&agg.session_id, usize::MAX);
-                let latest_verification =
-                    crate::verification_store::find_verification(&agg.session_id, None);
-
+                let preview = self
+                    .preview_for_session(&agg.session_id)
+                    .unwrap_or_else(|| "(empty session)".to_string());
                 SessionHistorySummary {
                     session_id: agg.session_id,
                     display_name: None,
                     turns: agg.turns,
-                    verification_runs: verifications.len(),
+                    verification_runs: 0,
                     last_timestamp: agg.last_timestamp,
-                    last_verification_timestamp: latest_verification
-                        .as_ref()
-                        .map(|run| run.record.created_at_utc),
-                    last_verification_confidence: latest_verification
-                        .as_ref()
-                        .map(|run| run.record.confidence_score),
-                    last_verification_coverage: latest_verification
-                        .as_ref()
-                        .map(|run| run.report.citation_coverage),
-                    last_verification_verified: latest_verification
-                        .as_ref()
-                        .map(|run| run.record.is_verified),
+                    last_verification_timestamp: None,
+                    last_verification_confidence: None,
+                    last_verification_coverage: None,
+                    last_verification_verified: None,
                     preview,
                 }
             })
             .collect()
+    }
+
+    fn has_persisted_sessions(&self) -> bool {
+        let sql = "SELECT count() AS total FROM type::table($table) GROUP ALL";
+        let mut response = match block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_TURN_TABLE)),
+        ) {
+            Ok(response) => response,
+            Err(_) => return false,
+        };
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct CountRow {
+            total: usize,
+        }
+
+        response
+            .take::<Vec<CountRow>>(0)
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .is_some_and(|row| row.total > 0)
+    }
+}
+
+impl SurrealSessionStore {
+    fn preview_for_session(&self, session_id: &str) -> Option<String> {
+        let sql = "SELECT content FROM type::table($table) \
+                   WHERE session_id = $session_id \
+                   ORDER BY timestamp DESC \
+                   LIMIT 8";
+        let mut response = block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_TURN_TABLE))
+                .bind(("session_id", session_id.to_string())),
+        )
+        .ok()?;
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct ContentRow {
+            content: String,
+        }
+
+        let rows: Vec<ContentRow> = response.take(0).ok()?;
+        for row in rows {
+            if let Some(preview) = crate::session_catalog::preview_line_from_content(&row.content) {
+                return Some(preview);
+            }
+        }
+        None
     }
 }
 
@@ -339,4 +398,12 @@ pub fn set_session_store(store: Arc<dyn SessionStore>) {
 
 pub fn get_session_store() -> Arc<dyn SessionStore> {
     SESSION_STORE.read().unwrap().clone()
+}
+
+pub fn build_backfill_summaries(limit: usize) -> Vec<SessionHistorySummary> {
+    get_session_store().build_backfill_summaries(limit)
+}
+
+pub fn has_persisted_sessions() -> bool {
+    get_session_store().has_persisted_sessions()
 }

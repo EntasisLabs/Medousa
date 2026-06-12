@@ -2,6 +2,8 @@
 //!
 //! Validates session_turn CRUD and the GROUP BY list query (`time::max`, not `math::max`).
 
+use std::sync::{LazyLock, Mutex};
+
 use chrono::{Duration, TimeZone, Utc};
 use medousa::session::ConversationTurn;
 use medousa::session_store::{SessionStore, SurrealSessionStore};
@@ -12,7 +14,10 @@ use surrealdb_types::SurrealValue;
 
 const SESSION_TURN_TABLE: &str = "session_turn";
 
+static TEST_STORE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
 async fn setup_store() -> SurrealSessionStore {
+    let _guard = TEST_STORE_LOCK.lock().expect("test store lock");
     let db = Surreal::<Any>::init();
     db.connect("mem://")
         .await
@@ -24,6 +29,9 @@ async fn setup_store() -> SurrealSessionStore {
     SurrealSessionStore::ensure_schema_for_db(&db)
         .await
         .expect("session_turn schema should apply");
+    medousa::session_catalog::init_surreal_catalog_for_db(db.clone())
+        .await
+        .expect("session_catalog schema should apply");
     SurrealSessionStore::new(db)
 }
 

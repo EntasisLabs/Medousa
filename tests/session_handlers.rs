@@ -18,7 +18,7 @@ fn make_temp_data_dir() -> PathBuf {
     base.join(format!("medousa_test_{}", nanos))
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn session_append_and_get_via_handlers() {
     let tmp = make_temp_data_dir();
     unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
@@ -51,7 +51,7 @@ async fn session_append_and_get_via_handlers() {
     assert_eq!(history.turns.last().unwrap().content, "hello from test");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn list_history_sessions_handler() {
     let tmp = make_temp_data_dir();
     unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };

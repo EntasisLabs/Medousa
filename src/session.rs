@@ -575,7 +575,8 @@ pub(crate) fn file_append_turn(session_id: &str, turn: &ConversationTurn) {
     }
 }
 
-pub(crate) fn file_list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
+/// One-time backfill helper — loads full history per session. Not for list API hot path.
+pub(crate) fn file_build_history_summaries_from_files(limit: usize) -> Vec<SessionHistorySummary> {
     let history_dir = medousa_data_dir().join("history");
     let Ok(entries) = std::fs::read_dir(history_dir) else {
         return Vec::new();
@@ -665,7 +666,7 @@ pub fn append_turn_with_scratch(
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
     let limit = limit.max(1);
-    let mut sessions = crate::session_store::get_session_store().list_history_sessions(limit);
+    let mut sessions = crate::session_catalog::list_sessions(limit);
     let mut seen: std::collections::HashSet<String> = sessions
         .iter()
         .map(|item| item.session_id.clone())
@@ -675,49 +676,19 @@ pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
         if !seen.insert(session_id.clone()) {
             continue;
         }
-        let turns = load_history(&session_id);
-        let verifications =
-            crate::verification_store::list_verifications(&session_id, usize::MAX);
-        let last_timestamp = turns.last().map(|t| t.timestamp);
-        let latest_verification =
-            crate::verification_store::find_verification(&session_id, None);
-        let preview = turns
-            .iter()
-            .rev()
-            .find(|t| !t.content.trim().is_empty())
-            .and_then(|t| t.content.lines().next())
-            .unwrap_or("(channel session)")
-            .chars()
-            .take(72)
-            .collect::<String>();
-
-        sessions.push(SessionHistorySummary {
-            session_id,
-            display_name: None,
-            turns: turns.len(),
-            verification_runs: verifications.len(),
-            last_timestamp,
-            last_verification_timestamp: latest_verification
-                .as_ref()
-                .map(|run| run.record.created_at_utc),
-            last_verification_confidence: latest_verification
-                .as_ref()
-                .map(|run| run.record.confidence_score),
-            last_verification_coverage: latest_verification
-                .as_ref()
-                .map(|run| run.report.citation_coverage),
-            last_verification_verified: latest_verification
-                .as_ref()
-                .map(|run| run.record.is_verified),
-            preview,
-        });
+        if let Some(summary) = crate::session_catalog::get_summary(&session_id) {
+            sessions.push(summary);
+        }
     }
 
-    // Named sessions without turns still appear in global history.
     for (session_id, display_name) in crate::session_meta_store::list_session_display_names(limit) {
         if !seen.insert(session_id.clone()) {
             continue;
         }
+        if crate::session_catalog::get_summary(&session_id).is_some() {
+            continue;
+        }
+        crate::session_catalog::ensure_named_session(&session_id, Some(display_name.clone()));
         sessions.push(SessionHistorySummary {
             session_id,
             display_name: Some(display_name),
@@ -739,7 +710,11 @@ pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
 }
 
 pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<(), String> {
-    crate::session_meta_store::set_session_display_name(session_id, display_name)
+    let result = crate::session_meta_store::set_session_display_name(session_id, display_name);
+    if result.is_ok() {
+        crate::session_catalog::set_display_name(session_id, display_name);
+    }
+    result
 }
 
 pub fn get_session_display_name(session_id: &str) -> Option<String> {
@@ -767,7 +742,7 @@ pub fn resolve_history_resume_target(target: &str) -> Option<String> {
         return Some(session_id);
     }
 
-    if !load_history(target).is_empty() {
+    if crate::session_catalog::session_has_activity(target) || !load_history(target).is_empty() {
         return Some(target.to_string());
     }
 

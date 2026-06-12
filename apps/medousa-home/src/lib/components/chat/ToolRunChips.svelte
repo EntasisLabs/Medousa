@@ -13,8 +13,9 @@
 
   interface Props {
     runs: ToolRunState[];
+    /** Smaller timeline typography (e.g. ask rails); does not affect collapse behavior. */
     compact?: boolean;
-    /** Collapse the tool timeline until expanded (default for completed turns). */
+    /** Collapse completed tool runs behind a summary badge; false while streaming shows the live timeline. */
     inspectorCollapsed?: boolean;
   }
 
@@ -29,7 +30,7 @@
     hasRunning ? lineage.find((segment) => segment.status === "running") : null,
   );
   const isDone = $derived(!hasRunning && runs.every((run) => run.status !== "failed"));
-  const footnote = $derived(inspectorCollapsed && isDone && !compact);
+  const footnote = $derived(inspectorCollapsed && isDone);
 
   function segmentHasDetail(segment: ToolLineageSegment): boolean {
     if (segment.count > 1) return true;
@@ -148,7 +149,7 @@
 {/snippet}
 
 {#if runs.length > 0}
-  {#if inspectorCollapsed && !compact}
+  {#if inspectorCollapsed}
     <details
       class="tool-trace group/inspector overflow-hidden transition-[border-color,background,box-shadow] duration-200 {footnote
         ? 'chat-tool-footnote'

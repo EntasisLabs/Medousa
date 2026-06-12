@@ -18,7 +18,7 @@ fn make_temp_data_dir() -> PathBuf {
     base.join(format!("medousa_session_name_test_{}", nanos))
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn set_and_list_session_display_name_via_handlers() {
     let tmp = make_temp_data_dir();
     unsafe { env::set_var("XDG_DATA_HOME", &tmp) };
