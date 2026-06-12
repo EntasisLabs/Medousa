@@ -158,6 +158,7 @@ That is what Medousa is for.
 ### Mac · Windows · Linux · iOS · Android 
 
 Open it. Pick how your brain thinks in the welcome flow. If you chose private mode, the model downloads to your device. You land in chat. About ninety seconds. No terminal.
+
 ---
 
 ## Powered by Stasis, Locus, and Resonantia
