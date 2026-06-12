@@ -11,6 +11,7 @@ import type {
   ActiveSessionTurnResponse,
   CancelActiveSessionTurnResponse,
   SessionHistoryResponse,
+  SessionSetDisplayNameResponse,
   SessionSummary,
 } from "$lib/types/session";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
@@ -88,6 +89,16 @@ export async function getSessionHistory(
   sessionId: string,
 ): Promise<SessionHistoryResponse> {
   return invoke<SessionHistoryResponse>("session_get_history", { sessionId });
+}
+
+export async function setSessionDisplayName(
+  sessionId: string,
+  displayName: string,
+): Promise<SessionSetDisplayNameResponse> {
+  return invoke<SessionSetDisplayNameResponse>("session_set_display_name", {
+    sessionId,
+    displayName,
+  });
 }
 
 export async function getActiveSessionTurn(

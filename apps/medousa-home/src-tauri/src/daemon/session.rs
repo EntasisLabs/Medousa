@@ -35,6 +35,47 @@ pub async fn session_list(
     response.json::<SessionHistoryListResponse>().await.map_err(|err| err.to_string())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSetDisplayNameResponse {
+    pub session_id: String,
+    pub display_name: String,
+}
+
+#[tauri::command]
+pub async fn session_set_display_name(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    display_name: String,
+) -> Result<SessionSetDisplayNameResponse, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let trimmed_id = session_id.trim();
+    if trimmed_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let trimmed_name = display_name.trim();
+    if trimmed_name.is_empty() {
+        return Err("display name must not be empty".to_string());
+    }
+
+    let url = format!("{base}/v1/sessions/{trimmed_id}/name");
+    let client = Client::new();
+    let response = client
+        .put(&url)
+        .json(&serde_json::json!({ "display_name": trimmed_name }))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("session rename failed ({status}): {body}"));
+    }
+    response
+        .json::<SessionSetDisplayNameResponse>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 pub async fn session_get_history(
     state: State<'_, DaemonState>,

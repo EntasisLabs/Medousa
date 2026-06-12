@@ -1,3 +1,8 @@
+export interface SessionSetDisplayNameResponse {
+  session_id: string;
+  display_name: string;
+}
+
 export interface SessionSummary {
   session_id: string;
   display_name?: string | null;

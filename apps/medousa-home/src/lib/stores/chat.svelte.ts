@@ -4,6 +4,7 @@ import {
   getSessionHistory,
   listSessionTurns,
   listSessions,
+  setSessionDisplayName,
   startInteractiveStream,
   stopInteractiveStream,
 } from "$lib/daemon";
@@ -193,6 +194,19 @@ export class ChatStore {
       this.pinnedIds = [...this.pinnedIds, sessionId];
     }
     localStorage.setItem(PINS_KEY, JSON.stringify(this.pinnedIds));
+  }
+
+  async renameSession(sessionId: string, displayName: string): Promise<void> {
+    const trimmed = displayName.trim();
+    if (!trimmed) {
+      throw new Error("Session name must not be empty");
+    }
+    const response = await setSessionDisplayName(sessionId, trimmed);
+    this.sessions = this.sessions.map((session) =>
+      session.session_id === sessionId
+        ? { ...session, display_name: response.display_name }
+        : session,
+    );
   }
 
   async refreshSessions(options?: { force?: boolean }) {

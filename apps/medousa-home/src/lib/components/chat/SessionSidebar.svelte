@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X } from "@lucide/svelte";
+  import { Pencil, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import type { SessionSummary } from "$lib/types/session";
@@ -14,6 +14,10 @@
   let { open, onClose, variant = "drawer" }: Props = $props();
 
   let query = $state("");
+  let renamingSession = $state<SessionSummary | null>(null);
+  let renameDraft = $state("");
+  let renameError = $state<string | null>(null);
+  let renameSaving = $state(false);
 
   $effect(() => {
     if (open) {
@@ -76,6 +80,33 @@
       onClose?.();
     }
   }
+
+  function openRename(session: SessionSummary) {
+    renamingSession = session;
+    renameDraft = session.display_name?.trim() || formatSessionLabel(session);
+    renameError = null;
+  }
+
+  function closeRename() {
+    renamingSession = null;
+    renameDraft = "";
+    renameError = null;
+    renameSaving = false;
+  }
+
+  async function submitRename(event: Event) {
+    event.preventDefault();
+    if (!renamingSession || !renameDraft.trim() || renameSaving) return;
+    renameSaving = true;
+    renameError = null;
+    try {
+      await chat.renameSession(renamingSession.session_id, renameDraft.trim());
+      closeRename();
+    } catch (err) {
+      renameError = err instanceof Error ? err.message : String(err);
+      renameSaving = false;
+    }
+  }
 </script>
 
 {#if open}
@@ -88,7 +119,7 @@
       }}
     >
       <div
-        class="mobile-sheet mobile-sheet-tall flex flex-col"
+        class="mobile-sheet mobile-sheet-tall relative flex flex-col"
         role="dialog"
         aria-label="Chat sessions"
       >
@@ -108,7 +139,7 @@
     <aside
       class="{variant === 'drawer'
         ? 'workshop-drawer absolute left-0 top-0 z-30 w-64 border-r-2'
-        : 'workshop-drawer relative w-56 shrink-0 border-r-2'} flex h-full flex-col"
+        : 'workshop-drawer relative w-56 shrink-0 border-r-2'} relative flex h-full flex-col"
       aria-label="Chat sessions"
     >
       {@render sessionPanel()}
@@ -189,6 +220,65 @@
       </li>
     </ol>
   </div>
+
+  {#if renamingSession}
+    <div
+      class="absolute inset-0 z-40 flex items-end bg-surface-950/70 p-3 sm:items-center sm:justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-rename-title"
+    >
+      <form
+        class="card w-full space-y-3 p-4 shadow-xl sm:max-w-sm"
+        onsubmit={submitRename}
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p id="session-rename-title" class="text-sm font-semibold text-surface-100">
+              Rename session
+            </p>
+            <p class="workshop-faint mt-0.5 text-xs">
+              Saved on the engine — searchable in this list and via /history in TUI.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            aria-label="Cancel rename"
+            onclick={closeRename}
+          >
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+        <input
+          class="input w-full text-sm"
+          type="text"
+          maxlength="80"
+          bind:value={renameDraft}
+          autofocus
+        />
+        {#if renameError}
+          <p class="text-xs text-error-400">{renameError}</p>
+        {/if}
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={closeRename}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-sm variant-filled-primary"
+            disabled={!renameDraft.trim() || renameSaving}
+          >
+            {renameSaving ? "Saving…" : "Save name"}
+          </button>
+        </div>
+      </form>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet sessionButton(session: SessionSummary)}
@@ -214,6 +304,15 @@
       <p class="workshop-faint mt-0.5 truncate">
         {session.turns} turn{session.turns === 1 ? "" : "s"}
       </p>
+    </button>
+    <button
+      type="button"
+      class="px-2 text-xs text-surface-500 opacity-60 transition hover:text-primary-300 group-hover:opacity-100"
+      title="Rename session"
+      aria-label="Rename session"
+      onclick={() => openRename(session)}
+    >
+      <Pencil size={14} strokeWidth={1.75} />
     </button>
     <button
       type="button"

@@ -100,6 +100,7 @@ pub fn run() {
             daemon::turn_budget::turn_budget_deny,
             daemon::turn_budget::turn_budget_list,
             daemon::session::session_list,
+            daemon::session::session_set_display_name,
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,
             daemon::session::session_cancel_active_turn,

@@ -125,12 +125,31 @@ impl SessionMetaStore for SurrealSessionMetaStore {
             display_name: display_name.to_string(),
             updated_at: Utc::now(),
         };
-        let sql = "UPSERT type::record($table, $id) CONTENT $data";
+        let update_sql = "UPDATE type::table($table) MERGE $data WHERE session_id = $session_id";
+        let mut update = block_on(
+            self.db
+                .query(update_sql)
+                .bind(("table", SESSION_META_TABLE))
+                .bind(("session_id", session_id.to_string()))
+                .bind(("data", record.clone())),
+        )
+        .map_err(|err| err.to_string())?;
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct UpdatedRow {
+            session_id: String,
+        }
+
+        let updated: Vec<UpdatedRow> = update.take(0).unwrap_or_default();
+        if !updated.is_empty() {
+            return Ok(());
+        }
+
+        let create_sql = "CREATE type::table($table) CONTENT $data";
         block_on(
             self.db
-                .query(sql)
+                .query(create_sql)
                 .bind(("table", SESSION_META_TABLE))
-                .bind(("id", session_id.to_string()))
                 .bind(("data", record)),
         )
         .map_err(|err| err.to_string())?;

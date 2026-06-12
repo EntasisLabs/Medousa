@@ -65,6 +65,13 @@ Rule: **list path never calls `load_history` or `read_all()` on verification ind
 - [x] Debounce post-turn refresh calls (`scheduleSessionsRefresh`)
 - [x] Home passes `include_verification=false` on session list
 
+### Phase 4 — Naming + search at scale (next)
+
+- [x] Home rename UI (`PUT /v1/sessions/{id}/name`) — pencil in session sidebar
+- [ ] Server-side `GET /v1/sessions?q=&cursor=` — catalog search + pagination past client `limit=50`
+- [ ] Auto-title from first user turn when preview is empty (write hook on `append_turn`)
+- [ ] Case-insensitive display-name search in meta store (catalog already has lower lookup)
+
 ## Success criteria
 
 | Check | Target |
