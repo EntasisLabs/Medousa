@@ -54,15 +54,16 @@ Rule: **list path never calls `load_history` or `read_all()` on verification ind
 
 ### Phase 2 — Adjacent slow paths
 
-- [ ] `resolve_history_resume_target` — prefix/name lookup via catalog/meta, not `list_history_sessions(500)`
-- [ ] `format_channel_session_history` — turn counts from catalog, not `load_history().len()`
-- [ ] Optional `GET /v1/sessions?include=verification` (Home skips enrichment)
+- [x] `resolve_history_resume_target` — prefix/name lookup via catalog/meta, not `list_history_sessions(500)`
+- [x] `format_channel_session_history` — turn counts from catalog, not `load_history().len()`
+- [x] Optional `GET /v1/sessions?include_verification=false` (strip trust fields for lighter payloads)
 
 ### Phase 3 — Client polish
 
-- [ ] Cache session list in Home with stale-while-revalidate
-- [ ] Parallel `refreshSessions` + `ensureSessionHydrated` on connect
-- [ ] Debounce post-turn refresh calls
+- [x] Cache session list in Home with stale-while-revalidate (`SESSIONS_STALE_MS`, in-flight coalescing)
+- [x] Parallel `refreshSessions` + `ensureSessionHydrated` on connect
+- [x] Debounce post-turn refresh calls (`scheduleSessionsRefresh`)
+- [x] Home passes `include_verification=false` on session list
 
 ## Success criteria
 

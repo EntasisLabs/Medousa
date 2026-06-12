@@ -17,8 +17,10 @@
     const unlisteners: Promise<() => void>[] = [];
 
     (async () => {
-      await chat.refreshSessions();
-      await chat.reloadCurrentSession();
+      await Promise.all([
+        chat.refreshSessions({ force: true }),
+        chat.reloadCurrentSession(),
+      ]);
 
       unlisteners.push(
         onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {

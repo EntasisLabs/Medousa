@@ -17,7 +17,7 @@
 
   $effect(() => {
     if (open) {
-      void chat.refreshSessions();
+      void chat.refreshSessions({ force: true });
     }
   });
 
@@ -153,6 +153,8 @@
 
     {#if chat.sessionsError}
       <p class="px-3 py-2 text-xs text-error-400">{chat.sessionsError}</p>
+    {:else if chat.sessionsRefreshing}
+      <p class="workshop-faint px-3 py-1 text-[11px]">Updating sessions…</p>
     {/if}
 
     <ol class="flex-1 space-y-3 overflow-y-auto p-2">

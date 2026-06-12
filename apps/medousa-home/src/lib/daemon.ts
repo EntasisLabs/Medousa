@@ -65,10 +65,23 @@ export async function setDaemonUrl(url: string): Promise<void> {
   return invoke("set_daemon_url", { url });
 }
 
+export interface ListSessionsOptions {
+  limit?: number;
+  /** Home omits TUI verification trust fields for smaller payloads. Default false. */
+  includeVerification?: boolean;
+}
+
 export async function listSessions(
-  limit?: number,
+  limitOrOptions?: number | ListSessionsOptions,
 ): Promise<{ sessions: SessionSummary[] }> {
-  return invoke<{ sessions: SessionSummary[] }>("session_list", { limit });
+  const options: ListSessionsOptions =
+    typeof limitOrOptions === "number"
+      ? { limit: limitOrOptions }
+      : (limitOrOptions ?? {});
+  return invoke<{ sessions: SessionSummary[] }>("session_list", {
+    limit: options.limit,
+    includeVerification: options.includeVerification ?? false,
+  });
 }
 
 export async function getSessionHistory(

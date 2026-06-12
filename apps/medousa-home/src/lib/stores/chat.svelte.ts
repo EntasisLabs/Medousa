@@ -36,6 +36,8 @@ import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
+const SESSIONS_STALE_MS = 30_000;
+const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
 
 interface WorkerLink {
   workId: string;
@@ -57,6 +59,8 @@ export class ChatStore {
   streamError = $state<string | null>(null);
   sessions = $state<SessionSummary[]>([]);
   sessionsError = $state<string | null>(null);
+  /** True while revalidating the session list without clearing cached rows. */
+  sessionsRefreshing = $state(false);
   pinnedIds = $state<string[]>(loadPinnedIds());
   historyLoading = $state(false);
   /** Brief banner after reloading turns from the engine (e.g. after WebView refresh). */
@@ -72,6 +76,9 @@ export class ChatStore {
   private assistantId: string | null = null;
   /** Bumps when the local transcript changes; stale daemon reloads must not overwrite it. */
   private transcriptEpoch = 0;
+  private sessionsFetchedAt = 0;
+  private sessionsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private sessionsRefreshInFlight: Promise<void> | null = null;
 
   /** True while the composer must wait — Tier 2c: always open. */
   get composerBlocked(): boolean {
@@ -188,13 +195,60 @@ export class ChatStore {
     localStorage.setItem(PINS_KEY, JSON.stringify(this.pinnedIds));
   }
 
-  async refreshSessions() {
-    this.sessionsError = null;
+  async refreshSessions(options?: { force?: boolean }) {
+    const force = options?.force ?? false;
+    const hadCache = this.sessions.length > 0;
+    const fresh =
+      !force &&
+      hadCache &&
+      Date.now() - this.sessionsFetchedAt < SESSIONS_STALE_MS;
+
+    if (fresh) {
+      return;
+    }
+
+    if (this.sessionsRefreshInFlight) {
+      return this.sessionsRefreshInFlight;
+    }
+
+    this.sessionsRefreshInFlight = this.fetchSessions(hadCache);
     try {
-      const response = await listSessions(50);
+      await this.sessionsRefreshInFlight;
+    } finally {
+      this.sessionsRefreshInFlight = null;
+    }
+  }
+
+  /** Debounced refresh after turn lifecycle events (coalesces rapid stream terminals). */
+  scheduleSessionsRefresh() {
+    if (this.sessionsRefreshTimer) {
+      clearTimeout(this.sessionsRefreshTimer);
+    }
+    this.sessionsRefreshTimer = setTimeout(() => {
+      this.sessionsRefreshTimer = null;
+      void this.refreshSessions({ force: true });
+    }, SESSIONS_REFRESH_DEBOUNCE_MS);
+  }
+
+  private async fetchSessions(hadCache: boolean) {
+    this.sessionsRefreshing = hadCache;
+    if (!hadCache) {
+      this.sessionsError = null;
+    }
+    try {
+      const response = await listSessions({
+        limit: 50,
+        includeVerification: false,
+      });
       this.sessions = response.sessions;
+      this.sessionsFetchedAt = Date.now();
+      this.sessionsError = null;
     } catch (err) {
-      this.sessionsError = err instanceof Error ? err.message : String(err);
+      if (!hadCache) {
+        this.sessionsError = err instanceof Error ? err.message : String(err);
+      }
+    } finally {
+      this.sessionsRefreshing = false;
     }
   }
 
@@ -210,7 +264,7 @@ export class ChatStore {
     this.activeTurnId = null;
     this.turns = new Map();
     this.workers = new Map();
-    await this.refreshSessions();
+    await this.refreshSessions({ force: true });
   }
 
   /** Pull transcript from daemon when the UI remounted empty (startup / reconnect). */
@@ -1303,7 +1357,7 @@ export class ChatStore {
 
     if (isWorkerHandoffStreamEvent(event)) {
       this.releaseComposerHandoff(messageId, "worker_ack", event);
-      void this.refreshSessions();
+      this.scheduleSessionsRefresh();
       return;
     }
 
@@ -1317,7 +1371,7 @@ export class ChatStore {
       this.finishAskLaneTurn(event.turn_id);
       if (this.shouldSettleTurnFromStream(event.turn_id)) {
         this.settleTurn(event.turn_id);
-        void this.refreshSessions();
+        this.scheduleSessionsRefresh();
       }
     }
   }
@@ -1384,7 +1438,7 @@ export class ChatStore {
 
     if (isWorkerHandoffStreamEvent(event)) {
       this.releaseComposerHandoff(id, "worker_ack", event);
-      void this.refreshSessions();
+      this.scheduleSessionsRefresh();
       return;
     }
 
@@ -1398,7 +1452,7 @@ export class ChatStore {
       this.finishAskLaneTurn(event.turn_id);
       if (this.shouldSettleTurnFromStream(event.turn_id)) {
         this.settleTurn(event.turn_id);
-        void this.refreshSessions();
+        this.scheduleSessionsRefresh();
       }
     }
   }

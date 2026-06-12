@@ -87,8 +87,10 @@ async function startWorkshopStreams(): Promise<void> {
   await stopWorkspaceStream();
   await startWorkspaceStream(workspace.revision || undefined);
   void recurring.refresh();
-  await chat.refreshSessions();
-  await chat.ensureSessionHydrated({ notice: true });
+  await Promise.all([
+    chat.refreshSessions({ force: true }),
+    chat.ensureSessionHydrated({ notice: true }),
+  ]);
   void chat.tryReattachActiveTurn();
   void chat.hydrateAskThreads(workspace.cards);
   void chat.tryReattachAskTurns(workspace.cards);

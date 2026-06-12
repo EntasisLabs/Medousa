@@ -118,6 +118,17 @@ pub struct SessionHistorySummary {
     pub preview: String,
 }
 
+impl SessionHistorySummary {
+    pub fn without_verification_fields(mut self) -> Self {
+        self.verification_runs = 0;
+        self.last_verification_timestamp = None;
+        self.last_verification_confidence = None;
+        self.last_verification_coverage = None;
+        self.last_verification_verified = None;
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiKeyStorageBackend {
     KeychainActive,
@@ -667,19 +678,20 @@ pub fn append_turn_with_scratch(
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
     let limit = limit.max(1);
     let mut sessions = crate::session_catalog::list_sessions(limit);
+
+    if sessions.is_empty() {
+        crate::session_catalog::ensure_catalog_populated(limit);
+        sessions = crate::session_catalog::list_sessions(limit);
+    }
+
+    if sessions.is_empty() && crate::session_store::has_persisted_sessions() {
+        sessions = crate::session_store::build_backfill_summaries(limit);
+    }
+
     let mut seen: std::collections::HashSet<String> = sessions
         .iter()
         .map(|item| item.session_id.clone())
         .collect();
-
-    for session_id in crate::channel_session_store::list_distinct_channel_session_ids(limit) {
-        if !seen.insert(session_id.clone()) {
-            continue;
-        }
-        if let Some(summary) = crate::session_catalog::get_summary(&session_id) {
-            sessions.push(summary);
-        }
-    }
 
     for (session_id, display_name) in crate::session_meta_store::list_session_display_names(limit) {
         if !seen.insert(session_id.clone()) {
@@ -731,6 +743,11 @@ pub fn enrich_session_summaries(sessions: &mut [SessionHistorySummary]) {
     }
 }
 
+pub fn session_turn_count(session_id: &str) -> usize {
+    crate::session_catalog::turn_count(session_id)
+        .unwrap_or_else(|| load_history(session_id).len())
+}
+
 /// Resolve `/history <target>`: full id, id prefix, or global display name (unique).
 pub fn resolve_history_resume_target(target: &str) -> Option<String> {
     let target = target.trim();
@@ -742,30 +759,21 @@ pub fn resolve_history_resume_target(target: &str) -> Option<String> {
         return Some(session_id);
     }
 
-    if crate::session_catalog::session_has_activity(target) || !load_history(target).is_empty() {
+    if crate::session_catalog::get_summary(target).is_some() {
+        return Some(target.to_string());
+    }
+    if !load_history(target).is_empty() {
         return Some(target.to_string());
     }
 
-    let summaries = list_history_sessions(500);
-    let prefix_matches = summaries
-        .iter()
-        .filter(|item| item.session_id.starts_with(target))
-        .collect::<Vec<_>>();
-    if prefix_matches.len() == 1 {
-        return Some(prefix_matches[0].session_id.clone());
+    if let Some(session_id) = crate::session_catalog::find_unique_session_id_by_prefix(target) {
+        return Some(session_id);
     }
 
-    let lower = target.to_ascii_lowercase();
-    let name_matches = summaries
-        .iter()
-        .filter(|item| {
-            item.display_name
-                .as_deref()
-                .is_some_and(|name| name.to_ascii_lowercase() == lower)
-        })
-        .collect::<Vec<_>>();
-    if name_matches.len() == 1 {
-        return Some(name_matches[0].session_id.clone());
+    if let Some(session_id) =
+        crate::session_catalog::find_unique_session_id_by_display_name_case_insensitive(target)
+    {
+        return Some(session_id);
     }
 
     None

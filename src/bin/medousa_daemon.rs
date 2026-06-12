@@ -2717,7 +2717,7 @@ async fn format_channel_session_history(
     );
     let mut lines = vec![format!(
         "* {active_label} (active, {} turns)",
-        medousa::session::load_history(active_session_id).len()
+        medousa::session::session_turn_count(active_session_id)
     )];
 
     for session_id in entries.into_iter().take(9) {
@@ -2730,7 +2730,7 @@ async fn format_channel_session_history(
         );
         lines.push(format!(
             "* {label} ({} turns)",
-            medousa::session::load_history(&session_id).len()
+            medousa::session::session_turn_count(&session_id)
         ));
     }
 

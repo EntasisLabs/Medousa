@@ -166,6 +166,8 @@ pub struct EnqueueResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistoryListRequest {
     pub limit: Option<usize>,
+    /// When `false`, omit verification trust fields from each session row (smaller payloads).
+    pub include_verification: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

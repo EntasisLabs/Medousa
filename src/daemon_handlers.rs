@@ -13,7 +13,13 @@ pub async fn list_session_history(
     Query(request): Query<SessionHistoryListRequest>,
 ) -> Result<Json<SessionHistoryListResponse>, (StatusCode, String)> {
     let limit = request.limit.unwrap_or(200).clamp(1, 1000);
-    let sessions = crate::session::list_history_sessions(limit);
+    let mut sessions = crate::session::list_history_sessions(limit);
+    if request.include_verification == Some(false) {
+        sessions = sessions
+            .into_iter()
+            .map(|session| session.without_verification_fields())
+            .collect();
+    }
     Ok(Json(SessionHistoryListResponse { sessions }))
 }
 

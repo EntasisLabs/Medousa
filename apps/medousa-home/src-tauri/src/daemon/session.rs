@@ -11,13 +11,19 @@ use super::DaemonState;
 pub async fn session_list(
     state: State<'_, DaemonState>,
     limit: Option<usize>,
+    include_verification: Option<bool>,
 ) -> Result<SessionHistoryListResponse, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let capped = limit.unwrap_or(50).clamp(1, 200);
-    let url = format!("{base}/v1/sessions?limit={capped}");
+    let include_verification = include_verification.unwrap_or(false);
+    let url = format!("{base}/v1/sessions");
     let client = Client::new();
     let response = client
         .get(&url)
+        .query(&[
+            ("limit", capped.to_string()),
+            ("include_verification", include_verification.to_string()),
+        ])
         .send()
         .await
         .map_err(|err| err.to_string())?;

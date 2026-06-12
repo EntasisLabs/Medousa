@@ -69,9 +69,27 @@ async fn list_history_sessions_handler() {
         medousa::session::append_turn(&sid, &turn);
     }
 
-    let query = Query(SessionHistoryListRequest { limit: Some(10) });
+    let query = Query(SessionHistoryListRequest {
+        limit: Some(10),
+        include_verification: None,
+    });
     let res = list_session_history(query).await;
     assert!(res.is_ok());
     let Json(list) = res.unwrap();
     assert!(list.sessions.len() >= 2);
+
+    let slim_query = Query(SessionHistoryListRequest {
+        limit: Some(10),
+        include_verification: Some(false),
+    });
+    let slim_res = list_session_history(slim_query).await;
+    assert!(slim_res.is_ok());
+    let Json(slim_list) = slim_res.unwrap();
+    assert!(slim_list.sessions.iter().all(|session| {
+        session.verification_runs == 0
+            && session.last_verification_timestamp.is_none()
+            && session.last_verification_confidence.is_none()
+            && session.last_verification_coverage.is_none()
+            && session.last_verification_verified.is_none()
+    }));
 }

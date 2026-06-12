@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::future::IntoFuture;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Utc};
@@ -38,7 +39,10 @@ const SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD last_verification_coverage ON TABLE session_catalog TYPE option<float>",
     "DEFINE FIELD last_verification_verified ON TABLE session_catalog TYPE option<bool>",
     "DEFINE INDEX idx_session_catalog_session_id ON TABLE session_catalog COLUMNS session_id UNIQUE",
-    "DEFINE INDEX idx_session_catalog_last_activity ON TABLE session_catalog COLUMNS last_activity_at",
+];
+
+const SCHEMA_MIGRATIONS: &[&str] = &[
+    "REMOVE INDEX IF EXISTS idx_session_catalog_last_activity ON TABLE session_catalog",
 ];
 
 static SESSION_CATALOG_STORE: Lazy<RwLock<Arc<dyn SessionCatalogStore>>> =
@@ -137,6 +141,8 @@ trait SessionCatalogStore: Send + Sync {
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow>;
     fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow>;
     fn row_count(&self) -> usize;
+    fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String>;
+    fn find_session_ids_by_display_name_lower(&self, lower: &str, max: usize) -> Vec<String>;
 }
 
 fn block_on<F: IntoFuture>(f: F) -> F::Output {
@@ -223,6 +229,71 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             })
             .unwrap_or(0)
     }
+
+    fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String> {
+        let prefix = prefix.trim();
+        if prefix.is_empty() {
+            return Vec::new();
+        }
+
+        let dir = catalog_dir();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+
+        entries
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| {
+                let path = entry.path();
+                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                    return None;
+                }
+                let stem = path.file_stem()?.to_string_lossy();
+                if stem.starts_with(prefix) {
+                    Some(stem.to_string())
+                } else {
+                    None
+                }
+            })
+            .take(max.max(1))
+            .collect()
+    }
+
+    fn find_session_ids_by_display_name_lower(&self, lower: &str, max: usize) -> Vec<String> {
+        if lower.is_empty() {
+            return Vec::new();
+        }
+
+        let dir = catalog_dir();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+
+        let mut matches = Vec::new();
+        for entry in entries.filter_map(|entry| entry.ok()) {
+            if matches.len() >= max.max(1) {
+                break;
+            }
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(raw) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok(row) = serde_json::from_str::<SessionCatalogRow>(&raw) else {
+                continue;
+            };
+            if row
+                .display_name
+                .as_deref()
+                .is_some_and(|name| name.to_ascii_lowercase() == lower)
+            {
+                matches.push(row.session_id);
+            }
+        }
+        matches
+    }
 }
 
 struct SurrealSessionCatalogStore {
@@ -246,35 +317,66 @@ impl SurrealSessionCatalogStore {
                 }
             }
         }
+        for statement in SCHEMA_MIGRATIONS {
+            let _ = self.db.query(*statement).await;
+        }
         Ok(())
     }
 }
 
 impl SessionCatalogStore for SurrealSessionCatalogStore {
     fn upsert_row(&self, row: &SessionCatalogRow) {
-        let sql = "UPSERT type::record($table, $id) CONTENT $data";
+        let session_id = row.session_id.clone();
+        let update_sql = "UPDATE type::table($table) MERGE $data WHERE session_id = $session_id";
+        let update = block_on(
+            self.db
+                .query(update_sql)
+                .bind(("table", SESSION_CATALOG_TABLE))
+                .bind(("session_id", session_id.clone()))
+                .bind(("data", row.clone())),
+        );
+
+        match update {
+            Ok(mut response) => {
+                #[derive(Debug, Deserialize, SurrealValue)]
+                struct UpdatedRow {
+                    session_id: String,
+                }
+                let updated: Vec<UpdatedRow> = response.take(0).unwrap_or_default();
+                if !updated.is_empty() {
+                    return;
+                }
+            }
+            Err(err) => {
+                eprintln!("SurrealSessionCatalogStore::upsert_row update error: {err}");
+            }
+        }
+
+        let create_sql = "CREATE type::table($table) CONTENT $data";
         if let Err(err) = block_on(
             self.db
-                .query(sql)
+                .query(create_sql)
                 .bind(("table", SESSION_CATALOG_TABLE))
-                .bind(("id", row.session_id.clone()))
                 .bind(("data", row.clone())),
         ) {
-            eprintln!("SurrealSessionCatalogStore::upsert_row error: {err}");
+            eprintln!("SurrealSessionCatalogStore::upsert_row create error: {err}");
         }
     }
 
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
-        let sql = "SELECT * FROM type::record($table, $id)";
+        let sql = "SELECT * FROM type::table($table) WHERE session_id = $session_id LIMIT 1";
         let mut response = block_on(
             self.db
                 .query(sql)
                 .bind(("table", SESSION_CATALOG_TABLE))
-                .bind(("id", session_id.trim().to_string())),
+                .bind(("session_id", session_id.trim().to_string())),
         )
         .ok()?;
 
-        response.take::<Option<SessionCatalogRow>>(0).ok().flatten()
+        response
+            .take::<Vec<SessionCatalogRow>>(0)
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
     }
 
     fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow> {
@@ -320,6 +422,80 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
             .map(|row| row.total)
             .unwrap_or(0)
     }
+
+    fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String> {
+        let prefix = prefix.trim().to_string();
+        if prefix.is_empty() {
+            return Vec::new();
+        }
+
+        let sql = "SELECT session_id FROM type::table($table) \
+                   WHERE string::starts_with(session_id, $prefix) \
+                   LIMIT $limit";
+        let mut response = match block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_CATALOG_TABLE))
+                .bind(("prefix", prefix))
+                .bind(("limit", max.max(1) as i64)),
+        ) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!("SurrealSessionCatalogStore::find_session_ids_by_prefix error: {err}");
+                return Vec::new();
+            }
+        };
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct Row {
+            session_id: String,
+        }
+
+        response
+            .take::<Vec<Row>>(0)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| row.session_id)
+            .collect()
+    }
+
+    fn find_session_ids_by_display_name_lower(&self, lower: &str, max: usize) -> Vec<String> {
+        if lower.is_empty() {
+            return Vec::new();
+        }
+
+        let sql = "SELECT session_id FROM type::table($table) \
+                   WHERE display_name != NONE \
+                     AND string::lowercase(display_name) = $lower \
+                   LIMIT $limit";
+        let mut response = match block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_CATALOG_TABLE))
+                .bind(("lower", lower.to_string()))
+                .bind(("limit", max.max(1) as i64)),
+        ) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!(
+                    "SurrealSessionCatalogStore::find_session_ids_by_display_name_lower error: {err}"
+                );
+                return Vec::new();
+            }
+        };
+
+        #[derive(Debug, Deserialize, SurrealValue)]
+        struct Row {
+            session_id: String,
+        }
+
+        response
+            .take::<Vec<Row>>(0)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| row.session_id)
+            .collect()
+    }
 }
 
 pub async fn init_session_catalog_with_runtime(runtime: &RuntimeComposition) {
@@ -329,9 +505,11 @@ pub async fn init_session_catalog_with_runtime(runtime: &RuntimeComposition) {
                 eprintln!(
                     "Surreal session catalog schema init error: {err}; keeping file-backed catalog"
                 );
-                return;
+            } else {
+                eprintln!(
+                    "Surreal runtime detected; session catalog switched to SurrealDB backend"
+                );
             }
-            eprintln!("Surreal runtime detected; session catalog switched to SurrealDB backend");
         }
         _ => {}
     }
@@ -435,6 +613,8 @@ pub fn session_has_activity(session_id: &str) -> bool {
         .is_some_and(|row| row.turn_count > 0)
 }
 
+static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);
+
 pub fn list_sessions(limit: usize) -> Vec<SessionHistorySummary> {
     catalog_store()
         .list_rows(limit.max(1))
@@ -443,17 +623,71 @@ pub fn list_sessions(limit: usize) -> Vec<SessionHistorySummary> {
         .collect()
 }
 
-fn backfill_if_needed() {
+/// One-shot repair when the catalog is empty but legacy session data exists.
+pub fn ensure_catalog_populated(limit: usize) {
     if catalog_store().row_count() > 0 {
         return;
     }
-
+    if CATALOG_SYNC_ATTEMPTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
     if !legacy_sessions_detected() {
         return;
     }
+    eprintln!("session catalog empty — syncing from session store…");
+    match sync_catalog_from_session_store(limit.max(500)) {
+        Ok(count) => eprintln!("session catalog sync complete ({count} sessions)"),
+        Err(err) => eprintln!("session catalog sync error: {err}"),
+    }
+}
 
+fn sync_catalog_from_session_store(limit: usize) -> Result<usize, String> {
+    backfill_from_legacy_stores(limit)
+}
+
+pub fn turn_count(session_id: &str) -> Option<usize> {
+    catalog_store()
+        .get_row(session_id.trim())
+        .map(|row| row.turn_count)
+}
+
+pub fn find_unique_session_id_by_prefix(prefix: &str) -> Option<String> {
+    let matches = catalog_store().find_session_ids_by_prefix(prefix, 2);
+    if matches.len() == 1 {
+        Some(matches[0].clone())
+    } else {
+        None
+    }
+}
+
+pub fn find_unique_session_id_by_display_name_case_insensitive(name: &str) -> Option<String> {
+    let lower = name.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+    let matches = catalog_store()
+        .find_session_ids_by_display_name_lower(&lower, 2);
+    if matches.len() == 1 {
+        Some(matches[0].clone())
+    } else {
+        None
+    }
+}
+
+fn backfill_if_needed() {
+    if catalog_store().row_count() > 0 {
+        CATALOG_SYNC_ATTEMPTED.store(true, Ordering::SeqCst);
+        return;
+    }
+    if CATALOG_SYNC_ATTEMPTED.load(Ordering::SeqCst) {
+        return;
+    }
+    if !legacy_sessions_detected() {
+        return;
+    }
+    CATALOG_SYNC_ATTEMPTED.store(true, Ordering::SeqCst);
     eprintln!("session catalog empty — backfilling from existing session history…");
-    match backfill_from_legacy_stores() {
+    match sync_catalog_from_session_store(500) {
         Ok(count) => eprintln!("session catalog backfill complete ({count} sessions)"),
         Err(err) => eprintln!("session catalog backfill error: {err}"),
     }
@@ -467,11 +701,11 @@ fn legacy_sessions_detected() -> bool {
     !crate::session_meta_store::list_session_display_names(1).is_empty()
 }
 
-fn backfill_from_legacy_stores() -> Result<usize, String> {
+fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
     let (verification_by_session, verification_counts) = group_latest_verifications();
     let mut count = 0usize;
 
-    for summary in crate::session_store::build_backfill_summaries(usize::MAX) {
+    for summary in crate::session_store::build_backfill_summaries(limit) {
         let mut row = SessionCatalogRow {
             session_id: summary.session_id.clone(),
             preview: summary.preview,
