@@ -55,6 +55,31 @@ Same engine on every device. Same engine if you plug in Telegram, or call it fro
 | Run it fully offline | **Private brain** on your device — Gemma, local. Your hardware. Your rules. |
 | Start fresh on a new device | Open Medousa, run the welcome flow. About sixty seconds. |
 
+
+### Chat
+<img width="1552" height="1012" alt="Chat" src="https://github.com/user-attachments/assets/00b35647-6f6c-4aa3-8d95-77db8e2df5e0" />
+
+### Let Medousa do meaningful work
+<img width="1552" height="1012" alt="Work" src="https://github.com/user-attachments/assets/3f4c490f-231e-453c-affb-d1c0eb030cdd" />
+<img width="1552" height="1012" alt="Cron" src="https://github.com/user-attachments/assets/6fbd3745-d5ed-4d7b-980a-e5b05698ca99" />
+
+### Review your life in one place
+<img width="1552" height="1012" alt="Vault" src="https://github.com/user-attachments/assets/63563221-f28c-437e-9cd3-7f9c62da97b1" />
+
+### Reflect about your journey and visualize your context
+<img width="1552" height="1012" alt="Threads" src="https://github.com/user-attachments/assets/871a5952-2382-4b73-a164-39b8066a10ce" />
+<img width="1552" height="1012" alt="Maps" src="https://github.com/user-attachments/assets/ac82139d-86db-417d-af96-06c2e9961fad" />
+
+### Special work demands special skills, add what fits you
+<img width="1552" height="1012" alt="Skills" src="https://github.com/user-attachments/assets/8b05ac5d-7e28-4bd4-bea9-72ee55a232be" />
+
+### Check in from anywhere 
+<img width="1552" height="1012" alt="Messaging" src="https://github.com/user-attachments/assets/b586c2d1-a117-42bf-9ccc-6f71729c19a2" />
+
+### Connect your mobile app with a simple QR Code
+<img width="1552" height="1012" alt="Settings   Tunnel" src="https://github.com/user-attachments/assets/5d828508-1b24-4c55-a225-7aa3f4288eb7" />
+
+
 ---
 
 ## Powered by Stasis, Locus, and Resonantia
