@@ -15,19 +15,11 @@ Medousa is a permanent AI workspace that lives on your devices. It remembers eve
 
 One brain. Your Mac, your phone, your scheduled work, your memory — not four apps pretending to be one.
 
+
 You talk to it from **Medousa**, from Discord, Telegram, Slack, or WhatsApp if you want them. It runs in the background, processes your requests, and surfaces answers that carry proof — not just words.
 
 **No cloud, no subscription, no hallucinated answers that you cannot trace.**
 
----
-
-## Get Medousa
-
-**[Download →](https://github.com/EntasisLabs/Medousa/releases)**  
-
-### Mac · Windows · Linux · iOS · Android 
-
-Open it. Pick how your brain thinks in the welcome flow. If you chose private mode, the model downloads to your device. You land in chat. About ninety seconds. No terminal.
 
 ---
 
@@ -79,22 +71,8 @@ Same engine on every device. Same engine if you plug in Telegram, or call it fro
 ### Connect your mobile app with a simple QR Code
 <img width="1552" height="1012" alt="Settings   Tunnel" src="https://github.com/user-attachments/assets/5d828508-1b24-4c55-a225-7aa3f4288eb7" />
 
-
 ---
 
-## Powered by Stasis, Locus, and Resonantia
-
-The reliability is not hand-waved. Medousa is built on the same infrastructure family as **[Resonantia](https://resonantia.me)** — not a chat wrapper pretending to be durable.
-
-**[Stasis](https://github.com/EntasisLabs/stasis)** — the engine underneath. When you send something, schedule something, or ask for something later, Stasis makes it real work — saved, retried, finished, delivered back to you. Your laptop sleeps. The network drops. The app restarts. The work does not vanish.
-
-**[Locus](https://github.com/EntasisLabs/locus)** — the memory layer. What matters becomes structured, timestamped, retrievable memory — not a scrollback dump. Medousa writes it, recalls it across turns, and stops treating every conversation like day one.
-
-**[Resonantia](https://resonantia.me)** — the sibling on the same protocol. Where Medousa is the workspace that runs and remembers on your machine, Resonantia is the terrain you navigate — your mind, made visible. Same foundation. Different surface. If you want to *see* what this memory looks like when it becomes a map, start there.
-
-Medousa is the brain. Stasis makes work finish. Locus makes memory stick. Resonantia shows what that memory can become.
-
----
 
 ## What makes it reliable
 
@@ -171,3 +149,27 @@ It remembers. It verifies. It finishes what it starts. It runs where you live �
 Chaotic life turns to stone when the tools around you stop adding to the noise.
 
 That is what Medousa is for.
+
+
+## Get Medousa
+
+**[Download →](https://github.com/EntasisLabs/Medousa/releases)**  
+
+### Mac · Windows · Linux · iOS · Android 
+
+Open it. Pick how your brain thinks in the welcome flow. If you chose private mode, the model downloads to your device. You land in chat. About ninety seconds. No terminal.
+---
+
+## Powered by Stasis, Locus, and Resonantia
+
+The reliability is not hand-waved. Medousa is built on the same infrastructure family as **[Resonantia](https://resonantia.me)** — not a chat wrapper pretending to be durable.
+
+**[Stasis](https://github.com/EntasisLabs/stasis)** — the engine underneath. When you send something, schedule something, or ask for something later, Stasis makes it real work — saved, retried, finished, delivered back to you. Your laptop sleeps. The network drops. The app restarts. The work does not vanish.
+
+**[Locus](https://github.com/EntasisLabs/locus)** — the memory layer. What matters becomes structured, timestamped, retrievable memory — not a scrollback dump. Medousa writes it, recalls it across turns, and stops treating every conversation like day one.
+
+**[Resonantia](https://resonantia.me)** — the sibling on the same protocol. Where Medousa is the workspace that runs and remembers on your machine, Resonantia is the terrain you navigate — your mind, made visible. Same foundation. Different surface. If you want to *see* what this memory looks like when it becomes a map, start there.
+
+Medousa is the brain. Stasis makes work finish. Locus makes memory stick. Resonantia shows what that memory can become.
+
+---
