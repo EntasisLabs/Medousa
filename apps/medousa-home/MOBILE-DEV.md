@@ -311,7 +311,8 @@ Same as dev: daemon on Mac with `medousa start daemon --public`, then **You → 
 |---------|-----|
 | **No valid signing identity** | Xcode → Accounts → manage certificates; confirm `developmentTeam` in `tauri.conf.json`. |
 | **Bundle ID not found in Connect** | Create the app in App Store Connect with exact bundle ID before uploading. |
-| **Duplicate build number** | Increase `--build-number` or bump `version` in `tauri.conf.json`. |
+| **Duplicate build number** | Run `npm run tauri:ios:clean` then rebuild; confirm printed `CFBundleVersion` before upload. |
+| **Same version after bumping config** | Stale cache — `npm run tauri:ios:clean` (or `CLEAN=1 ./scripts/ios-testflight-build.sh`). If still stale: `rm -rf src-tauri/gen/apple && npm run tauri:ios:init`, then rebuild. |
 | **Upload stuck / invalid IPA** | Rebuild with `--export-method release-testing`, not `debugging`. |
 | **Processing forever** | Check email from Apple for compliance/metadata issues. |
 | **Old icon on home screen** | Delete app, reinstall from TestFlight after `npm run icons:generate` + rebuild. |

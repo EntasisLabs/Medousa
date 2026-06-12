@@ -1,6 +1,6 @@
 {
   "name": "medousa-home",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Medousa — Life Manageable",
   "type": "module",
   "scripts": {
@@ -14,7 +14,8 @@
     "tauri:ios:init": "tauri ios init",
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build",
-    "tauri:ios:build:testflight": "tauri ios build -- --export-method release-testing --build-number $(date +%s) --ci"
+    "tauri:ios:clean": "bash scripts/ios-clean.sh",
+    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"
   },
   "license": "MIT",
   "dependencies": {
