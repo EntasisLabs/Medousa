@@ -11,7 +11,7 @@ export function isTauriMobilePlatform(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
-/** Channel surface tag sent to the daemon for interactive turns from Medousa Home. */
+/** Channel surface tag sent to the daemon for interactive turns from Medousa. */
 export function homeChannelSurface(): string {
   if (!isTauri() || typeof navigator === "undefined") return "home-desktop";
   const ua = navigator.userAgent;

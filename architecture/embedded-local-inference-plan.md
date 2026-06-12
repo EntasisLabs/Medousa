@@ -1,6 +1,6 @@
-# Embedded local inference (Medousa Core engine)
+# Embedded local inference (Medousa Engine)
 
-> **Status:** Phase 1 landed — Phase 2 next (download manager + wizard UX)  
+> **Status:** Phase 2 landed — Phase 3 next (full Gemma matrix + routing)  
 > **Date:** 2026-06-07 (Gemma 4 catalog lock — June 2026 releases)  
 > **Default brain:** **Gemma 4** family — hero model **Gemma 4 12B Unified** (June 3, 2026) on 16 GB+ Macs  
 > **Goal:** Normies never install Ollama. Medousa Core downloads a curated Gemma 4 build, runs it in-process, and exposes it to the existing turn pipeline. Home (desktop + iPhone) stays a portal.  
@@ -285,7 +285,7 @@ Internal chat: `http://127.0.0.1:7421/v1/chat/completions` (mistral.rs OpenAI se
 | **Desktop Screen 1 — BYOM** | Keep Ollama detect + cloud keys; “Medousa offline model” card when catalog available |
 | **Mobile Screen 1** | Unchanged — connect to Mac; Mac owns model |
 | **Settings → Voice** | Show tier, installed local model, download/remove, re-run hardware probe |
-| **TUI / CLI** | `medousa models list|download|remove|probe` — power user parity |
+| **TUI / CLI** | `medousa start daemon --inference` (dev); `medousa models …` — never the normie path |
 
 Cross-ref: [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) Phase C/E offline + recommended paths.
 
@@ -313,10 +313,10 @@ Cross-ref: [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan
 
 ### Phase 2 — Download manager + wizard UX (~2 weeks)
 
-- [ ] Async download job + progress SSE / Tauri event
-- [ ] SHA256 verify + resume
-- [ ] Wizard Screen 1 offline card wired end-to-end
-- [ ] Settings → Voice local model panel
+- [x] Async download job + progress SSE / Tauri event
+- [x] SHA256 verify + resume
+- [x] Wizard Screen 1 offline card wired end-to-end
+- [x] Settings → Voice local model panel
 
 **Exit:** Fresh VM: Offline → **Gemma 4** download → chat, no terminal.
 
@@ -331,7 +331,7 @@ Cross-ref: [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan
 ### Phase 4 — Polish & ops (~1 week)
 
 - [ ] Engine unload on idle timeout (configurable)
-- [ ] Doctor: `medousa doctor --local-engine`
+- [x] Doctor: `medousa doctor --local-engine` (+ `medousa models` power-user commands)
 - [ ] Release notes + manifest update process when Google ships Gemma 4 point releases
 - [ ] Benchmark: mistral.rs UQFF vs llama.cpp GGUF for 12B on M-series; pick default backend per platform
 
@@ -367,4 +367,4 @@ Cross-ref: [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan
 
 ---
 
-*Next step: Phase 2 — async download manager + wizard Offline card wired to `POST /v1/local/engine/load`.*
+*Next step: Phase 3 — stage routing matrix + tier-sized model defaults across turn pipeline.*

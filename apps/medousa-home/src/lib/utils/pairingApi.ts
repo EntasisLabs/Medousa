@@ -41,14 +41,14 @@ export interface BonjourStatus {
 
 export async function fetchPairingQr(): Promise<PairingQrResponse> {
   if (!isTauri()) {
-    throw new Error("Pairing requires the Medousa Home desktop app");
+    throw new Error("Pairing requires the Medousa desktop app");
   }
   return invoke<PairingQrResponse>("pairing_fetch_qr");
 }
 
 export async function fetchPairingQrImage(): Promise<PairingQrImage> {
   if (!isTauri()) {
-    throw new Error("Pairing requires the Medousa Home desktop app");
+    throw new Error("Pairing requires the Medousa desktop app");
   }
   return invoke<PairingQrImage>("pairing_fetch_qr_image");
 }

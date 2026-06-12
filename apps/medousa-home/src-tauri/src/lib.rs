@@ -40,6 +40,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(DaemonState::new())
+        .manage(daemon::local_inference::LocalInferenceStreamState::new())
         .setup(|_app| {
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -149,6 +150,16 @@ pub fn run() {
             wizard::wizard_advance,
             wizard::wizard_apply_screen1,
             wizard::wizard_complete,
+            daemon::local_inference::local_inference_hardware,
+            daemon::local_inference::local_inference_catalog,
+            daemon::local_inference::local_inference_models,
+            daemon::local_inference::local_inference_start_download,
+            daemon::local_inference::local_inference_download_status,
+            daemon::local_inference::local_inference_load_engine,
+            daemon::local_inference::local_inference_engine_status,
+            daemon::local_inference::local_inference_remove_model,
+            daemon::local_inference::local_inference_stream_download,
+            daemon::local_inference::local_inference_stream_download_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -156,7 +167,7 @@ pub fn run() {
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show Medousa Home", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -166,7 +177,7 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
         TrayIconBuilder::with_id("main-tray")
             .icon(icon)
             .menu(&menu)
-            .tooltip("Medousa Home")
+            .tooltip("Medousa")
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show_main_window(app),
                 "chat" => {

@@ -158,23 +158,23 @@ The workspace is a terminal interface with everything you need in one place. Tur
 
 It is fast. It connects to the background engine automatically. If the engine is not running, the workspace starts it.
 
-## Medousa Home
+## Medousa (the app)
 
-**Medousa Home** is the desktop workshop — a native app for chat, your vault library, live work board, and activity feed. Same engine as the terminal workspace; calmer surface for day-to-day use.
+**Medousa** is the product — chat, vault, work board, and your private brain in one native app. Same **Medousa Engine** as the terminal; a calmer surface for day-to-day use.
 
 **The Workshop** layout: labeled nav, chat with session drawer, vault tree + editor, kanban with card inspector, bottom work rail for in-motion jobs, system tray, and optional pop-out chat.
 
-**Run it** (daemon must be up):
+**Run it** (engine must be up for dev):
 
 ```bash
-medousa start daemon
+medousa start daemon --inference
 
 cd apps/medousa-home
 npm install
 npm run tauri dev
 ```
 
-**Connection** — Home talks to `medousa_daemon` over HTTP/SSE. Default base URL: `http://127.0.0.1:7419`. Override with `MEDOUSA_DAEMON_URL` or **Settings → Connection** in the app.
+**Connection** — Medousa talks to Medousa Engine over HTTP/SSE. Default: `http://127.0.0.1:7419`. Override with `MEDOUSA_DAEMON_URL` or **Settings → Connection**.
 
 **Build a release binary:**
 

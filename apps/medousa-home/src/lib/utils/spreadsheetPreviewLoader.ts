@@ -9,7 +9,7 @@ import { isTauri } from "$lib/window";
 
 export async function loadSpreadsheetPreview(path: string): Promise<SpreadsheetPreviewData> {
   if (!isTauri()) {
-    throw new Error("Spreadsheet preview needs the Medousa Home desktop app and a local file path.");
+    throw new Error("Spreadsheet preview needs the Medousa desktop app and a local file path.");
   }
 
   const payload = await readExternalFile(path);

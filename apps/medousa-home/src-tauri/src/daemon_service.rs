@@ -159,7 +159,26 @@ fn detach_new_session(command: &mut Command) {
 #[cfg(not(unix))]
 fn detach_new_session(_command: &mut Command) {}
 
-fn spawn_daemon_background(backend: &str, bind: &str) -> Result<(u32, PathBuf), String> {
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonStartRequest {
+    /// Load the private Gemma brain when the engine starts (`medousa_daemon --local-engine`).
+    #[serde(default)]
+    pub private_brain: bool,
+}
+
+fn should_load_private_brain(explicit: bool) -> bool {
+    if explicit {
+        return true;
+    }
+    load_tui_defaults_summary()
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|provider| provider.eq_ignore_ascii_case("medousa-local"))
+}
+
+fn spawn_daemon_background(backend: &str, bind: &str, private_brain: bool) -> Result<(u32, PathBuf), String> {
     let daemon = resolve_daemon_binary()?;
     let log_path = daemon_log_path();
     if let Some(parent) = log_path.parent() {
@@ -184,6 +203,9 @@ fn spawn_daemon_background(backend: &str, bind: &str) -> Result<(u32, PathBuf), 
     if let Some(model) = summary.model.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
         command.arg("--model").arg(model);
     }
+    if private_brain {
+        command.arg("--local-engine");
+    }
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));
@@ -199,7 +221,8 @@ fn spawn_daemon_background(backend: &str, bind: &str) -> Result<(u32, PathBuf), 
 }
 
 #[tauri::command]
-pub async fn daemon_start() -> Result<DaemonStartResult, String> {
+pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonStartResult, String> {
+    let private_brain = should_load_private_brain(request.map(|r| r.private_brain).unwrap_or(false));
     let base_url = DEFAULT_DAEMON_URL;
     if daemon_http_healthy(base_url).await {
         return Ok(DaemonStartResult {
@@ -207,25 +230,29 @@ pub async fn daemon_start() -> Result<DaemonStartResult, String> {
             already_running: true,
             pid: None,
             log_path: daemon_log_path().to_string_lossy().to_string(),
-            message: format!("Medousa Core already running at {base_url}"),
+            message: format!("Medousa Engine already running at {base_url}"),
         });
     }
 
     if is_bind_reachable(DEFAULT_BIND) {
         return Err(format!(
-            "Port {DEFAULT_BIND} is open but Core /health is not responding. Try restarting Medousa Core from Settings."
+            "Port {DEFAULT_BIND} is open but the engine is not responding. Try restarting from Settings → Basement."
         ));
     }
 
     let backend = resolve_backend();
-    let (pid, log_path) = spawn_daemon_background(&backend, DEFAULT_BIND)?;
+    let (pid, log_path) = spawn_daemon_background(&backend, DEFAULT_BIND, private_brain)?;
 
     Ok(DaemonStartResult {
         started: true,
         already_running: false,
         pid: Some(pid),
         log_path: log_path.to_string_lossy().to_string(),
-        message: format!("Starting Medousa Core (pid {pid})"),
+        message: if private_brain {
+            format!("Starting Medousa Engine with your private brain (pid {pid})")
+        } else {
+            format!("Starting Medousa Engine (pid {pid})")
+        },
     })
 }
 
@@ -248,7 +275,7 @@ pub async fn daemon_wait_healthy(
         if daemon_http_healthy(base_url).await {
             return Ok(DaemonWaitHealthResult {
                 ok: true,
-                message: format!("Medousa Core is ready at {base_url}"),
+                message: format!("Medousa Engine is ready at {base_url}"),
                 attempts,
             });
         }
@@ -258,7 +285,7 @@ pub async fn daemon_wait_healthy(
     Ok(DaemonWaitHealthResult {
         ok: false,
         message: format!(
-            "Medousa Core did not become ready within {}s — check {}",
+            "Medousa Engine did not become ready within {}s — check {}",
             request.timeout_seconds,
             daemon_log_path().display()
         ),

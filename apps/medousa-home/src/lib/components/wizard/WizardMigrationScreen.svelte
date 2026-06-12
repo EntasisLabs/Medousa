@@ -27,7 +27,7 @@
       Phone pairing and managed AI paths arrive in the next screens when you choose them.
     </li>
     <li class="rounded-lg border border-surface-500/35 bg-surface-950/50 px-4 py-3">
-      Medousa Core keeps running lean — durable workers, same daemon you already trust.
+      Medousa Engine keeps running lean — durable workers, same engine you already trust.
     </li>
   </ul>
 

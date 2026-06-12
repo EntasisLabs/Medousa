@@ -60,7 +60,7 @@
       connected = health.ok;
       statusMessage = health.ok
         ? health.message
-        : health.message || "Could not reach Medousa Core on your Mac";
+        : health.message || "Could not reach Medousa Engine on your Mac";
     } catch (err) {
       connected = false;
       statusMessage = err instanceof Error ? err.message : String(err);
@@ -85,7 +85,7 @@
       if (!connected) {
         wizard.error =
           statusMessage ??
-          "Could not reach your Mac yet — fix the URL or start Core with `medousa start daemon --public`.";
+          "Could not reach your Mac yet — fix the URL or start the engine with `medousa start daemon --public`.";
       }
       await wizard.continue("mobile-client");
     } finally {
@@ -105,7 +105,7 @@
   </h1>
   <p class="mt-3 text-sm leading-relaxed text-surface-300">
     Your phone is a window into the brain on your Mac. Models and memory live there — this app talks
-    to Medousa Core over your home Wi‑Fi.
+    to Medousa Engine over your home Wi‑Fi.
   </p>
 
   <div class="mt-6 rounded-xl border border-primary-500/35 bg-primary-500/10 p-5">

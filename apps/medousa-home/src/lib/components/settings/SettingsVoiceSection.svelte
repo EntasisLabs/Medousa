@@ -1,8 +1,26 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { LoaderCircle, Trash2 } from "@lucide/svelte";
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import {
+    ensureLocalModelReady,
+    fetchLocalCatalog,
+    fetchLocalEngineStatus,
+    fetchLocalHardware,
+    fetchLocalModels,
+    formatBytes,
+    loadLocalEngine,
+    removeLocalModel,
+    type InstalledLocalModel,
+    type LocalCatalogResponse,
+    type LocalEngineStatus,
+    type LocalHardwareResponse,
+    type ModelDownloadProgress,
+  } from "$lib/utils/localInferenceApi";
+  import { startEngine, waitForEngine } from "$lib/utils/providersApi";
 
   interface Props {
     mobile?: boolean;
@@ -10,7 +28,85 @@
 
   let { mobile = false }: Props = $props();
 
+  let localHardware = $state<LocalHardwareResponse | null>(null);
+  let localCatalog = $state<LocalCatalogResponse | null>(null);
+  let installedModels = $state<InstalledLocalModel[]>([]);
+  let engineStatus = $state<LocalEngineStatus | null>(null);
+  let localBusy = $state(false);
+  let localMessage = $state<string | null>(null);
+  let downloadProgress = $state<ModelDownloadProgress | null>(null);
+
   const readOnly = $derived(mobile && isTauriMobilePlatform());
+  const recommendedModelId = $derived(localCatalog?.recommendedModelId ?? null);
+
+  onMount(() => {
+    if (!readOnly) void refreshLocalPanel();
+  });
+
+  async function refreshLocalPanel() {
+    localBusy = true;
+    localMessage = null;
+    try {
+      await startEngine({ privateBrain: true });
+      const health = await waitForEngine(20);
+      if (!health.ok) {
+        localMessage = health.message;
+        return;
+      }
+      localHardware = await fetchLocalHardware();
+      localCatalog = await fetchLocalCatalog();
+      const models = await fetchLocalModels();
+      installedModels = models.installed;
+      engineStatus = await fetchLocalEngineStatus();
+    } catch (err) {
+      localMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      localBusy = false;
+    }
+  }
+
+  async function downloadRecommended() {
+    if (!recommendedModelId) return;
+    localBusy = true;
+    localMessage = "Downloading recommended Gemma 4 model…";
+    try {
+      downloadProgress = await ensureLocalModelReady(recommendedModelId);
+      await refreshLocalPanel();
+      localMessage = "Download complete.";
+    } catch (err) {
+      localMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      localBusy = false;
+      downloadProgress = null;
+    }
+  }
+
+  async function loadEngine(modelId: string) {
+    localBusy = true;
+    localMessage = "Loading local engine…";
+    try {
+      engineStatus = await loadLocalEngine(modelId);
+      localMessage = engineStatus.message;
+    } catch (err) {
+      localMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      localBusy = false;
+    }
+  }
+
+  async function removeModel(modelId: string) {
+    localBusy = true;
+    localMessage = null;
+    try {
+      await removeLocalModel(modelId);
+      await refreshLocalPanel();
+      localMessage = `Removed ${modelId}.`;
+    } catch (err) {
+      localMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      localBusy = false;
+    }
+  }
 
   function textField(key: "provider" | "model", event: Event) {
     workshopDefaults.draft = {
@@ -57,11 +153,11 @@
   <div class="mt-6 grid gap-4 sm:grid-cols-2">
     <label class="block">
       <span class="block text-sm font-medium text-surface-100">Provider</span>
-      <span class="workshop-faint mt-0.5 block text-xs">Who runs the model — e.g. ollama, openai</span>
+      <span class="workshop-faint mt-0.5 block text-xs">Who runs the model — e.g. medousa-local, ollama</span>
       <input
         class="input mt-2 w-full"
         value={workshopDefaults.draft.provider ?? ""}
-        placeholder="ollama"
+        placeholder="medousa-local"
         readonly={readOnly}
         disabled={readOnly}
         oninput={(event) => textField("provider", event)}
@@ -73,13 +169,117 @@
       <input
         class="input mt-2 w-full"
         value={workshopDefaults.draft.model ?? ""}
-        placeholder="qwen2.5:7b"
+        placeholder="gemma-4-12b-it"
         readonly={readOnly}
         disabled={readOnly}
         oninput={(event) => textField("model", event)}
       />
     </label>
   </div>
+
+  {#if !readOnly}
+    <div class="mt-8 border-t border-surface-500/35 pt-6">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold text-surface-50">Local Gemma brain</h3>
+          <p class="workshop-faint mt-1 text-xs">
+            Your private brain runs on this Mac through Medousa Engine — no Ollama required.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn variant-ghost min-h-9 text-sm"
+          disabled={localBusy}
+          onclick={() => void refreshLocalPanel()}
+        >
+          {#if localBusy}
+            <LoaderCircle class="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />
+          {/if}
+          Re-probe hardware
+        </button>
+      </div>
+
+      {#if localHardware}
+        <p class="mt-4 text-sm text-surface-200">
+          Tier <span class="font-medium">{localHardware.profile.tierLabel}</span>
+          ({localHardware.profile.tier}) — recommended
+          <span class="font-medium">{localHardware.profile.recommendedDisplayName}</span>
+        </p>
+      {/if}
+
+      {#if engineStatus}
+        <p class="workshop-faint mt-2 text-xs">
+          Engine: {engineStatus.loaded ? "ready" : "idle"}
+          {#if engineStatus.modelAlias}
+            · {engineStatus.modelAlias}
+          {/if}
+          · {engineStatus.baseUrl}
+        </p>
+      {/if}
+
+      {#if downloadProgress}
+        <div class="mt-4">
+          <div class="h-2 overflow-hidden rounded-full bg-surface-800">
+            <div
+              class="h-full rounded-full bg-primary-500 transition-all duration-300"
+              style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
+            ></div>
+          </div>
+          <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
+        </div>
+      {/if}
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="btn variant-soft-primary min-h-9 text-sm"
+          disabled={localBusy || !recommendedModelId}
+          onclick={() => void downloadRecommended()}
+        >
+          Download recommended Gemma 4
+        </button>
+      </div>
+
+      {#if installedModels.length > 0}
+        <ul class="mt-4 space-y-2">
+          {#each installedModels as entry (entry.modelId)}
+            <li class="settings-depth-card flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-medium text-surface-100">{entry.modelId}</p>
+                <p class="workshop-faint text-xs">
+                  {formatBytes(entry.bytesOnDisk)} on disk · {entry.verified ? "verified" : "pending"}
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="btn variant-ghost min-h-9 text-sm"
+                  disabled={localBusy}
+                  onclick={() => void loadEngine(entry.modelId)}
+                >
+                  Load
+                </button>
+                <button
+                  type="button"
+                  class="btn variant-ghost min-h-9 text-sm text-warning-200"
+                  disabled={localBusy}
+                  onclick={() => void removeModel(entry.modelId)}
+                >
+                  <Trash2 class="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {:else if localHardware?.engineAvailable}
+        <p class="workshop-faint mt-4 text-sm">No local models installed yet.</p>
+      {/if}
+
+      {#if localMessage}
+        <p class="mt-4 text-sm text-surface-300">{localMessage}</p>
+      {/if}
+    </div>
+  {/if}
 
   <div class="mt-6 border-t border-surface-500/35 pt-5">
     <SettingsCharterSaveBar {mobile} />

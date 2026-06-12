@@ -73,12 +73,12 @@ fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
 
 fn pairing_unavailable_message(status: reqwest::StatusCode, body: &str) -> String {
     if status.as_u16() == 404 {
-        return "LAN pairing is not enabled on Medousa Core. Restart Core without MEDOUSA_PAIRING_DISABLE.".to_string();
+        return "LAN pairing is not enabled on Medousa Engine. Restart the engine without MEDOUSA_PAIRING_DISABLE.".to_string();
     }
     if body.trim().is_empty() {
-        format!("Medousa Core returned HTTP {}", status)
+        format!("Medousa Engine returned HTTP {}", status)
     } else {
-        format!("Medousa Core returned HTTP {}: {}", status, body.trim())
+        format!("Medousa Engine returned HTTP {}: {}", status, body.trim())
     }
 }
 
@@ -90,7 +90,7 @@ pub async fn pairing_fetch_qr(state: State<'_, DaemonState>) -> Result<PairingQr
         .get(format!("{base}/qr"))
         .send()
         .await
-        .map_err(|err| format!("cannot reach Medousa Core at {base}: {err}"))?;
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -112,7 +112,7 @@ pub async fn pairing_fetch_qr_image(
         .get(format!("{base}/qr"))
         .send()
         .await
-        .map_err(|err| format!("cannot reach Medousa Core at {base}: {err}"))?;
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
     if !qr_response.status().is_success() {
         let status = qr_response.status();
         let body = qr_response.text().await.unwrap_or_default();
@@ -152,7 +152,7 @@ pub async fn pairing_fetch_status(
         .get(format!("{base}/pair/status"))
         .send()
         .await
-        .map_err(|err| format!("cannot reach Medousa Core at {base}: {err}"))?;
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -179,7 +179,7 @@ pub async fn pairing_revoke(
         .delete(format!("{base}/pair/{trimmed}"))
         .send()
         .await
-        .map_err(|err| format!("cannot reach Medousa Core at {base}: {err}"))?;
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
     if response.status().is_success() || response.status().as_u16() == 204 {
         return Ok(());
     }

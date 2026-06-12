@@ -108,7 +108,7 @@
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         {#if step === 1}
           <p class="text-sm leading-relaxed text-surface-300">
-            Medousa Home is your garage — journals, projects, budgets, and the files you already
+            Medousa is your garage — journals, projects, budgets, and the files you already
             have. Markdown underneath. Human on top.
           </p>
 

@@ -1,4 +1,6 @@
-# Medousa Home
+# Medousa
+
+Native desktop and mobile app for Medousa — chat, vault, pairing, and your private brain.
 
 Tauri v2 + SvelteKit + Skeleton UI v2 workshop shell for Medousa.
 

@@ -15,7 +15,7 @@ export interface ExternalFilePayload {
 
 export async function readExternalFile(path: string): Promise<ExternalFilePayload> {
   if (!isTauri()) {
-    throw new Error("File read needs the Medousa Home desktop app.");
+    throw new Error("File read needs the Medousa desktop app.");
   }
   return invoke<ExternalFilePayload>("external_desk_read_file", { path });
 }

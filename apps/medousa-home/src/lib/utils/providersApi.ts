@@ -83,19 +83,24 @@ export async function validateProviderKey(
   return invoke<ProvidersValidateKeyResult>("providers_validate_key", { request });
 }
 
-export async function startDaemonCore(): Promise<DaemonStartResult> {
+export async function startEngine(options?: { privateBrain?: boolean }): Promise<DaemonStartResult> {
   if (!isTauri()) {
     return {
       started: false,
       alreadyRunning: false,
       logPath: "",
-      message: "Start Medousa Core from the terminal in dev browser mode",
+      message: "Open the Medousa app (browser dev mode cannot start the engine)",
     };
   }
-  return invoke<DaemonStartResult>("daemon_start");
+  return invoke<DaemonStartResult>("daemon_start", {
+    request: { privateBrain: options?.privateBrain ?? false },
+  });
 }
 
-export async function waitForDaemonCore(
+/** @deprecated Use startEngine */
+export const startDaemonCore = startEngine;
+
+export async function waitForEngine(
   timeoutSeconds = 30,
 ): Promise<DaemonWaitHealthResult> {
   if (!isTauri()) {
@@ -106,13 +111,16 @@ export async function waitForDaemonCore(
   });
 }
 
+/** @deprecated Use waitForEngine */
+export const waitForDaemonCore = waitForEngine;
+
 export async function applyWizardScreen1(
   request: WizardApplyScreen1Request,
 ): Promise<WizardApplyScreen1Result> {
   if (!isTauri()) {
     return {
       coreReady: false,
-      coreMessage: "Saved locally in dev mode — run the desktop app to start Core",
+      coreMessage: "Saved locally in dev mode — open the Medousa app to start the engine",
       provider: request.provider,
       model: request.model,
     };

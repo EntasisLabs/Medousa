@@ -30,7 +30,7 @@ pub fn compose_turn_budget_notify_text(payload: &TurnBudgetNotifyPayload) -> Str
         "Medousa turn paused at {}/{} tool rounds.\n\
          Requesting +{} rounds: {}\n\
          Request id: `{}`\n\
-         Approve or deny in Medousa Home (Blocked) or open: {deep_link}{progress}",
+         Approve or deny in Medousa (Blocked) or open: {deep_link}{progress}",
         payload.rounds_executed,
         payload.max_tool_rounds,
         payload.requested_rounds,

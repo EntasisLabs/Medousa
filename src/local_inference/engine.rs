@@ -230,6 +230,8 @@ pub fn config_from_catalog_entry(
     entry: &super::catalog::CatalogModelEntry,
     bind: Option<String>,
 ) -> LocalEngineConfig {
+    let model_repo =
+        super::store::local_repo_if_installed(&entry.id).unwrap_or_else(|| entry.repo.clone());
     let uqff_file = entry
         .engine_args
         .get("uqffFile")
@@ -243,7 +245,7 @@ pub fn config_from_catalog_entry(
     let use_uqff = uqff_file.is_some();
     LocalEngineConfig {
         bind: bind.unwrap_or_else(|| DEFAULT_LOCAL_ENGINE_BIND.to_string()),
-        model_repo: entry.repo.clone(),
+        model_repo,
         model_alias: entry.id.clone(),
         from_uqff: uqff_file,
         in_situ_quant: if use_uqff {

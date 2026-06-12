@@ -1,7 +1,7 @@
 {
   "name": "medousa-home",
   "version": "0.1.0",
-  "description": "Medousa Home — Tauri workshop UI",
+  "description": "Medousa — Life Manageable",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

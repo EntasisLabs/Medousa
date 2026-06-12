@@ -42,7 +42,7 @@
       try {
         previewUrl = await attachmentPreviewUrl(current.path);
         if (!previewUrl) {
-          previewError = "Preview needs the Medousa Home desktop app and a local file path.";
+          previewError = "Preview needs the Medousa desktop app and a local file path.";
         }
       } catch (err) {
         previewError = err instanceof Error ? err.message : String(err);

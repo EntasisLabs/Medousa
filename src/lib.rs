@@ -64,6 +64,7 @@ pub mod identity_write_policy;
 pub mod locus_handlers;
 pub mod locus_memory;
 pub mod local_inference;
+pub mod local_inference_cli;
 pub mod local_inference_handlers;
 pub mod memory_tools;
 pub mod tool_aliases;

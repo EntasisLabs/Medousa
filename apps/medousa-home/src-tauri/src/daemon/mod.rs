@@ -2,6 +2,7 @@ pub mod artifact;
 pub mod catalog;
 pub mod identity;
 pub mod jobs;
+pub mod local_inference;
 pub mod locus;
 pub mod recurring;
 pub mod runtime;

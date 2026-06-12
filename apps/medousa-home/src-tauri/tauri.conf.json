@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Medousa Home",
+  "productName": "Medousa",
   "version": "0.1.0",
   "identifier": "com.entasislabs.medousa-home",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Medousa Home",
+        "title": "Medousa",
         "width": 1440,
         "height": 900,
         "minWidth": 960,

@@ -400,7 +400,11 @@ pub async fn wizard_apply_screen1(
     let mut core_message = "Provider saved".to_string();
 
     if request.start_core {
-        let start = daemon_start().await?;
+        let private_brain = request.path.eq_ignore_ascii_case("offline");
+        let start = daemon_start(Some(crate::daemon_service::DaemonStartRequest {
+            private_brain,
+        }))
+        .await?;
         core_message = if start.already_running {
             start.message
         } else {

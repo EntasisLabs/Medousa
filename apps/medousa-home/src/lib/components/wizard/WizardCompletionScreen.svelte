@@ -3,14 +3,14 @@
   import { LoaderCircle } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { checkDaemonHealth, type DaemonHealth } from "$lib/daemon";
-  import { startDaemonCore, waitForDaemonCore } from "$lib/utils/providersApi";
+  import { startEngine, waitForEngine } from "$lib/utils/providersApi";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
 
   let health = $state<DaemonHealth | null>(null);
   let checking = $state(true);
   let starting = $state(false);
-  let statusLine = $state("Checking Medousa Core…");
+  let statusLine = $state("Checking the engine…");
 
   onMount(() => {
     void ensureCoreReady();
@@ -40,9 +40,9 @@
       }
 
       starting = true;
-      statusLine = "Starting Medousa Core…";
-      await startDaemonCore();
-      const wait = await waitForDaemonCore(30);
+      statusLine = "Starting the engine…";
+      await startEngine();
+      const wait = await waitForEngine(30);
       health = await checkDaemonHealth();
       statusLine = wait.ok ? wait.message : wait.message;
     } catch (err) {
@@ -62,11 +62,11 @@
       {#if isTauriMobilePlatform()}
         Connected to your Mac workshop. Your brain is online — open Chat when you're ready.
       {:else}
-        Medousa Core is running. Your brain is online. Ask me anything when you're back in the
+        The engine is running. Your brain is online. Ask me anything when you're back in the
         workshop.
       {/if}
     {:else}
-      Your model is configured. Medousa Core may still be starting — you can retry from Settings if
+      Your model is configured. The engine may still be starting — you can retry from Settings if
       chat doesn't connect.
     {/if}
   </p>

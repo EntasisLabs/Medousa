@@ -66,7 +66,7 @@
     error = null;
     try {
       if (!isTauri()) {
-        error = "Phone pairing runs in the Medousa Home desktop app with Core online.";
+        error = "Phone pairing runs in the Medousa desktop app with the engine online.";
         return;
       }
       const health = await checkDaemonHealth();
@@ -165,7 +165,7 @@
     </div>
   {:else if !coreOnline}
     <div class="rounded-xl border border-warning-500/35 bg-warning-500/10 px-4 py-4 text-sm text-warning-100">
-      Medousa Core is offline. Finish Screen 1 setup or start Core from Settings → Basement before
+      The engine is offline. Finish Screen 1 setup or start it from Settings → Basement before
       pairing your phone.
     </div>
   {:else if connectedDevice}
@@ -239,7 +239,7 @@
         <p class="workshop-faint mt-1 text-xs leading-relaxed">{bonjour.message}</p>
         {#if bonjour.deviceId}
           <p class="workshop-faint mt-2 font-mono text-[11px]">
-            Core ID {bonjour.deviceId}
+            Engine ID {bonjour.deviceId}
             {#if bonjour.peerName}
               · {bonjour.peerName}
             {/if}
@@ -302,7 +302,7 @@
       <ul class="list-disc space-y-2 pl-5 text-xs">
         <li>Phone and Mac must be on the same Wi‑Fi (guest networks often block LAN discovery).</li>
         <li>
-          For automatic discovery, start Core with
+          For automatic discovery, start the engine with
           <span class="font-mono text-surface-200">medousa start daemon --public</span>.
         </li>
         <li>QR pairing works even when Bonjour is blocked — scan or use the short code.</li>

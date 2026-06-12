@@ -9,9 +9,9 @@ pub fn tray_update_blocked_count(app: AppHandle, blocked_count: u32) -> Result<(
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         let tooltip = if blocked_count > 0 {
-            format!("Medousa Home · {blocked_count} blocked")
+            format!("Medousa · {blocked_count} blocked")
         } else {
-            "Medousa Home".to_string()
+            "Medousa".to_string()
         };
 
         if let Some(tray) = app.tray_by_id("main-tray") {

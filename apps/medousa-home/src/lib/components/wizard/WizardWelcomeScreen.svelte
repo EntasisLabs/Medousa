@@ -10,9 +10,22 @@
   import { wizard } from "$lib/stores/wizard.svelte";
   import {
     probeProviders,
+    startEngine,
     validateProviderKey,
+    waitForEngine,
     type ProvidersProbeResult,
   } from "$lib/utils/providersApi";
+  import {
+    ensureLocalModelReady,
+    fetchLocalCatalog,
+    fetchLocalHardware,
+    formatBytes,
+    loadLocalEngine,
+    type LocalCatalogModel,
+    type LocalCatalogResponse,
+    type LocalHardwareResponse,
+    type ModelDownloadProgress,
+  } from "$lib/utils/localInferenceApi";
 
   type WizardPath = "managed" | "byok" | "offline";
   type ByokProvider = "openai" | "anthropic" | "google" | "ollama";
@@ -33,8 +46,24 @@
   let validating = $state(false);
   let statusMessage = $state<string | null>(null);
 
+  let localHardware = $state<LocalHardwareResponse | null>(null);
+  let localCatalog = $state<LocalCatalogResponse | null>(null);
+  let offlineModelId = $state<string | null>(null);
+  let localLoading = $state(false);
+  let downloadProgress = $state<ModelDownloadProgress | null>(null);
+
   const networkOnline = $derived(probe?.networkOnline ?? true);
   const ollamaReady = $derived(probe?.ollamaDetected ?? false);
+  const recommendedOfflineModel = $derived.by(() => {
+    const catalog = localCatalog;
+    if (!catalog) return null;
+    return (
+      catalog.models.find((entry) => entry.id === catalog.recommendedModelId) ??
+      catalog.models.find((entry) => entry.tierRecommended) ??
+      catalog.models[0] ??
+      null
+    );
+  });
 
   onMount(() => {
     void refreshProbe();
@@ -45,7 +74,7 @@
     statusMessage = null;
     try {
       probe = await probeProviders();
-      if (byokProvider === "ollama" || selectedPath === "offline") {
+      if (byokProvider === "ollama" && selectedPath === "byok") {
         model = probe.suggestedOllamaModel ?? "llama3.2";
       }
       if (!probe.networkOnline && selectedPath === "managed") {
@@ -58,13 +87,40 @@
     }
   }
 
+  async function refreshLocalInference() {
+    localLoading = true;
+    statusMessage = null;
+    try {
+      await startEngine({ privateBrain: true });
+      const health = await waitForEngine(30);
+      if (!health.ok) {
+        statusMessage = health.message;
+        return;
+      }
+      localHardware = await fetchLocalHardware();
+      localCatalog = await fetchLocalCatalog();
+      offlineModelId = localCatalog.recommendedModelId;
+    } catch (err) {
+      statusMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      localLoading = false;
+    }
+  }
+
   function selectPath(path: WizardPath) {
     selectedPath = path;
     statusMessage = null;
-    if (path === "offline" || (path === "byok" && byokProvider === "ollama")) {
-      byokProvider = "ollama";
+    downloadProgress = null;
+    if (path === "byok" && byokProvider === "ollama") {
       model = probe?.suggestedOllamaModel ?? "llama3.2";
     }
+    if (path === "offline") {
+      void refreshLocalInference();
+    }
+  }
+
+  function selectOfflineModel(entry: LocalCatalogModel) {
+    offlineModelId = entry.id;
   }
 
   function selectByokProvider(provider: ByokProvider) {
@@ -81,15 +137,65 @@
     }
   }
 
+  async function continueOfflineSetup() {
+    const modelId = offlineModelId ?? localCatalog?.recommendedModelId;
+    if (!modelId) {
+      statusMessage = "Pick a Gemma 4 model size first.";
+      return;
+    }
+
+    validating = true;
+    statusMessage = "Starting the engine…";
+    wizard.error = null;
+
+    try {
+      await startEngine({ privateBrain: true });
+      const health = await waitForEngine(60);
+      if (!health.ok) {
+        statusMessage = health.message;
+        return;
+      }
+
+      statusMessage = "Downloading Gemma 4 — this may take a while on first setup…";
+      downloadProgress = await ensureLocalModelReady(modelId, (progress) => {
+        downloadProgress = progress;
+      });
+
+      statusMessage = "Loading local brain…";
+      const engine = await loadLocalEngine(modelId);
+      if (!engine.loaded) {
+        statusMessage = engine.message;
+        return;
+      }
+
+      await wizard.applyScreen1Setup({
+        path: "offline",
+        provider: "medousa-local",
+        model: modelId,
+        baseUrl: engine.baseUrl,
+        startCore: false,
+      });
+    } catch (err) {
+      statusMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      validating = false;
+      downloadProgress = null;
+    }
+  }
+
   async function continueSetup() {
     if (!selectedPath || selectedPath === "managed") return;
+    if (selectedPath === "offline") {
+      await continueOfflineSetup();
+      return;
+    }
 
     validating = true;
     statusMessage = null;
     wizard.error = null;
 
     try {
-      const provider = selectedPath === "offline" ? "ollama" : byokProvider;
+      const provider = byokProvider;
       const validation = await validateProviderKey({
         provider,
         apiKey: provider === "ollama" ? "" : apiKey,
@@ -119,12 +225,30 @@
   }
 
   const canContinue = $derived.by(() => {
-    if (wizard.busy || validating || probing) return false;
+    if (wizard.busy || validating || probing || localLoading) return false;
     if (!selectedPath || selectedPath === "managed") return false;
-    if (selectedPath === "offline" || byokProvider === "ollama") {
+    if (selectedPath === "offline") {
+      return Boolean(
+        localCatalog &&
+          localHardware?.engineAvailable &&
+          (offlineModelId ?? localCatalog.recommendedModelId),
+      );
+    }
+    if (byokProvider === "ollama") {
       return ollamaReady && model.trim().length > 0;
     }
     return apiKey.trim().length > 0 && model.trim().length > 0;
+  });
+
+  const continueLabel = $derived.by(() => {
+    if (validating || wizard.busy) {
+      if (selectedPath === "offline" && downloadProgress) {
+        return `Downloading ${Math.round(downloadProgress.percent)}%`;
+      }
+      return "Starting the engine…";
+    }
+    if (selectedPath === "offline") return "Download Gemma 4 & continue";
+    return "Continue";
   });
 </script>
 
@@ -160,8 +284,8 @@
           <p class="font-semibold text-surface-50">Recommended — Managed AI</p>
           <p class="mt-1 text-sm text-surface-300">
             {#if networkOnline}
-              Medousa Cloud provisioning lands in a future update — use your own key or Ollama
-              today.
+              Medousa Cloud provisioning lands in a future update — use your own key or Gemma 4
+              offline today.
             {:else}
               <span class="inline-flex items-center gap-1 text-warning-200">
                 <WifiOff class="h-3.5 w-3.5" aria-hidden="true" />
@@ -259,17 +383,56 @@
     >
       <div class="flex items-start gap-3 text-left">
         <WifiOff class="mt-0.5 h-5 w-5 shrink-0 text-surface-300" aria-hidden="true" />
-        <div class="min-w-0">
-          <p class="font-semibold text-surface-50">Offline — local only</p>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-surface-50">Offline — Gemma 4 on this Mac</p>
           <p class="mt-1 text-sm text-surface-300">
-            {#if ollamaReady}
-              Ollama detected — private inference on this machine, no cloud required.
+            {#if localLoading}
+              Probing hardware and picking the right Gemma 4 size…
+            {:else if localHardware && recommendedOfflineModel}
+              Your Mac is <strong class="text-surface-100">{localHardware.profile.tierLabel}</strong>
+              — we recommend
+              <strong class="text-surface-100">{recommendedOfflineModel.displayName}</strong>
+              (~{formatBytes(recommendedOfflineModel.sizeBytes)} download).
+            {:else if localHardware && !localHardware.engineAvailable}
+              Rebuild Medousa Engine with embedded inference enabled, then try again.
             {:else}
-              Install Ollama from ollama.com, pull a model, then come back and tap Try again.
+              Private inference on this machine — no cloud, no Ollama required.
             {/if}
           </p>
-          {#if selectedPath === "offline" && ollamaReady}
-            <p class="mt-2 text-xs text-primary-200">Model: {model}</p>
+
+          {#if selectedPath === "offline" && localCatalog}
+            <div class="mt-4 space-y-2 border-t border-surface-500/30 pt-4">
+              {#each localCatalog.models as entry (entry.id)}
+                <button
+                  type="button"
+                  class="settings-depth-card w-full text-left {(offlineModelId ?? localCatalog.recommendedModelId) === entry.id
+                    ? 'settings-depth-card-active'
+                    : ''}"
+                  disabled={wizard.busy || validating}
+                  onclick={() => selectOfflineModel(entry)}
+                >
+                  <span class="block text-sm font-medium text-surface-100">{entry.displayName}</span>
+                  <span class="workshop-faint mt-1 block text-xs">
+                    ~{formatBytes(entry.sizeBytes)} · tier {entry.tierMin}–{entry.tierMax}
+                    {#if entry.tierRecommended}
+                      · recommended
+                    {/if}
+                  </span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if downloadProgress && selectedPath === "offline"}
+            <div class="mt-3">
+              <div class="h-2 overflow-hidden rounded-full bg-surface-800">
+                <div
+                  class="h-full rounded-full bg-primary-500 transition-all duration-300"
+                  style:width="{Math.max(4, Math.round(downloadProgress.percent))}%"
+                ></div>
+              </div>
+              <p class="workshop-faint mt-2 text-xs">{downloadProgress.message}</p>
+            </div>
           {/if}
         </div>
       </div>
@@ -293,8 +456,11 @@
     <button
       type="button"
       class="btn variant-ghost min-h-11"
-      disabled={wizard.busy || probing}
-      onclick={() => void refreshProbe()}
+      disabled={wizard.busy || probing || localLoading}
+      onclick={() => {
+        void refreshProbe();
+        if (selectedPath === "offline") void refreshLocalInference();
+      }}
     >
       Try again
     </button>
@@ -306,9 +472,9 @@
     >
       {#if validating || wizard.busy}
         <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
-        Starting Medousa Core…
+        {continueLabel}
       {:else}
-        Continue
+        {continueLabel}
         <ChevronRight class="h-4 w-4" aria-hidden="true" />
       {/if}
     </button>

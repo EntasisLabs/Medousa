@@ -10,11 +10,63 @@
 
 **Download → chat in 90 seconds, zero terminal.**
 
-A normie opens Medousa Home, picks how the brain thinks, optionally pairs a phone on the same Wi‑Fi, and lands in chat. No `medousa setup`, no daemon jargon, no JSON files.
+A normie opens **Medousa**, picks how the brain thinks, optionally pairs a phone on the same Wi‑Fi, and lands in chat. No `medousa setup`, no engine jargon, no JSON files.
 
 Marketing line: *Your second brain — always here, always yours, always private.*
 
 The daemon already idles at ~27 MB with full orchestration (Stasis, durable workers, identity). Onboarding must feel as light as that footprint.
+
+---
+
+## Product naming (locked)
+
+| Surface | Name | Never say |
+|---------|------|-----------|
+| **The app** | **Medousa** | Medousa Home, workshop UI |
+| **The backend** | **Medousa Engine** (or “the engine”) | daemon, Core, axum, SurrealDB |
+| **Private model** | your private brain / Gemma | medousa-local, HF repo, mistral.rs |
+
+Repo paths like `apps/medousa-home` stay for now — **user-facing copy is always Medousa + Engine**.
+
+---
+
+## Normie-first setup flow (product)
+
+**Two audiences, one product — never conflate them in copy or defaults.**
+
+| Audience | Entry | What they see | Terminal? |
+|----------|-------|---------------|-----------|
+| **Normie (primary)** | **Medousa.app** | Welcome wizard → “How should I think?” → optional account → optional phone → chat | **Never required** |
+| **Power user** | `medousa setup` / `medousa models` / `medousa doctor` | TUI wizard, CLI model management, diagnostics | Optional |
+
+### Normie journey (target)
+
+1. **Install** — drag **Medousa** to Applications (release ships Engine with embedded inference baked in).
+2. **First open** — Medousa starts **the engine** automatically (`daemon_start` IPC). Copy: “Starting the engine…” — never “daemon”.
+3. **Screen 1 — Offline (default when no cloud)** — hardware probe → recommended Gemma 4 → license accept → “Downloading your private brain…” → auto-load → chat.
+4. **Chat** — composer focused; no provider/model fields visible.
+5. **Settings** — Voice panel for re-download / smaller model; **Advanced** collapsible for raw provider strings.
+
+### Copy & UX rules
+
+- Say **Medousa Engine** or **the engine**, never “daemon”, “Core”, “axum”, “SurrealDB”, “HF repo”.
+- Errors: human sentence + **Try again** / **Use a smaller model** — never raw mistral.rs stderr in the wizard.
+- Progress: percent + “About X minutes on your connection” — no job IDs unless Advanced.
+- Managed AI card greyed when offline; **Offline path is the hero** until cloud ships.
+
+### Power-user parity (CLI, not normie path)
+
+- `medousa start daemon --inference` — dev-only Core start with private brain (aliases: `--local-engine`, `--private-brain`)
+- `medousa doctor --local-engine` — tier, installed models, engine on `:7421`, HF token hint.
+- `medousa setup` remains TUI; completion prints “Open Medousa” as the recommended next step.
+
+### Release / packaging gaps (still open)
+
+- [ ] Ship `medousa_daemon` with `embedded-inference-metal` in Home bundle (no cargo flags for end users).
+- [ ] `install.sh` / README primary CTA = **Open Medousa**, not `cargo run`.
+- [ ] Wizard: Gemma license gate before first download; cache in `wizard.json`.
+- [ ] Settings Voice: hide provider/model text fields behind **Advanced**.
+- [ ] Optional: `medousa onboard --gui` opens Medousa (TUI stays for `--advanced`).
 
 ---
 
@@ -30,7 +82,7 @@ These resolve conflicts between the pairing protocol draft and the first-run wiz
 | Default port | **`7419`** (`DEFAULT_DAEMON_PORT`) unless overridden | Already in `daemon_api.rs`; wizard draft’s `4737` is wrong |
 | LAN bind | **`--public`** → `0.0.0.0:{port}` for pairing; Home stays on localhost IPC | Reuse `detect_lan_ipv4()` + `resolve_mobile_client_daemon_url()` |
 | Config files | **Extend existing on-disk layout** — no silent `config.toml` migration in v1 | `product_config.json`, `tui_defaults.json`, new `wizard.json` |
-| UI terminology | **“Medousa Core”** in wizard copy — never “daemon”, “SurrealDB”, “backend” | Wizard spec brand voice |
+| UI terminology | **“Medousa Engine”** in wizard copy — never “daemon”, “SurrealDB”, “backend” | Wizard brand voice |
 | Garage wizard | **Separate** from product first-run wizard | M8f `garageOnboarding` is Vault-only localStorage |
 | Session after restart | **Pairing identity persists**; bearer token refreshes via stored keys | Avoid “scan QR every reboot” |
 | Managed AI / cloud auth | **Screen 2 stub OK for v1 prod** — Skip must work | BYOM + Ollama + offline path ship without Medousa Cloud |
@@ -48,7 +100,7 @@ flowchart TB
         DONE[Completion → chat]
     end
 
-    subgraph core [Medousa Core — medousa_daemon]
+    subgraph engine [Medousa Engine — medousa_daemon]
         AXUM[axum HTTP :7419 or --public]
         PAIR[/pair/* /qr /qr.png]
         AGENT[Agent runtime + Stasis]
@@ -128,7 +180,7 @@ Magic link + Apple/Google SSO → `medousa://auth/callback?token=…` (deep link
 - States: waiting → connected → failed/retry.
 - **I'll do this later** → `pairing.status = skipped`; re-enter from Settings → Phone.
 
-Pre-flight via IPC: Core running, mDNS registered (when enabled), identity key present. If Core down: “Starting Medousa Core…” spinner → `daemon_start` IPC.
+Pre-flight via IPC: Engine running, mDNS registered (when enabled), identity key present. If engine down: “Starting the engine…” spinner → `daemon_start` IPC.
 
 ### Completion
 

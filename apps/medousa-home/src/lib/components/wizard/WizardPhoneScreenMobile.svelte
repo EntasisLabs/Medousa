@@ -25,7 +25,7 @@
   >
     <Smartphone class="h-10 w-10 text-primary-300" aria-hidden="true" />
     <p class="mt-4 text-sm text-surface-300">
-      To register this phone for LAN pairing later, open <span class="text-surface-100">Medousa Home on your Mac → Settings → Phone</span>
+      To register this phone for LAN pairing later, open <span class="text-surface-100">Medousa on your Mac → Settings → Phone</span>
       and scan from a future phone build — or skip for now.
     </p>
   </div>

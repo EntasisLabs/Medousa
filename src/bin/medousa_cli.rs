@@ -268,11 +268,14 @@ async fn run_daemon_first_run(daemon_url: &str, args: &[String]) -> Result<()> {
 
     let report_query = find_arg_value(args, "--report-query")
         .unwrap_or("Summarize runtime posture with citations");
-    println!("next step: trigger report flow");
+    println!("next step: open Medousa and chat, or trigger a report from the CLI");
     println!(
-        "  cargo run -p medousa --bin medousa_cli -- daemon-report \"{}\" --daemon-url {} --poll-timeout-ms 30000",
+        "  medousa-cli daemon-report \"{}\" --daemon-url {} --poll-timeout-ms 30000",
         report_query,
         daemon_url
+    );
+    println!(
+        "offline brain: open Medousa welcome wizard, or: medousa models probe"
     );
     println!(
         "safety posture interactive_profile={} scheduled_profile={}",

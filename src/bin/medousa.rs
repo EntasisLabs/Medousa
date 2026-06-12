@@ -75,6 +75,7 @@ fn main() -> Result<()> {
         "workspace" => run_workspace(&args[1..]),
         "vault" => run_vault(&args[1..]),
         "pair" => pair_cli::run_pair(&args[1..]),
+        "models" => medousa::local_inference_cli::run_models_command(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -530,6 +531,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
             bind: daemon_bind.clone(),
             health_url: selected.daemon_url.clone(),
             mobile_url: None,
+            private_brain: false,
         };
         if daemon_http_healthy(&plan.health_url) {
             print_daemon_ready_messages(&plan, true);
@@ -695,6 +697,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
         )
         .green()
     );
+    medousa::local_inference_cli::print_normie_home_hint();
 
     if selected.launch_tui {
         println!("{}", "Launching Medousa chat...".magenta().bold());
@@ -748,13 +751,21 @@ fn run_daemon(args: &[String]) -> Result<()> {
 
     let mut passthrough = drop_flag_value_pair(args, "--backend");
     passthrough = drop_flag_value_pair(&passthrough, "--bind");
-    passthrough.retain(|arg| arg != "--public");
+    passthrough.retain(|arg| {
+        arg != "--public"
+            && arg != "--inference"
+            && arg != "--local-engine"
+            && arg != "--private-brain"
+    });
 
     let daemon = resolve_component_command("medousa_daemon")?;
     let mut command = Command::new(&daemon.program);
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(&plan.bind);
+    if plan.private_brain {
+        command.arg("--local-engine");
+    }
     if let Some(mobile_url) = &plan.mobile_url {
         command.env("MEDOUSA_DAEMON_PUBLIC_URL", mobile_url);
     }
@@ -1016,7 +1027,8 @@ fn run_whatsapp(args: &[String]) -> Result<()> {
     }
 }
 
-fn run_doctor(_args: &[String]) -> Result<()> {
+fn run_doctor(args: &[String]) -> Result<()> {
+    let local_engine_verbose = has_flag(args, "--local-engine");
     let defaults = load_tui_defaults();
     let profile = load_onboard_profile();
     let mut product_config = load_product_config();
@@ -1102,11 +1114,11 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         println!("dashboard_url={}", daemon_dashboard_url(&daemon_url));
     }
     println!(
-        "medousa_home={} (Tauri workshop UI — cd apps/medousa-home && npm run tauri dev)",
+        "medousa_app={} (open Medousa — that's the product)",
         if daemon_http.healthy {
             "ready"
         } else {
-            "needs daemon http_health=ok"
+            "open Medousa to start the engine"
         }
     );
     if let Some(lock_path) = surrealkv_lock_path(&backend) {
@@ -1380,7 +1392,7 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         if daemon_tcp_reachable {
             println!("next: medousa start daemon-restart");
         } else {
-            println!("next: medousa start daemon  (or medousa setup)");
+            println!("next: open Medousa  (or: medousa start daemon --inference for dev)");
         }
     }
 
@@ -1491,6 +1503,12 @@ fn run_doctor(_args: &[String]) -> Result<()> {
         "{}",
         "[hint] For DOM/browser automation, register a browser MCP server (Playwright, Puppeteer, etc.) in ~/.config/medousa/mcp-gateway.toml — Medousa uses MCP BYOB, not native browser."
             .blue()
+    );
+
+    medousa::local_inference_cli::print_doctor_local_inference(
+        &daemon_url,
+        daemon_http.healthy,
+        local_engine_verbose,
     );
 
     Ok(())
@@ -1954,6 +1972,17 @@ struct DaemonLaunchPlan {
     bind: String,
     health_url: String,
     mobile_url: Option<String>,
+    /// Load Gemma on this Mac at Core startup (`medousa_daemon --local-engine`).
+    private_brain: bool,
+}
+
+fn wants_private_brain(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        matches!(
+            arg.as_str(),
+            "--inference" | "--local-engine" | "--private-brain"
+        )
+    })
 }
 
 fn resolve_daemon_launch_plan(
@@ -1961,6 +1990,7 @@ fn resolve_daemon_launch_plan(
     profile: &OnboardProfile,
     product: &ProductConfig,
 ) -> DaemonLaunchPlan {
+    let private_brain = wants_private_brain(args);
     let explicit_daemon_url = find_arg_value(args, "--daemon-url")
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1981,6 +2011,7 @@ fn resolve_daemon_launch_plan(
             bind,
             health_url,
             mobile_url,
+            private_brain,
         };
     }
 
@@ -1992,6 +2023,7 @@ fn resolve_daemon_launch_plan(
         bind,
         health_url,
         mobile_url: None,
+        private_brain,
     }
 }
 
@@ -2116,12 +2148,19 @@ fn print_daemon_ready_messages(plan: &DaemonLaunchPlan, already_running: bool) {
     if already_running {
         println!(
             "{}",
-            format!("[ok] Daemon healthy at {daemon_url}").green()
+            format!("[ok] Medousa Engine is running at {daemon_url}").green()
         );
     } else {
         println!(
             "{}",
-            format!("[ok] Daemon started at {daemon_url}").green()
+            format!("[ok] Medousa Engine started at {daemon_url}").green()
+        );
+    }
+    if plan.private_brain {
+        println!(
+            "{}",
+            "[info] Loading your private brain — Gemma may take a few minutes the first time."
+                .blue()
         );
     }
     println!(
@@ -2135,19 +2174,21 @@ fn print_daemon_ready_messages(plan: &DaemonLaunchPlan, already_running: bool) {
     if let Some(mobile_url) = &plan.mobile_url {
         println!(
             "{}",
-            format!("[ok] Mobile / LAN clients: {mobile_url}").green()
+            format!("[ok] Phone pairing URL: {mobile_url}").green()
         );
         println!(
             "{}",
-            "[info] Point Medousa Home → Settings → Connection at that URL on iPhone."
-                .blue()
+            "[info] On iPhone: Medousa → Settings → Connection".blue()
         );
     } else if plan.bind.starts_with("0.0.0.0:") || plan.bind.starts_with("[::]:") {
         println!(
             "{}",
-            "[warn] Public bind but no LAN IP detected — chat stream URLs may fail from phones until MEDOUSA_DAEMON_PUBLIC_URL is set."
+            "[warn] Public bind but no LAN IP detected — phone URLs may fail until MEDOUSA_DAEMON_PUBLIC_URL is set."
                 .yellow()
         );
+    }
+    if !plan.private_brain {
+        medousa::local_inference_cli::print_normie_home_hint();
     }
 }
 
@@ -2301,12 +2342,24 @@ fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()>
     command.args(&daemon.pre_args);
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(&plan.bind);
+    if plan.private_brain {
+        command.arg("--local-engine");
+    }
     if let Some(mobile_url) = &plan.mobile_url {
         command.env("MEDOUSA_DAEMON_PUBLIC_URL", mobile_url);
     }
     let product_config = load_product_config();
     apply_daemon_env(&product_config);
     medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
+    if plan.private_brain {
+        println!(
+            "{}",
+            format!(
+                "[info] Starting Medousa Engine with your private brain (Gemma loads in the background — first time can take several minutes)"
+            )
+            .blue()
+        );
+    }
     println!(
         "{}",
         format!("[info] medousa_daemon --backend {backend} --bind {}", plan.bind).blue()
@@ -2634,6 +2687,33 @@ fn run_start(args: &[String]) -> Result<()> {
 
 fn start_daemon_service(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     if daemon_http_healthy(&plan.health_url) {
+        if plan.private_brain {
+            match medousa::local_inference_cli::fetch_local_engine_status(&plan.health_url) {
+                Ok(status) if status.loaded => {
+                    println!(
+                        "{}",
+                        "[ok] Medousa Engine is up and your private brain is loaded.".green()
+                    );
+                }
+                Ok(status) if !status.feature_enabled => {
+                    println!(
+                        "{}",
+                        "[warn] This engine build cannot load a private brain — install Medousa from a release build."
+                            .yellow()
+                    );
+                }
+                _ => {
+                    println!(
+                        "{}",
+                        "[info] Core is already running without a loaded brain.".blue()
+                    );
+                    println!(
+                        "{}",
+                        "       Run: medousa start daemon-restart --inference".blue()
+                    );
+                }
+            }
+        }
         print_daemon_ready_messages(plan, true);
         return Ok(());
     }
@@ -2726,32 +2806,34 @@ fn start_whatsapp_service(daemon_url: &str, product_config: &ProductConfig) -> R
 }
 
 fn print_start_help() {
-    println!("medousa start — launch Medousa services in the background");
+    println!("Start Medousa Engine in the background.");
+    println!();
+    println!("If you just want to chat: open Medousa. The app starts the engine for you.");
+    println!("These commands are for developers and troubleshooting.");
     println!();
     println!("USAGE:");
-    println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--public] [--daemon-url <url>]");
+    println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--public] [--inference] [--daemon-url <url>]");
     println!();
     println!("FLAGS:");
-    println!("  --public      Bind daemon to 0.0.0.0 and print LAN URL for phones (mobile dev)");
+    println!("  --inference   Load your private Gemma brain on this Mac (alias: --local-engine)");
+    println!("  --public      Bind Core to 0.0.0.0 for phone pairing on the same Wi‑Fi");
     println!();
     println!("SERVICES:");
-    println!("  daemon        Background medousa_daemon (engine)");
-    println!("  daemon-restart  Stop wedged daemon and start fresh (same as restart-daemon)");
-    println!("  mcp-gateway   Background medousa_mcp_gateway (MCP broker)");
-    println!("  discord       Background Discord adapter (needs bot token)");
-    println!("  telegram      Background Telegram adapter (needs bot token)");
-    println!("  slack         Background Slack adapter (needs bot + app tokens)");
-    println!("  whatsapp      Background WhatsApp adapter");
-    println!("  all           daemon + mcp-gateway + any configured adapters");
+    println!("  daemon          Medousa Engine (background)");
+    println!("  daemon-restart  Stop a stuck Core and start fresh");
+    println!("  mcp-gateway     MCP tool broker (advanced)");
+    println!("  discord         Discord adapter (needs bot token)");
+    println!("  telegram        Telegram adapter (needs bot token)");
+    println!("  slack           Slack adapter (needs bot + app tokens)");
+    println!("  whatsapp        WhatsApp adapter");
+    println!("  all             Core + gateway + any configured adapters");
     println!();
     println!("Logs: ~/.local/share/medousa/logs/<service>.log");
-    println!("MCP config: ~/.config/medousa/mcp-gateway.toml (see docs/mcp-gateway-setup.md)");
     println!();
     println!("EXAMPLES:");
-    println!("  medousa start daemon --backend surreal-mem");
-    println!("  medousa start daemon --public          # iPhone / LAN mobile dev");
-    println!("  medousa start mcp-gateway");
-    println!("  medousa start all");
+    println!("  medousa start daemon --inference     # offline / private brain (power users)");
+    println!("  medousa start daemon --public        # LAN phone dev");
+    println!("  medousa start daemon-restart --inference");
 }
 
 fn discord_log_path() -> PathBuf {
@@ -3192,11 +3274,15 @@ fn parse_workspace_sse_data(frame: &str) -> Option<String> {
 }
 
 fn print_help() {
-    println!("Medousa launcher");
+    println!("Medousa — your second brain, always here, always yours.");
+    println!();
+    println!("Start here: open Medousa. No terminal required.");
+    println!();
+    println!("Power users & troubleshooting:");
     println!();
     println!("USAGE:");
     println!("  medousa onboard|setup|init [--yes] [--advanced] [--provider <name>] [--model <name>] [--base-url <url>] [--api-key <key>] [--backend <name>] [--daemon-url <url>] [--no-daemon] [--no-tui]");
-    println!("  medousa start <service>   Background daemon, mcp-gateway, adapters (see: medousa start --help)");
+    println!("  medousa start <service>   Core, adapters — see: medousa start --help");
     println!("  medousa tui [--daemon-url <url>] [--no-daemon] [-- <medousa_tui args>]");
     println!("  medousa daemon [--backend <name>] [--bind <host:port>] [--public] [-- <medousa_daemon args>]  (foreground)");
     println!("  medousa discord [--daemon-url <url>] [--token <token>] [-- <medousa_discord args>]");
@@ -3205,7 +3291,8 @@ fn print_help() {
     println!("  medousa slack [--daemon-url <url>] [--bot-token <xoxb-…>] [--app-token <xapp-…>]");
     println!("  medousa whatsapp [--daemon-url <url>] [--deliver-bind <host:port>] [--session-db <path>]");
     println!("    WhatsApp uses a local deliver endpoint; session persists in ~/.local/share/medousa/whatsapp/session.db by default.");
-    println!("  medousa doctor");
+    println!("  medousa doctor [--local-engine]");
+    println!("  medousa models probe|catalog|list|download|remove|engine-status|engine-load [--daemon-url <url>]");
     println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
     println!("  medousa identity-remember --kind <preference|person|note> --subject <key|name> --statement <text> [--source user_direct] [--attributes a,b]");
     println!("  medousa manuscript-list");
@@ -3219,14 +3306,8 @@ fn print_help() {
     println!("  medousa pair status|list|qr [--term] [--open]|remove <pairing_id> [--daemon-url <url>]");
     println!();
     println!("EXAMPLES:");
-    println!("  medousa onboard");
-    println!("  medousa setup");
-    println!("  medousa start daemon && medousa start mcp-gateway");
-    println!("  medousa onboard --yes --provider ollama --model llama3.2 --no-daemon");
-    println!("  medousa tui");
-    println!("  medousa discord");
-    println!("  medousa telegram");
-    println!("  medousa slack");
-    println!("  medousa whatsapp");
+    println!("  Open Medousa");
+    println!("  medousa start daemon --inference   (offline private brain — dev only)");
     println!("  medousa doctor");
+    println!("  medousa models probe");
 }
