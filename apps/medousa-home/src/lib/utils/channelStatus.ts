@@ -18,12 +18,14 @@ export function channelStatus(
       if (!channel.credentialsSet || channel.allowedUserIds.length === 0) {
         return "needs_setup";
       }
-      return daemonOk ? "connected" : "ready";
+      if (channel.adapterRunning && daemonOk) return "connected";
+      return "ready";
     }
     case "discord": {
       const channel = summary.discord;
       if (!channel.credentialsSet) return "needs_setup";
-      return daemonOk ? "connected" : "ready";
+      if (channel.adapterRunning && daemonOk) return "connected";
+      return "ready";
     }
     case "slack": {
       const channel = summary.slack;
@@ -34,14 +36,16 @@ export function channelStatus(
       ) {
         return "needs_setup";
       }
-      return daemonOk ? "connected" : "ready";
+      if (channel.adapterRunning && daemonOk) return "connected";
+      return "ready";
     }
     case "whatsapp": {
       const channel = summary.whatsapp;
       if (!channel.deliverBind.trim() || channel.allowedUserIds.length === 0) {
         return "needs_setup";
       }
-      return daemonOk ? "connected" : "ready";
+      if (channel.adapterRunning && daemonOk) return "connected";
+      return "ready";
     }
     default:
       return "needs_setup";

@@ -415,6 +415,7 @@ pub async fn wizard_apply_screen1(
         let private_brain = request.path.eq_ignore_ascii_case("offline");
         let start = daemon_start(Some(crate::daemon_service::DaemonStartRequest {
             private_brain,
+            public_bind: None,
         }))
         .await?;
         core_message = if start.already_running {

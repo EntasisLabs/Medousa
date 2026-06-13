@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 const DEFAULT_BIND: &str = "127.0.0.1:7419";
+const PUBLIC_BIND: &str = "0.0.0.0:7419";
 const DEFAULT_BACKEND: &str = "surreal-mem";
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +57,54 @@ fn daemon_log_path() -> PathBuf {
     medousa_data_dir().join("logs").join("daemon.log")
 }
 
-fn resolve_backend() -> String {
+fn daemon_pid_path() -> PathBuf {
+    medousa_data_dir().join("daemon.pid")
+}
+
+fn write_daemon_pid(pid: u32) -> Result<(), String> {
+    if let Some(parent) = daemon_pid_path().parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(daemon_pid_path(), pid.to_string()).map_err(|err| err.to_string())
+}
+
+fn clear_daemon_pid() {
+    let _ = fs::remove_file(daemon_pid_path());
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        use std::process::Command;
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+pub fn stop_daemon_process() {
+    if let Ok(raw) = fs::read_to_string(daemon_pid_path()) {
+        if let Ok(pid) = raw.trim().parse::<u32>() {
+            if is_process_alive(pid) {
+                #[cfg(unix)]
+                {
+                    use std::process::Command;
+                    let _ = Command::new("kill").arg(pid.to_string()).status();
+                }
+            }
+        }
+    }
+    clear_daemon_pid();
+}
+
+pub(crate) fn resolve_backend() -> String {
     if let Ok(raw) = fs::read_to_string(tui_defaults_path()) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
             if let Some(backend) = json.get("backend").and_then(|value| value.as_str()) {
@@ -70,9 +118,9 @@ fn resolve_backend() -> String {
     DEFAULT_BACKEND.to_string()
 }
 
-struct ComponentCommand {
-    program: String,
-    pre_args: Vec<String>,
+pub(crate) struct ComponentCommand {
+    pub program: String,
+    pub pre_args: Vec<String>,
 }
 
 fn find_command_in_path(command: &str) -> Option<PathBuf> {
@@ -82,7 +130,7 @@ fn find_command_in_path(command: &str) -> Option<PathBuf> {
         .find(|candidate| candidate.exists())
 }
 
-fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
+pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
     if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_DAEMON_BIN") {
         let path = PathBuf::from(explicit.trim());
         if path.exists() {
@@ -165,9 +213,27 @@ pub struct DaemonStartRequest {
     /// Load the private Gemma brain when the engine starts (`medousa_daemon --local-engine`).
     #[serde(default)]
     pub private_brain: bool,
+    /// Bind on all interfaces for phone pairing (`0.0.0.0:7419`). Falls back to saved prefs.
+    #[serde(default)]
+    pub public_bind: Option<bool>,
 }
 
-fn should_load_private_brain(explicit: bool) -> bool {
+fn resolve_bind_address(public_bind: bool) -> &'static str {
+    if public_bind {
+        PUBLIC_BIND
+    } else {
+        DEFAULT_BIND
+    }
+}
+
+fn resolve_public_bind(request: Option<&DaemonStartRequest>) -> bool {
+    if let Some(explicit) = request.and_then(|value| value.public_bind) {
+        return explicit;
+    }
+    crate::connection_prefs::load_connection_prefs().public_bind
+}
+
+pub(crate) fn should_load_private_brain(explicit: bool) -> bool {
     if explicit {
         return true;
     }
@@ -217,12 +283,20 @@ fn spawn_daemon_background(backend: &str, bind: &str, private_brain: bool) -> Re
             daemon.program
         )
     })?;
-    Ok((child.id(), log_path))
+    let pid = child.id();
+    let _ = write_daemon_pid(pid);
+    Ok((pid, log_path))
 }
 
 #[tauri::command]
 pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonStartResult, String> {
-    let private_brain = should_load_private_brain(request.map(|r| r.private_brain).unwrap_or(false));
+    let request = request.unwrap_or(DaemonStartRequest {
+        private_brain: false,
+        public_bind: None,
+    });
+    let private_brain = should_load_private_brain(request.private_brain);
+    let public_bind = resolve_public_bind(Some(&request));
+    let bind = resolve_bind_address(public_bind);
     let base_url = DEFAULT_DAEMON_URL;
     if daemon_http_healthy(base_url).await {
         return Ok(DaemonStartResult {
@@ -234,14 +308,14 @@ pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonS
         });
     }
 
-    if is_bind_reachable(DEFAULT_BIND) {
+    if is_bind_reachable(bind) {
         return Err(format!(
-            "Port {DEFAULT_BIND} is open but the engine is not responding. Try restarting from Settings → Connection."
+            "Port {bind} is open but the engine is not responding. Try restarting from Settings → Connection."
         ));
     }
 
     let backend = resolve_backend();
-    let (pid, log_path) = spawn_daemon_background(&backend, DEFAULT_BIND, private_brain)?;
+    let (pid, log_path) = spawn_daemon_background(&backend, bind, private_brain)?;
 
     Ok(DaemonStartResult {
         started: true,
@@ -250,10 +324,19 @@ pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonS
         log_path: log_path.to_string_lossy().to_string(),
         message: if private_brain {
             format!("Starting Medousa Engine with your private brain (pid {pid})")
+        } else if public_bind {
+            format!("Starting Medousa Engine on your network (pid {pid})")
         } else {
             format!("Starting Medousa Engine (pid {pid})")
         },
     })
+}
+
+#[tauri::command]
+pub async fn daemon_restart(request: Option<DaemonStartRequest>) -> Result<DaemonStartResult, String> {
+    stop_daemon_process();
+    tokio::time::sleep(Duration::from_millis(750)).await;
+    daemon_start(request).await
 }
 
 #[tauri::command]

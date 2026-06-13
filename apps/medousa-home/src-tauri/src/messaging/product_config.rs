@@ -48,6 +48,8 @@ pub struct TelegramChannelSummary {
     pub heartbeat_nudges_enabled: bool,
     pub heartbeat_chat_ids: Vec<i64>,
     pub credentials_set: bool,
+    #[serde(default)]
+    pub adapter_running: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -57,6 +59,8 @@ pub struct DiscordChannelSummary {
     pub heartbeat_nudges_enabled: bool,
     pub heartbeat_channel_ids: Vec<u64>,
     pub credentials_set: bool,
+    #[serde(default)]
+    pub adapter_running: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -67,6 +71,8 @@ pub struct SlackChannelSummary {
     pub heartbeat_channel_ids: Vec<String>,
     pub bot_token_set: bool,
     pub app_token_set: bool,
+    #[serde(default)]
+    pub adapter_running: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -78,6 +84,8 @@ pub struct WhatsAppChannelSummary {
     pub allowed_user_ids: Vec<String>,
     pub heartbeat_nudges_enabled: bool,
     pub heartbeat_chat_jids: Vec<String>,
+    #[serde(default)]
+    pub adapter_running: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,7 +148,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
     let slack = config.get("slack").cloned().unwrap_or_default();
     let whatsapp = config.get("whatsapp").cloned().unwrap_or_default();
 
-    Ok(ProductConfigSummary {
+    let mut summary = ProductConfigSummary {
         telegram: TelegramChannelSummary {
             allowed_user_ids: telegram
                 .get("allowed_user_ids")
@@ -155,6 +163,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or_default(),
             credentials_set: secrets::secret_is_set("telegram_bot_token")?,
+            adapter_running: false,
         },
         discord: DiscordChannelSummary {
             command_prefix: discord
@@ -171,6 +180,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or_default(),
             credentials_set: secrets::secret_is_set("discord_bot_token")?,
+            adapter_running: false,
         },
         slack: SlackChannelSummary {
             allowed_user_ids: slack
@@ -187,6 +197,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .unwrap_or_default(),
             bot_token_set: secrets::secret_is_set("slack_bot_token")?,
             app_token_set: secrets::secret_is_set("slack_app_token")?,
+            adapter_running: false,
         },
         whatsapp: WhatsAppChannelSummary {
             deliver_bind: whatsapp
@@ -214,12 +225,15 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
                 .get("heartbeat_chat_jids")
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or_default(),
+            adapter_running: false,
         },
-    })
+    };
+    crate::channel_adapters::adapter_status_for_summary(&mut summary);
+    Ok(summary)
 }
 
 pub fn save_channel_product_config(request: ChannelConfigSave) -> Result<(), String> {
-    match request {
+    let result = match request {
         ChannelConfigSave::Telegram(config) => merge_channel_config(
             "telegram",
             json!({
@@ -255,5 +269,8 @@ pub fn save_channel_product_config(request: ChannelConfigSave) -> Result<(), Str
                 "heartbeat_chat_jids": config.heartbeat_chat_jids,
             }),
         ),
-    }
+    };
+    result?;
+    crate::channel_adapters::sync_channel_adapters(None)?;
+    Ok(())
 }

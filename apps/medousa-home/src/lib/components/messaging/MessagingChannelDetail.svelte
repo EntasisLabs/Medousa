@@ -113,7 +113,7 @@
       <div class="mt-3 flex flex-wrap gap-2">
         <WorkshopLivelinessChip variant={statusChipVariant(status)} label={statusLabel(status)} />
         {#if !daemonOk}
-          <WorkshopLivelinessChip variant="muted" label="Workshop offline" />
+          <WorkshopLivelinessChip variant="muted" label="Medousa offline" />
         {/if}
       </div>
     </div>
@@ -237,14 +237,22 @@
     <h3 class="workshop-label">Recommended</h3>
     <div class="mt-3 space-y-4">
       {#if channelId === "telegram"}
+        <div class="rounded-xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 text-sm leading-relaxed text-surface-300">
+          <p class="font-medium text-surface-50">Lock to just you</p>
+          <p class="mt-2">
+            After you save your bot token, message your bot
+            <span class="font-mono text-surface-100">/whoami</span>
+            on Telegram. It replies with your numeric user ID — paste that below.
+          </p>
+        </div>
         <label class="block">
-          <span class="workshop-label">Allowed Telegram user IDs</span>
+          <span class="workshop-label">Your Telegram user ID</span>
           <span class="workshop-faint mt-0.5 block text-xs">
-            Comma-separated numeric IDs — required for ingest
+            Only this account can talk to Medousa — get it from /whoami
           </span>
           <input
             class="input mt-2 w-full font-mono text-xs"
-            placeholder="123456789, 987654321"
+            placeholder="123456789"
             bind:value={telegramAllowedUsers}
           />
         </label>
@@ -348,16 +356,18 @@
       disabled={saving}
       onclick={() => void onSave()}
     >
-      {saving ? "Saving…" : "Save channel"}
+      {saving ? "Saving…" : "Save & connect"}
     </button>
     {#if saveMessage}
       <p class="text-xs {saveMessage === 'Saved' ? 'text-primary-300' : 'text-warning-400'}">
-        {saveMessage}
+        {saveMessage === "Saved"
+          ? "Saved — Medousa starts this channel for you. No terminal needed."
+          : saveMessage}
       </p>
     {/if}
     {#if !daemonOk}
       <p class="workshop-faint text-xs">
-        Workshop offline — config saves locally; adapters connect when the daemon starts.
+        Medousa isn't running — settings are saved; the channel connects when the engine is online.
       </p>
     {/if}
   </footer>

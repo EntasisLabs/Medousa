@@ -7,6 +7,7 @@ export interface TelegramChannelSummary {
   heartbeatNudgesEnabled: boolean;
   heartbeatChatIds: number[];
   credentialsSet: boolean;
+  adapterRunning: boolean;
 }
 
 export interface DiscordChannelSummary {
@@ -14,6 +15,7 @@ export interface DiscordChannelSummary {
   heartbeatNudgesEnabled: boolean;
   heartbeatChannelIds: number[];
   credentialsSet: boolean;
+  adapterRunning: boolean;
 }
 
 export interface SlackChannelSummary {
@@ -22,6 +24,7 @@ export interface SlackChannelSummary {
   heartbeatChannelIds: string[];
   botTokenSet: boolean;
   appTokenSet: boolean;
+  adapterRunning: boolean;
 }
 
 export interface WhatsAppChannelSummary {
@@ -31,6 +34,7 @@ export interface WhatsAppChannelSummary {
   allowedUserIds: string[];
   heartbeatNudgesEnabled: boolean;
   heartbeatChatJids: string[];
+  adapterRunning: boolean;
 }
 
 export interface ProductConfigSummary {

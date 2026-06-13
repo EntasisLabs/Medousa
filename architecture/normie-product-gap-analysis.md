@@ -1,6 +1,6 @@
 # Normie product gap analysis (“Steve Jobs” pass)
 
-> **Status:** Active — Phase A in progress  
+> **Status:** Active — Phase C shipped (2026-06-12)  
 > **Date:** 2026-06-12  
 > **Audience:** Product + engineering  
 > **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)
@@ -93,10 +93,10 @@ Every time we say *daemon*, *workshop*, *ingest*, *Surreal*, or show a 47-row se
 
 ## Phase C — “Phone & channels without terminal”
 
-- Messaging save starts/stops channel adapters (no `medousa start telegram`)
-- Telegram “only me” UX with `/whoami` helper
-- Engine auto-start on login (launchd / Task Scheduler)
-- `--public` pairing story documented + one-click in Connection settings
+- [x] Messaging save starts/stops channel adapters (no `medousa start telegram`)
+- [x] Telegram “only me” UX with `/whoami` helper
+- [x] Engine auto-start on login (launchd on macOS)
+- [x] `--public` pairing story + one-click toggle in Connection settings
 
 ---
 

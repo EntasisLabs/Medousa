@@ -1,5 +1,5 @@
-mod product_config;
-mod secrets;
+pub mod product_config;
+pub mod secrets;
 
 use product_config::{
     load_product_config_summary, save_channel_product_config, ChannelConfigSave,
@@ -23,10 +23,14 @@ pub fn messaging_secret_status(secret_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn messaging_save_secret(secret_id: String, value: Option<String>) -> Result<(), String> {
-    secrets::save_secret(secret_id.trim(), value)
+    secrets::save_secret(secret_id.trim(), value)?;
+    crate::channel_adapters::sync_channel_adapters(None)?;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn messaging_clear_secret(secret_id: String) -> Result<(), String> {
-    secrets::clear_secret(secret_id.trim())
+    secrets::clear_secret(secret_id.trim())?;
+    crate::channel_adapters::sync_channel_adapters(None)?;
+    Ok(())
 }

@@ -1,4 +1,7 @@
+mod autostart;
 mod badge;
+mod channel_adapters;
+mod connection_prefs;
 mod daemon_service;
 mod external_desk;
 mod files;
@@ -72,7 +75,11 @@ pub fn run() {
             daemon::set_daemon_url,
             daemon::daemon_health,
             daemon_service::daemon_start,
+            daemon_service::daemon_restart,
             daemon_service::daemon_wait_healthy,
+            connection_prefs::connection_load_prefs,
+            connection_prefs::connection_set_public_bind,
+            connection_prefs::connection_set_autostart,
             providers::providers_probe,
             providers::providers_validate_key,
             pairing::pairing_fetch_qr,
@@ -142,6 +149,7 @@ pub fn run() {
             messaging::messaging_secret_status,
             messaging::messaging_save_secret,
             messaging::messaging_clear_secret,
+            channel_adapters::messaging_sync_adapters,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             external_desk::external_desk_scan_root,
             external_desk::external_desk_read_file,

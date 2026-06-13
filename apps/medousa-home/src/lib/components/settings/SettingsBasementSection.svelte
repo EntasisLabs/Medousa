@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { Wifi, WifiOff } from "@lucide/svelte";
   import {
     getMedousaConfigPaths,
@@ -6,6 +7,12 @@
     type MedousaConfigPaths,
   } from "$lib/config";
   import { getDaemonUrl, setDaemonUrl, type DaemonHealth } from "$lib/daemon";
+  import {
+    loadConnectionPrefs,
+    setAutostart,
+    setPublicBind,
+    type ConnectionPrefsSummary,
+  } from "$lib/connection";
   import { reconnectWorkshop } from "$lib/workshopConnection";
   import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -26,6 +33,9 @@
 
   let configPaths = $state<MedousaConfigPaths | null>(null);
   let connectionEditing = $state(false);
+  let connectionPrefs = $state<ConnectionPrefsSummary | null>(null);
+  let prefsBusy = $state(false);
+  let prefsMessage = $state<string | null>(null);
 
   const connected = $derived(Boolean(health?.ok));
   const connectionLabel = $derived(connectionHumanLabel(settings.daemonUrl));
@@ -97,6 +107,53 @@
     }
   }
 
+  onMount(() => {
+    if (isTauri() && !mobile) {
+      void loadConnectionPrefsState();
+    }
+  });
+
+  async function loadConnectionPrefsState() {
+    try {
+      connectionPrefs = await loadConnectionPrefs();
+    } catch {
+      connectionPrefs = null;
+    }
+  }
+
+  async function togglePublicBind(enabled: boolean) {
+    if (!isTauri()) return;
+    prefsBusy = true;
+    prefsMessage = null;
+    try {
+      const result = await setPublicBind(enabled);
+      prefsMessage = result.message;
+      await loadConnectionPrefsState();
+      await reconnectWorkshop(onDaemonHealth);
+    } catch (err) {
+      prefsMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      prefsBusy = false;
+    }
+  }
+
+  async function toggleAutostart(enabled: boolean) {
+    if (!isTauri()) return;
+    prefsBusy = true;
+    prefsMessage = null;
+    try {
+      await setAutostart(enabled);
+      await loadConnectionPrefsState();
+      prefsMessage = enabled
+        ? "Medousa will start when you log in."
+        : "Auto-start turned off.";
+    } catch (err) {
+      prefsMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      prefsBusy = false;
+    }
+  }
+
   async function loadConfigPaths() {
     try {
       configPaths = await getMedousaConfigPaths();
@@ -125,9 +182,9 @@
 
 <section class="settings-section">
   <header class="settings-section-header">
-    <h2 class="text-base font-semibold text-surface-50">Basement</h2>
+    <h2 class="text-base font-semibold text-surface-50">Connection</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Workshop address, on-disk files, and diagnostics — for when the charter isn’t enough.
+      Medousa on this device, phone pairing, and advanced files.
     </p>
   </header>
 
@@ -224,6 +281,51 @@
       </div>
     {/if}
   </div>
+
+  {#if isTauri() && !mobile && connectionPrefs}
+    <div class="settings-toggle-list mt-6">
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">
+            Let phones on your Wi‑Fi connect
+          </span>
+          <span class="workshop-faint mt-0.5 block text-xs leading-relaxed">
+            Restarts Medousa on your network so QR pairing and your phone app can reach this Mac
+            without typing an IP address.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          checked={connectionPrefs.publicBind}
+          disabled={prefsBusy}
+          onchange={(event) =>
+            void togglePublicBind((event.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+      {#if connectionPrefs.autostartSupported}
+        <label class="settings-toggle-row">
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium text-surface-100">Start Medousa when I log in</span>
+            <span class="workshop-faint mt-0.5 block text-xs">
+              Keeps the engine ready in the background — channels and chat connect faster.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            class="checkbox shrink-0"
+            checked={connectionPrefs.autostartEnabled}
+            disabled={prefsBusy}
+            onchange={(event) =>
+              void toggleAutostart((event.currentTarget as HTMLInputElement).checked)}
+          />
+        </label>
+      {/if}
+    </div>
+    {#if prefsMessage}
+      <p class="mt-2 text-xs text-surface-300">{prefsMessage}</p>
+    {/if}
+  {/if}
 
   <div class="mt-6">
     <h3 class="text-sm font-semibold text-surface-100">First-run setup</h3>

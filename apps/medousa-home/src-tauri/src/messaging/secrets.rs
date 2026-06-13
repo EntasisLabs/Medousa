@@ -36,14 +36,46 @@ fn file_secret(name: &str) -> Option<String> {
 }
 
 fn load_secret(service: &str, account: &str, file_name: &str) -> bool {
+    read_secret_value(service, account, file_name).is_some()
+}
+
+fn read_secret_value(service: &str, account: &str, file_name: &str) -> Option<String> {
     if let Ok(entry) = keyring_entry(service, account) {
         if let Ok(value) = entry.get_password() {
-            if !value.trim().is_empty() {
-                return true;
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
             }
         }
     }
-    file_secret(file_name).is_some()
+    file_secret(file_name)
+}
+
+pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
+    Ok(match secret_id {
+        "telegram_bot_token" => read_secret_value(
+            TELEGRAM_BOT_TOKEN_SERVICE,
+            TELEGRAM_BOT_TOKEN_ACCOUNT,
+            "telegram_bot_token",
+        ),
+        "discord_bot_token" => read_secret_value(
+            DISCORD_BOT_TOKEN_SERVICE,
+            DISCORD_BOT_TOKEN_ACCOUNT,
+            "discord_bot_token",
+        ),
+        "slack_bot_token" => read_secret_value(
+            SLACK_BOT_TOKEN_SERVICE,
+            SLACK_BOT_TOKEN_ACCOUNT,
+            "slack_bot_token",
+        ),
+        "slack_app_token" => read_secret_value(
+            SLACK_APP_TOKEN_SERVICE,
+            SLACK_APP_TOKEN_ACCOUNT,
+            "slack_app_token",
+        ),
+        "api_key" => read_secret_value(API_KEY_SERVICE, API_KEY_ACCOUNT, "api_key"),
+        other => return Err(format!("unknown secret_id '{other}'")),
+    })
 }
 
 fn save_secret_value(

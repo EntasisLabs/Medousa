@@ -72,6 +72,16 @@ async fn handle_message(
         return Ok(());
     }
 
+    if input.eq_ignore_ascii_case("/whoami") {
+        let user_id = msg.from.as_ref().map(|user| user.id.0).unwrap_or(0);
+        let chat_id = msg.chat.id.0;
+        let reply = format!(
+            "Your Telegram user ID: {user_id}\nThis chat ID: {chat_id}\n\nPaste the user ID into Medousa → Messaging → Telegram → Allowed users to lock the bot to you."
+        );
+        bot.send_message(msg.chat.id, reply).await?;
+        return Ok(());
+    }
+
     let request = IngestRequest {
         channel: "telegram".to_string(),
         user_id: msg
