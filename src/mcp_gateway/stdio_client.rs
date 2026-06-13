@@ -176,7 +176,7 @@ impl Drop for StdioMcpSession {
     }
 }
 
-fn parse_tool_list(response: &Value) -> Result<Vec<McpToolDefinition>> {
+pub(crate) fn parse_tool_list(response: &Value) -> Result<Vec<McpToolDefinition>> {
     let tools = response
         .get("result")
         .and_then(|value| value.get("tools"))

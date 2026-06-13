@@ -9,6 +9,8 @@ mod daemon;
 mod messaging;
 mod medousa_paths;
 mod pairing;
+mod capabilities;
+mod mcp_gateway;
 mod provider_catalog;
 mod providers;
 mod tray;
@@ -90,6 +92,17 @@ pub fn run() {
             pairing::pairing_revoke,
             pairing::pairing_wait_ready,
             pairing::bonjour_status,
+            mcp_gateway::mcp_gateway_load_config,
+            mcp_gateway::mcp_gateway_status,
+            mcp_gateway::mcp_gateway_restart,
+            mcp_gateway::mcp_gateway_upsert_server,
+            mcp_gateway::mcp_gateway_remove_server,
+            mcp_gateway::mcp_gateway_set_server_enabled,
+            mcp_gateway::mcp_gateway_apply_server,
+            capabilities::capabilities_load_overlay,
+            capabilities::capabilities_set_binding_enabled,
+            capabilities::capabilities_save_web_search,
+            daemon::catalog::catalog_reindex_capabilities,
             daemon::workspace_stream_start,
             daemon::workspace_stream_stop,
             daemon::interactive_turn_send,

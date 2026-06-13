@@ -123,7 +123,7 @@ pub(crate) struct ComponentCommand {
     pub pre_args: Vec<String>,
 }
 
-fn find_command_in_path(command: &str) -> Option<PathBuf> {
+pub(crate) fn find_command_in_path(command: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
     std::env::split_paths(&path_var)
         .map(|path| path.join(command))

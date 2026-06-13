@@ -91,9 +91,7 @@ export class ChatStore {
   get liveStreamActive(): boolean {
     for (const turn of this.turns.values()) {
       if (turn.mode !== "interactive" || turn.terminal) continue;
-      if (turn.phase === "worker_handoff" || turn.phase === "budget_blocked") {
-        continue;
-      }
+      if (this.isComposerOpenDuringHandoff(turn.turnId, turn.phase)) continue;
       return true;
     }
     return false;
@@ -103,9 +101,7 @@ export class ChatStore {
   hasLiveInteractiveTurn(): boolean {
     for (const turn of this.turns.values()) {
       if (turn.mode !== "interactive" || turn.terminal) continue;
-      if (turn.phase === "worker_handoff" || turn.phase === "budget_blocked") {
-        continue;
-      }
+      if (this.isComposerOpenDuringHandoff(turn.turnId, turn.phase)) continue;
       return true;
     }
     return false;
@@ -470,6 +466,9 @@ export class ChatStore {
 
       let attached = false;
       for (const record of response.turns) {
+        if (this.isDetachedWorkerTurnRecord(record)) {
+          continue;
+        }
         attached = true;
         let messageId = this.messages.find(
           (m) => m.turnId === record.turn_id && m.role === "assistant",
@@ -1145,6 +1144,8 @@ export class ChatStore {
   }
 
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
+    if (!this.isRelevantStreamEvent(event)) return;
+
     this.syncTurnFromEvent(event);
 
     const workerLink = this.workerLinkForTurn(event.turn_id);
@@ -1634,27 +1635,59 @@ export class ChatStore {
     this.draft = text;
   }
 
-  private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {
-    let existing = this.turns.get(event.turn_id);
-    if (!existing && (event.content_delta || event.final_text || event.terminal)) {
-      existing = {
-        turnId: event.turn_id,
-        mode: "background",
-        phase: event.phase,
-        messageId: null,
-        streamAttached: true,
-        terminal: false,
-        workspaceCardId: null,
-      };
+  private isDetachedWorkerTurnRecord(record: TurnTicketRecord): boolean {
+    const cardId = record.workspace_card_id?.trim();
+    if (cardId?.startsWith("work-")) {
+      return true;
     }
+    if (record.mode === "background" && cardId?.startsWith("medousa-daemon-ask-")) {
+      return false;
+    }
+    return false;
+  }
+
+  private isComposerOpenDuringHandoff(turnId: string, phase: string): boolean {
+    if (phase === "worker_handoff" || phase === "budget_blocked") {
+      return true;
+    }
+    const workerLink = this.workerLinkForTurn(turnId);
+    return workerLink != null && !workerLink.synthesisDelivered;
+  }
+
+  /** Ignore stray worker-session streams and orphan turn ids outside this chat. */
+  private isRelevantStreamEvent(event: InteractiveTurnStreamEvent): boolean {
+    const turnId = event.turn_id?.trim();
+    if (!turnId) return false;
+
+    if (this.turns.has(turnId)) return true;
+    if (isWorkerHandoffStreamEvent(event) || isBudgetApprovalStreamEvent(event)) {
+      return true;
+    }
+    if (this.workerLinkForTurn(turnId)) return true;
+
+    const workId = event.work_id?.trim();
+    if (workId && this.workers.has(workId)) return true;
+
+    return false;
+  }
+
+  private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {
+    const existing = this.turns.get(event.turn_id);
     if (!existing) return;
+
+    const workerLink = this.workerLinkForTurn(event.turn_id);
+    const preserveHandoff =
+      workerLink != null &&
+      !workerLink.synthesisDelivered &&
+      !isWorkerHandoffStreamEvent(event) &&
+      !isBudgetApprovalStreamEvent(event);
 
     const next = new Map(this.turns);
     if (event.terminal) {
       if (existing.mode === "background") {
         next.set(event.turn_id, {
           ...existing,
-          phase: this.phaseFromEvent(event),
+          phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
           streamAttached: true,
           terminal: false,
         });
@@ -1663,7 +1696,7 @@ export class ChatStore {
       } else {
         next.set(event.turn_id, {
           ...existing,
-          phase: this.phaseFromEvent(event),
+          phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
           streamAttached: true,
           terminal: false,
         });
@@ -1671,7 +1704,7 @@ export class ChatStore {
     } else {
       next.set(event.turn_id, {
         ...existing,
-        phase: this.phaseFromEvent(event),
+        phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
         streamAttached: true,
         terminal: false,
       });

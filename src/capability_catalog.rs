@@ -47,6 +47,8 @@ pub struct GraphemeCapabilityBindingSpec {
     pub module_op: String,
     #[serde(default)]
     pub priority: u16,
+    #[serde(default = "default_binding_enabled")]
+    pub enabled: bool,
 }
 
 /// Explicit MCP binding from manifest.
@@ -56,8 +58,44 @@ pub struct McpCapabilityBindingSpec {
     pub tool_name: String,
     #[serde(default)]
     pub priority: u16,
+    #[serde(default = "default_binding_enabled")]
+    pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect_class: Option<String>,
+}
+
+fn default_binding_enabled() -> bool {
+    true
+}
+
+impl Default for GraphemeCapabilityBindingSpec {
+    fn default() -> Self {
+        Self {
+            module_op: String::new(),
+            priority: 0,
+            enabled: true,
+        }
+    }
+}
+
+impl Default for McpCapabilityBindingSpec {
+    fn default() -> Self {
+        Self {
+            server_id: String::new(),
+            tool_name: String::new(),
+            priority: 0,
+            enabled: true,
+            effect_class: None,
+        }
+    }
+}
+
+/// Operator-disabled binding stored in capabilities.toml overlay.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DisabledBindingRef {
+    pub capability_id: String,
+    pub source: String,
+    pub reference: String,
 }
 
 /// Manifest entry: definition fields + declared bindings (TOML-friendly layout).
@@ -116,6 +154,8 @@ pub struct CapabilityManifest {
     pub capabilities: Vec<CapabilityManifestEntry>,
     #[serde(default)]
     pub web_search: WebSearchSettings,
+    #[serde(default)]
+    pub disabled_bindings: Vec<DisabledBindingRef>,
 }
 
 /// Resolved binding ready for agent consumption.
@@ -312,6 +352,21 @@ pub struct CapabilityRegistry {
     bindings: HashMap<CapabilityId, Vec<CapabilityBinding>>,
 }
 
+impl CapabilityManifest {
+    pub fn is_binding_disabled(
+        &self,
+        capability_id: &str,
+        source: CapabilitySource,
+        reference: &str,
+    ) -> bool {
+        self.disabled_bindings.iter().any(|entry| {
+            entry.capability_id.eq_ignore_ascii_case(capability_id)
+                && entry.source.eq_ignore_ascii_case(source.as_str())
+                && entry.reference == reference
+        })
+    }
+}
+
 impl CapabilityRegistry {
     pub fn from_manifest(manifest: &CapabilityManifest) -> Self {
         let mut registry = Self::default();
@@ -322,6 +377,12 @@ impl CapabilityRegistry {
 
             let mut resolved = Vec::new();
             for binding in &entry.bindings.grapheme {
+                if !binding.enabled {
+                    continue;
+                }
+                if manifest.is_binding_disabled(&id, CapabilitySource::Grapheme, &binding.module_op) {
+                    continue;
+                }
                 resolved.push(CapabilityBinding::grapheme(
                     &binding.module_op,
                     binding.priority,
@@ -329,6 +390,13 @@ impl CapabilityRegistry {
                 ));
             }
             for binding in &entry.bindings.mcp {
+                if !binding.enabled {
+                    continue;
+                }
+                let reference = format!("{}.{}", binding.server_id, binding.tool_name);
+                if manifest.is_binding_disabled(&id, CapabilitySource::Mcp, &reference) {
+                    continue;
+                }
                 resolved.push(CapabilityBinding::mcp(
                     &binding.server_id,
                     &binding.tool_name,
@@ -629,6 +697,11 @@ fn merge_capability_manifests(base: &mut CapabilityManifest, overlay: Capability
     if overlay.web_search.preferred_provider.is_some() {
         base.web_search.preferred_provider = overlay.web_search.preferred_provider;
     }
+    for disabled in overlay.disabled_bindings {
+        if !base.disabled_bindings.iter().any(|entry| entry == &disabled) {
+            base.disabled_bindings.push(disabled);
+        }
+    }
 }
 
 /// Resolved web-search operator prefs (capabilities.toml + env override).
@@ -684,10 +757,12 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                         GraphemeCapabilityBindingSpec {
                             module_op: "websearch.research_materials".to_string(),
                             priority: 10,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "docs.search".to_string(),
                             priority: 20,
+                            ..Default::default()
                         },
                     ],
                     mcp: vec![
@@ -696,18 +771,21 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                             tool_name: "search_pages".to_string(),
                             priority: 30,
                             effect_class: None,
+                            ..Default::default()
                         },
                         McpCapabilityBindingSpec {
                             server_id: "confluence".to_string(),
                             tool_name: "search".to_string(),
                             priority: 40,
                             effect_class: None,
+                            ..Default::default()
                         },
                         McpCapabilityBindingSpec {
                             server_id: "google_drive".to_string(),
                             tool_name: "search_docs".to_string(),
                             priority: 50,
                             effect_class: None,
+                            ..Default::default()
                         },
                     ],
                 },
@@ -732,30 +810,37 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                         GraphemeCapabilityBindingSpec {
                             module_op: "web.providers".to_string(),
                             priority: 5,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "web.capabilities".to_string(),
                             priority: 8,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "web.duckduckgo".to_string(),
                             priority: 10,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "web.google".to_string(),
                             priority: 15,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "websearch.search".to_string(),
                             priority: 30,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "websearch.research_materials".to_string(),
                             priority: 35,
+                            ..Default::default()
                         },
                         GraphemeCapabilityBindingSpec {
                             module_op: "websearch.research_report".to_string(),
                             priority: 40,
+                            ..Default::default()
                         },
                     ],
                     mcp: vec![],
@@ -776,6 +861,7 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     grapheme: vec![GraphemeCapabilityBindingSpec {
                         module_op: "http.fetch".to_string(),
                         priority: 10,
+                        ..Default::default()
                     }],
                     mcp: vec![],
                 },
@@ -794,17 +880,20 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     grapheme: vec![GraphemeCapabilityBindingSpec {
                         module_op: "smtp.send".to_string(),
                         priority: 10,
+                        ..Default::default()
                     }],
                     mcp: vec![McpCapabilityBindingSpec {
                         server_id: "gmail".to_string(),
                         tool_name: "send_message".to_string(),
                         priority: 20,
                         effect_class: Some("external_side_effect".to_string()),
+                        ..Default::default()
                     }],
                 },
             },
         ],
         web_search: WebSearchSettings::default(),
+        ..Default::default()
     }
 }
 
@@ -857,6 +946,7 @@ mod tests {
                 bindings: CapabilityManifestBindings::default(),
             }],
             web_search: WebSearchSettings::default(),
+            ..Default::default()
         };
         merge_capability_manifests(&mut manifest, file_manifest);
 

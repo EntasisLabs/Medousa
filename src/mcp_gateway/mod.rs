@@ -7,6 +7,7 @@ mod policy_client;
 mod registry;
 mod server_config;
 mod starter_config;
+mod remote_client;
 mod stdio_client;
 
 pub use auth::{verify_admin_bearer, verify_gateway_bearer, verify_policy_bearer};

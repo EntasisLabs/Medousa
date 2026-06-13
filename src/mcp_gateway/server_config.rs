@@ -49,6 +49,10 @@ pub struct McpServerConfig {
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub bearer_token: Option<String>,
     #[serde(default = "default_allowed_lanes")]
     pub allowed_lanes: Vec<String>,
     #[serde(default = "default_allowed_effects")]

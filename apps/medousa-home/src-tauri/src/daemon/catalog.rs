@@ -94,3 +94,23 @@ pub async fn catalog_get_capability(
         .await
         .map_err(|err| err.to_string())
 }
+
+#[tauri::command]
+pub async fn catalog_reindex_capabilities(
+    state: State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let url = format!("{base}/v1/capabilities/reindex");
+    let client = Client::new();
+    let response = client
+        .post(&url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("capability reindex failed ({status}): {body}"));
+    }
+    response.json().await.map_err(|err| err.to_string())
+}

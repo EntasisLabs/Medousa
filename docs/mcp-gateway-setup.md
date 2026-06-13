@@ -53,8 +53,10 @@ Each server is one MCP connection the gateway manages.
 | `id` | Stable id used in `cognition.mcp.invoke` (`server_id`) |
 | `title` | Human label |
 | `enabled` | `false` skips registration |
-| `transport` | `stdio` (spawn `command` + `args`) |
+| `transport` | `stdio` (local command), `http` / `streamable` (POST JSON-RPC), or `sse` (legacy SSE + POST endpoint) |
 | `command` / `args` | Stdio MCP server launch line |
+| `url` | Remote MCP endpoint (`http://` or `https://`) |
+| `bearer_token` | Optional bearer token for remote MCP auth |
 | `use_mock` | `true` = mock tools only (no subprocess) |
 | `allowed_lanes` | `interactive`, `scheduled`, … |
 | `allowed_effect_classes` | Policy hints: `external_read`, `external_write`, `external_side_effect` |
@@ -100,6 +102,33 @@ enabled = true
 transport = "stdio"
 command = "uvx"
 args = ["mcp-server-fetch"]
+allowed_lanes = ["interactive"]
+allowed_effect_classes = ["external_read"]
+```
+
+### Remote HTTP (hosted MCP gateway)
+
+```toml
+[[servers]]
+id = "hosted"
+title = "Hosted MCP"
+enabled = true
+transport = "http"
+url = "https://mcp.example.com/mcp"
+bearer_token = "your-token-if-required"
+allowed_lanes = ["interactive", "scheduled"]
+allowed_effect_classes = ["external_read", "external_write"]
+```
+
+Use `transport = "sse"` for legacy MCP servers that expose an SSE stream plus a separate message POST endpoint (common in older reference servers).
+
+```toml
+[[servers]]
+id = "legacy"
+title = "Legacy SSE MCP"
+enabled = true
+transport = "sse"
+url = "https://mcp.example.com/sse"
 allowed_lanes = ["interactive"]
 allowed_effect_classes = ["external_read"]
 ```

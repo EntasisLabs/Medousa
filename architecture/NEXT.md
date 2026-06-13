@@ -40,9 +40,9 @@ Product UX polish (Home layout, nav tiers, Work Hub manifestations, chat present
 | Deliverable | Status |
 |-------------|--------|
 | Read gateway config + server health (Home Skills / Settings) | ✅ read-only catalog |
-| Write API: add/edit/remove `[[servers]]`, restart gateway | ⬜ |
-| Home: “Add MCP server” form + test connection | ⬜ |
-| HTTP/SSE MCP transport (not only stdio) | ⬜ (needed for URL-only servers) |
+| Write API: add/edit/remove `[[servers]]`, restart gateway | ✅ Home Services tab |
+| Home: “Add MCP server” form + test connection | ✅ Save & connect |
+| HTTP/SSE MCP transport (not only stdio) | ✅ remote `url` + bearer token in Home + gateway client |
 
 See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s file-based flow.
 
@@ -55,8 +55,8 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 | Deliverable | Status |
 |-------------|--------|
 | Read `GET /v1/capabilities` in Skills → Tools | ✅ |
-| Web search prefs (`[web_search]` in capabilities.toml) | ⬜ in-app |
-| Enable/disable capability bindings | ⬜ |
+| Web search prefs (`[web_search]` in capabilities.toml) | ✅ Reach settings + capabilities overlay API |
+| Enable/disable capability bindings | ✅ Tools detail toggles |
 
 ---
 

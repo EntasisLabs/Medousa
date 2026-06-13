@@ -167,10 +167,16 @@ pub async fn register_turn(
 ) -> Result<(), TurnTicketConflict> {
     let mut guard = registry.write().await;
     if ticket.mode == TurnTicketMode::Interactive {
-        if guard.interactive_by_session.contains_key(&ticket.session_id) {
-            return Err(TurnTicketConflict {
-                message: "session already has an active interactive turn".to_string(),
-            });
+        if let Some(existing_id) = guard.interactive_by_session.get(&ticket.session_id) {
+            let allow_fork = guard
+                .by_id
+                .get(existing_id)
+                .is_some_and(|existing| existing.phase.composer_handoff());
+            if !allow_fork {
+                return Err(TurnTicketConflict {
+                    message: "session already has an active interactive turn".to_string(),
+                });
+            }
         }
         guard
             .interactive_by_session
@@ -196,7 +202,13 @@ pub async fn note_stream_event(
     ticket.updated_at = Utc::now();
     if next.terminal() && ticket.mode == TurnTicketMode::Interactive {
         let session_id = ticket.session_id.clone();
-        guard.interactive_by_session.remove(&session_id);
+        if guard
+            .interactive_by_session
+            .get(&session_id)
+            .is_some_and(|active| active == turn_id)
+        {
+            guard.interactive_by_session.remove(&session_id);
+        }
     }
 }
 
@@ -401,8 +413,28 @@ mod tests {
         let turn = active.turn.expect("turn");
         assert!(turn.composer_handoff);
 
+        register_turn(
+            &registry,
+            TurnTicket {
+                turn_id: "turn-2".to_string(),
+                session_id: "session-a".to_string(),
+                mode: TurnTicketMode::Interactive,
+                phase: TurnTicketPhase::Streaming,
+                stream_url: "http://localhost/stream2".to_string(),
+                prompt_preview: "fork while worker runs".to_string(),
+                workspace_card_id: None,
+                started_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+        )
+        .await
+        .expect("fork during worker handoff");
+
+        let forked = get_active_interactive_turn(&registry, "session-a").await;
+        assert_eq!(forked.turn.as_ref().map(|t| t.turn_id.as_str()), Some("turn-2"));
+
         note_stream_event(&registry, "turn-1", "final", "final", true).await;
-        assert!(!get_active_interactive_turn(&registry, "session-a").await.active);
+        assert!(get_active_interactive_turn(&registry, "session-a").await.active);
     }
 
     #[tokio::test]

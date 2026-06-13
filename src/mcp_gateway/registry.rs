@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::capability_catalog::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use crate::mcp_gateway::catalog::{auto_tag_capabilities, discover_from_entries, mock_tool_catalog};
 use crate::mcp_gateway::policy_client::DaemonPolicyClient;
+use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
 use crate::mcp_gateway::stdio_client::StdioMcpSession;
 use crate::mcp_gateway_api::{
@@ -98,7 +99,7 @@ impl ServerRegistry {
                 continue;
             }
 
-            if server.use_mock || server.command.as_deref().unwrap_or("").is_empty() {
+            if server_unconfigured(server) {
                 let mock_tools: Vec<_> = mock_tool_catalog()
                     .into_iter()
                     .filter(|tool| tool.server_id == server.id)
@@ -118,7 +119,7 @@ impl ServerRegistry {
                 continue;
             }
 
-            match list_tools_from_stdio(server, timeout).await {
+            match list_tools_for_server(server, timeout).await {
                 Ok(live_tools) => {
                     let count = live_tools.len();
                     tools.extend(live_tools);
@@ -372,41 +373,77 @@ impl ServerRegistry {
     }
 }
 
-async fn list_tools_from_stdio(
+async fn list_tools_for_server(
     server: &McpServerConfig,
     timeout: Duration,
 ) -> Result<Vec<McpToolCatalogEntry>> {
+    let tools = match remote_transport(server) {
+        Some(transport) => list_tools_from_remote(server, transport, timeout).await?,
+        None => list_tools_from_stdio(server, timeout).await?,
+    };
+    Ok(tools
+        .into_iter()
+        .map(|tool| tool_entry_from_definition(server, tool))
+        .collect())
+}
+
+async fn list_tools_from_stdio(
+    server: &McpServerConfig,
+    timeout: Duration,
+) -> Result<Vec<crate::mcp_gateway::stdio_client::McpToolDefinition>> {
     let command = server
         .command
         .as_deref()
         .context("stdio server missing command")?;
     let mut session = StdioMcpSession::spawn(command, &server.args, timeout).await?;
-    let tools = session.list_tools().await?;
-    Ok(tools
-        .into_iter()
-        .map(|tool| {
-            let effect_class = infer_effect_class(&tool.name, tool.description.as_deref());
-            let capability_ids = server
-                .tool_tags
-                .get(&tool.name)
-                .cloned()
-                .unwrap_or_else(|| auto_tag_capabilities(&tool.name, tool.description.as_deref()));
-            McpToolCatalogEntry {
-                server_id: server.id.clone(),
-                server_title: server.title.clone(),
-                tool_name: tool.name.clone(),
-                title: tool.title,
-                description: tool.description,
-                input_schema_summary: tool
-                    .input_schema
-                    .as_ref()
-                    .map(|schema| schema.to_string()),
-                effect_class,
-                capability_ids,
-                stability: "live".to_string(),
-            }
-        })
-        .collect())
+    session.list_tools().await
+}
+
+async fn list_tools_from_remote(
+    server: &McpServerConfig,
+    transport: RemoteTransport,
+    timeout: Duration,
+) -> Result<Vec<crate::mcp_gateway::stdio_client::McpToolDefinition>> {
+    let url = server
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .context("remote MCP server missing url")?;
+    let bearer_token = server
+        .bearer_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let mut session = RemoteMcpSession::connect(url, transport, bearer_token, timeout).await?;
+    session.list_tools().await
+}
+
+fn tool_entry_from_definition(
+    server: &McpServerConfig,
+    tool: crate::mcp_gateway::stdio_client::McpToolDefinition,
+) -> McpToolCatalogEntry {
+    let effect_class = infer_effect_class(&tool.name, tool.description.as_deref());
+    let capability_ids = server
+        .tool_tags
+        .get(&tool.name)
+        .cloned()
+        .unwrap_or_else(|| auto_tag_capabilities(&tool.name, tool.description.as_deref()));
+    McpToolCatalogEntry {
+        server_id: server.id.clone(),
+        server_title: server.title.clone(),
+        tool_name: tool.name.clone(),
+        title: tool.title,
+        description: tool.description,
+        input_schema_summary: tool
+            .input_schema
+            .as_ref()
+            .map(|schema| schema.to_string()),
+        effect_class,
+        capability_ids,
+        stability: "live".to_string(),
+    }
 }
 
 async fn execute_invoke(
@@ -415,14 +452,31 @@ async fn execute_invoke(
     input: Value,
     timeout: Duration,
 ) -> Result<Value> {
-    if server.use_mock || server.command.as_deref().unwrap_or("").is_empty() {
+    if server_unconfigured(server) {
         return Ok(json!({
             "mock": true,
             "server_id": server.id,
             "tool_name": tool_name,
             "input": input,
-            "message": "mock MCP invoke (configure server.command for live stdio MCP)"
+            "message": "mock MCP invoke (configure server command or url for live MCP)"
         }));
+    }
+
+    if let Some(transport) = remote_transport(server) {
+        let url = server
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .context("remote MCP server missing url")?;
+        let bearer_token = server
+            .bearer_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let mut session = RemoteMcpSession::connect(url, transport, bearer_token, timeout).await?;
+        return session.call_tool(tool_name, input).await;
     }
 
     let command = server
@@ -431,6 +485,25 @@ async fn execute_invoke(
         .context("stdio server missing command")?;
     let mut session = StdioMcpSession::spawn(command, &server.args, timeout).await?;
     session.call_tool(tool_name, input).await
+}
+
+fn remote_transport(server: &McpServerConfig) -> Option<RemoteTransport> {
+    RemoteTransport::parse(&server.transport)
+}
+
+fn server_unconfigured(server: &McpServerConfig) -> bool {
+    if server.use_mock {
+        return true;
+    }
+    if remote_transport(server).is_some() {
+        return server
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none();
+    }
+    server.command.as_deref().unwrap_or("").trim().is_empty()
 }
 
 fn status_from_config(
@@ -519,6 +592,8 @@ mod tests {
                 transport: "stdio".to_string(),
                 command: None,
                 args: Vec::new(),
+                url: None,
+                bearer_token: None,
                 allowed_lanes: vec!["interactive".to_string()],
                 allowed_effect_classes: vec!["external_read".to_string()],
                 tool_tags: Default::default(),

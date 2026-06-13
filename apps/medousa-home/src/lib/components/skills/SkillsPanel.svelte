@@ -21,8 +21,19 @@
     primaryEffectClass,
     type ToolFilterChip,
   } from "$lib/utils/toolCatalog";
+  import McpServersPanel from "$lib/components/skills/McpServersPanel.svelte";
+  import {
+    isBindingDisabled,
+    loadCapabilitiesOverlay,
+    toggleCapabilityBinding,
+    type DisabledBindingRef,
+  } from "$lib/utils/capabilitiesApi";
 
-  type CatalogTab = "skills" | "tools";
+  type CatalogTab = "skills" | "tools" | "services";
+
+  let disabledBindings = $state<DisabledBindingRef[]>([]);
+  let bindingBusy = $state<string | null>(null);
+  let bindingMessage = $state<string | null>(null);
 
   interface Props {
     visible: boolean;
@@ -49,8 +60,18 @@
   $effect(() => {
     if (visible) {
       void catalog.refresh();
+      void refreshDisabledBindings();
     }
   });
+
+  async function refreshDisabledBindings() {
+    try {
+      const overlay = await loadCapabilitiesOverlay();
+      disabledBindings = overlay.disabledBindings;
+    } catch {
+      disabledBindings = [];
+    }
+  }
 
   const filteredSkills = $derived(
     filterSkills(catalog.manuscripts, search, skillFilter),
@@ -89,7 +110,37 @@
   function selectTool(entry: CapabilityListEntry) {
     selectedToolId = entry.id;
     selectedSkillId = null;
+    bindingMessage = null;
     void catalog.loadCapabilityDetail(entry.id);
+  }
+
+  async function toggleBinding(
+    capabilityId: string,
+    source: string,
+    reference: string,
+    enabled: boolean,
+  ) {
+    const key = `${capabilityId}:${source}:${reference}`;
+    bindingBusy = key;
+    bindingMessage = null;
+    try {
+      const result = await toggleCapabilityBinding(
+        capabilityId,
+        source,
+        reference,
+        enabled,
+      );
+      bindingMessage = result.message;
+      await refreshDisabledBindings();
+      await catalog.refresh();
+      if (selectedToolId) {
+        await catalog.loadCapabilityDetail(selectedToolId);
+      }
+    } catch (err) {
+      bindingMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      bindingBusy = null;
+    }
   }
 
   function setTab(tab: CatalogTab) {
@@ -125,8 +176,10 @@
             <p class="workshop-header-line mt-1">
               {#if activeTab === "skills"}
                 Manuscripts she can run · {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
-              {:else}
+              {:else if activeTab === "tools"}
                 Tools she can reach · {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+              {:else}
+                MCP servers Medousa can call
               {/if}
             </p>
           </div>
@@ -143,8 +196,10 @@
           <p class="workshop-faint text-xs">
             {#if activeTab === "skills"}
               {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
-            {:else}
+            {:else if activeTab === "tools"}
               {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+            {:else}
+              MCP services
             {/if}
           </p>
           <button
@@ -172,8 +227,16 @@
       >
         Tools
       </button>
+      <button
+        type="button"
+        class="workshop-tab {activeTab === 'services' ? 'workshop-tab-active' : ''}"
+        onclick={() => setTab("services")}
+      >
+        Services
+      </button>
     </div>
 
+    {#if activeTab !== "services"}
     <label class="mt-3 block">
       <span class="sr-only">
         Search {activeTab === "skills" ? "skills" : "tools"}
@@ -187,6 +250,7 @@
         bind:value={search}
       />
     </label>
+    {/if}
 
     {#if activeTab === "skills"}
       <div class="mt-2 flex flex-wrap gap-1.5">
@@ -221,6 +285,11 @@
   {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
+    {#if activeTab === "services"}
+      <div class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3">
+        <McpServersPanel />
+      </div>
+    {:else}
     <div
       class="workshop-list-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen
         ? 'hidden'
@@ -511,6 +580,27 @@
                         {binding.effect_class}
                       </span>
                     {/if}
+                    <label class="ml-auto inline-flex items-center gap-2 text-surface-300">
+                      <input
+                        type="checkbox"
+                        class="checkbox"
+                        checked={!isBindingDisabled(
+                          disabledBindings,
+                          selectedTool.id,
+                          binding.source,
+                          binding.reference,
+                        )}
+                        disabled={bindingBusy !== null}
+                        onchange={(event) =>
+                          void toggleBinding(
+                            selectedTool.id,
+                            binding.source,
+                            binding.reference,
+                            (event.currentTarget as HTMLInputElement).checked,
+                          )}
+                      />
+                      Enabled
+                    </label>
                   </div>
                   <p class="mt-1 font-mono text-[11px] text-surface-300">
                     {binding.reference}
@@ -533,6 +623,10 @@
               MCP gateway unreachable — MCP bindings may show unavailable until sync.
             </p>
           {/if}
+
+          {#if bindingMessage}
+            <p class="mt-3 text-xs text-surface-300">{bindingMessage}</p>
+          {/if}
         {:else}
           <dl class="mt-4 space-y-2 text-xs">
             <div>
@@ -549,7 +643,7 @@
           class="workshop-text-action mt-5"
           onclick={() => void openCapabilitiesFile()}
         >
-          Edit bindings…
+          Open capabilities.toml
         </button>
       {:else}
         <p class="workshop-muted text-sm">
@@ -562,5 +656,6 @@
         </p>
       {/if}
     </aside>
+    {/if}
   </div>
 </section>
