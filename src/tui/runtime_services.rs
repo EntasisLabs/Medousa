@@ -53,7 +53,8 @@ use crate::bridge_tools::{
 use crate::capability_catalog::CapabilityRegistry;
 use crate::mcp_gateway_client::McpGatewayClient;
 use crate::turn_control_tools::{
-    CognitionTurnBeginWorkTool, CognitionTurnFinishTool, CognitionTurnPrepareFinalTool,
+    CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
+    CognitionTurnPrepareFinalTool,
     CognitionTurnRequestMoreRoundsTool,
 };
 use crate::turn_continuation::TurnContinuationScope;
@@ -288,6 +289,7 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
 
     tool_registry.register_tool(CognitionTurnBeginWorkTool)?;
+    tool_registry.register_tool(CognitionTurnCheckpointTool)?;
     tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
     tool_registry.register_tool(CognitionTurnFinishTool)?;
     tool_registry.register_tool(CognitionTurnRequestMoreRoundsTool)?;

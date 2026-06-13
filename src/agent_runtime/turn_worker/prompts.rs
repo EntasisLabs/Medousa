@@ -29,7 +29,7 @@ Rules:
 - On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps, HOST_TOOL_SLICES excerpt) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
 - Host may call cognition_tool_history_summary / cognition_tool_history_detail(slice_id=turn:N) to verify prior tool receipts without re-running discovery.
 - Persist runtime learnings with cognition_vault_write + tags: [runtime-learning] — turn start injects [MEDOUSA_RUNTIME_LEARNINGS]. Propose manuscript overlays with cognition_manuscript_overlay_propose (operator approves; never kernel STTP edits).
-- Turn control: answer in prose when no tools are needed; cognition_turn_begin_work for a progress line before host tools; cognition_turn_finish to commit when done; cognition_turn_request_more_rounds if the round budget is tight."#;
+- Turn control: answer in prose when no tools are needed; cognition_turn_begin_work for a progress line before host tools; cognition_turn_checkpoint to hand a mid-task update back to the principal (conversation continues); cognition_turn_finish when fully done; cognition_turn_request_more_rounds if the round budget is tight."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");

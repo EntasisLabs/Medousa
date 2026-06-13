@@ -27,7 +27,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     },
     runtime_control(.98): {
         tool_surface(.99): "Bootstrap tools always visible (~9). cognition_tools_discover(domain) unlocks tool groups for this session. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], matched scripts/learnings.",
-        turn_finalize(.99): "Prose completes simple turns. cognition_turn_begin_work for progress; cognition_turn_finish when tool work is done. Runtime auto-extends round budget within fuse.",
+        turn_finalize(.99): "Prose completes simple turns. cognition_turn_begin_work for progress; cognition_turn_checkpoint to hand mid-task updates back to the principal; cognition_turn_finish when tool work is fully done. Runtime auto-extends round budget within fuse.",
         turn_worker_bus(.97): "Orchestrate on console; delegate execution via cognition_spawn_turn_worker with resolved handoff. Workshop = same Medousa; synthesis or pass-through on finish."
     },
     locus_memory(.99): {

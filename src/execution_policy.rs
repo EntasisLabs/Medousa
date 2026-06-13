@@ -205,6 +205,8 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition.turn.prepare_final"
         | "cognition_turn_finish"
         | "cognition.turn.finish"
+        | "cognition_turn_checkpoint"
+        | "cognition.turn.checkpoint"
         | "cognition_turn_request_more_rounds"
         | "cognition.turn.request_more_rounds" => StepExecutionClass::ReadOnly,
         _ if tool_name.contains("modules") || tool_name.contains("examples") => {

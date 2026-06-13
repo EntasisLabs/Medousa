@@ -28,6 +28,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_web_search",
     "cognition_vault_search",
     "cognition_turn_begin_work",
+    "cognition_turn_checkpoint",
     "cognition_turn_finish",
     "cognition_turn_worker_status",
 ];
@@ -266,6 +267,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_vault_search" => "Search vault notes",
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_turn_begin_work" => "Progress line before heavy tools",
+        "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer",
         "cognition_turn_worker_status" => "Pending worker status",
         "cognition_capability_invoke" => "One-shot capability execution",

@@ -10,7 +10,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
 use crate::agent_runtime::turn_completion::missing_ritual_tools_for_avec;
 use crate::agent_runtime::turn_worker_tools::is_spawn_turn_worker_tool_name;
-use crate::turn_control_tools::{is_begin_work_tool_name, is_finish_turn_tool_name};
+use crate::turn_control_tools::{is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name};
 use crate::turn_text_heuristics::{
     draft_implies_pending_spawn, looks_like_clarifying_question, looks_like_substantive_final_answer,
     user_prompt_implies_host_delegation,
@@ -59,7 +59,7 @@ pub fn continue_control_message(reason: ContinueReason, missing_tools: &[String]
         }
         ContinueReason::PendingDelegation => {
             "Turn continues: delegated work is still open — call cognition_spawn_turn_worker with a complete task \
-             (include resolved manuscripts/capabilities from this turn) or finish with cognition_turn_finish when done."
+             (include resolved manuscripts/capabilities from this turn), cognition_turn_checkpoint for mid-task handoff, or cognition_turn_finish when fully done."
                 .to_string()
         }
     }
@@ -100,6 +100,12 @@ fn spawn_turn_worker_invoked(invocations: &[ToolInvocation]) -> bool {
     invocations
         .iter()
         .any(|inv| is_spawn_turn_worker_tool_name(&inv.tool_name))
+}
+
+fn checkpoint_turn_invoked(invocations: &[ToolInvocation]) -> bool {
+    invocations
+        .iter()
+        .any(|inv| is_checkpoint_turn_tool_name(&inv.tool_name))
 }
 
 fn finish_turn_invoked(invocations: &[ToolInvocation]) -> bool {
@@ -235,6 +241,12 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
     if host_avec_ritual_receipts_satisfied(ctx) {
         return TurnRoundAction::EndTurn {
             termination_reason: "tool_debt_complete",
+        };
+    }
+
+    if checkpoint_turn_invoked(ctx.invocations) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "tool_debt_checkpoint",
         };
     }
 
@@ -572,6 +584,25 @@ mod tests {
             action,
             TurnRoundAction::EndTurn {
                 termination_reason: "tool_debt_complete"
+            }
+        ));
+    }
+
+    #[test]
+    fn checkpoint_tool_ends_without_forced_continue() {
+        let invocations = vec![
+            tool("cognition_memory_context"),
+            tool("cognition_turn_checkpoint"),
+        ];
+        let action = decide_after_tools_text_round(&after_tools(
+            "write the article",
+            "Still drafting — reply when you want me to continue.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "tool_debt_checkpoint"
             }
         ));
     }

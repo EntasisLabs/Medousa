@@ -1054,6 +1054,27 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 emit_orchestration_summary(&sink, &orchestration_state).await;
                 return;
             }
+            if response.termination_reason == "cognition_turn_checkpoint" {
+                let tool_names = collect_tool_names(&combined_invocations);
+                sink.tool_invoked(
+                    "llm.chat".to_string(),
+                    format!(
+                        "checkpoint  {} token(s)",
+                        final_text.split_whitespace().count()
+                    ),
+                )
+                .await;
+                stage_scratch_for_persist(&sink, &last_tool_scratch).await;
+                super::turn_delivery::deliver_agent_turn_checkpoint(
+                    &sink,
+                    turn_id,
+                    final_text,
+                    tool_names,
+                )
+                .await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+                return;
+            }
             if should_run_continuation(&combined_invocations)
                 && !crate::channel_delivery::is_principal_interactive_channel(
                     origin_channel.as_deref().unwrap_or(channel_delivery::CHANNEL_INTERACTIVE),

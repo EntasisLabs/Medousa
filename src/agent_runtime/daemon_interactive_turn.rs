@@ -305,6 +305,61 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
+    async fn agent_turn_checkpoint(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| {
+                parts.finalize_assistant_turn(
+                    body.clone(),
+                    tool_names.clone(),
+                    Some("checkpoint".to_string()),
+                )
+            })
+            .unwrap_or_else(|_| {
+                crate::turn_parts::conversation_turn_from_parts(
+                    "assistant",
+                    body.clone(),
+                    tool_names.clone(),
+                    Some("checkpoint".to_string()),
+                    vec![crate::turn_parts::TurnPart::Text {
+                        markdown: body.clone(),
+                    }],
+                )
+            });
+        append_turn_with_scratch(
+            &self.session_id,
+            &assistant_turn,
+            self.take_pending_scratch().as_ref(),
+        );
+
+        let checkpoint_event = if stream_authoritative {
+            interactive_turn_runtime::turn_checkpoint_stream_event(
+                &self.turn_id,
+                "",
+                tool_names,
+            )
+        } else {
+            interactive_turn_runtime::turn_checkpoint_stream_event(
+                &self.turn_id,
+                &body,
+                tool_names,
+            )
+        };
+        self.publish_tracked(checkpoint_event).await;
+        self.sync_ask_job_succeeded(body).await;
+
+        if let Some(delivery) = &self.delivery {
+            delivery.mark_complete(None).await;
+        }
+    }
+
     async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         if self.emit_cancelled_if_needed().await {
             return;
@@ -848,6 +903,13 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         self.inner.agent_turn_progress(turn_id, message, tool_names).await;
+    }
+
+    async fn agent_turn_checkpoint(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
+        *self.outcome.write().await = Some(TurnOutcome::Success);
+        self.inner
+            .agent_turn_checkpoint(turn_id, message, tool_names)
+            .await;
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {

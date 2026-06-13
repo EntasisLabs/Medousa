@@ -112,6 +112,19 @@ impl AgentStreamSink for TuiStreamSink {
             .await;
     }
 
+    async fn agent_turn_checkpoint(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
+        let _ = self
+            .tx
+            .send(TuiEvent::AgentResponse {
+                turn_id,
+                text,
+                tool_names,
+                terminal: true,
+                work_id: None,
+            })
+            .await;
+    }
+
     async fn agent_error(&self, turn_id: u64, message: String) {
         let _ = self
             .tx
@@ -849,6 +862,29 @@ async fn dispatch_daemon_stream_event(
                     turn_id,
                     text,
                     tool_names,
+                })
+                .await
+                .map_err(|err| err.to_string())?;
+        }
+        "turn_checkpoint" => {
+            let text = payload
+                .final_text
+                .or_else(|| {
+                    if payload.message.trim().is_empty() {
+                        None
+                    } else {
+                        Some(payload.message.clone())
+                    }
+                })
+                .unwrap_or_else(|| "(empty checkpoint update)".to_string());
+            let tool_names = payload.tool_names.unwrap_or_default();
+            event_tx
+                .send(TuiEvent::AgentResponse {
+                    turn_id,
+                    text,
+                    tool_names,
+                    terminal: payload.terminal,
+                    work_id: None,
                 })
                 .await
                 .map_err(|err| err.to_string())?;

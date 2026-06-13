@@ -33,6 +33,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
          Serve the principal in this turn: use tools when needed; complete prose ends the turn. \
+         Mid-task updates that hand control back to the principal: cognition_turn_checkpoint (not finish_turn). \
          When execution belongs in the workshop, call cognition_spawn_turn_worker with resolved context — \
          do not stop on plan prose alone. \
          Turn start injects [MEDOUSA_TOOL_SLICES], [MEDOUSA_TOOL_HINTS], and matched [MEDOUSA_GRAPHEME_SCRIPTS]. \
@@ -221,7 +222,8 @@ pub fn stuck_turn_user_message(
     format!(
         "We hit the turn loop limit: {text_only_limit} consecutive principal-visible replies without \
          new tool receipts (turn budget: {max_tool_rounds} rounds; used {rounds_executed} this turn). \
-         What should we do next — run the missing ritual (calibrate, moods), call cognition_turn_finish \
+         What should we do next — run the missing ritual (calibrate, moods), call cognition_turn_checkpoint \
+         for a mid-task handoff, cognition_turn_finish when fully done, \
          with the complete answer, or extend the budget?"
     )
 }

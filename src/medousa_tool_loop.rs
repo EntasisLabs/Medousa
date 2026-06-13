@@ -37,9 +37,11 @@ use crate::turn_budget_request::{
 };
 use crate::turn_control_tools::{
     finish_turn_from_invocations, begin_work_message_from_invocations,
-    is_begin_work_tool_name, is_finish_turn_tool_name, is_prepare_final_tool_name,
+    checkpoint_turn_from_invocations,
+    is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name,
+    is_prepare_final_tool_name,
     is_request_more_rounds_tool_name, request_more_rounds_from_invocations,
-    COGNITION_TURN_FINISH,
+    COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
@@ -393,6 +395,7 @@ impl MedousaToolLoopPipeline {
                     && tool_calls.iter().any(|call| {
                         !is_prepare_final_tool_name(&call.fn_name)
                             && !is_begin_work_tool_name(&call.fn_name)
+                            && !is_checkpoint_turn_tool_name(&call.fn_name)
                             && !is_finish_turn_tool_name(&call.fn_name)
                             && !is_request_more_rounds_tool_name(&call.fn_name)
                     })
@@ -782,6 +785,35 @@ impl MedousaToolLoopPipeline {
                     });
                 }
 
+                if let Some(message) = checkpoint_turn_from_invocations(&invocations) {
+                    if let Some(gate) = completion_gate.as_ref() {
+                        let tools = collect_tool_names(&invocations);
+                        persist_ledger_record(
+                            gate.session_id.as_deref(),
+                            &record_finalized(
+                                gate.stream_turn_id,
+                                "cognition_turn_checkpoint",
+                                rounds_executed,
+                                &tools,
+                            ),
+                        );
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: COGNITION_TURN_CHECKPOINT.to_string(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text: message,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: "cognition_turn_checkpoint".to_string(),
+                    });
+                }
+
                 if let Some((work_id, ack)) =
                     crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
                         &invocations,
@@ -1145,6 +1177,20 @@ mod tests {
                 termination_reason: "tool_debt_complete"
             }
         ));
+    }
+
+    #[test]
+    fn checkpoint_turn_from_invocations_is_detected_for_loop_exit() {
+        use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+        let invocations = vec![ToolInvocation {
+            tool_name: "cognition_turn_checkpoint".to_string(),
+            tool_input: serde_json::json!({"message": "Here is progress so far."}),
+            tool_output: serde_json::json!({"ok": true, "checkpoint_turn": true}),
+        }];
+        assert_eq!(
+            crate::turn_control_tools::checkpoint_turn_from_invocations(&invocations).as_deref(),
+            Some("Here is progress so far.")
+        );
     }
 
     #[test]

@@ -1320,6 +1320,43 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "turn_checkpoint") {
+      const checkpointBody =
+        event.final_text?.trim() ||
+        event.message?.trim() ||
+        current.content;
+      const prior = current.content.trim();
+      const merged =
+        prior && checkpointBody && prior !== checkpointBody
+          ? `${prior}\n\n${checkpointBody}`
+          : resolveTurnContent(current.content, checkpointBody, true);
+      const next: ChatMessage = {
+        ...current,
+        content: merged,
+        phase: "handoff",
+        statusLine:
+          event.message?.trim() ||
+          "Reply when you're ready — Medousa can continue this task.",
+        tools: event.tool_names?.length
+          ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
+          : current.tools,
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      if (event.terminal) {
+        this.finishMessage(messageId);
+        this.finishAskLaneTurn(event.turn_id);
+        if (this.shouldSettleTurnFromStream(event.turn_id)) {
+          this.settleTurn(event.turn_id);
+          this.scheduleSessionsRefresh();
+        }
+      }
+      return;
+    }
+
     if (event.event_type === "scratch_reset") {
       const next: ChatMessage = {
         ...current,

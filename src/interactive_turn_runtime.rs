@@ -119,6 +119,24 @@ pub fn turn_progress_stream_event(
     Ok(event)
 }
 
+/// Mid-task handoff: principal sees a durable update; turn ends without claiming final completion.
+pub fn turn_checkpoint_stream_event(
+    turn_id: &str,
+    message: &str,
+    tool_names: Vec<String>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event(
+        turn_id,
+        "turn_checkpoint",
+        "handoff",
+        "Medousa handed the turn back to you — reply when ready to continue",
+    )?;
+    event.final_text = Some(message.to_string());
+    event.tool_names = Some(tool_names);
+    event.terminal = true;
+    Ok(event)
+}
+
 pub fn final_stream_event(turn_id: &str, final_text: &str) -> Result<InteractiveTurnStreamEvent> {
     final_stream_event_with_tools(turn_id, final_text, Vec::new())
 }

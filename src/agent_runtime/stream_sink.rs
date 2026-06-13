@@ -22,6 +22,10 @@ pub trait AgentStreamSink: Send + Sync {
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         let _ = (turn_id, message, tool_names);
     }
+    /// Mid-task handoff: substantive update for the principal; ends the agent turn without final completion.
+    async fn agent_turn_checkpoint(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
+        self.agent_response(turn_id, message, tool_names).await;
+    }
     /// Short host acknowledgement while a background turn worker runs (non-terminal delivery).
     async fn agent_worker_ack(
         &self,

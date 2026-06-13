@@ -6,6 +6,7 @@ use super::stream_sink::SharedAgentStreamSink;
 pub enum AgentTurnDeliveryKind {
     Final,
     NeedsInput,
+    Checkpoint,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,10 +54,22 @@ pub async fn deliver_agent_turn_outcome(
         AgentTurnDeliveryKind::NeedsInput => {
             sink.agent_needs_input(turn_id, text, tool_names).await;
         }
+        AgentTurnDeliveryKind::Checkpoint => {
+            sink.agent_turn_checkpoint(turn_id, text, tool_names).await;
+        }
         AgentTurnDeliveryKind::Final => {
             sink.agent_response(turn_id, text, tool_names).await;
         }
     }
+}
+
+pub async fn deliver_agent_turn_checkpoint(
+    sink: &SharedAgentStreamSink,
+    turn_id: u64,
+    text: String,
+    tool_names: Vec<String>,
+) {
+    sink.agent_turn_checkpoint(turn_id, text, tool_names).await;
 }
 
 #[cfg(test)]

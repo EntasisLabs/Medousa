@@ -26,7 +26,14 @@ export function isTerminalContentCommit(
   return (
     event.terminal ||
     event.event_type === "final" ||
+    event.event_type === "turn_checkpoint" ||
     event.event_type === "needs_input" ||
     event.event_type === "error"
   );
+}
+
+export function isCheckpointHandoffStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return event.event_type === "turn_checkpoint" || event.phase === "handoff";
 }

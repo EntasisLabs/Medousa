@@ -85,24 +85,26 @@ VERSION="$(medousa_version)"
 medousa_log "building medousa v${VERSION} for ${TARGET}"
 medousa_log "staging → ${BIN_DIR}"
 
-CARGO_TARGET_ARGS=()
-if [[ -n "${TARGET}" ]]; then
-  CARGO_TARGET_ARGS=(--target "${TARGET}")
-fi
-
-CARGO_FEATURE_ARGS=()
+CARGO_BUILD_ARGS=(--release --bins)
 if [[ "${WITH_INFERENCE}" -eq 1 ]] && [[ "${TARGET}" == *-apple-* ]]; then
-  CARGO_FEATURE_ARGS=(--features embedded-inference-metal)
+  CARGO_BUILD_ARGS+=(--features embedded-inference-metal)
   medousa_log "embedded inference enabled (embedded-inference-metal)"
 elif [[ "${WITH_INFERENCE}" -eq 1 ]]; then
   medousa_log "note: --with-inference only applies embedded-inference-metal on Apple targets"
 fi
+if [[ -n "${TARGET}" ]]; then
+  CARGO_BUILD_ARGS+=(--target "${TARGET}")
+fi
 
 medousa_log "cargo build (root workspace, release, all bins)…"
-cargo build --release --bins "${CARGO_FEATURE_ARGS[@]}" "${CARGO_TARGET_ARGS[@]}"
+cargo build "${CARGO_BUILD_ARGS[@]}"
 
 medousa_log "cargo build (medousa_whatsapp)…"
-cargo build --release --manifest-path "${MEDOUSA_WHATSAPP_MANIFEST}" "${CARGO_TARGET_ARGS[@]}"
+WA_BUILD_ARGS=(--release --manifest-path "${MEDOUSA_WHATSAPP_MANIFEST}")
+if [[ -n "${TARGET}" ]]; then
+  WA_BUILD_ARGS+=(--target "${TARGET}")
+fi
+cargo build "${WA_BUILD_ARGS[@]}"
 
 MAIN_RELEASE="$(medousa_cargo_release_dir "${TARGET}")"
 WA_RELEASE="$(medousa_whatsapp_cargo_release_dir "${TARGET}")"

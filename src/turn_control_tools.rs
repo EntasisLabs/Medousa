@@ -16,6 +16,11 @@ pub const COGNITION_TURN_FINISH: &str = "cognition_turn_finish";
 
 pub const COGNITION_TURN_FINISH_DOTTED: &str = "cognition.turn.finish";
 
+/// Hand mid-task update to the principal and end this agent turn (conversation continues on their reply).
+pub const COGNITION_TURN_CHECKPOINT: &str = "cognition_turn_checkpoint";
+
+pub const COGNITION_TURN_CHECKPOINT_DOTTED: &str = "cognition.turn.checkpoint";
+
 pub const COGNITION_TURN_REQUEST_MORE_ROUNDS: &str = "cognition_turn_request_more_rounds";
 
 pub const COGNITION_TURN_REQUEST_MORE_ROUNDS_DOTTED: &str = "cognition.turn.request_more_rounds";
@@ -44,6 +49,13 @@ pub fn is_finish_turn_tool_name(name: &str) -> bool {
     trimmed == COGNITION_TURN_FINISH
         || trimmed == COGNITION_TURN_FINISH_DOTTED
         || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_FINISH
+}
+
+pub fn is_checkpoint_turn_tool_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed == COGNITION_TURN_CHECKPOINT
+        || trimmed == COGNITION_TURN_CHECKPOINT_DOTTED
+        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_CHECKPOINT
 }
 
 pub fn is_request_more_rounds_tool_name(name: &str) -> bool {
@@ -152,12 +164,35 @@ pub fn request_more_rounds_from_invocations(
 }
 
 fn message_from_finish_turn_payload(payload: &Value) -> Option<String> {
+    message_from_turn_control_message_payload(payload)
+}
+
+fn message_from_turn_control_message_payload(payload: &Value) -> Option<String> {
     payload
         .get("message")
         .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+/// Extract the principal-facing checkpoint from a tool batch, if `cognition_turn_checkpoint` ran.
+pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    for inv in invocations.iter().rev() {
+        if !is_checkpoint_turn_tool_name(&inv.tool_name) {
+            continue;
+        }
+        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
+            continue;
+        }
+        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_input) {
+            return Some(message);
+        }
+        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_output) {
+            return Some(message);
+        }
+    }
+    None
 }
 
 /// Signal tool-loop entry with a principal-facing progress line (loop continues).
@@ -273,7 +308,7 @@ impl StasisTool for CognitionTurnFinishTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Deliver the complete principal-facing final answer now and end this turn immediately. \
-             Prefer this when tool work is done and the principal is served — over interim status or prepare_final.",
+             Use only when the task is fully done — not for mid-task updates (use cognition_turn_checkpoint).",
         )
     }
 
@@ -312,6 +347,74 @@ impl StasisTool for CognitionTurnFinishTool {
             "ok": true,
             "finish_turn": true,
             "message": message,
+            "reason": reason,
+        }))
+    }
+}
+
+/// Hand a mid-task update to the principal and end this agent turn (await their reply to continue).
+pub struct CognitionTurnCheckpointTool;
+
+#[async_trait]
+impl StasisTool for CognitionTurnCheckpointTool {
+    fn name(&self) -> &'static str {
+        COGNITION_TURN_CHECKPOINT
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Share a substantive mid-task update with the principal and hand the turn back to them. \
+             The conversation is not over — you may continue after they reply. \
+             Use when tool work produced real progress but you are not done (not a final answer). \
+             Prefer this over streaming long interim prose that the runtime may loop on.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Principal-facing update: what you did, what you found, and what happens next or what you need from them"
+                },
+                "awaiting": {
+                    "type": "string",
+                    "description": "Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Optional short note for logs (not shown to the principal)"
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let Some(message) = message_from_turn_control_message_payload(&input) else {
+            return Ok(json!({
+                "ok": false,
+                "checkpoint_turn": false,
+                "error": "message is required and must be non-empty",
+            }));
+        };
+        let awaiting = input
+            .get("awaiting")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let reason = input
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        Ok(json!({
+            "ok": true,
+            "checkpoint_turn": true,
+            "message": message,
+            "awaiting": awaiting,
             "reason": reason,
         }))
     }
@@ -486,5 +589,32 @@ mod tests {
         assert_eq!(out["finish_turn"], true);
         assert_eq!(out["message"], "Done.");
         assert_eq!(out["reason"], "task complete");
+    }
+
+    #[test]
+    fn recognizes_checkpoint_turn_names() {
+        assert!(is_checkpoint_turn_tool_name("cognition_turn_checkpoint"));
+        assert!(is_checkpoint_turn_tool_name("cognition.turn.checkpoint"));
+        assert!(!is_checkpoint_turn_tool_name("cognition_turn_finish"));
+    }
+
+    #[test]
+    fn checkpoint_turn_from_invocations_reads_latest_successful_call() {
+        let invocations = vec![ToolInvocation {
+            tool_name: COGNITION_TURN_CHECKPOINT.to_string(),
+            tool_input: json!({"message": "Found three blockers — need your pick on scope."}),
+            tool_output: json!({"ok": true, "checkpoint_turn": true}),
+        }];
+        assert_eq!(
+            checkpoint_turn_from_invocations(&invocations).as_deref(),
+            Some("Found three blockers — need your pick on scope.")
+        );
+    }
+
+    #[tokio::test]
+    async fn checkpoint_turn_tool_requires_message() {
+        let tool = CognitionTurnCheckpointTool;
+        let out = tool.invoke(json!({})).await.expect("invoke");
+        assert_eq!(out["ok"], false);
     }
 }

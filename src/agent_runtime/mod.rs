@@ -39,7 +39,8 @@ pub use ambient_context::{
     ChannelAmbientPolicy,
 };
 pub use turn_delivery::{
-    classify_agent_turn_delivery, deliver_agent_turn_outcome, AgentTurnDeliveryHint,
+    classify_agent_turn_delivery, deliver_agent_turn_checkpoint, deliver_agent_turn_outcome,
+    AgentTurnDeliveryHint,
     AgentTurnDeliveryKind,
 };
 pub use continuation::{
