@@ -61,32 +61,29 @@
     }),
   );
 
-  function goToSurface(surface: Surface) {
+  function navigateToSurface(surface: Surface) {
+    if (surface !== "chat") {
+      layout.setSessionDrawerOpen(false);
+      layout.setIdentityDrawerOpen(false);
+    }
+    if (surface === "work") {
+      layout.setActivityCollapsed(true);
+      void workspace.prefetchCardDetails();
+    }
     activeSurface = surface;
     saveLastSurface(surface);
     if (surface === "chat") {
       void chat.refreshSessions();
       void chat.ensureSessionHydrated();
-    }
-    if (surface === "work") {
-      layout.setActivityCollapsed(true);
-      void workspace.prefetchCardDetails();
     }
   }
 
+  function goToSurface(surface: Surface) {
+    navigateToSurface(surface);
+  }
+
   function handleSurfaceSelect(surface: Surface) {
-    if (surface === "work") {
-      layout.setActivityCollapsed(true);
-    }
-    activeSurface = surface;
-    saveLastSurface(surface);
-    if (surface === "chat") {
-      void chat.refreshSessions();
-      void chat.ensureSessionHydrated();
-    }
-    if (surface === "work") {
-      void workspace.prefetchCardDetails();
-    }
+    navigateToSurface(surface);
   }
 
   async function handleOpenNote(path: string) {
@@ -115,70 +112,81 @@
     <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {#if activeSurface === "library"}
-          <LibraryPanel
-            visible={true}
-            onOpenChat={() => goToSurface("chat")}
-            onOpenWork={() => goToSurface("work")}
-            onSelectCard={handleCardSelect}
-          />
-        {:else if activeSurface === "context"}
-          <ContextPanel
-            visible={true}
-            onOpenChat={async (sessionId) => {
-              goToSurface("chat");
-              await chat.switchSession(sessionId);
-            }}
-          />
-        {:else if activeSurface === "skills"}
-          <SkillsPanel
-            visible={true}
-            onOpenChat={() => goToSurface("chat")}
-            onScheduleSkill={(entry) => {
-              cronDraft.openCreate({
-                prompt: `Run ${entry.name} on schedule`,
-                cron_expr: "0 9 * * *",
-                manuscript_id: entry.id,
-              });
-              activeSurface = "cron";
-            }}
-          />
-        {:else if activeSurface === "cron"}
-          <CronPanel visible={true} />
-        {:else if activeSurface === "messaging"}
-          <MessagingPanel visible={true} health={daemonHealth} />
-        {:else if activeSurface === "work"}
-          <WorkPanel
-            visible={true}
-            onOpenNote={handleOpenNote}
-            onOpenChat={() => goToSurface("chat")}
-            onSelectCard={handleCardSelect}
-          />
-        {:else if activeSurface === "runtime"}
-          <RuntimePanel
-            visible={true}
-            inMotionCount={workspace.inMotionCount()}
-            onOpenCron={() => (activeSurface = "cron")}
-          />
-        {:else if activeSurface === "settings"}
-          <SettingsPanel
-            visible={true}
-            revision={workspace.revision}
-            health={daemonHealth}
-            onDaemonHealth={async () => {
-              daemonHealth = await refreshDaemonHealth();
-            }}
-          />
-        {:else}
-          <ChatPanel
-            visible={activeSurface === "chat"}
-            onOpenContext={() => {
-              layout.setIdentityDrawerOpen(false);
-              goToSurface("context");
-            }}
-            onOpenConnection={() => goToSurface("settings")}
-          />
-        {/if}
+        {#key activeSurface}
+          {#if activeSurface === "chat"}
+            <ChatPanel
+              visible={true}
+              onOpenContext={() => {
+                layout.setIdentityDrawerOpen(false);
+                goToSurface("context");
+              }}
+              onOpenConnection={() => goToSurface("settings")}
+            />
+          {:else if activeSurface === "library"}
+            <LibraryPanel
+              visible={true}
+              onOpenChat={() => goToSurface("chat")}
+              onOpenWork={() => goToSurface("work")}
+              onSelectCard={handleCardSelect}
+            />
+          {:else if activeSurface === "context"}
+            <ContextPanel
+              visible={true}
+              onOpenChat={async (sessionId) => {
+                goToSurface("chat");
+                await chat.switchSession(sessionId);
+              }}
+            />
+          {:else if activeSurface === "skills"}
+            <SkillsPanel
+              visible={true}
+              onOpenChat={() => goToSurface("chat")}
+              onScheduleSkill={(entry) => {
+                cronDraft.openCreate({
+                  prompt: `Run ${entry.name} on schedule`,
+                  cron_expr: "0 9 * * *",
+                  manuscript_id: entry.id,
+                });
+                navigateToSurface("cron");
+              }}
+            />
+          {:else if activeSurface === "cron"}
+            <CronPanel visible={true} />
+          {:else if activeSurface === "messaging"}
+            <MessagingPanel visible={true} health={daemonHealth} />
+          {:else if activeSurface === "work"}
+            <WorkPanel
+              visible={true}
+              onOpenNote={handleOpenNote}
+              onOpenChat={() => goToSurface("chat")}
+              onSelectCard={handleCardSelect}
+            />
+          {:else if activeSurface === "runtime"}
+            <RuntimePanel
+              visible={true}
+              inMotionCount={workspace.inMotionCount()}
+              onOpenCron={() => navigateToSurface("cron")}
+            />
+          {:else if activeSurface === "settings"}
+            <SettingsPanel
+              visible={true}
+              revision={workspace.revision}
+              health={daemonHealth}
+              onDaemonHealth={async () => {
+                daemonHealth = await refreshDaemonHealth();
+              }}
+            />
+          {:else}
+            <ChatPanel
+              visible={true}
+              onOpenContext={() => {
+                layout.setIdentityDrawerOpen(false);
+                goToSurface("context");
+              }}
+              onOpenConnection={() => goToSurface("settings")}
+            />
+          {/if}
+        {/key}
         </div>
 
         {#if layout.activityCollapsed || desktopRails.showActivityStrip}
@@ -239,8 +247,8 @@
         cronTotalCount={recurring.activeCount().total}
         pendingDeliveries={runtime.delivery?.pending_job_deliveries ?? null}
         lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
-        onOpenRuntime={() => (activeSurface = "runtime")}
-        onOpenCron={() => (activeSurface = "cron")}
+        onOpenRuntime={() => navigateToSurface("runtime")}
+        onOpenCron={() => navigateToSurface("cron")}
       />
 
       {#if workspace.inMotionCount() > 0 && activeSurface !== "work"}

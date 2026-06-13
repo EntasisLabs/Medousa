@@ -90,6 +90,7 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 
 | Item | Doc |
 |------|-----|
+| Desktop app CI + signed bundles (dmg/msi/AppImage) | [desktop-distribution-plan.md](desktop-distribution-plan.md) |
 | Phase E cloud auth | [normie-product-gap-analysis.md](normie-product-gap-analysis.md) |
 | Phase F accessibility + prod packaging | [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) |
 | P5 media & attachments | [media-and-attachments-plan.md](media-and-attachments-plan.md) |

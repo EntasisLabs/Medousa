@@ -92,46 +92,48 @@
   data-mobile-tab={layout.mobileTab}
 >
   <main class="min-h-0 flex-1 overflow-hidden">
-    {#if layout.mobileTab === "pulse"}
-      <PulsePanel
-        health={daemonHealth}
-        onSelectCard={handleSelectCard}
-        onOpenChat={handleOpenChat}
-        onOpenNote={handleOpenNote}
-        onOpenSettings={() => layout.openYou("settings")}
-        onToggleActivity={() => layout.toggleActivitySheet()}
-      />
-    {:else if layout.mobileTab === "work"}
-      <WorkTimeline
-        visible={true}
-        onSelectCard={handleSelectCard}
-        onOpenNote={handleOpenNote}
-        onOpenChat={handleOpenChat}
-      />
-    {:else if layout.mobileTab === "chat"}
-      <ChatPanel
-        visible={true}
-        showPopout={false}
-        mobile={true}
-        onOpenContext={() => {
-          layout.setIdentityDrawerOpen(false);
-          layout.openYou("context");
-        }}
-        onOpenConnection={() => layout.openYou("settings")}
-      />
-    {:else}
-      <YouHub
-        visible={true}
-        health={daemonHealth}
-        revision={workspace.revision}
-        onOpenChat={handleOpenChat}
-        onDaemonHealth={async () => {
-          daemonHealth = await reconnectWorkshop((health) => {
-            daemonHealth = health;
-          });
-        }}
-      />
-    {/if}
+    {#key layout.mobileTab}
+      {#if layout.mobileTab === "pulse"}
+        <PulsePanel
+          health={daemonHealth}
+          onSelectCard={handleSelectCard}
+          onOpenChat={handleOpenChat}
+          onOpenNote={handleOpenNote}
+          onOpenSettings={() => layout.openYou("settings")}
+          onToggleActivity={() => layout.toggleActivitySheet()}
+        />
+      {:else if layout.mobileTab === "work"}
+        <WorkTimeline
+          visible={true}
+          onSelectCard={handleSelectCard}
+          onOpenNote={handleOpenNote}
+          onOpenChat={handleOpenChat}
+        />
+      {:else if layout.mobileTab === "chat"}
+        <ChatPanel
+          visible={true}
+          showPopout={false}
+          mobile={true}
+          onOpenContext={() => {
+            layout.setIdentityDrawerOpen(false);
+            layout.openYou("context");
+          }}
+          onOpenConnection={() => layout.openYou("settings")}
+        />
+      {:else}
+        <YouHub
+          visible={true}
+          health={daemonHealth}
+          revision={workspace.revision}
+          onOpenChat={handleOpenChat}
+          onDaemonHealth={async () => {
+            daemonHealth = await reconnectWorkshop((health) => {
+              daemonHealth = health;
+            });
+          }}
+        />
+      {/if}
+    {/key}
   </main>
 
   <MobileBottomChrome />
