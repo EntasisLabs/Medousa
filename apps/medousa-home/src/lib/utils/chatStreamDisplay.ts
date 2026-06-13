@@ -17,6 +17,16 @@ export function isEngineTelemetryEvent(event: InteractiveTurnStreamEvent): boole
   return isEngineTelemetryText(event.message);
 }
 
+export function visibleChatStatusLine(
+  line: string | null | undefined,
+  showEngineDetails: boolean,
+): string | null {
+  const trimmed = line?.trim();
+  if (!trimmed) return null;
+  if (!showEngineDetails && isEngineTelemetryText(trimmed)) return null;
+  return trimmed;
+}
+
 export function operatorStreamStatusLine(
   event: InteractiveTurnStreamEvent,
   showEngineDetails: boolean,

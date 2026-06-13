@@ -71,7 +71,7 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 | B2: Verification badges hidden in chat | ✅ |
 | A1/A2: Foreground resume + transcript reconcile | ✅ |
 | D1–D3: Retention settings, tray clear, engine TTL + archive | ✅ (engine defaults 24h hide / 7d wipe) |
-| C2: Mobile “Mac daemon defaults” chip | ⬜ |
+| C2: Mobile “Mac daemon defaults” chip | ✅ |
 
 ---
 

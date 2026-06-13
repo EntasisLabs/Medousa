@@ -4,7 +4,7 @@
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import type { ChatMessage } from "$lib/types/chat";
-  import { isEngineTelemetryText } from "$lib/utils/chatStreamDisplay";
+  import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { formatToolName } from "$lib/utils/formatTurn";
 
   interface Props {
@@ -15,13 +15,8 @@
 
   let { messages, mobile = false, compact = false }: Props = $props();
 
-  function visibleStatusLine(message: ChatMessage): string | null {
-    const line = message.statusLine?.trim();
-    if (!line) return null;
-    if (!settings.showEngineDetailsInChat && isEngineTelemetryText(line)) {
-      return null;
-    }
-    return line;
+  function displayStatusLine(message: ChatMessage): string | null {
+    return visibleChatStatusLine(message.statusLine, settings.showEngineDetailsInChat);
   }
 </script>
 
@@ -68,7 +63,7 @@
         </p>
       {/if}
 
-      {#if visibleStatusLine(message) && message.streaming}
+      {#if displayStatusLine(message) && message.streaming}
         <p
           class="mb-2 flex items-center gap-1.5 text-[11px] {message.phase === 'worker_ack' ||
           message.phase === 'awaiting_operator'
@@ -81,7 +76,7 @@
               aria-hidden="true"
             ></span>
           {/if}
-          {visibleStatusLine(message)}
+          {displayStatusLine(message)}
         </p>
       {/if}
 

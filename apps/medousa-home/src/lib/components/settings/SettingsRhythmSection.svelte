@@ -1,18 +1,21 @@
 <script lang="ts">
   import { settings } from "$lib/stores/settings.svelte";
+  import { isTauriMobilePlatform } from "$lib/platform";
 
   interface Props {
     mobile?: boolean;
   }
 
   let { mobile = false }: Props = $props();
+
+  const retentionReadOnly = $derived(mobile || isTauriMobilePlatform());
 </script>
 
 <section class="settings-section">
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Rhythm</h2>
     <p class="workshop-faint mt-1 text-sm">
-      How Medousa interrupts your day on this device{mobile ? " — saved locally" : ""}.
+      Notifications and display — most rhythm toggles are saved on this device.
     </p>
   </header>
 
@@ -53,7 +56,7 @@
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Engine details in chat</span>
         <span class="workshop-faint mt-0.5 block text-xs">
-          Show orchestrator routing and tool telemetry in the chat stream (hidden by default)
+          Show orchestrator routing and tool telemetry in chat (hidden by default; never deleted)
         </span>
       </span>
       <input
@@ -69,8 +72,14 @@
   <div class="mt-8 border-t border-surface-800/80 pt-6">
     <h3 class="text-sm font-semibold text-surface-100">Work card retention</h3>
     <p class="workshop-faint mt-1 text-xs">
-      Saved to <span class="font-mono text-surface-400">tui_defaults.json</span> on the Mac daemon.
-      Hide removes terminal cards from the board; wipe purges archived records.
+      {#if retentionReadOnly}
+        Read from your Mac daemon after connect. Edit on the Mac in Settings → Rhythm or in
+        <span class="font-mono text-surface-400">tui_defaults.json</span>.
+      {:else}
+        Saved to
+        <span class="font-mono text-surface-400">tui_defaults.json</span>
+        on this Mac. Hide removes terminal cards from the board; wipe purges archived records.
+      {/if}
     </p>
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
       <label class="block">
@@ -81,6 +90,7 @@
           max="168"
           class="input mt-1 w-full"
           value={settings.workCardHideAfterHours}
+          disabled={retentionReadOnly}
           onchange={(event) => {
             settings.setWorkCardHideAfterHours(
               Number((event.currentTarget as HTMLInputElement).value),
@@ -97,6 +107,7 @@
           max="90"
           class="input mt-1 w-full"
           value={settings.workCardWipeAfterDays}
+          disabled={retentionReadOnly}
           onchange={(event) => {
             settings.setWorkCardWipeAfterDays(
               Number((event.currentTarget as HTMLInputElement).value),

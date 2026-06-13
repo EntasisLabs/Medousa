@@ -1,6 +1,7 @@
 <script lang="ts">
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -104,6 +105,9 @@
       if (pending) void workspace.selectCard(pending.requestId);
     }}
   />
+  <div class="px-3 pb-1">
+    <DaemonPortalChip compact />
+  </div>
   <div class="composer-bar composer-bar-mobile">
     <GrowingTextarea
       bind:value={chat.draft}

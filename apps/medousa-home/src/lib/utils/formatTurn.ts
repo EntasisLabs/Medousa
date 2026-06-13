@@ -15,6 +15,12 @@ export function formatTurnPhase(phase: string): string {
       return "Checking answer";
     case "startup":
       return "Starting";
+    case "orchestration":
+      return "Planning";
+    case "streaming":
+      return "Thinking…";
+    case "handoff":
+      return "Ready for you";
     case "worker_ack":
       return "Worker started";
     case "awaiting_operator":

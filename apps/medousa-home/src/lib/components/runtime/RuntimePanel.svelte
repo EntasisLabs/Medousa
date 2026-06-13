@@ -1,10 +1,13 @@
 <script lang="ts">
   import WorkshopDefaultsPanel from "$lib/components/settings/WorkshopDefaultsPanel.svelte";
+  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { untrack } from "svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
+  import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { DepthMode, RuntimeTab } from "$lib/types/runtime";
 
   interface Props {
@@ -42,6 +45,12 @@
 
   const streamingMessage = $derived(
     chat.messages.find((message) => message.streaming) ?? null,
+  );
+
+  const streamingStatusLine = $derived(
+    streamingMessage
+      ? visibleChatStatusLine(streamingMessage.statusLine, settings.showEngineDetailsInChat)
+      : null,
   );
 
   $effect(() => {
@@ -148,8 +157,8 @@
           <p class="text-sm text-surface-100">
             {formatTurnPhase(streamingMessage.phase ?? "streaming")}
           </p>
-          {#if streamingMessage.statusLine}
-            <p class="workshop-faint mt-0.5">{streamingMessage.statusLine}</p>
+          {#if streamingStatusLine}
+            <p class="workshop-faint mt-0.5">{streamingStatusLine}</p>
           {/if}
           {#if streamingMessage.tools?.length}
             <p class="mt-1 font-mono text-[10px] text-surface-500">
@@ -293,11 +302,23 @@
       </div>
     {:else if runtime.activeTab === "controls"}
       <section class="max-w-xl space-y-4">
-        <p class="workshop-faint">
-          Session override only — tweaks the next turns without rewriting your charter. Voice lives
-          in Settings → Voice; tools and delegation in Settings → Reach.
-        </p>
+        {#if mobile}
+          <div class="workshop-inset space-y-3 p-4">
+            <DaemonPortalChip />
+            <p class="workshop-faint text-xs">
+              Model and stage routing are configured on your Mac. This phone sends turns to the
+              daemon — change Voice and Reach in Mac Settings, or edit
+              <span class="font-mono text-surface-400">tui_defaults.json</span> there.
+            </p>
+          </div>
+        {:else}
+          <p class="workshop-faint">
+            Session override only — tweaks the next turns without rewriting your charter. Voice lives
+            in Settings → Voice; tools and delegation in Settings → Reach.
+          </p>
+        {/if}
 
+        {#if !mobile}
         <div class="workshop-inset p-4">
           <h2 class="text-sm font-semibold text-surface-100">Model</h2>
           <div class="mt-4 grid gap-3 sm:grid-cols-2">
@@ -329,6 +350,15 @@
             {runtime.savingControls ? "Applying…" : "Apply model"}
           </button>
         </div>
+        {/if}
+
+        {#if mobile}
+        <div class="workshop-inset p-4">
+          <h2 class="text-sm font-semibold text-surface-100">Active model</h2>
+          <p class="mt-2 font-mono text-sm text-surface-200">{runtime.modelLabel()}</p>
+          <p class="workshop-faint mt-1 text-xs">Read from Mac daemon after connect</p>
+        </div>
+        {/if}
 
         <div class="workshop-inset p-4">
           <h2 class="text-sm font-semibold text-surface-100">Response depth</h2>

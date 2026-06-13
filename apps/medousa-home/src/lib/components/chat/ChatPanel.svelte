@@ -3,18 +3,23 @@
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import {
     createTurnTicket,
     startInteractiveStream,
   } from "$lib/daemon";
 
   import { formatSessionLabel } from "$lib/utils/formatSession";
+  import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { STARTER_PROMPTS } from "$lib/utils/starterPrompts";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { groupAskThreads, isChatLaneMessage } from "$lib/utils/askThreads";
@@ -60,7 +65,11 @@
   );
   const phaseLine = $derived.by(() => {
     if (!streamingMessage) return null;
-    if (streamingMessage.statusLine?.trim()) return streamingMessage.statusLine.trim();
+    const status = visibleChatStatusLine(
+      streamingMessage.statusLine,
+      settings.showEngineDetailsInChat,
+    );
+    if (status) return status;
     if (streamingMessage.phase) return formatTurnPhase(streamingMessage.phase);
     if (streamingMessage.tools?.length) {
       return streamingMessage.tools.map((tool) => formatToolName(tool)).join(" · ");
@@ -68,9 +77,10 @@
     return "Working…";
   });
 
+  const mobilePortal = $derived(isTauriMobilePlatform());
+
   const mobileChatTitle = $derived.by(() => {
     if (!mobile) return "Medousa";
-    if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.backgroundActivity > 0) {
       return chat.backgroundActivity === 1
         ? "Working in background"
@@ -81,6 +91,7 @@
 
   const mobileChatSubtitle = $derived.by(() => {
     if (!mobile) return sessionLabel;
+    if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.liveStreamActive) return "Thinking…";
     if (chat.backgroundActivity > 0) return "Composer open · check Work";
     const last = [...chat.messages].reverse().find((message) => message.content.trim());
@@ -314,6 +325,16 @@
     {/if}
   </header>
 
+  {#if mobile && chat.liveStreamActive && phaseLine}
+    <div class="mobile-chat-phase" aria-live="polite">
+      <span
+        class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary-400"
+        aria-hidden="true"
+      ></span>
+      <span class="min-w-0 truncate">{phaseLine}</span>
+    </div>
+  {/if}
+
   {#if chat.historyNotice && visible}
     <div
       class="chat-restore-toast {mobile ? 'chat-restore-toast-mobile' : ''}"
@@ -401,7 +422,8 @@
                   </p>
                   <p class="mt-0.5 text-[10px] text-surface-500">
                     {#if thread.active}
-                      {thread.statusLine}
+                      {visibleChatStatusLine(thread.statusLine, settings.showEngineDetailsInChat) ??
+                        "Working in background…"}
                     {:else}
                       Settled
                     {/if}
@@ -423,6 +445,11 @@
         {#if mobile}
           <p class="text-sm text-surface-300">Say one thing.</p>
           <p class="workshop-faint mt-2 text-xs">Medousa remembers this conversation.</p>
+          {#if mobilePortal}
+            <div class="mt-3">
+              <DaemonPortalChip compact />
+            </div>
+          {/if}
           <div class="mt-4 flex flex-wrap gap-2">
             {#each STARTER_PROMPTS as prompt (prompt)}
               <button
@@ -506,6 +533,9 @@
           {/each}
         </ul>
       {/if}
+      <p class="workshop-faint mx-4 mb-1.5 text-[10px]">
+        {runtime.modelLabel()} · {runtime.depthMode}
+      </p>
       <div class="composer-bar chat-composer-bar">
         <GrowingTextarea
           bind:value={chat.draft}

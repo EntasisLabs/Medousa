@@ -1,6 +1,6 @@
 # Home UI polish — streaming, thinking, work hygiene
 
-> **Status:** Active (2026-06-07)  
+> **Status:** Shipped (2026-06-13) — A1–D3 + C1/C2 complete; A3 and D4 deferred  
 > **Product decisions (locked):**
 
 | Topic | Decision |
@@ -47,8 +47,8 @@
 
 | ID | Deliverable | Status |
 |----|-------------|--------|
-| C1 | Mobile **never sends** provider/model/stageRouting on turns (portal to Mac) — document in UI | ⬜ |
-| C2 | Optional subtle chip: “Using Mac daemon defaults” when on mobile (read from runtime summary) | ⬜ |
+| C1 | Mobile **never sends** provider/model/stageRouting on turns (portal to Mac) — document in UI | ✅ |
+| C2 | Optional subtle chip: “Using Mac daemon defaults” when on mobile (read from runtime summary) | ✅ |
 | C3 | Engine (later): `operator_message` vs `debug_message` on stream events | ⬜ deferred |
 
 ---
