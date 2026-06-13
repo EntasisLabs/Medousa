@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { LoaderCircle, Trash2 } from "@lucide/svelte";
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
+  import ProviderPicker from "$lib/components/settings/ProviderPicker.svelte";
+  import type { ProviderCatalogEntry } from "$lib/types/providers";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
@@ -35,6 +37,7 @@
   let localBusy = $state(false);
   let localMessage = $state<string | null>(null);
   let downloadProgress = $state<ModelDownloadProgress | null>(null);
+  let providerStatus = $state<string | null>(null);
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
   const recommendedModelId = $derived(localCatalog?.recommendedModelId ?? null);
@@ -108,11 +111,14 @@
     }
   }
 
-  function textField(key: "provider" | "model", event: Event) {
+  function onProviderChange(id: string, entry: ProviderCatalogEntry) {
     workshopDefaults.draft = {
       ...workshopDefaults.draft,
-      [key]: (event.currentTarget as HTMLInputElement).value,
+      provider: id,
+      model: entry.defaultModel,
+      baseUrl: entry.defaultBaseUrl,
     };
+    providerStatus = null;
   }
 </script>
 
@@ -150,31 +156,37 @@
     </div>
   </div>
 
-  <div class="mt-6 grid gap-4 sm:grid-cols-2">
-    <label class="block">
-      <span class="block text-sm font-medium text-surface-100">Provider</span>
-      <span class="workshop-faint mt-0.5 block text-xs">Who runs the model — e.g. medousa-local, ollama</span>
-      <input
-        class="input mt-2 w-full"
-        value={workshopDefaults.draft.provider ?? ""}
-        placeholder="medousa-local"
-        readonly={readOnly}
-        disabled={readOnly}
-        oninput={(event) => textField("provider", event)}
+  <div class="mt-6">
+    <h3 class="text-sm font-semibold text-surface-50">Cloud &amp; hosted models</h3>
+    <p class="workshop-faint mt-1 text-xs">
+      Pick any genai-supported provider — same list as the setup wizard.
+    </p>
+    <div class="mt-4">
+      <ProviderPicker
+        providerId={workshopDefaults.draft.provider ?? "openai"}
+        model={workshopDefaults.draft.model ?? ""}
+        apiKey={workshopDefaults.apiKeyDraft}
+        baseUrl={workshopDefaults.draft.baseUrl ?? ""}
+        disabled={readOnly || workshopDefaults.saving}
+        excludeProviderIds={["medousa-local"]}
+        onProviderChange={onProviderChange}
+        onModelChange={(value) =>
+          (workshopDefaults.draft = { ...workshopDefaults.draft, model: value })}
+        onApiKeyChange={(value) => (workshopDefaults.apiKeyDraft = value)}
+        onBaseUrlChange={(value) =>
+          (workshopDefaults.draft = { ...workshopDefaults.draft, baseUrl: value })}
+        onStatus={(message, ok) => {
+          providerStatus = message;
+          if (ok === true) providerStatus = message;
+        }}
       />
-    </label>
-    <label class="block">
-      <span class="block text-sm font-medium text-surface-100">Model</span>
-      <span class="workshop-faint mt-0.5 block text-xs">The voice she uses for orchestration</span>
-      <input
-        class="input mt-2 w-full"
-        value={workshopDefaults.draft.model ?? ""}
-        placeholder="gemma-4-12b-it"
-        readonly={readOnly}
-        disabled={readOnly}
-        oninput={(event) => textField("model", event)}
-      />
-    </label>
+    </div>
+    {#if providerStatus}
+      <p class="mt-2 text-xs text-surface-300">{providerStatus}</p>
+    {/if}
+    {#if workshopDefaults.apiKeySet && !workshopDefaults.apiKeyDraft.trim()}
+      <p class="workshop-faint mt-2 text-xs">An API key is already stored — enter a new one to replace it.</p>
+    {/if}
   </div>
 
   {#if !readOnly}

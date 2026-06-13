@@ -1,6 +1,6 @@
 # Presentation layer & turn envelope — plan
 
-> **Status:** Plan — design before implementation  
+> **Status:** Shipped — P0–P4 complete (2026-06-07); P5 deferred → [media-and-attachments-plan.md](media-and-attachments-plan.md)  
 > **Scope:** Home first (tool UI + markdown); daemon contract stays channel-agnostic  
 > **Related:** [interaction-and-state-model.md](interaction-and-state-model.md), [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md), [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md), [async-chat-unlock-plan.md](async-chat-unlock-plan.md)
 

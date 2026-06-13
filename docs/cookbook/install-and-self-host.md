@@ -58,7 +58,7 @@ medousa models download gemma-4-e4b-it --wait
 medousa models engine-load --model gemma-4-e4b-it
 ```
 
-Normies should use the **Medousa app** instead of this flow.
+non-devs should use the **Medousa app** instead of this flow.
 
 ---
 
@@ -95,6 +95,10 @@ Override DB path: `--backend surreal-kv:/path` or `MEDOUSA_SURREALKV_PATH`.
 ---
 
 ## Environment
+
+See **[Configuration reference](configuration-reference.md)** for the full catalog (LLM, MCP, Locus, grapheme, pairing, channels).
+
+Quick table — most common overrides:
 
 | Variable | Purpose |
 |----------|---------|

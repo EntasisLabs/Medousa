@@ -1,6 +1,6 @@
 # Normie product gap analysis (“Steve Jobs” pass)
 
-> **Status:** Active — Phase D shipped (2026-06-07)  
+> **Status:** Complete — Phases A–D shipped (2026-06-07); next work → [NEXT.md](NEXT.md)  
 > **Date:** 2026-06-12  
 > **Audience:** Product + engineering  
 > **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)
@@ -17,7 +17,7 @@ The **vision is right** (see normie onboarding plan). **Packaging and path consi
 
 ## Core insight
 
-> Normies don’t fail on features. They fail when the product asks them to understand our architecture before their first sentence.
+> non-devs don’t fail on features. They fail when the product asks them to understand our architecture before their first sentence.
 
 Every time we say *daemon*, *workshop*, *ingest*, *Surreal*, or show a 47-row settings panel, we ask them to join the engineering team.
 
@@ -48,7 +48,7 @@ Every time we say *daemon*, *workshop*, *ingest*, *Surreal*, or show a 47-row se
 
 ---
 
-## Phase A — “It just works” (current sprint)
+## Phase A — “It just works” (shipped)
 
 **Goal:** A normie can download, complete the wizard, and send a first message without terminal, jargon, or silent failure.
 
@@ -169,8 +169,24 @@ flowchart LR
 
 ---
 
+## What's next (not UX polish — operator surface)
+
+Product layout, Work Hub manifestations, nav tiers, chat presentation, and onboarding Phases A–D are **done**. Remaining blockers for “extend Medousa without editing files”:
+
+| Track | Doc |
+|-------|-----|
+| Env + paths catalog | [docs/configuration-reference.md](../docs/configuration-reference.md) |
+| Provider picker + API keys in UI | [NEXT.md](NEXT.md) |
+| MCP server add/edit in UI | [NEXT.md](NEXT.md) |
+| Capabilities toggles in UI | [NEXT.md](NEXT.md) |
+
+Deferred: Phase E cloud auth, Phase F accessibility/packaging.
+
+---
+
 ## Changelog
 
 | Date | Change |
 |------|--------|
+| 2026-06-07 | Phases A–D marked complete; pointer to NEXT.md |
 | 2026-06-12 | Initial gap analysis + Phase A kickoff |

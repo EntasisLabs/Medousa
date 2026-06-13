@@ -1,6 +1,8 @@
 # Turn control tools — budget extension & explicit finish
 
-Internal plan for two model-facing control-plane tools that give Medousa better self-management of turn loops: escape overly tight round limits without silent failure, and end turns immediately when the completion gatekeeper misjudges output.
+> **Status:** Shipped — `cognition_turn_finish`, `cognition_turn_request_more_rounds`, `cognition_turn_checkpoint` (2026-06)
+
+Internal plan for model-facing control-plane tools that give Medousa better self-management of turn loops.
 
 ## Problem
 

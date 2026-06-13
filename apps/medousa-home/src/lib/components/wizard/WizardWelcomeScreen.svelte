@@ -8,6 +8,8 @@
     Sparkles,
   } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import ProviderPicker from "$lib/components/settings/ProviderPicker.svelte";
+  import type { ProviderCatalogEntry } from "$lib/types/providers";
   import {
     probeProviders,
     startEngine,
@@ -28,20 +30,14 @@
   } from "$lib/utils/localInferenceApi";
 
   type WizardPath = "byok" | "offline";
-  type ByokProvider = "openai" | "anthropic" | "google" | "ollama";
-
-  const BYOK_PROVIDERS: { id: ByokProvider; label: string; keyHint: string }[] = [
-    { id: "openai", label: "OpenAI", keyHint: "sk-…" },
-    { id: "anthropic", label: "Anthropic", keyHint: "sk-ant-…" },
-    { id: "google", label: "Google Gemini", keyHint: "AI…" },
-    { id: "ollama", label: "Ollama (local)", keyHint: "" },
-  ];
 
   let showAdvanced = $state(false);
   let selectedPath = $state<WizardPath | null>("offline");
-  let byokProvider = $state<ByokProvider>("ollama");
+  let byokProvider = $state("openai");
+  let byokNeedsKey = $state(true);
   let apiKey = $state("");
-  let model = $state("llama3.2");
+  let baseUrl = $state("");
+  let model = $state("gpt-4o-mini");
   let probe = $state<ProvidersProbeResult | null>(null);
   let probing = $state(true);
   let validating = $state(false);
@@ -124,17 +120,36 @@
     offlineModelId = entry.id;
   }
 
-  function selectByokProvider(provider: ByokProvider) {
-    byokProvider = provider;
+  function onByokProviderChange(id: string, entry: ProviderCatalogEntry) {
+    byokProvider = id;
+    byokNeedsKey = entry.needsApiKey;
     statusMessage = null;
-    if (provider === "ollama") {
-      model = probe?.suggestedOllamaModel ?? "llama3.2";
-    } else if (provider === "openai") {
-      model = "gpt-4o-mini";
-    } else if (provider === "anthropic") {
-      model = "claude-3-7-sonnet-latest";
-    } else {
-      model = "gemini-2.5-pro";
+    model =
+      id === "ollama"
+        ? (probe?.suggestedOllamaModel ?? entry.defaultModel)
+        : entry.defaultModel;
+    baseUrl = entry.defaultBaseUrl ?? "";
+  }
+
+  function onPickerStatus(message: string | null, ok?: boolean) {
+    if (message) {
+      statusMessage = message;
+    } else if (ok !== false) {
+      statusMessage = null;
+    }
+  }
+
+  async function skipSetup() {
+    wizard.error = null;
+    statusMessage = "Starting Medousa…";
+    validating = true;
+    try {
+      await startEngine({ privateBrain: false }).catch(() => undefined);
+      await waitForEngine(45);
+      await wizard.skipCurrent();
+    } finally {
+      validating = false;
+      statusMessage = null;
     }
   }
 
@@ -142,6 +157,12 @@
     const modelId = offlineModelId ?? localCatalog?.recommendedModelId;
     if (!modelId) {
       statusMessage = "Pick a Gemma 4 model size first.";
+      return;
+    }
+
+    if (localHardware && !localHardware.engineAvailable) {
+      statusMessage =
+        "Local Gemma isn't available in this build — use Advanced (API key / Ollama) or Skip for now.";
       return;
     }
 
@@ -199,8 +220,8 @@
       const provider = byokProvider;
       const validation = await validateProviderKey({
         provider,
-        apiKey: provider === "ollama" ? "" : apiKey,
-        baseUrl: provider === "ollama" ? probe?.ollamaBaseUrl : null,
+        apiKey: byokNeedsKey ? apiKey : "",
+        baseUrl: baseUrl.trim() || probe?.ollamaBaseUrl || null,
       });
 
       if (!validation.ok) {
@@ -208,14 +229,14 @@
         return;
       }
 
-      const resolvedModel = model.trim() || validation.suggestedModel || "llama3.2";
+      const resolvedModel = model.trim() || validation.suggestedModel || "gpt-4o-mini";
 
       await wizard.applyScreen1Setup({
         path: selectedPath,
         provider,
         model: resolvedModel,
-        baseUrl: provider === "ollama" ? probe?.ollamaBaseUrl : null,
-        apiKey: provider === "ollama" ? null : apiKey.trim(),
+        baseUrl: baseUrl.trim() || (provider === "ollama" ? probe?.ollamaBaseUrl : null) || null,
+        apiKey: byokNeedsKey && apiKey.trim() ? apiKey.trim() : null,
         startCore: true,
       });
     } catch {
@@ -226,17 +247,21 @@
   }
 
   const canContinue = $derived.by(() => {
-    if (wizard.busy || validating || probing || localLoading) return false;
+    if (wizard.busy || validating) return false;
     if (!selectedPath) return false;
     if (selectedPath === "offline") {
+      if (localLoading || probing) return false;
       return Boolean(
         localCatalog &&
-          localHardware?.engineAvailable &&
           (offlineModelId ?? localCatalog.recommendedModelId),
       );
     }
+    if (probing) return false;
     if (byokProvider === "ollama") {
       return ollamaReady && model.trim().length > 0;
+    }
+    if (!byokNeedsKey) {
+      return model.trim().length > 0;
     }
     return apiKey.trim().length > 0 && model.trim().length > 0;
   });
@@ -291,7 +316,7 @@
             (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
             device unless you choose cloud later.
           {:else if localHardware && !localHardware.engineAvailable}
-            Local models aren't available in this build yet. Use Advanced options below.
+            Local Gemma isn't in this build yet — pick Advanced below or Skip for now.
           {:else}
             Download a local model once — chat without sending data to the cloud.
           {/if}
@@ -368,65 +393,29 @@
           <div class="min-w-0">
             <p class="font-semibold text-surface-50">Your API key or Ollama</p>
             <p class="mt-1 text-sm text-surface-300">
-              OpenAI, Anthropic, Gemini, or Ollama on this computer. Keys stay in your system
-              keychain.
+              OpenAI, Anthropic, DeepSeek, Groq, and 20+ more — or Ollama on this computer. Keys stay
+              on this device.
             </p>
           </div>
         </div>
       </button>
 
       {#if selectedPath === "byok"}
-        <div class="mt-4 space-y-4 border-t border-surface-500/30 pt-4">
-          <div class="grid gap-2 sm:grid-cols-2">
-            {#each BYOK_PROVIDERS as option (option.id)}
-              <button
-                type="button"
-                class="settings-depth-card {byokProvider === option.id
-                  ? 'settings-depth-card-active'
-                  : ''}"
-                disabled={wizard.busy}
-                onclick={() => selectByokProvider(option.id)}
-              >
-                <span class="block text-sm font-medium text-surface-100">{option.label}</span>
-                {#if option.id === "ollama"}
-                  <span class="workshop-faint mt-1 block text-xs">
-                    {ollamaReady ? "Ollama is running" : "Install ollama.com and start it"}
-                  </span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-
-          {#if byokProvider !== "ollama"}
-            <label class="block">
-              <span class="block text-sm font-medium text-surface-100">API key</span>
-              <input
-                class="input mt-2 w-full font-mono text-sm"
-                type="password"
-                autocomplete="off"
-                placeholder={BYOK_PROVIDERS.find((entry) => entry.id === byokProvider)?.keyHint}
-                bind:value={apiKey}
-                disabled={wizard.busy || validating}
-              />
-            </label>
-          {/if}
-
-          <label class="block">
-            <span class="block text-sm font-medium text-surface-100">Model</span>
-            {#if byokProvider === "ollama" && (probe?.ollamaModels.length ?? 0) > 0}
-              <select class="select mt-2 w-full" bind:value={model} disabled={wizard.busy}>
-                {#each probe?.ollamaModels ?? [] as name (name)}
-                  <option value={name}>{name}</option>
-                {/each}
-              </select>
-            {:else}
-              <input
-                class="input mt-2 w-full font-mono text-sm"
-                bind:value={model}
-                disabled={wizard.busy || validating}
-              />
-            {/if}
-          </label>
+        <div class="mt-4 border-t border-surface-500/30 pt-4">
+          <ProviderPicker
+            providerId={byokProvider}
+            {model}
+            {apiKey}
+            {baseUrl}
+            disabled={wizard.busy || validating}
+            excludeProviderIds={["medousa-local"]}
+            showValidate={false}
+            onProviderChange={onByokProviderChange}
+            onModelChange={(value) => (model = value)}
+            onApiKeyChange={(value) => (apiKey = value)}
+            onBaseUrlChange={(value) => (baseUrl = value)}
+            onStatus={onPickerStatus}
+          />
         </div>
       {/if}
     </div>
@@ -446,17 +435,27 @@
   {/if}
 
   <div class="mt-auto flex flex-wrap items-center justify-between gap-3 pt-8">
-    <button
-      type="button"
-      class="btn variant-ghost min-h-11"
-      disabled={wizard.busy || probing || localLoading}
-      onclick={() => {
-        void refreshProbe();
-        if (selectedPath === "offline") void refreshLocalInference();
-      }}
-    >
-      Try again
-    </button>
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        class="btn variant-ghost min-h-11"
+        disabled={wizard.busy || validating}
+        onclick={() => void skipSetup()}
+      >
+        Skip for now
+      </button>
+      <button
+        type="button"
+        class="btn variant-ghost min-h-11"
+        disabled={wizard.busy || probing || localLoading || validating}
+        onclick={() => {
+          void refreshProbe();
+          if (selectedPath === "offline") void refreshLocalInference();
+        }}
+      >
+        Try again
+      </button>
+    </div>
     <button
       type="button"
       class="btn variant-filled-primary inline-flex min-h-11 items-center gap-2 px-6"

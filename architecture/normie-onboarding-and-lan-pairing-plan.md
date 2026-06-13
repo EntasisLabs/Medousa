@@ -1,8 +1,8 @@
 # Normie onboarding + LAN pairing
 
-> **Status:** Approved — Phase A in progress ([gap analysis](normie-product-gap-analysis.md))  
+> **Status:** Shipped — Phases A–D complete (2026-06-07); Phase E/F deferred ([gap analysis](normie-product-gap-analysis.md), [NEXT.md](NEXT.md))  
 > **Date:** 2026-06-11  
-> **Epic target:** Phase 1 LAN Magic (4–6 weeks)  
+> **Epic target:** Phase 1 LAN Magic — **core path landed**  
 > **Supersedes:** informal `strategy/medousa-normie-onboarding-strategy.md` references (strategy doc not yet in repo)  
 > **Related:** [medousa-home-plan.md](medousa-home-plan.md), [medousa-home-mobile-plan.md](medousa-home-mobile-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md), [embedded-local-inference-plan.md](embedded-local-inference-plan.md), [component-daemon.md](component-daemon.md)
 

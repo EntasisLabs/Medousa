@@ -1,5 +1,7 @@
 # Async chat unlock — internal plan
 
+> **Status:** Shipped — Tiers 1–3 (handoff bubbles, worker synthesis, reconnect recovery)
+
 Medousa’s runtime (daemon SSE, workspace, jobs, workers, continuations, notifications) is largely **event/async**. Interactive chat is still a **sync contract**: one turn, one SSE, composer blocked until `terminal`.
 
 This plan unlocks chat incrementally without waiting for a full TurnTicket rewrite.

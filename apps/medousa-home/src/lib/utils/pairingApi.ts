@@ -83,6 +83,14 @@ export async function fetchBonjourStatus(): Promise<BonjourStatus> {
   return invoke<BonjourStatus>("bonjour_status");
 }
 
+/** Poll until /qr/image succeeds — status alone can pass before QR generation is ready. */
+export async function waitForPairingQr(timeoutSeconds = 45): Promise<PairingQrImage> {
+  if (!isTauri()) {
+    throw new Error("Pairing requires the Medousa desktop app");
+  }
+  return invoke<PairingQrImage>("pairing_wait_ready", { timeoutSeconds });
+}
+
 export function formatShortCode(raw: string): string {
   const cleaned = raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (cleaned.length <= 3) return cleaned;

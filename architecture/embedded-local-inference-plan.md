@@ -3,7 +3,7 @@
 > **Status:** Phase 2 landed — Phase 3 next (full Gemma matrix + routing)  
 > **Date:** 2026-06-07 (Gemma 4 catalog lock — June 2026 releases)  
 > **Default brain:** **Gemma 4** family — hero model **Gemma 4 12B Unified** (June 3, 2026) on 16 GB+ Macs  
-> **Goal:** Normies never install Ollama. Medousa Core downloads a curated Gemma 4 build, runs it in-process, and exposes it to the existing turn pipeline. Home (desktop + iPhone) stays a portal.  
+> **Goal:** non-devs never install Ollama. Medousa Core downloads a curated Gemma 4 build, runs it in-process, and exposes it to the existing turn pipeline. Home (desktop + iPhone) stays a portal.  
 > **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [component-daemon.md](component-daemon.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md)
 
 ---
@@ -114,7 +114,7 @@ Use **`hf-hub`** for curated downloads. Treat **Candle** as transitive only.
 
 ## Curated model catalog (Gemma 4 first)
 
-Normies never browse Hugging Face. We ship a **signed manifest** in the repo (updated with Medousa releases). **All entries are Gemma 4** at launch; IDs match wizard copy and `tui_defaults.model`.
+non-devs never browse Hugging Face. We ship a **signed manifest** in the repo (updated with Medousa releases). **All entries are Gemma 4** at launch; IDs match wizard copy and `tui_defaults.model`.
 
 ### Launch catalog (v1)
 

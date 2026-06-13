@@ -17,11 +17,12 @@
     formatShortCode,
     revokePairingDevice,
     secondsUntil,
+    waitForPairingQr,
     type BonjourStatus,
     type PairedDeviceSummary,
     type PairingQrImage,
   } from "$lib/utils/pairingApi";
-  import { checkDaemonHealth } from "$lib/daemon";
+  import { waitForEngine } from "$lib/utils/providersApi";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -62,6 +63,26 @@
     qrRefreshTimer = null;
   }
 
+  async function loadPairingBundle(timeoutSeconds = 45) {
+    qr = await waitForPairingQr(timeoutSeconds);
+    countdown = secondsUntil(qr.expiresAt);
+    error = null;
+
+    try {
+      const status = await fetchPairingStatus();
+      devices = status.pairedDevices;
+      knownPairingIds = status.pairedDevices.map((device) => device.pairingId);
+    } catch {
+      // Best effort — QR is what matters for the wizard.
+    }
+
+    try {
+      bonjour = await fetchBonjourStatus();
+    } catch {
+      bonjour = null;
+    }
+  }
+
   async function bootstrap() {
     loading = true;
     error = null;
@@ -70,13 +91,13 @@
         error = "Phone pairing needs Medousa running on this computer. Finish setup or open Connection settings.";
         return;
       }
-      const health = await checkDaemonHealth();
+      const health = await waitForEngine(45);
       coreOnline = health.ok;
       if (!health.ok) {
         error = health.message;
         return;
       }
-      await refreshAll();
+      await loadPairingBundle(60);
       startTimers();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -105,12 +126,9 @@
 
   async function refreshAll() {
     refreshing = true;
+    error = null;
     try {
-      const status = await fetchPairingStatus();
-      devices = status.pairedDevices;
-      knownPairingIds = status.pairedDevices.map((device) => device.pairingId);
-      bonjour = await fetchBonjourStatus();
-      await refreshQr({ retries: 5 });
+      await loadPairingBundle(30);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -143,6 +161,9 @@
     }
     if (!silent) {
       qrLoading = false;
+    }
+    if (qr == null && lastError) {
+      throw new Error(lastError);
     }
   }
 
@@ -181,7 +202,7 @@
   {#if loading}
     <div class="flex items-center gap-2 text-sm text-surface-400">
       <LoaderCircle class="h-4 w-4 animate-spin" aria-hidden="true" />
-      Loading pairing…
+      {refreshing ? "Generating QR code…" : "Preparing phone pairing…"}
     </div>
   {:else if !coreOnline}
     <div class="rounded-xl border border-warning-500/35 bg-warning-500/10 px-4 py-4 text-sm text-warning-100">
@@ -245,11 +266,11 @@
     </div>
   {/if}
 
-  {#if error}
+  {#if error && !loading && !refreshing}
     <p class="mt-4 text-sm text-warning-200">{error}</p>
   {/if}
 
-  {#if bonjour}
+  {#if bonjour && bonjour.pairingAvailable}
     <div
       class="mt-5 flex items-start gap-3 rounded-xl border border-surface-500/35 bg-surface-950/50 px-4 py-3 text-sm"
     >

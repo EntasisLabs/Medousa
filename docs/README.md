@@ -21,7 +21,8 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 
 | Guide | You want to… |
 |-------|----------------|
-| [Install & self-host](cookbook/install-and-self-host.md) | `install.sh`, setup, doctor, data paths, env vars |
+| [Install & self-host](cookbook/install-and-self-host.md) | `install.sh`, setup, doctor, data paths |
+| [Configuration reference](configuration-reference.md) | **All env vars** — LLM, MCP, Locus, grapheme, channels |
 | [CLI & workspace](cookbook/cli-and-workspace.md) | `medousa` commands, TUI, `start daemon --inference` |
 | [Channels & chat commands](cookbook/channels-and-chat.md) | Discord, Telegram, Slack, WhatsApp, slash commands |
 | [Skills & specialties](cookbook/skills-and-specialties.md) | Manuscripts, Hermes/Cursor/OpenClaw import |
@@ -34,7 +35,7 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 |-------|----------------|
 | [Engine overview](engine/README.md) | Why corps embed Medousa Engine, topology, trust model |
 | [HTTP API reference](engine/http-api.md) | Routes, contracts, interactive turns, local inference |
-| [Architecture (deep)](../architecture/README.md) | Component boundaries, turn worker, identity, plans |
+| [Architecture (deep)](../architecture/README.md) | Component boundaries, shipped plans, [active work](../architecture/NEXT.md) |
 
 ### Existing setup guides
 
@@ -67,4 +68,4 @@ App development lives under `apps/medousa-home/` — see [Build from source](coo
 
 ## Contributing
 
-Implementation plans and ADRs live in [`architecture/`](../architecture/). Product onboarding spec: [`architecture/normie-onboarding-and-lan-pairing-plan.md`](../architecture/normie-onboarding-and-lan-pairing-plan.md).
+Implementation history lives in [`architecture/`](../architecture/). **Active work:** [`architecture/NEXT.md`](../architecture/NEXT.md). Shipped milestone index: [`architecture/archive/`](../architecture/archive/).

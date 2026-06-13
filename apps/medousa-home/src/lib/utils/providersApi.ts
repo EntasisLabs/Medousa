@@ -1,5 +1,14 @@
-import { invoke } from "@tauri-apps/api/core";
+import type {
+  ProviderCatalogEntry,
+  ProvidersListResult,
+} from "$lib/types/providers";
 import { isTauri } from "$lib/window";
+
+export type {
+  ProviderCatalogEntry,
+  ProviderCategory,
+  ProvidersListResult,
+} from "$lib/types/providers";
 
 export interface ProvidersProbeResult {
   ollamaDetected: boolean;
@@ -59,8 +68,84 @@ const LOCAL_PROBE: ProvidersProbeResult = {
   suggestedOllamaModel: "llama3.2",
 };
 
+const LOCAL_CATALOG: ProvidersListResult = {
+  categories: [
+    { id: "featured", label: "Popular" },
+    { id: "local", label: "On this device" },
+    { id: "cloud", label: "More providers" },
+  ],
+  providers: [
+    {
+      id: "openai",
+      label: "OpenAI",
+      category: "featured",
+      defaultModel: "gpt-4o-mini",
+      needsApiKey: true,
+      supportsCustomBaseUrl: true,
+      defaultBaseUrl: "https://api.openai.com/v1",
+      keyHint: "sk-…",
+      blurb: "GPT-4o family",
+    },
+    {
+      id: "anthropic",
+      label: "Anthropic",
+      category: "featured",
+      defaultModel: "claude-sonnet-4-20250514",
+      needsApiKey: true,
+      supportsCustomBaseUrl: false,
+      defaultBaseUrl: null,
+      keyHint: "sk-ant-…",
+      blurb: "Claude models",
+    },
+    {
+      id: "deepseek",
+      label: "DeepSeek",
+      category: "featured",
+      defaultModel: "deepseek-chat",
+      needsApiKey: true,
+      supportsCustomBaseUrl: true,
+      defaultBaseUrl: "https://api.deepseek.com/v1",
+      keyHint: "sk-…",
+      blurb: "DeepSeek Chat",
+    },
+    {
+      id: "ollama",
+      label: "Ollama (local)",
+      category: "local",
+      defaultModel: "llama3.2",
+      needsApiKey: false,
+      supportsCustomBaseUrl: true,
+      defaultBaseUrl: "http://127.0.0.1:11434/v1",
+      keyHint: null,
+      blurb: "Local Ollama",
+    },
+  ],
+};
+
+let catalogCache: ProvidersListResult | null = null;
+
+export function findCatalogProvider(
+  catalog: ProvidersListResult,
+  id: string,
+): ProviderCatalogEntry | undefined {
+  const normalized = id.trim().toLowerCase();
+  return catalog.providers.find((entry) => entry.id.toLowerCase() === normalized);
+}
+
+export async function listProviders(force = false): Promise<ProvidersListResult> {
+  if (catalogCache && !force) return catalogCache;
+  if (!isTauri()) {
+    catalogCache = LOCAL_CATALOG;
+    return catalogCache;
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  catalogCache = await invoke<ProvidersListResult>("providers_list");
+  return catalogCache;
+}
+
 export async function probeProviders(): Promise<ProvidersProbeResult> {
   if (!isTauri()) return LOCAL_PROBE;
+  const { invoke } = await import("@tauri-apps/api/core");
   return invoke<ProvidersProbeResult>("providers_probe");
 }
 
@@ -80,6 +165,7 @@ export async function validateProviderKey(
       suggestedModel: null,
     };
   }
+  const { invoke } = await import("@tauri-apps/api/core");
   return invoke<ProvidersValidateKeyResult>("providers_validate_key", { request });
 }
 
@@ -92,6 +178,7 @@ export async function startEngine(options?: { privateBrain?: boolean }): Promise
       message: "Open the Medousa app (browser dev mode cannot start the engine)",
     };
   }
+  const { invoke } = await import("@tauri-apps/api/core");
   return invoke<DaemonStartResult>("daemon_start", {
     request: { privateBrain: options?.privateBrain ?? false },
   });
@@ -106,6 +193,7 @@ export async function waitForEngine(
   if (!isTauri()) {
     return { ok: false, message: "Unavailable in browser dev mode", attempts: 0 };
   }
+  const { invoke } = await import("@tauri-apps/api/core");
   return invoke<DaemonWaitHealthResult>("daemon_wait_healthy", {
     request: { timeoutSeconds, pollMs: 2000 },
   });
@@ -125,5 +213,6 @@ export async function applyWizardScreen1(
       model: request.model,
     };
   }
+  const { invoke } = await import("@tauri-apps/api/core");
   return invoke<WizardApplyScreen1Result>("wizard_apply_screen1", { request });
 }

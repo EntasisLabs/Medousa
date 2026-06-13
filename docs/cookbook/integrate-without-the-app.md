@@ -1,6 +1,6 @@
 # Integrate without the Medousa app
 
-Use **Medousa Engine** as infrastructure. Your UI, your portal, your Slack bot — same runtime normies get in the app.
+Use **Medousa Engine** as infrastructure. Your UI, your portal, your Slack bot — same runtime non-devs get in the app.
 
 Overview: [engine/README.md](../engine/README.md)  
 API index: [engine/http-api.md](../engine/http-api.md)
@@ -131,5 +131,5 @@ Deep dive: [enterprise-architecture-and-flow-guide.md](../../architecture/enterp
 
 ## What not to do
 
-- Don’t ask employees to `curl | bash` if they’re normies — give them **Medousa** the app.
+- Don’t ask employees to `curl | bash` if they’re non-devs — give them **Medousa** the app.
 - Don’t fork the turn loop — call the engine; that’s the Ferrari.

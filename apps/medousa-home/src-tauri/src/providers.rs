@@ -1,3 +1,4 @@
+use crate::provider_catalog::{self, ProviderValidation, ProvidersListResult};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -51,13 +52,31 @@ fn detect_local_ollama_tcp() -> bool {
     false
 }
 
-fn default_model_for_provider(provider: &str) -> &'static str {
-    match provider.trim().to_ascii_lowercase().as_str() {
-        "anthropic" => "claude-3-7-sonnet-latest",
-        "google" | "gemini" => "gemini-2.5-pro",
-        "xai" => "grok-3-mini",
-        "ollama" => DEFAULT_OLLAMA_MODEL,
-        _ => "gpt-4o-mini",
+fn default_model_for_provider(provider: &str) -> String {
+    provider_catalog::find_provider(provider)
+        .map(|spec| spec.default_model.to_string())
+        .unwrap_or_else(|| "gpt-4o-mini".to_string())
+}
+
+fn resolve_base_url(
+    spec: Option<&provider_catalog::ProviderSpec>,
+    request_base: Option<&str>,
+) -> Option<String> {
+    request_base
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            spec.and_then(|entry| entry.default_base_url.map(str::to_string))
+        })
+}
+
+fn models_url(base: &str) -> String {
+    let trimmed = base.trim().trim_end_matches('/');
+    if trimmed.ends_with("/v1") {
+        format!("{trimmed}/models")
+    } else {
+        format!("{trimmed}/v1/models")
     }
 }
 
@@ -99,6 +118,11 @@ async fn probe_network_online(client: &Client) -> bool {
 }
 
 #[tauri::command]
+pub fn providers_list() -> ProvidersListResult {
+    provider_catalog::providers_catalog()
+}
+
+#[tauri::command]
 pub async fn providers_probe() -> Result<ProvidersProbeResult, String> {
     let client = probe_http_client()?;
     let ollama_detected = detect_local_ollama_tcp();
@@ -124,38 +148,45 @@ pub async fn providers_probe() -> Result<ProvidersProbeResult, String> {
     })
 }
 
-async fn validate_openai_key(client: &Client, api_key: &str) -> ProvidersValidateKeyResult {
-    let response = client
-        .get("https://api.openai.com/v1/models")
-        .bearer_auth(api_key)
-        .send()
-        .await;
+async fn validate_openai_compatible(
+    client: &Client,
+    api_key: &str,
+    base_url: &str,
+    provider_label: &str,
+    suggested_model: &str,
+) -> ProvidersValidateKeyResult {
+    let url = models_url(base_url);
+    let response = client.get(url).bearer_auth(api_key).send().await;
 
     match response {
         Ok(response) if response.status().is_success() => ProvidersValidateKeyResult {
             ok: true,
-            message: "OpenAI key verified".to_string(),
-            suggested_model: Some(default_model_for_provider("openai").to_string()),
+            message: format!("{provider_label} key verified"),
+            suggested_model: Some(suggested_model.to_string()),
         },
         Ok(response) if response.status().as_u16() == 401 => ProvidersValidateKeyResult {
             ok: false,
-            message: "Invalid OpenAI API key".to_string(),
+            message: format!("Invalid {provider_label} API key"),
             suggested_model: None,
         },
         Ok(response) => ProvidersValidateKeyResult {
             ok: false,
-            message: format!("OpenAI returned HTTP {}", response.status()),
+            message: format!("{provider_label} returned HTTP {}", response.status()),
             suggested_model: None,
         },
         Err(err) => ProvidersValidateKeyResult {
             ok: false,
-            message: format!("Could not reach OpenAI: {err}"),
+            message: format!("Could not reach {provider_label}: {err}"),
             suggested_model: None,
         },
     }
 }
 
-async fn validate_anthropic_key(client: &Client, api_key: &str) -> ProvidersValidateKeyResult {
+async fn validate_anthropic_key(
+    client: &Client,
+    api_key: &str,
+    suggested_model: &str,
+) -> ProvidersValidateKeyResult {
     let response = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", api_key)
@@ -172,7 +203,7 @@ async fn validate_anthropic_key(client: &Client, api_key: &str) -> ProvidersVali
         Ok(response) if response.status().is_success() => ProvidersValidateKeyResult {
             ok: true,
             message: "Anthropic key verified".to_string(),
-            suggested_model: Some(default_model_for_provider("anthropic").to_string()),
+            suggested_model: Some(suggested_model.to_string()),
         },
         Ok(response) if response.status().as_u16() == 401 => ProvidersValidateKeyResult {
             ok: false,
@@ -192,7 +223,11 @@ async fn validate_anthropic_key(client: &Client, api_key: &str) -> ProvidersVali
     }
 }
 
-async fn validate_google_key(client: &Client, api_key: &str) -> ProvidersValidateKeyResult {
+async fn validate_google_key(
+    client: &Client,
+    api_key: &str,
+    suggested_model: &str,
+) -> ProvidersValidateKeyResult {
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models?key={}",
         urlencoding::encode(api_key)
@@ -203,7 +238,7 @@ async fn validate_google_key(client: &Client, api_key: &str) -> ProvidersValidat
         Ok(response) if response.status().is_success() => ProvidersValidateKeyResult {
             ok: true,
             message: "Google Gemini key verified".to_string(),
-            suggested_model: Some(default_model_for_provider("google").to_string()),
+            suggested_model: Some(suggested_model.to_string()),
         },
         Ok(response) if response.status().as_u16() == 400 || response.status().as_u16() == 403 => {
             ProvidersValidateKeyResult {
@@ -259,15 +294,34 @@ async fn validate_ollama(client: &Client, base_url: Option<&str>) -> ProvidersVa
 pub async fn providers_validate_key(
     request: ProvidersValidateKeyRequest,
 ) -> Result<ProvidersValidateKeyResult, String> {
-    let provider = request.provider.trim().to_ascii_lowercase();
+    let provider_id = request.provider.trim().to_ascii_lowercase();
     let api_key = request.api_key.trim();
+    let spec = provider_catalog::find_provider(&provider_id);
+    let suggested_model = default_model_for_provider(&provider_id);
 
-    if provider == "ollama" {
+    if provider_id == "ollama" {
         let client = probe_http_client()?;
         return Ok(validate_ollama(&client, request.base_url.as_deref()).await);
     }
 
-    if api_key.is_empty() {
+    if provider_id == "medousa-local" {
+        return Ok(ProvidersValidateKeyResult {
+            ok: true,
+            message: "Use Settings → Voice to download and load the private brain".to_string(),
+            suggested_model: Some(suggested_model),
+        });
+    }
+
+    if provider_id == "bedrock" {
+        return Ok(ProvidersValidateKeyResult {
+            ok: true,
+            message: "Configure AWS credentials in your environment — no API key stored here".to_string(),
+            suggested_model: Some(suggested_model),
+        });
+    }
+
+    let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(true);
+    if needs_key && api_key.is_empty() {
         return Ok(ProvidersValidateKeyResult {
             ok: false,
             message: "API key is required".to_string(),
@@ -276,16 +330,35 @@ pub async fn providers_validate_key(
     }
 
     let client = probe_http_client()?;
-    let result = match provider.as_str() {
-        "openai" => validate_openai_key(&client, api_key).await,
-        "anthropic" => validate_anthropic_key(&client, api_key).await,
-        "google" | "gemini" => validate_google_key(&client, api_key).await,
-        other => ProvidersValidateKeyResult {
-            ok: false,
-            message: format!("Provider '{other}' validation is not supported yet"),
-            suggested_model: None,
+    let label = spec.map(|entry| entry.label).unwrap_or(&provider_id);
+
+    let result = match spec.map(|entry| entry.validation) {
+        Some(ProviderValidation::Ollama) => validate_ollama(&client, request.base_url.as_deref()).await,
+        Some(ProviderValidation::Anthropic) => {
+            validate_anthropic_key(&client, api_key, &suggested_model).await
+        }
+        Some(ProviderValidation::Google) => {
+            validate_google_key(&client, api_key, &suggested_model).await
+        }
+        Some(ProviderValidation::OpenAiCompatible) => {
+            let Some(base) = resolve_base_url(spec, request.base_url.as_deref()) else {
+                return Ok(ProvidersValidateKeyResult {
+                    ok: false,
+                    message: format!("Set an API base URL for {label}"),
+                    suggested_model: None,
+                });
+            };
+            validate_openai_compatible(&client, api_key, &base, label, &suggested_model).await
+        }
+        Some(ProviderValidation::AcceptKey) | None => ProvidersValidateKeyResult {
+            ok: true,
+            message: format!(
+                "{label} key saved — verify on your first chat turn"
+            ),
+            suggested_model: Some(suggested_model),
         },
     };
+
     Ok(result)
 }
 
@@ -294,8 +367,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_models_match_workshop() {
-        assert_eq!(default_model_for_provider("openai"), "gpt-4o-mini");
+    fn default_models_from_catalog() {
+        assert_eq!(default_model_for_provider("deepseek"), "deepseek-chat");
         assert_eq!(default_model_for_provider("ollama"), DEFAULT_OLLAMA_MODEL);
+    }
+
+    #[test]
+    fn models_url_normalizes_base() {
+        assert_eq!(
+            models_url("https://api.deepseek.com/v1"),
+            "https://api.deepseek.com/v1/models"
+        );
+        assert_eq!(
+            models_url("https://api.openai.com"),
+            "https://api.openai.com/v1/models"
+        );
     }
 }

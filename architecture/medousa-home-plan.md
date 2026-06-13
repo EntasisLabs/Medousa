@@ -1,6 +1,6 @@
 # Medousa Home — daemon-first workspace plan
 
-> **Status:** Design — daemon APIs first; all UI (Tauri, TUI panels) deferred until contracts are stable  
+> **Status:** Shipped — Home app live; this doc remains the daemon-first design reference  
 > **Date:** 2026-05-30  
 > **Related:** [turn-worker-bus-plan.md](turn-worker-bus-plan.md), [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [component-daemon.md](component-daemon.md), [worker-continuity-plan.md](worker-continuity-plan.md)
 

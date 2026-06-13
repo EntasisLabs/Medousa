@@ -296,6 +296,10 @@ pub fn wizard_advance(request: WizardAdvanceRequest) -> Result<WizardBootstrap, 
             }
         },
         "skip" => match screen {
+            WizardScreen::Screen1 => {
+                file.screen2_skipped = Some(true);
+                file.screen = Some(WizardScreen::Screen3);
+            }
             WizardScreen::Screen2 => {
                 file.screen2_skipped = Some(true);
                 file.screen = Some(WizardScreen::Screen3);

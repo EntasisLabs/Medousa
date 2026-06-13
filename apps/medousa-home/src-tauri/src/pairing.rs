@@ -1,7 +1,7 @@
 use crate::daemon::DaemonState;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,12 +101,16 @@ pub async fn pairing_fetch_qr(state: State<'_, DaemonState>) -> Result<PairingQr
         .map_err(|err| err.to_string())
 }
 
-#[tauri::command]
-pub async fn pairing_fetch_qr_image(
-    state: State<'_, DaemonState>,
-) -> Result<PairingQrImage, String> {
-    let base = daemon_base(&state)?;
-    let client = pairing_client()?;
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QrImagePayload {
+    url: String,
+    expires_at: String,
+    short_code: String,
+    png_base64: String,
+}
+
+async fn fetch_qr_image_once(base: &str, client: &Client) -> Result<PairingQrImage, String> {
     let response = client
         .get(format!("{base}/qr/image"))
         .send()
@@ -116,14 +120,6 @@ pub async fn pairing_fetch_qr_image(
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(pairing_unavailable_message(status, &body));
-    }
-    #[derive(Debug, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct QrImagePayload {
-        url: String,
-        expires_at: String,
-        short_code: String,
-        png_base64: String,
     }
     let payload = response
         .json::<QrImagePayload>()
@@ -135,6 +131,38 @@ pub async fn pairing_fetch_qr_image(
         expires_at: payload.expires_at,
         short_code: payload.short_code,
     })
+}
+
+#[tauri::command]
+pub async fn pairing_fetch_qr_image(
+    state: State<'_, DaemonState>,
+) -> Result<PairingQrImage, String> {
+    let base = daemon_base(&state)?;
+    let client = pairing_client()?;
+    fetch_qr_image_once(&base, &client).await
+}
+
+#[tauri::command]
+pub async fn pairing_wait_ready(
+    state: State<'_, DaemonState>,
+    timeout_seconds: Option<u64>,
+) -> Result<PairingQrImage, String> {
+    let timeout = Duration::from_secs(timeout_seconds.unwrap_or(45).max(1));
+    let poll = Duration::from_millis(750);
+    let started = Instant::now();
+    let base = daemon_base(&state)?;
+    let client = pairing_client()?;
+    let mut last_error = "Pairing is still starting…".to_string();
+
+    while started.elapsed() < timeout {
+        match fetch_qr_image_once(&base, &client).await {
+            Ok(image) => return Ok(image),
+            Err(err) => last_error = err,
+        }
+        tokio::time::sleep(poll).await;
+    }
+
+    Err(last_error)
 }
 
 #[tauri::command]

@@ -15,7 +15,7 @@ If your users already run Medousa at home, your enterprise product can offer **t
 |---------|----------------|
 | Chat wrappers lose work on restart | **Stasis** job lifecycle — enqueue, retry, finish, deliver |
 | Assistants forget between sessions | **Locus** identity + session stores — structured memory, not scrollback |
-| “Our AI” vs “their AI” at home | **One protocol** — normies use the app; your backend calls the same HTTP surface |
+| “Our AI” vs “their AI” at home | **One protocol** — non-devs use the app; your backend calls the same HTTP surface |
 | Air-gapped / on-prem | **Local inference** — Gemma via `/v1/local/*`, loopback OpenAI on `:7421` |
 | Tool sprawl | **MCP gateway** — bring your servers; Medousa executes with policy |
 

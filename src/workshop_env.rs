@@ -28,6 +28,7 @@ fn inject_provider_api_key_env(provider: &str, key: &str) {
     let normalized = provider.trim().to_ascii_uppercase().replace('-', "_");
     unsafe {
         std::env::set_var(format!("STASIS_{normalized}_API_KEY"), key);
+        std::env::set_var(format!("MEDOUSA_{normalized}_API_KEY"), key);
         std::env::set_var("STASIS_LLM_API_KEY", key);
     }
 
@@ -38,6 +39,12 @@ fn inject_provider_api_key_env(provider: &str, key: &str) {
         "gemini" | "google" => unsafe { std::env::set_var("GEMINI_API_KEY", key) },
         "groq" => unsafe { std::env::set_var("GROQ_API_KEY", key) },
         "xai" => unsafe { std::env::set_var("XAI_API_KEY", key) },
+        "mistral" => unsafe { std::env::set_var("MISTRAL_API_KEY", key) },
+        "cohere" => unsafe { std::env::set_var("COHERE_API_KEY", key) },
+        "perplexity" => unsafe { std::env::set_var("PERPLEXITY_API_KEY", key) },
+        "together" => unsafe { std::env::set_var("TOGETHER_API_KEY", key) },
+        "fireworks" => unsafe { std::env::set_var("FIREWORKS_API_KEY", key) },
+        "openrouter" => unsafe { std::env::set_var("OPENROUTER_API_KEY", key) },
         _ => {}
     }
 }

@@ -1,6 +1,6 @@
 # Medousa Home — Work Hub Plan (M8)
 
-> **Status:** In progress — W1 UI shell shipped first  
+> **Status:** Shipped — W1–W3 (grid, trays, manifestation pop-out, nav tiers); W2 archive persistence optional follow-up  
 > **Date:** 2026-06-07  
 > **Related:** [medousa-home-polish-plan.md](medousa-home-polish-plan.md), [medousa-home-main-workspace-plan.md](medousa-home-main-workspace-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)
 
@@ -212,3 +212,4 @@ Built from existing `WorkCard`, `WorkCardDetail`, `WorkspaceEvent[]`, `cardDetai
 |------|------|
 | 2026-06-07 | W1 shipped — grid, trays, pop-out, composer |
 | 2026-06-07 | W3 shipped — ManifestTimeline, workManifestation projection, mobile hub grid |
+| 2026-06-07 | Nav tiers shipped — life orbit / capability / utility rail (`NavSidebar.svelte`) |
