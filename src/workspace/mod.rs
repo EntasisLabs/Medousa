@@ -6,6 +6,7 @@ pub mod ask_job_store;
 pub mod card;
 pub mod event;
 pub mod feed;
+pub mod retention;
 pub mod service;
 pub mod store;
 

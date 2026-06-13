@@ -560,6 +560,10 @@ async fn main() -> Result<()> {
             post(medousa::workspace_handlers::cancel_workspace_card),
         )
         .route(
+            "/v1/workspace/cards/{card_id}/archive",
+            post(medousa::workspace_handlers::archive_workspace_card),
+        )
+        .route(
             "/v1/workspace/cards/{card_id}/link-vault",
             post(medousa::workspace_handlers::link_workspace_card_vault),
         )
@@ -956,6 +960,7 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
     let stage_routing = saved.stage_routing.clone().unwrap_or_else(|| {
         medousa::stage_routing::StageRoutingMatrix::default_for(&provider, &model)
     });
+    let retention = medousa::workspace::retention::WorkspaceRetentionConfig::from_tui_defaults(&saved);
     Json(RuntimeDefaultsResponse {
         backend: state.backend.clone(),
         provider,
@@ -963,6 +968,8 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
         response_depth_mode,
         base_url,
         stage_routing,
+        work_card_hide_after_hours: retention.hide_after_hours,
+        work_card_wipe_after_days: retention.wipe_after_days,
     })
 }
 

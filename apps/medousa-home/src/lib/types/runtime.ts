@@ -66,6 +66,8 @@ export interface RuntimeDefaultsResponse {
   response_depth_mode: string;
   base_url: string | null;
   stage_routing: StageRoutingMatrix;
+  work_card_hide_after_hours: number;
+  work_card_wipe_after_days: number;
 }
 
 export interface StageRouteCommandResponse {

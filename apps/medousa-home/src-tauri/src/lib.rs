@@ -118,6 +118,7 @@ pub fn run() {
             daemon::vault::vault_backlinks,
             daemon::workspace_card::workspace_get_card,
             daemon::workspace_card::workspace_cancel_card,
+            daemon::workspace_card::workspace_archive_card,
             daemon::workspace_card::workspace_retry_card,
             daemon::turn_budget::turn_budget_approve,
             daemon::turn_budget::turn_budget_deny,

@@ -48,5 +48,63 @@
           settings.setShowTechnicalActivity((event.currentTarget as HTMLInputElement).checked)}
       />
     </label>
+
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">Engine details in chat</span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          Show orchestrator routing and tool telemetry in the chat stream (hidden by default)
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={settings.showEngineDetailsInChat}
+        onchange={(event) =>
+          settings.setShowEngineDetailsInChat((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
+  </div>
+
+  <div class="mt-8 border-t border-surface-800/80 pt-6">
+    <h3 class="text-sm font-semibold text-surface-100">Work card retention</h3>
+    <p class="workshop-faint mt-1 text-xs">
+      Saved to <span class="font-mono text-surface-400">tui_defaults.json</span> on the Mac daemon.
+      Hide removes terminal cards from the board; wipe purges archived records.
+    </p>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <label class="block">
+        <span class="text-xs font-medium text-surface-200">Hide from board after (hours)</span>
+        <input
+          type="number"
+          min="1"
+          max="168"
+          class="input mt-1 w-full"
+          value={settings.workCardHideAfterHours}
+          onchange={(event) => {
+            settings.setWorkCardHideAfterHours(
+              Number((event.currentTarget as HTMLInputElement).value),
+            );
+            void settings.persistWorkRetention();
+          }}
+        />
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-surface-200">Wipe archived after (days)</span>
+        <input
+          type="number"
+          min="1"
+          max="90"
+          class="input mt-1 w-full"
+          value={settings.workCardWipeAfterDays}
+          onchange={(event) => {
+            settings.setWorkCardWipeAfterDays(
+              Number((event.currentTarget as HTMLInputElement).value),
+            );
+            void settings.persistWorkRetention();
+          }}
+        />
+      </label>
+    </div>
   </div>
 </section>

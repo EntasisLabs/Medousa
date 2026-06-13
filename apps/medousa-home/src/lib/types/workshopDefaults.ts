@@ -44,6 +44,8 @@ export interface TuiDefaults {
   stageRouting?: StageRoutingMatrix | null;
   webSearchPreferredProvider?: string | null;
   webSearchTryFallbacks?: boolean | null;
+  workCardHideAfterHours?: number | null;
+  workCardWipeAfterDays?: number | null;
 }
 
 export const WORKSHOP_DEFAULTS_TABS: {
@@ -188,6 +190,8 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     stageRouting: raw.stageRouting ?? null,
     webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
     webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,
+    workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
+    workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
   };
 }
 

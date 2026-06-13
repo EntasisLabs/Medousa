@@ -395,6 +395,8 @@ pub struct RuntimeDefaultsResponse {
     pub response_depth_mode: String,
     pub base_url: Option<String>,
     pub stage_routing: StageRoutingMatrix,
+    pub work_card_hide_after_hours: u32,
+    pub work_card_wipe_after_days: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

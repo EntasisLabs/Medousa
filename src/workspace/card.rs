@@ -11,11 +11,11 @@ use crate::daemon_api::{
     WorkBoardColumn, WorkCard, WorkCardDetail, WorkCardId, WorkCardKind,
 };
 use crate::workspace::ask_job_store::{AskJobRecord, AskJobStatus, ask_job_store};
+use crate::workspace::retention::{self, WorkspaceRetentionConfig};
 use crate::turn_budget_request::{turn_budget_request_store, TurnBudgetRequest, TurnBudgetRequestStatus};
 use crate::openshell_sandbox_run::OPENSHELL_SANDBOX_RUN_JOB_TYPE;
 use crate::workspace::store::workspace_store;
 
-const DONE_CARD_TTL: Duration = Duration::hours(24);
 const WRAPPING_UP_STALE: Duration = Duration::hours(2);
 
 pub struct ProjectedWorkItem {
@@ -63,6 +63,9 @@ pub async fn project_workspace_items(
         .map(|record| record.job_id)
         .collect::<std::collections::HashSet<_>>();
 
+    let retention = WorkspaceRetentionConfig::load();
+    let hide_ttl = retention.hide_ttl();
+
     let mut items = Vec::new();
 
     for worker in &workers {
@@ -73,7 +76,7 @@ pub async fn project_workspace_items(
         {
             continue;
         }
-        if let Some(item) = project_turn_worker(worker, include_terminal) {
+        if let Some(item) = project_turn_worker(worker, include_terminal, hide_ttl) {
             items.push(item);
         }
     }
@@ -82,13 +85,13 @@ pub async fn project_workspace_items(
         if worker_ids.contains(&job.correlation_id) {
             continue;
         }
-        if let Some(item) = project_job(&job, include_terminal) {
+        if let Some(item) = project_job(&job, include_terminal, hide_ttl) {
             items.push(item);
         }
     }
 
     for ask in ask_job_store().list_for_workspace(include_terminal) {
-        if let Some(item) = project_ask_job(&ask, include_terminal) {
+        if let Some(item) = project_ask_job(&ask, include_terminal, hide_ttl) {
             items.push(item);
         }
     }
@@ -103,8 +106,12 @@ pub async fn project_workspace_items(
     Ok(items)
 }
 
-pub fn project_ask_job(record: &AskJobRecord, include_terminal: bool) -> Option<ProjectedWorkItem> {
-    let (column, status_label, terminal) = column_for_ask_job(record, include_terminal)?;
+pub fn project_ask_job(
+    record: &AskJobRecord,
+    include_terminal: bool,
+    hide_ttl: Duration,
+) -> Option<ProjectedWorkItem> {
+    let (column, status_label, terminal) = column_for_ask_job(record, include_terminal, hide_ttl)?;
 
     let title = truncate_line(&record.prompt, 80);
     let card = WorkCard {
@@ -215,31 +222,47 @@ pub fn project_turn_budget_request(
 fn column_for_ask_job(
     record: &AskJobRecord,
     include_terminal: bool,
+    hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, bool)> {
     match record.status {
         AskJobStatus::Pending => Some((WorkBoardColumn::Backlog, "queued", false)),
         AskJobStatus::Running => Some((WorkBoardColumn::InFlight, "running", false)),
         AskJobStatus::Succeeded => {
-            if !include_terminal && terminal_ask_stale(record.finished_at_utc) {
+            if !include_terminal && terminal_ask_stale(record.finished_at_utc, hide_ttl) {
                 return None;
             }
             Some((WorkBoardColumn::Done, "succeeded", true))
         }
-        AskJobStatus::Failed => Some((WorkBoardColumn::Blocked, "failed", true)),
-        AskJobStatus::Canceled => Some((WorkBoardColumn::Blocked, "canceled", true)),
+        AskJobStatus::Failed => {
+            if !include_terminal
+                && terminal_ask_stale(record.finished_at_utc.or(Some(record.updated_at_utc)), hide_ttl)
+            {
+                return None;
+            }
+            Some((WorkBoardColumn::Blocked, "failed", true))
+        }
+        AskJobStatus::Canceled => {
+            if !include_terminal
+                && terminal_ask_stale(record.finished_at_utc.or(Some(record.updated_at_utc)), hide_ttl)
+            {
+                return None;
+            }
+            Some((WorkBoardColumn::Blocked, "canceled", true))
+        }
     }
 }
 
-fn terminal_ask_stale(finished_at: Option<DateTime<Utc>>) -> bool {
-    finished_at.is_some_and(|at| Utc::now().signed_duration_since(at) > DONE_CARD_TTL)
+fn terminal_ask_stale(finished_at: Option<DateTime<Utc>>, hide_ttl: Duration) -> bool {
+    finished_at.is_some_and(|at| retention::terminal_card_stale(at, hide_ttl))
 }
 
 pub fn project_turn_worker(
     record: &TurnWorkRecord,
     include_terminal: bool,
+    hide_ttl: Duration,
 ) -> Option<ProjectedWorkItem> {
     let (column, status_label, wrapping_up_reasons, terminal) =
-        column_for_turn_worker(record, include_terminal)?;
+        column_for_turn_worker(record, include_terminal, hide_ttl)?;
 
     let title = if !record.user_ack.trim().is_empty() {
         record.user_ack.trim().to_string()
@@ -286,9 +309,9 @@ pub fn project_turn_worker(
     Some(ProjectedWorkItem { card, detail })
 }
 
-pub fn project_job(job: &Job, include_terminal: bool) -> Option<ProjectedWorkItem> {
+pub fn project_job(job: &Job, include_terminal: bool, hide_ttl: Duration) -> Option<ProjectedWorkItem> {
     let (column, status_label, wrapping_up_reasons, terminal) =
-        column_for_job(job, include_terminal)?;
+        column_for_job(job, include_terminal, hide_ttl)?;
 
     let payload = parse_payload(&job.payload_ref);
     let title = title_for_job(job, &payload);
@@ -354,6 +377,7 @@ pub fn project_job(job: &Job, include_terminal: bool) -> Option<ProjectedWorkIte
 pub fn column_for_job(
     job: &Job,
     include_terminal: bool,
+    hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
     match job.state {
         JobState::Enqueued => Some((
@@ -375,7 +399,7 @@ pub fn column_for_job(
             false,
         )),
         JobState::Succeeded => {
-            if !include_terminal && terminal_job_stale(job.finished_at) {
+            if !include_terminal && terminal_job_stale(job.finished_at, hide_ttl) {
                 return None;
             }
             Some((
@@ -409,6 +433,7 @@ pub fn column_for_job(
 pub fn column_for_turn_worker(
     record: &TurnWorkRecord,
     include_terminal: bool,
+    hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
     match record.status {
         TurnWorkStatus::Pending => Some((
@@ -442,23 +467,37 @@ pub fn column_for_turn_worker(
                 false,
             ))
         }
-        TurnWorkStatus::Failed => Some((
-            WorkBoardColumn::Blocked,
-            "failed",
-            Vec::new(),
-            true,
-        )),
-        TurnWorkStatus::Cancelled => Some((
-            WorkBoardColumn::Blocked,
-            "cancelled",
-            Vec::new(),
-            true,
-        )),
+        TurnWorkStatus::Failed => {
+            if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
+                return None;
+            }
+            Some((
+                WorkBoardColumn::Blocked,
+                "failed",
+                Vec::new(),
+                true,
+            ))
+        }
+        TurnWorkStatus::Cancelled => {
+            if !include_terminal && terminal_turn_worker_stale(record.updated_at, hide_ttl) {
+                return None;
+            }
+            Some((
+                WorkBoardColumn::Blocked,
+                "cancelled",
+                Vec::new(),
+                true,
+            ))
+        }
     }
 }
 
-fn terminal_job_stale(finished_at: Option<DateTime<Utc>>) -> bool {
-    finished_at.is_some_and(|at| Utc::now().signed_duration_since(at) > DONE_CARD_TTL)
+fn terminal_job_stale(finished_at: Option<DateTime<Utc>>, hide_ttl: Duration) -> bool {
+    finished_at.is_some_and(|at| retention::terminal_card_stale(at, hide_ttl))
+}
+
+fn terminal_turn_worker_stale(updated_at: DateTime<Utc>, hide_ttl: Duration) -> bool {
+    retention::terminal_card_stale(updated_at, hide_ttl)
 }
 
 fn wrapping_up_stale(updated_at: DateTime<Utc>) -> bool {
@@ -634,8 +673,9 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
+        let hide_ttl = Duration::hours(24);
         let (column, status, reasons, terminal) =
-            column_for_turn_worker(&record, true).expect("column");
+            column_for_turn_worker(&record, true, hide_ttl).expect("column");
         assert_eq!(column, WorkBoardColumn::WrappingUp);
         assert_eq!(status, "synthesis pending");
         assert_eq!(reasons, vec!["synthesis_pending"]);
@@ -677,7 +717,9 @@ mod tests {
             updated_at: Utc::now(),
         };
         let (column, status, _, terminal) =
-            column_for_turn_worker(&record, true).expect("column");
+        let hide_ttl = Duration::hours(24);
+        let (column, _, _, terminal) =
+            column_for_turn_worker(&record, true, hide_ttl).expect("column");
         assert_eq!(column, WorkBoardColumn::Done);
         assert_eq!(status, "completed");
         assert!(terminal);

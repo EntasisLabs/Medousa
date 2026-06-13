@@ -1,11 +1,13 @@
 import {
   archiveAskJob,
+  archiveWorkspaceCard,
   cancelWorkspaceCard,
   enqueueDaemonAsk,
   getWorkspaceCard,
   retryWorkspaceCard,
 } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
+import { settings } from "$lib/stores/settings.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import {
   notifyAskComplete,
@@ -20,6 +22,10 @@ import type { SwimlaneMode, WorkView } from "$lib/types/work";
 import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
 import { collectActivityCardIds } from "$lib/utils/activityEnrichment";
 import { hubCardsForPrefetch } from "$lib/utils/workHub";
+import {
+  isActionableBlockedCard,
+  visibleWorkCards,
+} from "$lib/utils/workCardRetention";
 import type {
   WorkCard,
   WorkspaceEvent,
@@ -272,11 +278,16 @@ export class WorkspaceStore {
   }
 
   kanbanCards(): WorkCard[] {
-    return this.cards.filter((card) => this.showDone || card.column !== "done");
+    const cards = this.visibleCards();
+    return cards.filter((card) => this.showDone || card.column !== "done");
   }
 
   activeCards(): WorkCard[] {
-    return this.cards.filter((c) => c.column !== "done");
+    return this.visibleCards().filter((c) => c.column !== "done");
+  }
+
+  visibleCards(): WorkCard[] {
+    return visibleWorkCards(this.cards, settings.workCardHideAfterHours);
   }
 
   /** Bottom work rail — in-motion cards only (Codex-style). */
@@ -286,10 +297,7 @@ export class WorkspaceStore {
   }
 
   blockedCount(): number {
-    if (this.columnCounts.blocked !== undefined) {
-      return this.columnCounts.blocked;
-    }
-    return this.cards.filter((card) => card.column === "blocked").length;
+    return this.visibleCards().filter(isActionableBlockedCard).length;
   }
 
   inMotionCount(): number {
@@ -475,6 +483,10 @@ export class WorkspaceStore {
       const response = await archiveAskJob(detail.job_id, purgeOutput);
       return { ok: response.archived, message: response.message };
     }
+    if (detail?.work_id || detail?.kind === "turn_worker") {
+      const response = await archiveWorkspaceCard(id, purgeOutput);
+      return { ok: response.ok, message: response.message };
+    }
     const response = await cancelWorkspaceCard(id);
     return { ok: response.ok, message: response.message };
   }
@@ -520,6 +532,25 @@ export class WorkspaceStore {
     this.cardActionMessage = `Archived ${ok}${skipped ? ` · ${skipped} skipped` : ""}${
       failed ? ` · ${failed} failed` : ""
     }`;
+  }
+
+  async archiveTerminalTrayCards(cards: WorkCard[], label: string, limit = 24) {
+    this.cardActionMessage = null;
+    this.cardDetailError = null;
+    let ok = 0;
+    let failed = 0;
+
+    for (const card of cards.slice(0, limit)) {
+      try {
+        const response = await this.archiveCard(card.id, true);
+        if (response.ok) ok += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    this.cardActionMessage = `Cleared ${ok} ${label}${failed ? ` · ${failed} failed` : ""}`;
   }
 }
 

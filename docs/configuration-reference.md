@@ -14,7 +14,7 @@ non-devs configure Medousa through the **app wizard and Settings**. This documen
 
 | File | Purpose |
 |------|---------|
-| `~/.local/share/medousa/tui_defaults.json` | Provider, model, routing, tool policy (shared with TUI + Home) |
+| `~/.local/share/medousa/tui_defaults.json` | Provider, model, routing, tool policy, **work card retention** (shared with TUI + Home) |
 | `~/.local/share/medousa/product_config.json` | Channels (Telegram, Slack, …) |
 | `~/.config/medousa/capabilities.toml` | Capability bindings, web search prefs |
 | `~/.config/medousa/mcp-gateway.toml` | MCP server launch config |
@@ -201,6 +201,23 @@ Channel tokens belong in `product_config.json` for normie flow; env vars remain 
 | `MEDOUSA_DASHBOARD_ACTION_BEARER_TOKEN` | Dashboard actions |
 | `MEDOUSA_DASHBOARD_ACTION_REQUIRED_ROLE` | RBAC role |
 | `MEDOUSA_DASHBOARD_ACTION_ROLE_CLAIM_HEADER` | Role claim header |
+
+---
+
+## Workspace retention
+
+Controls when terminal work cards disappear from the board and when archived ask jobs / turn workers are purged from disk.
+
+| Source | Key | Default | Range |
+|--------|-----|---------|-------|
+| `tui_defaults.json` | `work_card_hide_after_hours` | `24` | 1–168 |
+| `tui_defaults.json` | `work_card_wipe_after_days` | `7` | 1–90 |
+| Env override | `MEDOUSA_WORK_CARD_HIDE_AFTER_HOURS` | — | 1–168 |
+| Env override | `MEDOUSA_WORK_CARD_WIPE_AFTER_DAYS` | — | 1–90 |
+
+**Hide** applies to terminal done, failed, stopped, and cancelled cards in workspace projections. **Wipe** applies to archived rows in `workspace/ask_jobs.json` and `workspace/turn_workers.json`.
+
+Home Settings → Rhythm writes these fields to `tui_defaults.json` on Mac desktop. Mobile reads live values from `GET /v1/runtime/defaults` after connecting to the daemon.
 
 ---
 

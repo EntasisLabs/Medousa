@@ -96,6 +96,12 @@ pub struct TuiDefaults {
     pub web_search_preferred_provider: Option<String>,
     /// When false, only the preferred provider binding is tried.
     pub web_search_try_fallbacks: Option<bool>,
+    /// Hide terminal failed/stopped/done work cards from the board after this many hours.
+    #[serde(default)]
+    pub work_card_hide_after_hours: Option<u32>,
+    /// Purge archived ask jobs and turn workers after this many days.
+    #[serde(default)]
+    pub work_card_wipe_after_days: Option<u32>,
     pub surreal_endpoint: Option<String>,
     pub surreal_username: Option<String>,
     pub surreal_password: Option<String>,

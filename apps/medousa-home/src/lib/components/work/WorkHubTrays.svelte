@@ -15,7 +15,7 @@
   let openTray = $state<TrayId | null>(null);
   let trayBusy = $state(false);
 
-  const partition = $derived(partitionWorkHub(workspace.cards));
+  const partition = $derived(partitionWorkHub(workspace.visibleCards()));
   const blockedDisplay = $derived(prepareBlockedColumn(workspace.cards));
 
   const trays = $derived([
@@ -34,6 +34,26 @@
     trayBusy = true;
     try {
       await workspace.archiveTrayCards(partition.settled);
+    } finally {
+      trayBusy = false;
+    }
+  }
+
+  async function clearFailed() {
+    if (trayBusy || partition.failed.length === 0) return;
+    trayBusy = true;
+    try {
+      await workspace.archiveTerminalTrayCards(partition.failed, "failed");
+    } finally {
+      trayBusy = false;
+    }
+  }
+
+  async function clearStopped() {
+    if (trayBusy || partition.stopped.length === 0) return;
+    trayBusy = true;
+    try {
+      await workspace.archiveTerminalTrayCards(partition.stopped, "stopped");
     } finally {
       trayBusy = false;
     }
@@ -95,6 +115,24 @@
               onclick={() => void archiveSettled()}
             >
               Archive settled
+            </button>
+          {:else if active.id === "failed"}
+            <button
+              type="button"
+              class="workshop-text-action"
+              disabled={trayBusy}
+              onclick={() => void clearFailed()}
+            >
+              Clear failed
+            </button>
+          {:else if active.id === "stopped"}
+            <button
+              type="button"
+              class="workshop-text-action"
+              disabled={trayBusy}
+              onclick={() => void clearStopped()}
+            >
+              Clear stopped
             </button>
           {:else if active.id === "stuck"}
             <button

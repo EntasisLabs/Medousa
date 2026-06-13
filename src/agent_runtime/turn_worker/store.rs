@@ -15,7 +15,7 @@ use crate::turn_continuation::StoredDeliveryTarget;
 
 const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
 const MAX_ACTIVE_TURN_WORKERS: usize = 500;
-const ARCHIVE_RETENTION_DAYS: i64 = 30;
+use crate::workspace::retention::WorkspaceRetentionConfig;
 
 static STORE: Lazy<Arc<TurnWorkerStore>> = Lazy::new(|| Arc::new(TurnWorkerStore::new()));
 
@@ -147,7 +147,8 @@ impl TurnWorkerStore {
     }
 
     fn prune_map(map: &mut HashMap<String, TurnWorkRecord>) {
-        let cutoff = Utc::now() - Duration::days(ARCHIVE_RETENTION_DAYS);
+        let retention = WorkspaceRetentionConfig::load();
+        let cutoff = retention.wipe_cutoff(Utc::now());
         map.retain(|_, record| {
             if record.archived {
                 return record.updated_at >= cutoff;
@@ -264,5 +265,21 @@ impl TurnWorkerStore {
         drop(guard);
         self.persist();
         Some(cloned)
+    }
+
+    pub fn archive(&self, work_id: &str, purge_body: bool) -> Option<TurnWorkRecord> {
+        let now = Utc::now();
+        let mut guard = self.records.lock().expect("turn worker records");
+        let record = guard.get_mut(work_id)?;
+        record.archived = true;
+        record.updated_at = now;
+        if purge_body {
+            record.result_text = None;
+            record.worker_scratch = None;
+        }
+        let snapshot = record.clone();
+        drop(guard);
+        self.persist();
+        Some(snapshot)
     }
 }

@@ -162,6 +162,67 @@ async fn cancel_runtime_job(runtime: &RuntimeComposition, job_id: &str) -> bool 
     save_job(runtime, job).await.is_ok()
 }
 
+pub async fn archive_card(
+    runtime: Arc<RuntimeComposition>,
+    card_id: &str,
+    purge_output: bool,
+) -> Result<WorkspaceCardActionResponse, CardActionError> {
+    let card_id = card_id.trim();
+    if card_id.is_empty() {
+        return Err(CardActionError::NotActionable(
+            "card_id is required".to_string(),
+        ));
+    }
+
+    let detail = resolve_card_detail(runtime.clone(), card_id).await?;
+    let (ok, message, job_id) = match detail.kind {
+        WorkCardKind::TurnWorker => {
+            let work_id = detail.work_id.clone().ok_or_else(|| {
+                CardActionError::NotActionable("turn worker card missing work_id".to_string())
+            })?;
+            turn_worker_store()
+                .archive(&work_id, purge_output)
+                .ok_or(CardActionError::NotFound)?;
+            (
+                true,
+                format!("turn worker {work_id} archived"),
+                None,
+            )
+        }
+        WorkCardKind::AskJob => {
+            let job_id = detail.job_id.clone().ok_or_else(|| {
+                CardActionError::NotActionable("ask card missing job_id".to_string())
+            })?;
+            ask_job_store()
+                .archive(&job_id, purge_output)
+                .ok_or(CardActionError::NotFound)?;
+            (
+                true,
+                format!("ask {job_id} archived"),
+                Some(job_id),
+            )
+        }
+        other => {
+            return Err(CardActionError::NotActionable(format!(
+                "archive not supported for card kind {other:?}"
+            )));
+        }
+    };
+
+    WorkspaceService::sync_runtime(runtime.as_ref(), true).await;
+    Ok(WorkspaceCardActionResponse {
+        workspace_revision: workspace_store().revision(),
+        card_id: card_id.to_string(),
+        action: "archive".to_string(),
+        ok,
+        message,
+        job_id,
+        replayed: None,
+        job_succeeded: None,
+        associations: None,
+    })
+}
+
 pub async fn retry_card(
     runtime: Arc<RuntimeComposition>,
     card_id: &str,

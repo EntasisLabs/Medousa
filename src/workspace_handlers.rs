@@ -17,7 +17,7 @@ use crate::daemon_api::{
     WorkspaceSnapshotQuery, WorkspaceStreamQuery,
 };
 use crate::workspace::WorkspaceService;
-use crate::workspace::actions::{cancel_card, link_vault_card, retry_card, CardActionError};
+use crate::workspace::actions::{archive_card, cancel_card, link_vault_card, retry_card, CardActionError};
 use crate::workspace::feed::spawn_workspace_stream;
 
 #[derive(Clone)]
@@ -85,6 +85,17 @@ pub async fn cancel_workspace_card(
     Path(card_id): Path<String>,
 ) -> Result<Json<WorkspaceCardActionResponse>, (StatusCode, String)> {
     cancel_card(state.composition, &card_id)
+        .await
+        .map(Json)
+        .map_err(map_card_action_error)
+}
+
+pub async fn archive_workspace_card(
+    State(state): State<WorkspaceHandlerState>,
+    Path(card_id): Path<String>,
+    Json(request): Json<crate::daemon_api::ArchiveAskJobRequest>,
+) -> Result<Json<WorkspaceCardActionResponse>, (StatusCode, String)> {
+    archive_card(state.composition, &card_id, request.purge_output)
         .await
         .map(Json)
         .map_err(map_card_action_error)

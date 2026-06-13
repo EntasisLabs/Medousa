@@ -58,6 +58,8 @@ pub struct TuiDefaultsDto {
     pub stage_routing: Option<serde_json::Value>,
     pub web_search_preferred_provider: Option<String>,
     pub web_search_try_fallbacks: Option<bool>,
+    pub work_card_hide_after_hours: Option<u32>,
+    pub work_card_wipe_after_days: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -130,6 +132,10 @@ struct TuiDefaultsFile {
     web_search_preferred_provider: Option<String>,
     #[serde(default)]
     web_search_try_fallbacks: Option<bool>,
+    #[serde(default)]
+    work_card_hide_after_hours: Option<u32>,
+    #[serde(default)]
+    work_card_wipe_after_days: Option<u32>,
     #[serde(default)]
     command_usage_counts: Option<serde_json::Value>,
     #[serde(default)]
@@ -214,6 +220,8 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         stage_routing: file.stage_routing.clone(),
         web_search_preferred_provider: file.web_search_preferred_provider.clone(),
         web_search_try_fallbacks: file.web_search_try_fallbacks,
+        work_card_hide_after_hours: file.work_card_hide_after_hours,
+        work_card_wipe_after_days: file.work_card_wipe_after_days,
     }
 }
 
@@ -257,6 +265,8 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
         .filter(|value| !value.is_empty())
         .map(str::to_string);
     file.web_search_try_fallbacks = dto.web_search_try_fallbacks;
+    file.work_card_hide_after_hours = dto.work_card_hide_after_hours;
+    file.work_card_wipe_after_days = dto.work_card_wipe_after_days;
     if dto.stage_routing.is_some() {
         file.stage_routing = dto.stage_routing.clone();
     }

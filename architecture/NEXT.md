@@ -60,7 +60,20 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 
 ---
 
-## 5. Repo hygiene (this pass)
+## 6. Home UI polish (streaming, thinking, work hygiene)
+
+**Goal:** Mobile resume aligns with daemon; chat hides engine telemetry; work cards auto-hide/wipe with operator control.
+
+| Deliverable | Status |
+|-------------|--------|
+| Phased plan + product decisions | ✅ [`home-ui-polish-plan.md`](home-ui-polish-plan.md) |
+| B1/B4: Engine details toggle + chat stream filter | ✅ |
+| B2: Verification badges hidden in chat | ✅ |
+| A1/A2: Foreground resume + transcript reconcile | ✅ |
+| D1–D3: Retention settings, tray clear, engine TTL + archive | ✅ (engine defaults 24h hide / 7d wipe) |
+| C2: Mobile “Mac daemon defaults” chip | ⬜ |
+
+---
 
 | Deliverable | Status |
 |-------------|--------|

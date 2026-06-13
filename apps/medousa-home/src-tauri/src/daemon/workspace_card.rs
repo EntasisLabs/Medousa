@@ -56,6 +56,27 @@ pub async fn workspace_cancel_card(
 }
 
 #[tauri::command]
+pub async fn workspace_archive_card(
+    state: State<'_, DaemonState>,
+    card_id: String,
+    purge_output: Option<bool>,
+) -> Result<WorkspaceCardActionResponse, String> {
+    let base = daemon_base(&state)?;
+    let encoded = urlencoding::encode(card_id.trim());
+    let client = Client::new();
+    let response = client
+        .post(format!("{base}/v1/workspace/cards/{encoded}/archive"))
+        .json(&serde_json::json!({ "purge_output": purge_output.unwrap_or(true) }))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(map_http_error(response).await);
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn workspace_retry_card(
     state: State<'_, DaemonState>,
     card_id: String,

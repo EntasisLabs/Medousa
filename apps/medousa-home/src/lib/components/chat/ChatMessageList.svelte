@@ -2,11 +2,9 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import type { ChatMessage } from "$lib/types/chat";
-  import {
-    answerStateTextClass,
-    formatAnswerState,
-  } from "$lib/utils/formatAnswer";
+  import { isEngineTelemetryText } from "$lib/utils/chatStreamDisplay";
   import { formatToolName } from "$lib/utils/formatTurn";
 
   interface Props {
@@ -16,6 +14,15 @@
   }
 
   let { messages, mobile = false, compact = false }: Props = $props();
+
+  function visibleStatusLine(message: ChatMessage): string | null {
+    const line = message.statusLine?.trim();
+    if (!line) return null;
+    if (!settings.showEngineDetailsInChat && isEngineTelemetryText(line)) {
+      return null;
+    }
+    return line;
+  }
 </script>
 
 {#each messages as message, index (message.id)}
@@ -61,7 +68,7 @@
         </p>
       {/if}
 
-      {#if message.statusLine && message.streaming}
+      {#if visibleStatusLine(message) && message.streaming}
         <p
           class="mb-2 flex items-center gap-1.5 text-[11px] {message.phase === 'worker_ack' ||
           message.phase === 'awaiting_operator'
@@ -74,21 +81,14 @@
               aria-hidden="true"
             ></span>
           {/if}
-          {message.statusLine}
+          {visibleStatusLine(message)}
         </p>
       {/if}
 
-      {@const answer = formatAnswerState(message.answerState)}
       {#if message.content?.trim() || message.streaming}
         <div class="chat-voice">
           <MarkdownContent content={message.content || "…"} />
         </div>
-      {/if}
-
-      {#if answer && !message.streaming}
-        <p class="mt-2 text-[10px] {answerStateTextClass(answer.tone)}">
-          {answer.label}
-        </p>
       {/if}
 
       {#if message.toolRuns && message.toolRuns.length > 0}

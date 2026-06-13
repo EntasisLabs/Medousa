@@ -366,6 +366,16 @@ export async function getWorkspaceCard(
   return invoke<WorkCardDetail>("workspace_get_card", { cardId });
 }
 
+export async function archiveWorkspaceCard(
+  cardId: string,
+  purgeOutput = true,
+): Promise<WorkspaceCardActionResponse> {
+  return invoke<WorkspaceCardActionResponse>("workspace_archive_card", {
+    cardId,
+    purgeOutput,
+  });
+}
+
 export async function cancelWorkspaceCard(
   cardId: string,
 ): Promise<WorkspaceCardActionResponse> {

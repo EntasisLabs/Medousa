@@ -26,7 +26,14 @@ import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
 import { reasoningFromParts, toolRunsFromParts } from "$lib/types/turnParts";
 import { formatSessionLabel } from "$lib/utils/formatSession";
+import {
+  isEngineTelemetryText,
+  operatorStreamStatusLine,
+  shouldMirrorStatusIntoContent,
+} from "$lib/utils/chatStreamDisplay";
+import { mergeTranscript } from "$lib/utils/mergeTranscript";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
+import { settings } from "$lib/stores/settings.svelte";
 import {
   isBudgetApprovalStreamEvent,
   isTerminalContentCommit,
@@ -284,12 +291,41 @@ export class ChatStore {
     await this.refreshSessions({ force: true });
   }
 
-  /** Pull transcript from daemon when the UI remounted empty (startup / reconnect). */
+  /** Pull transcript from the daemon when the UI remounted empty (startup / reconnect). */
   async ensureSessionHydrated(options?: { notice?: boolean }) {
-    if (this.historyLoading || this.messages.length > 0) {
+    if (this.historyLoading) return;
+    if (this.messages.length === 0) {
+      await this.reloadCurrentSession(options);
       return;
     }
-    await this.reloadCurrentSession(options);
+    await this.reconcileOnResume({ notice: options?.notice });
+  }
+
+  /** Foreground/resume: merge daemon history with local stream state and reattach SSE. */
+  async reconcileOnResume(options?: { notice?: boolean }) {
+    const sessionId = this.sessionId.trim();
+    if (!sessionId) return;
+
+    const epoch = this.transcriptEpoch;
+    try {
+      await this.tryReattachActiveTurn();
+      if (epoch !== this.transcriptEpoch) return;
+
+      const history = await getSessionHistory(sessionId);
+      if (epoch !== this.transcriptEpoch) return;
+
+      const daemonMessages = mapTurns(history.turns, { sessionId });
+      this.messages = mergeTranscript(this.messages, daemonMessages);
+
+      if (options?.notice !== false && history.turns.length > 0 && this.historyNotice == null) {
+        const active = [...this.turns.values()].some((turn) => !turn.terminal);
+        if (active) {
+          this.historyNotice = "Reconnected to live turn";
+        }
+      }
+    } catch {
+      // Best-effort resume reconcile.
+    }
   }
 
   /** Fetch current session history from the engine (survives WebView refresh). */
@@ -475,20 +511,30 @@ export class ChatStore {
         )?.id;
 
         if (!messageId && !record.composer_handoff) {
-          messageId = crypto.randomUUID();
-          this.messages = [
-            ...this.messages,
-            {
-              id: messageId,
-              role: "assistant",
-              content: "",
-              streaming: true,
-              turnId: record.turn_id,
-            },
-          ];
+          const existing = this.messages.find(
+            (message) =>
+              message.turnId === record.turn_id && message.role === "assistant",
+          );
+          if (existing) {
+            messageId = existing.id;
+          } else {
+            messageId = crypto.randomUUID();
+            this.messages = [
+              ...this.messages,
+              {
+                id: messageId,
+                role: "assistant",
+                content: "",
+                streaming: true,
+                turnId: record.turn_id,
+              },
+            ];
+          }
           if (record.mode === "interactive") {
             this.assistantId = messageId;
           }
+        } else if (messageId && record.mode === "interactive") {
+          this.assistantId = messageId;
         }
 
         this.registerTurnFromRecord(record, messageId ?? null);
@@ -1300,15 +1346,19 @@ export class ChatStore {
     let content = current.content;
 
     if (event.event_type === "turn_progress") {
-      const statusLine = event.message?.trim() || current.statusLine;
-      if (!content.trim() && statusLine) {
+      const statusLine = this.resolveStatusLine(event, current.statusLine);
+      if (
+        !content.trim() &&
+        statusLine &&
+        shouldMirrorStatusIntoContent(event, settings.showEngineDetailsInChat)
+      ) {
         content = statusLine;
       }
       const next: ChatMessage = {
         ...current,
         content,
         phase: "tool_loop",
-        statusLine: statusLine || current.statusLine,
+        statusLine: this.resolveStatusLine(event, current.statusLine),
         tools: event.tool_names?.length
           ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
           : current.tools,
@@ -1404,7 +1454,7 @@ export class ChatStore {
       ...current,
       content,
       phase: event.phase || current.phase,
-      statusLine: event.message?.trim() || current.statusLine,
+        statusLine: this.resolveStatusLine(event, current.statusLine),
       tools: tools.length > 0 ? tools : current.tools,
       reasoning: reasoning || current.reasoning,
     };
@@ -1474,7 +1524,7 @@ export class ChatStore {
         streaming: !event.terminal,
         turnId: event.turn_id,
         phase: event.phase || null,
-        statusLine: event.message?.trim() || null,
+        statusLine: this.resolveStatusLine(event, null),
         tools: event.tool_names?.length ? [...event.tool_names] : undefined,
       },
     ];
@@ -1710,6 +1760,19 @@ export class ChatStore {
       });
     }
     this.turns = next;
+  }
+
+  private resolveStatusLine(
+    event: InteractiveTurnStreamEvent,
+    current: string | null | undefined,
+  ): string | null {
+    if (event.message?.trim()) {
+      return operatorStreamStatusLine(event, settings.showEngineDetailsInChat);
+    }
+    if (!settings.showEngineDetailsInChat && isEngineTelemetryText(current)) {
+      return null;
+    }
+    return current ?? null;
   }
 
   private phaseFromEvent(event: InteractiveTurnStreamEvent): string {

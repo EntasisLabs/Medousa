@@ -13,7 +13,7 @@ use crate::session;
 
 const ASK_JOBS_FILE: &str = "workspace/ask_jobs.json";
 const MAX_ACTIVE_ASK_JOBS: usize = 200;
-const ARCHIVE_RETENTION_DAYS: i64 = 30;
+use crate::workspace::retention::WorkspaceRetentionConfig;
 
 static STORE: Lazy<AskJobStore> = Lazy::new(AskJobStore::new);
 
@@ -130,7 +130,8 @@ impl AskJobStore {
     }
 
     fn prune_map(map: &mut HashMap<String, AskJobRecord>) {
-        let cutoff = Utc::now() - Duration::days(ARCHIVE_RETENTION_DAYS);
+        let retention = WorkspaceRetentionConfig::load();
+        let cutoff = retention.wipe_cutoff(Utc::now());
         map.retain(|_, record| {
             if record.archived {
                 return record.updated_at_utc >= cutoff;

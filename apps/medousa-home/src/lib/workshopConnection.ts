@@ -103,11 +103,41 @@ async function loadWorkshopDefaults(connected: boolean): Promise<void> {
     await runtime.loadWorkshopRuntime({ connected });
     if (connected) {
       await workshopDefaults.load(true);
+      await settings.hydrateWorkRetentionFromDaemon();
       void runtime.refresh();
     }
   } catch {
     // Workshop defaults are optional when offline.
   }
+}
+
+export async function resumeWorkshop(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<void> {
+  const health = await checkDaemonHealth();
+  connection.setHealth(health);
+  onHealthChange(health);
+  if (!health.ok) return;
+
+  await Promise.all([
+    chat.reconcileOnResume({ notice: false }),
+    chat.hydrateAskThreads(workspace.cards),
+    chat.tryReattachAskTurns(workspace.cards),
+  ]);
+}
+
+export function attachWorkshopForegroundResume(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  const handler = () => {
+    if (document.visibilityState !== "visible") return;
+    void resumeWorkshop(onHealthChange);
+  };
+
+  document.addEventListener("visibilitychange", handler);
+  return () => document.removeEventListener("visibilitychange", handler);
 }
 
 export async function reconnectWorkshop(
@@ -126,6 +156,7 @@ export async function reconnectWorkshop(
     workshopDefaults.resetForReconnect();
     await runtime.loadWorkshopRuntime({ connected: true });
     await workshopDefaults.load(true);
+    await settings.hydrateWorkRetentionFromDaemon();
     await startWorkshopStreams();
   }
 
@@ -141,6 +172,8 @@ export function connectWorkshop(options: {
   settings.applyTheme();
   const unlisteners: Promise<() => void>[] = [];
   registerStreamListeners(unlisteners);
+
+  const detachForeground = attachWorkshopForegroundResume(options.onHealthChange);
 
   void (async () => {
     try {
@@ -167,6 +200,7 @@ export function connectWorkshop(options: {
   })();
 
   return () => {
+    detachForeground();
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     stopWorkspaceStream();
     stopInteractiveStream();
