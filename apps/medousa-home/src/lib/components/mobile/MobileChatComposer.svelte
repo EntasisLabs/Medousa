@@ -8,7 +8,7 @@
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { createTurnTicket, startInteractiveStream } from "$lib/daemon";
+  import { createTurnTicket } from "$lib/daemon";
   import {
     parseChatSlashInput,
     runSlashCommand,
@@ -40,7 +40,11 @@
       channelSurface: opts.channelSurface,
     });
     chat.beginTurn(userContent, accepted);
-    await startInteractiveStream(accepted.stream_url);
+    await chat.startTurnStream(
+      accepted.turn_id,
+      accepted.session_id,
+      accepted.stream_url,
+    );
   }
 
   async function submit(event: Event) {

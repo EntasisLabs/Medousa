@@ -1,11 +1,12 @@
 <script lang="ts">
   import { PanelRightClose } from "@lucide/svelte";
   import ContextPanel from "$lib/components/layout/ContextPanel.svelte";
+  import { activityView } from "$lib/stores/activityView.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkCardDetail } from "$lib/types/card";
   import type { WorkspaceEvent } from "$lib/types/workspace";
-  import { filterOperatorActivity } from "$lib/utils/activityFilter";
+  import { visibleActivityFeed } from "$lib/utils/activityFilter";
   import { resolveActivityEnrichment } from "$lib/utils/activityEnrichment";
   import { presentActivityEvent } from "$lib/utils/activityPresentation";
 
@@ -40,8 +41,9 @@
   }: Props = $props();
 
   const visibleEvents = $derived(
-    filterOperatorActivity(events, {
+    visibleActivityFeed(events, {
       showTechnical: settings.showTechnicalActivity,
+      hiddenIds: activityView.hiddenIds,
     }),
   );
 
@@ -52,8 +54,13 @@
   $effect(() => {
     if (events.length > 0) {
       void workspace.prefetchActivityCardDetails();
+      activityView.pruneToFeed(new Set(events.map((event) => event.id)));
     }
   });
+
+  function clearViewed() {
+    activityView.clearViewed(visibleEvents.map((event) => event.id));
+  }
 </script>
 
 <aside
@@ -77,17 +84,37 @@
       <h2 class="min-w-0 truncate text-sm font-semibold tracking-wide text-surface-100">
         Activity
       </h2>
-      {#if onCollapse}
-        <button
-          type="button"
-          class="workshop-rail-btn shrink-0"
-          aria-label="Collapse activity panel"
-          title="Collapse activity panel"
-          onclick={onCollapse}
-        >
-          <PanelRightClose size={20} strokeWidth={1.75} />
-        </button>
-      {/if}
+      <div class="flex shrink-0 items-center gap-2">
+        {#if visibleEvents.length > 0}
+          <button
+            type="button"
+            class="workshop-text-action text-[11px]"
+            onclick={clearViewed}
+          >
+            Clear viewed
+          </button>
+        {/if}
+        {#if activityView.hiddenIds.size > 0}
+          <button
+            type="button"
+            class="workshop-text-action text-[11px]"
+            onclick={() => activityView.restoreAll()}
+          >
+            Show all
+          </button>
+        {/if}
+        {#if onCollapse}
+          <button
+            type="button"
+            class="workshop-rail-btn shrink-0"
+            aria-label="Collapse activity panel"
+            title="Collapse activity panel"
+            onclick={onCollapse}
+          >
+            <PanelRightClose size={20} strokeWidth={1.75} />
+          </button>
+        {/if}
+      </div>
     </div>
     {#if error}
       <p class="mt-1 text-xs text-error-400">{error}</p>
@@ -117,7 +144,11 @@
         <div class="mx-auto mb-3 h-0.5 w-8 rounded-full bg-primary-500"></div>
         <p class="text-sm text-surface-300">All quiet</p>
         <p class="mt-1 text-xs text-surface-500">
-          Work and vault updates show up here.
+          {#if activityView.hiddenIds.size > 0}
+            Cleared from view on this device. New updates still appear here.
+          {:else}
+            Work and vault updates show up here.
+          {/if}
         </p>
       </li>
     {/each}

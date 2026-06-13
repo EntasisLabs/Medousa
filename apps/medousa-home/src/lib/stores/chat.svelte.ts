@@ -7,6 +7,7 @@ import {
   setSessionDisplayName,
   startInteractiveStream,
   stopInteractiveStream,
+  stopInteractiveStreamTurn,
 } from "$lib/daemon";
 import type {
   ChatMessage,
@@ -32,6 +33,11 @@ import {
   shouldMirrorStatusIntoContent,
 } from "$lib/utils/chatStreamDisplay";
 import { mergeTranscript } from "$lib/utils/mergeTranscript";
+import {
+  shouldAcceptStreamEvent,
+  shouldReattachTurnRecord,
+  type StreamOwner,
+} from "$lib/utils/streamOwnership";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import { settings } from "$lib/stores/settings.svelte";
 import {
@@ -88,6 +94,8 @@ export class ChatStore {
   private sessionsFetchedAt = 0;
   private sessionsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionsRefreshInFlight: Promise<void> | null = null;
+  /** Turn ids with an active local SSE listener (subset of `turns`). */
+  private streamOwners = new Map<string, StreamOwner>();
 
   /** True while the composer must wait — Tier 2c: always open. */
   get composerBlocked(): boolean {
@@ -288,6 +296,7 @@ export class ChatStore {
     this.activeTurnId = null;
     this.turns = new Map();
     this.workers = new Map();
+    void this.clearStreamOwnership();
     await this.refreshSessions({ force: true });
   }
 
@@ -302,13 +311,13 @@ export class ChatStore {
   }
 
   /** Foreground/resume: merge daemon history with local stream state and reattach SSE. */
-  async reconcileOnResume(options?: { notice?: boolean }) {
+  async reconcileOnResume(options?: { notice?: boolean }, cards: WorkCard[] = []) {
     const sessionId = this.sessionId.trim();
     if (!sessionId) return;
 
     const epoch = this.transcriptEpoch;
     try {
-      await this.tryReattachActiveTurn();
+      await this.tryReattachActiveTurn(cards);
       if (epoch !== this.transcriptEpoch) return;
 
       const history = await getSessionHistory(sessionId);
@@ -370,6 +379,7 @@ export class ChatStore {
     this.activeTurnId = null;
     this.turns = new Map();
     this.workers = new Map();
+    void this.clearStreamOwnership();
     this.historyLoading = true;
     const epoch = this.transcriptEpoch;
     try {
@@ -471,14 +481,23 @@ export class ChatStore {
     this.activeTurnId = null;
   }
 
+  /** Bind local SSE ownership after the shell starts the daemon stream URL. */
+  async startTurnStream(turnId: string, sessionId: string, streamUrl: string) {
+    await startInteractiveStream(streamUrl);
+    this.markStreamOwner(turnId, sessionId, streamUrl);
+  }
+
   /**
-   * Reattach SSE listeners for all active session turns after refresh/reconnect.
+   * Reattach SSE listeners for owned, non-terminal session turns after refresh/reconnect.
    */
-  async tryReattachActiveTurn(): Promise<boolean> {
+  async tryReattachActiveTurn(cards: WorkCard[] = []): Promise<boolean> {
     const sessionId = this.sessionId.trim();
     if (!sessionId) return false;
 
+    await this.pruneStreamOwnership();
+
     try {
+      const targets: TurnTicketRecord[] = [];
       const response = await listSessionTurns(sessionId, true);
       if (response.turns.length === 0) {
         const legacy = await getActiveSessionTurn(sessionId);
@@ -499,58 +518,146 @@ export class ChatStore {
           updated_at: legacy.turn.started_at,
         });
       }
+      targets.push(...response.turns);
 
-      let attached = false;
-      for (const record of response.turns) {
-        if (this.isDetachedWorkerTurnRecord(record)) {
-          continue;
+      for (const card of cards) {
+        if (!isAskJobId(card.id)) continue;
+        if (card.column === "done" || card.column === "blocked") continue;
+        try {
+          const askResponse = await listSessionTurns(askSessionId(card.id), true);
+          targets.push(...askResponse.turns);
+        } catch {
+          // Best-effort — card may still be queued.
         }
-        attached = true;
-        let messageId = this.messages.find(
-          (m) => m.turnId === record.turn_id && m.role === "assistant",
-        )?.id;
-
-        if (!messageId && !record.composer_handoff) {
-          const existing = this.messages.find(
-            (message) =>
-              message.turnId === record.turn_id && message.role === "assistant",
-          );
-          if (existing) {
-            messageId = existing.id;
-          } else {
-            messageId = crypto.randomUUID();
-            this.messages = [
-              ...this.messages,
-              {
-                id: messageId,
-                role: "assistant",
-                content: "",
-                streaming: true,
-                turnId: record.turn_id,
-              },
-            ];
-          }
-          if (record.mode === "interactive") {
-            this.assistantId = messageId;
-          }
-        } else if (messageId && record.mode === "interactive") {
-          this.assistantId = messageId;
-        }
-
-        this.registerTurnFromRecord(record, messageId ?? null);
-        if (record.composer_handoff && record.mode === "interactive") {
-          this.backgroundActivity = Math.max(this.backgroundActivity, 1);
-        } else if (record.mode === "background") {
-          this.backgroundActivity = Math.max(this.backgroundActivity, 1);
-        }
-
-        await startInteractiveStream(record.stream_url);
       }
 
+      let attached = false;
+      const seen = new Set<string>();
+      for (const record of targets) {
+        if (seen.has(record.turn_id)) continue;
+        seen.add(record.turn_id);
+        if (await this.attachTurnStream(record)) {
+          attached = true;
+        }
+      }
+
+      await this.pruneStreamOwnership();
       return attached;
     } catch {
       return false;
     }
+  }
+
+  /** @deprecated use tryReattachActiveTurn(cards) */
+  async tryReattachAskTurns(cards: WorkCard[]): Promise<boolean> {
+    return this.tryReattachActiveTurn(cards);
+  }
+
+  private reattachContextFor(record: TurnTicketRecord) {
+    const assistant = this.messages.find(
+      (message) => message.turnId === record.turn_id && message.role === "assistant",
+    );
+    return {
+      principalSessionId: this.sessionId,
+      isRelevantSession: (sessionId: string | null | undefined) =>
+        this.isRelevantSession(sessionId),
+      isDetachedWorkerTurn: (ticket: TurnTicketRecord) =>
+        this.isDetachedWorkerTurnRecord(ticket),
+      localTurn: this.turns.get(record.turn_id),
+      hasAssistantMessage: assistant != null,
+      assistantStreaming: assistant?.streaming ?? false,
+    };
+  }
+
+  private markStreamOwner(turnId: string, sessionId: string, streamUrl: string) {
+    this.streamOwners.set(turnId, { turnId, sessionId, streamUrl });
+  }
+
+  private async detachStreamOwner(turnId: string) {
+    if (!this.streamOwners.delete(turnId)) return;
+    try {
+      await stopInteractiveStreamTurn(turnId);
+    } catch {
+      // Best-effort detach.
+    }
+  }
+
+  private async clearStreamOwnership() {
+    const turnIds = [...this.streamOwners.keys()];
+    this.streamOwners.clear();
+    await Promise.all(
+      turnIds.map((turnId) =>
+        stopInteractiveStreamTurn(turnId).catch(() => undefined),
+      ),
+    );
+  }
+
+  private async pruneStreamOwnership() {
+    for (const [turnId] of this.streamOwners) {
+      const turn = this.turns.get(turnId);
+      if (!turn || turn.terminal) {
+        await this.detachStreamOwner(turnId);
+        continue;
+      }
+      if (turn.phase === "worker_handoff" && turn.mode === "interactive") {
+        await this.detachStreamOwner(turnId);
+      }
+    }
+  }
+
+  private async attachTurnStream(record: TurnTicketRecord): Promise<boolean> {
+    if (!shouldReattachTurnRecord(record, this.reattachContextFor(record))) {
+      return false;
+    }
+
+    const existing = this.streamOwners.get(record.turn_id);
+    if (existing?.streamUrl === record.stream_url) {
+      return false;
+    }
+    if (existing) {
+      await this.detachStreamOwner(record.turn_id);
+    }
+
+    let messageId = this.messages.find(
+      (message) => message.turnId === record.turn_id && message.role === "assistant",
+    )?.id;
+
+    if (!messageId && !record.composer_handoff) {
+      messageId = crypto.randomUUID();
+      const lane = record.mode === "background" ? ("ask" as const) : ("chat" as const);
+      const askJobId =
+        record.mode === "background"
+          ? (record.workspace_card_id ?? record.turn_id)
+          : null;
+      this.messages = [
+        ...this.messages,
+        {
+          id: messageId,
+          role: "assistant",
+          content: "",
+          streaming: true,
+          turnId: record.turn_id,
+          lane,
+          askJobId,
+        },
+      ];
+      if (record.mode === "interactive") {
+        this.assistantId = messageId;
+      }
+    } else if (messageId && record.mode === "interactive") {
+      this.assistantId = messageId;
+    }
+
+    this.registerTurnFromRecord(record, messageId ?? null);
+    if (record.composer_handoff && record.mode === "interactive") {
+      this.backgroundActivity = Math.max(this.backgroundActivity, 1);
+    } else if (record.mode === "background") {
+      this.backgroundActivity = Math.max(this.backgroundActivity, 1);
+    }
+
+    await startInteractiveStream(record.stream_url);
+    this.markStreamOwner(record.turn_id, record.session_id, record.stream_url);
+    return true;
   }
 
   /** Cancel the daemon-side turn and detach the local SSE listener. */
@@ -565,6 +672,7 @@ export class ChatStore {
     }
 
     await stopInteractiveStream();
+    this.streamOwners.clear();
     this.activeTurnId = null;
     this.assistantId = null;
     this.turns = new Map();
@@ -645,51 +753,6 @@ export class ChatStore {
     if (hydrated.length > 0) {
       this.messages = [...this.messages, ...hydrated];
     }
-  }
-
-  /** Reattach SSE for in-flight ask jobs after reconnect. */
-  async tryReattachAskTurns(cards: WorkCard[]): Promise<boolean> {
-    let attached = false;
-    for (const card of cards) {
-      if (!isAskJobId(card.id)) continue;
-      if (card.column === "done" || card.column === "blocked") continue;
-
-      try {
-        const response = await listSessionTurns(askSessionId(card.id), true);
-        for (const record of response.turns) {
-          attached = true;
-          let messageId = this.messages.find(
-            (message) =>
-              message.turnId === record.turn_id && message.lane === "ask",
-          )?.id;
-
-          if (!messageId && !record.composer_handoff) {
-            messageId = crypto.randomUUID();
-            this.messages = [
-              ...this.messages,
-              {
-                id: messageId,
-                role: "assistant",
-                content: "",
-                streaming: true,
-                turnId: record.turn_id,
-                lane: "ask",
-                askJobId: card.id,
-              },
-            ];
-          }
-
-          this.registerTurnFromRecord(record, messageId ?? null);
-          if (record.composer_handoff) {
-            this.backgroundActivity = Math.max(this.backgroundActivity, 1);
-          }
-          await startInteractiveStream(record.stream_url);
-        }
-      } catch {
-        // Best-effort — card may still be queued.
-      }
-    }
-    return attached;
   }
 
   private isRelevantSession(sessionId: string | null | undefined): boolean {
@@ -1112,6 +1175,7 @@ export class ChatStore {
     const next = new Map(this.turns);
     next.delete(turnId);
     this.turns = next;
+    void this.detachStreamOwner(turnId);
   }
 
   private appendWorkerSynthesisMessage(
@@ -1631,6 +1695,7 @@ export class ChatStore {
     this.backgroundActivity += 1;
 
     if (phase === "worker_ack") {
+      void this.detachStreamOwner(event.turn_id);
       this.linkWorkerFromStream(event, messageId);
       return;
     }
@@ -1709,7 +1774,6 @@ export class ChatStore {
     const turnId = event.turn_id?.trim();
     if (!turnId) return false;
 
-    if (this.turns.has(turnId)) return true;
     if (isWorkerHandoffStreamEvent(event) || isBudgetApprovalStreamEvent(event)) {
       return true;
     }
@@ -1718,7 +1782,7 @@ export class ChatStore {
     const workId = event.work_id?.trim();
     if (workId && this.workers.has(workId)) return true;
 
-    return false;
+    return shouldAcceptStreamEvent(turnId, this.streamOwners, this.turns);
   }
 
   private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {

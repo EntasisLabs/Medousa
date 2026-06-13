@@ -93,6 +93,84 @@ pub fn status_stream_event(
     build_event(turn_id, "status", phase, message)
 }
 
+pub fn debug_status_stream_event(
+    turn_id: &str,
+    phase: &str,
+    debug_message: &str,
+) -> Result<InteractiveTurnStreamEvent> {
+    build_event_messages(
+        turn_id,
+        "status",
+        phase,
+        StreamMessages {
+            operator_message: None,
+            debug_message: Some(debug_message.trim().to_string()),
+        },
+    )
+}
+
+pub fn operator_status_stream_event(
+    turn_id: &str,
+    phase: &str,
+    operator_message: &str,
+) -> Result<InteractiveTurnStreamEvent> {
+    build_event_messages(
+        turn_id,
+        "status",
+        phase,
+        StreamMessages {
+            operator_message: Some(operator_message.trim().to_string()),
+            debug_message: None,
+        },
+    )
+}
+
+/// Whether a stream status line is engine telemetry rather than operator copy.
+pub fn is_stream_debug_telemetry(message: &str) -> bool {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.starts_with('◈') {
+        return true;
+    }
+    if trimmed.contains("orchestrator=") || trimmed.contains("fallback=") {
+        return true;
+    }
+    trimmed.starts_with("tool=")
+}
+
+#[derive(Debug, Clone, Default)]
+struct StreamMessages {
+    operator_message: Option<String>,
+    debug_message: Option<String>,
+}
+
+pub fn classify_stream_messages(phase: &str, message: &str) -> StreamMessages {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return StreamMessages::default();
+    }
+    if phase == "orchestration" || phase == "tool" || is_stream_debug_telemetry(trimmed) {
+        return StreamMessages {
+            operator_message: None,
+            debug_message: Some(trimmed.to_string()),
+        };
+    }
+    StreamMessages {
+        operator_message: Some(trimmed.to_string()),
+        debug_message: None,
+    }
+}
+
+fn legacy_stream_message(messages: &StreamMessages) -> String {
+    messages
+        .operator_message
+        .clone()
+        .or_else(|| messages.debug_message.clone())
+        .unwrap_or_default()
+}
+
 pub fn content_delta_stream_event(turn_id: &str, delta: &str) -> Result<InteractiveTurnStreamEvent> {
     let mut event = build_event(turn_id, "content_delta", "streaming", "")?;
     event.content_delta = Some(delta.to_string());
@@ -113,7 +191,8 @@ pub fn turn_progress_stream_event(
     progress: &str,
     tool_names: Vec<String>,
 ) -> Result<InteractiveTurnStreamEvent> {
-    let mut event = build_event(turn_id, "turn_progress", "tool_loop", progress)?;
+    let messages = classify_stream_messages("tool_loop", progress);
+    let mut event = build_event_messages(turn_id, "turn_progress", "tool_loop", messages)?;
     event.tool_names = Some(tool_names);
     event.terminal = false;
     Ok(event)
@@ -159,6 +238,8 @@ pub fn worker_ack_stream_event_with_tools(
     event.event_type = "worker_ack".to_string();
     event.phase = "worker_ack".to_string();
     event.message = "background worker started".to_string();
+    event.operator_message = Some("background worker started".to_string());
+    event.debug_message = None;
     event.work_id = work_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -231,7 +312,15 @@ pub fn error_stream_event(turn_id: &str, message: &str) -> Result<InteractiveTur
 
 /// Clear in-flight assistant draft in the TUI before the next model round (tool-loop interim).
 pub fn scratch_reset_stream_event(turn_id: &str) -> Result<InteractiveTurnStreamEvent> {
-    build_event(turn_id, "scratch_reset", "streaming", "assistant scratch cleared")
+    build_event_messages(
+        turn_id,
+        "scratch_reset",
+        "streaming",
+        StreamMessages {
+            operator_message: None,
+            debug_message: Some("assistant scratch cleared".to_string()),
+        },
+    )
 }
 
 pub fn tool_started_stream_event(
@@ -241,11 +330,14 @@ pub fn tool_started_stream_event(
     input_summary: &str,
     tool_round: usize,
 ) -> Result<InteractiveTurnStreamEvent> {
-    let mut event = build_event(
+    let mut event = build_event_messages(
         turn_id,
         "tool_started",
         "tool_loop",
-        &format!("Running {tool_name}"),
+        StreamMessages {
+            operator_message: Some(format!("Running {tool_name}")),
+            debug_message: None,
+        },
     )?;
     event.tool_run_id = Some(tool_run_id.to_string());
     event.tool_name = Some(tool_name.to_string());
@@ -269,7 +361,15 @@ pub fn tool_finished_stream_event(
         Some(summary) => format!("{tool_name}: {summary}"),
         None => format!("{tool_name} {status}"),
     };
-    let mut event = build_event(turn_id, "tool_finished", "tool_loop", &message)?;
+    let mut event = build_event_messages(
+        turn_id,
+        "tool_finished",
+        "tool_loop",
+        StreamMessages {
+            operator_message: Some(message),
+            debug_message: None,
+        },
+    )?;
     event.tool_run_id = Some(tool_run_id.to_string());
     event.tool_name = Some(tool_name.to_string());
     event.tool_status = Some(status.to_string());
@@ -298,13 +398,21 @@ pub fn budget_approval_stream_event(
     let message = format!(
         "Turn paused at {rounds_executed}/{max_tool_rounds}. Requesting +{requested_rounds} rounds: {reason}"
     );
-    let mut event = build_event(turn_id, "budget_approval", "awaiting_operator", &message)?;
-    event.message = format!("{message} (request {request_id})");
+    let mut operator_line = format!("{message} (request {request_id})");
+    if !summary.is_empty() {
+        operator_line.push_str(&format!(". Progress: {summary}"));
+    }
+    let mut event = build_event_messages(
+        turn_id,
+        "budget_approval",
+        "awaiting_operator",
+        StreamMessages {
+            operator_message: Some(operator_line.clone()),
+            debug_message: None,
+        },
+    )?;
     event.budget_request_id = Some(request_id.to_string());
     event.requested_rounds = Some(requested_rounds);
-    if !summary.is_empty() {
-        event.message.push_str(&format!(". Progress: {summary}"));
-    }
     event.terminal = false;
     Ok(event)
 }
@@ -315,6 +423,15 @@ fn build_event(
     phase: &str,
     message: &str,
 ) -> Result<InteractiveTurnStreamEvent> {
+    build_event_messages(turn_id, event_type, phase, classify_stream_messages(phase, message))
+}
+
+fn build_event_messages(
+    turn_id: &str,
+    event_type: &str,
+    phase: &str,
+    messages: StreamMessages,
+) -> Result<InteractiveTurnStreamEvent> {
     let turn_id = turn_id.trim().to_string();
     if turn_id.is_empty() {
         return Err(anyhow!("turn_id is required"));
@@ -324,7 +441,9 @@ fn build_event(
         turn_id,
         event_type: event_type.to_string(),
         phase: phase.to_string(),
-        message: message.to_string(),
+        message: legacy_stream_message(&messages),
+        operator_message: messages.operator_message,
+        debug_message: messages.debug_message,
         content_delta: None,
         reasoning_delta: None,
         final_text: None,
@@ -342,4 +461,50 @@ fn build_event(
         tool_round: None,
         tool_artifact_refs: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_orchestration_as_debug_only() {
+        let messages = classify_stream_messages(
+            "orchestration",
+            "◈ orchestration_summary calls_total=1 final_mode=tool_loop",
+        );
+        assert!(messages.operator_message.is_none());
+        assert!(messages.debug_message.is_some());
+    }
+
+    #[test]
+    fn classifies_operator_progress_as_operator_message() {
+        let event = turn_progress_stream_event(
+            "turn-1",
+            "Wrapping up your answer…",
+            vec!["cognition_web_search".to_string()],
+        )
+        .expect("event");
+        assert_eq!(
+            event.operator_message.as_deref(),
+            Some("Wrapping up your answer…")
+        );
+        assert!(event.debug_message.is_none());
+    }
+
+    #[test]
+    fn status_stream_event_keeps_legacy_message_for_tui() {
+        let event =
+            debug_status_stream_event("turn-1", "orchestration", "◈ activation heuristic class=tool")
+                .expect("event");
+        assert_eq!(
+            event.message,
+            "◈ activation heuristic class=tool"
+        );
+        assert!(event.operator_message.is_none());
+        assert_eq!(
+            event.debug_message.as_deref(),
+            Some("◈ activation heuristic class=tool")
+        );
+    }
 }

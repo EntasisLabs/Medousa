@@ -7,10 +7,11 @@
     FileText,
     Play,
   } from "@lucide/svelte";
+  import { activityView } from "$lib/stores/activityView.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import type { WorkspaceEvent } from "$lib/types/workspace";
-  import { filterOperatorActivity } from "$lib/utils/activityFilter";
+  import { visibleActivityFeed } from "$lib/utils/activityFilter";
   import { resolveActivityEnrichment } from "$lib/utils/activityEnrichment";
   import {
     presentActivityEvent,
@@ -21,13 +22,15 @@
   interface Props {
     events: WorkspaceEvent[];
     error: string | null;
+    showActions?: boolean;
   }
 
-  let { events, error }: Props = $props();
+  let { events, error, showActions = true }: Props = $props();
 
   const visibleEvents = $derived(
-    filterOperatorActivity(events, {
+    visibleActivityFeed(events, {
       showTechnical: settings.showTechnicalActivity,
+      hiddenIds: activityView.hiddenIds,
     }),
   );
 
@@ -44,11 +47,40 @@
     neutral: Play,
     vault: FileText,
   };
+
+  $effect(() => {
+    if (events.length > 0) {
+      activityView.pruneToFeed(new Set(events.map((event) => event.id)));
+    }
+  });
+
+  function clearViewed() {
+    activityView.clearViewed(visibleEvents.map((event) => event.id));
+  }
 </script>
 
 <div class="mobile-activity-feed flex flex-col" aria-label="Recent activity">
   {#if error}
     <p class="mobile-activity-banner text-error-300">{error}</p>
+  {/if}
+
+  {#if showActions && (feed.length > 0 || activityView.hiddenIds.size > 0)}
+    <div class="mobile-activity-actions">
+      {#if feed.length > 0}
+        <button type="button" class="workshop-text-action text-xs" onclick={clearViewed}>
+          Clear viewed
+        </button>
+      {/if}
+      {#if activityView.hiddenIds.size > 0}
+        <button
+          type="button"
+          class="workshop-text-action text-xs"
+          onclick={() => activityView.restoreAll()}
+        >
+          Show all
+        </button>
+      {/if}
+    </div>
   {/if}
 
   {#if feed.length > 0}
@@ -95,7 +127,11 @@
         </span>
         <p class="text-sm font-medium text-surface-200">All quiet</p>
         <p class="workshop-faint mt-1 max-w-xs text-center text-xs leading-relaxed">
-          When Medousa finishes work or needs you, it shows up here.
+          {#if activityView.hiddenIds.size > 0}
+            Cleared from view on this device. New updates still appear here.
+          {:else}
+            When Medousa finishes work or needs you, it shows up here.
+          {/if}
         </p>
       </li>
     {/each}

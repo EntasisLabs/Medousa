@@ -70,8 +70,11 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 | B1/B4: Engine details toggle + chat stream filter | ✅ |
 | B2: Verification badges hidden in chat | ✅ |
 | A1/A2: Foreground resume + transcript reconcile | ✅ |
+| A3: Stream ownership map (reattach non-terminal owned turns only) | ✅ |
 | D1–D3: Retention settings, tray clear, engine TTL + archive | ✅ (engine defaults 24h hide / 7d wipe) |
+| D4: Activity feed technical filter + Clear viewed (hide only) | ✅ |
 | C2: Mobile “Mac daemon defaults” chip | ✅ |
+| C3: Stream `operator_message` / `debug_message` split | ✅ |
 
 ---
 

@@ -94,3 +94,21 @@ pub async fn workspace_retry_card(
     }
     response.json().await.map_err(|err| err.to_string())
 }
+
+#[tauri::command]
+pub async fn workspace_fetch_snapshot(
+    state: State<'_, DaemonState>,
+    since_revision: Option<u64>,
+) -> Result<crate::daemon::types::WorkspaceSnapshot, String> {
+    let base = daemon_base(&state)?;
+    let mut url = format!("{base}/v1/workspace/snapshot");
+    if let Some(revision) = since_revision {
+        url.push_str(&format!("?since_revision={revision}"));
+    }
+    let client = Client::new();
+    let response = client.get(url).send().await.map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(map_http_error(response).await);
+    }
+    response.json().await.map_err(|err| err.to_string())
+}

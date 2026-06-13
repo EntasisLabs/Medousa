@@ -478,7 +478,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn notice(&self, message: String) {
-        self.publish_tracked(interactive_turn_runtime::status_stream_event(
+        self.publish_tracked(interactive_turn_runtime::debug_status_stream_event(
             &self.turn_id,
             "orchestration",
             &message,
@@ -526,7 +526,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
-        self.publish_tracked(interactive_turn_runtime::status_stream_event(
+        self.publish_tracked(interactive_turn_runtime::debug_status_stream_event(
             &self.turn_id,
             "tool",
             &format!("tool={tool_name} {input_summary}"),

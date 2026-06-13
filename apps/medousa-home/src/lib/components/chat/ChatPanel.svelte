@@ -15,7 +15,6 @@
   import { isTauriMobilePlatform } from "$lib/platform";
   import {
     createTurnTicket,
-    startInteractiveStream,
   } from "$lib/daemon";
 
   import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -165,7 +164,11 @@
       channelSurface: opts.channelSurface,
     });
     chat.beginTurn(userContent, accepted);
-    await startInteractiveStream(accepted.stream_url);
+    await chat.startTurnStream(
+      accepted.turn_id,
+      accepted.session_id,
+      accepted.stream_url,
+    );
   }
 
   async function submit(event: Event) {

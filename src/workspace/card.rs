@@ -65,6 +65,10 @@ pub async fn project_workspace_items(
 
     let retention = WorkspaceRetentionConfig::load();
     let hide_ttl = retention.hide_ttl();
+    let jobs_by_id: std::collections::HashMap<String, Job> = jobs
+        .iter()
+        .map(|job| (job.id.clone(), job.clone()))
+        .collect();
 
     let mut items = Vec::new();
 
@@ -76,7 +80,12 @@ pub async fn project_workspace_items(
         {
             continue;
         }
-        if let Some(item) = project_turn_worker(worker, include_terminal, hide_ttl) {
+        let stasis_job = worker
+            .stasis_job_id
+            .as_deref()
+            .or(Some(worker.work_id.as_str()))
+            .and_then(|job_id| jobs_by_id.get(job_id));
+        if let Some(item) = project_turn_worker(worker, stasis_job, include_terminal, hide_ttl) {
             items.push(item);
         }
     }
@@ -258,11 +267,13 @@ fn terminal_ask_stale(finished_at: Option<DateTime<Utc>>, hide_ttl: Duration) ->
 
 pub fn project_turn_worker(
     record: &TurnWorkRecord,
+    stasis_job: Option<&Job>,
     include_terminal: bool,
     hide_ttl: Duration,
 ) -> Option<ProjectedWorkItem> {
+    let effective_status = effective_turn_worker_status(record, stasis_job);
     let (column, status_label, wrapping_up_reasons, terminal) =
-        column_for_turn_worker(record, include_terminal, hide_ttl)?;
+        column_for_turn_worker_status(record, effective_status, include_terminal, hide_ttl)?;
 
     let title = if !record.user_ack.trim().is_empty() {
         record.user_ack.trim().to_string()
@@ -435,7 +446,58 @@ pub fn column_for_turn_worker(
     include_terminal: bool,
     hide_ttl: Duration,
 ) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
-    match record.status {
+    column_for_turn_worker_status(
+        record,
+        effective_turn_worker_status(record, None),
+        include_terminal,
+        hide_ttl,
+    )
+}
+
+/// Align worker board column with durable Stasis job state when the worker record lags.
+fn effective_turn_worker_status(record: &TurnWorkRecord, stasis_job: Option<&Job>) -> TurnWorkStatus {
+    if record.synthesis_delivered {
+        return TurnWorkStatus::Completed;
+    }
+    if let Some(job) = stasis_job {
+        match job.state {
+            JobState::Succeeded => {
+                if matches!(
+                    record.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running | TurnWorkStatus::Completed
+                ) {
+                    return TurnWorkStatus::Completed;
+                }
+            }
+            JobState::Failed | JobState::DeadLetter => {
+                if matches!(
+                    record.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                ) {
+                    return TurnWorkStatus::Failed;
+                }
+            }
+            JobState::Canceled => {
+                if matches!(
+                    record.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                ) {
+                    return TurnWorkStatus::Cancelled;
+                }
+            }
+            _ => {}
+        }
+    }
+    record.status
+}
+
+fn column_for_turn_worker_status(
+    record: &TurnWorkRecord,
+    status: TurnWorkStatus,
+    include_terminal: bool,
+    hide_ttl: Duration,
+) -> Option<(WorkBoardColumn, &'static str, Vec<String>, bool)> {
+    match status {
         TurnWorkStatus::Pending => Some((
             WorkBoardColumn::Backlog,
             "pending",
@@ -716,9 +778,8 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        let (column, status, _, terminal) =
         let hide_ttl = Duration::hours(24);
-        let (column, _, _, terminal) =
+        let (column, status, _, terminal) =
             column_for_turn_worker(&record, true, hide_ttl).expect("column");
         assert_eq!(column, WorkBoardColumn::Done);
         assert_eq!(status, "completed");
@@ -728,7 +789,8 @@ mod tests {
     #[test]
     fn job_enqueued_is_backlog() {
         let job = sample_job(JobState::Enqueued, "openshell.sandbox.run", "{}");
-        let (column, _, _, _) = column_for_job(&job, true).expect("column");
+        let hide_ttl = Duration::hours(24);
+        let (column, _, _, _) = column_for_job(&job, true, hide_ttl).expect("column");
         assert_eq!(column, WorkBoardColumn::Backlog);
     }
 }

@@ -395,6 +395,8 @@ pub async fn wizard_apply_screen1(
                 model: Some(model.clone()),
                 base_url: base_url.or(existing.base_url),
                 response_depth_mode: existing.response_depth_mode.or(dto.response_depth_mode),
+                work_card_hide_after_hours: existing.work_card_hide_after_hours,
+                work_card_wipe_after_days: existing.work_card_wipe_after_days,
             };
         }
     }

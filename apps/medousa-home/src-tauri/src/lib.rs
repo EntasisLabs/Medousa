@@ -117,6 +117,7 @@ pub fn run() {
             daemon::vault::vault_search,
             daemon::vault::vault_backlinks,
             daemon::workspace_card::workspace_get_card,
+            daemon::workspace_card::workspace_fetch_snapshot,
             daemon::workspace_card::workspace_cancel_card,
             daemon::workspace_card::workspace_archive_card,
             daemon::workspace_card::workspace_retry_card,

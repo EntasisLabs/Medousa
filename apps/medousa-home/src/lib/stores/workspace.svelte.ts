@@ -3,6 +3,7 @@ import {
   archiveWorkspaceCard,
   cancelWorkspaceCard,
   enqueueDaemonAsk,
+  fetchWorkspaceSnapshot,
   getWorkspaceCard,
   retryWorkspaceCard,
 } from "$lib/daemon";
@@ -39,6 +40,18 @@ const LIVING_DETAIL_COLUMNS = new Set([
   "blocked",
 ]);
 
+/** Activity kinds that should pull fresh card columns from the daemon. */
+const FEED_CARD_RECONCILE_KINDS = new Set([
+  "job_succeeded",
+  "work_completed",
+  "work_unblocked",
+  "job_failed",
+  "work_wrapping_up",
+  "job_started",
+]);
+
+const LIVING_BOARD_COLUMNS = new Set(["backlog", "in_flight", "wrapping_up"]);
+
 export class WorkspaceStore {
   revision = $state(0);
   cards = $state<WorkCard[]>([]);
@@ -59,6 +72,8 @@ export class WorkspaceStore {
   showDone = $state(false);
   workView = $state<WorkView>("kanban");
   private previousColumns = new Map<string, string>();
+  private reconcilingCards = false;
+  private heartbeatsSinceReconcile = 0;
 
   applyEvent(event: WorkspaceStreamEvent) {
     this.revision = event.workspace_revision;
@@ -92,11 +107,22 @@ export class WorkspaceStore {
       case "feed_appended":
         if (event.feed_event) {
           this.feed = [...this.feed, event.feed_event].slice(-200);
+          void this.reconcileCardsForFeedEvent(event.feed_event);
         }
         break;
       case "column_counts":
         if (event.counts) {
           this.columnCounts = event.counts;
+          if (this.boardCountsDriftFromServer(event.counts)) {
+            void this.reconcileCardsFromSnapshot();
+          }
+        }
+        break;
+      case "heartbeat":
+        this.heartbeatsSinceReconcile += 1;
+        if (this.heartbeatsSinceReconcile >= 6) {
+          this.heartbeatsSinceReconcile = 0;
+          void this.reconcileCardsFromSnapshot();
         }
         break;
       default:
@@ -159,7 +185,9 @@ export class WorkspaceStore {
 
     const idx = this.cards.findIndex((c) => c.id === card.id);
     if (idx >= 0) {
-      this.cards[idx] = card;
+      this.cards = this.cards.map((existing, index) =>
+        index === idx ? card : existing,
+      );
     } else {
       this.cards = [...this.cards, card];
     }
@@ -184,6 +212,72 @@ export class WorkspaceStore {
   async syncTurnWorkerCardsToChat() {
     chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
     await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
+  }
+
+  /** Pull authoritative card columns when activity says done but the board lagged. */
+  async reconcileCardsFromSnapshot() {
+    if (this.reconcilingCards) return;
+    this.reconcilingCards = true;
+    try {
+      const snapshot = await fetchWorkspaceSnapshot(
+        this.revision > 0 ? this.revision : undefined,
+      );
+      if (snapshot.cards.length === 0 && this.revision > 0) {
+        return;
+      }
+      this.revision = snapshot.workspace_revision;
+      this.cards = snapshot.cards;
+      this.columnCounts = snapshot.counts_by_column;
+      this.syncColumnMemory();
+      chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+    } catch {
+      // Best-effort — SSE upserts remain primary.
+    } finally {
+      this.reconcilingCards = false;
+    }
+  }
+
+  private boardCountsDriftFromServer(counts: Record<string, number>): boolean {
+    const living = ["backlog", "in_flight", "wrapping_up"] as const;
+    for (const column of living) {
+      const local = this.cards.filter((card) => card.column === column).length;
+      const remote = counts[column] ?? 0;
+      if (local !== remote) return true;
+    }
+    return false;
+  }
+
+  private async reconcileCardsForFeedEvent(event: WorkspaceEvent) {
+    if (!FEED_CARD_RECONCILE_KINDS.has(event.kind)) return;
+    const cardIds = [
+      ...new Set(
+        event.refs
+          .filter((ref) => ref.ref_type === "card")
+          .map((ref) => ref.ref_id.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (cardIds.length === 0) return;
+
+    const staleIds = cardIds.filter((id) => {
+      const local = this.cards.find((card) => card.id === id);
+      return local != null && LIVING_BOARD_COLUMNS.has(local.column);
+    });
+    if (staleIds.length === 0) {
+      return;
+    }
+
+    await Promise.all(staleIds.map((id) => this.refreshCardProjection(id)));
+  }
+
+  private async refreshCardProjection(cardId: string) {
+    try {
+      const detail = await getWorkspaceCard(cardId);
+      this.cardDetailsCache.set(cardId, detail);
+      this.handleCardUpserted(detail.card);
+    } catch {
+      // Card may have been archived between feed and fetch.
+    }
   }
 
   async submitAsk(request: EnqueueAskJobRequest) {

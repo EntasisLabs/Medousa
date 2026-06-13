@@ -9,12 +9,30 @@ export function isEngineTelemetryText(message: string | null | undefined): boole
   return false;
 }
 
+function streamDebugMessage(event: InteractiveTurnStreamEvent): string | null {
+  const explicit = event.debug_message?.trim();
+  if (explicit) return explicit;
+  if (event.operator_message?.trim()) return null;
+  const legacy = event.message?.trim();
+  if (!legacy) return null;
+  return isEngineTelemetryText(legacy) ? legacy : null;
+}
+
+function streamOperatorMessage(event: InteractiveTurnStreamEvent): string | null {
+  const explicit = event.operator_message?.trim();
+  if (explicit) return explicit;
+  if (event.debug_message?.trim()) return null;
+  const legacy = event.message?.trim();
+  if (!legacy || isEngineTelemetryText(legacy)) return null;
+  return legacy;
+}
+
 /** Engine/TUI telemetry — hidden from chat unless the operator enables engine details. */
 export function isEngineTelemetryEvent(event: InteractiveTurnStreamEvent): boolean {
   if (event.event_type === "status" && event.phase === "orchestration") {
-    return true;
+    return streamOperatorMessage(event) == null;
   }
-  return isEngineTelemetryText(event.message);
+  return streamDebugMessage(event) != null && streamOperatorMessage(event) == null;
 }
 
 export function visibleChatStatusLine(
@@ -31,12 +49,12 @@ export function operatorStreamStatusLine(
   event: InteractiveTurnStreamEvent,
   showEngineDetails: boolean,
 ): string | null {
-  const message = event.message?.trim();
-  if (!message) return null;
-  if (!showEngineDetails && isEngineTelemetryEvent(event)) {
-    return null;
+  const operator = streamOperatorMessage(event);
+  if (operator) return operator;
+  if (showEngineDetails) {
+    return streamDebugMessage(event);
   }
-  return message;
+  return null;
 }
 
 export function shouldMirrorStatusIntoContent(
@@ -45,5 +63,5 @@ export function shouldMirrorStatusIntoContent(
 ): boolean {
   if (event.event_type !== "turn_progress") return false;
   if (showEngineDetails) return true;
-  return !isEngineTelemetryEvent(event);
+  return streamOperatorMessage(event) != null;
 }

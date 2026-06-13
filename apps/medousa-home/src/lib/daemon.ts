@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkspaceCardActionResponse } from "$lib/types/work";
+import type { WorkspaceSnapshot } from "$lib/types/workspace";
 import type {
   CapabilityListResponse,
   CapabilityResolveResponse,
@@ -364,6 +365,14 @@ export async function getWorkspaceCard(
   cardId: string,
 ): Promise<WorkCardDetail> {
   return invoke<WorkCardDetail>("workspace_get_card", { cardId });
+}
+
+export async function fetchWorkspaceSnapshot(
+  sinceRevision?: number,
+): Promise<WorkspaceSnapshot> {
+  return invoke<WorkspaceSnapshot>("workspace_fetch_snapshot", {
+    sinceRevision,
+  });
 }
 
 export async function archiveWorkspaceCard(

@@ -4044,7 +4044,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
     async fn notice(&self, message: String) {
         publish_interactive_turn_event(
             &self.stream_tx,
-            medousa::interactive_turn_runtime::status_stream_event(
+            medousa::interactive_turn_runtime::debug_status_stream_event(
                 &self.stream_id,
                 "orchestration",
                 &message,
@@ -4055,7 +4055,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         publish_interactive_turn_event(
             &self.stream_tx,
-            medousa::interactive_turn_runtime::status_stream_event(
+            medousa::interactive_turn_runtime::debug_status_stream_event(
                 &self.stream_id,
                 "tool",
                 &format!("tool={tool_name} {input_summary}"),

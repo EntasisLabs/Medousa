@@ -11,7 +11,6 @@
     getJobResult,
     lookupArtifact,
     createTurnTicket,
-    startInteractiveStream,
   } from "$lib/daemon";
   import { defaultJournalPathForToday, isAskJobId } from "$lib/types/askJob";
   import type { ArtifactPreview } from "$lib/types/artifact";
@@ -262,7 +261,11 @@
         channelSurface: opts.channelSurface,
       });
       chat.beginTurn(prompt, accepted);
-      await startInteractiveStream(accepted.stream_url);
+      await chat.startTurnStream(
+        accepted.turn_id,
+        accepted.session_id,
+        accepted.stream_url,
+      );
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }

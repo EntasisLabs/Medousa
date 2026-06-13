@@ -743,6 +743,12 @@ pub struct InteractiveTurnStreamEvent {
     pub tool_round: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_artifact_refs: Option<Vec<StreamToolArtifactRef>>,
+    /// Human-facing status whisper for rich surfaces (Home default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_message: Option<String>,
+    /// Engine/TUI telemetry — shown only when the operator opts into engine details.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

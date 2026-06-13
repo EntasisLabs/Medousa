@@ -1,4 +1,10 @@
 {
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "bundle": {
+    "externalBin": []
+  },
   "app": {
     "windows": [
       {

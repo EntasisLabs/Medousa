@@ -88,4 +88,8 @@ export interface InteractiveTurnStreamEvent {
   tool_output_summary?: string | null;
   tool_round?: number | null;
   tool_artifact_refs?: ToolArtifactRef[] | null;
+  /** Human-facing status whisper (Home default). */
+  operator_message?: string | null;
+  /** Engine telemetry — shown only with engine details enabled. */
+  debug_message?: string | null;
 }

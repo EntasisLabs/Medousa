@@ -92,9 +92,8 @@ async function startWorkshopStreams(): Promise<void> {
     chat.refreshSessions({ force: true }),
     chat.ensureSessionHydrated({ notice: true }),
   ]);
-  void chat.tryReattachActiveTurn();
+  void chat.tryReattachActiveTurn(workspace.cards);
   void chat.hydrateAskThreads(workspace.cards);
-  void chat.tryReattachAskTurns(workspace.cards);
   void workspace.syncTurnWorkerCardsToChat();
 }
 
@@ -120,9 +119,9 @@ export async function resumeWorkshop(
   if (!health.ok) return;
 
   await Promise.all([
-    chat.reconcileOnResume({ notice: false }),
+    chat.reconcileOnResume({ notice: false }, workspace.cards),
     chat.hydrateAskThreads(workspace.cards),
-    chat.tryReattachAskTurns(workspace.cards),
+    workspace.reconcileCardsFromSnapshot(),
   ]);
 }
 

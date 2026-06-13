@@ -40,7 +40,7 @@
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Technical activity</span>
         <span class="workshop-faint mt-0.5 block text-xs">
-          Show repeated job failures and internal workflow noise in the feed
+          Show repeated job failures, turn lifecycle noise, and internal workflow events
         </span>
       </span>
       <input

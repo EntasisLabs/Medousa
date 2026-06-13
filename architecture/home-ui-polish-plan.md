@@ -1,6 +1,6 @@
 # Home UI polish — streaming, thinking, work hygiene
 
-> **Status:** Shipped (2026-06-13) — A1–D3 + C1/C2 complete; A3 and D4 deferred  
+> **Status:** Shipped (2026-06-13) — Home UI polish plan complete (A1–A3, B1–B4, C1–C3, D1–D4)  
 > **Product decisions (locked):**
 
 | Topic | Decision |
@@ -20,7 +20,7 @@
 |----|-------------|--------|
 | A1 | Tauri/mobile **foreground hook** → refresh health, workspace stream, `tryReattachActiveTurn` | ✅ |
 | A2 | **Smart reconcile** on resume: fetch session turns + active tickets; merge with local transcript by `turnId`; de-dupe reattach bubbles | ✅ |
-| A3 | Stream ownership map: reattach only non-terminal turns for current session (+ linked worker sessions) | ⬜ |
+| A3 | Stream ownership map: reattach only non-terminal turns for current session (+ linked worker sessions) | ✅ |
 
 **Acceptance:** Mid-turn background → return → same bubble continues or shows final; no phantom thread; composer works.
 
@@ -49,7 +49,7 @@
 |----|-------------|--------|
 | C1 | Mobile **never sends** provider/model/stageRouting on turns (portal to Mac) — document in UI | ✅ |
 | C2 | Optional subtle chip: “Using Mac daemon defaults” when on mobile (read from runtime summary) | ✅ |
-| C3 | Engine (later): `operator_message` vs `debug_message` on stream events | ⬜ deferred |
+| C3 | Engine: `operator_message` vs `debug_message` on stream events | ✅ |
 
 ---
 
@@ -62,7 +62,7 @@
 | D1 | **User settings:** hide-after (default 24h), wipe-after (default 7d) for terminal work cards | ✅ (`tui_defaults.json` + `/v1/runtime/defaults`) |
 | D2 | Engine: apply TTL to **failed/cancelled** turn workers (mirror ask-job stale); archive API for turn_worker | ✅ |
 | D3 | UI: **Clear failed** / **Clear stopped** tray actions; badge = actionable blocked only | ✅ |
-| D4 | Activity feed: respect technical toggle; optional “Clear viewed” (hide only) | ⬜ deferred |
+| D4 | Activity feed: respect technical toggle; optional “Clear viewed” (hide only) | ✅ |
 
 **Acceptance:** User clears Failed tray; Pulse badge drops; old failures auto-hide/wipe per settings.
 

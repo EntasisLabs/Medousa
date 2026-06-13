@@ -174,6 +174,10 @@ pub struct InteractiveTurnStreamEvent {
     pub tool_round: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_artifact_refs: Option<Vec<StreamToolArtifactRef>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
