@@ -13,14 +13,28 @@ pub async fn list_session_history(
     Query(request): Query<SessionHistoryListRequest>,
 ) -> Result<Json<SessionHistoryListResponse>, (StatusCode, String)> {
     let limit = request.limit.unwrap_or(200).clamp(1, 1000);
-    let mut sessions = crate::session::list_history_sessions(limit);
+    let query = request
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let cursor = request
+        .cursor
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let mut page = crate::session::list_history_sessions_page(limit, query, cursor);
     if request.include_verification == Some(false) {
-        sessions = sessions
+        page.sessions = page
+            .sessions
             .into_iter()
             .map(|session| session.without_verification_fields())
             .collect();
     }
-    Ok(Json(SessionHistoryListResponse { sessions }))
+    Ok(Json(SessionHistoryListResponse {
+        sessions: page.sessions,
+        next_cursor: page.next_cursor,
+    }))
 }
 
 pub async fn get_session_history(

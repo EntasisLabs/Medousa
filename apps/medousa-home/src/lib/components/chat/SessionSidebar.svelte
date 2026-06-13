@@ -14,6 +14,7 @@
   let { open, onClose, variant = "drawer" }: Props = $props();
 
   let query = $state("");
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let renamingSession = $state<SessionSummary | null>(null);
   let renameDraft = $state("");
   let renameError = $state<string | null>(null);
@@ -21,8 +22,22 @@
 
   $effect(() => {
     if (open) {
-      void chat.refreshSessions({ force: true });
+      query = chat.sessionListQuery;
+      void chat.refreshSessions({ force: true, q: query });
     }
+  });
+
+  $effect(() => {
+    const needle = query;
+    if (!open) return;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTimer = null;
+      void chat.refreshSessions({ force: true, q: needle });
+    }, 300);
+    return () => {
+      if (searchTimer) clearTimeout(searchTimer);
+    };
   });
 
   function matchesQuery(session: SessionSummary): boolean {
@@ -44,9 +59,7 @@
   );
 
   const recent = $derived(
-    chat.sessions.filter(
-      (session) => !chat.isPinned(session.session_id) && matchesQuery(session),
-    ),
+    chat.sessions.filter((session) => !chat.isPinned(session.session_id)),
   );
 
   function formatWhen(iso?: string | null): string {

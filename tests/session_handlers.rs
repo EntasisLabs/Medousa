@@ -72,6 +72,8 @@ async fn list_history_sessions_handler() {
     let query = Query(SessionHistoryListRequest {
         limit: Some(10),
         include_verification: None,
+        q: None,
+        cursor: None,
     });
     let res = list_session_history(query).await;
     assert!(res.is_ok());
@@ -81,6 +83,8 @@ async fn list_history_sessions_handler() {
     let slim_query = Query(SessionHistoryListRequest {
         limit: Some(10),
         include_verification: Some(false),
+        q: None,
+        cursor: None,
     });
     let slim_res = list_session_history(slim_query).await;
     assert!(slim_res.is_ok());
@@ -92,4 +96,35 @@ async fn list_history_sessions_handler() {
             && session.last_verification_coverage.is_none()
             && session.last_verification_verified.is_none()
     }));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn list_history_sessions_search_via_handlers() {
+    let tmp = make_temp_data_dir();
+    unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+
+    medousa::session::set_session_display_name("alpha-session", "Budget planning").unwrap();
+    medousa::session::set_session_display_name("beta-session", "Morning brief").unwrap();
+
+    let turn = ConversationTurn::plain(
+        "user",
+        "hello".to_string(),
+        Utc::now(),
+        vec![],
+        None,
+    );
+    medousa::session::append_turn("alpha-session", &turn);
+    medousa::session::append_turn("beta-session", &turn);
+
+    let search = Query(SessionHistoryListRequest {
+        limit: Some(10),
+        include_verification: None,
+        q: Some("budget".to_string()),
+        cursor: None,
+    });
+    let res = list_session_history(search).await;
+    assert!(res.is_ok());
+    let Json(list) = res.unwrap();
+    assert_eq!(list.sessions.len(), 1);
+    assert_eq!(list.sessions[0].session_id, "alpha-session");
 }

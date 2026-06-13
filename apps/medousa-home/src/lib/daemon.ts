@@ -70,18 +70,29 @@ export interface ListSessionsOptions {
   limit?: number;
   /** Home omits TUI verification trust fields for smaller payloads. Default false. */
   includeVerification?: boolean;
+  /** Server-side substring search on name, preview, or session id. */
+  q?: string;
+  /** Pagination cursor from a prior `next_cursor` response. */
+  cursor?: string;
+}
+
+export interface ListSessionsResponse {
+  sessions: SessionSummary[];
+  next_cursor?: string | null;
 }
 
 export async function listSessions(
   limitOrOptions?: number | ListSessionsOptions,
-): Promise<{ sessions: SessionSummary[] }> {
+): Promise<ListSessionsResponse> {
   const options: ListSessionsOptions =
     typeof limitOrOptions === "number"
       ? { limit: limitOrOptions }
       : (limitOrOptions ?? {});
-  return invoke<{ sessions: SessionSummary[] }>("session_list", {
+  return invoke<ListSessionsResponse>("session_list", {
     limit: options.limit,
     includeVerification: options.includeVerification ?? false,
+    q: options.q?.trim() || undefined,
+    cursor: options.cursor?.trim() || undefined,
   });
 }
 

@@ -43,6 +43,8 @@ async fn set_and_list_session_display_name_via_handlers() {
     let list_res = list_session_history(axum::extract::Query(SessionHistoryListRequest {
         limit: Some(50),
         include_verification: None,
+        q: None,
+        cursor: None,
     }))
     .await;
     assert!(list_res.is_ok());

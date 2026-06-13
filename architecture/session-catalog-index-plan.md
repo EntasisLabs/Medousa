@@ -68,8 +68,8 @@ Rule: **list path never calls `load_history` or `read_all()` on verification ind
 ### Phase 4 — Naming + search at scale (next)
 
 - [x] Home rename UI (`PUT /v1/sessions/{id}/name`) — pencil in session sidebar
-- [ ] Server-side `GET /v1/sessions?q=&cursor=` — catalog search + pagination past client `limit=50`
-- [ ] Auto-title from first user turn when preview is empty (write hook on `append_turn`)
+- [x] Server-side `GET /v1/sessions?q=&cursor=` — catalog search + pagination past client `limit=50`
+- [x] Auto-title from first user turn when preview is empty (write hook on `append_turn`)
 - [ ] Case-insensitive display-name search in meta store (catalog already has lower lookup)
 
 ## Success criteria

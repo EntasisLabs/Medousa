@@ -676,19 +676,35 @@ pub fn append_turn_with_scratch(
 }
 
 pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
+    list_history_sessions_page(limit, None, None).sessions
+}
+
+pub fn list_history_sessions_page(
+    limit: usize,
+    query: Option<&str>,
+    cursor: Option<&str>,
+) -> crate::session_catalog::SessionListPage {
     let limit = limit.max(1);
-    let mut sessions = crate::session_catalog::list_sessions(limit);
+    let searching = query.is_some() || cursor.is_some();
 
-    if sessions.is_empty() {
-        crate::session_catalog::ensure_catalog_populated(limit);
-        sessions = crate::session_catalog::list_sessions(limit);
+    crate::session_catalog::ensure_catalog_populated(limit.max(500));
+    let mut page = crate::session_catalog::list_sessions_page(limit, query, cursor);
+
+    if searching {
+        enrich_session_summaries(&mut page.sessions);
+        return page;
     }
 
-    if sessions.is_empty() && crate::session_store::has_persisted_sessions() {
-        sessions = crate::session_store::build_backfill_summaries(limit);
+    if page.sessions.is_empty() {
+        page.sessions = crate::session_catalog::list_sessions(limit);
     }
 
-    let mut seen: std::collections::HashSet<String> = sessions
+    if page.sessions.is_empty() && crate::session_store::has_persisted_sessions() {
+        page.sessions = crate::session_store::build_backfill_summaries(limit);
+    }
+
+    let mut seen: std::collections::HashSet<String> = page
+        .sessions
         .iter()
         .map(|item| item.session_id.clone())
         .collect();
@@ -701,7 +717,7 @@ pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
             continue;
         }
         crate::session_catalog::ensure_named_session(&session_id, Some(display_name.clone()));
-        sessions.push(SessionHistorySummary {
+        page.sessions.push(SessionHistorySummary {
             session_id,
             display_name: Some(display_name),
             turns: 0,
@@ -715,10 +731,10 @@ pub fn list_history_sessions(limit: usize) -> Vec<SessionHistorySummary> {
         });
     }
 
-    enrich_session_summaries(&mut sessions);
-    sessions.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
-    sessions.truncate(limit);
-    sessions
+    enrich_session_summaries(&mut page.sessions);
+    page.sessions.sort_by(|a, b| b.last_timestamp.cmp(&a.last_timestamp));
+    page.sessions.truncate(limit);
+    page
 }
 
 pub fn set_session_display_name(session_id: &str, display_name: &str) -> Result<(), String> {

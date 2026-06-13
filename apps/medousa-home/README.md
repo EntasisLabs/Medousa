@@ -14,7 +14,8 @@ Mobile: [`../../architecture/medousa-home-mobile-plan.md`](../../architecture/me
 
 - Node.js 20+ with npm
 - Rust toolchain (for Tauri)
-- `medousa_daemon` running on `http://127.0.0.1:7419` (or set `MEDOUSA_DAEMON_URL`)
+- **Released app builds** bundle and start the engine automatically — no terminal.
+- **Dev only:** if the sidecar is missing, run `medousa_daemon` on `http://127.0.0.1:7419` or set `MEDOUSA_DAEMON_URL`.
 
 ## Develop
 

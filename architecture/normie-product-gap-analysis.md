@@ -1,6 +1,6 @@
 # Normie product gap analysis (“Steve Jobs” pass)
 
-> **Status:** Active — Phase C shipped (2026-06-12)  
+> **Status:** Active — Phase D shipped (2026-06-07)  
 > **Date:** 2026-06-12  
 > **Audience:** Product + engineering  
 > **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)
@@ -100,12 +100,26 @@ Every time we say *daemon*, *workshop*, *ingest*, *Surreal*, or show a 47-row se
 
 ---
 
-## Phase D — “Scale without fear”
+## Phase D — “Scale without fear” (shipped 2026-06-07)
 
-- `GET /v1/sessions?q=&cursor=` server-side search
-- Hide TUI/CLI from normie README hero; `/help` in TUI (5 commands)
-- Delete or ship dead wizard screens (`WizardAccountScreen`, `WizardPhoneScreenMobile`)
-- Wire Garage onboarding into main funnel
+**Goal:** Scale session discovery and polish normie/power-user boundaries without architectural jargon.
+
+### D1. Session catalog search API
+
+- [x] `GET /v1/sessions?q=&cursor=` — case-insensitive substring on display name, preview, session id
+- [x] `next_cursor` pagination token in response
+- [x] Home session sidebar debounced server search
+
+### D2. Normie vs power-user docs
+
+- [x] Product README hero stays app-first; engine section labeled for developers
+- [x] TUI `/help` — five essential commands; shorter unknown-command hint
+
+### D3. Wizard cleanup + garage funnel
+
+- [x] Removed unused `WizardAccountScreen`, `WizardPhoneScreenMobile`
+- [x] Garage import wizard opens after desktop product wizard finish (first run)
+- [x] `VaultGarageImportWizard` mounted in `AppShell` (not Vault-only)
 
 ---
 

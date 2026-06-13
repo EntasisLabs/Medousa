@@ -11,7 +11,6 @@
   import VaultSpaceChips from "./VaultSpaceChips.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
-  import VaultGarageImportWizard from "./VaultGarageImportWizard.svelte";
   import VaultNewGroupDialog from "./VaultNewGroupDialog.svelte";
   import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
@@ -285,4 +284,3 @@
 
 <VaultNewNoteDialog />
 <VaultNewGroupDialog />
-<VaultGarageImportWizard />

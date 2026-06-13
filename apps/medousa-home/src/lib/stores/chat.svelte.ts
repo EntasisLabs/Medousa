@@ -59,6 +59,7 @@ export class ChatStore {
   backgroundActivity = $state(0);
   streamError = $state<string | null>(null);
   sessions = $state<SessionSummary[]>([]);
+  sessionListQuery = $state("");
   sessionsError = $state<string | null>(null);
   /** True while revalidating the session list without clearing cached rows. */
   sessionsRefreshing = $state(false);
@@ -209,11 +210,16 @@ export class ChatStore {
     );
   }
 
-  async refreshSessions(options?: { force?: boolean }) {
+  async refreshSessions(options?: { force?: boolean; q?: string }) {
     const force = options?.force ?? false;
+    const query = (options?.q ?? this.sessionListQuery).trim();
+    if (options?.q !== undefined) {
+      this.sessionListQuery = query;
+    }
     const hadCache = this.sessions.length > 0;
     const fresh =
       !force &&
+      !query &&
       hadCache &&
       Date.now() - this.sessionsFetchedAt < SESSIONS_STALE_MS;
 
@@ -225,7 +231,7 @@ export class ChatStore {
       return this.sessionsRefreshInFlight;
     }
 
-    this.sessionsRefreshInFlight = this.fetchSessions(hadCache);
+    this.sessionsRefreshInFlight = this.fetchSessions(hadCache, query);
     try {
       await this.sessionsRefreshInFlight;
     } finally {
@@ -244,7 +250,7 @@ export class ChatStore {
     }, SESSIONS_REFRESH_DEBOUNCE_MS);
   }
 
-  private async fetchSessions(hadCache: boolean) {
+  private async fetchSessions(hadCache: boolean, query = "") {
     this.sessionsRefreshing = hadCache;
     if (!hadCache) {
       this.sessionsError = null;
@@ -253,6 +259,7 @@ export class ChatStore {
       const response = await listSessions({
         limit: 50,
         includeVerification: false,
+        q: query || undefined,
       });
       this.sessions = response.sessions;
       this.sessionsFetchedAt = Date.now();

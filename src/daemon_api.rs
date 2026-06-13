@@ -168,11 +168,17 @@ pub struct SessionHistoryListRequest {
     pub limit: Option<usize>,
     /// When `false`, omit verification trust fields from each session row (smaller payloads).
     pub include_verification: Option<bool>,
+    /// Case-insensitive substring match on display name, preview, or session id.
+    pub q: Option<String>,
+    /// Opaque pagination cursor from a prior response (`next_cursor`).
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistoryListResponse {
     pub sessions: Vec<SessionHistorySummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

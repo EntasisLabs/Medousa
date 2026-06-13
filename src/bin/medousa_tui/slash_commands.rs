@@ -14,6 +14,23 @@ pub(crate) async fn handle_slash_command(
     let cmd = parts.next().unwrap_or_default();
 
     match cmd {
+        "/help" => {
+            push_obs(state, "◈ essential commands:".to_string());
+            push_obs(state, "  /new      start a fresh session".to_string());
+            push_obs(
+                state,
+                "  /history  browse and resume past sessions".to_string(),
+            );
+            push_obs(
+                state,
+                "  /name     set or show this session's label".to_string(),
+            );
+            push_obs(
+                state,
+                "  /settings open provider, model, and routing".to_string(),
+            );
+            push_obs(state, "  /close    quit medousa_tui".to_string());
+        }
         "/new" => {
             slash_command_services::handle_new_session_command(state, tui_rt, event_tx).await;
         }
@@ -333,7 +350,7 @@ pub(crate) async fn handle_slash_command(
         _ => {
             push_obs(
                 state,
-                "⚠ unknown command. try /new /history /settings /budget /skills /skill /edit /open /save /run /run-current /artifact /artifact-chunks /artifact-list /artifact-maintain /artifact-extract /artifact-extractions /artifact-pack /artifact-packs /artifact-pack-use /artifact-pack-auto /artifact-verify /artifact-verifications /artifact-verification /verify-policy /stage-routes /stage-route-set /stage-route-reset /close /allowlist-preview /clear-key /rotate-key /model /depth /stop /regen /export /perf /daemon /watch"
+                "⚠ unknown command. try /help for essentials, or /history /settings /close"
                     .to_string(),
             );
         }

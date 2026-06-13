@@ -121,9 +121,11 @@ Native YAML manuscripts and imported skills coexist. Write new specialties in YA
 
 ---
 
-## Medousa Engine
+## Medousa Engine (developers)
 
 The app is a client. The engine is the product underneath — durable jobs, HTTP API, local inference, MCP, channel ingest. Run it headless. Call it from your stack. Same runtime the app uses on every platform.
+
+**Power users:** terminal workspace and CLI live in the **[developer docs](docs/README.md)** — not required for the app welcome flow.
 
 **[Developer docs →](docs/README.md)**
 

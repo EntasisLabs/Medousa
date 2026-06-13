@@ -4,6 +4,7 @@
   import MobileShell from "$lib/components/mobile/MobileShell.svelte";
   import CommandPalette from "$lib/components/layout/CommandPalette.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
+  import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -69,3 +70,5 @@
     if (blocked) void workspace.selectCard(blocked.id);
   }}
 />
+
+<VaultGarageImportWizard />

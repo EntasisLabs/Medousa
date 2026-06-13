@@ -4,12 +4,14 @@ import {
   bootstrapWizard,
   completeWizard,
 } from "$lib/utils/wizardApi";
-import { layout } from "$lib/stores/layout.svelte";
+import { layout, saveLastSurface } from "$lib/stores/layout.svelte";
+import { vault } from "$lib/stores/vault.svelte";
 import {
   applyWizardScreen1,
   type WizardApplyScreen1Request,
 } from "$lib/utils/providersApi";
-import { layout, saveLastSurface } from "$lib/stores/layout.svelte";
+import { isTauriMobilePlatform } from "$lib/platform";
+import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
 import type { WizardBootstrap, WizardMode, WizardScreen } from "$lib/types/wizard";
 
 class WizardStore {
@@ -69,6 +71,9 @@ class WizardStore {
       this.applyBootstrap(await completeWizard());
       layout.setMobileTab("chat");
       saveLastSurface("chat");
+      if (!isTauriMobilePlatform() && shouldShowGarageWizard()) {
+        vault.openGarageWizard();
+      }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {

@@ -181,9 +181,80 @@ trait SessionCatalogStore: Send + Sync {
     fn upsert_row(&self, row: &SessionCatalogRow);
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow>;
     fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow>;
+    fn list_rows_page(
+        &self,
+        limit: usize,
+        query: Option<&str>,
+        cursor: Option<&SessionListCursor>,
+    ) -> Vec<SessionCatalogRow>;
     fn row_count(&self) -> usize;
     fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String>;
     fn find_session_ids_by_display_name_lower(&self, lower: &str, max: usize) -> Vec<String>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionListCursor {
+    pub last_activity_at: DateTime<Utc>,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionListPage {
+    pub sessions: Vec<SessionHistorySummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+pub fn encode_list_cursor(row: &SessionCatalogRow) -> String {
+    let at = row
+        .last_activity_at
+        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap_or_else(Utc::now));
+    format!("{}|{}", at.to_rfc3339(), row.session_id)
+}
+
+pub fn decode_list_cursor(raw: &str) -> Option<SessionListCursor> {
+    let raw = raw.trim();
+    let (at_raw, session_id) = raw.rsplit_once('|')?;
+    let last_activity_at = chrono::DateTime::parse_from_rfc3339(at_raw)
+        .ok()?
+        .with_timezone(&Utc);
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return None;
+    }
+    Some(SessionListCursor {
+        last_activity_at,
+        session_id: session_id.to_string(),
+    })
+}
+
+fn row_matches_query(row: &SessionCatalogRow, query: &str) -> bool {
+    let needle = query.trim().to_ascii_lowercase();
+    if needle.is_empty() {
+        return true;
+    }
+    row.session_id.to_ascii_lowercase().contains(&needle)
+        || row.preview.to_ascii_lowercase().contains(&needle)
+        || row
+            .display_name
+            .as_ref()
+            .is_some_and(|name| name.to_ascii_lowercase().contains(&needle))
+}
+
+fn row_is_older_than_cursor(row: &SessionCatalogRow, cursor: &SessionListCursor) -> bool {
+    let row_at = row
+        .last_activity_at
+        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).unwrap_or_else(Utc::now));
+    row_at < cursor.last_activity_at
+        || (row_at == cursor.last_activity_at && row.session_id < cursor.session_id)
+}
+
+fn sort_rows_by_recency(rows: &mut [SessionCatalogRow]) {
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| b.session_id.cmp(&a.session_id))
+    });
 }
 
 fn block_on<F: IntoFuture>(f: F) -> F::Output {
@@ -249,6 +320,39 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             .collect::<Vec<_>>();
 
         rows.sort_by(|a, b| b.last_activity_at.cmp(&a.last_activity_at));
+        rows.truncate(limit.max(1));
+        rows
+    }
+
+    fn list_rows_page(
+        &self,
+        limit: usize,
+        query: Option<&str>,
+        cursor: Option<&SessionListCursor>,
+    ) -> Vec<SessionCatalogRow> {
+        let dir = catalog_dir();
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+
+        let mut rows = entries
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    == Some("json")
+            })
+            .filter_map(|entry| {
+                let raw = std::fs::read_to_string(entry.path()).ok()?;
+                serde_json::from_str::<SessionCatalogRow>(&raw).ok()
+            })
+            .filter(|row| query.is_none_or(|needle| row_matches_query(row, needle)))
+            .filter(|row| cursor.is_none_or(|cursor| row_is_older_than_cursor(row, cursor)))
+            .collect::<Vec<_>>();
+
+        sort_rows_by_recency(&mut rows);
         rows.truncate(limit.max(1));
         rows
     }
@@ -433,6 +537,65 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
             Ok(response) => response,
             Err(err) => {
                 eprintln!("SurrealSessionCatalogStore::list_rows error: {err}");
+                return Vec::new();
+            }
+        };
+
+        response.take(0).unwrap_or_default()
+    }
+
+    fn list_rows_page(
+        &self,
+        limit: usize,
+        query: Option<&str>,
+        cursor: Option<&SessionListCursor>,
+    ) -> Vec<SessionCatalogRow> {
+        let q_lower = query
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase);
+
+        let sql = if q_lower.is_some() {
+            "SELECT * FROM type::table($table) \
+             WHERE ($cursor_at IS NONE OR last_activity_at < $cursor_at \
+                    OR (last_activity_at = $cursor_at AND session_id < $cursor_id)) \
+               AND (string::contains(string::lowercase(session_id), $q_lower) \
+                    OR string::contains(string::lowercase(preview), $q_lower) \
+                    OR (display_name != NONE \
+                        AND string::contains(string::lowercase(display_name), $q_lower))) \
+             ORDER BY last_activity_at DESC, session_id DESC \
+             LIMIT $limit"
+        } else {
+            "SELECT * FROM type::table($table) \
+             WHERE ($cursor_at IS NONE OR last_activity_at < $cursor_at \
+                    OR (last_activity_at = $cursor_at AND session_id < $cursor_id)) \
+             ORDER BY last_activity_at DESC, session_id DESC \
+             LIMIT $limit"
+        };
+
+        let mut query_builder = self
+            .db
+            .query(sql)
+            .bind(("table", SESSION_CATALOG_TABLE))
+            .bind(("limit", limit.max(1) as i64));
+
+        if let Some(cursor) = cursor {
+            query_builder = query_builder
+                .bind(("cursor_at", cursor.last_activity_at))
+                .bind(("cursor_id", cursor.session_id.clone()));
+        } else {
+            query_builder = query_builder.bind(("cursor_at", None::<DateTime<Utc>>));
+            query_builder = query_builder.bind(("cursor_id", None::<String>));
+        }
+
+        if let Some(q_lower) = q_lower {
+            query_builder = query_builder.bind(("q_lower", q_lower));
+        }
+
+        let mut response = match block_on(query_builder) {
+            Ok(response) => response,
+            Err(err) => {
+                eprintln!("SurrealSessionCatalogStore::list_rows_page error: {err}");
                 return Vec::new();
             }
         };
@@ -664,11 +827,36 @@ pub fn session_has_activity(session_id: &str) -> bool {
 static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 
 pub fn list_sessions(limit: usize) -> Vec<SessionHistorySummary> {
-    catalog_store()
-        .list_rows(limit.max(1))
-        .into_iter()
-        .map(SessionHistorySummary::from)
-        .collect()
+    list_sessions_page(limit, None, None).sessions
+}
+
+pub fn list_sessions_page(
+    limit: usize,
+    query: Option<&str>,
+    cursor: Option<&str>,
+) -> SessionListPage {
+    let limit = limit.max(1);
+    let decoded_cursor = cursor.and_then(decode_list_cursor);
+    let fetch_limit = limit.saturating_add(1);
+    let rows = catalog_store().list_rows_page(
+        fetch_limit,
+        query,
+        decoded_cursor.as_ref(),
+    );
+    let has_more = rows.len() > limit;
+    let page_rows: Vec<_> = rows.into_iter().take(limit).collect();
+    let next_cursor = if has_more {
+        page_rows.last().map(encode_list_cursor)
+    } else {
+        None
+    };
+    SessionListPage {
+        sessions: page_rows
+            .into_iter()
+            .map(SessionHistorySummary::from)
+            .collect(),
+        next_cursor,
+    }
 }
 
 /// One-shot repair when the catalog is empty but legacy session data exists.
@@ -903,5 +1091,45 @@ mod tests {
             None,
         );
         assert!(auto_title_from_turn(&turn).is_none());
+    }
+
+    #[test]
+    fn list_sessions_page_filters_query_and_cursor() {
+        let tmp = std::env::temp_dir().join(format!(
+            "medousa-catalog-page-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).expect("tempdir");
+        unsafe { std::env::set_var("XDG_DATA_HOME", &tmp) };
+        set_catalog_store(Arc::new(FileSessionCatalogStore));
+
+        let needle = format!("budget-unique-{}", std::process::id());
+        let at = Utc.with_ymd_and_hms(2026, 6, 8, 12, 0, 0).unwrap();
+        for (session_id, preview) in [
+            ("sess-alpha", format!("{needle} planning notes")),
+            ("sess-beta", "Morning brief draft".to_string()),
+        ] {
+            let turn = ConversationTurn::plain(
+                "user",
+                preview,
+                at,
+                vec![],
+                None,
+            );
+            record_turn_appended(session_id, &turn);
+        }
+
+        let page = list_sessions_page(10, Some(&needle), None);
+        assert_eq!(page.sessions.len(), 1);
+        assert_eq!(page.sessions[0].session_id, "sess-alpha");
+
+        let first = list_sessions_page(1, None, None);
+        assert_eq!(first.sessions.len(), 1);
+        assert!(first.next_cursor.is_some());
+
+        let second = list_sessions_page(1, None, first.next_cursor.as_deref());
+        assert_eq!(second.sessions.len(), 1);
+        assert_ne!(second.sessions[0].session_id, first.sessions[0].session_id);
     }
 }

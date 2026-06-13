@@ -12,18 +12,27 @@ pub async fn session_list(
     state: State<'_, DaemonState>,
     limit: Option<usize>,
     include_verification: Option<bool>,
+    q: Option<String>,
+    cursor: Option<String>,
 ) -> Result<SessionHistoryListResponse, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let capped = limit.unwrap_or(50).clamp(1, 200);
     let include_verification = include_verification.unwrap_or(false);
     let url = format!("{base}/v1/sessions");
     let client = Client::new();
+    let mut query = vec![
+        ("limit", capped.to_string()),
+        ("include_verification", include_verification.to_string()),
+    ];
+    if let Some(search) = q.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        query.push(("q", search.to_string()));
+    }
+    if let Some(page_cursor) = cursor.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        query.push(("cursor", page_cursor.to_string()));
+    }
     let response = client
         .get(&url)
-        .query(&[
-            ("limit", capped.to_string()),
-            ("include_verification", include_verification.to_string()),
-        ])
+        .query(&query)
         .send()
         .await
         .map_err(|err| err.to_string())?;

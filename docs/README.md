@@ -45,7 +45,9 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 
 ---
 
-## Quick paths
+## Quick paths (power users & operators)
+
+Need the terminal workspace or headless engine without the app? Start here:
 
 ```bash
 # Self-host engine (power user / server)
