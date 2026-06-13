@@ -30,6 +30,7 @@
   } from "$lib/utils/contextCrossLinks";
   import type { ContextMapNode } from "$lib/utils/contextMap";
   import { ChevronLeft, X } from "@lucide/svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
 
   interface Props {
     visible: boolean;
@@ -407,6 +408,15 @@
         ? contextThreads.loading
         : contextPosture.loading,
   );
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    return registerMobileBackHandler(() => {
+      if (!mobileDetailOpen) return false;
+      mobileDetailOpen = false;
+      return true;
+    });
+  });
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">

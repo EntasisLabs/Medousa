@@ -39,6 +39,9 @@
   let lastFitKey = $state("");
   let lastClick = { id: "", time: 0 };
   let animFrame = 0;
+  let pinching = $state(false);
+  let pinchStartDistance = 0;
+  let pinchStartZoom = 1;
 
   const nodeById = $derived(Object.fromEntries(graph.nodes.map((node) => [node.id, node])));
   const visibleNodes = $derived(graph.nodes.filter((node) => node.visible));
@@ -172,7 +175,7 @@
   });
 
   function onPointerDown(event: PointerEvent) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || pinching) return;
     if (isMapChromeTarget(event.target)) return;
     dragging = true;
     suppressClick = false;
@@ -204,20 +207,64 @@
     const mx = event.clientX - rect.left;
     const my = event.clientY - rect.top;
     const factor = event.deltaY > 0 ? 0.9 : 1.1;
-    const nextZoom = Math.min(3.5, Math.max(0.18, zoom * factor));
-    panX = mx - (mx - panX) * (nextZoom / zoom);
-    panY = my - (my - panY) * (nextZoom / zoom);
-    zoom = nextZoom;
+    applyZoomAt(mx, my, zoom * factor);
   }
 
   function zoomBy(factor: number) {
     if (!viewportEl) return;
     const mx = viewportEl.clientWidth / 2;
     const my = viewportEl.clientHeight / 2;
-    const nextZoom = Math.min(3.5, Math.max(0.18, zoom * factor));
-    panX = mx - (mx - panX) * (nextZoom / zoom);
-    panY = my - (my - panY) * (nextZoom / zoom);
-    zoom = nextZoom;
+    applyZoomAt(mx, my, zoom * factor);
+  }
+
+  function applyZoomAt(focalX: number, focalY: number, nextZoom: number) {
+    const clamped = Math.min(3.5, Math.max(0.18, nextZoom));
+    panX = focalX - (focalX - panX) * (clamped / zoom);
+    panY = focalY - (focalY - panY) * (clamped / zoom);
+    zoom = clamped;
+  }
+
+  function touchDistance(touches: TouchList): number {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  function touchCenter(touches: TouchList, rect: DOMRect) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left,
+      y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top,
+    };
+  }
+
+  function onTouchStart(event: TouchEvent) {
+    if (event.touches.length !== 2 || !viewportEl) return;
+    pinching = true;
+    dragging = false;
+    suppressClick = true;
+    pinchStartDistance = touchDistance(event.touches);
+    pinchStartZoom = zoom;
+  }
+
+  function onTouchMove(event: TouchEvent) {
+    if (!pinching || event.touches.length !== 2 || !viewportEl || pinchStartDistance <= 0) return;
+    event.preventDefault();
+    const rect = viewportEl.getBoundingClientRect();
+    const center = touchCenter(event.touches, rect);
+    const scale = touchDistance(event.touches) / pinchStartDistance;
+    applyZoomAt(center.x, center.y, pinchStartZoom * scale);
+  }
+
+  function onTouchEnd(event: TouchEvent) {
+    if (event.touches.length >= 2) return;
+    pinching = false;
+    pinchStartDistance = 0;
+    if (event.touches.length === 0) {
+      queueMicrotask(() => {
+        suppressClick = false;
+      });
+    }
   }
 
   function handleClearClick(event: MouseEvent) {
@@ -363,7 +410,9 @@
 
 <div
   bind:this={viewportEl}
-  class="context-map-viewport {dragging ? 'context-map-viewport-dragging' : ''} {focusActive
+  class="context-map-viewport {dragging ? 'context-map-viewport-dragging' : ''} {pinching
+    ? 'context-map-viewport-pinching'
+    : ''} {focusActive
     ? 'context-map-viewport-focused'
     : ''} {selectionActive ? 'context-map-viewport-selected' : ''}"
   role="application"
@@ -373,6 +422,10 @@
   onpointerup={onPointerUp}
   onpointercancel={onPointerUp}
   onwheel={onWheel}
+  ontouchstart={onTouchStart}
+  ontouchmove={onTouchMove}
+  ontouchend={onTouchEnd}
+  ontouchcancel={onTouchEnd}
 >
   <div class="context-map-controls" onpointerdown={(event) => event.stopPropagation()}>
     {#if selectionActive}

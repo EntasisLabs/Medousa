@@ -27,8 +27,11 @@
     reconnectWorkshop,
   } from "$lib/workshopConnection";
   import type { DaemonHealth } from "$lib/daemon";
+  import { attachMobileTabSwipe } from "$lib/utils/mobileTabSwipe";
+  import { switchMobileTab } from "$lib/mobileNavigation";
 
   let daemonHealth = $state<DaemonHealth | null>(null);
+  let mainEl: HTMLElement | undefined = $state();
 
   $effect(() => {
     const blocked = workspace.blockedCount();
@@ -48,6 +51,11 @@
     if (layout.mobileTab !== "chat") {
       setMobileComposerFocus(false);
     }
+  });
+
+  $effect(() => {
+    if (!mainEl) return;
+    return attachMobileTabSwipe(mainEl);
   });
 
   onMount(() => {
@@ -71,12 +79,12 @@
   }
 
   async function handleSelectCard(id: string) {
-    layout.setMobileTab("work");
+    switchMobileTab("work");
     await workspace.selectCard(id);
   }
 
   async function handleOpenChat(sessionId?: string) {
-    layout.setMobileTab("chat");
+    switchMobileTab("chat");
     if (sessionId) {
       await chat.switchSession(sessionId);
     }
@@ -91,7 +99,7 @@
   class="mobile-shell flex min-h-0 w-full flex-col bg-surface-950 text-surface-50"
   data-mobile-tab={layout.mobileTab}
 >
-  <main class="min-h-0 flex-1 overflow-hidden">
+  <main bind:this={mainEl} class="min-h-0 flex-1 overflow-hidden">
     {#key layout.mobileTab}
       {#if layout.mobileTab === "pulse"}
         <PulsePanel
