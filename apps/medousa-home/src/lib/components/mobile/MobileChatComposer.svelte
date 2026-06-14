@@ -1,6 +1,6 @@
 <script lang="ts">
-  import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
@@ -10,7 +10,6 @@
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket } from "$lib/daemon";
-  import ChatComposerAttachments from "$lib/components/chat/ChatComposerAttachments.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import {
     parseChatSlashInput,
@@ -122,27 +121,13 @@
   <div class="px-3 pb-1">
     <DaemonPortalChip compact />
   </div>
-  <ChatComposerAttachments mobile disabled={connection.offline || chat.composerBlocked} />
-  <div class="composer-bar composer-bar-mobile">
-    <GrowingTextarea
-      bind:value={chat.draft}
-      placeholder="Message"
-      disabled={connection.offline || chat.composerBlocked}
-      maxHeight={144}
-      minHeight={34}
-      onkeydown={handleKeydown}
-      onfocus={handleComposerFocus}
-      onblur={handleComposerBlur}
-      aria-label="Message"
-    />
-    <button
-      type="submit"
-      class="composer-bar-send"
-      disabled={connection.offline || chat.composerBlocked || (!chat.draft.trim() && chat.pendingMediaRefs.length === 0)}
-      aria-label="Send message"
-      onmousedown={(event) => event.preventDefault()}
-    >
-      {chat.composerBlocked ? "…" : "↑"}
-    </button>
-  </div>
+  <ChatComposerBar
+    mobile
+    disabled={connection.offline}
+    composerBlocked={chat.composerBlocked}
+    onkeydown={handleKeydown}
+    onfocus={handleComposerFocus}
+    onblur={handleComposerBlur}
+    onOpenVoiceSettings={() => layout.openYou("runtime")}
+  />
 </form>

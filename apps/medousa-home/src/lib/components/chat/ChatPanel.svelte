@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
-  import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
+  import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -10,7 +10,6 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import {
@@ -30,7 +29,6 @@
   import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
-  import ChatComposerAttachments from "$lib/components/chat/ChatComposerAttachments.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
 
   interface Props {
@@ -545,29 +543,12 @@
           {/each}
         </ul>
       {/if}
-      <p class="workshop-faint mx-4 mb-1.5 text-[10px]">
-        {runtime.modelLabel()} · {runtime.depthMode}
-      </p>
-      <ChatComposerAttachments disabled={connection.offline || chat.composerBlocked} />
-      <div class="composer-bar chat-composer-bar">
-        <GrowingTextarea
-          bind:value={chat.draft}
-          placeholder="Message Medousa…"
-          disabled={connection.offline || chat.composerBlocked}
-          maxHeight={128}
-          minHeight={36}
-          onkeydown={handleKeydown}
-          aria-label="Message"
-        />
-        <button
-          type="submit"
-          class="composer-bar-send"
-          disabled={connection.offline || chat.composerBlocked || (!chat.draft.trim() && chat.pendingMediaRefs.length === 0)}
-          aria-label="Send message"
-        >
-          {chat.composerBlocked ? "…" : "↑"}
-        </button>
-      </div>
+      <ChatComposerBar
+        disabled={connection.offline}
+        composerBlocked={chat.composerBlocked}
+        onkeydown={handleKeydown}
+        onOpenVoiceSettings={onOpenConnection}
+      />
     </form>
   {/if}
 

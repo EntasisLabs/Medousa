@@ -926,6 +926,78 @@
       0 0 0 3px rgb(var(--color-primary-500) / 0.08);
   }
 
+  .chat-composer-shell {
+    @apply items-center gap-1 px-1.5 py-1;
+  }
+
+  .chat-composer-bar.chat-composer-shell {
+    @apply px-1.5 py-1;
+  }
+
+  .composer-bar-icon-btn {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-200 disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .composer-bar-voice-btn {
+    @apply opacity-35;
+  }
+
+  .composer-attachment-chips {
+    @apply mx-8 mb-1.5 flex flex-wrap gap-1.5;
+  }
+
+  .mobile-chat-composer .composer-attachment-chips {
+    @apply mx-3 mb-1;
+  }
+
+  .composer-attachment-chip {
+    @apply inline-flex max-w-[min(100%,220px)] items-center gap-0.5 rounded-full border border-surface-500/40 bg-surface-800/70 py-0.5 pl-2.5 pr-1 text-xs text-primary-200;
+  }
+
+  .composer-attachment-chip-remove {
+    @apply inline-flex h-5 w-5 items-center justify-center rounded-full text-surface-500 hover:bg-surface-700 hover:text-surface-200 disabled:opacity-40;
+  }
+
+  .composer-model-picker {
+    @apply relative shrink-0;
+  }
+
+  .composer-model-pill {
+    @apply inline-flex max-w-[9.5rem] items-center gap-1 rounded-full border border-surface-500/35 bg-surface-900/50 px-2 py-1 text-[11px] font-medium text-surface-200 transition hover:border-surface-400/45 hover:bg-surface-800/70 disabled:opacity-50;
+  }
+
+  .composer-model-pill-readonly {
+    @apply cursor-default opacity-80;
+  }
+
+  .composer-model-menu {
+    @apply absolute bottom-full left-0 z-50 mb-2 w-64 overflow-hidden rounded-xl border border-surface-600/40 bg-surface-900 shadow-xl;
+  }
+
+  .composer-model-menu-search {
+    @apply flex items-center gap-2 border-b border-surface-700/60 px-3 py-2;
+  }
+
+  .composer-model-menu-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none;
+  }
+
+  .composer-model-menu-list {
+    @apply max-h-56 overflow-y-auto py-1;
+  }
+
+  .composer-model-menu-item {
+    @apply flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-surface-800/80;
+  }
+
+  .composer-model-menu-empty {
+    @apply px-3 py-4 text-center text-xs text-surface-500;
+  }
+
+  .composer-model-menu-footer {
+    @apply w-full border-t border-surface-700/60 px-3 py-2 text-left text-[11px] text-surface-400 transition hover:bg-surface-800/60 hover:text-surface-200;
+  }
+
   .chat-tool-footnote > summary {
     @apply list-none;
   }
