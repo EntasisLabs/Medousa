@@ -100,7 +100,7 @@
   data-mobile-tab={layout.mobileTab}
 >
   <main bind:this={mainEl} class="min-h-0 flex-1 overflow-hidden">
-    {#key layout.mobileTab}
+    {#key layout.navigationEpoch}
       {#if layout.mobileTab === "pulse"}
         <PulsePanel
           health={daemonHealth}

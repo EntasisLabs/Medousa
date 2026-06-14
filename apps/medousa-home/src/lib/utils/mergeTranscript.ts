@@ -1,18 +1,27 @@
 import type { ChatMessage } from "$lib/types/chat";
 
+/** Keep first occurrence — Svelte keyed `{#each}` throws on duplicate message ids. */
+export function dedupeMessagesById(messages: ChatMessage[]): ChatMessage[] {
+  const seen = new Set<string>();
+  const output: ChatMessage[] = [];
+  for (const message of messages) {
+    if (seen.has(message.id)) continue;
+    seen.add(message.id);
+    output.push(message);
+  }
+  return output;
+}
+
 /** Merge daemon history with local bubbles, preserving in-flight stream state. */
 export function mergeTranscript(
   local: ChatMessage[],
   daemon: ChatMessage[],
 ): ChatMessage[] {
-  if (local.length === 0) return daemon;
-  if (daemon.length === 0) return dedupeAssistantTurns(local);
+  if (local.length === 0) return dedupeMessagesById(daemon);
+  if (daemon.length === 0) return dedupeMessagesById(dedupeAssistantTurns(local));
 
   const localTurnIds = new Set(
     local.map((message) => message.turnId).filter((id): id is string => Boolean(id?.trim())),
-  );
-  const daemonTurnIds = new Set(
-    daemon.map((message) => message.turnId).filter((id): id is string => Boolean(id?.trim())),
   );
 
   const merged = [...local];
@@ -31,11 +40,7 @@ export function mergeTranscript(
     merged.push(message);
   }
 
-  if (daemonTurnIds.size === 0) {
-    return dedupeAssistantTurns(merged);
-  }
-
-  return dedupeAssistantTurns(merged);
+  return dedupeMessagesById(dedupeAssistantTurns(merged));
 }
 
 function dedupeAssistantTurns(messages: ChatMessage[]): ChatMessage[] {

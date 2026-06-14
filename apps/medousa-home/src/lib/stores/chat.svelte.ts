@@ -32,7 +32,7 @@ import {
   operatorStreamStatusLine,
   shouldMirrorStatusIntoContent,
 } from "$lib/utils/chatStreamDisplay";
-import { mergeTranscript } from "$lib/utils/mergeTranscript";
+import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
 import {
   shouldAcceptStreamEvent,
   shouldReattachTurnRecord,
@@ -65,6 +65,8 @@ interface WorkerLink {
 }
 
 export class ChatStore {
+  private askHydrationInFlight = new Set<string>();
+
   sessionId = $state(loadSessionId());
   messages = $state<ChatMessage[]>([]);
   draft = $state("");
@@ -308,6 +310,15 @@ export class ChatStore {
       return;
     }
     await this.reconcileOnResume({ notice: options?.notice });
+    this.sanitizeTranscript();
+  }
+
+  /** Drop duplicate message ids — keyed chat UI throws if ids repeat. */
+  sanitizeTranscript() {
+    const deduped = dedupeMessagesById(this.messages);
+    if (deduped.length !== this.messages.length) {
+      this.messages = deduped;
+    }
   }
 
   /** Foreground/resume: merge daemon history with local stream state and reattach SSE. */
@@ -712,46 +723,69 @@ export class ChatStore {
   promoteAskToChat(jobId: string) {
     const trimmed = jobId.trim();
     if (!trimmed) return;
-    this.messages = this.messages.map((message) =>
-      message.askJobId === trimmed
-        ? { ...message, lane: "chat", askJobId: null }
-        : message,
+    this.messages = dedupeMessagesById(
+      this.messages.map((message) =>
+        message.askJobId === trimmed
+          ? { ...message, lane: "chat", askJobId: null }
+          : message,
+      ),
     );
   }
 
   /** Load isolated ask session transcripts into the Asks rail. */
   async hydrateAskThreads(cards: WorkCard[]) {
     const epoch = this.transcriptEpoch;
-    const targets = cards.filter(
-      (card) =>
-        isAskJobId(card.id) &&
-        !this.messages.some((message) => message.askJobId === card.id),
-    );
+    const targets = cards.filter((card) => {
+      if (!isAskJobId(card.id)) return false;
+      if (this.askHydrationInFlight.has(card.id)) return false;
+      return !this.messages.some((message) => message.askJobId === card.id);
+    });
     if (targets.length === 0) return;
 
-    const batches = await Promise.all(
-      targets.map(async (card) => {
-        try {
-          const sessionId = askSessionId(card.id);
-          const history = await getSessionHistory(sessionId);
-          if (epoch !== this.transcriptEpoch || history.turns.length === 0) {
+    for (const card of targets) {
+      this.askHydrationInFlight.add(card.id);
+    }
+
+    try {
+      const batches = await Promise.all(
+        targets.map(async (card) => {
+          try {
+            const sessionId = askSessionId(card.id);
+            const history = await getSessionHistory(sessionId);
+            if (epoch !== this.transcriptEpoch || history.turns.length === 0) {
+              return [] as ChatMessage[];
+            }
+            return mapTurns(history.turns, {
+              lane: "ask",
+              askJobId: card.id,
+              sessionId,
+            });
+          } catch {
             return [] as ChatMessage[];
           }
-          return mapTurns(history.turns, {
-            lane: "ask",
-            askJobId: card.id,
-            sessionId,
-          });
-        } catch {
-          return [] as ChatMessage[];
-        }
-      }),
-    );
+        }),
+      );
 
-    if (epoch !== this.transcriptEpoch) return;
-    const hydrated = batches.flat();
-    if (hydrated.length > 0) {
-      this.messages = [...this.messages, ...hydrated];
+      if (epoch !== this.transcriptEpoch) return;
+
+      const hydrated = batches.flat();
+      if (hydrated.length === 0) return;
+
+      const jobsAlreadyHydrated = new Set(
+        this.messages
+          .map((message) => message.askJobId)
+          .filter((jobId): jobId is string => Boolean(jobId?.trim())),
+      );
+      const fresh = hydrated.filter(
+        (message) => !message.askJobId || !jobsAlreadyHydrated.has(message.askJobId),
+      );
+      if (fresh.length === 0) return;
+
+      this.messages = dedupeMessagesById([...this.messages, ...fresh]);
+    } finally {
+      for (const card of targets) {
+        this.askHydrationInFlight.delete(card.id);
+      }
     }
   }
 

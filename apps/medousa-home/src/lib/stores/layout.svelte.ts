@@ -21,6 +21,10 @@ export class LayoutStore {
   isMobile = $state(
     typeof window !== "undefined" ? shouldUseMobileShell() : false,
   );
+  /** Desktop primary panel (WorkshopShell). */
+  desktopSurface = $state<Surface>(loadLastSurface());
+  /** Bumped on every explicit nav action so keyed panels remount even when revisiting the same surface/tab. */
+  navigationEpoch = $state(0);
   mobileTab = $state<MobileTab>(loadMobileTab());
   youDestination = $state<YouDestination>("hub");
   activitySheetOpen = $state(false);
@@ -127,10 +131,35 @@ export class LayoutStore {
     this.isMobile = mobile;
   }
 
-  setMobileTab(tab: MobileTab) {
+  private bumpNavigation() {
+    this.navigationEpoch += 1;
+  }
+
+  navigateDesktop(surface: Surface, options?: { bump?: boolean }) {
+    const next = surface === "home" ? "chat" : surface;
+    if (next !== "chat") {
+      this.setSessionDrawerOpen(false);
+      this.setIdentityDrawerOpen(false);
+    }
+    if (next === "work") {
+      this.setActivityCollapsed(true);
+    }
+    const changed = this.desktopSurface !== next;
+    this.desktopSurface = next;
+    saveLastSurface(next);
+    if (changed || options?.bump) {
+      this.bumpNavigation();
+    }
+  }
+
+  setMobileTab(tab: MobileTab, options?: { bump?: boolean }) {
+    const changed = this.mobileTab !== tab;
     this.mobileTab = tab;
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(MOBILE_TAB_KEY, tab);
+    }
+    if (changed || options?.bump) {
+      this.bumpNavigation();
     }
   }
 

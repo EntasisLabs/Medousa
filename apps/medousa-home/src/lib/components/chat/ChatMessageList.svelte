@@ -23,15 +23,18 @@
 {#each messages as message, index (message.id)}
   {@const previous = index > 0 ? messages[index - 1] : null}
   {@const turnBreak = message.role === "user" && previous?.role === "assistant"}
+  {#if mobile && message.role === "user"}
+    <div class="{turnBreak ? 'chat-turn-break' : ''} mobile-chat-user-row">
+      <article class="mobile-chat-bubble-user">
+        <p class="mobile-chat-user-text">{message.content}</p>
+      </article>
+    </div>
+  {:else}
   <article
-    class="{turnBreak ? 'chat-turn-break' : ''} {mobile && message.role === 'user'
-      ? 'mobile-chat-bubble-user'
-      : mobile && message.role === 'assistant'
-        ? 'mobile-chat-bubble-assistant'
-        : ''} {message.role === 'user'
-      ? mobile
-        ? ''
-        : compact
+    class="{turnBreak ? 'chat-turn-break' : ''} {mobile && message.role === 'assistant'
+      ? 'mobile-chat-bubble-assistant'
+      : ''} {message.role === 'user'
+      ? compact
           ? 'chat-user-bubble chat-user-bubble-compact'
           : 'chat-user-bubble'
       : message.role === 'system'
@@ -100,9 +103,7 @@
         </p>
       {/if}
     {:else if message.role === "user"}
-      <p
-        class="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-surface-100 [overflow-wrap:anywhere]"
-      >
+      <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-100">
         {message.content}
       </p>
     {:else}
@@ -111,4 +112,5 @@
       </p>
     {/if}
   </article>
+  {/if}
 {/each}

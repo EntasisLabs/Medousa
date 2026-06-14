@@ -10,7 +10,7 @@
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
-  import { layout, loadLastSurface, saveLastSurface } from "$lib/stores/layout.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { layoutDesktopRails } from "$lib/utils/desktopRails";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
@@ -30,8 +30,9 @@
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import type { DaemonHealth } from "$lib/daemon";
 
-  let activeSurface = $state<Surface>(loadLastSurface());
   let daemonHealth = $state<DaemonHealth | null>(null);
+
+  const activeSurface = $derived(layout.desktopSurface);
 
   $effect(() => {
     if (!isTauri()) return;
@@ -62,16 +63,10 @@
   );
 
   function navigateToSurface(surface: Surface) {
-    if (surface !== "chat") {
-      layout.setSessionDrawerOpen(false);
-      layout.setIdentityDrawerOpen(false);
-    }
+    layout.navigateDesktop(surface, { bump: true });
     if (surface === "work") {
-      layout.setActivityCollapsed(true);
       void workspace.prefetchCardDetails();
     }
-    activeSurface = surface;
-    saveLastSurface(surface);
     if (surface === "chat") {
       void chat.refreshSessions();
       void chat.ensureSessionHydrated();
@@ -87,15 +82,12 @@
   }
 
   async function handleOpenNote(path: string) {
-    activeSurface = "library";
-    saveLastSurface("library");
+    layout.navigateDesktop("library");
     await vault.openNote(path);
   }
 
   async function handleCardSelect(id: string) {
-    activeSurface = "work";
-    saveLastSurface("work");
-    layout.setActivityCollapsed(true);
+    layout.navigateDesktop("work");
     await workspace.selectCard(id);
   }
 </script>
@@ -112,7 +104,7 @@
     <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {#key activeSurface}
+        {#key layout.navigationEpoch}
           {#if activeSurface === "chat"}
             <ChatPanel
               visible={true}
@@ -175,15 +167,6 @@
               onDaemonHealth={async () => {
                 daemonHealth = await refreshDaemonHealth();
               }}
-            />
-          {:else}
-            <ChatPanel
-              visible={true}
-              onOpenContext={() => {
-                layout.setIdentityDrawerOpen(false);
-                goToSurface("context");
-              }}
-              onOpenConnection={() => goToSurface("settings")}
             />
           {/if}
         {/key}

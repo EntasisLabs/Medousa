@@ -7,6 +7,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket } from "$lib/daemon";
   import {
@@ -104,7 +105,7 @@
   <BudgetApprovalBar
     mobile
     onOpenWork={() => {
-      layout.setMobileTab("work");
+      switchMobileTab("work");
       const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
       if (pending) void workspace.selectCard(pending.requestId);
     }}
