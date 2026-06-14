@@ -11,6 +11,7 @@ pub mod artifact_store;
 pub mod media_handlers;
 pub mod media_store;
 pub mod media_text_extract;
+pub mod media_vision;
 pub mod channel_session_store;
 pub mod turn_continuation;
 pub mod turn_parts;

@@ -248,6 +248,7 @@ pub struct LocalTurnExecutionParams {
     pub handoff_model_avec: MemoryAvecState,
     pub host_continuity_bundle: Option<super::worker_continuity::HostContinuityBundle>,
     pub session_scratch_seed: TurnScratchpad,
+    pub current_turn_user_message: ChatMessage,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -263,6 +264,8 @@ pub struct AssembleLocalTurnParams<'a> {
     pub response_depth_mode: &'a str,
     pub turn_id: u64,
     pub scheduled_tool_allowlist: Option<std::collections::HashSet<String>>,
+    pub media_refs: Vec<crate::daemon_api::MediaRef>,
+    pub vision_plan: crate::media_vision::TurnMediaVisionPlan,
 }
 
 pub struct AssembledLocalTurn {
@@ -344,6 +347,9 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     } else {
         append_tool_loop_policy(&params.resolved_prompt, activation.max_tool_rounds)
     };
+    let current_turn_user_message = params
+        .vision_plan
+        .build_user_message(&prompt_for_request);
 
     let pipeline_selection = turn_services::select_pipeline_for_turn_with_allowlist(
         params.tui_rt,
@@ -416,6 +422,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
                 params.conversation,
                 params.prompt,
             ),
+            current_turn_user_message,
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -743,6 +750,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         handoff_model_avec,
         mut host_continuity_bundle,
         session_scratch_seed,
+        current_turn_user_message,
     } = params;
 
     sink.notice(format!(
@@ -903,7 +911,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             suggested_intent,
         )));
         messages.extend(prior_messages);
-        messages.push(ChatMessage::user(prompt_for_request));
+        messages.push(current_turn_user_message.clone());
 
         if !try_consume_prompt_only_budget(&sink, &mut orchestration_state, &turn_budget).await {
             orchestration_state.final_mode = "prompt_only_budget_denied".to_string();
@@ -1030,6 +1038,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 Some(&chunk_tx),
                 loop_max_rounds,
                 Some(&mut completion_gate),
+                Some(current_turn_user_message.clone()),
             )
             .await
     };
@@ -1166,6 +1175,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                     Some(&chunk_tx),
                                     continuation_max_rounds,
                                     Some(&mut continuation_gate),
+                                    None,
                                 )
                                 .await
                         };
@@ -1287,6 +1297,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 Some(&chunk_tx),
                                 retry_rounds,
                                 Some(&mut retry_gate),
+                                None,
                             )
                             .await
                     };

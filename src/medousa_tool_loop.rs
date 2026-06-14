@@ -123,6 +123,7 @@ impl MedousaToolLoopPipeline {
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
         max_tool_rounds: usize,
         completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
+        current_turn_user_message: Option<ChatMessage>,
     ) -> Result<ToolLoopExecutionResponse> {
         self.execute_internal(
             request,
@@ -130,6 +131,7 @@ impl MedousaToolLoopPipeline {
             chunk_tx,
             max_tool_rounds,
             completion_gate,
+            current_turn_user_message,
         )
         .await
     }
@@ -140,7 +142,7 @@ impl MedousaToolLoopPipeline {
         prior_messages: Vec<ChatMessage>,
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
     ) -> Result<ToolLoopExecutionResponse> {
-        self.execute_internal(request, prior_messages, chunk_tx, DEFAULT_MAX_TOOL_ROUNDS, None)
+        self.execute_internal(request, prior_messages, chunk_tx, DEFAULT_MAX_TOOL_ROUNDS, None, None)
             .await
     }
 
@@ -151,6 +153,7 @@ impl MedousaToolLoopPipeline {
         chunk_tx: Option<&mpsc::UnboundedSender<StreamDelta>>,
         max_tool_rounds: usize,
         mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
+        current_turn_user_message: Option<ChatMessage>,
     ) -> Result<ToolLoopExecutionResponse> {
         let ToolLoopExecutionRequest {
             user_prompt,
@@ -173,10 +176,9 @@ impl MedousaToolLoopPipeline {
         let has_selected_tool = !shared_inputs.selected_tool_name().trim().is_empty();
         let parallel_settings = load_parallel_execution_settings();
 
-        let mut turn_ctx = HostTurnContext::new(
-            prior_messages,
-            shared_inputs.user_prompt.to_string(),
-        );
+        let user_message = current_turn_user_message
+            .unwrap_or_else(|| ChatMessage::user(shared_inputs.user_prompt.to_string()));
+        let mut turn_ctx = HostTurnContext::new_with_user_message(prior_messages, user_message);
         if let Some(gate) = completion_gate.as_ref() {
             if let Some(seed) = gate.initial_worker_scratch.as_ref() {
                 turn_ctx.scratchpad = seed.clone();

@@ -9,6 +9,12 @@ use uuid::Uuid;
 
 use crate::daemon_api::{MediaRef, MediaUploadResponse};
 
+#[derive(Debug, Clone, Default)]
+pub struct MediaPromptMergeOptions {
+    pub vision_active: bool,
+    pub vision_image_ids: std::collections::HashSet<String>,
+}
+
 const MEDIA_INDEX_FILE: &str = "index.jsonl";
 const MAX_UPLOAD_BYTES: u64 = 25 * 1024 * 1024;
 
@@ -148,6 +154,12 @@ pub fn media_ref_from_record(record: &MediaRecord) -> MediaRef {
 }
 
 pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), String> {
+    if refs.len() > crate::media_vision::MAX_MEDIA_REFS_PER_TURN {
+        return Err(format!(
+            "too many attachments (max {})",
+            crate::media_vision::MAX_MEDIA_REFS_PER_TURN
+        ));
+    }
     for media_ref in refs {
         let media_id = media_ref.media_id.trim();
         if media_id.is_empty() {
@@ -177,6 +189,7 @@ pub fn merge_media_refs_into_prompt(
     prompt: &str,
     session_id: &str,
     media_refs: &[MediaRef],
+    options: &MediaPromptMergeOptions,
 ) -> String {
     if media_refs.is_empty() {
         return prompt.to_string();
@@ -193,6 +206,21 @@ pub fn merge_media_refs_into_prompt(
             "- {name} ({}, kind={}, id={})\n",
             media_ref.mime, media_ref.kind, media_ref.media_id
         ));
+
+        let is_image = media_ref.kind == "image"
+            || media_ref.mime.trim().to_ascii_lowercase().starts_with("image/");
+
+        if is_image {
+            if options.vision_active && options.vision_image_ids.contains(&media_ref.media_id) {
+                block.push_str("  (included as image content for this turn)\n");
+                continue;
+            }
+            if !options.vision_active {
+                block.push_str(
+                    "  (image attached — current model cannot see images; describe it in text or switch to a vision-capable model)\n",
+                );
+            }
+        }
 
         if let Some(record) = get_media_record(session_id, &media_ref.media_id) {
             if let Some(extract) = read_media_extract(&record) {
@@ -334,6 +362,7 @@ mod tests {
                 mime: "image/png".into(),
                 label: Some("shot.png".into()),
             }],
+            &MediaPromptMergeOptions::default(),
         );
         assert!(merged.contains("[Attachments]"));
         assert!(merged.contains("shot.png"));

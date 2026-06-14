@@ -536,6 +536,7 @@ pub async fn run_worker_turn(
             None,
             worker_max_rounds,
             Some(&mut completion_gate),
+            None,
         )
         .await;
 

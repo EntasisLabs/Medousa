@@ -390,9 +390,21 @@ impl HostTurnContext {
         prior_messages: Vec<ChatMessage>,
         user_prompt: String,
     ) -> Self {
-        let scratchpad = TurnScratchpad::from_user_prompt(&user_prompt);
+        Self::new_with_user_message(prior_messages, ChatMessage::user(user_prompt))
+    }
+
+    pub fn new_with_user_message(
+        prior_messages: Vec<ChatMessage>,
+        user_message: ChatMessage,
+    ) -> Self {
+        let scratch_source = user_message
+            .content
+            .first_text()
+            .unwrap_or("")
+            .to_string();
+        let scratchpad = TurnScratchpad::from_user_prompt(&scratch_source);
         let mut user_lane_prefix = prior_messages;
-        user_lane_prefix.push(ChatMessage::user(user_prompt));
+        user_lane_prefix.push(user_message);
         Self {
             user_lane_prefix,
             tool_lane: ToolLaneState::default(),

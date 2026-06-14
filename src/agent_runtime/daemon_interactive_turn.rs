@@ -17,6 +17,7 @@ use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session::{append_turn, append_turn_with_scratch, load_history};
 use crate::session_active_turn::{self, TurnTicketRegistry};
 use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
+use crate::media_vision;
 use crate::turn_parts::{
     artifact_refs_from_stream, user_conversation_turn, user_conversation_turn_with_media,
     TurnPartsAccumulator,
@@ -710,9 +711,31 @@ async fn run_agent_turn_inner(
         }
     }
 
-    let effective_prompt = merge_media_refs_into_prompt(&prompt, &session_id, &request.media_refs);
-
     let settings = runtime_settings_for_interactive_turn(backend, &request);
+    let vision_plan = match media_vision::plan_turn_media(
+        &session_id,
+        &request.media_refs,
+        &settings.provider,
+        &settings.model,
+    ) {
+        Ok(plan) => plan,
+        Err(err) => {
+            sink.agent_error(1, err).await;
+            return;
+        }
+    };
+
+    let effective_prompt = merge_media_refs_into_prompt(
+        &prompt,
+        &session_id,
+        &request.media_refs,
+        &vision_plan.merge_options,
+    );
+
+    if let Some(notice) = vision_plan.stream_notice(&settings.provider, &settings.model) {
+        sink.notice(notice).await;
+    }
+
     let stage_routing = stage_routing_for_interactive_turn(&request);
     let final_route = stage_routing.get("final_response").cloned();
     let verifier_route = stage_routing.get("verifier").cloned();
@@ -841,6 +864,8 @@ async fn run_agent_turn_inner(
         response_depth_mode: &request.response_depth_mode,
         turn_id: 1,
         scheduled_tool_allowlist,
+        media_refs: request.media_refs.clone(),
+        vision_plan,
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {
