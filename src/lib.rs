@@ -22,6 +22,7 @@ pub mod manuscript_overlay_tools;
 pub mod turn_budget_request;
 pub mod turn_budget_handlers;
 pub mod turn_budget_notify;
+pub mod turn_worker_notify;
 pub mod turn_control_tools;
 pub mod turn_text_heuristics;
 pub mod context_pack;
@@ -169,7 +170,7 @@ pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_s
 pub use workshop_env::apply_workshop_llm_env;
 pub use adapter_ingest::{
     AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,
-    wait_for_ask_delivery, ADAPTER_COMMAND_HINT,
+    should_send_immediate_ingest_reply, wait_for_ask_delivery, ADAPTER_COMMAND_HINT,
 };
 pub use agent_runtime::{
     AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime,

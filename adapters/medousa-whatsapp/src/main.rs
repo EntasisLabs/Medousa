@@ -292,9 +292,11 @@ async fn handle_inbound_message(
         .await
         .context("decode ingest response")?;
 
-    send_whatsapp_reply(ctx, &format_ingest_ack(&response)).await?;
-
     if !response.stream_ready {
+        let ack = format_ingest_ack(&response);
+        if !ack.trim().is_empty() {
+            send_whatsapp_reply(ctx, &ack).await?;
+        }
         return Ok(());
     }
 

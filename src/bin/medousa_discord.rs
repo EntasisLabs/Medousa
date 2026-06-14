@@ -133,11 +133,6 @@ async fn handle_message(
         .context("failed to decode daemon ingest response")?;
 
     if response.stream_ready {
-        msg.channel_id
-            .say(&ctx.http, format_discord_ack(&response, &state.command_prefix))
-            .await
-            .context("failed to send discord ack")?;
-
         let http = ctx.http.clone();
         let channel_id = msg.channel_id;
         let typing_task = tokio::spawn(async move {
@@ -184,13 +179,15 @@ async fn handle_message(
         return Ok(());
     }
 
-    msg.channel_id
-        .say(
-            &ctx.http,
-            format_discord_ack(&response, &state.command_prefix),
-        )
-        .await
-        .context("failed to send discord reply")?;
+    if medousa::adapter_ingest::should_send_immediate_ingest_reply(&response) {
+        msg.channel_id
+            .say(
+                &ctx.http,
+                format_discord_ack(&response, &state.command_prefix),
+            )
+            .await
+            .context("failed to send discord reply")?;
+    }
 
     Ok(())
 }

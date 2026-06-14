@@ -135,9 +135,6 @@ async fn handle_message(
     };
 
     if response.stream_ready {
-        bot.send_message(msg.chat.id, format_ingest_ack(&response))
-            .await?;
-
         let typing_bot = bot.clone();
         let chat_id = msg.chat.id;
         let typing_task = tokio::spawn(async move {
@@ -178,7 +175,9 @@ async fn handle_message(
         return Ok(());
     }
 
-    bot.send_message(msg.chat.id, format_ingest_ack(&response)).await?;
+    if medousa::adapter_ingest::should_send_immediate_ingest_reply(&response) {
+        bot.send_message(msg.chat.id, format_ingest_ack(&response)).await?;
+    }
     Ok(())
 }
 

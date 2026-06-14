@@ -125,6 +125,10 @@ pub fn default_delivery_timeout() -> Duration {
     DEFAULT_DELIVERY_TIMEOUT
 }
 
+pub fn should_send_immediate_ingest_reply(response: &IngestResponse) -> bool {
+    !response.stream_ready && !response.reply.trim().is_empty()
+}
+
 pub fn format_ingest_ack(response: &IngestResponse) -> String {
     if response.is_new_session {
         format!("🆕 {}\n\n{}", response.reply, ADAPTER_COMMAND_HINT)
@@ -135,3 +139,37 @@ pub fn format_ingest_ack(response: &IngestResponse) -> String {
 
 pub const ADAPTER_COMMAND_HINT: &str =
     "Commands: /new /help /history /model /depth /stop /regen /health /heartbeat — or send a message to chat.";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::daemon_api::IngestResponse;
+
+    #[test]
+    fn skip_immediate_reply_when_stream_ready() {
+        let response = IngestResponse {
+            session_id: "s1".to_string(),
+            job_id: Some("job-1".to_string()),
+            reply: "processing your request…".to_string(),
+            is_new_session: false,
+            stream_id: Some("stream-1".to_string()),
+            stream_url: Some("http://localhost/stream".to_string()),
+            stream_ready: true,
+        };
+        assert!(!should_send_immediate_ingest_reply(&response));
+    }
+
+    #[test]
+    fn send_immediate_reply_for_command_results() {
+        let response = IngestResponse {
+            session_id: "s1".to_string(),
+            job_id: None,
+            reply: "Medousa ingester online.".to_string(),
+            is_new_session: false,
+            stream_id: None,
+            stream_url: None,
+            stream_ready: false,
+        };
+        assert!(should_send_immediate_ingest_reply(&response));
+    }
+}

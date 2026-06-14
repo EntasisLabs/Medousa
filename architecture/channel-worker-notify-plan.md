@@ -1,6 +1,6 @@
 # Channel worker notifications — review plan
 
-> **Status:** Review (2026-06-07) — not implemented  
+> **Status:** Implemented (2026-06-07)  
 > **Symptom:** WhatsApp / Telegram / Discord user sees nothing when a turn worker spawns or finishes; only Home (SSE + Work Hub) shows activity.
 
 ---

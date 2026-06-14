@@ -34,8 +34,7 @@ pub trait AgentStreamSink: Send + Sync {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
-        let _ = work_id;
-        self.agent_response(turn_id, text, tool_names).await;
+        let _ = (turn_id, text, tool_names, work_id);
     }
     async fn agent_error(&self, turn_id: u64, message: String);
     async fn notice(&self, message: String);

@@ -155,9 +155,7 @@ pub async fn resume_pending_synthesis(agent: Arc<TuiRuntime>, record: TurnWorkRe
         return;
     }
     let ctx = WorkerRuntimeContext::from_tui_runtime(agent.as_ref());
-    let sink: SharedAgentStreamSink = Arc::new(DurableWorkerStreamSink {
-        session_id: record.session_id.clone(),
-    });
+    let sink = durable_worker_sink(&record);
     resume_synthesis_if_needed(&ctx, record, sink).await;
 }
 
@@ -203,9 +201,7 @@ impl JobHandler for TurnWorkerJobHandler {
         }
 
         let ctx = WorkerRuntimeContext::from_tui_runtime(self.agent.as_ref());
-        let sink: SharedAgentStreamSink = Arc::new(DurableWorkerStreamSink {
-            session_id: record.session_id.clone(),
-        });
+        let sink = durable_worker_sink(&record);
 
         if record.status == TurnWorkStatus::Completed && !record.synthesis_delivered {
             resume_synthesis_if_needed(&ctx, record, sink).await;
@@ -254,6 +250,14 @@ impl JobHandler for TurnWorkerJobHandler {
 
 struct DurableWorkerStreamSink {
     session_id: String,
+    work_id: String,
+}
+
+fn durable_worker_sink(record: &TurnWorkRecord) -> SharedAgentStreamSink {
+    Arc::new(DurableWorkerStreamSink {
+        session_id: record.session_id.clone(),
+        work_id: record.work_id.clone(),
+    })
 }
 
 #[async_trait]
@@ -265,12 +269,27 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         let turn = ConversationTurn::plain(
             "assistant",
-            text,
+            text.clone(),
             Utc::now(),
-            tool_names,
+            tool_names.clone(),
             None,
         );
         append_turn(&self.session_id, &turn);
+
+        if let Some(record) = turn_worker_store().get(&self.work_id) {
+            if let Err(err) = crate::turn_worker_notify::deliver_worker_result_to_ingest_channel(
+                &record,
+                &text,
+                &tool_names,
+            )
+            .await
+            {
+                eprintln!(
+                    "turn worker channel synthesis delivery failed work_id={}: {err:#}",
+                    self.work_id
+                );
+            }
+        }
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {

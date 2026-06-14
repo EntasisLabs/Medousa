@@ -417,6 +417,16 @@ async fn main() -> Result<()> {
         webhook_client,
     };
 
+    medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(
+        medousa::turn_worker_notify::IngestChannelDeliveryBridge::new(
+            state.channel_dispatch_client.clone(),
+            state.job_delivery_records.clone(),
+            state.channel_deliveries.clone(),
+            state.last_delivery_at.clone(),
+            state.last_delivery_latency_ms.clone(),
+        ),
+    );
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/stats", get(stats))
@@ -2588,7 +2598,7 @@ async fn ingest_handler(
             stream_id = Some(stream.stream_id);
             stream_url = Some(stream.stream_url);
             stream_ready = true;
-            reply = "processing your request…".to_string();
+            reply.clear();
         }
         session_mapping::IngestAction::CancelActiveJob => {
             reply = cancel_active_ingest_job(&state, &mapping_key).await;
@@ -2620,7 +2630,7 @@ async fn ingest_handler(
             stream_id = Some(stream.stream_id);
             stream_url = Some(stream.stream_url);
             stream_ready = true;
-            reply = "regenerating last response…".to_string();
+            reply.clear();
         }
         session_mapping::IngestAction::ListHistory => {
             reply = format_channel_session_history(&mapping_key, &outcome.session_id).await;
@@ -3851,6 +3861,66 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &delta,
             ),
         );
+    }
+
+    async fn agent_worker_ack(
+        &self,
+        _turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        if self.cancelled_streams.read().await.contains(&self.stream_id) {
+            return;
+        }
+
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| {
+                parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone())
+            })
+            .unwrap_or_else(|_| {
+                medousa::turn_parts::conversation_turn_from_parts(
+                    "assistant",
+                    text.clone(),
+                    tool_names.clone(),
+                    Some("worker_ack".to_string()),
+                    vec![medousa::turn_parts::TurnPart::Text {
+                        markdown: text.clone(),
+                    }],
+                )
+            });
+        medousa::session::append_turn(&self.session_id, &assistant_turn);
+
+        if medousa::channel_delivery::is_external_push_channel(&self.delivery_target.channel) {
+            let payload = medousa::turn_worker_notify::TurnWorkerSpawnNotifyPayload {
+                work_id: work_id.clone().unwrap_or_else(|| self.job_id.clone()),
+                user_ack: text.clone(),
+                intent: None,
+            };
+            if let Err(err) = medousa::turn_worker_notify::notify_turn_worker_spawned(
+                &self.dispatch_client,
+                &self.delivery_target,
+                payload,
+            )
+            .await
+            {
+                eprintln!(
+                    "ingest worker spawn channel notify failed job_id={} channel={}: {err:#}",
+                    self.job_id, self.delivery_target.channel
+                );
+            }
+        }
+
+        if let Ok(event) = medousa::interactive_turn_runtime::worker_ack_stream_event_with_tools(
+            &self.stream_id,
+            &text,
+            tool_names,
+            work_id.as_deref(),
+        ) {
+            publish_interactive_turn_event(&self.stream_tx, Ok(event));
+        }
     }
 
     async fn agent_final_pending(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {

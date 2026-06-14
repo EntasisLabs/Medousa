@@ -147,41 +147,43 @@ async fn handle_push_event(
         .await
         .context("decode ingest response")?;
 
-    post_slack_message(&state, &channel_id, &format_ingest_ack(&response)).await?;
+    if response.stream_ready {
+        let delivery_outcome = wait_for_ask_delivery(
+            &state.http_client,
+            &state.daemon_url,
+            &response,
+            default_delivery_timeout(),
+        )
+        .await;
 
-    if !response.stream_ready {
+        match delivery_outcome {
+            Ok(AdapterDeliveryOutcome::PushDelivered) => {}
+            Ok(AdapterDeliveryOutcome::Fallback { text }) => {
+                post_slack_message(&state, &channel_id, &truncate_for_slack(&text)).await?;
+            }
+            Ok(AdapterDeliveryOutcome::StreamError { message }) => {
+                post_slack_message(
+                    &state,
+                    &channel_id,
+                    &truncate_for_slack(&message),
+                )
+                .await?;
+            }
+            Err(err) => {
+                post_slack_message(
+                    &state,
+                    &channel_id,
+                    &truncate_for_slack(&format!("delivery error: {err:#}")),
+                )
+                .await?;
+            }
+        }
+
         return Ok(());
     }
 
-    let delivery_outcome = wait_for_ask_delivery(
-        &state.http_client,
-        &state.daemon_url,
-        &response,
-        default_delivery_timeout(),
-    )
-    .await;
-
-    match delivery_outcome {
-        Ok(AdapterDeliveryOutcome::PushDelivered) => {}
-        Ok(AdapterDeliveryOutcome::Fallback { text }) => {
-            post_slack_message(&state, &channel_id, &truncate_for_slack(&text)).await?;
-        }
-        Ok(AdapterDeliveryOutcome::StreamError { message }) => {
-            post_slack_message(
-                &state,
-                &channel_id,
-                &truncate_for_slack(&message),
-            )
-            .await?;
-        }
-        Err(err) => {
-            post_slack_message(
-                &state,
-                &channel_id,
-                &truncate_for_slack(&format!("delivery error: {err:#}")),
-            )
-            .await?;
-        }
+    if medousa::adapter_ingest::should_send_immediate_ingest_reply(&response) {
+        post_slack_message(&state, &channel_id, &format_ingest_ack(&response)).await?;
     }
 
     Ok(())
