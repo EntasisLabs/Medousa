@@ -991,6 +991,51 @@
     @apply mx-8 mb-1 text-[11px] text-surface-400;
   }
 
+  .composer-voice-status-error {
+    @apply text-error-300;
+  }
+
+  .composer-voice-recorder {
+    @apply flex min-h-[36px] w-full min-w-0 flex-1 items-center gap-2;
+  }
+
+  .composer-voice-recorder-main {
+    @apply flex min-w-0 flex-1 flex-col gap-1;
+  }
+
+  .composer-voice-wave {
+    @apply flex h-7 min-w-0 flex-1 items-end gap-[2px] overflow-hidden px-1;
+  }
+
+  .composer-voice-wave-bar {
+    @apply w-[2px] shrink-0 rounded-full bg-surface-100;
+    transition: height 80ms linear, opacity 80ms linear;
+  }
+
+  .composer-voice-preview {
+    @apply truncate px-1 text-[11px] leading-tight text-surface-200;
+  }
+
+  .composer-voice-preview-empty {
+    @apply text-surface-500;
+  }
+
+  .composer-voice-timer {
+    @apply shrink-0 tabular-nums text-[11px] font-medium text-surface-400;
+  }
+
+  .composer-voice-recorder-cancel {
+    @apply text-surface-400 hover:text-surface-100;
+  }
+
+  .composer-voice-recorder-confirm {
+    @apply text-primary-200 hover:bg-primary-500/15 hover:text-primary-100;
+  }
+
+  .composer-voice-recorder-mobile .composer-voice-preview {
+    @apply text-xs;
+  }
+
   .mobile-chat-composer .composer-voice-status {
     @apply mx-3;
   }

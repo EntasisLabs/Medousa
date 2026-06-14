@@ -11,6 +11,13 @@ export function isTauriMobilePlatform(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+/** Tauri desktop build running on macOS (not iOS simulator / Catalyst). */
+export function isTauriMacDesktop(): boolean {
+  if (!isTauri() || isTauriMobilePlatform()) return false;
+  if (typeof navigator === "undefined") return false;
+  return /Mac/i.test(navigator.platform) || /Mac OS X/i.test(navigator.userAgent);
+}
+
 /** Channel surface tag sent to the daemon for interactive turns from Medousa. */
 export function homeChannelSurface(): string {
   if (!isTauri() || typeof navigator === "undefined") return "home-desktop";

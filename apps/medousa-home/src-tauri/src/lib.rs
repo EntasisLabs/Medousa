@@ -10,6 +10,7 @@ mod messaging;
 mod medousa_paths;
 mod pairing;
 mod capabilities;
+mod composer_stt;
 mod mcp_gateway;
 mod provider_catalog;
 mod providers;
@@ -46,7 +47,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(DaemonState::new())
-        .manage(daemon::local_inference::LocalInferenceStreamState::new())
+        .manage(daemon::local_inference::LocalInferenceStreamState::new());
+
+    builder = builder
         .setup(|_app| {
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -189,6 +192,8 @@ pub fn run() {
             daemon::local_inference::local_inference_remove_model,
             daemon::local_inference::local_inference_stream_download,
             daemon::local_inference::local_inference_stream_download_stop,
+            composer_stt::composer_stt_status,
+            composer_stt::composer_stt_transcribe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

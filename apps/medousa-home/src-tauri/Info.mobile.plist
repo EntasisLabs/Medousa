@@ -8,8 +8,6 @@
 		<true/>
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Medousa uses the microphone when you tap the voice button to dictate messages in chat.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Medousa converts your speech to text in the chat composer when you use voice input.</string>
+	<string>Medousa records audio when you tap the voice button so your message can be transcribed in chat.</string>
 </dict>
 </plist>
