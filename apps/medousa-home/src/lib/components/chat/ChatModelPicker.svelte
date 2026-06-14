@@ -10,6 +10,8 @@
     type ChatModelPickOption,
   } from "$lib/utils/chatModelPicker";
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
+  import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
+  import type { DepthMode } from "$lib/types/runtime";
 
   interface Props {
     disabled?: boolean;
@@ -84,13 +86,34 @@
     open = false;
     await runtime.applyModel(option.provider, option.model);
   }
+
+  async function selectDepth(mode: DepthMode) {
+    if (mode === runtime.depthMode || runtime.savingControls) return;
+    await runtime.setDepthMode(mode);
+  }
+
+  function openMenu() {
+    if (disabled || runtime.savingControls) return;
+    open = !open;
+    if (open) search = "";
+  }
 </script>
 
 <div class="composer-model-picker">
   {#if nativeMobileReadonly}
-    <span class="composer-model-pill composer-model-pill-readonly" title={runtime.modelLabel()}>
-      {displayName}
-    </span>
+    <button
+      bind:this={triggerEl}
+      type="button"
+      class="composer-model-pill composer-model-pill-readonly"
+      title="{runtime.modelLabel()} · depth {runtime.depthMode}"
+      disabled={disabled}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onclick={openMenu}
+    >
+      <span class="truncate">{displayName}</span>
+      <ChevronDown size={12} class="shrink-0 opacity-70" />
+    </button>
   {:else}
     <button
       bind:this={triggerEl}
@@ -107,9 +130,31 @@
       <span class="truncate">{displayName}</span>
       <ChevronDown size={12} class="shrink-0 opacity-70" />
     </button>
+  {/if}
 
-    {#if open}
-      <div bind:this={menuEl} class="composer-model-menu" role="listbox">
+  {#if open}
+    <div bind:this={menuEl} class="composer-model-menu" role="listbox">
+      <div class="composer-model-menu-depth">
+        <span class="composer-model-menu-depth-label">Depth</span>
+        <div class="composer-model-menu-depth-row">
+          {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
+            <button
+              type="button"
+              class="composer-model-depth-pill {runtime.depthMode === option.id
+                ? 'composer-model-depth-pill-active'
+                : ''}"
+              disabled={runtime.savingControls}
+              aria-pressed={runtime.depthMode === option.id}
+              title={option.hint}
+              onclick={() => void selectDepth(option.id)}
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      {#if !nativeMobileReadonly}
         <div class="composer-model-menu-search">
           <Search size={14} class="shrink-0 opacity-60" />
           <input
@@ -149,13 +194,18 @@
             {/each}
           {/if}
         </ul>
+      {:else}
+        <div class="composer-model-menu-mobile-note">
+          <p class="text-xs text-surface-300">{runtime.modelLabel()}</p>
+          <p class="mt-1 text-[11px] text-surface-500">Model is set on your Mac workshop</p>
+        </div>
+      {/if}
 
-        {#if onOpenVoiceSettings}
-          <button type="button" class="composer-model-menu-footer" onclick={onOpenVoiceSettings}>
-            All models in Workshop
-          </button>
-        {/if}
-      </div>
-    {/if}
+      {#if onOpenVoiceSettings}
+        <button type="button" class="composer-model-menu-footer" onclick={onOpenVoiceSettings}>
+          {nativeMobileReadonly ? "Open Workshop" : "All models in Workshop"}
+        </button>
+      {/if}
+    </div>
   {/if}
 </div>

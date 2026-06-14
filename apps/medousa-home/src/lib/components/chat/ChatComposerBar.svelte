@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { LoaderCircle, Mic, Plus } from "@lucide/svelte";
+  import { LoaderCircle, Plus } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
+  import ChatVoiceButton from "$lib/components/chat/ChatVoiceButton.svelte";
   import { chat } from "$lib/stores/chat.svelte";
 
   interface Props {
@@ -25,6 +26,8 @@
     onOpenVoiceSettings,
   }: Props = $props();
 
+  let voiceStatus = $state<string | null>(null);
+
   const blocked = $derived(disabled || composerBlocked);
   const canSend = $derived(
     !blocked && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
@@ -32,6 +35,10 @@
 </script>
 
 <ChatAttachmentChips {disabled} />
+
+{#if voiceStatus}
+  <p class="composer-voice-status" role="status">{voiceStatus}</p>
+{/if}
 
 <div
   class="composer-bar chat-composer-shell {mobile ? 'composer-bar-mobile' : 'chat-composer-bar'}"
@@ -64,16 +71,7 @@
     aria-label="Message"
   />
 
-  <button
-    type="button"
-    class="composer-bar-icon-btn composer-bar-voice-btn"
-    aria-label="Voice input — coming soon"
-    title="Voice input — coming soon"
-    disabled={true}
-    tabindex={-1}
-  >
-    <Mic size={16} strokeWidth={2} />
-  </button>
+  <ChatVoiceButton {mobile} disabled={blocked} onStatus={(message) => (voiceStatus = message)} />
 
   <button
     type="submit"

@@ -939,11 +939,60 @@
   }
 
   .composer-bar-voice-btn {
-    @apply opacity-35;
+    @apply opacity-80;
+  }
+
+  .composer-bar-voice-btn-active {
+    @apply text-error-300 opacity-100;
+    background-color: rgb(var(--color-error-500) / 0.18);
+    box-shadow: 0 0 0 2px rgb(var(--color-error-500) / 0.25);
+    animation: composer-voice-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes composer-voice-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.06);
+    }
+  }
+
+  .composer-model-menu-depth {
+    @apply border-b border-surface-700/60 px-3 py-2.5;
+  }
+
+  .composer-model-menu-depth-label {
+    @apply mb-2 block text-[10px] font-medium uppercase tracking-[0.12em] text-surface-500;
+  }
+
+  .composer-model-menu-depth-row {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .composer-model-depth-pill {
+    @apply rounded-full border border-surface-600/50 px-2.5 py-1 text-[11px] font-medium text-surface-300 transition hover:border-surface-500/60 hover:text-surface-100 disabled:opacity-50;
+  }
+
+  .composer-model-depth-pill-active {
+    @apply border-primary-400/45 bg-primary-500/15 text-primary-200;
+  }
+
+  .composer-model-menu-mobile-note {
+    @apply border-b border-surface-700/60 px-3 py-3;
   }
 
   .composer-attachment-chips {
     @apply mx-8 mb-1.5 flex flex-wrap gap-1.5;
+  }
+
+  .composer-voice-status {
+    @apply mx-8 mb-1 text-[11px] text-surface-400;
+  }
+
+  .mobile-chat-composer .composer-voice-status {
+    @apply mx-3;
   }
 
   .mobile-chat-composer .composer-attachment-chips {
