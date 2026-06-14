@@ -37,7 +37,7 @@
   let byokNeedsKey = $state(true);
   let apiKey = $state("");
   let baseUrl = $state("");
-  let model = $state("gpt-4o-mini");
+  let model = $state("gpt-5.4-mini");
   let probe = $state<ProvidersProbeResult | null>(null);
   let probing = $state(true);
   let validating = $state(false);
@@ -229,7 +229,7 @@
         return;
       }
 
-      const resolvedModel = model.trim() || validation.suggestedModel || "gpt-4o-mini";
+      const resolvedModel = model.trim() || validation.suggestedModel || "gpt-5.4-mini";
 
       await wizard.applyScreen1Setup({
         path: selectedPath,

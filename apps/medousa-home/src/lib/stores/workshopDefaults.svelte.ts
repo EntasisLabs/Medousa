@@ -1,6 +1,7 @@
 import {
   loadTuiDefaults,
   persistTuiDefaults,
+  persistTuiFavoriteModels,
   persistTuiRuntimePrefs,
 } from "$lib/config";
 import { getRuntimeDefaults } from "$lib/daemon";
@@ -17,6 +18,11 @@ import {
 } from "$lib/types/workshopDefaults";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
+import {
+  isFavoriteModel,
+  toggleFavoriteModel,
+  type FavoriteModel,
+} from "$lib/utils/modelCatalog";
 
 export class WorkshopDefaultsStore {
   activeTab = $state<WorkshopDefaultsTab>("setup");
@@ -123,6 +129,21 @@ export class WorkshopDefaultsStore {
       ...matrix,
       [role]: { ...current, ...patch },
     };
+  }
+
+  favoriteModels(): FavoriteModel[] {
+    return this.draft.favoriteModels ?? [];
+  }
+
+  isFavorite(provider: string, model: string): boolean {
+    return isFavoriteModel(this.favoriteModels(), provider, model);
+  }
+
+  async toggleFavorite(provider: string, model: string) {
+    if (!isTauri() || isTauriMobilePlatform()) return;
+    const next = toggleFavoriteModel(this.favoriteModels(), provider, model);
+    this.draft = { ...this.draft, favoriteModels: next };
+    await persistTuiFavoriteModels(next);
   }
 
   async save() {

@@ -1270,6 +1270,26 @@
     @apply max-w-[9rem] truncate text-right text-xs font-medium text-surface-200;
   }
 
+  .composer-model-panel-header-actions {
+    @apply flex min-w-0 items-center gap-1.5;
+  }
+
+  .composer-model-favorite-btn {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-surface-500 transition hover:text-surface-200 disabled:opacity-45;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-900) / 0.45);
+  }
+
+  .composer-model-favorite-btn.is-active {
+    @apply text-primary-200;
+    border-color: rgb(var(--color-primary-500) / 0.35);
+    background-color: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .composer-model-list-section {
+    @apply px-3.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-surface-500;
+  }
+
   .composer-model-panel-section {
     @apply border-b border-surface-700/40 px-3.5 py-3;
   }
@@ -2932,6 +2952,39 @@
 
   .settings-profile-current {
     @apply mt-4 flex items-center gap-3 rounded-xl border border-surface-600/30 bg-surface-900/45 px-3 py-2.5;
+  }
+
+  .settings-profile-favorite-btn {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-surface-500 transition hover:text-surface-200 disabled:opacity-45;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-900) / 0.45);
+  }
+
+  .settings-profile-favorite-btn.is-active {
+    @apply text-primary-200;
+    border-color: rgb(var(--color-primary-500) / 0.35);
+    background-color: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .settings-favorites-list {
+    @apply mt-3 space-y-2;
+  }
+
+  .settings-favorites-row {
+    @apply flex items-stretch gap-2;
+  }
+
+  .settings-favorites-main {
+    @apply flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-surface-600/30 bg-surface-900/35 px-3 py-2.5 text-left transition hover:border-surface-500/45 hover:bg-surface-800/45 disabled:opacity-45;
+  }
+
+  .settings-favorites-main.is-active {
+    @apply border-primary-500/40;
+    background-color: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .settings-favorites-remove {
+    @apply shrink-0 rounded-xl border border-surface-600/35 px-3 text-xs font-medium text-surface-400 transition hover:border-surface-500/45 hover:text-surface-200 disabled:opacity-45;
   }
 
   .settings-profile-badge {

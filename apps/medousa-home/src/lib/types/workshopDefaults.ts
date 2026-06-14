@@ -1,4 +1,6 @@
 import type { DepthMode, StageRoutingMatrix } from "$lib/types/runtime";
+import type { FavoriteModel } from "$lib/utils/modelCatalog";
+import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
 
 export type WorkshopDefaultsTab =
   | "setup"
@@ -48,6 +50,8 @@ export interface TuiDefaults {
   sttProvider?: string | null;
   sttModel?: string | null;
   sttBaseUrl?: string | null;
+  /** Pinned chat models for quick access in composer and settings. */
+  favoriteModels?: FavoriteModel[] | null;
   workCardHideAfterHours?: number | null;
   workCardWipeAfterDays?: number | null;
 }
@@ -201,6 +205,7 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     sttProvider: raw.sttProvider?.trim() || "openai",
     sttModel: raw.sttModel?.trim() || defaultSttModel(raw.sttProvider ?? "openai"),
     sttBaseUrl: raw.sttBaseUrl?.trim() || "",
+    favoriteModels: normalizeFavoriteModels(raw.favoriteModels),
     workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
   };

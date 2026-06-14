@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import type { TuiDefaults } from "$lib/types/workshopDefaults";
+import type { FavoriteModel } from "$lib/utils/modelCatalog";
 
 export interface MedousaConfigPaths {
   dataDir: string;
@@ -17,6 +18,7 @@ export interface TuiDefaultsSummary {
   model?: string | null;
   responseDepthMode?: string | null;
   stageRouting?: StageRoutingMatrix | null;
+  favoriteModels?: FavoriteModel[] | null;
 }
 
 export async function getMedousaConfigPaths(): Promise<MedousaConfigPaths> {
@@ -47,6 +49,10 @@ export async function persistTuiRuntimePrefs(
     responseDepthMode,
     stageRouting: stageRouting ?? null,
   });
+}
+
+export async function persistTuiFavoriteModels(models: FavoriteModel[]): Promise<void> {
+  return invoke("persist_tui_favorite_models", { models });
 }
 
 export async function openConfigPath(path: string): Promise<void> {

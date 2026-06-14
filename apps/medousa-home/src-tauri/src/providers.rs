@@ -55,7 +55,7 @@ fn detect_local_ollama_tcp() -> bool {
 fn default_model_for_provider(provider: &str) -> String {
     provider_catalog::find_provider(provider)
         .map(|spec| spec.default_model.to_string())
-        .unwrap_or_else(|| "gpt-4o-mini".to_string())
+        .unwrap_or_else(|| "gpt-5.4-mini".to_string())
 }
 
 fn resolve_base_url(

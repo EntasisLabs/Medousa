@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search, Sparkles } from "@lucide/svelte";
+  import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search, Sparkles, Star } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { loadTuiDefaultsSummary, persistTuiFavoriteModels } from "$lib/config";
   import { formatModelDisplayName, modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildChatModelOptions,
@@ -14,6 +16,12 @@
     type ChatModelPickOption,
   } from "$lib/utils/chatModelPicker";
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
+  import {
+    isFavoriteModel,
+    normalizeFavoriteModels,
+    toggleFavoriteModel,
+    type FavoriteModel,
+  } from "$lib/utils/modelCatalog";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import type { DepthMode } from "$lib/types/runtime";
 
@@ -28,12 +36,18 @@
   let search = $state("");
   let loading = $state(true);
   let options = $state<ChatModelPickOption[]>([]);
+  let favorites = $state<FavoriteModel[]>([]);
+  let catalogSnapshot = $state<Awaited<ReturnType<typeof listProviders>> | null>(null);
+  let probeSnapshot = $state<Awaited<ReturnType<typeof probeProviders>> | null>(null);
   let menuEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
 
   const displayName = $derived(formatModelDisplayName(runtime.model));
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
   const filtered = $derived(filterChatModelOptions(options, search));
+  const favoriteOptions = $derived(filtered.filter((option) => option.favorite));
+  const otherOptions = $derived(filtered.filter((option) => !option.favorite));
+  const activeIsFavorite = $derived(isFavoriteModel(favorites, runtime.provider, runtime.model));
   const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
   const providerBadge = $derived(providerMonogram(runtime.provider));
   const depthLabel = $derived(depthModeLabel(runtime.depthMode));
@@ -60,20 +74,61 @@
   async function bootstrap() {
     loading = true;
     try {
-      const [catalog, probe] = await Promise.all([listProviders(), probeProviders()]);
-      options = buildChatModelOptions(catalog, probe, runtime.provider, runtime.model);
+      const [catalog, probe, summary] = await Promise.all([
+        listProviders(),
+        probeProviders(),
+        loadTuiDefaultsSummary().catch(() => null),
+      ]);
+      catalogSnapshot = catalog;
+      probeSnapshot = probe;
+      favorites = normalizeFavoriteModels(summary?.favoriteModels);
+      if (workshopDefaults.loaded) {
+        favorites = workshopDefaults.favoriteModels();
+      }
+      rebuildOptions(catalog, probe, favorites);
     } catch {
-      options = buildChatModelOptions(
+      catalogSnapshot = null;
+      probeSnapshot = null;
+      rebuildOptions(
         {
           categories: [],
           providers: [],
         },
         null,
-        runtime.provider,
-        runtime.model,
+        favorites,
       );
     } finally {
       loading = false;
+    }
+  }
+
+  function rebuildOptions(
+    catalog: NonNullable<typeof catalogSnapshot>,
+    probe: typeof probeSnapshot,
+    nextFavorites: FavoriteModel[],
+  ) {
+    options = buildChatModelOptions(
+      catalog,
+      probe,
+      runtime.provider,
+      runtime.model,
+      nextFavorites,
+    );
+  }
+
+  async function toggleActiveFavorite(event: MouseEvent) {
+    event.stopPropagation();
+    if (nativeMobileReadonly || runtime.savingControls) return;
+    const next = toggleFavoriteModel(favorites, runtime.provider, runtime.model);
+    favorites = next;
+    workshopDefaults.draft = { ...workshopDefaults.draft, favoriteModels: next };
+    if (catalogSnapshot) {
+      rebuildOptions(catalogSnapshot, probeSnapshot, next);
+    }
+    try {
+      await persistTuiFavoriteModels(next);
+    } catch {
+      // Favorites still update locally; persist retries on next settings save.
     }
   }
 
@@ -144,7 +199,21 @@
           <Sparkles size={14} class="composer-model-panel-icon" />
           <span>Model</span>
         </div>
-        <span class="composer-model-panel-active">{displayName}</span>
+        <div class="composer-model-panel-header-actions">
+          {#if !nativeMobileReadonly}
+            <button
+              type="button"
+              class="composer-model-favorite-btn {activeIsFavorite ? 'is-active' : ''}"
+              disabled={runtime.savingControls}
+              aria-pressed={activeIsFavorite}
+              title={activeIsFavorite ? "Remove from favorites" : "Add to favorites"}
+              onclick={(event) => void toggleActiveFavorite(event)}
+            >
+              <Star size={14} fill={activeIsFavorite ? "currentColor" : "none"} />
+            </button>
+          {/if}
+          <span class="composer-model-panel-active">{displayName}</span>
+        </div>
       </div>
 
       <div class="composer-model-panel-section">
@@ -189,7 +258,39 @@
           {:else if filtered.length === 0}
             <li class="composer-model-list-empty">No matches</li>
           {:else}
-            {#each filtered as option (option.key)}
+            {#if favoriteOptions.length > 0 && !search.trim()}
+              <li class="composer-model-list-section" aria-hidden="true">Favorites</li>
+              {#each favoriteOptions as option (option.key)}
+                <li>
+                  <button
+                    type="button"
+                    class="composer-model-list-item {option.key === activeKey
+                      ? 'composer-model-list-item-active'
+                      : ''}"
+                    role="option"
+                    aria-selected={option.key === activeKey}
+                    onclick={() => void selectOption(option)}
+                  >
+                    <span class="composer-model-list-badge">{providerMonogram(option.provider)}</span>
+                    <span class="composer-model-list-copy">
+                      <span class="composer-model-list-name">{option.label}</span>
+                      {#if option.hint}
+                        <span class="composer-model-list-hint">{option.hint}</span>
+                      {/if}
+                    </span>
+                    {#if option.key === activeKey}
+                      <span class="composer-model-list-check" aria-hidden="true">
+                        <Check size={14} strokeWidth={2.75} />
+                      </span>
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+              {#if otherOptions.length > 0}
+                <li class="composer-model-list-section" aria-hidden="true">More models</li>
+              {/if}
+            {/if}
+            {#each (search.trim() ? filtered : otherOptions) as option (option.key)}
               <li>
                 <button
                   type="button"

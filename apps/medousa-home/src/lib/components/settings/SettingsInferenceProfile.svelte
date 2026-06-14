@@ -1,10 +1,15 @@
 <script lang="ts">
-  import { ChevronDown } from "@lucide/svelte";
+  import { ChevronDown, Star } from "@lucide/svelte";
   import ProviderPicker from "$lib/components/settings/ProviderPicker.svelte";
   import type { ProviderCatalogEntry } from "$lib/types/providers";
   import { findCatalogProvider, type ProvidersListResult } from "$lib/utils/providersApi";
   import { providerMonogram } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
+  import {
+    curatedPicksForProvider,
+    type FavoriteModel,
+    type ModelPick,
+  } from "$lib/utils/modelCatalog";
 
   interface Props {
     title: string;
@@ -21,6 +26,10 @@
     statusLabel: string;
     statusDetail?: string | null;
     disabled?: boolean;
+    showSuggestedModels?: boolean;
+    showFavoriteToggle?: boolean;
+    favoriteModels?: FavoriteModel[];
+    onToggleFavorite?: (provider: string, model: string) => void | Promise<void>;
     onProviderChange: (id: string, entry: ProviderCatalogEntry) => void;
     onModelChange: (model: string) => void;
     onApiKeyChange?: (key: string) => void;
@@ -43,6 +52,10 @@
     statusLabel,
     statusDetail = null,
     disabled = false,
+    showSuggestedModels = false,
+    showFavoriteToggle = false,
+    favoriteModels = [],
+    onToggleFavorite,
     onProviderChange,
     onModelChange,
     onApiKeyChange,
@@ -64,12 +77,30 @@
       .filter((entry): entry is ProviderCatalogEntry => !!entry);
   });
 
+  const suggestedPicks = $derived(showSuggestedModels ? curatedPicksForProvider(providerId) : []);
+
   const displayModel = $derived(formatModelDisplayName(model, 28));
   const providerLabel = $derived(selected?.label ?? providerId);
   const needsKey = $derived(selected?.needsApiKey ?? true);
+  const isFavorite = $derived(
+    favoriteModels.some(
+      (entry) =>
+        entry.provider.trim().toLowerCase() === providerId.trim().toLowerCase() &&
+        entry.model.trim() === model.trim(),
+    ),
+  );
 
   function selectQuick(entry: ProviderCatalogEntry) {
     onProviderChange(entry.id, entry);
+    onStatus?.(null);
+  }
+
+  function selectSuggested(pick: ModelPick) {
+    if (pick.provider !== providerId) {
+      const entry = catalog ? findCatalogProvider(catalog, pick.provider) : undefined;
+      if (entry) onProviderChange(entry.id, entry);
+    }
+    onModelChange(pick.model);
     onStatus?.(null);
   }
 </script>
@@ -95,6 +126,18 @@
       <p class="settings-profile-model">{displayModel}</p>
       <p class="settings-profile-provider">{providerLabel}</p>
     </div>
+    {#if showFavoriteToggle && onToggleFavorite}
+      <button
+        type="button"
+        class="settings-profile-favorite-btn {isFavorite ? 'is-active' : ''}"
+        disabled={disabled || !model.trim()}
+        aria-pressed={isFavorite}
+        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        onclick={() => void onToggleFavorite(providerId, model)}
+      >
+        <Star size={15} fill={isFavorite ? "currentColor" : "none"} />
+      </button>
+    {/if}
   </div>
 
   {#if statusDetail}
@@ -115,6 +158,27 @@
             onclick={() => selectQuick(entry)}
           >
             {entry.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  {#if suggestedPicks.length > 0}
+    <div class="settings-profile-quick">
+      <span class="settings-profile-quick-label">Frontier picks</span>
+      <div class="settings-profile-quick-row">
+        {#each suggestedPicks as pick (pick.provider + pick.model)}
+          <button
+            type="button"
+            class="settings-profile-quick-btn {providerId === pick.provider && model === pick.model
+              ? 'settings-profile-quick-btn-active'
+              : ''}"
+            disabled={disabled}
+            title={pick.hint}
+            onclick={() => selectSuggested(pick)}
+          >
+            {pick.label}
           </button>
         {/each}
       </div>

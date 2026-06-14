@@ -12,6 +12,13 @@ pub struct MedousaConfigPaths {
     pub mcp_gateway: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteModelDto {
+    pub provider: String,
+    pub model: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TuiDefaultsSummary {
@@ -19,6 +26,7 @@ pub struct TuiDefaultsSummary {
     pub model: Option<String>,
     pub response_depth_mode: Option<String>,
     pub stage_routing: Option<serde_json::Value>,
+    pub favorite_models: Option<Vec<FavoriteModelDto>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -63,6 +71,7 @@ pub struct TuiDefaultsDto {
     pub stt_base_url: Option<String>,
     pub work_card_hide_after_hours: Option<u32>,
     pub work_card_wipe_after_days: Option<u32>,
+    pub favorite_models: Option<Vec<FavoriteModelDto>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -145,6 +154,8 @@ struct TuiDefaultsFile {
     work_card_hide_after_hours: Option<u32>,
     #[serde(default)]
     work_card_wipe_after_days: Option<u32>,
+    #[serde(default)]
+    favorite_models: Option<Vec<FavoriteModelDto>>,
     #[serde(default)]
     command_usage_counts: Option<serde_json::Value>,
     #[serde(default)]
@@ -234,6 +245,7 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         stt_base_url: file.stt_base_url.clone(),
         work_card_hide_after_hours: file.work_card_hide_after_hours,
         work_card_wipe_after_days: file.work_card_wipe_after_days,
+        favorite_models: file.favorite_models.clone(),
     }
 }
 
@@ -297,6 +309,20 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
         .map(str::to_string);
     file.work_card_hide_after_hours = dto.work_card_hide_after_hours;
     file.work_card_wipe_after_days = dto.work_card_wipe_after_days;
+    file.favorite_models = dto.favorite_models.clone().and_then(|entries| {
+        let filtered: Vec<FavoriteModelDto> = entries
+            .into_iter()
+            .filter(|entry| {
+                !entry.provider.trim().is_empty() && !entry.model.trim().is_empty()
+            })
+            .take(8)
+            .collect();
+        if filtered.is_empty() {
+            None
+        } else {
+            Some(filtered)
+        }
+    });
     if dto.stage_routing.is_some() {
         file.stage_routing = dto.stage_routing.clone();
     }
@@ -324,6 +350,7 @@ pub fn load_tui_defaults_summary() -> TuiDefaultsSummary {
         model: file.model,
         response_depth_mode: file.response_depth_mode,
         stage_routing: file.stage_routing,
+        favorite_models: file.favorite_models,
     }
 }
 
@@ -353,5 +380,18 @@ pub fn persist_tui_runtime_prefs(
     if let Some(matrix) = stage_routing {
         file.stage_routing = Some(matrix);
     }
+    write_tui_defaults_file(&file)
+}
+
+#[tauri::command]
+pub fn persist_tui_favorite_models(models: Vec<FavoriteModelDto>) -> Result<(), String> {
+    let mut file = read_tui_defaults_file();
+    file.favorite_models = Some(
+        models
+            .into_iter()
+            .filter(|entry| !entry.provider.trim().is_empty() && !entry.model.trim().is_empty())
+            .take(8)
+            .collect(),
+    );
     write_tui_defaults_file(&file)
 }

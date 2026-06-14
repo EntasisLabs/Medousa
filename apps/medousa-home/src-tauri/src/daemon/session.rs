@@ -321,7 +321,7 @@ pub async fn turn_create(
     let stage_routing = stage_routing.unwrap_or_else(|| {
         StageRoutingMatrix::default_for(
             if provider.is_empty() { "openai" } else { provider.as_str() },
-            if model.is_empty() { "gpt-4o-mini" } else { model.as_str() },
+            if model.is_empty() { "gpt-5.4-mini" } else { model.as_str() },
         )
     });
     let channel_surface = channel_surface

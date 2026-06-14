@@ -1,3 +1,8 @@
+import type { FavoriteModel } from "$lib/utils/modelCatalog";
+import {
+  CURATED_MODEL_PICKS,
+  favoriteToPick,
+} from "$lib/utils/modelCatalog";
 import type { ProvidersListResult } from "$lib/types/providers";
 import type { ProvidersProbeResult } from "$lib/utils/providersApi";
 import { modelPickKey } from "$lib/utils/formatModelDisplay";
@@ -8,6 +13,7 @@ export interface ChatModelPickOption {
   model: string;
   label: string;
   hint?: string;
+  favorite?: boolean;
 }
 
 export function buildChatModelOptions(
@@ -15,16 +21,28 @@ export function buildChatModelOptions(
   probe: ProvidersProbeResult | null,
   currentProvider: string,
   currentModel: string,
+  favorites: FavoriteModel[] = [],
 ): ChatModelPickOption[] {
   const options: ChatModelPickOption[] = [];
   const seen = new Set<string>();
 
-  const push = (provider: string, model: string, label: string, hint?: string) => {
+  const push = (
+    provider: string,
+    model: string,
+    label: string,
+    hint?: string,
+    favorite = false,
+  ) => {
     const key = modelPickKey(provider, model);
     if (seen.has(key)) return;
     seen.add(key);
-    options.push({ key, provider, model, label, hint });
+    options.push({ key, provider, model, label, hint, favorite });
   };
+
+  for (const entry of favorites) {
+    const pick = favoriteToPick(entry);
+    push(pick.provider, pick.model, pick.label, pick.hint ?? "Favorite", true);
+  }
 
   const provider = currentProvider.trim();
   const model = currentModel.trim();
@@ -32,15 +50,16 @@ export function buildChatModelOptions(
     push(provider, model, model, "Active");
   }
 
-  for (const entry of catalog.providers) {
-    if (entry.category === "featured" || entry.id === "openai" || entry.id === "anthropic") {
-      push(entry.id, entry.defaultModel, entry.defaultModel, entry.label);
-    }
+  for (const pick of CURATED_MODEL_PICKS) {
+    push(pick.provider, pick.model, pick.label, pick.hint);
   }
 
   for (const entry of catalog.providers) {
     if (entry.category === "local" || entry.id === "ollama") {
-      push(entry.id, entry.defaultModel, entry.defaultModel, entry.label);
+      const defaultModel = entry.defaultModel;
+      if (!CURATED_MODEL_PICKS.some((pick) => pick.provider === entry.id && pick.model === defaultModel)) {
+        push(entry.id, defaultModel, defaultModel, entry.label);
+      }
     }
   }
 

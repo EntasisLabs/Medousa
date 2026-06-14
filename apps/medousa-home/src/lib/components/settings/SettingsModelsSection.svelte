@@ -7,6 +7,8 @@
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
+  import { providerMonogram } from "$lib/utils/chatModelPicker";
+  import { favoriteToPick } from "$lib/utils/modelCatalog";
   import { listProviders, probeProviders, type ProvidersListResult } from "$lib/utils/providersApi";
   import { composerSttStatus } from "$lib/utils/composerStt";
 
@@ -88,6 +90,17 @@
     void refreshSttStatus();
   }
 
+  const favorites = $derived(workshopDefaults.favoriteModels());
+
+  function applyFavorite(provider: string, model: string) {
+    workshopDefaults.draft = {
+      ...workshopDefaults.draft,
+      provider,
+      model,
+    };
+    providerStatus = null;
+  }
+
   async function refreshSttStatus() {
     const stt = await composerSttStatus();
     sttReady = stt.available;
@@ -118,6 +131,10 @@
       statusOk={chatStatusOk}
       statusLabel={chatStatusLabel}
       statusDetail={chatStatusDetail}
+      showSuggestedModels
+      showFavoriteToggle
+      favoriteModels={favorites}
+      onToggleFavorite={(provider, model) => workshopDefaults.toggleFavorite(provider, model)}
       disabled={readOnly || workshopDefaults.saving}
       onProviderChange={onChatProviderChange}
       onModelChange={(value) =>
@@ -130,6 +147,52 @@
         if (ok === true) providerStatus = message;
       }}
     />
+
+    {#if favorites.length > 0}
+      <article class="settings-profile-card">
+        <header class="settings-profile-header">
+          <div class="min-w-0">
+            <h3 class="settings-profile-title">Favorites</h3>
+            <p class="settings-profile-subtitle">
+              Pinned for one-tap access in the composer model menu.
+            </p>
+          </div>
+        </header>
+        <ul class="settings-favorites-list">
+          {#each favorites as entry (entry.provider + entry.model)}
+            {@const pick = favoriteToPick(entry)}
+            {@const active =
+              workshopDefaults.draft.provider === entry.provider &&
+              workshopDefaults.draft.model === entry.model}
+            <li class="settings-favorites-row">
+              <button
+                type="button"
+                class="settings-favorites-main {active ? 'is-active' : ''}"
+                disabled={readOnly || workshopDefaults.saving}
+                onclick={() => applyFavorite(entry.provider, entry.model)}
+              >
+                <span class="settings-profile-badge" aria-hidden="true">
+                  {providerMonogram(entry.provider)}
+                </span>
+                <span class="min-w-0 flex-1 text-left">
+                  <span class="settings-profile-model">{pick.label}</span>
+                  <span class="settings-profile-provider">{pick.hint ?? entry.provider}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="settings-favorites-remove"
+                disabled={readOnly || workshopDefaults.saving}
+                title="Remove favorite"
+                onclick={() => void workshopDefaults.toggleFavorite(entry.provider, entry.model)}
+              >
+                Remove
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </article>
+    {/if}
 
     <SettingsInferenceProfile
       title="Dictation"
