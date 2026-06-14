@@ -133,7 +133,9 @@
   }
 
   async function startVoice() {
-    if (blocked || voiceBusy || voiceActive || !voiceSupported) return;
+    if (blocked || voiceBusy || voiceActive) return;
+    await refreshSttStatus();
+    if (!voiceSupported) return;
 
     voiceError = null;
     voiceBusy = true;

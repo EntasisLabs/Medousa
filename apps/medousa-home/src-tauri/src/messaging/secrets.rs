@@ -10,6 +10,8 @@ const SLACK_APP_TOKEN_SERVICE: &str = "medousa.slack";
 const SLACK_APP_TOKEN_ACCOUNT: &str = "app_token";
 const API_KEY_SERVICE: &str = "medousa.tui";
 const API_KEY_ACCOUNT: &str = "api_key";
+const STT_API_KEY_SERVICE: &str = "medousa.stt";
+const STT_API_KEY_ACCOUNT: &str = "api_key";
 
 fn medousa_data_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -74,6 +76,7 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
             "slack_app_token",
         ),
         "api_key" => read_secret_value(API_KEY_SERVICE, API_KEY_ACCOUNT, "api_key"),
+        "stt_api_key" => read_secret_value(STT_API_KEY_SERVICE, STT_API_KEY_ACCOUNT, "stt_api_key"),
         other => return Err(format!("unknown secret_id '{other}'")),
     })
 }
@@ -131,6 +134,7 @@ pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
             "slack_app_token",
         ),
         "api_key" => load_secret(API_KEY_SERVICE, API_KEY_ACCOUNT, "api_key"),
+        "stt_api_key" => load_secret(STT_API_KEY_SERVICE, STT_API_KEY_ACCOUNT, "stt_api_key"),
         other => return Err(format!("unknown secret_id '{other}'")),
     })
 }
@@ -165,6 +169,12 @@ pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String>
             API_KEY_SERVICE,
             API_KEY_ACCOUNT,
             "api_key",
+            value.as_deref(),
+        ),
+        "stt_api_key" => save_secret_value(
+            STT_API_KEY_SERVICE,
+            STT_API_KEY_ACCOUNT,
+            "stt_api_key",
             value.as_deref(),
         ),
         other => Err(format!("unknown secret_id '{other}'")),

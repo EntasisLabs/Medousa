@@ -44,6 +44,10 @@ export interface TuiDefaults {
   stageRouting?: StageRoutingMatrix | null;
   webSearchPreferredProvider?: string | null;
   webSearchTryFallbacks?: boolean | null;
+  /** Whisper / speech-to-text for composer dictation — independent of chat provider. */
+  sttProvider?: string | null;
+  sttModel?: string | null;
+  sttBaseUrl?: string | null;
   workCardHideAfterHours?: number | null;
   workCardWipeAfterDays?: number | null;
 }
@@ -72,6 +76,10 @@ export const WEB_SEARCH_PROVIDER_OPTIONS = [
   { value: "google", label: "Google" },
   { value: "tavily", label: "Tavily" },
 ] as const;
+
+export function defaultSttModel(providerId = "openai"): string {
+  return providerId.trim().toLowerCase() === "groq" ? "whisper-large-v3" : "whisper-1";
+}
 
 export function defaultWorkshopDefaults(): Required<
   Pick<
@@ -190,6 +198,9 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     stageRouting: raw.stageRouting ?? null,
     webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
     webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,
+    sttProvider: raw.sttProvider?.trim() || "openai",
+    sttModel: raw.sttModel?.trim() || defaultSttModel(raw.sttProvider ?? "openai"),
+    sttBaseUrl: raw.sttBaseUrl?.trim() || "",
     workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
   };

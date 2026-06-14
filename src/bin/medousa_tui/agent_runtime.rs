@@ -527,6 +527,8 @@ pub(crate) async fn start_prompt_run(
             activation.max_tool_rounds,
         )
     };
+    let current_turn_user_message = medousa::media_vision::TurnMediaVisionPlan::empty()
+        .build_user_message(&prompt_for_request);
     let retry_max_retries = medousa::tui::settings::parse_usize_with_bounds(
         &state.settings.retry_runtime_max_retries,
         DEFAULT_RETRY_RUNTIME_MAX_RETRIES,
@@ -625,6 +627,7 @@ pub(crate) async fn start_prompt_run(
                 handoff_model_avec,
                 host_continuity_bundle,
                 session_scratch_seed,
+                current_turn_user_message,
             },
         )
         .await;

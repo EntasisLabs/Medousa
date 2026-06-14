@@ -5,6 +5,7 @@
   import ProviderPicker from "$lib/components/settings/ProviderPicker.svelte";
   import type { ProviderCatalogEntry } from "$lib/types/providers";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
+  import { defaultSttModel } from "$lib/types/workshopDefaults";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import {
@@ -38,6 +39,7 @@
   let localMessage = $state<string | null>(null);
   let downloadProgress = $state<ModelDownloadProgress | null>(null);
   let providerStatus = $state<string | null>(null);
+  let sttProviderStatus = $state<string | null>(null);
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
   const recommendedModelId = $derived(localCatalog?.recommendedModelId ?? null);
@@ -120,17 +122,67 @@
     };
     providerStatus = null;
   }
+
+  function onSttProviderChange(id: string, entry: ProviderCatalogEntry) {
+    workshopDefaults.draft = {
+      ...workshopDefaults.draft,
+      sttProvider: id,
+      sttModel: defaultSttModel(id),
+      sttBaseUrl: entry.defaultBaseUrl,
+    };
+    sttProviderStatus = null;
+  }
 </script>
 
 <section class="settings-section">
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Voice</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Who speaks for the workshop — and how much depth you want in every answer.
+      Speech input for dictation, plus how chat answers are shaped.
     </p>
   </header>
 
   <div class="mt-5">
+    <h3 class="text-sm font-semibold text-surface-50">Speech input</h3>
+    <p class="workshop-faint mt-1 text-xs">
+      Transcribes the mic button in chat. Separate from your chat model — use any
+      OpenAI-compatible Whisper endpoint (OpenAI, Groq, etc.).
+    </p>
+    <div class="mt-4">
+      <ProviderPicker
+        providerId={workshopDefaults.draft.sttProvider ?? "openai"}
+        model={workshopDefaults.draft.sttModel ?? defaultSttModel(workshopDefaults.draft.sttProvider ?? "openai")}
+        apiKey={workshopDefaults.sttApiKeyDraft}
+        baseUrl={workshopDefaults.draft.sttBaseUrl ?? ""}
+        disabled={readOnly || workshopDefaults.saving}
+        excludeProviderIds={["medousa-local", "ollama"]}
+        onProviderChange={onSttProviderChange}
+        onModelChange={(value) =>
+          (workshopDefaults.draft = { ...workshopDefaults.draft, sttModel: value })}
+        onApiKeyChange={(value) => (workshopDefaults.sttApiKeyDraft = value)}
+        onBaseUrlChange={(value) =>
+          (workshopDefaults.draft = { ...workshopDefaults.draft, sttBaseUrl: value })}
+        onStatus={(message, ok) => {
+          sttProviderStatus = message;
+          if (ok === true) sttProviderStatus = message;
+        }}
+      />
+    </div>
+    {#if sttProviderStatus}
+      <p class="mt-2 text-xs text-surface-300">{sttProviderStatus}</p>
+    {/if}
+    {#if workshopDefaults.sttApiKeySet && !workshopDefaults.sttApiKeyDraft.trim()}
+      <p class="workshop-faint mt-2 text-xs">
+        A speech input API key is stored. Leave blank to keep it, or enter a new one to replace it.
+      </p>
+    {:else if workshopDefaults.apiKeySet && !workshopDefaults.sttApiKeySet}
+      <p class="workshop-faint mt-2 text-xs">
+        No speech key yet — your chat API key will be used as a fallback.
+      </p>
+    {/if}
+  </div>
+
+  <div class="mt-8 border-t border-surface-500/35 pt-6">
     <span class="block text-sm font-medium text-surface-100">Response depth</span>
     <span class="workshop-faint mt-0.5 block text-xs">
       Applies to chat turns — shared with the TUI and CLI.
@@ -157,9 +209,9 @@
   </div>
 
   <div class="mt-6">
-    <h3 class="text-sm font-semibold text-surface-50">Cloud &amp; hosted models</h3>
+    <h3 class="text-sm font-semibold text-surface-50">Chat model</h3>
     <p class="workshop-faint mt-1 text-xs">
-      Pick any genai-supported provider — same list as the setup wizard.
+      Default provider and model for chat turns — shared with the TUI and CLI.
     </p>
     <div class="mt-4">
       <ProviderPicker

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
+const STT_SETTINGS_HINT: &str = "Configure speech input in Settings → Voice → Speech input.";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +28,12 @@ pub struct ComposerSttResult {
     pub text: String,
 }
 
+struct SttConfig {
+    model: String,
+    base_url: String,
+    needs_api_key: bool,
+}
+
 fn stt_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
@@ -35,12 +42,12 @@ fn stt_client() -> Result<reqwest::Client, String> {
         .map_err(|err| err.to_string())
 }
 
-fn resolve_provider_id() -> String {
-    load_tui_defaults()
-        .provider
-        .map(|value| value.trim().to_lowercase())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "openai".to_string())
+fn default_whisper_model(provider_id: &str) -> &'static str {
+    if provider_id == "groq" {
+        "whisper-large-v3"
+    } else {
+        "whisper-1"
+    }
 }
 
 fn resolve_base_url(provider_id: &str, override_base: Option<&str>) -> Option<String> {
@@ -54,20 +61,101 @@ fn resolve_base_url(provider_id: &str, override_base: Option<&str>) -> Option<St
         })
 }
 
-fn whisper_model(provider_id: &str) -> Option<&'static str> {
-    match provider_id {
-        "groq" => Some("whisper-large-v3"),
-        "openai" | "openrouter" | "together" | "fireworks" | "mistral" | "azure-openai" => {
-            Some("whisper-1")
-        }
-        _ => None,
+fn provider_supports_whisper(provider_id: &str) -> bool {
+    let Some(spec) = provider_catalog::find_provider(provider_id) else {
+        return false;
+    };
+    match spec.validation {
+        ProviderValidation::OpenAiCompatible => true,
+        ProviderValidation::AcceptKey if spec.supports_custom_base_url => true,
+        _ => false,
     }
 }
 
-fn whisper_provider_label(provider_id: &str) -> &str {
+fn provider_label(provider_id: &str) -> &str {
     provider_catalog::find_provider(provider_id)
         .map(|spec| spec.label)
         .unwrap_or(provider_id)
+}
+
+fn load_stt_config() -> Result<SttConfig, String> {
+    let defaults = load_tui_defaults();
+    let provider_id = defaults
+        .stt_provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase)
+        .unwrap_or_else(|| "openai".to_string());
+
+    if !provider_supports_whisper(&provider_id) {
+        return Err(format!(
+            "{} does not support Whisper transcription — pick an OpenAI-compatible provider there (e.g. OpenAI, Groq). Current: {}.",
+            STT_SETTINGS_HINT,
+            provider_label(&provider_id)
+        ));
+    }
+
+    let model = defaults
+        .stt_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| default_whisper_model(&provider_id).to_string());
+
+    let base_url = resolve_base_url(&provider_id, defaults.stt_base_url.as_deref()).ok_or_else(
+        || {
+            format!(
+                "No transcription API base URL for {} — set one under Speech input in Settings → Voice.",
+                provider_label(&provider_id)
+            )
+        },
+    )?;
+
+    let needs_api_key = provider_catalog::find_provider(&provider_id)
+        .map(|spec| spec.needs_api_key)
+        .unwrap_or(true);
+
+    Ok(SttConfig {
+        model,
+        base_url,
+        needs_api_key,
+    })
+}
+
+fn resolve_stt_api_key(needs_key: bool) -> Result<String, String> {
+    if !needs_key {
+        return Ok(String::new());
+    }
+
+    if let Some(key) = load_secret_value("stt_api_key")?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(key);
+    }
+
+    if let Some(key) = load_secret_value("api_key")?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        return Ok(key);
+    }
+
+    Err(format!(
+        "Add a speech input API key in Settings → Voice → Speech input (or reuse your chat API key)."
+    ))
+}
+
+fn stt_unavailable_reason(config: &Result<SttConfig, String>) -> Option<String> {
+    match config {
+        Ok(cfg) => match resolve_stt_api_key(cfg.needs_api_key) {
+            Ok(_) => None,
+            Err(reason) => Some(reason),
+        },
+        Err(reason) => Some(reason.clone()),
+    }
 }
 
 fn transcription_url(base_url: &str) -> String {
@@ -92,49 +180,10 @@ fn extension_for_mime(mime_type: &str) -> &'static str {
     }
 }
 
-fn stt_unavailable_reason(provider_id: &str) -> Option<String> {
-    let spec = provider_catalog::find_provider(provider_id);
-    let validation = spec.map(|entry| entry.validation);
-
-    if validation == Some(ProviderValidation::Ollama) {
-        return Some(
-            "Voice input needs a cloud provider with Whisper — Ollama does not support transcription."
-                .into(),
-        );
-    }
-    if matches!(
-        validation,
-        Some(ProviderValidation::Anthropic) | Some(ProviderValidation::Google)
-    ) {
-        let label = spec.map(|entry| entry.label).unwrap_or(provider_id);
-        return Some(format!(
-            "Voice input needs an OpenAI-compatible provider — {label} does not offer Whisper transcription."
-        ));
-    }
-    if whisper_model(provider_id).is_none() {
-        return Some(format!(
-            "Voice input uses Whisper — switch to OpenAI or Groq in Settings → Voice (current: {}).",
-            whisper_provider_label(provider_id)
-        ));
-    }
-
-    let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(true);
-    if needs_key {
-        let key = load_secret_value("api_key").map_err(|err| err.to_string()).ok().flatten();
-        if key.is_none() {
-            return Some(
-                "Add an API key in Settings → Voice before using voice input.".into(),
-            );
-        }
-    }
-
-    None
-}
-
 #[tauri::command]
 pub fn composer_stt_status() -> ComposerSttStatus {
-    let provider_id = resolve_provider_id();
-    if let Some(reason) = stt_unavailable_reason(&provider_id) {
+    let config = load_stt_config();
+    if let Some(reason) = stt_unavailable_reason(&config) {
         return ComposerSttStatus {
             available: false,
             reason: Some(reason),
@@ -157,28 +206,8 @@ pub async fn composer_stt_transcribe(
         return Err("Recording is too long — keep voice messages under a few minutes.".into());
     }
 
-    let provider_id = resolve_provider_id();
-    if let Some(reason) = stt_unavailable_reason(&provider_id) {
-        return Err(reason);
-    }
-
-    let model = whisper_model(&provider_id)
-        .ok_or_else(|| format!("Voice input is not configured for provider \"{provider_id}\"."))?;
-
-    let defaults = load_tui_defaults();
-    let base_url = resolve_base_url(&provider_id, defaults.base_url.as_deref()).ok_or_else(|| {
-        format!("No API base URL configured for provider \"{provider_id}\".")
-    })?;
-
-    let spec = provider_catalog::find_provider(&provider_id);
-    let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(true);
-    let api_key = if needs_key {
-        load_secret_value("api_key")?
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| "Add an API key in Settings → Voice before using voice input.".to_string())?
-    } else {
-        String::new()
-    };
+    let config = load_stt_config()?;
+    let api_key = resolve_stt_api_key(config.needs_api_key)?;
 
     let mime_type = request.mime_type.trim();
     let mime_type = if mime_type.is_empty() {
@@ -190,7 +219,7 @@ pub async fn composer_stt_transcribe(
     let filename = format!("composer-voice.{extension}");
 
     let form = multipart::Form::new()
-        .text("model", model)
+        .text("model", config.model.clone())
         .part(
             "file",
             multipart::Part::bytes(request.audio_bytes)
@@ -200,9 +229,11 @@ pub async fn composer_stt_transcribe(
         );
 
     let client = stt_client()?;
-    let mut req = client.post(transcription_url(&base_url)).multipart(form);
-    if needs_key {
-        req = req.bearer_auth(api_key.trim());
+    let mut req = client
+        .post(transcription_url(&config.base_url))
+        .multipart(form);
+    if config.needs_api_key {
+        req = req.bearer_auth(api_key);
     }
 
     let response = req.send().await.map_err(|err| {
@@ -218,7 +249,10 @@ pub async fn composer_stt_transcribe(
         let body = response.text().await.unwrap_or_default();
         let detail = body.trim();
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err("Invalid API key — update it in Settings → Voice.".into());
+            return Err(
+                "Invalid speech input API key — update it in Settings → Voice → Speech input."
+                    .into(),
+            );
         }
         if detail.is_empty() {
             return Err(format!("Transcription failed ({status})."));

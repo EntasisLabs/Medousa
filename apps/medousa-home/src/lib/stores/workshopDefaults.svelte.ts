@@ -25,6 +25,9 @@ export class WorkshopDefaultsStore {
   apiKeySet = $state(false);
   apiKeyDraft = $state("");
   clearApiKey = $state(false);
+  sttApiKeySet = $state(false);
+  sttApiKeyDraft = $state("");
+  clearSttApiKey = $state(false);
 
   loading = $state(false);
   saving = $state(false);
@@ -77,6 +80,9 @@ export class WorkshopDefaultsStore {
       this.apiKeySet = await messagingSecretStatus("api_key");
       this.apiKeyDraft = "";
       this.clearApiKey = false;
+      this.sttApiKeySet = await messagingSecretStatus("stt_api_key");
+      this.sttApiKeyDraft = "";
+      this.clearSttApiKey = false;
       this.loaded = true;
     } catch (err) {
       this.message = err instanceof Error ? err.message : String(err);
@@ -132,6 +138,7 @@ export class WorkshopDefaultsStore {
       const payload: TuiDefaults = {
         ...this.draft,
         baseUrl: this.draft.baseUrl?.trim() || null,
+        sttBaseUrl: this.draft.sttBaseUrl?.trim() || null,
         envOverrides: this.draft.envOverrides?.trim() || null,
         allowedModules: parseAllowedModulesText(this.allowedModulesText),
       };
@@ -152,6 +159,15 @@ export class WorkshopDefaultsStore {
         await messagingSaveSecret("api_key", this.apiKeyDraft.trim());
         this.apiKeySet = true;
         this.apiKeyDraft = "";
+      }
+
+      if (this.clearSttApiKey) {
+        await messagingClearSecret("stt_api_key");
+        this.sttApiKeySet = false;
+      } else if (this.sttApiKeyDraft.trim()) {
+        await messagingSaveSecret("stt_api_key", this.sttApiKeyDraft.trim());
+        this.sttApiKeySet = true;
+        this.sttApiKeyDraft = "";
       }
 
       runtime.provider = payload.provider ?? runtime.provider;
