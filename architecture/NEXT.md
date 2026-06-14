@@ -90,6 +90,7 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 
 | Item | Doc |
 |------|-----|
+| External channel worker spawn + synthesis notify | [channel-worker-notify-plan.md](channel-worker-notify-plan.md) |
 | Desktop app CI + signed bundles (dmg/msi/AppImage) | [desktop-distribution-plan.md](desktop-distribution-plan.md) |
 | Phase E cloud auth | [normie-product-gap-analysis.md](normie-product-gap-analysis.md) |
 | Phase F accessibility + prod packaging | [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) |

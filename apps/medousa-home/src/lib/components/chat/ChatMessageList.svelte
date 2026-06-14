@@ -100,7 +100,9 @@
         </p>
       {/if}
     {:else if message.role === "user"}
-      <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-100">
+      <p
+        class="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-relaxed text-surface-100 [overflow-wrap:anywhere]"
+      >
         {message.content}
       </p>
     {:else}
