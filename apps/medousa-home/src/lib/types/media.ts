@@ -10,6 +10,7 @@ export interface MediaUploadResponse {
   mime: string;
   byte_size: number;
   label?: string | null;
+  text_extracted?: boolean;
 }
 
 export interface ChatMediaAttachment {

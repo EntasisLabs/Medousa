@@ -710,7 +710,7 @@ async fn run_agent_turn_inner(
         }
     }
 
-    let effective_prompt = merge_media_refs_into_prompt(&prompt, &request.media_refs);
+    let effective_prompt = merge_media_refs_into_prompt(&prompt, &session_id, &request.media_refs);
 
     let settings = runtime_settings_for_interactive_turn(backend, &request);
     let stage_routing = stage_routing_for_interactive_turn(&request);

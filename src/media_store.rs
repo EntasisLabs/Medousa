@@ -23,6 +23,12 @@ pub struct MediaRecord {
     pub payload_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extract_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extract_chars: Option<usize>,
+    #[serde(default)]
+    pub extract_truncated: bool,
 }
 
 pub fn media_root() -> PathBuf {
@@ -74,6 +80,21 @@ pub fn persist_user_media(
         .filter(|value| !value.is_empty())
         .map(str::to_string);
 
+    let mut extract_path = None;
+    let mut extract_chars = None;
+    let mut extract_truncated = false;
+    if let Some(extract) =
+        crate::media_text_extract::extract_media_text(bytes, &mime, label.as_deref())
+    {
+        let path = crate::media_text_extract::extract_path_for_media(
+            payload_path.to_string_lossy().as_ref(),
+        );
+        fs::write(&path, &extract.text).map_err(|err| err.to_string())?;
+        extract_chars = Some(extract.text.chars().count());
+        extract_truncated = extract.truncated;
+        extract_path = Some(path.to_string_lossy().to_string());
+    }
+
     let record = MediaRecord {
         media_id: media_id.clone(),
         session_id: session_id.to_string(),
@@ -83,6 +104,9 @@ pub fn persist_user_media(
         stored_at_utc: Utc::now(),
         payload_path: payload_path.to_string_lossy().to_string(),
         label: label.clone(),
+        extract_path: extract_path.clone(),
+        extract_chars,
+        extract_truncated,
     };
     append_index_record(&record)?;
 
@@ -91,6 +115,7 @@ pub fn persist_user_media(
         mime,
         byte_size,
         label,
+        text_extracted: extract_path.is_some(),
     })
 }
 
@@ -135,7 +160,24 @@ pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), St
     Ok(())
 }
 
-pub fn merge_media_refs_into_prompt(prompt: &str, media_refs: &[MediaRef]) -> String {
+pub fn read_media_extract(record: &MediaRecord) -> Option<String> {
+    let path = record
+        .extract_path
+        .as_deref()
+        .filter(|value| !value.is_empty())?;
+    if !Path::new(path).exists() {
+        return None;
+    }
+    std::fs::read_to_string(path)
+        .ok()
+        .filter(|text| !text.trim().is_empty())
+}
+
+pub fn merge_media_refs_into_prompt(
+    prompt: &str,
+    session_id: &str,
+    media_refs: &[MediaRef],
+) -> String {
     if media_refs.is_empty() {
         return prompt.to_string();
     }
@@ -151,6 +193,25 @@ pub fn merge_media_refs_into_prompt(prompt: &str, media_refs: &[MediaRef]) -> St
             "- {name} ({}, kind={}, id={})\n",
             media_ref.mime, media_ref.kind, media_ref.media_id
         ));
+
+        if let Some(record) = get_media_record(session_id, &media_ref.media_id) {
+            if let Some(extract) = read_media_extract(&record) {
+                block.push_str("  ```\n");
+                for line in extract.lines() {
+                    block.push_str("  ");
+                    block.push_str(line);
+                    block.push('\n');
+                }
+                block.push_str("  ```\n");
+                if record.extract_truncated {
+                    block.push_str("  (extract truncated at import)\n");
+                }
+            } else if media_ref.mime == "application/pdf" {
+                block.push_str(
+                    "  (no text layer — scanned PDF may need vision/OCR in a later release)\n",
+                );
+            }
+        }
     }
     format!("{prompt}{block}")
 }
@@ -266,6 +327,7 @@ mod tests {
     fn merge_media_refs_appends_block() {
         let merged = merge_media_refs_into_prompt(
             "hello",
+            "session-a",
             &[MediaRef {
                 media_id: "usr:abc:1".into(),
                 kind: "image".into(),

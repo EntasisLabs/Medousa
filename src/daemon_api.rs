@@ -643,6 +643,9 @@ pub struct MediaUploadResponse {
     pub byte_size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// True when local text extraction succeeded at upload (P5a-text).
+    #[serde(default)]
+    pub text_extracted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
