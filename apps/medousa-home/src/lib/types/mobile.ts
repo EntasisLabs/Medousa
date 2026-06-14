@@ -27,7 +27,7 @@ export const YOU_DESTINATIONS: {
   { id: "skills", label: "Skills", hint: "Run in chat" },
   { id: "cron", label: "Schedule", hint: "Recurring prompts" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
-  { id: "settings", label: "Preferences", hint: "Charter — memory, voice, reach" },
+  { id: "settings", label: "Preferences", hint: "Models, voice, memory & reach" },
   { id: "runtime", label: "Workshop", hint: "Live pulse, jobs & delivery" },
 ];
 

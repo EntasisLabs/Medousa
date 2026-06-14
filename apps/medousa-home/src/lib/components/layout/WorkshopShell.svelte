@@ -11,6 +11,7 @@
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { layoutDesktopRails } from "$lib/utils/desktopRails";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
@@ -112,7 +113,10 @@
                 layout.setIdentityDrawerOpen(false);
                 goToSurface("context");
               }}
-              onOpenConnection={() => goToSurface("settings")}
+              onOpenConnection={() => {
+                settingsNav.openSection("models");
+                goToSurface("settings");
+              }}
             />
           {:else if activeSurface === "library"}
             <LibraryPanel

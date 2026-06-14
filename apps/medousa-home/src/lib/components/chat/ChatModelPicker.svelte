@@ -1,12 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Check, ChevronDown, LoaderCircle, Search } from "@lucide/svelte";
+  import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search, Sparkles } from "@lucide/svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { formatModelDisplayName, modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildChatModelOptions,
+    depthModeLabel,
     filterChatModelOptions,
+    providerMonogram,
     type ChatModelPickOption,
   } from "$lib/utils/chatModelPicker";
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
@@ -16,10 +20,9 @@
   interface Props {
     disabled?: boolean;
     readonly?: boolean;
-    onOpenVoiceSettings?: () => void;
   }
 
-  let { disabled = false, readonly = false, onOpenVoiceSettings }: Props = $props();
+  let { disabled = false, readonly = false }: Props = $props();
 
   let open = $state(false);
   let search = $state("");
@@ -32,6 +35,8 @@
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
   const filtered = $derived(filterChatModelOptions(options, search));
   const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
+  const providerBadge = $derived(providerMonogram(runtime.provider));
+  const depthLabel = $derived(depthModeLabel(runtime.depthMode));
 
   onMount(() => {
     void bootstrap();
@@ -97,51 +102,59 @@
     open = !open;
     if (open) search = "";
   }
+
+  function openModelsSettings() {
+    settingsNav.openSection("models");
+    if (layout.isMobile) {
+      layout.openYou("settings");
+      return;
+    }
+    layout.navigateDesktop("settings");
+  }
 </script>
 
 <div class="composer-model-picker">
-  {#if nativeMobileReadonly}
-    <button
-      bind:this={triggerEl}
-      type="button"
-      class="composer-model-pill composer-model-pill-readonly"
-      title="{runtime.modelLabel()} · depth {runtime.depthMode}"
-      disabled={disabled}
-      aria-haspopup="menu"
-      aria-expanded={open}
-      onclick={openMenu}
-    >
-      <span class="truncate">{displayName}</span>
-      <ChevronDown size={12} class="shrink-0 opacity-70" />
-    </button>
-  {:else}
-    <button
-      bind:this={triggerEl}
-      type="button"
-      class="composer-model-pill"
-      disabled={disabled || runtime.savingControls}
-      aria-haspopup="listbox"
-      aria-expanded={open}
-      onclick={toggleMenu}
-    >
-      {#if runtime.savingControls}
-        <LoaderCircle size={12} class="animate-spin opacity-70" />
-      {/if}
-      <span class="truncate">{displayName}</span>
-      <ChevronDown size={12} class="shrink-0 opacity-70" />
-    </button>
-  {/if}
+  <button
+    bind:this={triggerEl}
+    type="button"
+    class="composer-model-trigger {nativeMobileReadonly ? 'composer-model-trigger-readonly' : ''}"
+    class:composer-model-trigger-open={open}
+    disabled={disabled || runtime.savingControls}
+    aria-haspopup="listbox"
+    aria-expanded={open}
+    title="{runtime.modelLabel()} · {depthLabel} depth"
+    onclick={nativeMobileReadonly ? openMenu : toggleMenu}
+  >
+    <span class="composer-model-trigger-badge" aria-hidden="true">{providerBadge}</span>
+    <span class="composer-model-trigger-copy">
+      <span class="composer-model-trigger-name">{displayName}</span>
+      <span class="composer-model-trigger-meta">{depthLabel}</span>
+    </span>
+    {#if runtime.savingControls}
+      <LoaderCircle size={13} class="composer-model-trigger-spinner animate-spin" />
+    {:else}
+      <ChevronDown size={13} class="composer-model-trigger-chevron" />
+    {/if}
+  </button>
 
   {#if open}
-    <div bind:this={menuEl} class="composer-model-menu" role="listbox">
-      <div class="composer-model-menu-depth">
-        <span class="composer-model-menu-depth-label">Depth</span>
-        <div class="composer-model-menu-depth-row">
+    <div bind:this={menuEl} class="composer-model-panel" role="dialog" aria-label="Model picker">
+      <div class="composer-model-panel-header">
+        <div class="composer-model-panel-title">
+          <Sparkles size={14} class="composer-model-panel-icon" />
+          <span>Model</span>
+        </div>
+        <span class="composer-model-panel-active">{displayName}</span>
+      </div>
+
+      <div class="composer-model-panel-section">
+        <span class="composer-model-panel-label">Answer depth</span>
+        <div class="composer-model-depth-segment" role="group" aria-label="Answer depth">
           {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
             <button
               type="button"
-              class="composer-model-depth-pill {runtime.depthMode === option.id
-                ? 'composer-model-depth-pill-active'
+              class="composer-model-depth-segment-btn {runtime.depthMode === option.id
+                ? 'composer-model-depth-segment-btn-active'
                 : ''}"
               disabled={runtime.savingControls}
               aria-pressed={runtime.depthMode === option.id}
@@ -155,39 +168,49 @@
       </div>
 
       {#if !nativeMobileReadonly}
-        <div class="composer-model-menu-search">
-          <Search size={14} class="shrink-0 opacity-60" />
-          <input
-            type="search"
-            class="composer-model-menu-search-input"
-            placeholder="Search models"
-            bind:value={search}
-          />
+        <div class="composer-model-panel-section composer-model-panel-section-search">
+          <label class="composer-model-search">
+            <Search size={14} class="composer-model-search-icon" />
+            <input
+              type="search"
+              class="composer-model-search-input"
+              placeholder="Search models"
+              bind:value={search}
+            />
+          </label>
         </div>
 
-        <ul class="composer-model-menu-list">
+        <ul class="composer-model-list" role="listbox">
           {#if loading}
-            <li class="composer-model-menu-empty">Loading models…</li>
+            <li class="composer-model-list-empty">
+              <LoaderCircle size={16} class="animate-spin opacity-60" />
+              <span>Loading models…</span>
+            </li>
           {:else if filtered.length === 0}
-            <li class="composer-model-menu-empty">No matches</li>
+            <li class="composer-model-list-empty">No matches</li>
           {:else}
             {#each filtered as option (option.key)}
               <li>
                 <button
                   type="button"
-                  class="composer-model-menu-item"
+                  class="composer-model-list-item {option.key === activeKey
+                    ? 'composer-model-list-item-active'
+                    : ''}"
                   role="option"
                   aria-selected={option.key === activeKey}
                   onclick={() => void selectOption(option)}
                 >
-                  <span class="min-w-0 flex-1 truncate text-left">
-                    <span class="block truncate text-sm text-surface-100">{option.label}</span>
+                  <span class="composer-model-list-badge">{providerMonogram(option.provider)}</span>
+                  <span class="composer-model-list-copy">
+                    <span class="composer-model-list-name">{option.label}</span>
                     {#if option.hint}
-                      <span class="block truncate text-[10px] text-surface-500">{option.hint}</span>
+                      <span class="composer-model-list-hint">{option.hint}</span>
                     {/if}
                   </span>
                   {#if option.key === activeKey}
-                    <Check size={14} class="shrink-0 text-primary-300" />
+                    <span class="composer-model-list-check" aria-hidden="true">
+                      <Check size={14} strokeWidth={2.75} />
+                    </span>
                   {/if}
                 </button>
               </li>
@@ -195,17 +218,16 @@
           {/if}
         </ul>
       {:else}
-        <div class="composer-model-menu-mobile-note">
-          <p class="text-xs text-surface-300">{runtime.modelLabel()}</p>
-          <p class="mt-1 text-[11px] text-surface-500">Model is set on your Mac workshop</p>
+        <div class="composer-model-mobile-note">
+          <p class="composer-model-mobile-title">{runtime.modelLabel()}</p>
+          <p class="composer-model-mobile-copy">Model is set on your Mac workshop</p>
         </div>
       {/if}
 
-      {#if onOpenVoiceSettings}
-        <button type="button" class="composer-model-menu-footer" onclick={onOpenVoiceSettings}>
-          {nativeMobileReadonly ? "Open Workshop" : "All models in Workshop"}
-        </button>
-      {/if}
+      <button type="button" class="composer-model-panel-footer" onclick={openModelsSettings}>
+        <span>{nativeMobileReadonly ? "Open Models" : "Models in Settings"}</span>
+        <ArrowUpRight size={14} />
+      </button>
     </div>
   {/if}
 </div>

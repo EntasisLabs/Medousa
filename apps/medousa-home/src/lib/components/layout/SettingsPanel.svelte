@@ -3,12 +3,16 @@
   import SettingsRoomSection from "$lib/components/settings/SettingsRoomSection.svelte";
   import SettingsRhythmSection from "$lib/components/settings/SettingsRhythmSection.svelte";
   import SettingsMemorySection from "$lib/components/settings/SettingsMemorySection.svelte";
+  import SettingsModelsSection from "$lib/components/settings/SettingsModelsSection.svelte";
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+  import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { depthModeLabel } from "$lib/utils/chatModelPicker";
+  import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import type { SettingsSectionId } from "$lib/types/settings";
 
   interface Props {
@@ -39,25 +43,16 @@
 
   $effect(() => {
     if (visible) {
+      const pending = settingsNav.takePending();
+      if (pending) activeSection = pending;
       void workshopDefaults.load();
     }
   });
 
   const charterLine = $derived(
     !workshopDefaults.loaded
-      ? "Your charter with the workshop."
-      : (() => {
-          const hot = workshopDefaults.draft.sliceHotWindowTurns ?? 8;
-          const depth = workshopDefaults.draft.responseDepthMode ?? "standard";
-          const model = workshopDefaults.draft.model?.trim() || "default model";
-          const modules = workshopDefaults.allowedModulesText
-            .split(/[,\n]/)
-            .map((entry) => entry.trim())
-            .filter(Boolean);
-          const reach =
-            modules.length > 0 ? `${modules.length} tools allowed` : "full tool catalog";
-          return `Remembers ${hot} turns hot · answers ${depth} · ${reach} · ${model}`;
-        })(),
+      ? "Shape how Medousa listens, thinks, and remembers."
+      : `${depthModeLabel(workshopDefaults.draft.responseDepthMode ?? "standard")} answers · ${formatModelDisplayName(workshopDefaults.draft.model ?? "model")} in chat`,
   );
 </script>
 
@@ -93,6 +88,8 @@
         <SettingsRhythmSection {mobile} />
       {:else if activeSection === "memory"}
         <SettingsMemorySection {mobile} />
+      {:else if activeSection === "models"}
+        <SettingsModelsSection {mobile} />
       {:else if activeSection === "voice"}
         <SettingsVoiceSection {mobile} />
       {:else if activeSection === "reach"}

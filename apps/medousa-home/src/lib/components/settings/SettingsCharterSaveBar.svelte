@@ -4,9 +4,10 @@
 
   interface Props {
     mobile?: boolean;
+    onSaved?: () => void | Promise<void>;
   }
 
-  let { mobile = false }: Props = $props();
+  let { mobile = false, onSaved }: Props = $props();
 
   const mobileReadOnly = $derived(mobile && isTauriMobilePlatform());
 </script>
@@ -15,7 +16,7 @@
   <p class="workshop-faint text-sm">Loading your charter…</p>
 {:else if mobileReadOnly}
   <p class="workshop-faint rounded-container-token border border-surface-500/35 bg-surface-900/40 px-3 py-2 text-xs leading-relaxed">
-    These values live on your Mac workshop. Change Memory and Voice on the Mac, or edit
+    These values live on your Mac workshop. Change Models and Voice on the Mac, or edit
     <span class="font-mono text-surface-400">tui_defaults.json</span> in Basement → Workshop files.
   </p>
 {:else}
@@ -24,7 +25,12 @@
       type="button"
       class="btn btn-sm variant-filled-primary"
       disabled={workshopDefaults.saving || workshopDefaults.loading}
-      onclick={() => workshopDefaults.save()}
+      onclick={async () => {
+        await workshopDefaults.save();
+        if (workshopDefaults.message?.toLowerCase().includes("saved")) {
+          await onSaved?.();
+        }
+      }}
     >
       {workshopDefaults.saving ? "Saving…" : "Save charter"}
     </button>

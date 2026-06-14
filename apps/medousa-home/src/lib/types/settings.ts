@@ -2,6 +2,7 @@ export type SettingsSectionId =
   | "room"
   | "rhythm"
   | "memory"
+  | "models"
   | "voice"
   | "reach"
   | "phone"
@@ -15,6 +16,7 @@ export const SETTINGS_SECTIONS: {
   { id: "room", label: "Room", hint: "Theme & atmosphere" },
   { id: "rhythm", label: "Rhythm", hint: "How she interrupts you" },
   { id: "memory", label: "Memory", hint: "What stays vivid" },
+  { id: "models", label: "Models", hint: "Chat & dictation" },
   { id: "voice", label: "Voice", hint: "How she answers" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },

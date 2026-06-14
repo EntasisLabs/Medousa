@@ -18,6 +18,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import { isTauri } from "$lib/window";
 
   const isDevBuild = import.meta.env.DEV;
@@ -53,7 +54,7 @@
           {
             id: "workspace",
             label: "tui_defaults.json",
-            hint: "Full charter — Memory & Voice edit the human fields above",
+            hint: "Full charter — Models & Voice edit the human fields above",
             path: configPaths.tuiDefaults,
           },
           {
@@ -325,6 +326,10 @@
     {#if prefsMessage}
       <p class="mt-2 text-xs text-surface-300">{prefsMessage}</p>
     {/if}
+  {/if}
+
+  {#if isTauri() && !mobile}
+    <SettingsLocalBrainPanel />
   {/if}
 
   <div class="mt-6">

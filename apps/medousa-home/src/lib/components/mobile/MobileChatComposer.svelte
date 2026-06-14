@@ -128,6 +128,5 @@
     onkeydown={handleKeydown}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}
-    onOpenVoiceSettings={() => layout.openYou("runtime")}
   />
 </form>

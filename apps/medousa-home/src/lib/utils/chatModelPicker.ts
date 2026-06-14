@@ -67,3 +67,22 @@ export function filterChatModelOptions(
       (option.hint?.toLowerCase().includes(needle) ?? false),
   );
 }
+
+/** Two-letter monogram for composer model badge. */
+export function providerMonogram(provider: string): string {
+  const id = provider.trim().toLowerCase();
+  if (id === "openai") return "OA";
+  if (id === "anthropic") return "AN";
+  if (id === "ollama") return "OL";
+  if (id === "groq") return "GQ";
+  if (id === "deepseek") return "DS";
+  if (id === "google") return "GG";
+  if (id.length >= 2) return id.slice(0, 2).toUpperCase();
+  return id.toUpperCase() || "AI";
+}
+
+export function depthModeLabel(mode: string): string {
+  if (mode === "concise") return "Concise";
+  if (mode === "deep") return "Deep";
+  return "Standard";
+}

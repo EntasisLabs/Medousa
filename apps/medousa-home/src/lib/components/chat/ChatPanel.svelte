@@ -547,7 +547,6 @@
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
         onkeydown={handleKeydown}
-        onOpenVoiceSettings={onOpenConnection}
       />
     </form>
   {/if}

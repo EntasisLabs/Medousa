@@ -30,7 +30,6 @@
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
-    onOpenVoiceSettings?: () => void;
   }
 
   let {
@@ -40,7 +39,6 @@
     onkeydown,
     onfocus,
     onblur,
-    onOpenVoiceSettings,
   }: Props = $props();
 
   let voiceActive = $state(false);
@@ -208,7 +206,9 @@
 {/if}
 
 <div
-  class="composer-bar chat-composer-shell {mobile ? 'composer-bar-mobile' : 'chat-composer-bar'}"
+  class="composer-bar chat-composer-shell {mobile ? 'composer-bar-mobile' : 'chat-composer-bar'} {voiceActive
+    ? 'composer-bar-voice-mode'
+    : ''} {voiceTranscribing ? 'composer-bar-voice-transcribing' : ''}"
 >
   {#if voiceActive}
     <ChatVoiceRecorder
@@ -239,7 +239,7 @@
       {/if}
     </button>
 
-    <ChatModelPicker {disabled} readonly={mobile} {onOpenVoiceSettings} />
+    <ChatModelPicker {disabled} readonly={mobile} />
 
     <GrowingTextarea
       bind:value={chat.draft}
