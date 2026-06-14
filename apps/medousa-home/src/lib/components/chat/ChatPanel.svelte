@@ -30,6 +30,8 @@
   import { SLASH_COMMAND_HINTS } from "$lib/utils/slashCommands";
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
+  import ChatComposerAttachments from "$lib/components/chat/ChatComposerAttachments.svelte";
+  import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
 
   interface Props {
     visible: boolean;
@@ -153,6 +155,7 @@
 
   async function submitTurn(userContent: string, prompt: string, mode: "interactive" | "background") {
     const opts = buildInteractiveTurnOptions();
+    const mediaRefs = [...chat.pendingMediaRefs];
     const accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt,
@@ -162,8 +165,10 @@
       responseDepthMode: opts.responseDepthMode,
       stageRouting: opts.stageRouting,
       channelSurface: opts.channelSurface,
+      mediaRefs,
     });
-    chat.beginTurn(userContent, accepted);
+    chat.beginTurn(userContent, accepted, mediaRefs);
+    chat.clearPendingMedia();
     await chat.startTurnStream(
       accepted.turn_id,
       accepted.session_id,
@@ -175,7 +180,8 @@
     event.preventDefault();
     if (connection.offline) return;
     const prompt = chat.draft.trim();
-    if (!prompt) return;
+    const hasAttachments = chat.pendingMediaRefs.length > 0;
+    if (!prompt && !hasAttachments) return;
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
@@ -189,12 +195,15 @@
       }
 
       if (askPrompt) {
-        await submitTurn(prompt, askPrompt, "background");
+        await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background");
         return;
       }
 
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
-      await submitTurn(prompt, prompt, mode);
+      const display =
+        prompt ||
+        (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
+      await submitTurn(display, prompt, mode);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }
@@ -399,7 +408,7 @@
                 {/if}
               </header>
               <div class="chat-ask-thread-body space-y-3">
-                <ChatMessageList messages={thread.messages} {mobile} compact={true} />
+                <ChatMessageList messages={thread.messages} sessionId={chat.sessionId} {mobile} compact={true} />
               </div>
             </article>
           {/each}
@@ -434,7 +443,7 @@
                 </div>
               </header>
               <div class="chat-ask-thread-body space-y-3">
-                <ChatMessageList messages={thread.messages} {mobile} compact={true} />
+                <ChatMessageList messages={thread.messages} sessionId={chat.sessionId} {mobile} compact={true} />
               </div>
             </article>
           {/each}
@@ -442,7 +451,7 @@
       {/if}
 
       {#if chatMessages.length > 0}
-        <ChatMessageList messages={chatMessages} {mobile} />
+        <ChatMessageList messages={chatMessages} sessionId={chat.sessionId} {mobile} />
       {:else if askThreads.length === 0 && workerThreads.length === 0}
       <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
         {#if mobile}
@@ -539,6 +548,7 @@
       <p class="workshop-faint mx-4 mb-1.5 text-[10px]">
         {runtime.modelLabel()} · {runtime.depthMode}
       </p>
+      <ChatComposerAttachments disabled={connection.offline || chat.composerBlocked} />
       <div class="composer-bar chat-composer-bar">
         <GrowingTextarea
           bind:value={chat.draft}
@@ -552,7 +562,7 @@
         <button
           type="submit"
           class="composer-bar-send"
-          disabled={connection.offline || chat.composerBlocked || !chat.draft.trim()}
+          disabled={connection.offline || chat.composerBlocked || (!chat.draft.trim() && chat.pendingMediaRefs.length === 0)}
           aria-label="Send message"
         >
           {chat.composerBlocked ? "…" : "↑"}

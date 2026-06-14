@@ -45,6 +45,7 @@ import type {
   VaultSearchResponse,
   VaultWriteResponse,
 } from "$lib/types/vault";
+import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
 
 export interface DaemonHealth {
   ok: boolean;
@@ -141,6 +142,7 @@ export async function createTurnTicket(
     responseDepthMode: request.responseDepthMode ?? null,
     stageRouting: request.stageRouting ?? null,
     channelSurface: request.channelSurface ?? null,
+    mediaRefs: request.mediaRefs ?? null,
   });
 }
 
@@ -204,7 +206,7 @@ export interface InteractiveTurnOptions {
 export async function sendInteractiveTurn(
   sessionId: string,
   prompt: string,
-  options?: InteractiveTurnOptions,
+  options?: InteractiveTurnOptions & { mediaRefs?: MediaRef[] },
 ): Promise<InteractiveTurnAccepted> {
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
@@ -215,6 +217,40 @@ export async function sendInteractiveTurn(
     stageRouting: options?.stageRouting,
     channelSurface: options?.channelSurface,
   });
+}
+
+export async function uploadMediaBytes(
+  sessionId: string,
+  filename: string,
+  mime: string,
+  bytes: number[],
+  label?: string | null,
+): Promise<MediaUploadResponse> {
+  return invoke<MediaUploadResponse>("media_upload", {
+    sessionId,
+    filename,
+    mime,
+    bytes,
+    label: label ?? null,
+  });
+}
+
+export async function uploadMediaPath(
+  sessionId: string,
+  path: string,
+  label?: string | null,
+): Promise<MediaUploadResponse> {
+  return invoke<MediaUploadResponse>("media_upload_path", {
+    sessionId,
+    path,
+    label: label ?? null,
+  });
+}
+
+export async function mediaFetchUrl(sessionId: string, mediaId: string): Promise<string> {
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const params = new URLSearchParams({ session_id: sessionId });
+  return `${base}/v1/media/${encodeURIComponent(mediaId)}?${params.toString()}`;
 }
 
 export async function getRuntimeStats(): Promise<DaemonStatsResponse> {

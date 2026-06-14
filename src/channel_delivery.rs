@@ -770,8 +770,8 @@ mod tests {
             additional_manuscript_ids: None,
             suggested_capability_ids: None,
             scheduled_tool_allowlist: None,
+            media_refs: Vec::new(),
         };
-        let target = delivery_target_from_interactive_turn(&request, "turn-1");
         assert_eq!(target.channel, "home-ios");
         assert_eq!(target.channel_id, "sess-1");
         assert!(is_home_channel(&target.channel));

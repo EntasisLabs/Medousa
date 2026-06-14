@@ -1,5 +1,6 @@
 use crate::daemon::types::{
-    SessionHistoryListResponse, SessionHistoryResponse, StageRoutingMatrix, TurnSurfaceContext,
+    MediaRef, SessionHistoryListResponse, SessionHistoryResponse, StageRoutingMatrix,
+    TurnSurfaceContext,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -265,6 +266,8 @@ struct CreateTurnTicketBody {
     stage_routing: Option<StageRoutingMatrix>,
     #[serde(default)]
     surface: Option<TurnSurfaceContext>,
+    #[serde(default)]
+    media_refs: Vec<MediaRef>,
 }
 
 fn default_persist_user_turn() -> bool {
@@ -286,13 +289,14 @@ pub async fn turn_create(
     response_depth_mode: Option<String>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
+    media_refs: Option<Vec<MediaRef>>,
 ) -> Result<TurnTicketResponse, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed_session = session_id.trim();
     if trimmed_session.is_empty() {
         return Err("session_id is required".to_string());
     }
-    if prompt.trim().is_empty() {
+    if prompt.trim().is_empty() && media_refs.as_ref().is_none_or(|refs| refs.is_empty()) {
         return Err("prompt is required".to_string());
     }
 
@@ -340,6 +344,7 @@ pub async fn turn_create(
         model,
         stage_routing: Some(stage_routing),
         surface,
+        media_refs: media_refs.unwrap_or_default(),
     };
 
     let client = Client::new();

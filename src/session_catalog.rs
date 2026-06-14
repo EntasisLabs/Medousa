@@ -159,6 +159,10 @@ fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
             let text = match part {
                 TurnPart::Text { markdown } | TurnPart::Reasoning { markdown } => markdown,
                 TurnPart::Handoff { text, .. } => text,
+                TurnPart::UserMedia { label, media_id, .. } => {
+                    label.as_deref().unwrap_or(media_id.as_str())
+                }
+                TurnPart::AttachmentRef { label, .. } => label.as_str(),
                 TurnPart::ToolRun { .. } => continue,
             };
             if let Some(line) = preview_line_from_content(text) {

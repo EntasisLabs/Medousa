@@ -4,6 +4,7 @@ pub mod identity;
 pub mod jobs;
 pub mod local_inference;
 pub mod locus;
+pub mod media;
 pub mod recurring;
 pub mod runtime;
 pub mod session;
@@ -79,7 +80,7 @@ fn persist_daemon_url(url: &str) -> Result<(), String> {
     std::fs::write(path, url).map_err(|err| err.to_string())
 }
 
-fn daemon_http_client() -> Result<Client, String> {
+pub(crate) fn daemon_http_client() -> Result<Client, String> {
     Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(10))
@@ -319,6 +320,7 @@ pub async fn interactive_turn_send(
             channel_id: Some(session_id.clone()),
             user_id: Some(session_id),
         }),
+        media_refs: Vec::new(),
     };
 
     let client = daemon_http_client()?;

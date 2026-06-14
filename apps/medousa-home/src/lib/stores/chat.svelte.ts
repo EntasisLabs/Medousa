@@ -25,7 +25,9 @@ import type {
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
-import { reasoningFromParts, toolRunsFromParts } from "$lib/types/turnParts";
+import { reasoningFromParts, toolRunsFromParts, userMediaFromParts } from "$lib/types/turnParts";
+import type { MediaRef } from "$lib/types/media";
+import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import {
   isEngineTelemetryText,
@@ -70,6 +72,9 @@ export class ChatStore {
   sessionId = $state(loadSessionId());
   messages = $state<ChatMessage[]>([]);
   draft = $state("");
+  /** Files uploaded to local daemon, waiting to send with the next turn. */
+  pendingMediaRefs = $state<MediaRef[]>([]);
+  pendingMediaUploading = $state(false);
   /** Worker handoffs and operator pauses still running outside the live stream. */
   backgroundActivity = $state(0);
   streamError = $state<string | null>(null);
@@ -434,7 +439,11 @@ export class ChatStore {
   }
 
   /** Start a user + assistant bubble pair for a new turn ticket. */
-  beginTurn(userContent: string, ticket: TurnTicketResponse) {
+  beginTurn(
+    userContent: string,
+    ticket: TurnTicketResponse,
+    mediaRefs: MediaRef[] = [],
+  ) {
     this.transcriptEpoch += 1;
     this.historyNotice = null;
     const assistantId = crypto.randomUUID();
@@ -449,6 +458,10 @@ export class ChatStore {
         content: userContent,
         lane,
         askJobId: isAsk ? askJobId : null,
+        mediaAttachments:
+          mediaRefs.length > 0
+            ? chatMediaAttachmentsFromRefs(mediaRefs)
+            : undefined,
       },
       {
         id: assistantId,
@@ -1784,6 +1797,30 @@ export class ChatStore {
     this.draft = text;
   }
 
+  clearPendingMedia() {
+    this.pendingMediaRefs = [];
+  }
+
+  removePendingMedia(mediaId: string) {
+    this.pendingMediaRefs = this.pendingMediaRefs.filter(
+      (ref) => ref.media_id !== mediaId,
+    );
+  }
+
+  async attachFilesFromPicker() {
+    if (this.pendingMediaUploading) return;
+    this.pendingMediaUploading = true;
+    try {
+      const { attachChatFiles } = await import("$lib/utils/chatMediaUpload");
+      const refs = await attachChatFiles(this.sessionId);
+      if (refs.length > 0) {
+        this.pendingMediaRefs = [...this.pendingMediaRefs, ...refs];
+      }
+    } finally {
+      this.pendingMediaUploading = false;
+    }
+  }
+
   private isDetachedWorkerTurnRecord(record: TurnTicketRecord): boolean {
     const cardId = record.workspace_card_id?.trim();
     if (cardId?.startsWith("work-")) {
@@ -1909,6 +1946,7 @@ function mapTurns(
     tools: turn.tool_names?.length ? turn.tool_names : undefined,
     toolRuns: toolRunsFromParts(turn.parts ?? null),
     reasoning: reasoningFromParts(turn.parts ?? null),
+    mediaAttachments: userMediaFromParts(turn.parts ?? null),
   }));
 }
 

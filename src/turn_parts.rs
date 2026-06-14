@@ -44,6 +44,23 @@ pub enum TurnPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         work_id: Option<String>,
     },
+    /// User-attached file stored under medousa/media/ (reference only — no inline bytes).
+    UserMedia {
+        media_id: String,
+        mime: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        byte_size: Option<u64>,
+    },
+    /// Legacy/tool artifact pointer (same index as artifact_store).
+    AttachmentRef {
+        artifact_id: String,
+        mime: String,
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        byte_size: Option<u64>,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -193,16 +210,33 @@ impl TurnPartsAccumulator {
 }
 
 pub fn user_conversation_turn(content: impl Into<String>) -> ConversationTurn {
+    user_conversation_turn_with_media(content, &[])
+}
+
+pub fn user_conversation_turn_with_media(
+    content: impl Into<String>,
+    media_refs: &[crate::daemon_api::MediaRef],
+) -> ConversationTurn {
     let content = content.into();
-    conversation_turn_from_parts(
-        "user",
-        content.clone(),
-        Vec::new(),
-        None,
-        vec![TurnPart::Text {
-            markdown: content,
-        }],
-    )
+    let mut parts = Vec::new();
+    for media_ref in media_refs {
+        parts.push(TurnPart::UserMedia {
+            media_id: media_ref.media_id.clone(),
+            mime: media_ref.mime.clone(),
+            label: media_ref.label.clone(),
+            byte_size: None,
+        });
+    }
+    if !content.trim().is_empty() {
+        parts.push(TurnPart::Text {
+            markdown: content.clone(),
+        });
+    } else if parts.is_empty() {
+        parts.push(TurnPart::Text {
+            markdown: String::new(),
+        });
+    }
+    conversation_turn_from_parts("user", content, Vec::new(), None, parts)
 }
 
 pub fn conversation_turn_from_parts(
@@ -284,6 +318,27 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
             } => {
                 out.push_str(&format!("\n\n> [!note] Handoff ({handoff_kind})\n> "));
                 out.push_str(&text.replace('\n', "\n> "));
+            }
+            TurnPart::UserMedia {
+                media_id,
+                mime,
+                label,
+                ..
+            } => {
+                let name = label.as_deref().unwrap_or("attachment");
+                out.push_str(&format!(
+                    "\n\n> [!note] Attachment: {name} ({mime})\n> `media:{media_id}`"
+                ));
+            }
+            TurnPart::AttachmentRef {
+                artifact_id,
+                mime,
+                label,
+                ..
+            } => {
+                out.push_str(&format!(
+                    "\n\n> [!note] Attachment: {label} ({mime})\n> `artifact:{artifact_id}`"
+                ));
             }
         }
     }

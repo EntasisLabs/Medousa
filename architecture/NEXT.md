@@ -94,15 +94,33 @@ See [`docs/mcp-gateway-setup.md`](../docs/mcp-gateway-setup.md) for today’s fi
 | Desktop app CI + signed bundles (dmg/msi/AppImage) | [desktop-distribution-plan.md](desktop-distribution-plan.md) |
 | Phase E cloud auth | [normie-product-gap-analysis.md](normie-product-gap-analysis.md) |
 | Phase F accessibility + prod packaging | [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) |
-| P5 media & attachments | [media-and-attachments-plan.md](media-and-attachments-plan.md) |
+| P5 media & attachments (local `medousa/media/`, no cloud) | [media-and-attachments-plan.md](media-and-attachments-plan.md) — **active** |
 | Work Hub W2 archive persistence | [medousa-home-work-hub-plan.md](medousa-home-work-hub-plan.md) |
 | Loop FSM mock integration tests | [turn-state-machine-plan.md](turn-state-machine-plan.md) |
 
 ---
 
+## 6. Local attachments (P5 — active)
+
+**Goal:** Attach files in Home chat; bytes on disk under `medousa/media/`; references in `parts[]`; localhost daemon upload only — **no cloud**.
+
+| Slice | Deliverable | Status |
+|-------|-------------|--------|
+| P5a.0 | `TurnPart::UserMedia`, `MediaRef`, `InteractiveTurnRequest.media_refs` | ⬜ |
+| P5a.1 | `POST/GET /v1/media/*`, local media dir + index | ⬜ |
+| P5a.2 | Persist user turns with media parts | ⬜ |
+| P5a.3 | Home composer attach + thumbnail UI | ⬜ |
+| P5a-text | PDF/xlsx/csv extract-on-import | ⬜ |
+| P5b | Vision for current-turn images | ⬜ deferred |
+
+Full plan: [media-and-attachments-plan.md](media-and-attachments-plan.md)
+
+---
+
 ## Suggested implementation order
 
-1. Finish configuration reference + doctor summary  
-2. Provider picker + API key UI  
-3. MCP add-server (daemon write path + Home form)  
-4. Capabilities toggles (web search first)
+1. **P5a local attachments** (envelope → store → UI → extract)  
+2. Finish configuration reference + doctor summary  
+3. Provider picker + API key UI  
+4. MCP add-server (daemon write path + Home form)  
+5. Capabilities toggles (web search first)

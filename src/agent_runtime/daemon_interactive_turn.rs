@@ -16,7 +16,11 @@ use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session::{append_turn, append_turn_with_scratch, load_history};
 use crate::session_active_turn::{self, TurnTicketRegistry};
-use crate::turn_parts::{artifact_refs_from_stream, user_conversation_turn, TurnPartsAccumulator};
+use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
+use crate::turn_parts::{
+    artifact_refs_from_stream, user_conversation_turn, user_conversation_turn_with_media,
+    TurnPartsAccumulator,
+};
 use crate::workspace::ask_job_store::{self, AskJobStore};
 
 use crate::turn_continuation::{TurnContinuationScope, TurnOutcome, turn_continuation_store};
@@ -692,11 +696,21 @@ async fn run_agent_turn_inner(
 
     let session_id = request.session_id.trim().to_string();
     let prompt = request.prompt.trim().to_string();
-    if session_id.is_empty() || prompt.is_empty() {
+    let has_media = !request.media_refs.is_empty();
+    if session_id.is_empty() || (prompt.is_empty() && !has_media) {
         sink.agent_error(1, "session_id and prompt are required".to_string())
             .await;
         return;
     }
+
+    if has_media {
+        if let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
+            sink.agent_error(1, err).await;
+            return;
+        }
+    }
+
+    let effective_prompt = merge_media_refs_into_prompt(&prompt, &request.media_refs);
 
     let settings = runtime_settings_for_interactive_turn(backend, &request);
     let stage_routing = stage_routing_for_interactive_turn(&request);
@@ -716,7 +730,7 @@ async fn run_agent_turn_inner(
 
     let mut conversation = load_history(&session_id);
     if request.persist_user_turn {
-        let user_turn = user_conversation_turn(prompt.clone());
+        let user_turn = user_conversation_turn_with_media(prompt.clone(), &request.media_refs);
         append_turn(&session_id, &user_turn);
         conversation.push(user_turn);
     }
@@ -768,7 +782,7 @@ async fn run_agent_turn_inner(
 
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &session_id,
-        prompt: &prompt,
+        prompt: &effective_prompt,
         selected_context_pack_query: None,
         settings: &settings,
         verifier_route: verifier_route.as_ref(),
@@ -818,7 +832,7 @@ async fn run_agent_turn_inner(
         session_id: &session_id,
         settings: &settings,
         conversation: &conversation,
-        prompt: &prompt,
+        prompt: &effective_prompt,
         persist_user_turn: request.persist_user_turn,
         prepared: &prepared,
         resolved_prompt,

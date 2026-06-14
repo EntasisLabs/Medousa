@@ -212,6 +212,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             } else {
                 Some(payload.scheduled_tool_allowlist.clone())
             },
+            media_refs: Vec::new(),
         };
 
         let output = Arc::new(Mutex::new(None));

@@ -1,0 +1,99 @@
+import { uploadMediaBytes, uploadMediaPath } from "$lib/daemon";
+import {
+  mediaKindFromMime,
+  mediaRefFromUpload,
+  type MediaRef,
+} from "$lib/types/media";
+import { guessMimeFromPath } from "$lib/utils/vaultAttachments";
+import { isTauri } from "$lib/window";
+
+function fileNameFromPath(path: string): string {
+  return path.split("/").pop()?.split("\\").pop() ?? path;
+}
+
+export async function pickChatAttachmentFiles(): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept = "image/*,.pdf,.csv,.tsv,.txt,.md,.xlsx,.xls,.docx";
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      const files = [...(input.files ?? [])];
+      input.remove();
+      resolve(files);
+    });
+    input.addEventListener("cancel", () => {
+      input.remove();
+      resolve([]);
+    });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+export async function uploadChatFiles(
+  sessionId: string,
+  files: File[],
+): Promise<MediaRef[]> {
+  const refs: MediaRef[] = [];
+  for (const file of files) {
+    const bytes = [...new Uint8Array(await file.arrayBuffer())];
+    const response = await uploadMediaBytes(
+      sessionId,
+      file.name,
+      file.type || guessMimeFromPath(file.name),
+      bytes,
+      file.name,
+    );
+    refs.push(mediaRefFromUpload(response, file.name));
+  }
+  return refs;
+}
+
+export async function attachChatFiles(sessionId: string): Promise<MediaRef[]> {
+  if (isTauri()) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        multiple: true,
+        title: "Attach files",
+      });
+      if (!selected) return [];
+      const paths = Array.isArray(selected) ? selected : [selected];
+      const refs: MediaRef[] = [];
+      for (const path of paths) {
+        const response = await uploadMediaPath(
+          sessionId,
+          path,
+          fileNameFromPath(path),
+        );
+        refs.push(
+          mediaRefFromUpload(response, fileNameFromPath(path)),
+        );
+      }
+      return refs;
+    } catch {
+      return [];
+    }
+  }
+
+  const files = await pickChatAttachmentFiles();
+  if (files.length === 0) return [];
+  return uploadChatFiles(sessionId, files);
+}
+
+export function pendingMediaLabels(refs: MediaRef[]): string {
+  return refs
+    .map((ref) => ref.label?.trim() || ref.media_id)
+    .join(", ");
+}
+
+export function chatMediaAttachmentsFromRefs(refs: MediaRef[]) {
+  return refs.map((ref) => ({
+    mediaId: ref.media_id,
+    kind: ref.kind || mediaKindFromMime(ref.mime),
+    mime: ref.mime,
+    label: ref.label?.trim() || ref.media_id,
+  }));
+}

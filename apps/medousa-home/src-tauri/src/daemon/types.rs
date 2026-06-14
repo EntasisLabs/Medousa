@@ -129,6 +129,26 @@ pub struct InteractiveTurnRequest {
     pub stage_routing: StageRoutingMatrix,
     #[serde(default)]
     pub surface: Option<TurnSurfaceContext>,
+    #[serde(default)]
+    pub media_refs: Vec<MediaRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaRef {
+    pub media_id: String,
+    pub kind: String,
+    pub mime: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaUploadResponse {
+    pub media_id: String,
+    pub mime: String,
+    pub byte_size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

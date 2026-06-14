@@ -8,6 +8,8 @@ pub mod artifact_chunking;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
 pub mod artifact_store;
+pub mod media_handlers;
+pub mod media_store;
 pub mod channel_session_store;
 pub mod turn_continuation;
 pub mod turn_parts;
@@ -127,7 +129,7 @@ pub use daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, ContinuationStatusResponse,
     TurnContinuationLineageResponse, ReplayAndResumeResponse,
     InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
-    TurnSurfaceContext,
+    MediaRef, MediaUploadResponse, TurnSurfaceContext,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse,
     ArchiveAskJobRequest, ArchiveAskJobResponse, AskJobCompleteActionsRequest,
     AskJobCompleteActionsResponse, JobReportResponse, RegisterRecurringPromptRequest,

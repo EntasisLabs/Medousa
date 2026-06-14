@@ -620,6 +620,29 @@ pub struct InteractiveTurnRequest {
     pub suggested_capability_ids: Option<Vec<String>>,
     #[serde(default)]
     pub scheduled_tool_allowlist: Option<Vec<String>>,
+    /// User media uploaded to local medousa/media/ before this turn (P5a).
+    #[serde(default)]
+    pub media_refs: Vec<MediaRef>,
+}
+
+/// Reference to a user file stored locally under medousa/media/ (not inline bytes).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaRef {
+    pub media_id: String,
+    /// image | document | spreadsheet | audio
+    pub kind: String,
+    pub mime: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaUploadResponse {
+    pub media_id: String,
+    pub mime: String,
+    pub byte_size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -660,6 +683,9 @@ pub struct CreateTurnTicketRequest {
     pub additional_manuscript_ids: Option<Vec<String>>,
     #[serde(default)]
     pub suggested_capability_ids: Option<Vec<String>>,
+    /// User media uploaded to local medousa/media/ before this turn (P5a).
+    #[serde(default)]
+    pub media_refs: Vec<MediaRef>,
 }
 
 fn default_persist_user_turn() -> bool {

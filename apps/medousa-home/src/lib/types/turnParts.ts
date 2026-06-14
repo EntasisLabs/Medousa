@@ -1,4 +1,5 @@
 import type { ToolArtifactRef, ToolRunState } from "$lib/types/chat";
+import type { ChatMediaAttachment } from "$lib/types/media";
 
 export interface TurnArtifactRef {
   role: string;
@@ -27,6 +28,20 @@ export type TurnPart =
       handoff_kind: string;
       text: string;
       work_id?: string | null;
+    }
+  | {
+      kind: "user_media";
+      media_id: string;
+      mime: string;
+      label?: string | null;
+      byte_size?: number | null;
+    }
+  | {
+      kind: "attachment_ref";
+      artifact_id: string;
+      mime: string;
+      label: string;
+      byte_size?: number | null;
     };
 
 export function toolRunsFromParts(parts?: TurnPart[] | null): ToolRunState[] | undefined {
@@ -63,6 +78,21 @@ export function reasoningFromParts(parts?: TurnPart[] | null): string | null {
   return chunks.length > 0 ? chunks.join("\n") : null;
 }
 
+export function userMediaFromParts(parts?: TurnPart[] | null): ChatMediaAttachment[] | undefined {
+  if (!parts?.length) return undefined;
+  const attachments = parts
+    .filter((part): part is Extract<TurnPart, { kind: "user_media" }> => part.kind === "user_media")
+    .map(
+      (part): ChatMediaAttachment => ({
+        mediaId: part.media_id,
+        kind: part.mime.startsWith("image/") ? "image" : "document",
+        mime: part.mime,
+        label: part.label?.trim() || part.media_id,
+      }),
+    );
+  return attachments.length > 0 ? attachments : undefined;
+}
+
 /** Journal export: Obsidian-flavored markdown from structured parts. */
 export function composeTurnMarkdown(
   content: string,
@@ -92,6 +122,16 @@ export function composeTurnMarkdown(
       case "handoff":
         sections.push(
           `> [!note] Handoff (${part.handoff_kind})\n> ${part.text.replace(/\n/g, "\n> ")}`,
+        );
+        break;
+      case "user_media":
+        sections.push(
+          `> [!note] Attachment: ${part.label ?? "attachment"} (${part.mime})\n> \`media:${part.media_id}\``,
+        );
+        break;
+      case "attachment_ref":
+        sections.push(
+          `> [!note] Attachment: ${part.label} (${part.mime})\n> \`artifact:${part.artifact_id}\``,
         );
         break;
     }

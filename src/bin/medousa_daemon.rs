@@ -486,6 +486,14 @@ async fn main() -> Result<()> {
         .route("/v1/identity/rollback", post(identity_rollback_version))
         .route("/v1/ingest", post(ingest_handler))
         .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
+        .route(
+            "/v1/media/upload",
+            post(medousa::media_handlers::upload_media),
+        )
+        .route(
+            "/v1/media/{media_id}",
+            get(medousa::media_handlers::get_media),
+        )
         .route("/v1/deliver/outbox", post(deliver_outbox_webhook))
         .route("/v1/deliver/poll/{job_id}", get(deliver_poll))
         .route("/v1/delivery/status", get(delivery_status))
@@ -1372,6 +1380,7 @@ async fn enqueue_ask(
         manuscript_id,
         additional_manuscript_ids,
         suggested_capability_ids,
+        media_refs: Vec::new(),
     };
     let interactive_request =
         build_interactive_request_from_ticket(&ticket_request, provider, model, stage_routing);
@@ -1901,6 +1910,7 @@ fn build_interactive_request_from_ticket(
         additional_manuscript_ids: request.additional_manuscript_ids.clone(),
         suggested_capability_ids: request.suggested_capability_ids.clone(),
         scheduled_tool_allowlist: None,
+        media_refs: request.media_refs.clone(),
     }
 }
 
@@ -2071,7 +2081,7 @@ async fn create_turn_ticket(
     if session_id.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
     }
-    if request.prompt.trim().is_empty() {
+    if request.prompt.trim().is_empty() && request.media_refs.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "prompt is required".to_string()));
     }
 
@@ -2178,6 +2188,7 @@ async fn start_interactive_turn(
         manuscript_id: request.manuscript_id.clone(),
         additional_manuscript_ids: request.additional_manuscript_ids.clone(),
         suggested_capability_ids: request.suggested_capability_ids.clone(),
+        media_refs: request.media_refs.clone(),
     };
 
     let (provider, model) = (ticket_request.provider.clone(), ticket_request.model.clone());

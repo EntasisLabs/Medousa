@@ -1,53 +1,71 @@
-# Media & attachments — draft plan (P5)
+# Media & attachments — local-first plan (P5)
 
-> **Status:** Draft — saved for return after runtime bugfix  
-> **Scope:** User attachments, generated images, voice (STT/TTS later); Home first, channels phased  
+> **Status:** Ready to implement (2026-06-07)  
+> **Scope:** User attachments in Home first; channels phased later  
 > **Depends on:** P0–P4 complete ([presentation-and-envelope-plan.md](presentation-and-envelope-plan.md))  
-> **Related:** [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md), [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) (envelope hooks), [interaction-and-state-model.md](interaction-and-state-model.md)
+> **Related:** [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md), vault attachments (M8)
 
 ---
 
-## Why this doc exists
+## Non-negotiable: fully local, no cloud dependency
 
-Medousa does **text really well** — clean bodies, tool chips, `parts[]`, surface parity. **Media was never first-class:** no upload API, no multimodal model path, no composer attach UI, channel adapters always send empty attachments.
+**“Upload” in this plan means Home → local daemon over `localhost` — never S3, never a vendor blob bucket, never a network dependency for the operator.**
 
-This draft captures an honest as-built audit, sizing, risks, and a phased rollout so P5 can start without re-litigating architecture or inlining blobs into prompts.
+User files live under the same **`medousa` data directory** as sessions, vault, artifacts, and workspace:
+
+```
+~/Library/Application Support/medousa/   (macOS)
+~/.local/share/medousa/                (Linux)
+```
+
+```
+medousa/
+├── artifacts/     ← tool JSON receipts (exists today)
+├── media/         ← user attachments (P5a — copy-on-attach)
+├── history/       ← session transcripts
+├── vault/         ← notes
+└── workspace/     ← cards, ask jobs
+```
+
+The transcript stores **references only** (`media_id`, mime, label) on `TurnPart` — never file bytes in `ConversationTurn.content` or session JSON.
 
 ---
 
 ## North star
 
-**Blobs live in artifact store. The transcript holds references only.**
-
-Same principle as P0 (don’t pollute canonical markdown) and P3 (`parts[]` timeline). User photos, PDFs, generated images, and audio files are **artifact ids + MIME + label** on `TurnPart` variants — never base64 in `ConversationTurn.content` or session JSON.
+**Blobs on disk. References in `parts[]`. Extract or vision at turn time.**
 
 ```mermaid
 flowchart TB
-  subgraph intake [Intake]
+  subgraph intake [Intake — all local]
     Home[Home composer]
-    TG[Channel adapters]
-    Ingest[POST /v1/ingest]
+    Tauri[Tauri file picker / drag-drop]
+    Ingest[POST /v1/ingest — channels later]
   end
 
-  subgraph daemon [Daemon — canonical]
-    Upload[POST /v1/media/upload]
-    ArtStore[(artifact store)]
+  subgraph daemon [Local daemon]
+    Upload["POST /v1/media/upload (localhost)"]
+    MediaDir[(medousa/media/)]
+    Index[artifact index — extended]
     Parts[parts on ConversationTurn]
+    Extract[extract-on-import optional]
     ToolLoop[tool loop]
     LLM[genai ChatMessage]
   end
 
-  subgraph surfaces [Surfaces — projection]
+  subgraph surfaces [Surfaces]
     HomeUI[thumbnail / lightbox]
-    TUI[TUI artifact line]
-    Channels[plain text + link]
+    TUI[TUI attachment line]
+    Channels[caption + local link — later]
   end
 
-  Home --> Upload
-  TG --> Ingest
-  Upload --> ArtStore
+  Home --> Tauri
+  Tauri --> Upload
+  Upload --> MediaDir
+  MediaDir --> Index
   Ingest --> Upload
-  ArtStore --> Parts
+  MediaDir --> Extract
+  Extract --> Parts
   Parts --> ToolLoop
   ToolLoop --> LLM
   Parts --> HomeUI
@@ -57,264 +75,203 @@ flowchart TB
 
 ---
 
-## What P0–P4 already gave us
+## What we already have (reuse, don’t reinvent)
 
-| Layer | Status | Media leverage |
-|-------|--------|----------------|
-| P0 clean canonical bodies | ✅ | Media never jammed into answer markdown |
-| P1 structured tool SSE | ✅ | `tool_artifact_refs` on tool runs |
-| P2 Obsidian markdown (Home) | ✅ | Captions in text parts; media beside prose |
-| P3 session `parts[]` | ✅ | Timeline slots for `UserMedia`, `AttachmentRef`, `GeneratedImage` |
-| P4 TUI alignment | ✅ | Same envelope; TUI can show artifact lines |
-| Presentation profiles | ✅ | Rich Home vs plain channel dispatch |
-
-**Envelope variants designed but not implemented** (from presentation plan):
-
-```rust
-// Target — extend turn_parts.rs additively
-AttachmentRef {
-    artifact_id: String,
-    mime: String,
-    label: String,
-    byte_size: Option<u64>,
-},
-UserMedia {
-    ingest_attachment_id: String,  // or artifact_id once unified
-    kind: String,
-},
-GeneratedImage {
-    artifact_id: String,
-    prompt_excerpt: Option<String>,
-},
-```
-
-SSE hook (future): `artifact_stored` with `artifact_id`, `mime`, `label`, `associations`.
+| Piece | Location | P5 leverage |
+|-------|----------|-------------|
+| Local artifact tree | `artifact_store.rs` → `medousa/artifacts/` | Extend index + persistence pattern for binary MIME |
+| Vault attachments | `vaultAttachments.ts`, frontmatter `path/label/mime` | Hybrid: ref vault paths; copy everything else |
+| File picker | `vaultAttachmentPicker.ts`, Tauri dialog | Composer attach UX |
+| Spreadsheet preview | `spreadsheetPreview.ts`, `xlsx` in Home | Port extract logic to daemon |
+| Local file read | `external_desk.rs` | Read paths on desktop; not for web |
+| Turn timeline | `turn_parts.rs` `parts[]` | Add `UserMedia`, `AttachmentRef` |
+| Ingest attachments | `IngestAttachment` + `merge_attachments_into_prompt` | **Do not** extend for binary — use media refs |
 
 ---
 
-## As-built audit (2026-06)
+## Storage strategy: copy vs reference
 
-### Ingest attachments — API only, text merge
+| Source | Strategy | Why |
+|--------|----------|-----|
+| Random file (Downloads, drag-drop) | **Copy** into `medousa/media/{session}/{media_id}` | Stable across refresh; daemon owns path |
+| Already in vault / Garage pinned root | **Reference** normalized path (+ optional lazy copy) | No duplicate; user owns canonical file |
+| Channel adapter (later) | Download → **copy** into `medousa/media/` | Same as desktop attach |
 
-- `IngestAttachment { kind, content: String }` on `IngestRequest` (`daemon_api.rs`).
-- `merge_attachments_into_prompt()` appends `[attachment:kind] content` into the ask string (`session_mapping.rs`).
-- **All channel adapters** pass `attachments: Vec::new()` (Telegram, Discord, Slack, WhatsApp, CLI).
-- Fine for pasted text snippets; **wrong for binary** (would base64 into prompt = context bomb, no refresh).
+**Tauri v1:** `media_import` command copies (or registers vault ref) → returns `MediaRef[]` → turn sends `media_refs` on `InteractiveTurnRequest`.
 
-### Artifact store — tool JSON receipts, not user media
-
-- `artifact_store.rs`: `persist_tool_artifact()` stores JSON under `artifacts/{session}/{tool}/{direction}/{hash}.json`.
-- Triggered when tool I/O exceeds `DEFAULT_MAX_INLINE_BYTES` (8 KiB) via `payload_receipt.rs`.
-- `content_type` effectively `application/json`; TUI persists from `ToolPayload` events.
-- **No HTTP fetch-by-id** for Home chat rendering; workspace cards have `artifact_ids` associations (linking concept exists).
-
-### Model path — text-only
-
-- `build_prior_messages()` pushes `ChatMessage::user/assistant(bounded text)` from `turn.content` only (`turn_services.rs`).
-- Host turn context: `ChatMessage::user(user_prompt)` string (`turn_context.rs`).
-- **No multimodal message construction** anywhere; vision models would not see uploads today.
-
-### Home composer — textarea only
-
-- `ChatPanel.svelte`: text input + send; no attach, drag-drop, paste-image, or voice.
-- `InteractiveTurnRequest` has no attachment / media_refs field.
-
-### Generated images & voice — not in codebase
-
-- No image-generation tool.
-- “Voice” in docs = collaborator **tone** (`runtime-collaborator-voice.md`), not STT/TTS.
-- No Whisper, audio MIME, or outbound TTS.
-
-### TurnPart enum (shipped P3)
-
-Implemented: `Text`, `Reasoning`, `ToolRun`, `Handoff`.  
-**Not yet:** `AttachmentRef`, `UserMedia`, `GeneratedImage`.
+**Browser dev:** multipart `POST /v1/media/upload` to local daemon (same as other API calls).
 
 ---
 
-## Three capabilities — separate products, shared foundation
+## Three capabilities — separate slices
 
-| Capability | User expectation | Primary touch | Depends on |
-|------------|------------------|---------------|------------|
-| **User attachments** (photo, PDF, CSV) | “I attached a file; Medousa saw it” | Composer, upload API, user `parts[]`, vision models | Blob store v2 |
-| **Generated images** | “Draw me…” → inline in chat | Tool + `GeneratedImage` part + lightbox | Blob store + SSE |
-| **Voice (STT / optional TTS)** | Speak → text | Mic UI, STT provider, mobile permissions | Audio blobs + composer |
+| Capability | User expectation | Slice |
+|------------|------------------|-------|
+| **User attachments** (photo, PDF, xlsx) | “I attached a file; Medousa saw it” | P5a + P5a-text |
+| **Vision** (photos, screenshots) | Model sees the image | P5b |
+| **Voice STT** | Speak → text in composer | P5d (later) |
+| **Generated images** | Tool output inline | P5c (later) |
+| **Channel media** | Telegram photo → same pipeline | P5e (later) |
 
-**Voice is the largest outlier** — do not bundle with “attach a PDF” in the first slice.
+Do **not** bundle voice or channel media with file attach v1.
 
 ---
 
-## Phased rollout
+## Implementation slices
 
-### P5a — Blob store + upload + UserMedia parts (Home)
+### P5a.0 — Envelope types (foundation) ✅ start here
 
-**Goal:** Reference-only user media survives refresh; no model vision required yet.
+- `TurnPart::UserMedia`, `TurnPart::AttachmentRef` in `turn_parts.rs`
+- `MediaRef`, `MediaUploadResponse` in `daemon_api.rs`
+- `InteractiveTurnRequest.media_refs: Vec<MediaRef>` (serde default `[]`)
+- Home/Tauri TypeScript mirrors
+- `compose_parts_markdown` renders attachment lines (no bytes)
 
-1. Generalize `artifact_store`: binary MIME, provenance (`user` | `tool`), stable `artifact_id`.
-2. `POST /v1/media/upload` (+ optional `GET /v1/media/{id}` with session auth).
-3. Extend `TurnPart`: `UserMedia`, `AttachmentRef`.
-4. Persist user turns with `parts: [UserMedia, Text?]` (not inline in `content`).
-5. Home: attach button, pending uploads, thumbnail from fetch API.
-6. Extend `InteractiveTurnRequest` with `media_refs: Vec<MediaRef>` (additive).
+**Effort:** ~1 day  
+**Risk:** Low
 
-**Effort:** ~1.5–2.5 weeks  
-**Risk:** Medium (storage, retention, MIME allowlist, size caps)
+### P5a.1 — Local media store + upload API
 
-### P5b — Vision in tool loop
+- `medousa/media/{session_id}/{media_id}.{ext}` on disk
+- Extend artifact index: `provenance: user`, mime, byte_size, payload_path
+- `POST /v1/media/upload` (multipart, session header) → `MediaUploadResponse`
+- `GET /v1/media/{id}` (session-scoped, MIME, cache headers)
+- Retention: align with existing artifact maintenance / settings TTL
 
-**Goal:** Model with vision sees **current turn** attachment(s).
+**Effort:** ~3–5 days  
+**Risk:** Medium (size caps, MIME allowlist, auth)
 
-1. Model capability matrix (`supports_vision` on stage routes or provider metadata).
-2. Build multimodal `ChatMessage` for active user turn only (policy: don’t replay all images in history).
-3. Graceful fallback when model can’t see images.
-4. Update `build_prior_messages` / host context assembly — text summary for old turns with media.
+### P5a.2 — Turn wiring
 
-**Effort:** ~1.5–2 weeks  
-**Risk:** **High** (provider variance, cost, context limits)
+- On interactive turn with `media_refs`: persist user turn with `parts: [UserMedia, Text?]`
+- Stop using `merge_attachments_into_prompt` for binary kinds
+- Session history API returns `parts` to Home (already partially there)
 
-### P5c — Generated images
+**Effort:** ~2–3 days  
+**Risk:** Medium
 
-**Goal:** Tool output → `GeneratedImage` part → Home lightbox + journal export.
+### P5a.3 — Home composer UI
 
-1. Image-gen tool (provider API behind tool policy).
-2. Tool loop writes blob + `GeneratedImage` part + optional `artifact_stored` SSE.
-3. Home `MediaPart.svelte` (thumbnail + lightbox); reuse P5a fetch path.
+- Attach button (reuse picker patterns from vault)
+- Pending uploads → local daemon upload → chips/thumbnails
+- `ChatMessageList` / new `MediaPart.svelte` for bubbles
+- Thumbnail via `GET /v1/media/{id}`
+
+**Effort:** ~3–5 days  
+**Risk:** Medium (mobile layout, Tauri vs web capability flags)
+
+### P5a-text — Local extractors (no vision required)
+
+Run at **import time**; store extracted text as sibling artifact or inline summary ref.
+
+| MIME | Local technique |
+|------|-----------------|
+| csv, txt, md | Read + char cap |
+| xlsx/xls | Rust crate or port Home `xlsx` logic → markdown table |
+| pdf | `pdftotext` / Rust PDF extract, page cap |
+| docx | ZIP/XML text extract (later) |
+
+Inject bounded summary into turn context for **any text model**.
 
 **Effort:** ~1 week  
-**Risk:** Medium (tool allowlist, storage quota)
+**Risk:** Medium (PDF edge cases, scanned docs need OCR or vision later)
 
-### P5d — Voice (STT)
+### P5b — Vision (current turn only)
 
-**Goal:** Speak into composer → text prompt (+ optional audio artifact).
+- Model capability gate (`supports_vision`)
+- Multimodal `ChatMessage` for **active turn attachments only**
+- Fallback copy when model cannot see images
+- Prior turns: text summary only (not full image replay)
 
-1. STT path: browser Web Speech API and/or Whisper sidecar on daemon.
-2. Audio upload as MIME in artifact store; optional `UserMedia { kind: "audio" }`.
-3. Tauri/mobile mic permissions and capability detection.
+**Effort:** ~1.5–2 weeks  
+**Risk:** High (provider variance, cost)
 
-**Effort:** ~2–4 weeks  
-**Risk:** **High** (platform matrix, latency, privacy)
+### P5c / P5d / P5e — Later
 
-### P5e — Channel media
-
-**Goal:** Telegram photo, Discord attachment, etc. → same upload pipeline → `UserMedia` parts.
-
-1. Adapter downloads platform media → daemon upload → ingest with artifact refs.
-2. Outbound: generated images / attachments via channel formatters (links, not inline binary where unsupported).
-
-**Effort:** ~2–3 weeks per channel class  
-**Risk:** High (platform limits, adapter complexity)
-
-```mermaid
-flowchart LR
-  P5a[P5a Blob + upload + UserMedia]
-  P5b[P5b Vision in tool loop]
-  P5c[P5c GeneratedImage]
-  P5d[P5d Voice STT]
-  P5e[P5e Channel adapters]
-
-  P5a --> P5b
-  P5b --> P5c
-  P5a --> P5d
-  P5b --> P5e
-```
-
-**Recommended first slice:** P5a → P5b on Home only (~3–4 weeks to credible “attach image and model sees it”).
+Generated images, voice STT, channel adapters — unchanged from prior draft; defer until P5a + P5a-text ship on Home.
 
 ---
 
-## Risk register (foot-guns)
+## Recommended shipping order
 
-| Risk | Don’t | Do instead |
-|------|-------|------------|
-| Inline base64 in prompts | Extend `merge_attachments_into_prompt` for images | Upload → artifact id → `UserMedia` part |
-| Blobs in `content` / markdown | `[image:data:…]` in chat body | Caption in `Text`; media in `parts[]` |
-| Full vision history | Replay every image in `build_prior_messages` | Current turn only; text summary for older media |
-| One model for all | Assume every route accepts images | Capability gate + user-visible fallback |
-| Channel parity fantasy | Push binary into Telegram/WhatsApp bodies | `format_turn_for_channel()` → link + caption |
-| Security | Unbounded uploads | Max size, MIME allowlist, session-scoped GET |
-| Retention | Infinite user media | Quota / TTL aligned with artifact maintenance |
-| Big-bang rewrite | New transcript type | Additive `TurnPart` + serde defaults |
-| Tauri vs web | One composer code path | Capability flags for picker / camera / mic |
+1. **P5a.0** — types (enables parallel Home + daemon work)  
+2. **P5a.1 + P5a.2** — local store + turn persistence  
+3. **P5a.3** — composer UI (attach + preview + refresh survives)  
+4. **P5a-text** — PDF/xlsx/csv extract (works on every model)  
+5. **P5b** — vision for images  
+
+**Credible v1:** steps 1–4 ≈ **3 weeks** for “attach my spreadsheet/PDF and ask questions” on a text model, fully local.
 
 ---
 
-## Code touch map (when implementing)
+## MIME allowlist (v1 proposal)
 
-| Area | Files / modules |
-|------|-----------------|
-| Envelope | `src/turn_parts.rs`, `src/session.rs`, `session_store.rs` |
-| Blob store | `src/artifact_store.rs`, `src/payload_receipt.rs` (generalize MIME) |
-| API | `src/daemon_api.rs`, `src/daemon_handlers.rs`, `apps/medousa-home/src-tauri/` |
-| Ingest | `src/session_mapping.rs` (stop text-merge for binary; ref upload ids) |
-| Model | `src/agent_runtime/turn_services.rs`, `turn_context.rs`, `turn_orchestrator.rs` |
-| Stream | `interactive_turn_runtime.rs`, `tool_stream.rs` (`artifact_stored`) |
-| Home | `ChatPanel.svelte`, `chat.svelte.ts`, `types/session.ts`, new media components |
-| TUI | `event_reducer.rs`, `tui_presentation.rs`, `ui_render.rs` |
-| Channels | `medousa_telegram.rs`, `medousa_discord.rs`, adapters |
-| Presentation | `src/agent_runtime/presentation.rs` (channel media formatting) |
-| Plan cross-ref | `presentation-and-envelope-plan.md` P5 section |
+`png`, `jpg`, `jpeg`, `webp`, `gif`, `pdf`, `csv`, `tsv`, `txt`, `md`, `xlsx`, `xls` — max **25 MB** per file, **5 attachments** per turn.
 
 ---
 
-## Success criteria (P5 “done”)
-
-- User attaches PNG in Home → refresh → thumbnail from `parts[]` + fetch API (not re-upload).
-- Vision-capable model describes image; non-vision model gets clear guidance to switch or describe.
-- Generated image is `GeneratedImage` part + lightbox, not markdown garbage.
-- Session export / journal uses artifact refs (`compose_turn_markdown` / `compose_parts_markdown`).
-- Telegram gets caption + link, not broken inline blob.
-- **Zero** attachment bytes in `ConversationTurn.content` or polluted session rows.
-
----
-
-## Open decisions (park here)
-
-1. **Upload auth:** session_id header only vs signed upload tokens for Tauri.
-2. **History policy:** current-turn vision only vs last N images vs never in history.
-3. **Storage backend:** extend file artifact tree vs Surreal blob field vs object store (S3-compatible later).
-4. **STT default:** browser API vs daemon Whisper vs hybrid.
-5. **Image gen provider:** which tool + which models in allowlist.
-6. **Retention:** per-session cap vs global quota vs align with existing artifact maintenance job.
-
----
-
-## API sketch (additive)
+## API sketch (additive, localhost only)
 
 ```rust
-// Upload response
 struct MediaUploadResponse {
-    artifact_id: String,
+    media_id: String,
     mime: String,
     byte_size: u64,
     label: Option<String>,
 }
 
-// Interactive turn (additive)
+struct MediaRef {
+    media_id: String,
+    kind: String,   // image | document | spreadsheet | audio
+    mime: String,
+    label: Option<String>,
+}
+
 struct InteractiveTurnRequest {
     // ... existing fields ...
     #[serde(default)]
     media_refs: Vec<MediaRef>,
 }
-
-struct MediaRef {
-    artifact_id: String,
-    kind: String,  // image | document | audio
-    label: Option<String>,
-}
 ```
 
-Ingest evolution: `IngestAttachment` gains optional `artifact_id` after adapter upload; deprecate inline `content` for binary kinds.
+Ingest evolution (P5e): adapter downloads platform file → local upload → `IngestAttachment.artifact_id` (deprecate inline `content` for binary).
 
 ---
 
-## Relationship to presentation plan
+## Risk register
 
-| Presentation phase | Status | Media note |
-|--------------------|--------|------------|
-| P0–P4 | ✅ Shipped | Foundation for P5 |
-| P5 (this doc) | Draft | Split into P5a–P5e above |
+| Risk | Don't | Do |
+|------|-------|-----|
+| Cloud dependency | S3 / presigned URLs | `medousa/media/` + localhost API |
+| Inline base64 in prompts | Extend `merge_attachments_into_prompt` for images | Upload → media_id → `UserMedia` part |
+| Bytes in transcript | Put files in `content` | Caption in `Text`; media in `parts[]` |
+| Full vision history | Replay all images every turn | Current turn only |
+| Unbounded disk | Infinite uploads | Size cap + retention job |
+| Web vs Tauri parity | One code path | Capability flags; upload API for browser dev |
 
-Update [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) § P5 to link here when implementation starts.
+---
+
+## Success criteria (Home v1)
+
+- Attach PNG/PDF/xlsx in Home → refresh → thumbnail from `parts[]` + local GET (not re-upload).
+- File bytes never appear in `ConversationTurn.content`.
+- PDF/xlsx attach → model answers from extracted text on a non-vision model.
+- All bytes under `medousa/media/` or explicit vault path refs — **zero cloud calls**.
+
+---
+
+## Code touch map
+
+| Area | Files |
+|------|-------|
+| Envelope | `turn_parts.rs`, `session.rs`, `session_store.rs` |
+| Media store | `media_store.rs` (new) or extend `artifact_store.rs` |
+| API | `daemon_api.rs`, `daemon_handlers.rs`, `medousa_daemon.rs` |
+| Tauri | `apps/medousa-home/src-tauri/` upload/import commands |
+| Ingest | `session_mapping.rs` |
+| Model | `turn_services.rs`, `turn_context.rs` (P5b) |
+| Home | `ChatPanel.svelte`, `chat.svelte.ts`, `MediaPart.svelte` (new) |
+| Extract | new `media_extract.rs` or tools (P5a-text) |
 
 ---
 
@@ -322,4 +279,5 @@ Update [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) §
 
 | Date | Note |
 |------|------|
-| 2026-06-07 | Initial draft saved from architecture review session (post P4). Return after runtime bugfix. |
+| 2026-06-07 | Initial draft (post P4). |
+| 2026-06-07 | **Local-first rewrite:** no cloud; `medousa/media/`; copy-vs-ref hybrid; sliced P5a.0–P5a-text; approved to implement. |

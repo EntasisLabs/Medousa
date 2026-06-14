@@ -2,6 +2,7 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
+  import ChatMediaParts from "$lib/components/chat/ChatMediaParts.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import type { ChatMessage } from "$lib/types/chat";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
@@ -9,11 +10,12 @@
 
   interface Props {
     messages: ChatMessage[];
+    sessionId: string;
     mobile?: boolean;
     compact?: boolean;
   }
 
-  let { messages, mobile = false, compact = false }: Props = $props();
+  let { messages, sessionId, mobile = false, compact = false }: Props = $props();
 
   function displayStatusLine(message: ChatMessage): string | null {
     return visibleChatStatusLine(message.statusLine, settings.showEngineDetailsInChat);
@@ -26,7 +28,12 @@
   {#if mobile && message.role === "user"}
     <div class="{turnBreak ? 'chat-turn-break' : ''} mobile-chat-user-row">
       <article class="mobile-chat-bubble-user">
-        <p class="mobile-chat-user-text">{message.content}</p>
+        {#if message.content?.trim()}
+          <p class="mobile-chat-user-text">{message.content}</p>
+        {/if}
+        {#if message.mediaAttachments?.length}
+          <ChatMediaParts {sessionId} attachments={message.mediaAttachments} compact />
+        {/if}
       </article>
     </div>
   {:else}
@@ -103,9 +110,14 @@
         </p>
       {/if}
     {:else if message.role === "user"}
-      <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-100">
-        {message.content}
-      </p>
+      {#if message.content?.trim()}
+        <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-100">
+          {message.content}
+        </p>
+      {/if}
+      {#if message.mediaAttachments?.length}
+        <ChatMediaParts {sessionId} attachments={message.mediaAttachments} {compact} />
+      {/if}
     {:else}
       <p class="whitespace-pre-wrap text-sm leading-relaxed text-surface-300">
         {message.content}

@@ -665,6 +665,7 @@ async fn attempt_daemon_interactive_turn(
         additional_manuscript_ids: None,
         suggested_capability_ids: None,
         scheduled_tool_allowlist: None,
+        media_refs: Vec::new(),
     };
 
     daemon_start_interactive_turn(&state.daemon_url, &request)

@@ -10,6 +10,8 @@
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket } from "$lib/daemon";
+  import ChatComposerAttachments from "$lib/components/chat/ChatComposerAttachments.svelte";
+  import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import {
     parseChatSlashInput,
     runSlashCommand,
@@ -30,6 +32,7 @@
     mode: "interactive" | "background",
   ) {
     const opts = buildInteractiveTurnOptions();
+    const mediaRefs = [...chat.pendingMediaRefs];
     const accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt,
@@ -39,8 +42,10 @@
       responseDepthMode: opts.responseDepthMode,
       stageRouting: opts.stageRouting,
       channelSurface: opts.channelSurface,
+      mediaRefs,
     });
-    chat.beginTurn(userContent, accepted);
+    chat.beginTurn(userContent, accepted, mediaRefs);
+    chat.clearPendingMedia();
     await chat.startTurnStream(
       accepted.turn_id,
       accepted.session_id,
@@ -52,7 +57,8 @@
     event.preventDefault();
     if (connection.offline) return;
     const prompt = chat.draft.trim();
-    if (!prompt) return;
+    const hasAttachments = chat.pendingMediaRefs.length > 0;
+    if (!prompt && !hasAttachments) return;
     haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);
@@ -66,12 +72,15 @@
       }
 
       if (askPrompt) {
-        await submitTurn(prompt, askPrompt, "background");
+        await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background");
         return;
       }
 
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
-      await submitTurn(prompt, prompt, mode);
+      const display =
+        prompt ||
+        (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
+      await submitTurn(display, prompt, mode);
     } catch (err) {
       chat.setError(err instanceof Error ? err.message : String(err));
     }
@@ -113,6 +122,7 @@
   <div class="px-3 pb-1">
     <DaemonPortalChip compact />
   </div>
+  <ChatComposerAttachments mobile disabled={connection.offline || chat.composerBlocked} />
   <div class="composer-bar composer-bar-mobile">
     <GrowingTextarea
       bind:value={chat.draft}
@@ -128,7 +138,7 @@
     <button
       type="submit"
       class="composer-bar-send"
-      disabled={connection.offline || chat.composerBlocked || !chat.draft.trim()}
+      disabled={connection.offline || chat.composerBlocked || (!chat.draft.trim() && chat.pendingMediaRefs.length === 0)}
       aria-label="Send message"
       onmousedown={(event) => event.preventDefault()}
     >
