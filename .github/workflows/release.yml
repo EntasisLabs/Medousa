@@ -164,6 +164,12 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "Developer ID Application"; then
+            echo "::error::APPLE_CERTIFICATE must contain a Developer ID Application cert (for .dmg distribution)."
+            echo "You imported Apple Development — that is for local/Xcode builds only."
+            echo "Export Developer ID Application from Keychain Access and update the Medousa environment secret."
+            exit 1
+          fi
 
       - name: Install frontend dependencies
         run: npm ci

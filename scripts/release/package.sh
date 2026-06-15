@@ -52,7 +52,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 medousa_require_cmd tar
-medousa_require_cmd sha256sum
 
 ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
@@ -112,7 +111,7 @@ medousa_log "install-manifest component_set_id=$(medousa_read_manifest_field "${
 tar -czf "${ARCHIVE_PATH}" -C "${WORK}" "${BASENAME}"
 rm -rf "${WORK}"
 
-HASH="$(sha256sum "${ARCHIVE_PATH}" | awk '{print $1}')"
+HASH="$(medousa_sha256_file "${ARCHIVE_PATH}")"
 medousa_log "sha256: ${HASH}"
 
 # Replace existing line for this archive if re-packaging
