@@ -68,6 +68,7 @@ jobs:
   build-desktop:
     name: app (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    environment: MEDOUSA
     strategy:
       fail-fast: false
       matrix:
@@ -120,6 +121,31 @@ jobs:
             .
             apps/medousa-home/src-tauri
 
+      - name: Validate Apple signing secrets
+        if: matrix.os == 'macos-14'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY || vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          [[ -z "${APPLE_CERTIFICATE:-}" ]] && missing+=(APPLE_CERTIFICATE)
+          [[ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]] && missing+=(APPLE_CERTIFICATE_PASSWORD)
+          [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]] && missing+=(APPLE_SIGNING_IDENTITY)
+          [[ -z "${APPLE_ID:-}" ]] && missing+=(APPLE_ID)
+          [[ -z "${APPLE_PASSWORD:-}" ]] && missing+=(APPLE_PASSWORD)
+          [[ -z "${APPLE_TEAM_ID:-}" ]] && missing+=(APPLE_TEAM_ID)
+          if ((${#missing[@]})); then
+            echo "::error::Missing Apple signing values: ${missing[*]}"
+            echo "Add them as **Environment secrets** on GitHub → Settings → Environments → Medousa"
+            echo "(Repository secrets also work if you remove the job's environment: line.)"
+            exit 1
+          fi
+          echo "Apple signing secrets are present."
+
       - name: Import Apple Developer certificate
         if: matrix.os == 'macos-14'
         env:
@@ -148,10 +174,10 @@ jobs:
           CARGO_BUILD_TARGET: ${{ matrix.target }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY || vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
         run: npm run tauri:build -- --target "${{ matrix.target }}"
 
       - name: Stage desktop installers
