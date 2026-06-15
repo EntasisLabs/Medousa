@@ -20,7 +20,7 @@ Options:
   --target <triple>   Rust target triple (default: host)
   --output <dir>      Staging directory (default: dist/build/<target>)
   --print-target      Print resolved target triple and exit
-  --with-inference    Build medousa_daemon with embedded-inference-metal on Apple hosts
+  --with-inference    Build medousa_daemon with embedded inference (Metal on Apple, CPU elsewhere; set MEDOUSA_EMBEDDED_INFERENCE=cuda for NVIDIA builds)
   -h, --help          Show this help
 
 Builds root workspace binaries + medousa_whatsapp, copies into <output>/bin/.
@@ -86,11 +86,35 @@ medousa_log "building medousa v${VERSION} for ${TARGET}"
 medousa_log "staging → ${BIN_DIR}"
 
 CARGO_BUILD_ARGS=(--release --bins)
-if [[ "${WITH_INFERENCE}" -eq 1 ]] && [[ "${TARGET}" == *-apple-* ]]; then
-  CARGO_BUILD_ARGS+=(--features embedded-inference-metal)
-  medousa_log "embedded inference enabled (embedded-inference-metal)"
-elif [[ "${WITH_INFERENCE}" -eq 1 ]]; then
-  medousa_log "note: --with-inference only applies embedded-inference-metal on Apple targets"
+if [[ "${WITH_INFERENCE}" -eq 1 ]]; then
+  INFERENCE_MODE="${MEDOUSA_EMBEDDED_INFERENCE:-auto}"
+  case "${INFERENCE_MODE}" in
+    metal)
+      CARGO_BUILD_ARGS+=(--features embedded-inference-metal)
+      medousa_log "embedded inference enabled (embedded-inference-metal)"
+      ;;
+    cuda)
+      CARGO_BUILD_ARGS+=(--features embedded-inference-cuda)
+      medousa_log "embedded inference enabled (embedded-inference-cuda)"
+      ;;
+    cpu)
+      CARGO_BUILD_ARGS+=(--features embedded-inference)
+      medousa_log "embedded inference enabled (embedded-inference / CPU)"
+      ;;
+    auto)
+      if [[ "${TARGET}" == *-apple-* ]]; then
+        CARGO_BUILD_ARGS+=(--features embedded-inference-metal)
+        medousa_log "embedded inference enabled (embedded-inference-metal)"
+      else
+        CARGO_BUILD_ARGS+=(--features embedded-inference)
+        medousa_log "embedded inference enabled (embedded-inference / CPU — set MEDOUSA_EMBEDDED_INFERENCE=cuda for NVIDIA)"
+      fi
+      ;;
+    *)
+      echo "error: unknown MEDOUSA_EMBEDDED_INFERENCE=${INFERENCE_MODE}" >&2
+      exit 1
+      ;;
+  esac
 fi
 if [[ -n "${TARGET}" ]]; then
   CARGO_BUILD_ARGS+=(--target "${TARGET}")

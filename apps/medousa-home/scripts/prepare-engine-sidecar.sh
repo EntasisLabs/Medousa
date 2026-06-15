@@ -12,16 +12,56 @@ BINARIES_DIR="${HOME_DIR}/src-tauri/binaries"
 TARGET="${CARGO_BUILD_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 SIDEcar_NAME="medousa_daemon-${TARGET}"
 
+resolve_inference_features() {
+  local mode="${MEDOUSA_EMBEDDED_INFERENCE:-auto}"
+  case "${mode}" in
+    metal)
+      echo "--features embedded-inference-metal"
+      return
+      ;;
+    cuda)
+      echo "--features embedded-inference-cuda"
+      return
+      ;;
+    cpu)
+      echo "--features embedded-inference"
+      return
+      ;;
+    auto)
+      case "${TARGET}" in
+        *-apple-*)
+          echo "--features embedded-inference-metal"
+          ;;
+        *)
+          # CPU builds work everywhere; set MEDOUSA_EMBEDDED_INFERENCE=cuda when building on a CUDA host.
+          echo "--features embedded-inference"
+          ;;
+      esac
+      return
+      ;;
+    *)
+      echo "error: unknown MEDOUSA_EMBEDDED_INFERENCE=${mode} (expected auto|metal|cuda|cpu)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 FEATURES=()
-case "${TARGET}" in
-  *-apple-*)
+case "$(resolve_inference_features)" in
+  "--features embedded-inference-metal")
     FEATURES=(--features embedded-inference-metal)
+    ;;
+  "--features embedded-inference-cuda")
+    FEATURES=(--features embedded-inference-cuda)
+    ;;
+  *)
+    FEATURES=(--features embedded-inference)
     ;;
 esac
 
 mkdir -p "${BINARIES_DIR}"
 
-echo "prepare-engine-sidecar: building medousa_daemon for ${TARGET}…"
+echo "prepare-engine-sidecar: building medousa_daemon for ${TARGET} (${FEATURES[*]})…"
 (
   cd "${MEDOUSA_ROOT}"
   cargo build --release -p medousa --bin medousa_daemon "${FEATURES[@]}"

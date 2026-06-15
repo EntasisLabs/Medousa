@@ -20,6 +20,7 @@ export interface LocalHardwareProfile {
 export interface LocalHardwareResponse {
   profile: LocalHardwareProfile;
   engineAvailable: boolean;
+  compiledBackends?: string[];
   message: string;
 }
 
@@ -78,6 +79,7 @@ export interface LocalEngineStatus {
   bind?: string | null;
   modelRepo?: string | null;
   modelAlias?: string | null;
+  inferenceBackend?: string | null;
   message: string;
 }
 

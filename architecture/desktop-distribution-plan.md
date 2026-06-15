@@ -1,6 +1,6 @@
 # Desktop distribution plan
 
-> **Status:** Deferred (2026-06-13)  
+> **Status:** In progress — desktop matrix in `.github/workflows/release.yml` (2026-06)  
 > **Scope:** Mac / Windows / Linux installable bundles via GitHub Releases — **not** iOS/Android (App Store / TestFlight track)
 
 ## Current state

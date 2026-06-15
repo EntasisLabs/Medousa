@@ -11,10 +11,11 @@ use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
 use crate::local_inference::{
-    build_hardware_profile, builtin_catalog, config_from_catalog_entry, filter_catalog_for_tier,
-    load_recommended_engine, probe_hardware, read_hardware_profile, write_hardware_profile,
-    CatalogModelEntry, HardwareProfile, HardwareTier, InstalledModelRecord, LocalEngineStatus,
-    ModelDownloadProgress, MODEL_STORE, LOCAL_ENGINE,
+    build_hardware_profile, builtin_catalog, compiled_backends, config_from_catalog_entry,
+    filter_catalog_for_tier, load_recommended_engine, probe_hardware, read_hardware_profile,
+    resolve_inference_device, write_hardware_profile, CatalogModelEntry, HardwareProfile,
+    HardwareTier, InstalledModelRecord, LocalEngineStatus, ModelDownloadProgress, MODEL_STORE,
+    LOCAL_ENGINE,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +23,7 @@ use crate::local_inference::{
 pub struct LocalHardwareResponse {
     pub profile: HardwareProfile,
     pub engine_available: bool,
+    pub compiled_backends: Vec<String>,
     pub message: String,
 }
 
@@ -84,14 +86,20 @@ async fn local_hardware() -> Result<Json<LocalHardwareResponse>, (axum::http::St
     let profile = build_hardware_profile(probe);
     write_hardware_profile(&profile).map_err(internal_error)?;
     let engine_status = LOCAL_ENGINE.as_ref().status().await;
+    let device = resolve_inference_device(&profile.probe);
     Ok(Json(LocalHardwareResponse {
         message: format!(
-            "Hardware tier {} — {} (recommended: {})",
+            "Hardware tier {} — {} (recommended: {}, inference: {})",
             profile.tier.as_str(),
             profile.tier_label,
-            profile.recommended_display_name
+            profile.recommended_display_name,
+            device.label()
         ),
         engine_available: engine_status.feature_enabled,
+        compiled_backends: compiled_backends()
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
         profile,
     }))
 }

@@ -11,6 +11,8 @@ use tokio::sync::watch;
 pub struct LocalHardwareResponse {
     pub profile: serde_json::Value,
     pub engine_available: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compiled_backends: Vec<String>,
     pub message: String,
 }
 
@@ -54,6 +56,8 @@ pub struct LocalEngineStatus {
     pub bind: Option<String>,
     pub model_repo: Option<String>,
     pub model_alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_backend: Option<String>,
     pub message: String,
 }
 

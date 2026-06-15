@@ -85,7 +85,7 @@ pub fn probe_hardware() -> HardwareProbe {
     let available_ram_mb = system.available_memory() / 1024 / 1024;
     let cpu_cores = system.cpus().len().max(1);
     let cpu_arch = std::env::consts::ARCH.to_string();
-    let gpu_backend = detect_gpu_backend();
+    let gpu_backend = super::backends::detect_gpu_backend();
     let free_disk_gb = free_disk_gb_on_data_volume();
 
     HardwareProbe {
@@ -95,24 +95,6 @@ pub fn probe_hardware() -> HardwareProbe {
         cpu_arch,
         gpu_backend,
         free_disk_gb,
-    }
-}
-
-fn detect_gpu_backend() -> GpuBackend {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        GpuBackend::Metal
-    }
-    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-    {
-        if std::env::var_os("CUDA_VISIBLE_DEVICES")
-            .map(|value| !value.is_empty() && value != "-1")
-            .unwrap_or(false)
-        {
-            GpuBackend::Cuda
-        } else {
-            GpuBackend::None
-        }
     }
 }
 

@@ -39,6 +39,8 @@ pub struct LocalEngineStatus {
     pub bind: Option<String>,
     pub model_repo: Option<String>,
     pub model_alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_backend: Option<String>,
     pub message: String,
 }
 
@@ -51,6 +53,7 @@ impl LocalEngineStatus {
             bind: None,
             model_repo: None,
             model_alias: None,
+            inference_backend: None,
             message: "Local engine not loaded".to_string(),
         }
     }
@@ -80,6 +83,8 @@ impl LocalEngineManager {
 
         #[cfg(feature = "embedded-inference")]
         {
+            let probe = super::hardware::probe_hardware();
+            let device = super::backends::resolve_inference_device(&probe);
             let loaded = load_embedded_engine(config.clone()).await?;
             *self.shutdown_tx.write().await = Some(loaded.shutdown_tx);
             *self.server_task.write().await = Some(loaded.server_task);
@@ -90,7 +95,8 @@ impl LocalEngineManager {
                 bind: Some(config.bind),
                 model_repo: Some(config.model_repo),
                 model_alias: Some(config.model_alias),
-                message: "Local Gemma engine ready".to_string(),
+                inference_backend: Some(device.as_str().to_string()),
+                message: format!("Local Gemma engine ready ({})", device.label()),
             };
             *self.status.write().await = status.clone();
             Ok(status)
@@ -144,10 +150,11 @@ async fn load_embedded_engine(config: LocalEngineConfig) -> Result<LoadedEngine,
 
     let model = build_model_selected(&config)?;
     let paged_attn = configure_paged_attn_from_flags(false, false).map_err(|err| err.to_string())?;
+    let cpu_only = config.cpu_only;
     let mut builder = MistralRsForServerBuilder::new()
         .with_model(model)
         .with_token_source(TokenSource::CacheToken)
-        .with_cpu(config.cpu_only)
+        .with_cpu(cpu_only)
         .set_paged_attn(paged_attn);
 
     if let Some(isq) = config.in_situ_quant.as_deref() {
@@ -230,6 +237,15 @@ pub fn config_from_catalog_entry(
     entry: &super::catalog::CatalogModelEntry,
     bind: Option<String>,
 ) -> LocalEngineConfig {
+    let probe = super::hardware::probe_hardware();
+    config_from_catalog_entry_with_probe(entry, bind, &probe)
+}
+
+pub fn config_from_catalog_entry_with_probe(
+    entry: &super::catalog::CatalogModelEntry,
+    bind: Option<String>,
+    probe: &super::hardware::HardwareProbe,
+) -> LocalEngineConfig {
     let model_repo =
         super::store::local_repo_if_installed(&entry.id).unwrap_or_else(|| entry.repo.clone());
     let uqff_file = entry
@@ -253,8 +269,6 @@ pub fn config_from_catalog_entry(
         } else {
             in_situ_quant.or_else(|| Some("4".to_string()))
         },
-        cpu_only: std::env::var("MEDOUSA_LOCAL_ENGINE_CPU")
-            .ok()
-            .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")),
+        cpu_only: super::backends::resolve_cpu_only(probe),
     }
 }

@@ -91,6 +91,7 @@ mistralrs-server-core = { version = "0.8.1", optional = true, default-features =
 default = []
 embedded-inference = ["dep:mistralrs-core", "dep:mistralrs-server-core"]
 embedded-inference-metal = ["embedded-inference", "mistralrs-server-core/metal"]
+embedded-inference-cuda = ["embedded-inference", "mistralrs-server-core/cuda"]
 
 [dev-dependencies]
 surrealdb-types = { version = "3" }
