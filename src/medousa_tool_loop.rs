@@ -190,9 +190,10 @@ impl MedousaToolLoopPipeline {
             let selected_sanitized = sanitize_tool_name_for_model(shared_inputs.selected_tool_name());
             let selected_prefix = format!("{selected_sanitized}_");
             tools.retain(|tool| {
-                tool.name == shared_inputs.selected_tool_name()
-                    || tool.name == selected_sanitized
-                    || tool.name.starts_with(&selected_prefix)
+                let name = tool.name.as_str();
+                name == shared_inputs.selected_tool_name()
+                    || name == selected_sanitized
+                    || name.starts_with(&selected_prefix)
             });
         }
 

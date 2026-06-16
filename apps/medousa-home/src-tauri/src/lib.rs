@@ -89,6 +89,7 @@ pub fn run() {
             providers::providers_list,
             providers::providers_probe,
             providers::providers_validate_key,
+            providers::providers_list_models,
             pairing::pairing_fetch_qr,
             pairing::pairing_fetch_qr_image,
             pairing::pairing_fetch_status,

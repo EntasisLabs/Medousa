@@ -585,6 +585,7 @@ pub(crate) async fn start_prompt_run(
     let base_url = (!state.settings.base_url.trim().is_empty())
         .then(|| state.settings.base_url.clone());
     let response_depth_mode = state.response_depth_mode.clone();
+    let reasoning_effort = state.reasoning_effort.clone();
     let handle = tokio::spawn(async move {
         let previous_scope = turn_scope.read().await.clone();
         *turn_scope.write().await = Some(TurnContinuationScope {
@@ -607,6 +608,7 @@ pub(crate) async fn start_prompt_run(
                 model,
                 base_url,
                 response_depth_mode,
+                reasoning_effort,
                 worker_scheduler,
                 tool_registry,
                 identity_memory_store,
@@ -650,6 +652,7 @@ async fn attempt_daemon_interactive_turn(
         prompt: prompt.to_string(),
         persist_user_turn,
         response_depth_mode: state.response_depth_mode.clone(),
+        reasoning_effort: state.reasoning_effort.clone(),
         provider: state.settings.provider.clone(),
         model: state.settings.model.clone(),
         stage_routing: state.stage_routing.clone(),

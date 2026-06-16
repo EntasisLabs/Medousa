@@ -279,6 +279,7 @@ pub async fn interactive_turn_send(
     provider: Option<String>,
     model: Option<String>,
     response_depth_mode: Option<String>,
+    reasoning_effort: Option<String>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
@@ -295,6 +296,10 @@ pub async fn interactive_turn_send(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "standard".to_string());
+    let reasoning_effort = reasoning_effort
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "default".to_string());
     let stage_routing = stage_routing.unwrap_or_else(|| {
         StageRoutingMatrix::default_for(
             if provider.is_empty() { "openai" } else { provider.as_str() },
@@ -312,6 +317,7 @@ pub async fn interactive_turn_send(
         prompt,
         persist_user_turn: true,
         response_depth_mode,
+        reasoning_effort,
         provider: provider.clone(),
         model: model.clone(),
         stage_routing,

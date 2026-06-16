@@ -362,6 +362,144 @@ pub async fn providers_validate_key(
     Ok(result)
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvidersListModelsRequest {
+    pub provider: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvidersListModelsResult {
+    pub models: Vec<String>,
+    pub source: String,
+}
+
+async fn fetch_openai_compatible_model_ids(
+    client: &Client,
+    api_key: &str,
+    base_url: &str,
+) -> Result<Vec<String>, String> {
+    let url = models_url(base_url);
+    let response = client
+        .get(url)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("Provider returned HTTP {}", response.status()));
+    }
+    let payload: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
+    let models = payload
+        .get("data")
+        .and_then(|data| data.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    entry
+                        .get("id")
+                        .and_then(|id| id.as_str())
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_string)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(models)
+}
+
+#[tauri::command]
+pub async fn providers_list_models(
+    request: ProvidersListModelsRequest,
+) -> Result<ProvidersListModelsResult, String> {
+    let provider_id = request.provider.trim().to_ascii_lowercase();
+    let spec = provider_catalog::find_provider(&provider_id);
+    let client = probe_http_client()?;
+
+    if provider_id == "ollama" {
+        let models = fetch_ollama_models(&client).await;
+        return Ok(ProvidersListModelsResult {
+            source: "ollama.tags".to_string(),
+            models,
+        });
+    }
+
+    if provider_id == "medousa-local" {
+        return Ok(ProvidersListModelsResult {
+            source: "catalog.default".to_string(),
+            models: vec![default_model_for_provider(&provider_id)],
+        });
+    }
+
+    let api_key = request.api_key.unwrap_or_default();
+    let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(true);
+    if needs_key && api_key.trim().is_empty() {
+        return Err("API key is required to list models".to_string());
+    }
+
+    match spec.map(|entry| entry.validation) {
+        Some(ProviderValidation::Google) => {
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+                urlencoding::encode(api_key.trim())
+            );
+            let response = client.get(url).send().await.map_err(|err| err.to_string())?;
+            if !response.status().is_success() {
+                return Err(format!("Google returned HTTP {}", response.status()));
+            }
+            let payload: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
+            let models = payload
+                .get("models")
+                .and_then(|models| models.as_array())
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|entry| {
+                            entry
+                                .get("name")
+                                .and_then(|name| name.as_str())
+                                .map(|name| name.trim_start_matches("models/").to_string())
+                                .filter(|name| !name.is_empty())
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Ok(ProvidersListModelsResult {
+                source: "google.models".to_string(),
+                models,
+            })
+        }
+        Some(ProviderValidation::OpenAiCompatible) => {
+            let Some(base) = resolve_base_url(spec, request.base_url.as_deref()) else {
+                return Err("Set an API base URL for this provider".to_string());
+            };
+            let models = fetch_openai_compatible_model_ids(&client, api_key.trim(), &base).await?;
+            Ok(ProvidersListModelsResult {
+                source: "openai_compatible.models".to_string(),
+                models,
+            })
+        }
+        Some(ProviderValidation::Ollama) => {
+            let models = fetch_ollama_models(&client).await;
+            Ok(ProvidersListModelsResult {
+                source: "ollama.tags".to_string(),
+                models,
+            })
+        }
+        _ => Ok(ProvidersListModelsResult {
+            source: "unsupported".to_string(),
+            models: vec![default_model_for_provider(&provider_id)],
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

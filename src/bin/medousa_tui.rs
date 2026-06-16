@@ -187,6 +187,7 @@ struct TuiState {
     runtime_env_editing: bool,
     provider_model: String,
     response_depth_mode: String,
+    reasoning_effort: String,
     session_id: String,
     session_display_name: Option<String>,
     selected_context_pack_query: Option<String>,
@@ -529,6 +530,12 @@ async fn main() -> Result<()> {
             .as_deref()
             .unwrap_or("standard"),
     );
+    let resolved_reasoning_effort = medousa::reasoning_effort::normalize_reasoning_effort_value(
+        defaults
+            .reasoning_effort
+            .as_deref()
+            .unwrap_or(medousa::reasoning_effort::REASONING_EFFORT_DEFAULT),
+    );
     let resolved_daemon_url = resolve_daemon_url(daemon_url);
     let tui_platform_config = TuiPlatformBuildConfig::from_names(
         &resolved_backend,
@@ -688,6 +695,7 @@ async fn main() -> Result<()> {
         runtime_env_editing: false,
         provider_model,
         response_depth_mode: resolved_response_depth_mode,
+        reasoning_effort: resolved_reasoning_effort,
         session_id: session_id.clone(),
         session_display_name: medousa::session::get_session_display_name(&session_id),
         selected_context_pack_query: None,
@@ -1349,6 +1357,7 @@ mod tests {
             runtime_env_editing: false,
             provider_model: "openai:gpt-4o-mini".to_string(),
             response_depth_mode: "standard".to_string(),
+            reasoning_effort: medousa::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),
             session_id: "test-session".to_string(),
             session_display_name: None,
             selected_context_pack_query: None,

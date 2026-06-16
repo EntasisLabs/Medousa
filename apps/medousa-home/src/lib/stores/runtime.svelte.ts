@@ -15,9 +15,11 @@ import type {
   DaemonStatsResponse,
   DeliveryHealthResponse,
   DepthMode,
+  ReasoningEffortMode,
   RuntimeTab,
   StageRoutingMatrix,
 } from "$lib/types/runtime";
+import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { pollAllSettled } from "$lib/utils/poll";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { isTauri } from "$lib/window";
@@ -25,12 +27,14 @@ import { isTauri } from "$lib/window";
 const DEFAULT_PROVIDER = "ollama";
 const DEFAULT_MODEL = "qwen2.5:7b";
 const DEFAULT_DEPTH: DepthMode = "standard";
+const DEFAULT_REASONING: ReasoningEffortMode = "default";
 
 export class RuntimeStore {
   activeTab = $state<RuntimeTab>("now");
   provider = $state(DEFAULT_PROVIDER);
   model = $state(DEFAULT_MODEL);
   depthMode = $state<DepthMode>(DEFAULT_DEPTH);
+  reasoningEffort = $state<ReasoningEffortMode>(DEFAULT_REASONING);
   stageRouting = $state<StageRoutingMatrix>(
     defaultStageRouting(DEFAULT_PROVIDER, DEFAULT_MODEL),
   );
@@ -95,6 +99,7 @@ export class RuntimeStore {
         provider: summary.provider?.trim() || DEFAULT_PROVIDER,
         model: summary.model?.trim() || DEFAULT_MODEL,
         response_depth_mode: summary.responseDepthMode ?? DEFAULT_DEPTH,
+        reasoning_effort: summary.reasoningEffort ?? DEFAULT_REASONING,
         stage_routing:
           summary.stageRouting?.orchestrator?.role
             ? summary.stageRouting
@@ -129,6 +134,9 @@ export class RuntimeStore {
     this.provider = provider;
     this.model = model;
     this.depthMode = normalizeDepth(defaults.response_depth_mode ?? DEFAULT_DEPTH);
+    this.reasoningEffort = normalizeReasoningEffort(
+      defaults.reasoning_effort ?? DEFAULT_REASONING,
+    );
     if (defaults.stage_routing?.orchestrator?.role) {
       this.stageRouting = defaults.stage_routing;
     } else {
@@ -198,6 +206,7 @@ export class RuntimeStore {
           this.provider,
           this.model,
           this.depthMode,
+          this.reasoningEffort,
           this.stageRouting,
         );
       }
@@ -222,15 +231,18 @@ export class RuntimeStore {
         draft_provider: this.provider,
         draft_model: this.model,
         current_response_depth_mode: this.depthMode,
+        current_reasoning_effort: this.reasoningEffort,
         command: { command: "model", args: [nextProvider.trim(), nextModel.trim()] },
       });
       this.provider = response.next_draft_provider;
       this.model = response.next_draft_model;
       this.depthMode = normalizeDepth(response.next_response_depth_mode);
+      this.reasoningEffort = normalizeReasoningEffort(response.next_reasoning_effort);
       this.stageRouting = defaultStageRouting(this.provider, this.model);
       await this.persistSharedDefaults(
         response.should_apply_settings,
         response.should_persist_depth_defaults,
+        response.should_persist_reasoning_defaults,
       );
       this.controlsMessage =
         response.rendered_output ?? `Model set to ${this.provider}:${this.model}`;
@@ -251,14 +263,17 @@ export class RuntimeStore {
         draft_provider: this.provider,
         draft_model: this.model,
         current_response_depth_mode: this.depthMode,
+        current_reasoning_effort: this.reasoningEffort,
         command: { command: "depth", mode },
       });
       this.provider = response.next_draft_provider;
       this.model = response.next_draft_model;
       this.depthMode = normalizeDepth(response.next_response_depth_mode);
+      this.reasoningEffort = normalizeReasoningEffort(response.next_reasoning_effort);
       await this.persistSharedDefaults(
         response.should_apply_settings,
         response.should_persist_depth_defaults,
+        response.should_persist_reasoning_defaults,
       );
       this.controlsMessage =
         response.rendered_output ?? `Depth set to ${this.depthMode}`;
@@ -269,14 +284,46 @@ export class RuntimeStore {
     }
   }
 
+  async setReasoningEffort(mode: ReasoningEffortMode) {
+    this.savingControls = true;
+    this.controlsMessage = null;
+    try {
+      const response = await sendRuntimeConfigCommand({
+        current_provider: this.provider,
+        current_model: this.model,
+        draft_provider: this.provider,
+        draft_model: this.model,
+        current_response_depth_mode: this.depthMode,
+        current_reasoning_effort: this.reasoningEffort,
+        command: { command: "reasoning", mode },
+      });
+      this.provider = response.next_draft_provider;
+      this.model = response.next_draft_model;
+      this.depthMode = normalizeDepth(response.next_response_depth_mode);
+      this.reasoningEffort = normalizeReasoningEffort(response.next_reasoning_effort);
+      await this.persistSharedDefaults(
+        response.should_apply_settings,
+        response.should_persist_depth_defaults,
+        response.should_persist_reasoning_defaults,
+      );
+      this.controlsMessage =
+        response.rendered_output ?? `Reasoning effort set to ${this.reasoningEffort}`;
+    } catch (err) {
+      this.controlsMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.savingControls = false;
+    }
+  }
+
   private async persistSharedDefaults(
     shouldApplySettings: boolean,
     shouldPersistDepth: boolean,
+    shouldPersistReasoning = false,
   ) {
     if (
       !isTauri() ||
       isTauriMobilePlatform() ||
-      (!shouldApplySettings && !shouldPersistDepth)
+      (!shouldApplySettings && !shouldPersistDepth && !shouldPersistReasoning)
     ) {
       return;
     }
@@ -285,6 +332,7 @@ export class RuntimeStore {
         this.provider,
         this.model,
         this.depthMode,
+        shouldPersistReasoning || shouldApplySettings ? this.reasoningEffort : undefined,
         shouldApplySettings ? this.stageRouting : undefined,
       );
     } catch (err) {

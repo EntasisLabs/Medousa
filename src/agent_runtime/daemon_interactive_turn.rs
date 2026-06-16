@@ -872,6 +872,7 @@ async fn run_agent_turn_inner(
         tui_rt: agent_rt,
         final_route: final_route.as_ref(),
         response_depth_mode: &request.response_depth_mode,
+        reasoning_effort: &request.reasoning_effort,
         turn_id: 1,
         scheduled_tool_allowlist,
         media_refs: request.media_refs.clone(),

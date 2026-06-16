@@ -790,6 +790,7 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         prompt: record.task_prompt.clone(),
         persist_user_turn: false,
         response_depth_mode: record.response_depth_mode.clone(),
+        reasoning_effort: crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),
         provider: record.provider.clone(),
         model: record.model.clone(),
         stage_routing: StageRoutingMatrix::default_for(&record.provider, &record.model),

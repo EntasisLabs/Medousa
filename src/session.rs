@@ -90,6 +90,7 @@ pub struct TuiDefaults {
     pub verifier_min_supported_claim_ratio: Option<f32>,
     pub verifier_min_claim_support_strength: Option<f32>,
     pub response_depth_mode: Option<String>,
+    pub reasoning_effort: Option<String>,
     pub stage_routing: Option<crate::stage_routing::StageRoutingMatrix>,
     pub command_usage_counts: Option<std::collections::HashMap<String, u64>>,
     /// Preferred web search provider for `cognition_web_search` (e.g. duckduckgo, tavily).

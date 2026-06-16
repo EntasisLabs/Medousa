@@ -1556,6 +1556,7 @@ async fn run_llm(
             default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
         ),
         model_hint: model.map(|v| v.to_string()),
+        reasoning_effort: None,
         memory_policy: None,
     };
 
@@ -1618,6 +1619,7 @@ async fn run_ask(runtime: &RuntimeComposition, prompt: &str) -> Result<()> {
             default_policy_profile_for_lane(EngineExecutionLane::Interactive).to_string(),
         ),
         model_hint: None,
+        reasoning_effort: None,
         memory_policy: None,
         max_turns: Some(1),
         tool_call_mode: Some(AgentToolCallMode::Auto),

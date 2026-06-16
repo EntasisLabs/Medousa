@@ -198,6 +198,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
                 .response_depth_mode
                 .clone()
                 .unwrap_or_else(|| "standard".to_string()),
+            reasoning_effort: crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),
             provider,
             model,
             stage_routing,

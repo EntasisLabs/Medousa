@@ -38,6 +38,7 @@ pub struct IngestSessionRuntimeConfig {
     pub draft_provider: String,
     pub draft_model: String,
     pub response_depth_mode: String,
+    pub reasoning_effort: String,
 }
 
 impl IngestSessionRuntimeConfig {
@@ -52,11 +53,19 @@ impl IngestSessionRuntimeConfig {
             .filter(|value| !value.is_empty())
             .unwrap_or(product.tui.response_depth_mode.as_str())
             .to_string();
+        let reasoning_effort = defaults
+            .reasoning_effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string());
 
         Self {
             draft_provider: crate::resolve_llm_provider(defaults.provider.as_deref()),
             draft_model: crate::resolve_llm_model(defaults.model.as_deref()),
             response_depth_mode,
+            reasoning_effort,
         }
     }
 }
@@ -502,6 +511,7 @@ pub fn build_interactive_turn_request_for_ingest(
     provider: &str,
     model: &str,
     response_depth_mode: &str,
+    reasoning_effort: &str,
     ingest: Option<&IngestRequest>,
     manuscript_id: Option<String>,
     additional_manuscript_ids: Option<Vec<String>>,
@@ -526,6 +536,7 @@ pub fn build_interactive_turn_request_for_ingest(
         prompt,
         persist_user_turn: true,
         response_depth_mode: response_depth_mode.to_string(),
+        reasoning_effort: reasoning_effort.to_string(),
         provider: provider.to_string(),
         model: model.to_string(),
         stage_routing: StageRoutingMatrix::default_for(provider, model),

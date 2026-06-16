@@ -774,6 +774,7 @@ mod tests {
             prompt: "hi".to_string(),
             persist_user_turn: true,
             response_depth_mode: "standard".to_string(),
+            reasoning_effort: crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),
             provider: "openai".to_string(),
             model: "gpt-4o-mini".to_string(),
             stage_routing: StageRoutingMatrix::default_for("openai", "gpt-4o-mini"),

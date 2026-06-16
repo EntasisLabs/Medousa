@@ -4,6 +4,7 @@ use crate::daemon_api::{
     RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     RuntimeVerifyPolicyState,
 };
+use crate::reasoning_effort::{normalize_reasoning_effort_value, reasoning_effort_hint, REASONING_EFFORT_DEFAULT};
 
 pub fn execute_runtime_config_command(
     request: RuntimeConfigCommandRequest,
@@ -11,9 +12,15 @@ pub fn execute_runtime_config_command(
     let mut next_draft_provider = request.draft_provider;
     let mut next_draft_model = request.draft_model;
     let mut next_response_depth_mode = request.current_response_depth_mode;
+    let mut next_reasoning_effort = if request.current_reasoning_effort.trim().is_empty() {
+        REASONING_EFFORT_DEFAULT.to_string()
+    } else {
+        normalize_reasoning_effort_value(&request.current_reasoning_effort)
+    };
     let mut next_verify_policy_draft = None;
     let mut should_apply_settings = false;
     let mut should_persist_depth_defaults = false;
+    let mut should_persist_reasoning_defaults = false;
 
     let rendered_output = match request.command {
         RuntimeConfigCommandSpec::Model { args } => {
@@ -53,6 +60,22 @@ pub fn execute_runtime_config_command(
                 Some(format!("✓ response depth mode set to {} ({hint})", normalized))
             }
         }
+        RuntimeConfigCommandSpec::Reasoning { mode } => {
+            if mode.is_none() {
+                let hint = reasoning_effort_hint(&next_reasoning_effort);
+                Some(format!(
+                    "◈ reasoning effort={} ({hint}) options: default | minimal | low | medium | high | xhigh | max | budget:N",
+                    next_reasoning_effort,
+                ))
+            } else {
+                let normalized =
+                    normalize_reasoning_effort_value(mode.as_deref().unwrap_or(REASONING_EFFORT_DEFAULT));
+                next_reasoning_effort = normalized.clone();
+                should_persist_reasoning_defaults = true;
+                let hint = reasoning_effort_hint(&normalized);
+                Some(format!("✓ reasoning effort set to {} ({hint})", normalized))
+            }
+        }
         RuntimeConfigCommandSpec::VerifyPolicy { args, current } => {
             if args.is_empty() {
                 Some(format!(
@@ -85,9 +108,11 @@ pub fn execute_runtime_config_command(
         next_draft_provider,
         next_draft_model,
         next_response_depth_mode,
+        next_reasoning_effort,
         next_verify_policy_draft,
         should_apply_settings,
         should_persist_depth_defaults,
+        should_persist_reasoning_defaults,
     })
 }
 

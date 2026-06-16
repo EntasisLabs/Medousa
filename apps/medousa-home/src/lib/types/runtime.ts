@@ -32,6 +32,8 @@ export interface ContinuationStatusResponse {
 
 export type DepthMode = "concise" | "standard" | "deep";
 
+export type ReasoningEffortMode = import("./reasoningEffort").ReasoningEffortMode;
+
 export interface StageRoute {
   role: string;
   provider: string;
@@ -55,8 +57,10 @@ export interface RuntimeConfigCommandResponse {
   next_draft_provider: string;
   next_draft_model: string;
   next_response_depth_mode: string;
+  next_reasoning_effort: string;
   should_apply_settings: boolean;
   should_persist_depth_defaults: boolean;
+  should_persist_reasoning_defaults: boolean;
 }
 
 export interface RuntimeDefaultsResponse {
@@ -64,6 +68,7 @@ export interface RuntimeDefaultsResponse {
   provider: string;
   model: string;
   response_depth_mode: string;
+  reasoning_effort: string;
   base_url: string | null;
   stage_routing: StageRoutingMatrix;
   work_card_hide_after_hours: number;

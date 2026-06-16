@@ -210,6 +210,7 @@ export class WorkshopDefaultsStore {
         runtime.provider,
         runtime.model,
         runtime.depthMode,
+        runtime.reasoningEffort,
         payload.stageRouting ?? undefined,
       );
       runtime.defaultsLoaded = true;

@@ -30,6 +30,17 @@ export interface ProvidersValidateKeyResult {
   suggestedModel?: string | null;
 }
 
+export interface ProvidersListModelsRequest {
+  provider: string;
+  apiKey?: string | null;
+  baseUrl?: string | null;
+}
+
+export interface ProvidersListModelsResult {
+  models: string[];
+  source: string;
+}
+
 export interface DaemonStartResult {
   started: boolean;
   alreadyRunning: boolean;
@@ -167,6 +178,16 @@ export async function validateProviderKey(
   }
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<ProvidersValidateKeyResult>("providers_validate_key", { request });
+}
+
+export async function listProviderModels(
+  request: ProvidersListModelsRequest,
+): Promise<ProvidersListModelsResult> {
+  if (!isTauri()) {
+    return { models: [], source: "browser-dev" };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ProvidersListModelsResult>("providers_list_models", { request });
 }
 
 export async function startEngine(options?: { privateBrain?: boolean }): Promise<DaemonStartResult> {

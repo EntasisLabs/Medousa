@@ -259,6 +259,8 @@ struct CreateTurnTicketBody {
     #[serde(default = "default_response_depth_mode")]
     response_depth_mode: String,
     #[serde(default)]
+    reasoning_effort: String,
+    #[serde(default)]
     provider: String,
     #[serde(default)]
     model: String,
@@ -291,6 +293,7 @@ pub async fn turn_create(
     provider: Option<String>,
     model: Option<String>,
     response_depth_mode: Option<String>,
+    reasoning_effort: Option<String>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
     media_refs: Option<Vec<MediaRef>>,
@@ -324,6 +327,10 @@ pub async fn turn_create(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "standard".to_string());
+    let reasoning_effort = reasoning_effort
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "default".to_string());
     let stage_routing = stage_routing.unwrap_or_else(|| {
         StageRoutingMatrix::default_for(
             if provider.is_empty() { "openai" } else { provider.as_str() },
@@ -346,6 +353,7 @@ pub async fn turn_create(
         mode: ticket_mode,
         persist_user_turn: true,
         response_depth_mode,
+        reasoning_effort,
         provider,
         model,
         stage_routing: Some(stage_routing),

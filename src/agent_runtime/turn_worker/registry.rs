@@ -133,7 +133,7 @@ impl ToolRegistry for SessionBootstrapToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| tool_allowed(&tool.name, &allowed))
+            .filter(|tool| tool_allowed(tool.name.as_str(), &allowed))
             .collect())
     }
 
@@ -153,7 +153,7 @@ impl ToolRegistry for AllowlistToolRegistry {
         let tools = self.inner.list_tools().await?;
         Ok(tools
             .into_iter()
-            .filter(|tool| tool_allowed(&tool.name, &self.allowlist))
+            .filter(|tool| tool_allowed(tool.name.as_str(), &self.allowlist))
             .collect())
     }
 

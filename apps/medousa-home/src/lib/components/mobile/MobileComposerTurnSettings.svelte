@@ -16,9 +16,13 @@
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
   import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
-  import type { DepthMode } from "$lib/types/runtime";
+  import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
+  import {
+    REASONING_EFFORT_OPTIONS,
+    reasoningEffortLabel,
+  } from "$lib/types/reasoningEffort";
 
-  type SheetView = "main" | "voice" | "stance";
+  type SheetView = "main" | "voice" | "stance" | "reasoning";
 
   interface Props {
     disabled?: boolean;
@@ -37,6 +41,7 @@
   const depthLabel = $derived(
     DEPTH_CHARTER_OPTIONS.find((option) => option.id === runtime.depthMode)?.label ?? "Standard",
   );
+  const reasoningLabel = $derived(reasoningEffortLabel(runtime.reasoningEffort));
   const pickerDisabled = $derived(
     disabled || runtime.savingControls || voicePresets.saving,
   );
@@ -45,7 +50,9 @@
       ? "Select model"
       : sheetView === "voice"
         ? "Voice"
-        : "Stance",
+        : sheetView === "stance"
+          ? "Stance"
+          : "Reasoning",
   );
   const backdropTransition = {
     in: { duration: 260, easing: cubicOut },
@@ -153,6 +160,11 @@
   async function selectDepth(mode: DepthMode) {
     if (mode === runtime.depthMode || runtime.savingControls) return;
     await runtime.setDepthMode(mode);
+  }
+
+  async function selectReasoning(mode: ReasoningEffortMode) {
+    if (mode === runtime.reasoningEffort || runtime.savingControls) return;
+    await runtime.setReasoningEffort(mode);
   }
 </script>
 
@@ -290,6 +302,18 @@
                       <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
+                    disabled={navigating}
+                    onclick={() => drillTo("reasoning")}
+                  >
+                    <span class="mobile-turn-sheet-link-label">Reasoning</span>
+                    <span class="mobile-turn-sheet-link-value">
+                      {reasoningLabel}
+                      <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
+                    </span>
+                  </button>
                 </div>
               {:else if displayView === "voice"}
                 <div class="mobile-turn-sheet-group" role="listbox" aria-label="Voice">
@@ -315,7 +339,7 @@
                     </button>
                   {/each}
                 </div>
-              {:else}
+              {:else if displayView === "stance"}
                 <div class="mobile-turn-sheet-group" role="listbox" aria-label="Stance">
                   {#each DEPTH_CHARTER_OPTIONS as option, index (option.id)}
                     <button
@@ -332,6 +356,28 @@
                         <span class="mobile-turn-sheet-row-subtitle">{option.hint}</span>
                       </span>
                       {#if runtime.depthMode === option.id}
+                        <Check size={18} strokeWidth={2.5} class="mobile-turn-sheet-row-check" />
+                      {/if}
+                    </button>
+                  {/each}
+                </div>
+              {:else}
+                <div class="mobile-turn-sheet-group" role="listbox" aria-label="Reasoning effort">
+                  {#each REASONING_EFFORT_OPTIONS as option, index (option.id)}
+                    <button
+                      type="button"
+                      class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
+                      role="option"
+                      aria-selected={runtime.reasoningEffort === option.id}
+                      disabled={runtime.savingControls}
+                      title={option.hint}
+                      onclick={() => void selectReasoning(option.id)}
+                    >
+                      <span class="mobile-turn-sheet-row-copy">
+                        <span class="mobile-turn-sheet-row-title">{option.label}</span>
+                        <span class="mobile-turn-sheet-row-subtitle">{option.hint}</span>
+                      </span>
+                      {#if runtime.reasoningEffort === option.id}
                         <Check size={18} strokeWidth={2.5} class="mobile-turn-sheet-row-check" />
                       {/if}
                     </button>

@@ -140,6 +140,7 @@ export async function createTurnTicket(
     provider: request.provider ?? null,
     model: request.model ?? null,
     responseDepthMode: request.responseDepthMode ?? null,
+    reasoningEffort: request.reasoningEffort ?? null,
     stageRouting: request.stageRouting ?? null,
     channelSurface: request.channelSurface ?? null,
     mediaRefs: request.mediaRefs ?? null,
@@ -201,6 +202,7 @@ export interface InteractiveTurnOptions {
   provider?: string;
   model?: string;
   responseDepthMode?: string;
+  reasoningEffort?: string;
   stageRouting?: StageRoutingMatrix;
   channelSurface?: string;
 }
@@ -216,6 +218,7 @@ export async function sendInteractiveTurn(
     provider: options?.provider,
     model: options?.model,
     responseDepthMode: options?.responseDepthMode,
+    reasoningEffort: options?.reasoningEffort,
     stageRouting: options?.stageRouting,
     channelSurface: options?.channelSurface,
   });
@@ -277,9 +280,11 @@ export async function sendRuntimeConfigCommand(request: {
   draft_provider: string;
   draft_model: string;
   current_response_depth_mode: string;
+  current_reasoning_effort?: string;
   command:
     | { command: "model"; args: string[] }
-    | { command: "depth"; mode: string | null };
+    | { command: "depth"; mode: string | null }
+    | { command: "reasoning"; mode: string | null };
 }): Promise<RuntimeConfigCommandResponse> {
   return invoke<RuntimeConfigCommandResponse>("runtime_config_command", {
     request,

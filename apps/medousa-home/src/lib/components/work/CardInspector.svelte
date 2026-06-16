@@ -259,6 +259,7 @@
         provider: opts.provider,
         model: opts.model,
         responseDepthMode: opts.responseDepthMode,
+        reasoningEffort: opts.reasoningEffort,
         stageRouting: opts.stageRouting,
         channelSurface: opts.channelSurface,
         voicePresetId: voice.voicePresetId,

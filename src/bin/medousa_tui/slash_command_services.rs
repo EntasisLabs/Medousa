@@ -99,6 +99,7 @@ pub(crate) fn build_runtime_config_request(
         draft_provider: state.settings_draft.provider.clone(),
         draft_model: state.settings_draft.model.clone(),
         current_response_depth_mode: state.response_depth_mode.clone(),
+        current_reasoning_effort: state.reasoning_effort.clone(),
         command,
     }
 }
@@ -112,6 +113,7 @@ pub(crate) async fn apply_runtime_config_response(
     state.settings_draft.provider = response.next_draft_provider;
     state.settings_draft.model = response.next_draft_model;
     state.response_depth_mode = response.next_response_depth_mode;
+    state.reasoning_effort = response.next_reasoning_effort;
 
     if let Some(policy) = response.next_verify_policy_draft {
         state.settings_draft.verifier_min_citation_coverage = policy.min_citation_coverage;
@@ -122,6 +124,9 @@ pub(crate) async fn apply_runtime_config_response(
 
     if response.should_persist_depth_defaults {
         persist_response_depth_defaults(state);
+    }
+    if response.should_persist_reasoning_defaults {
+        persist_reasoning_defaults(state);
     }
 
     if let Some(rendered) = response.rendered_output {
@@ -191,6 +196,12 @@ pub(crate) fn handle_perf_command(
 fn persist_response_depth_defaults(state: &TuiState) {
     let mut defaults = load_tui_defaults();
     defaults.response_depth_mode = Some(state.response_depth_mode.clone());
+    save_tui_defaults(&defaults);
+}
+
+fn persist_reasoning_defaults(state: &TuiState) {
+    let mut defaults = load_tui_defaults();
+    defaults.reasoning_effort = Some(state.reasoning_effort.clone());
     save_tui_defaults(&defaults);
 }
 

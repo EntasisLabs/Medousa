@@ -35,6 +35,7 @@ pub struct TuiDefaultsSummary {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub response_depth_mode: Option<String>,
+    pub reasoning_effort: Option<String>,
     pub stage_routing: Option<serde_json::Value>,
     pub favorite_models: Option<Vec<FavoriteModelDto>>,
     pub active_voice_id: Option<String>,
@@ -75,6 +76,7 @@ pub struct TuiDefaultsDto {
     pub verifier_min_supported_claim_ratio: Option<f32>,
     pub verifier_min_claim_support_strength: Option<f32>,
     pub response_depth_mode: Option<String>,
+    pub reasoning_effort: Option<String>,
     pub stage_routing: Option<serde_json::Value>,
     pub web_search_preferred_provider: Option<String>,
     pub web_search_try_fallbacks: Option<bool>,
@@ -152,6 +154,8 @@ struct TuiDefaultsFile {
     verifier_min_claim_support_strength: Option<f32>,
     #[serde(default)]
     response_depth_mode: Option<String>,
+    #[serde(default)]
+    reasoning_effort: Option<String>,
     #[serde(default)]
     stage_routing: Option<serde_json::Value>,
     #[serde(default)]
@@ -255,6 +259,7 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         verifier_min_supported_claim_ratio: file.verifier_min_supported_claim_ratio,
         verifier_min_claim_support_strength: file.verifier_min_claim_support_strength,
         response_depth_mode: file.response_depth_mode.clone(),
+        reasoning_effort: file.reasoning_effort.clone(),
         stage_routing: file.stage_routing.clone(),
         web_search_preferred_provider: file.web_search_preferred_provider.clone(),
         web_search_try_fallbacks: file.web_search_try_fallbacks,
@@ -302,6 +307,7 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
     file.verifier_min_supported_claim_ratio = dto.verifier_min_supported_claim_ratio;
     file.verifier_min_claim_support_strength = dto.verifier_min_claim_support_strength;
     file.response_depth_mode = dto.response_depth_mode.clone();
+    file.reasoning_effort = dto.reasoning_effort.clone();
     file.web_search_preferred_provider = dto
         .web_search_preferred_provider
         .as_deref()
@@ -376,6 +382,7 @@ pub fn load_tui_defaults_summary() -> TuiDefaultsSummary {
         provider: file.provider,
         model: file.model,
         response_depth_mode: file.response_depth_mode,
+        reasoning_effort: file.reasoning_effort,
         stage_routing: file.stage_routing,
         favorite_models: file.favorite_models,
         active_voice_id: file.active_voice_id,
@@ -400,12 +407,16 @@ pub fn persist_tui_runtime_prefs(
     provider: String,
     model: String,
     response_depth_mode: String,
+    reasoning_effort: Option<String>,
     stage_routing: Option<serde_json::Value>,
 ) -> Result<(), String> {
     let mut file = read_tui_defaults_file();
     file.provider = Some(provider);
     file.model = Some(model);
     file.response_depth_mode = Some(response_depth_mode);
+    if let Some(effort) = reasoning_effort {
+        file.reasoning_effort = Some(effort);
+    }
     if let Some(matrix) = stage_routing {
         file.stage_routing = Some(matrix);
     }

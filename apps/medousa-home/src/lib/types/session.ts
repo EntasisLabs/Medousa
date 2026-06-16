@@ -94,6 +94,7 @@ export interface CreateTurnTicketRequest {
   provider?: string;
   model?: string;
   responseDepthMode?: string;
+  reasoningEffort?: string;
   stageRouting?: import("$lib/types/runtime").StageRoutingMatrix;
   channelSurface?: string;
   mediaRefs?: import("$lib/types/media").MediaRef[];

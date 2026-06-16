@@ -440,6 +440,7 @@ pub(crate) async fn finalize_settings_apply_if_ready(
                 };
             defaults.web_search_try_fallbacks = Some(snapshot.web_search_try_fallbacks);
             defaults.response_depth_mode = Some(state.response_depth_mode.clone());
+            defaults.reasoning_effort = Some(state.reasoning_effort.clone());
             defaults.stage_routing = Some(state.stage_routing.clone());
             defaults.command_usage_counts = if state.command_usage_counts.is_empty() {
                 None

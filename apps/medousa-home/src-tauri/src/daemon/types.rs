@@ -124,6 +124,8 @@ pub struct InteractiveTurnRequest {
     pub prompt: String,
     pub persist_user_turn: bool,
     pub response_depth_mode: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
     pub provider: String,
     pub model: String,
     pub stage_routing: StageRoutingMatrix,
@@ -573,6 +575,7 @@ pub struct RuntimeDefaultsResponse {
     pub provider: String,
     pub model: String,
     pub response_depth_mode: String,
+    pub reasoning_effort: String,
     pub base_url: Option<String>,
     pub stage_routing: StageRoutingMatrix,
     pub work_card_hide_after_hours: u32,
@@ -607,6 +610,7 @@ pub struct ContinuationStatusResponse {
 pub enum RuntimeConfigCommandSpec {
     Model { args: Vec<String> },
     Depth { mode: Option<String> },
+    Reasoning { mode: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -616,6 +620,8 @@ pub struct RuntimeConfigCommandRequest {
     pub draft_provider: String,
     pub draft_model: String,
     pub current_response_depth_mode: String,
+    #[serde(default)]
+    pub current_reasoning_effort: String,
     pub command: RuntimeConfigCommandSpec,
 }
 
@@ -625,8 +631,10 @@ pub struct RuntimeConfigCommandResponse {
     pub next_draft_provider: String,
     pub next_draft_model: String,
     pub next_response_depth_mode: String,
+    pub next_reasoning_effort: String,
     pub should_apply_settings: bool,
     pub should_persist_depth_defaults: bool,
+    pub should_persist_reasoning_defaults: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

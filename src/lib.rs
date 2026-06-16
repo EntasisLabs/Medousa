@@ -82,6 +82,7 @@ pub mod pairing;
 pub mod pairing_handlers;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
+pub mod reasoning_effort;
 pub mod session;
 pub mod session_active_turn;
 pub mod turn_ticket;

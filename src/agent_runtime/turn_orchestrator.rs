@@ -233,6 +233,7 @@ pub struct LocalTurnExecutionParams {
     pub model: String,
     pub base_url: Option<String>,
     pub response_depth_mode: String,
+    pub reasoning_effort: String,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
     pub tool_registry: Arc<dyn stasis::application::orchestration::tool_registry::ToolRegistry>,
     pub identity_memory_store:
@@ -270,6 +271,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub tui_rt: &'a TuiRuntime,
     pub final_route: Option<&'a StageRoute>,
     pub response_depth_mode: &'a str,
+    pub reasoning_effort: &'a str,
     pub turn_id: u64,
     pub scheduled_tool_allowlist: Option<std::collections::HashSet<String>>,
     pub media_refs: Vec<crate::daemon_api::MediaRef>,
@@ -376,6 +378,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             base_url: (!params.settings.base_url.trim().is_empty())
                 .then(|| params.settings.base_url.clone()),
             response_depth_mode: params.response_depth_mode.to_string(),
+            reasoning_effort: params.reasoning_effort.to_string(),
             worker_scheduler: params.tui_rt.worker_scheduler.clone(),
             tool_registry: params.tui_rt.tool_registry.clone(),
             identity_memory_store: Some(
@@ -604,6 +607,7 @@ async fn deliver_tool_loop_failure_explanation(
     suggested_intent: Option<&str>,
     orchestration_state: &mut TurnOrchestrationState,
     turn_budget: &TurnBudget,
+    prompt_ctx: PromptExecutionContext,
 ) {
     let _ = try_consume_prompt_only_budget(sink, orchestration_state, turn_budget).await;
     orchestration_state.final_mode = "tool_loop_failure_explanation".to_string();
@@ -636,7 +640,7 @@ async fn deliver_tool_loop_failure_explanation(
     let final_text = match no_tools_pipeline
         .complete_chat_stream(
             ChatRequest::new(messages),
-            PromptExecutionContext::default(),
+            prompt_ctx.clone(),
             Some(chunk_tx),
         )
         .await
@@ -736,6 +740,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         model,
         base_url,
         response_depth_mode,
+        reasoning_effort,
         worker_scheduler,
         tool_registry,
         identity_memory_store,
@@ -760,6 +765,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         session_scratch_seed,
         current_turn_user_message,
     } = params;
+
+    let prompt_ctx =
+        crate::reasoning_effort::prompt_execution_context(&model, Some(&reasoning_effort));
 
     sink.notice(format!(
         "◈ turn_loop_limits {}",
@@ -941,7 +949,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         match no_tools_pipeline
             .complete_chat_stream(
                 ChatRequest::new(messages),
-                PromptExecutionContext::default(),
+                prompt_ctx.clone(),
                 Some(&chunk_tx),
             )
             .await
@@ -983,7 +991,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             host_bus,
             suggested_intent,
         )),
-        context: PromptExecutionContext::default(),
+        context: prompt_ctx.clone(),
         tool_name: String::new(),
         tool_input: Value::Null,
         tool_call_mode: activation.tool_call_mode,
@@ -1132,7 +1140,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     let continuation_request = ToolLoopExecutionRequest {
                         user_prompt: continuation_compiled_prompt,
                         system_prompt: Some(DEFAULT_SYSTEM_PROMPT.to_string()),
-                        context: PromptExecutionContext::default(),
+                        context: prompt_ctx.clone(),
                         tool_name: String::new(),
                         tool_input: Value::Null,
                         tool_call_mode: ToolCallMode::Auto,
@@ -1348,6 +1356,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     suggested_intent,
                     &mut orchestration_state,
                     &turn_budget,
+                    prompt_ctx.clone(),
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
@@ -1370,6 +1379,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     suggested_intent,
                     &mut orchestration_state,
                     &turn_budget,
+                    prompt_ctx.clone(),
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;

@@ -6,13 +6,18 @@ import { runtime } from "$lib/stores/runtime.svelte";
 export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
   const channelSurface = homeChannelSurface();
   if (isTauriMobilePlatform()) {
-    return { responseDepthMode: runtime.depthMode, channelSurface };
+    return {
+      responseDepthMode: runtime.depthMode,
+      reasoningEffort: runtime.reasoningEffort,
+      channelSurface,
+    };
   }
 
   return {
     provider: runtime.provider,
     model: runtime.model,
     responseDepthMode: runtime.depthMode,
+    reasoningEffort: runtime.reasoningEffort,
     stageRouting: runtime.stageRouting,
     channelSurface,
   };

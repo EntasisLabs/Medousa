@@ -159,6 +159,7 @@ pub async fn run_heartbeat_agent_turn(
         provider,
         model,
         response_depth_mode,
+        crate::reasoning_effort::REASONING_EFFORT_DEFAULT,
         None,
         None,
         None,

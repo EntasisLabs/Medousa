@@ -18,6 +18,7 @@ export interface TuiDefaultsSummary {
   provider?: string | null;
   model?: string | null;
   responseDepthMode?: string | null;
+  reasoningEffort?: string | null;
   stageRouting?: StageRoutingMatrix | null;
   favoriteModels?: FavoriteModel[] | null;
   activeVoiceId?: string | null;
@@ -44,12 +45,14 @@ export async function persistTuiRuntimePrefs(
   provider: string,
   model: string,
   responseDepthMode: string,
+  reasoningEffort?: string,
   stageRouting?: StageRoutingMatrix,
 ): Promise<void> {
   return invoke("persist_tui_runtime_prefs", {
     provider,
     model,
     responseDepthMode,
+    reasoningEffort: reasoningEffort ?? null,
     stageRouting: stageRouting ?? null,
   });
 }

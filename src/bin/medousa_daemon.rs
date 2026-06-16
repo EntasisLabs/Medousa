@@ -969,6 +969,13 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
         .filter(|value| !value.is_empty())
         .unwrap_or(product.tui.response_depth_mode.as_str())
         .to_string();
+    let reasoning_effort = saved
+        .reasoning_effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| medousa::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string());
     let base_url = saved
         .base_url
         .as_deref()
@@ -984,6 +991,7 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
         provider,
         model,
         response_depth_mode,
+        reasoning_effort,
         base_url,
         stage_routing,
         work_card_hide_after_hours: retention.hide_after_hours,
@@ -1372,6 +1380,7 @@ async fn enqueue_ask(
         mode: medousa::turn_ticket::TurnTicketMode::Background,
         persist_user_turn: true,
         response_depth_mode: state.default_runtime_config.response_depth_mode.clone(),
+        reasoning_effort: state.default_runtime_config.reasoning_effort.clone(),
         provider: provider.clone(),
         model: model.clone(),
         stage_routing: Some(stage_routing.clone()),
@@ -1486,6 +1495,7 @@ async fn retry_ask_workspace_card(
         record.session_id.clone(),
         record.prompt.clone(),
         state.default_runtime_config.response_depth_mode.clone(),
+        state.default_runtime_config.reasoning_effort.clone(),
         provider,
         model,
         record.manuscript_id.clone(),
@@ -1549,6 +1559,7 @@ async fn enqueue_report(
         session_id,
         prompt,
         state.default_runtime_config.response_depth_mode.clone(),
+        state.default_runtime_config.reasoning_effort.clone(),
         provider,
         model,
         None,
@@ -1603,6 +1614,7 @@ async fn enqueue_prompt(
         )),
         policy_profile: Some(effective_policy_profile),
         model_hint: request.model_hint,
+        reasoning_effort: None,
         memory_policy: None,
     };
 
@@ -1785,6 +1797,7 @@ async fn register_recurring_prompt(
                     )
                 }),
                 model_hint: request.model_hint.clone(),
+                reasoning_effort: None,
                 memory_policy: None,
             };
             (
@@ -1902,6 +1915,7 @@ fn build_interactive_request_from_ticket(
         prompt: request.prompt.clone(),
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),
+        reasoning_effort: request.reasoning_effort.clone(),
         provider,
         model,
         stage_routing,
@@ -2113,6 +2127,11 @@ async fn create_turn_ticket(
     let mut interactive_request =
         build_interactive_request_from_ticket(&request, provider, model, stage_routing);
 
+    let runtime_config = resolve_session_runtime_config(&state, &session_id).await;
+    if interactive_request.reasoning_effort.trim().is_empty() {
+        interactive_request.reasoning_effort = runtime_config.reasoning_effort.clone();
+    }
+
     let (turn_id, workspace_card_id) = match request.mode {
         medousa::turn_ticket::TurnTicketMode::Interactive => {
             (format!("daemon-turn-{}", Uuid::new_v4().simple()), None)
@@ -2184,6 +2203,7 @@ async fn start_interactive_turn(
         mode: medousa::turn_ticket::TurnTicketMode::Interactive,
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),
+        reasoning_effort: request.reasoning_effort.clone(),
         provider: request.provider.clone(),
         model: request.model.clone(),
         stage_routing: Some(request.stage_routing.clone()),
@@ -2799,6 +2819,7 @@ async fn apply_session_model_config(
         draft_provider: current.draft_provider.clone(),
         draft_model: current.draft_model.clone(),
         current_response_depth_mode: current.response_depth_mode.clone(),
+        current_reasoning_effort: current.reasoning_effort.clone(),
         command: RuntimeConfigCommandSpec::Model { args },
     };
     let response = medousa::runtime_config_command_runtime::execute_runtime_config_command(request)
@@ -2821,6 +2842,7 @@ async fn apply_session_depth_config(
         draft_provider: current.draft_provider.clone(),
         draft_model: current.draft_model.clone(),
         current_response_depth_mode: current.response_depth_mode.clone(),
+        current_reasoning_effort: current.reasoning_effort.clone(),
         command: RuntimeConfigCommandSpec::Depth { mode },
     };
     let response = medousa::runtime_config_command_runtime::execute_runtime_config_command(request)
@@ -2841,6 +2863,7 @@ async fn persist_session_runtime_config(
         draft_provider: response.next_draft_provider.clone(),
         draft_model: response.next_draft_model.clone(),
         response_depth_mode: response.next_response_depth_mode.clone(),
+        reasoning_effort: response.next_reasoning_effort.clone(),
     };
     state
         .session_runtime_configs
@@ -3526,6 +3549,7 @@ async fn spawn_continuation_agent_turn(
         &record.provider,
         &record.model,
         &record.response_depth_mode,
+        medousa::reasoning_effort::REASONING_EFFORT_DEFAULT,
         None,
         None,
         None,
@@ -3600,6 +3624,7 @@ async fn spawn_continuation_agent_turn(
         record.session_id.clone(),
         interactive_request.prompt,
         record.response_depth_mode.clone(),
+        interactive_request.reasoning_effort.clone(),
         record.provider.clone(),
         record.model.clone(),
         continuation_scope,
@@ -3616,6 +3641,7 @@ async fn spawn_daemon_api_agent_turn(
     session_id: String,
     prompt: String,
     response_depth_mode: String,
+    reasoning_effort: String,
     provider: String,
     model: String,
     manuscript_id: Option<String>,
@@ -3637,6 +3663,7 @@ async fn spawn_daemon_api_agent_turn(
         session_id,
         prompt,
         response_depth_mode,
+        reasoning_effort,
         provider,
         model,
         continuation_scope,
@@ -3653,6 +3680,7 @@ async fn spawn_daemon_api_agent_turn_with_scope(
     session_id: String,
     prompt: String,
     response_depth_mode: String,
+    reasoning_effort: String,
     provider: String,
     model: String,
     continuation_scope: medousa::turn_continuation::TurnContinuationScope,
@@ -3675,6 +3703,7 @@ async fn spawn_daemon_api_agent_turn_with_scope(
         &provider,
         &model,
         &response_depth_mode,
+        &reasoning_effort,
         None,
         manuscript_id,
         additional_manuscript_ids,
@@ -4278,6 +4307,7 @@ async fn start_ingest_ask_stream(
         &runtime_config.draft_provider,
         &runtime_config.draft_model,
         &runtime_config.response_depth_mode,
+        &runtime_config.reasoning_effort,
         Some(request),
         manuscript_id,
         None,
