@@ -187,10 +187,17 @@ async fn send_telegram_agent_message(
     text: &str,
 ) -> ResponseResult<()> {
     let formatted = format_for_telegram_markdown_v2(text);
-    bot.send_message(chat_id, formatted)
+    match bot
+        .send_message(chat_id, formatted)
         .parse_mode(ParseMode::MarkdownV2)
-        .await?;
-    Ok(())
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            bot.send_message(chat_id, truncate_for_telegram(text)).await?;
+            Ok(())
+        }
+    }
 }
 
 fn resolve_telegram_token(explicit: Option<&str>) -> Result<String> {

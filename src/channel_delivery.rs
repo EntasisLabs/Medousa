@@ -391,25 +391,43 @@ async fn dispatch_telegram_message(
     let token = load_telegram_bot_token()
         .context("telegram bot token missing; run medousa setup to configure Telegram")?;
     let chat_id = parse_telegram_chat_id(channel_id)?;
-    let body = format_for_telegram_markdown_v2(text);
+    let plain = truncate_for_telegram(text);
+    let markdown = format_for_telegram_markdown_v2(text);
     let url = format!("https://api.telegram.org/bot{token}/sendMessage");
 
-    let response = client
+    let markdown_response = client
         .post(&url)
         .json(&json!({
             "chat_id": chat_id,
-            "text": body,
+            "text": markdown,
             "parse_mode": "MarkdownV2",
         }))
         .send()
         .await
         .context("telegram sendMessage request failed")?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let detail = response.text().await.unwrap_or_default();
+    if markdown_response.status().is_success() {
+        return Ok(());
+    }
+
+    let markdown_status = markdown_response.status();
+    let markdown_detail = markdown_response.text().await.unwrap_or_default();
+
+    let plain_response = client
+        .post(&url)
+        .json(&json!({
+            "chat_id": chat_id,
+            "text": plain,
+        }))
+        .send()
+        .await
+        .context("telegram plain sendMessage request failed")?;
+
+    if !plain_response.status().is_success() {
+        let plain_status = plain_response.status();
+        let plain_detail = plain_response.text().await.unwrap_or_default();
         return Err(anyhow!(
-            "telegram sendMessage returned {status}: {detail}"
+            "telegram sendMessage failed (markdown {markdown_status}: {markdown_detail}; plain {plain_status}: {plain_detail})"
         ));
     }
 

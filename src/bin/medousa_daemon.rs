@@ -3220,10 +3220,15 @@ async fn record_job_delivery_success(
     error: Option<String>,
 ) {
     let now = Utc::now();
+    let failed = error.as_ref().is_some_and(|value| !value.trim().is_empty());
     state.job_delivery_records.write().await.insert(
         job_id.to_string(),
         channel_delivery::JobDeliveryRecord {
-            state: channel_delivery::JobDeliveryState::Delivered,
+            state: if failed {
+                channel_delivery::JobDeliveryState::Failed
+            } else {
+                channel_delivery::JobDeliveryState::Delivered
+            },
             delivered_at: Some(now),
             error,
             latency_ms: Some(latency_ms),
@@ -3259,10 +3264,15 @@ async fn mark_job_delivery_success(
     last_delivery_latency_ms: &Arc<RwLock<Option<u64>>>,
 ) {
     let now = Utc::now();
+    let failed = error.as_ref().is_some_and(|value| !value.trim().is_empty());
     delivery_records.write().await.insert(
         job_id.to_string(),
         channel_delivery::JobDeliveryRecord {
-            state: channel_delivery::JobDeliveryState::Delivered,
+            state: if failed {
+                channel_delivery::JobDeliveryState::Failed
+            } else {
+                channel_delivery::JobDeliveryState::Delivered
+            },
             delivered_at: Some(now),
             error,
             latency_ms: Some(latency_ms),

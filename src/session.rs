@@ -449,6 +449,19 @@ pub fn save_discord_bot_token(token: Option<&str>) {
 }
 
 pub fn load_telegram_bot_token() -> Option<String> {
+    for key in [
+        "MEDOUSA_TELEGRAM_BOT_TOKEN",
+        "MEDOUSA_TELEGRAM_TOKEN",
+        "TELOXIDE_TOKEN",
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
     if let Ok(entry) = telegram_bot_token_keyring_entry() {
         if let Ok(value) = entry.get_password() {
             let trimmed = value.trim();

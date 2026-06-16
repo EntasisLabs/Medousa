@@ -43,7 +43,16 @@ pub async fn wait_for_ask_delivery(
     loop {
         let poll = poll_delivery_status(client, daemon_url, job_id).await?;
         match poll.status.as_str() {
-            "delivered" => return Ok(AdapterDeliveryOutcome::PushDelivered),
+            "delivered" => {
+                if poll
+                    .error
+                    .as_ref()
+                    .is_some_and(|value| !value.trim().is_empty())
+                {
+                    break;
+                }
+                return Ok(AdapterDeliveryOutcome::PushDelivered);
+            }
             "failed" => {
                 let message = poll
                     .error

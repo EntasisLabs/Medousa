@@ -244,6 +244,21 @@ pub(crate) fn should_load_private_brain(explicit: bool) -> bool {
         .is_some_and(|provider| provider.eq_ignore_ascii_case("medousa-local"))
 }
 
+fn apply_daemon_messaging_env(command: &mut Command) {
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("telegram_bot_token") {
+        command.env("MEDOUSA_TELEGRAM_BOT_TOKEN", token);
+    }
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("discord_bot_token") {
+        command.env("MEDOUSA_DISCORD_BOT_TOKEN", token);
+    }
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("slack_bot_token") {
+        command.env("MEDOUSA_SLACK_BOT_TOKEN", token);
+    }
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("slack_app_token") {
+        command.env("MEDOUSA_SLACK_APP_TOKEN", token);
+    }
+}
+
 fn spawn_daemon_background(backend: &str, bind: &str, private_brain: bool) -> Result<(u32, PathBuf), String> {
     let daemon = resolve_daemon_binary()?;
     let log_path = daemon_log_path();
@@ -272,6 +287,7 @@ fn spawn_daemon_background(backend: &str, bind: &str, private_brain: bool) -> Re
     if private_brain {
         command.arg("--local-engine");
     }
+    apply_daemon_messaging_env(&mut command);
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));

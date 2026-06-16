@@ -113,10 +113,15 @@ async fn mark_ingest_job_delivered(
     error: Option<String>,
 ) {
     let now = Utc::now();
+    let failed = error.as_ref().is_some_and(|value| !value.trim().is_empty());
     bridge.delivery_records.write().await.insert(
         job_id.to_string(),
         JobDeliveryRecord {
-            state: JobDeliveryState::Delivered,
+            state: if failed {
+                JobDeliveryState::Failed
+            } else {
+                JobDeliveryState::Delivered
+            },
             delivered_at: Some(now),
             error,
             latency_ms: Some(latency_ms),

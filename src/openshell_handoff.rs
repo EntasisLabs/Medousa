@@ -97,8 +97,15 @@ pub fn resolve_openshell_local_bin(name: &str) -> Option<PathBuf> {
 }
 
 pub fn podman_user_socket_path() -> PathBuf {
-    let uid = unsafe { libc::getuid() };
-    PathBuf::from(format!("/run/user/{uid}/podman/podman.sock"))
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::getuid() };
+        PathBuf::from(format!("/run/user/{uid}/podman/podman.sock"))
+    }
+    #[cfg(not(unix))]
+    {
+        PathBuf::from(r"C:\nonexistent\medousa-podman.sock")
+    }
 }
 
 pub fn probe_tcp_endpoint(url: &str, timeout: Duration) -> bool {
