@@ -2643,133 +2643,150 @@
     max-width: 5.5rem;
   }
 
-  .mobile-composer-settings {
+  .mobile-composer-turn {
     @apply relative min-w-0 flex-1;
   }
 
-  .mobile-composer-settings-trigger {
-    @apply flex w-full min-w-0 max-w-none items-center gap-1 rounded-lg border bg-surface-900/50 px-2 py-1 text-left transition;
-    border-color: rgb(var(--color-surface-600) / 0.35);
+  .mobile-composer-turn-trigger {
+    @apply flex max-w-full min-w-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-left transition;
+    background: rgb(var(--color-surface-700) / 0.42);
+    border: 1px solid rgb(var(--color-surface-600) / 0.28);
   }
 
-  .mobile-composer-settings-trigger:disabled {
+  .mobile-composer-turn-trigger:disabled {
     @apply opacity-45;
   }
 
-  .mobile-composer-settings-trigger-open {
-    border-color: rgb(var(--color-primary-500) / 0.45);
-    background-color: rgb(var(--color-surface-900) / 0.72);
-    box-shadow: 0 0 0 2px rgb(var(--color-primary-500) / 0.12);
+  .mobile-composer-turn-trigger-open {
+    background: rgb(var(--color-surface-700) / 0.58);
+    border-color: rgb(var(--color-surface-500) / 0.38);
   }
 
-  .mobile-composer-settings-trigger-copy {
-    @apply min-w-0 flex-1;
+  .mobile-composer-turn-trigger-label {
+    @apply min-w-0 flex-1 truncate text-[13px] font-medium text-surface-200;
+    letter-spacing: -0.01em;
   }
 
-  .mobile-composer-settings-trigger-name {
-    @apply block truncate text-[12px] font-medium leading-tight text-surface-100;
+  .mobile-composer-turn-trigger-sep {
+    @apply px-0.5 text-surface-500;
   }
 
-  .mobile-composer-settings-trigger-meta {
-    @apply block truncate text-[10px] leading-tight text-surface-500;
-  }
-
-  .mobile-composer-settings-trigger-chevron {
+  .mobile-composer-turn-trigger-chevron {
     @apply shrink-0 text-surface-500 transition-transform duration-200;
   }
 
-  .mobile-composer-settings-trigger-open .mobile-composer-settings-trigger-chevron {
+  .mobile-composer-turn-trigger-open .mobile-composer-turn-trigger-chevron {
     transform: rotate(180deg);
   }
 
-  .mobile-composer-settings-backdrop {
-    @apply fixed inset-0 z-40;
-    background: rgb(var(--color-surface-950) / 0.18);
+  .mobile-turn-sheet-backdrop {
+    z-index: 70;
   }
 
-  .mobile-composer-settings-popover {
-    @apply absolute bottom-full left-0 z-50 mb-2 w-[min(18.5rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl;
-    border: 1px solid rgb(var(--color-surface-600) / 0.42);
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-surface-800) / 0.98),
-      rgb(var(--color-surface-900) / 0.99)
-    );
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
-      0 16px 40px rgb(0 0 0 / 0.38),
-      0 0 0 1px rgb(0 0 0 / 0.18);
-    backdrop-filter: blur(18px);
+  .mobile-turn-sheet {
+    @apply max-h-[min(78vh,640px)] will-change-transform;
+    border-radius: 1.25rem 1.25rem 0 0;
+    background: rgb(var(--color-surface-900) / 0.98);
+    backdrop-filter: blur(24px);
   }
 
-  .mobile-composer-settings-header {
-    @apply flex items-start justify-between gap-3 border-b border-surface-700/45 px-3 py-2.5;
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-turn-sheet-backdrop,
+    .mobile-turn-sheet {
+      transition: none !important;
+      animation: none !important;
+    }
   }
 
-  .mobile-composer-settings-title {
-    @apply inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-surface-400;
+  .mobile-turn-sheet-grabber {
+    @apply mx-auto mt-2 h-1 w-10 shrink-0 rounded-full;
+    background: rgb(var(--color-surface-500) / 0.55);
   }
 
-  .mobile-composer-settings-active {
-    @apply max-w-[8rem] truncate text-right text-xs font-medium text-surface-200;
+  .mobile-turn-sheet-header {
+    @apply grid shrink-0 grid-cols-[2.5rem_1fr_2.5rem] items-center px-3 pb-2 pt-1;
   }
 
-  .mobile-composer-settings-section {
-    @apply border-b border-surface-700/35 px-3 py-2.5 last:border-b-0;
+  .mobile-turn-sheet-title {
+    @apply relative overflow-hidden text-center text-[15px] font-semibold text-surface-50;
+    letter-spacing: -0.01em;
   }
 
-  .mobile-composer-settings-label {
-    @apply mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em] text-surface-500;
+  .mobile-turn-sheet-title-text {
+    @apply block;
   }
 
-  .mobile-composer-settings-readonly {
-    @apply text-sm font-medium text-surface-100;
+  .mobile-turn-sheet-header-spacer {
+    @apply h-9 w-9;
   }
 
-  .mobile-composer-settings-footnote {
-    @apply mt-1 text-[11px] leading-snug text-surface-500;
+  .mobile-turn-sheet-icon-btn {
+    @apply flex h-9 w-9 items-center justify-center rounded-full text-surface-300 transition active:scale-95;
+    background: rgb(var(--color-surface-800) / 0.72);
   }
 
-  .mobile-composer-settings-list {
-    @apply m-0 max-h-36 list-none space-y-1 overflow-y-auto p-0;
+  .mobile-turn-sheet-body {
+    @apply relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-6 pt-1;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
   }
 
-  .mobile-composer-settings-option {
-    @apply flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition;
-    border: 1px solid transparent;
+  .mobile-turn-sheet-panel {
+    @apply w-full;
   }
 
-  .mobile-composer-settings-option-active {
-    border-color: rgb(var(--color-primary-500) / 0.35);
-    background: rgb(var(--color-primary-500) / 0.1);
+  .mobile-turn-sheet-empty {
+    @apply px-1 py-6 text-center text-sm text-surface-500;
   }
 
-  .mobile-composer-settings-option-copy {
+  .mobile-turn-sheet-group {
+    @apply overflow-hidden rounded-2xl;
+    background: rgb(var(--color-surface-800) / 0.72);
+    border: 1px solid rgb(var(--color-surface-600) / 0.28);
+  }
+
+  .mobile-turn-sheet-group-secondary {
+    @apply mt-3;
+  }
+
+  .mobile-turn-sheet-row {
+    @apply flex w-full items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-700/35;
+  }
+
+  .mobile-turn-sheet-row-divider {
+    box-shadow: inset 0 1px 0 rgb(var(--color-surface-600) / 0.22);
+  }
+
+  .mobile-turn-sheet-row-copy {
     @apply min-w-0 flex-1;
   }
 
-  .mobile-composer-settings-option-name {
-    @apply block truncate text-sm font-medium text-surface-100;
+  .mobile-turn-sheet-row-title {
+    @apply block text-[15px] font-medium leading-snug text-surface-50;
+    letter-spacing: -0.01em;
   }
 
-  .mobile-composer-settings-option-hint {
-    @apply block truncate text-[11px] text-surface-500;
+  .mobile-turn-sheet-row-subtitle {
+    @apply mt-0.5 block text-[13px] leading-snug text-surface-500;
   }
 
-  .mobile-composer-settings-segment {
-    @apply flex flex-wrap gap-1;
+  .mobile-turn-sheet-row-check {
+    @apply shrink-0 text-primary-400;
   }
 
-  .mobile-composer-settings-segment-btn {
-    @apply rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-surface-300 transition;
-    border: 1px solid rgb(var(--color-surface-600) / 0.35);
-    background: rgb(var(--color-surface-900) / 0.45);
+  .mobile-turn-sheet-link-row {
+    @apply flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition active:bg-surface-700/35;
   }
 
-  .mobile-composer-settings-segment-btn-active {
-    border-color: rgb(var(--color-primary-500) / 0.45);
-    background: rgb(var(--color-primary-500) / 0.14);
-    color: rgb(var(--color-surface-50));
+  .mobile-turn-sheet-link-label {
+    @apply text-[15px] font-medium text-surface-100;
+  }
+
+  .mobile-turn-sheet-link-value {
+    @apply inline-flex items-center gap-0.5 text-[15px] text-surface-500;
+  }
+
+  .mobile-turn-sheet-link-chevron {
+    @apply text-surface-600;
   }
 
   .mobile-composer-dock .composer-bar-send {
