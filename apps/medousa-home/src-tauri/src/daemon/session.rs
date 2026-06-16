@@ -268,6 +268,10 @@ struct CreateTurnTicketBody {
     surface: Option<TurnSurfaceContext>,
     #[serde(default)]
     media_refs: Vec<MediaRef>,
+    #[serde(default)]
+    voice_preset_id: Option<String>,
+    #[serde(default)]
+    voice_appendix: Option<String>,
 }
 
 fn default_persist_user_turn() -> bool {
@@ -290,6 +294,8 @@ pub async fn turn_create(
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
     media_refs: Option<Vec<MediaRef>>,
+    voice_preset_id: Option<String>,
+    voice_appendix: Option<String>,
 ) -> Result<TurnTicketResponse, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed_session = session_id.trim();
@@ -345,6 +351,12 @@ pub async fn turn_create(
         stage_routing: Some(stage_routing),
         surface,
         media_refs: media_refs.unwrap_or_default(),
+        voice_preset_id: voice_preset_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        voice_appendix: voice_appendix
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
     };
 
     let client = Client::new();

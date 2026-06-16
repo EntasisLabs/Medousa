@@ -1,6 +1,8 @@
 import type { DepthMode, StageRoutingMatrix } from "$lib/types/runtime";
 import type { FavoriteModel } from "$lib/utils/modelCatalog";
+import type { VoicePreset } from "$lib/types/voicePresets";
 import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
+import { DEFAULT_VOICE_ID, normalizeCustomVoicePresets } from "$lib/types/voicePresets";
 
 export type WorkshopDefaultsTab =
   | "setup"
@@ -52,6 +54,10 @@ export interface TuiDefaults {
   sttBaseUrl?: string | null;
   /** Pinned chat models for quick access in composer and settings. */
   favoriteModels?: FavoriteModel[] | null;
+  /** Active composer voice preset id (built-in or custom). */
+  activeVoiceId?: string | null;
+  /** User-authored voice stance presets (cap 8). */
+  customVoicePresets?: VoicePreset[] | null;
   workCardHideAfterHours?: number | null;
   workCardWipeAfterDays?: number | null;
 }
@@ -206,6 +212,8 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     sttModel: raw.sttModel?.trim() || defaultSttModel(raw.sttProvider ?? "openai"),
     sttBaseUrl: raw.sttBaseUrl?.trim() || "",
     favoriteModels: normalizeFavoriteModels(raw.favoriteModels),
+    activeVoiceId: raw.activeVoiceId?.trim() || DEFAULT_VOICE_ID,
+    customVoicePresets: normalizeCustomVoicePresets(raw.customVoicePresets),
     workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
   };

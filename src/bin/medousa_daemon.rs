@@ -1380,6 +1380,8 @@ async fn enqueue_ask(
         manuscript_id,
         additional_manuscript_ids,
         suggested_capability_ids,
+        voice_preset_id: None,
+        voice_appendix: None,
         media_refs: Vec::new(),
     };
     let interactive_request =
@@ -1910,6 +1912,8 @@ fn build_interactive_request_from_ticket(
         additional_manuscript_ids: request.additional_manuscript_ids.clone(),
         suggested_capability_ids: request.suggested_capability_ids.clone(),
         scheduled_tool_allowlist: None,
+        voice_preset_id: request.voice_preset_id.clone(),
+        voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
     }
 }
@@ -2188,6 +2192,8 @@ async fn start_interactive_turn(
         manuscript_id: request.manuscript_id.clone(),
         additional_manuscript_ids: request.additional_manuscript_ids.clone(),
         suggested_capability_ids: request.suggested_capability_ids.clone(),
+        voice_preset_id: request.voice_preset_id.clone(),
+        voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
     };
 

@@ -357,6 +357,25 @@ pub fn append_manuscript_hint(prompt: &str, manuscript: Option<&ManuscriptContex
     )
 }
 
+pub fn append_voice_preset_hint(
+    prompt: &str,
+    voice_preset_id: Option<&str>,
+    voice_appendix: Option<&str>,
+) -> String {
+    let appendix = voice_appendix.map(str::trim).filter(|value| !value.is_empty());
+    let Some(appendix) = appendix else {
+        return prompt.to_string();
+    };
+    let preset = voice_preset_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("custom");
+    format!(
+        "{prompt}\n\n[MEDOUSA_VOICE]\npreset={preset}\n{}",
+        truncate_text_for_budget(appendix, 800)
+    )
+}
+
 pub fn append_identity_context_hint(prompt: &str, identity: &IdentityContextProbe) -> String {
     if !identity.attempted {
         return prompt.to_string();

@@ -143,6 +143,8 @@ export async function createTurnTicket(
     stageRouting: request.stageRouting ?? null,
     channelSurface: request.channelSurface ?? null,
     mediaRefs: request.mediaRefs ?? null,
+    voicePresetId: request.voicePresetId ?? null,
+    voiceAppendix: request.voiceAppendix ?? null,
   });
 }
 

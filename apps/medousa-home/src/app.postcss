@@ -2643,6 +2643,135 @@
     max-width: 5.5rem;
   }
 
+  .mobile-composer-settings {
+    @apply relative min-w-0 flex-1;
+  }
+
+  .mobile-composer-settings-trigger {
+    @apply flex w-full min-w-0 max-w-none items-center gap-1 rounded-lg border bg-surface-900/50 px-2 py-1 text-left transition;
+    border-color: rgb(var(--color-surface-600) / 0.35);
+  }
+
+  .mobile-composer-settings-trigger:disabled {
+    @apply opacity-45;
+  }
+
+  .mobile-composer-settings-trigger-open {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    background-color: rgb(var(--color-surface-900) / 0.72);
+    box-shadow: 0 0 0 2px rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .mobile-composer-settings-trigger-copy {
+    @apply min-w-0 flex-1;
+  }
+
+  .mobile-composer-settings-trigger-name {
+    @apply block truncate text-[12px] font-medium leading-tight text-surface-100;
+  }
+
+  .mobile-composer-settings-trigger-meta {
+    @apply block truncate text-[10px] leading-tight text-surface-500;
+  }
+
+  .mobile-composer-settings-trigger-chevron {
+    @apply shrink-0 text-surface-500 transition-transform duration-200;
+  }
+
+  .mobile-composer-settings-trigger-open .mobile-composer-settings-trigger-chevron {
+    transform: rotate(180deg);
+  }
+
+  .mobile-composer-settings-backdrop {
+    @apply fixed inset-0 z-40;
+    background: rgb(var(--color-surface-950) / 0.18);
+  }
+
+  .mobile-composer-settings-popover {
+    @apply absolute bottom-full left-0 z-50 mb-2 w-[min(18.5rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl;
+    border: 1px solid rgb(var(--color-surface-600) / 0.42);
+    background: linear-gradient(
+      180deg,
+      rgb(var(--color-surface-800) / 0.98),
+      rgb(var(--color-surface-900) / 0.99)
+    );
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 16px 40px rgb(0 0 0 / 0.38),
+      0 0 0 1px rgb(0 0 0 / 0.18);
+    backdrop-filter: blur(18px);
+  }
+
+  .mobile-composer-settings-header {
+    @apply flex items-start justify-between gap-3 border-b border-surface-700/45 px-3 py-2.5;
+  }
+
+  .mobile-composer-settings-title {
+    @apply inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-surface-400;
+  }
+
+  .mobile-composer-settings-active {
+    @apply max-w-[8rem] truncate text-right text-xs font-medium text-surface-200;
+  }
+
+  .mobile-composer-settings-section {
+    @apply border-b border-surface-700/35 px-3 py-2.5 last:border-b-0;
+  }
+
+  .mobile-composer-settings-label {
+    @apply mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em] text-surface-500;
+  }
+
+  .mobile-composer-settings-readonly {
+    @apply text-sm font-medium text-surface-100;
+  }
+
+  .mobile-composer-settings-footnote {
+    @apply mt-1 text-[11px] leading-snug text-surface-500;
+  }
+
+  .mobile-composer-settings-list {
+    @apply m-0 max-h-36 list-none space-y-1 overflow-y-auto p-0;
+  }
+
+  .mobile-composer-settings-option {
+    @apply flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition;
+    border: 1px solid transparent;
+  }
+
+  .mobile-composer-settings-option-active {
+    border-color: rgb(var(--color-primary-500) / 0.35);
+    background: rgb(var(--color-primary-500) / 0.1);
+  }
+
+  .mobile-composer-settings-option-copy {
+    @apply min-w-0 flex-1;
+  }
+
+  .mobile-composer-settings-option-name {
+    @apply block truncate text-sm font-medium text-surface-100;
+  }
+
+  .mobile-composer-settings-option-hint {
+    @apply block truncate text-[11px] text-surface-500;
+  }
+
+  .mobile-composer-settings-segment {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .mobile-composer-settings-segment-btn {
+    @apply rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-surface-300 transition;
+    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    background: rgb(var(--color-surface-900) / 0.45);
+  }
+
+  .mobile-composer-settings-segment-btn-active {
+    border-color: rgb(var(--color-primary-500) / 0.45);
+    background: rgb(var(--color-primary-500) / 0.14);
+    color: rgb(var(--color-surface-50));
+  }
+
   .mobile-composer-dock .composer-bar-send {
     @apply mb-0 h-8 w-8 shrink-0 text-sm;
   }

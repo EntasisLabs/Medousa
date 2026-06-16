@@ -168,6 +168,7 @@ pub fn run() {
             medousa_paths::persist_tui_defaults,
             medousa_paths::persist_tui_runtime_prefs,
             medousa_paths::persist_tui_favorite_models,
+            medousa_paths::persist_tui_voice_prefs,
             messaging::messaging_load_product_config_summary,
             messaging::messaging_save_channel_config,
             messaging::messaging_secret_status,

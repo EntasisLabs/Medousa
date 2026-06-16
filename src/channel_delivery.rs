@@ -788,6 +788,8 @@ mod tests {
             additional_manuscript_ids: None,
             suggested_capability_ids: None,
             scheduled_tool_allowlist: None,
+            voice_preset_id: None,
+            voice_appendix: None,
             media_refs: Vec::new(),
         };
         let target = delivery_target_from_interactive_turn(&request, "turn-1");

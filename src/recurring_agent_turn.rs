@@ -212,6 +212,8 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             } else {
                 Some(payload.scheduled_tool_allowlist.clone())
             },
+            voice_preset_id: None,
+            voice_appendix: None,
             media_refs: Vec::new(),
         };
 

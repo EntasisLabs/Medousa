@@ -1,6 +1,12 @@
 <script lang="ts">
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import {
+    companionTurnRoutingHint,
+    connectToWorkshopHint,
+    workshopDaemonDefaultsLabel,
+    workshopHostBadge,
+  } from "$lib/platformCopy";
 
   interface Props {
     compact?: boolean;
@@ -10,17 +16,17 @@
   let { compact = false, class: className = "" }: Props = $props();
 
   const detail = $derived.by(() => {
-    if (!connection.health?.ok) return "Connect to your Mac to chat";
+    if (!connection.health?.ok) return connectToWorkshopHint();
     if (runtime.defaultsLoaded) return runtime.modelLabel();
-    return "Mac daemon defaults";
+    return workshopDaemonDefaultsLabel();
   });
 </script>
 
 <p
   class="daemon-portal-chip {className}"
-  title="This device sends turns to your Mac daemon — model and routing live there."
+  title={companionTurnRoutingHint()}
 >
-  <span class="daemon-portal-chip-badge">Mac</span>
+  <span class="daemon-portal-chip-badge">{workshopHostBadge()}</span>
   {#if compact}
     <span class="truncate">{detail}</span>
   {:else}

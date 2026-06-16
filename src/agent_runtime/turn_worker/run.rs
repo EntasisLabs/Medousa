@@ -800,6 +800,8 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         additional_manuscript_ids: None,
         suggested_capability_ids: None,
         scheduled_tool_allowlist: None,
+        voice_preset_id: None,
+        voice_appendix: None,
         media_refs: Vec::new(),
     };
     let mut settings = runtime_settings_for_interactive_turn("worker", &request);

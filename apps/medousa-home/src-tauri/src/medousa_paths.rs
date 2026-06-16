@@ -19,6 +19,16 @@ pub struct FavoriteModelDto {
     pub model: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoicePresetDto {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub voice_appendix: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TuiDefaultsSummary {
@@ -27,6 +37,8 @@ pub struct TuiDefaultsSummary {
     pub response_depth_mode: Option<String>,
     pub stage_routing: Option<serde_json::Value>,
     pub favorite_models: Option<Vec<FavoriteModelDto>>,
+    pub active_voice_id: Option<String>,
+    pub custom_voice_presets: Option<Vec<VoicePresetDto>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -72,6 +84,8 @@ pub struct TuiDefaultsDto {
     pub work_card_hide_after_hours: Option<u32>,
     pub work_card_wipe_after_days: Option<u32>,
     pub favorite_models: Option<Vec<FavoriteModelDto>>,
+    pub active_voice_id: Option<String>,
+    pub custom_voice_presets: Option<Vec<VoicePresetDto>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -156,6 +170,10 @@ struct TuiDefaultsFile {
     work_card_wipe_after_days: Option<u32>,
     #[serde(default)]
     favorite_models: Option<Vec<FavoriteModelDto>>,
+    #[serde(default)]
+    active_voice_id: Option<String>,
+    #[serde(default)]
+    custom_voice_presets: Option<Vec<VoicePresetDto>>,
     #[serde(default)]
     command_usage_counts: Option<serde_json::Value>,
     #[serde(default)]
@@ -246,6 +264,8 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         work_card_hide_after_hours: file.work_card_hide_after_hours,
         work_card_wipe_after_days: file.work_card_wipe_after_days,
         favorite_models: file.favorite_models.clone(),
+        active_voice_id: file.active_voice_id.clone(),
+        custom_voice_presets: file.custom_voice_presets.clone(),
     }
 }
 
@@ -323,6 +343,13 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
             Some(filtered)
         }
     });
+    file.active_voice_id = dto
+        .active_voice_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    file.custom_voice_presets = normalize_voice_presets(dto.custom_voice_presets.clone());
     if dto.stage_routing.is_some() {
         file.stage_routing = dto.stage_routing.clone();
     }
@@ -351,6 +378,8 @@ pub fn load_tui_defaults_summary() -> TuiDefaultsSummary {
         response_depth_mode: file.response_depth_mode,
         stage_routing: file.stage_routing,
         favorite_models: file.favorite_models,
+        active_voice_id: file.active_voice_id,
+        custom_voice_presets: file.custom_voice_presets,
     }
 }
 
@@ -393,5 +422,58 @@ pub fn persist_tui_favorite_models(models: Vec<FavoriteModelDto>) -> Result<(), 
             .take(8)
             .collect(),
     );
+    write_tui_defaults_file(&file)
+}
+
+fn normalize_voice_presets(
+    presets: Option<Vec<VoicePresetDto>>,
+) -> Option<Vec<VoicePresetDto>> {
+    let presets = presets?;
+    let filtered: Vec<VoicePresetDto> = presets
+        .into_iter()
+        .filter_map(|entry| {
+            let id = entry.id.trim();
+            let name = entry.name.trim();
+            let voice_appendix = entry.voice_appendix.trim();
+            if id.is_empty() || name.is_empty() || voice_appendix.is_empty() {
+                return None;
+            }
+            if id == "default" || id == "direct" {
+                return None;
+            }
+            Some(VoicePresetDto {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: entry
+                    .description
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
+                voice_appendix: voice_appendix.to_string(),
+            })
+        })
+        .take(8)
+        .collect();
+    if filtered.is_empty() {
+        None
+    } else {
+        Some(filtered)
+    }
+}
+
+#[tauri::command]
+pub fn persist_tui_voice_prefs(
+    active_voice_id: String,
+    custom_voice_presets: Option<Vec<VoicePresetDto>>,
+) -> Result<(), String> {
+    let mut file = read_tui_defaults_file();
+    let trimmed = active_voice_id.trim();
+    file.active_voice_id = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    };
+    file.custom_voice_presets = normalize_voice_presets(custom_voice_presets);
     write_tui_defaults_file(&file)
 }

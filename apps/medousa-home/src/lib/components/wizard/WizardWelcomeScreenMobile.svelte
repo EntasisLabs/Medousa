@@ -5,6 +5,11 @@
   import { inferDevDaemonUrl, isLoopbackDaemonUrl } from "$lib/daemonConnection";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
+  import {
+    workshopPairingFromHostHint,
+    workshopPairingStepsHint,
+    workshopQrScanHint,
+  } from "$lib/platformCopy";
 
   type ConnectMode = "address" | "pair";
 
@@ -77,7 +82,7 @@
       if (showErrors) {
         statusMessage =
           connectMode === "pair"
-            ? "Paste the pairing link from your Mac, or switch to Enter address."
+            ? workshopPairingFromHostHint()
             : "Enter your computer's address — e.g. http://192.168.1.42:7419";
       }
       connected = false;
@@ -194,7 +199,7 @@
     <label class="mt-6 block">
       <span class="block text-sm font-medium text-surface-100">Pairing link</span>
       <span class="workshop-faint mt-0.5 block text-xs">
-        Scan the QR on your Mac with the Camera app, then paste the medousa:// link here
+        {workshopQrScanHint()}
       </span>
       <input
         class="input mt-2 w-full font-mono text-sm"
@@ -266,7 +271,7 @@
       <li>Phone and computer must be on the same Wi‑Fi (guest networks often block this).</li>
       <li>Medousa must be running on the computer before you connect.</li>
       <li>
-        Pairing link: open the Camera app, scan the QR on your Mac, tap the banner, copy the link
+        {workshopPairingStepsHint()}
         if needed.
       </li>
       <li>You can change this address later in Settings → Connection.</li>

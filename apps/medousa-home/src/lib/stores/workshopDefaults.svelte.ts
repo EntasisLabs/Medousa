@@ -7,6 +7,7 @@ import {
 import { getRuntimeDefaults } from "$lib/daemon";
 import { messagingSecretStatus, messagingSaveSecret, messagingClearSecret } from "$lib/messaging";
 import { runtime } from "$lib/stores/runtime.svelte";
+import { voicePresets } from "$lib/stores/voicePresets.svelte";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import {
   allowedModulesToText,
@@ -16,7 +17,8 @@ import {
   type TuiDefaults,
   type WorkshopDefaultsTab,
 } from "$lib/types/workshopDefaults";
-import { isTauriMobilePlatform } from "$lib/platform";
+  import { isTauriMobilePlatform } from "$lib/platform";
+  import { workshopCharterOnHostHint } from "$lib/platformCopy";
 import { isTauri } from "$lib/window";
 import {
   isFavoriteModel,
@@ -89,6 +91,7 @@ export class WorkshopDefaultsStore {
       this.sttApiKeySet = await messagingSecretStatus("stt_api_key");
       this.sttApiKeyDraft = "";
       this.clearSttApiKey = false;
+      voicePresets.applyFromDraft(this.draft);
       this.loaded = true;
     } catch (err) {
       this.message = err instanceof Error ? err.message : String(err);
@@ -149,8 +152,7 @@ export class WorkshopDefaultsStore {
   async save() {
     if (!isTauri()) return;
     if (isTauriMobilePlatform()) {
-      this.message =
-        "Workshop charter lives on the Mac daemon. Change Memory and Voice in Settings on the Mac, or edit tui_defaults.json.";
+      this.message = workshopCharterOnHostHint();
       return;
     }
     this.saving = true;
@@ -203,6 +205,7 @@ export class WorkshopDefaultsStore {
       if (payload.stageRouting) {
         runtime.stageRouting = payload.stageRouting;
       }
+      voicePresets.applyFromDraft(payload);
       await persistTuiRuntimePrefs(
         runtime.provider,
         runtime.model,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { workshopConfigOnHostHint } from "$lib/platformCopy";
 
   interface Props {
     mobile?: boolean;
@@ -16,7 +17,7 @@
   <p class="workshop-faint text-sm">Loading your charter…</p>
 {:else if mobileReadOnly}
   <p class="workshop-faint rounded-container-token border border-surface-500/35 bg-surface-900/40 px-3 py-2 text-xs leading-relaxed">
-    These values live on your Mac workshop. Change Models and Voice on the Mac, or edit
+    {workshopConfigOnHostHint()} See
     <span class="font-mono text-surface-400">tui_defaults.json</span> in Basement → Workshop files.
   </p>
 {:else}

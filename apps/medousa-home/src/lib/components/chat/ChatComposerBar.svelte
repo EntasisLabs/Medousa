@@ -1,11 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { LoaderCircle, Mic, Plus } from "@lucide/svelte";
-  import { runtime } from "$lib/stores/runtime.svelte";
-  import MobileComposerModelSelect from "$lib/components/mobile/MobileComposerModelSelect.svelte";
-  import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
-  import type { DepthMode } from "$lib/types/runtime";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
+  import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
@@ -261,22 +258,7 @@
           {/if}
         </button>
 
-        <MobileComposerModelSelect disabled={pickerDisabled} />
-
-        <select
-          class="mobile-composer-select mobile-composer-select-depth"
-          aria-label="Answer depth"
-          disabled={pickerDisabled || runtime.savingControls}
-          value={runtime.depthMode}
-          onchange={(event) => {
-            const next = (event.currentTarget as HTMLSelectElement).value as DepthMode;
-            if (next !== runtime.depthMode) void runtime.setDepthMode(next);
-          }}
-        >
-          {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
-            <option value={option.id}>{option.label}</option>
-          {/each}
-        </select>
+        <MobileComposerTurnSettings disabled={pickerDisabled} />
 
         <span class="mobile-composer-dock-spacer" aria-hidden="true"></span>
 

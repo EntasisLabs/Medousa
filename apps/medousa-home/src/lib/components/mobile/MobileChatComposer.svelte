@@ -6,6 +6,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket } from "$lib/daemon";
@@ -35,6 +36,7 @@
   ) {
     const opts = buildInteractiveTurnOptions();
     const mediaRefs = [...chat.pendingMediaRefs];
+    const voice = voicePresets.turnVoiceFields();
     const accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt,
@@ -45,6 +47,8 @@
       stageRouting: opts.stageRouting,
       channelSurface: opts.channelSurface,
       mediaRefs,
+      voicePresetId: voice.voicePresetId,
+      voiceAppendix: voice.voiceAppendix,
     });
     chat.beginTurn(userContent, accepted, mediaRefs);
     chat.clearPendingMedia();

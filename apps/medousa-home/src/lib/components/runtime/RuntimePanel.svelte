@@ -9,6 +9,10 @@
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { DepthMode, RuntimeTab } from "$lib/types/runtime";
+  import {
+    workshopRuntimeReadHint,
+    workshopRuntimeRoutingHint,
+  } from "$lib/platformCopy";
 
   interface Props {
     visible: boolean;
@@ -306,9 +310,7 @@
           <div class="workshop-inset space-y-3 p-4">
             <DaemonPortalChip />
             <p class="workshop-faint text-xs">
-              Model and stage routing are configured on your Mac. This phone sends turns to the
-              daemon — change Voice and Reach in Mac Settings, or edit
-              <span class="font-mono text-surface-400">tui_defaults.json</span> there.
+              {workshopRuntimeRoutingHint()}
             </p>
           </div>
         {:else}
@@ -356,7 +358,7 @@
         <div class="workshop-inset p-4">
           <h2 class="text-sm font-semibold text-surface-100">Active model</h2>
           <p class="mt-2 font-mono text-sm text-surface-200">{runtime.modelLabel()}</p>
-          <p class="workshop-faint mt-1 text-xs">Read from Mac daemon after connect</p>
+          <p class="workshop-faint mt-1 text-xs">{workshopRuntimeReadHint()}</p>
         </div>
         {/if}
 

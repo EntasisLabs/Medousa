@@ -368,6 +368,8 @@ pub(crate) async fn start_prompt_run(
         manuscript_id: None,
         additional_manuscript_ids: None,
         suggested_capability_ids: None,
+        voice_preset_id: None,
+        voice_appendix: None,
     })
     .await;
 
@@ -668,6 +670,8 @@ async fn attempt_daemon_interactive_turn(
         additional_manuscript_ids: None,
         suggested_capability_ids: None,
         scheduled_tool_allowlist: None,
+        voice_preset_id: None,
+        voice_appendix: None,
         media_refs: Vec::new(),
     };
 

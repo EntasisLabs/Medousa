@@ -9,6 +9,7 @@
     WORKSHOP_DEFAULTS_TABS,
     type WorkshopDefaultsTab,
   } from "$lib/types/workshopDefaults";
+  import { workshopDefaultsMirrorHint } from "$lib/platformCopy";
 
   interface Props {
     visible: boolean;
@@ -80,7 +81,7 @@
       <h2 class="text-sm font-semibold text-surface-100">Workshop defaults</h2>
       <p class="workshop-faint mt-0.5">
         {#if mobile}
-          Read-only snapshot from the Mac — day-to-day charter is in Settings → Memory & Voice.
+          {workshopDefaultsMirrorHint()}
         {:else}
           Terminal view of <span class="font-mono text-surface-400">tui_defaults.json</span> — day-to-day
           charter is in Settings; edit everything here when you need the full matrix.

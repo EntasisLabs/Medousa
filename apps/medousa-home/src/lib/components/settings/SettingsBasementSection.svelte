@@ -20,6 +20,10 @@
   import { wizard } from "$lib/stores/wizard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import { isTauri } from "$lib/window";
+  import {
+    workshopBasementConnectionLabel,
+    workshopBasementRestartHint,
+  } from "$lib/platformCopy";
 
   const isDevBuild = import.meta.env.DEV;
 
@@ -80,7 +84,7 @@
       const parsed = new URL(trimmed);
       const host = parsed.hostname;
       if (host === "127.0.0.1" || host === "localhost") {
-        return mobile ? "Mac workshop (local)" : "Local workshop";
+        return workshopBasementConnectionLabel(mobile);
       }
       return `Remote · ${host}`;
     } catch {
@@ -291,7 +295,7 @@
             Let phones on your Wi‑Fi connect
           </span>
           <span class="workshop-faint mt-0.5 block text-xs leading-relaxed">
-            Restarts Medousa on your network so QR pairing and your phone app can reach this Mac
+            {workshopBasementRestartHint()}
             without typing an IP address.
           </span>
         </span>

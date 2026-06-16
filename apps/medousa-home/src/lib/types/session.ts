@@ -97,4 +97,6 @@ export interface CreateTurnTicketRequest {
   stageRouting?: import("$lib/types/runtime").StageRoutingMatrix;
   channelSurface?: string;
   mediaRefs?: import("$lib/types/media").MediaRef[];
+  voicePresetId?: string;
+  voiceAppendix?: string;
 }

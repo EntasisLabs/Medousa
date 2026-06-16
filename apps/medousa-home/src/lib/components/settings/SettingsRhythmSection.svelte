@@ -1,6 +1,10 @@
 <script lang="ts">
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import {
+    workshopRetentionLocalHint,
+    workshopRetentionReadHint,
+  } from "$lib/platformCopy";
 
   interface Props {
     mobile?: boolean;
@@ -73,12 +77,12 @@
     <h3 class="text-sm font-semibold text-surface-100">Work card retention</h3>
     <p class="workshop-faint mt-1 text-xs">
       {#if retentionReadOnly}
-        Read from your Mac daemon after connect. Edit on the Mac in Settings → Rhythm or in
-        <span class="font-mono text-surface-400">tui_defaults.json</span>.
+        {workshopRetentionReadHint()}
       {:else}
         Saved to
         <span class="font-mono text-surface-400">tui_defaults.json</span>
-        on this Mac. Hide removes terminal cards from the board; wipe purges archived records.
+        {workshopRetentionLocalHint()} Hide removes terminal cards from the board; wipe purges
+        archived records.
       {/if}
     </p>
     <div class="mt-4 grid gap-4 sm:grid-cols-2">

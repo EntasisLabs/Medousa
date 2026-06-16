@@ -540,6 +540,8 @@ pub fn build_interactive_turn_request_for_ingest(
         additional_manuscript_ids,
         suggested_capability_ids,
         scheduled_tool_allowlist: None,
+        voice_preset_id: None,
+        voice_appendix: None,
         media_refs: Vec::new(),
     }
 }

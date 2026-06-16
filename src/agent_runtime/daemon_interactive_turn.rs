@@ -816,6 +816,16 @@ async fn run_agent_turn_inner(
         manuscript_id,
         additional_manuscript_ids,
         suggested_capability_ids,
+        voice_preset_id: request
+            .voice_preset_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+        voice_appendix: request
+            .voice_appendix
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
     })
     .await;
 

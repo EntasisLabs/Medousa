@@ -2,6 +2,7 @@
   import { BookOpen, FolderOpen, Inbox, Pin, Sparkles, Wallet, X } from "@lucide/svelte";
   import { externalDesk } from "$lib/stores/externalDesk.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { vaultPinFolderHint } from "$lib/platformCopy";
 
   let step = $state(1);
   let pinning = $state(false);
@@ -133,8 +134,7 @@
           </p>
         {:else if step === 2}
           <p class="text-sm leading-relaxed text-surface-300">
-            Your real files live outside the vault too. Pin a folder from your Mac — Documents,
-            Downloads, project dirs — and link PDFs or spreadsheets into notes without importing
+            {vaultPinFolderHint()} Downloads, project dirs — and link PDFs or spreadsheets into notes without importing
             them.
           </p>
 

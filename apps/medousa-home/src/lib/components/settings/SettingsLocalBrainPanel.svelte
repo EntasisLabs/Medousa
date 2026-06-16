@@ -17,6 +17,7 @@
     type ModelDownloadProgress,
   } from "$lib/utils/localInferenceApi";
   import { startEngine, waitForEngine } from "$lib/utils/providersApi";
+  import { localBrainOnDeviceHint } from "$lib/platformCopy";
 
   interface Props {
     disabled?: boolean;
@@ -110,7 +111,7 @@
     <div class="min-w-0">
       <h3 class="settings-profile-title">Private brain</h3>
       <p class="settings-profile-subtitle">
-        Optional local Gemma engine on this Mac — separate from cloud chat models.
+        {localBrainOnDeviceHint()}
       </p>
     </div>
     <span

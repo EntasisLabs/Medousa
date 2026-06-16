@@ -3,6 +3,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+  import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import {
     archiveAskJob,
     approveTurnBudgetRequest,
@@ -250,6 +251,7 @@
     onOpenChat();
     try {
       const opts = buildInteractiveTurnOptions();
+      const voice = voicePresets.turnVoiceFields();
       const accepted = await createTurnTicket({
         sessionId: chat.sessionId,
         prompt,
@@ -259,6 +261,8 @@
         responseDepthMode: opts.responseDepthMode,
         stageRouting: opts.stageRouting,
         channelSurface: opts.channelSurface,
+        voicePresetId: voice.voicePresetId,
+        voiceAppendix: voice.voiceAppendix,
       });
       chat.beginTurn(prompt, accepted);
       await chat.startTurnStream(

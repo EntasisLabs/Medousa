@@ -1,6 +1,7 @@
 <script lang="ts">
   import PhonePairPanel from "$lib/components/pairing/PhonePairPanel.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { workshopPairingManagedHint } from "$lib/platformCopy";
 
   interface Props {
     mobile?: boolean;
@@ -21,8 +22,8 @@
     <div
       class="mt-5 rounded-xl border border-surface-500/35 bg-surface-950/50 px-4 py-5 text-sm leading-relaxed text-surface-300"
     >
-      Pairing is managed on your Mac. Open Medousa → Settings → Phone to
-      scan the QR code, then connect this app under Settings → Connection using your computer's LAN address.
+      {workshopPairingManagedHint()} Then connect this app under Settings → Connection using your
+      workshop's LAN address.
     </div>
   {:else}
     <div class="mt-5">

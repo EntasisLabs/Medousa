@@ -3,9 +3,11 @@
   import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search, Sparkles, Star } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import { workshopModelOnHostHint } from "$lib/platformCopy";
   import { loadTuiDefaultsSummary, persistTuiFavoriteModels } from "$lib/config";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
@@ -24,6 +26,7 @@
     type FavoriteModel,
   } from "$lib/utils/modelCatalog";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
+  import { allVoicePresets } from "$lib/types/voicePresets";
   import type { DepthMode } from "$lib/types/runtime";
 
   interface Props {
@@ -52,9 +55,12 @@
   const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
   const providerBadge = $derived(providerMonogram(runtime.provider));
   const depthLabel = $derived(depthModeLabel(runtime.depthMode));
+  const voiceLabel = $derived(voicePresets.activePreset.name);
+  const voiceOptions = $derived(allVoicePresets(workshopDefaults.draft.customVoicePresets));
 
   onMount(() => {
     void bootstrap();
+    void voicePresets.load();
     const onDocClick = (event: MouseEvent) => {
       if (!open) return;
       const target = event.target as Node | null;
@@ -153,6 +159,11 @@
     await runtime.setDepthMode(mode);
   }
 
+  async function selectVoice(voiceId: string) {
+    if (voiceId === voicePresets.activeVoiceId || voicePresets.saving) return;
+    await voicePresets.setActiveVoiceId(voiceId);
+  }
+
   function openMenu() {
     if (disabled || runtime.savingControls) return;
     open = !open;
@@ -178,13 +189,13 @@
     disabled={disabled || runtime.savingControls}
     aria-haspopup="listbox"
     aria-expanded={open}
-    title="{runtime.modelLabel()} · {depthLabel} depth"
+    title="{runtime.modelLabel()} · {voiceLabel} · {depthLabel} depth"
     onclick={nativeMobileReadonly ? openMenu : toggleMenu}
   >
     <span class="composer-model-trigger-badge" aria-hidden="true">{providerBadge}</span>
     <span class="composer-model-trigger-copy">
       <span class="composer-model-trigger-name">{displayName}</span>
-      <span class="composer-model-trigger-meta">{depthLabel}</span>
+      <span class="composer-model-trigger-meta">{voiceLabel} · {depthLabel}</span>
     </span>
     {#if runtime.savingControls}
       <LoaderCircle size={13} class="composer-model-trigger-spinner animate-spin" />
@@ -214,6 +225,26 @@
             </button>
           {/if}
           <span class="composer-model-panel-active">{displayName}</span>
+        </div>
+      </div>
+
+      <div class="composer-model-panel-section">
+        <span class="composer-model-panel-label">Voice</span>
+        <div class="composer-model-depth-segment" role="group" aria-label="Voice">
+          {#each voiceOptions as option (option.id)}
+            <button
+              type="button"
+              class="composer-model-depth-segment-btn {voicePresets.activeVoiceId === option.id
+                ? 'composer-model-depth-segment-btn-active'
+                : ''}"
+              disabled={voicePresets.saving}
+              aria-pressed={voicePresets.activeVoiceId === option.id}
+              title={option.description}
+              onclick={() => void selectVoice(option.id)}
+            >
+              {option.name}
+            </button>
+          {/each}
         </div>
       </div>
 
@@ -322,7 +353,7 @@
       {:else}
         <div class="composer-model-mobile-note">
           <p class="composer-model-mobile-title">{runtime.modelLabel()}</p>
-          <p class="composer-model-mobile-copy">Model is set on your Mac workshop</p>
+          <p class="composer-model-mobile-copy">{workshopModelOnHostHint()}</p>
         </div>
       {/if}
 

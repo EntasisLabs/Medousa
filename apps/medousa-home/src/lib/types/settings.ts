@@ -17,7 +17,7 @@ export const SETTINGS_SECTIONS: {
   { id: "rhythm", label: "Rhythm", hint: "How she interrupts you" },
   { id: "memory", label: "Memory", hint: "What stays vivid" },
   { id: "models", label: "Models", hint: "Chat & dictation" },
-  { id: "voice", label: "Voice", hint: "How she answers" },
+  { id: "voice", label: "Voice", hint: "Stance & answer depth" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
   { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },

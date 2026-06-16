@@ -618,6 +618,11 @@ pub struct InteractiveTurnRequest {
     pub additional_manuscript_ids: Option<Vec<String>>,
     #[serde(default)]
     pub suggested_capability_ids: Option<Vec<String>>,
+    /// Composer voice stance — short appendix block (not a manuscript specialty).
+    #[serde(default)]
+    pub voice_preset_id: Option<String>,
+    #[serde(default)]
+    pub voice_appendix: Option<String>,
     #[serde(default)]
     pub scheduled_tool_allowlist: Option<Vec<String>>,
     /// User media uploaded to local medousa/media/ before this turn (P5a).
@@ -686,6 +691,11 @@ pub struct CreateTurnTicketRequest {
     pub additional_manuscript_ids: Option<Vec<String>>,
     #[serde(default)]
     pub suggested_capability_ids: Option<Vec<String>>,
+    /// Composer voice stance — short appendix block (not a manuscript specialty).
+    #[serde(default)]
+    pub voice_preset_id: Option<String>,
+    #[serde(default)]
+    pub voice_appendix: Option<String>,
     /// User media uploaded to local medousa/media/ before this turn (P5a).
     #[serde(default)]
     pub media_refs: Vec<MediaRef>,

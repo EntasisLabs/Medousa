@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import type { TuiDefaults } from "$lib/types/workshopDefaults";
+import type { VoicePreset } from "$lib/types/voicePresets";
 import type { FavoriteModel } from "$lib/utils/modelCatalog";
 
 export interface MedousaConfigPaths {
@@ -19,6 +20,8 @@ export interface TuiDefaultsSummary {
   responseDepthMode?: string | null;
   stageRouting?: StageRoutingMatrix | null;
   favoriteModels?: FavoriteModel[] | null;
+  activeVoiceId?: string | null;
+  customVoicePresets?: VoicePreset[] | null;
 }
 
 export async function getMedousaConfigPaths(): Promise<MedousaConfigPaths> {
@@ -53,6 +56,16 @@ export async function persistTuiRuntimePrefs(
 
 export async function persistTuiFavoriteModels(models: FavoriteModel[]): Promise<void> {
   return invoke("persist_tui_favorite_models", { models });
+}
+
+export async function persistTuiVoicePrefs(prefs: {
+  activeVoiceId: string;
+  customVoicePresets?: VoicePreset[];
+}): Promise<void> {
+  return invoke("persist_tui_voice_prefs", {
+    activeVoiceId: prefs.activeVoiceId,
+    customVoicePresets: prefs.customVoicePresets ?? null,
+  });
 }
 
 export async function openConfigPath(path: string): Promise<void> {

@@ -28,6 +28,7 @@ use super::continuation::{
 use super::prompt_prep::{
     CheapRecallProbe, IdentityContextProbe, append_identity_context_hint,
     append_manuscript_hint, append_memory_recall_hint, append_suggested_capabilities_hint,
+    append_voice_preset_hint,
     cheap_memory_recall_probe,
     compile_interactive_context_prompt,
     channel_policy_probe, derive_recall_readiness, identity_context_probe,
@@ -115,6 +116,8 @@ pub struct PrepareTurnPromptParams<'a> {
     pub manuscript_id: Option<&'a str>,
     pub additional_manuscript_ids: Option<&'a [String]>,
     pub suggested_capability_ids: Option<&'a [String]>,
+    pub voice_preset_id: Option<&'a str>,
+    pub voice_appendix: Option<&'a str>,
 }
 
 pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> PreparedTurnPrompt {
@@ -166,6 +169,11 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     if let Some(ids) = params.suggested_capability_ids {
         resolved_prompt = append_suggested_capabilities_hint(&resolved_prompt, ids);
     }
+    resolved_prompt = append_voice_preset_hint(
+        &resolved_prompt,
+        params.voice_preset_id,
+        params.voice_appendix,
+    );
     resolved_prompt = append_identity_context_hint(&resolved_prompt, &identity_probe);
     resolved_prompt =
         crate::agent_runtime::turn_worker::append_active_workers_hint(

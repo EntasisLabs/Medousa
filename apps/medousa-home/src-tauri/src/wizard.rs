@@ -401,6 +401,8 @@ pub async fn wizard_apply_screen1(
                 work_card_hide_after_hours: existing.work_card_hide_after_hours,
                 work_card_wipe_after_days: existing.work_card_wipe_after_days,
                 favorite_models: existing.favorite_models,
+                active_voice_id: existing.active_voice_id,
+                custom_voice_presets: existing.custom_voice_presets,
             };
         }
     }
