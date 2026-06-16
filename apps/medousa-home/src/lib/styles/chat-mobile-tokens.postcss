@@ -1,0 +1,57 @@
+/* Mobile chat design tokens — see MOBILE-CHAT design contract in team docs */
+
+@layer base {
+  html {
+    --chat-mobile-user-max-width: 85%;
+    --chat-mobile-readable-width: 42rem;
+    --chat-mobile-stripe-width: 2px;
+    --chat-mobile-composer-radius: 22px;
+  }
+}
+
+@layer components {
+  .mobile-chat-starter-chip {
+    @apply rounded-full border border-surface-600/35 bg-surface-900/55 px-3.5 py-2 text-sm text-surface-200 transition;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+  .mobile-chat-starter-chip:hover:not(:disabled) {
+    @apply border-primary-500/35 text-surface-50;
+    background: rgb(var(--color-primary-500) / 0.08);
+  }
+
+  .mobile-chat-rail-chip {
+    @apply mb-2 flex w-full items-center justify-between gap-2 rounded-xl border border-surface-600/35 bg-surface-900/50 px-3 py-2.5 text-left text-[12px] text-surface-300 transition;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+  .mobile-chat-rail-chip:hover {
+    @apply border-primary-500/30 text-surface-100;
+    background: rgb(var(--color-primary-500) / 0.06);
+  }
+
+  .mobile-chat-bubble-assistant {
+    max-width: min(100%, var(--chat-mobile-readable-width));
+  }
+
+  .mobile-chat-bubble-assistant .markdown-content {
+    @apply pr-1;
+  }
+
+  .mobile-chat-bubble-assistant .markdown-external-link {
+    @apply my-2 block rounded-xl border border-surface-600/35 bg-surface-900/55 px-3 py-2.5 text-[13px] leading-snug text-primary-200 no-underline transition;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .mobile-chat-bubble-assistant .markdown-external-link:hover {
+    @apply border-primary-500/35 bg-surface-900/75 text-primary-100;
+  }
+
+  .mobile-chat-bubble-assistant .markdown-code-block {
+    @apply my-3 overflow-hidden rounded-xl border border-surface-600/40;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+}

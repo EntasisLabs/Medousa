@@ -25,7 +25,15 @@ function configureMarked(): void {
         }
         const safeHref = escapeAttr(href ?? "#");
         const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
-        return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
+        const external =
+          href?.startsWith("http://") || href?.startsWith("https://");
+        const linkLooksLikeUrl =
+          external &&
+          (text.trim() === href?.trim() ||
+            text.trim().startsWith("http") ||
+            (href?.length ?? 0) > 48);
+        const classAttr = linkLooksLikeUrl ? ' class="markdown-external-link"' : "";
+        return `<a href="${safeHref}"${classAttr}${titleAttr} target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
       },
       code({ text, lang }: Tokens.Code) {
         const language = (lang ?? "").trim();

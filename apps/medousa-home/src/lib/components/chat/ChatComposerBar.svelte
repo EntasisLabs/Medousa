@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { LoaderCircle, Mic, Plus } from "@lucide/svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
+  import MobileComposerModelSelect from "$lib/components/mobile/MobileComposerModelSelect.svelte";
+  import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
+  import type { DepthMode } from "$lib/types/runtime";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
@@ -30,6 +34,7 @@
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
+    controlsDisabled?: boolean;
   }
 
   let {
@@ -39,6 +44,7 @@
     onkeydown,
     onfocus,
     onblur,
+    controlsDisabled = false,
   }: Props = $props();
 
   let voiceActive = $state(false);
@@ -68,6 +74,7 @@
   const canSend = $derived(
     !blocked && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
   );
+  const pickerDisabled = $derived(blocked || controlsDisabled);
 
   onMount(() => {
     void refreshSttStatus();
@@ -205,10 +212,102 @@
   <p class="composer-voice-status composer-voice-status-error" role="alert">{voiceError}</p>
 {/if}
 
+{#if mobile}
+  <div
+    class="mobile-composer-dock {voiceActive ? 'mobile-composer-dock-voice' : ''} {voiceTranscribing
+      ? 'composer-bar-voice-transcribing'
+      : ''}"
+  >
+    {#if voiceActive}
+      <ChatVoiceRecorder
+        {mobile}
+        disabled={blocked}
+        uploading={chat.pendingMediaUploading}
+        levels={voiceLevels}
+        elapsed={voiceElapsed}
+        transcribing={voiceTranscribing}
+        micActive={voiceMicActive}
+        busy={voiceBusy}
+        onCancel={cancelVoice}
+        onConfirm={() => void confirmVoice()}
+        onAttach={() => void chat.attachFilesFromPicker()}
+      />
+    {:else}
+      <GrowingTextarea
+        bind:value={chat.draft}
+        placeholder="Message"
+        disabled={blocked}
+        maxHeight={144}
+        minHeight={34}
+        class="mobile-composer-dock-input"
+        {onkeydown}
+        {onfocus}
+        {onblur}
+        aria-label="Message"
+      />
+
+      <div class="mobile-composer-dock-toolbar">
+        <button
+          type="button"
+          class="composer-bar-icon-btn"
+          aria-label="Attach file"
+          disabled={blocked || chat.pendingMediaUploading}
+          onclick={() => void chat.attachFilesFromPicker()}
+        >
+          {#if chat.pendingMediaUploading}
+            <LoaderCircle size={16} class="animate-spin" />
+          {:else}
+            <Plus size={18} strokeWidth={2} />
+          {/if}
+        </button>
+
+        <MobileComposerModelSelect disabled={pickerDisabled} />
+
+        <select
+          class="mobile-composer-select mobile-composer-select-depth"
+          aria-label="Answer depth"
+          disabled={pickerDisabled || runtime.savingControls}
+          value={runtime.depthMode}
+          onchange={(event) => {
+            const next = (event.currentTarget as HTMLSelectElement).value as DepthMode;
+            if (next !== runtime.depthMode) void runtime.setDepthMode(next);
+          }}
+        >
+          {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
+            <option value={option.id}>{option.label}</option>
+          {/each}
+        </select>
+
+        <span class="mobile-composer-dock-spacer" aria-hidden="true"></span>
+
+        <button
+          type="button"
+          class="composer-bar-icon-btn composer-bar-voice-btn"
+          aria-label={voiceSupported ? "Voice input" : voiceHint}
+          title={voiceSupported ? "Voice input" : voiceHint}
+          disabled={blocked || !voiceSupported}
+          onclick={() => void startVoice()}
+        >
+          <Mic size={16} strokeWidth={2} />
+        </button>
+
+        <button
+          type="submit"
+          class="composer-bar-send"
+          disabled={!canSend}
+          aria-label="Send message"
+          onmousedown={(event) => event.preventDefault()}
+        >
+          {composerBlocked ? "…" : "↑"}
+        </button>
+      </div>
+    {/if}
+  </div>
+{:else}
 <div
-  class="composer-bar chat-composer-shell {mobile ? 'composer-bar-mobile' : 'chat-composer-bar'} {voiceActive
-    ? 'composer-bar-voice-mode'
-    : ''} {voiceTranscribing ? 'composer-bar-voice-transcribing' : ''}"
+  class="composer-bar chat-composer-shell chat-composer-bar {voiceActive ? 'composer-bar-voice-mode' : ''} {voiceTranscribing
+    ? 'composer-bar-voice-transcribing'
+    : ''}"
 >
   {#if voiceActive}
     <ChatVoiceRecorder
@@ -239,14 +338,14 @@
       {/if}
     </button>
 
-    <ChatModelPicker {disabled} readonly={mobile} />
+    <ChatModelPicker {disabled} />
 
     <GrowingTextarea
       bind:value={chat.draft}
-      placeholder={mobile ? "Message" : "Message Medousa…"}
+      placeholder="Message Medousa…"
       disabled={blocked}
-      maxHeight={mobile ? 144 : 128}
-      minHeight={mobile ? 34 : 36}
+      maxHeight={128}
+      minHeight={36}
       {onkeydown}
       {onfocus}
       {onblur}
@@ -275,3 +374,4 @@
     </button>
   {/if}
 </div>
+{/if}

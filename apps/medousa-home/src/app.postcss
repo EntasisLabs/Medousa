@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import "./lib/styles/chat-mobile-tokens.postcss";
+
 @layer base {
   html,
   body {
@@ -2585,6 +2587,66 @@
       opacity 0.2s ease;
   }
 
+  /* Mobile chat dock — separate from .composer-bar row flex (Hermes-style) */
+  .mobile-composer-dock {
+    @apply flex w-full flex-col items-stretch gap-0 rounded-[22px] px-2 py-1.5 transition-[border-radius,background-color,box-shadow,border-color] duration-200 ease-out;
+    border: 1px solid rgb(var(--color-surface-600) / 0.48);
+    background-color: rgb(var(--color-surface-800) / 0.78);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      inset 0 -1px 0 rgb(0 0 0 / 0.12),
+      0 1px 3px rgb(0 0 0 / 0.2);
+  }
+
+  .mobile-composer-dock:focus-within {
+    border-color: rgb(var(--color-surface-500) / 0.58);
+    background-color: rgb(var(--color-surface-800) / 0.92);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.09),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.14),
+      0 4px 16px rgb(0 0 0 / 0.22);
+  }
+
+  .mobile-composer-dock-voice {
+    @apply flex-row items-end px-1.5 py-0.5;
+  }
+
+  .mobile-composer-dock-input.composer-bar-input {
+    @apply w-full max-h-36 min-h-[34px] flex-none resize-none border-0 bg-transparent py-1.5 pl-1 pr-1 text-base leading-snug text-surface-50 shadow-none placeholder:text-surface-400 focus:border-0 focus:outline-none focus:ring-0;
+    flex: 0 0 auto;
+    letter-spacing: -0.01em;
+  }
+
+  .mobile-composer-dock-input.composer-bar-input::placeholder {
+    color: rgb(var(--color-surface-400) / 0.85);
+  }
+
+  .mobile-composer-dock-toolbar {
+    @apply flex w-full min-w-0 flex-row items-center gap-1 pb-0.5 pt-1.5;
+    border-top: 1px solid rgb(var(--color-surface-600) / 0.25);
+  }
+
+  .mobile-composer-dock-spacer {
+    @apply min-w-0 flex-1;
+  }
+
+  .mobile-composer-select {
+    @apply min-w-0 max-w-[9rem] truncate rounded-lg border bg-surface-900/50 px-1.5 py-1 text-[11px] text-surface-300;
+    border-color: rgb(var(--color-surface-600) / 0.35);
+  }
+
+  .mobile-composer-select:disabled {
+    @apply opacity-45;
+  }
+
+  .mobile-composer-select-depth {
+    max-width: 5.5rem;
+  }
+
+  .mobile-composer-dock .composer-bar-send {
+    @apply mb-0 h-8 w-8 shrink-0 text-sm;
+  }
+
   .composer-bar-send-text {
     @apply h-8 w-auto min-w-[3.25rem] px-3.5 text-xs font-semibold;
   }
@@ -3239,6 +3301,14 @@
   }
 
   html[data-theme="black-lily"] .composer-bar-mobile:focus-within {
+    border-color: rgb(var(--color-primary-400) / 0.45);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.1),
+      0 0 0 3px rgb(var(--color-primary-500) / 0.16),
+      0 4px 20px rgb(var(--color-primary-500) / 0.1);
+  }
+
+  html[data-theme="black-lily"] .mobile-composer-dock:focus-within {
     border-color: rgb(var(--color-primary-400) / 0.45);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.1),

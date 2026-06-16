@@ -1,12 +1,11 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
-  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
-  import { layout } from "$lib/stores/layout.svelte";
+  import { runtime } from "$lib/stores/runtime.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket } from "$lib/daemon";
@@ -18,6 +17,10 @@
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
 
   let composerBlurTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const controlsDisabled = $derived(
+    connection.offline || chat.composerBlocked || runtime.savingControls,
+  );
 
   function parseDaemonAskPrompt(value: string): string | null {
     const slash = parseChatSlashInput(value);
@@ -118,13 +121,11 @@
       if (pending) void workspace.selectCard(pending.requestId);
     }}
   />
-  <div class="px-3 pb-1">
-    <DaemonPortalChip compact />
-  </div>
   <ChatComposerBar
     mobile
     disabled={connection.offline}
     composerBlocked={chat.composerBlocked}
+    {controlsDisabled}
     onkeydown={handleKeydown}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}

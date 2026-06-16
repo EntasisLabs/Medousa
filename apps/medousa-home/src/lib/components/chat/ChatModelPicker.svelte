@@ -7,7 +7,7 @@
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { loadTuiDefaultsSummary, persistTuiFavoriteModels } from "$lib/config";
-  import { formatModelDisplayName, modelPickKey } from "$lib/utils/formatModelDisplay";
+  import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildChatModelOptions,
     depthModeLabel,
@@ -19,6 +19,7 @@
   import {
     isFavoriteModel,
     normalizeFavoriteModels,
+    resolveModelDisplayLabel,
     toggleFavoriteModel,
     type FavoriteModel,
   } from "$lib/utils/modelCatalog";
@@ -42,7 +43,7 @@
   let menuEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
 
-  const displayName = $derived(formatModelDisplayName(runtime.model));
+  const displayName = $derived(resolveModelDisplayLabel(runtime.provider, runtime.model));
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
   const filtered = $derived(filterChatModelOptions(options, search));
   const favoriteOptions = $derived(filtered.filter((option) => option.favorite));

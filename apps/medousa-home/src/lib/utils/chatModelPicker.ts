@@ -1,11 +1,12 @@
+import type { ProvidersListResult } from "$lib/types/providers";
+import type { ProvidersProbeResult } from "$lib/utils/providersApi";
+import { modelPickKey } from "$lib/utils/formatModelDisplay";
 import type { FavoriteModel } from "$lib/utils/modelCatalog";
 import {
   CURATED_MODEL_PICKS,
   favoriteToPick,
+  resolveModelDisplayLabel,
 } from "$lib/utils/modelCatalog";
-import type { ProvidersListResult } from "$lib/types/providers";
-import type { ProvidersProbeResult } from "$lib/utils/providersApi";
-import { modelPickKey } from "$lib/utils/formatModelDisplay";
 
 export interface ChatModelPickOption {
   key: string;
@@ -47,7 +48,7 @@ export function buildChatModelOptions(
   const provider = currentProvider.trim();
   const model = currentModel.trim();
   if (provider && model) {
-    push(provider, model, model, "Active");
+    push(provider, model, resolveModelDisplayLabel(provider, model), "Active");
   }
 
   for (const pick of CURATED_MODEL_PICKS) {
@@ -70,6 +71,31 @@ export function buildChatModelOptions(
   }
 
   return options;
+}
+
+/** Favorites, curated picks, and the active model — for mobile composer dropdowns. */
+export function buildMobileModelDropdownOptions(
+  catalog: ProvidersListResult,
+  probe: ProvidersProbeResult | null,
+  currentProvider: string,
+  currentModel: string,
+  favorites: FavoriteModel[] = [],
+): ChatModelPickOption[] {
+  const options = buildChatModelOptions(
+    catalog,
+    probe,
+    currentProvider,
+    currentModel,
+    favorites,
+  );
+  const curatedKeys = new Set(
+    CURATED_MODEL_PICKS.map((pick) => modelPickKey(pick.provider, pick.model)),
+  );
+  const activeKey = modelPickKey(currentProvider, currentModel);
+
+  return options.filter(
+    (option) => option.favorite || curatedKeys.has(option.key) || option.key === activeKey,
+  );
 }
 
 export function filterChatModelOptions(

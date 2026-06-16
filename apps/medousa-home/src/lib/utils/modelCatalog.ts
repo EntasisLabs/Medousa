@@ -149,7 +149,35 @@ export function favoriteToPick(entry: FavoriteModel): ModelPick {
   return {
     provider: entry.provider,
     model: entry.model,
-    label: curated?.label ?? entry.model,
+    label: curated?.label ?? resolveModelDisplayLabel(entry.provider, entry.model),
     hint: curated?.hint ?? "Favorite",
   };
+}
+
+/** Human label for UI — never show raw provider:model slugs to users. */
+export function resolveModelDisplayLabel(
+  provider: string,
+  model: string,
+  maxLen = 28,
+): string {
+  const curated = CURATED_MODEL_PICKS.find(
+    (pick) => pick.provider === provider.trim() && pick.model === model.trim(),
+  );
+  const label = curated?.label ?? humanizeModelSlug(model);
+  if (label.length <= maxLen) return label;
+  return `${label.slice(0, maxLen - 1)}…`;
+}
+
+function humanizeModelSlug(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) return "Model";
+  return trimmed
+    .split(/[-_/:]+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (/^v\d/i.test(part)) return part.toUpperCase();
+      if (part.length <= 3) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(" ");
 }

@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { ExternalLink, PanelLeft, Users } from "@lucide/svelte";
+  import { ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
-  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -11,7 +10,6 @@
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { settings } from "$lib/stores/settings.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
   import {
     createTurnTicket,
   } from "$lib/daemon";
@@ -30,6 +28,7 @@
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
+  import { switchMobileTab } from "$lib/mobileNavigation";
 
   interface Props {
     visible: boolean;
@@ -55,6 +54,13 @@
   const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(chat.messages));
   const workerThreads = $derived(groupWorkerThreads(chat.messages));
+  const showMobileEmptyState = $derived(
+    mobile &&
+      !chat.historyLoading &&
+      chatMessages.length === 0 &&
+      askThreads.length === 0 &&
+      workerThreads.length === 0,
+  );
   const sessionLabel = $derived(chat.currentSessionLabel());
   const recentSessions = $derived(
     chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
@@ -76,8 +82,6 @@
     return "Working…";
   });
 
-  const mobilePortal = $derived(isTauriMobilePlatform());
-
   const mobileChatTitle = $derived.by(() => {
     if (!mobile) return "Medousa";
     if (chat.backgroundActivity > 0) {
@@ -92,13 +96,18 @@
     if (!mobile) return sessionLabel;
     if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.liveStreamActive) return "Thinking…";
-    if (chat.backgroundActivity > 0) return "Composer open · check Work";
+    if (chat.backgroundActivity > 0) return "Background work · see Work";
+    if (showMobileEmptyState) return "What do you need handled?";
+    if (chat.historyLoading && chat.messages.length === 0) return "Opening thread…";
     const last = [...chat.messages].reverse().find((message) => message.content.trim());
     if (last?.content) {
       const line = last.content.trim().split("\n")[0];
+      if (/^done\s*[—–-]\s*vault/i.test(line)) {
+        return "Saved to Vault";
+      }
       return line.length > 56 ? `${line.slice(0, 55)}…` : line;
     }
-    return "Say one thing";
+    return "Ready when you are";
   });
 
   $effect(() => {
@@ -330,7 +339,7 @@
     </div>
     {#if chat.streamError}
       <p class="mt-1 text-[11px] text-error-400">{chat.streamError}</p>
-    {:else if chat.historyLoading}
+    {:else if !mobile && chat.historyLoading && chat.messages.length === 0}
       <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
     {/if}
   </header>
@@ -371,6 +380,18 @@
         : 'chat-scroll space-y-4'}"
     >
       {#if askThreads.length > 0}
+        {#if mobile}
+          <button
+            type="button"
+            class="mobile-chat-rail-chip"
+            onclick={() => switchMobileTab("work")}
+          >
+            <span>
+              {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
+            </span>
+            <span class="text-surface-500">→</span>
+          </button>
+        {:else}
         <section class="chat-ask-rail space-y-3">
           <div class="chat-ask-rail-header">
             <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-surface-500">
@@ -411,9 +432,22 @@
             </article>
           {/each}
         </section>
+        {/if}
       {/if}
 
       {#if workerThreads.length > 0}
+        {#if mobile}
+          <button
+            type="button"
+            class="mobile-chat-rail-chip"
+            onclick={() => switchMobileTab("work")}
+          >
+            <span>
+              {workerThreads.length} worker{workerThreads.length === 1 ? "" : "s"} in Work
+            </span>
+            <span class="text-surface-500">→</span>
+          </button>
+        {:else}
         <section class="chat-ask-rail space-y-3">
           <div class="chat-ask-rail-header">
             <p class="text-[11px] font-medium uppercase tracking-[0.14em] text-surface-500">
@@ -446,48 +480,47 @@
             </article>
           {/each}
         </section>
+        {/if}
       {/if}
 
       {#if chatMessages.length > 0}
         <ChatMessageList messages={chatMessages} sessionId={chat.sessionId} {mobile} />
-      {:else if askThreads.length === 0 && workerThreads.length === 0}
-      <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
-        {#if mobile}
-          <p class="text-sm text-surface-300">Say one thing.</p>
-          <p class="workshop-faint mt-2 text-xs">Medousa remembers this conversation.</p>
-          {#if mobilePortal}
-            <div class="mt-3">
-              <DaemonPortalChip compact />
-            </div>
-          {/if}
-          <div class="mt-4 flex flex-wrap gap-2">
-            {#each STARTER_PROMPTS as prompt (prompt)}
-              <button
-                type="button"
-                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
-                disabled={connection.offline || chat.composerBlocked}
-                onclick={() => void sendStarterPrompt(prompt)}
-              >
-                {prompt}
-              </button>
+      {:else if showMobileEmptyState}
+      <div class="flex min-h-[200px] flex-col justify-end px-1 pb-4">
+        <div class="flex flex-wrap gap-2">
+          {#each STARTER_PROMPTS as prompt (prompt)}
+            <button
+              type="button"
+              class="mobile-chat-starter-chip"
+              disabled={connection.offline || chat.composerBlocked}
+              onclick={() => void sendStarterPrompt(prompt)}
+            >
+              {prompt}
+            </button>
+          {/each}
+        </div>
+        {#if recentSessions.length > 0}
+          <ul class="mt-6 space-y-2 border-t border-surface-700/30 pt-4">
+            {#each recentSessions as session (session.session_id)}
+              <li>
+                <button
+                  type="button"
+                  class="workshop-text-action block max-w-md truncate text-left text-sm text-surface-400"
+                  onclick={() => resumeSession(session.session_id)}
+                >
+                  {formatSessionLabel(session)}
+                </button>
+              </li>
             {/each}
-          </div>
-          {#if recentSessions.length > 0}
-            <ul class="mt-6 space-y-2">
-              {#each recentSessions as session (session.session_id)}
-                <li>
-                  <button
-                    type="button"
-                    class="workshop-text-action block max-w-md truncate text-left text-sm"
-                    onclick={() => resumeSession(session.session_id)}
-                  >
-                    {formatSessionLabel(session)}
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {:else}
+          </ul>
+        {/if}
+      </div>
+      {:else if chat.historyLoading && chat.messages.length === 0}
+      <div class="flex min-h-[200px] items-center justify-center">
+        <LoaderCircle size={22} class="animate-spin text-surface-500/80" aria-label="Loading" />
+      </div>
+      {:else if !mobile && askThreads.length === 0 && workerThreads.length === 0}
+      <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
           <p class="mt-8 text-sm text-surface-400">What are you working on?</p>
           <div class="mt-4 flex flex-wrap gap-2">
             {#each STARTER_PROMPTS as prompt (prompt)}
@@ -518,7 +551,6 @@
           {:else}
             <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
           {/if}
-        {/if}
       </div>
       {/if}
     </div>

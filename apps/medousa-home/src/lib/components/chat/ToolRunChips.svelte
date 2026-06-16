@@ -175,7 +175,7 @@
             ? 'font-normal normal-case tracking-normal'
             : 'text-[11px] tabular-nums text-surface-200'}"
         >
-          {footnote ? `${toolCount} tools used` : collapsed.primary}
+          {collapsed.primary}
         </span>
         <ChevronDown
           class="h-3 w-3 shrink-0 text-surface-600 transition-transform duration-200 group-open/inspector:rotate-180"
