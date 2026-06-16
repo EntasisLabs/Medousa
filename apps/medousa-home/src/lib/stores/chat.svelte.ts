@@ -85,6 +85,8 @@ export class ChatStore {
   sessionsRefreshing = $state(false);
   pinnedIds = $state<string[]>(loadPinnedIds());
   historyLoading = $state(false);
+  /** Skip daemon history fetch until the first turn is sent (newSession). */
+  sessionPristine = $state(false);
   /** Brief banner after reloading turns from the engine (e.g. after WebView refresh). */
   historyNotice = $state<string | null>(null);
   /** Desktop in-app alert when a turn pauses for budget approval. */
@@ -293,6 +295,8 @@ export class ChatStore {
 
   async newSession() {
     this.transcriptEpoch += 1;
+    this.historyLoading = false;
+    this.sessionPristine = true;
     const id = `medousa-home-${crypto.randomUUID()}`;
     localStorage.setItem(SESSION_KEY, id);
     this.sessionId = id;
@@ -310,6 +314,7 @@ export class ChatStore {
   /** Pull transcript from the daemon when the UI remounted empty (startup / reconnect). */
   async ensureSessionHydrated(options?: { notice?: boolean }) {
     if (this.historyLoading) return;
+    if (this.sessionPristine) return;
     if (this.messages.length === 0) {
       await this.reloadCurrentSession(options);
       return;
@@ -385,6 +390,7 @@ export class ChatStore {
       await this.reloadCurrentSession({ notice: false });
       return;
     }
+    this.sessionPristine = false;
     this.transcriptEpoch += 1;
     this.sessionId = sessionId;
     localStorage.setItem(SESSION_KEY, sessionId);
@@ -444,6 +450,7 @@ export class ChatStore {
     ticket: TurnTicketResponse,
     mediaRefs: MediaRef[] = [],
   ) {
+    this.sessionPristine = false;
     this.transcriptEpoch += 1;
     this.historyNotice = null;
     const assistantId = crypto.randomUUID();

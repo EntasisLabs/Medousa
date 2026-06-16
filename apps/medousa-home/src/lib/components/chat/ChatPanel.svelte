@@ -54,12 +54,8 @@
   const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(chat.messages));
   const workerThreads = $derived(groupWorkerThreads(chat.messages));
-  const showMobileEmptyState = $derived(
-    mobile &&
-      !chat.historyLoading &&
-      chatMessages.length === 0 &&
-      askThreads.length === 0 &&
-      workerThreads.length === 0,
+  const showChatEmptyState = $derived(
+    chatMessages.length === 0 && askThreads.length === 0 && workerThreads.length === 0,
   );
   const sessionLabel = $derived(chat.currentSessionLabel());
   const recentSessions = $derived(
@@ -97,7 +93,7 @@
     if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.liveStreamActive) return "Thinking…";
     if (chat.backgroundActivity > 0) return "Background work · see Work";
-    if (showMobileEmptyState) return "What do you need handled?";
+    if (showChatEmptyState) return "What are you working on?";
     if (chat.historyLoading && chat.messages.length === 0) return "Opening thread…";
     const last = [...chat.messages].reverse().find((message) => message.content.trim());
     if (last?.content) {
@@ -485,13 +481,16 @@
 
       {#if chatMessages.length > 0}
         <ChatMessageList messages={chatMessages} sessionId={chat.sessionId} {mobile} />
-      {:else if showMobileEmptyState}
-      <div class="flex min-h-[200px] flex-col justify-end px-1 pb-4">
-        <div class="flex flex-wrap gap-2">
+      {:else if showChatEmptyState}
+      <div
+        class="flex min-h-[200px] flex-col justify-center {mobile ? 'px-1 pb-4' : 'px-2'}"
+      >
+        <p class="text-sm text-surface-400 {mobile ? '' : 'mt-8'}">What are you working on?</p>
+        <div class="mt-4 flex flex-wrap gap-2">
           {#each STARTER_PROMPTS as prompt (prompt)}
             <button
               type="button"
-              class="mobile-chat-starter-chip"
+              class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
               disabled={connection.offline || chat.composerBlocked}
               onclick={() => void sendStarterPrompt(prompt)}
             >
@@ -500,12 +499,12 @@
           {/each}
         </div>
         {#if recentSessions.length > 0}
-          <ul class="mt-6 space-y-2 border-t border-surface-700/30 pt-4">
+          <ul class="mt-5 space-y-1.5">
             {#each recentSessions as session (session.session_id)}
               <li>
                 <button
                   type="button"
-                  class="workshop-text-action block max-w-md truncate text-left text-sm text-surface-400"
+                  class="workshop-text-action block max-w-md truncate text-left"
                   onclick={() => resumeSession(session.session_id)}
                 >
                   {formatSessionLabel(session)}
@@ -513,44 +512,13 @@
               </li>
             {/each}
           </ul>
+        {:else}
+          <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
         {/if}
       </div>
-      {:else if chat.historyLoading && chat.messages.length === 0}
+      {:else if chat.historyLoading && chat.messages.length === 0 && !mobile}
       <div class="flex min-h-[200px] items-center justify-center">
         <LoaderCircle size={22} class="animate-spin text-surface-500/80" aria-label="Loading" />
-      </div>
-      {:else if !mobile && askThreads.length === 0 && workerThreads.length === 0}
-      <div class="flex h-full min-h-[200px] flex-col justify-center px-2">
-          <p class="mt-8 text-sm text-surface-400">What are you working on?</p>
-          <div class="mt-4 flex flex-wrap gap-2">
-            {#each STARTER_PROMPTS as prompt (prompt)}
-              <button
-                type="button"
-                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-sm text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
-                disabled={connection.offline || chat.composerBlocked}
-                onclick={() => void sendStarterPrompt(prompt)}
-              >
-                {prompt}
-              </button>
-            {/each}
-          </div>
-          {#if recentSessions.length > 0}
-            <ul class="mt-5 space-y-1.5">
-              {#each recentSessions as session (session.session_id)}
-                <li>
-                  <button
-                    type="button"
-                    class="workshop-text-action block max-w-md truncate text-left"
-                    onclick={() => resumeSession(session.session_id)}
-                  >
-                    {formatSessionLabel(session)}
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {:else}
-            <p class="mt-3 text-sm text-surface-400">No prior sessions</p>
-          {/if}
       </div>
       {/if}
     </div>
