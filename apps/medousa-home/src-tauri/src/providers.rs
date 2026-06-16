@@ -438,11 +438,28 @@ pub async fn providers_list_models(
         });
     }
 
-    let api_key = request.api_key.unwrap_or_default();
+    let api_key = request
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            crate::messaging::secrets::load_secret_value("api_key")
+                .ok()
+                .flatten()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_default();
     let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(true);
     if needs_key && api_key.trim().is_empty() {
-        return Err("API key is required to list models".to_string());
+        return Err("API key is required to list models — add one in Settings → Models".to_string());
     }
+
+    let base_url = resolve_base_url(spec, request.base_url.as_deref()).or_else(|| {
+        read_tui_defaults_base_url(&provider_id)
+    });
 
     match spec.map(|entry| entry.validation) {
         Some(ProviderValidation::Google) => {
@@ -477,7 +494,7 @@ pub async fn providers_list_models(
             })
         }
         Some(ProviderValidation::OpenAiCompatible) => {
-            let Some(base) = resolve_base_url(spec, request.base_url.as_deref()) else {
+            let Some(base) = base_url else {
                 return Err("Set an API base URL for this provider".to_string());
             };
             let models = fetch_openai_compatible_model_ids(&client, api_key.trim(), &base).await?;
@@ -498,6 +515,31 @@ pub async fn providers_list_models(
             models: vec![default_model_for_provider(&provider_id)],
         }),
     }
+}
+
+fn read_tui_defaults_base_url(provider_id: &str) -> Option<String> {
+    let defaults = crate::medousa_paths::load_tui_defaults();
+    let configured_provider = defaults
+        .provider
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let target = provider_id.trim().to_ascii_lowercase();
+    let from_file = if configured_provider == target {
+        defaults
+            .base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    } else {
+        None
+    };
+    from_file.or_else(|| {
+        provider_catalog::find_provider(provider_id)
+            .and_then(|entry| entry.default_base_url.map(str::to_string))
+    })
 }
 
 #[cfg(test)]

@@ -1176,61 +1176,40 @@
   }
 
   .composer-model-trigger {
-    @apply inline-flex max-w-[10.5rem] items-center gap-2 rounded-full px-1.5 py-1 text-left transition-all duration-200 ease-out disabled:pointer-events-none disabled:opacity-45;
-    border: 1px solid rgb(var(--color-surface-600) / 0.28);
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-surface-800) / 0.72),
-      rgb(var(--color-surface-900) / 0.55)
-    );
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+    @apply inline-flex max-w-[12rem] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45;
+    border: 1px solid rgb(var(--color-surface-600) / 0.22);
+    background: rgb(var(--color-surface-900) / 0.35);
   }
 
   .composer-model-trigger:hover:not(:disabled) {
-    border-color: rgb(var(--color-surface-600) / 0.42);
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-surface-800) / 0.88),
-      rgb(var(--color-surface-900) / 0.65)
-    );
+    border-color: rgb(var(--color-surface-600) / 0.38);
+    background: rgb(var(--color-surface-800) / 0.45);
   }
 
   .composer-model-trigger-open {
-    border-color: rgb(var(--color-primary-500) / 0.38);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.1);
+    border-color: rgb(var(--color-surface-600) / 0.45);
+    background: rgb(var(--color-surface-800) / 0.55);
   }
 
   .composer-model-trigger-readonly {
     @apply cursor-default;
   }
 
-  .composer-model-trigger-badge {
-    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold tracking-[0.06em] text-primary-100;
-    background: linear-gradient(
-      145deg,
-      rgb(var(--color-primary-500) / 0.42),
-      rgb(var(--color-secondary-700) / 0.35)
-    );
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
-  }
-
   .composer-model-trigger-copy {
-    @apply flex min-w-0 flex-col leading-none;
+    @apply min-w-0 flex-1 leading-none;
   }
 
   .composer-model-trigger-name {
-    @apply truncate text-[12px] font-medium text-surface-100;
+    @apply block truncate text-[13px] font-medium text-surface-200;
     letter-spacing: -0.01em;
   }
 
   .composer-model-trigger-meta {
-    @apply mt-0.5 truncate text-[10px] text-surface-500;
+    @apply mt-0.5 block truncate text-[10px] text-surface-500;
   }
 
   .composer-model-trigger-chevron {
-    @apply shrink-0 text-surface-500 transition-transform duration-200;
+    @apply shrink-0 text-surface-500 transition-transform duration-150;
   }
 
   .composer-model-trigger-open .composer-model-trigger-chevron {
@@ -1242,102 +1221,21 @@
   }
 
   .composer-model-panel {
-    @apply absolute bottom-full left-0 z-50 mb-2.5 w-[19rem] overflow-hidden rounded-2xl;
-    border: 1px solid rgb(var(--color-surface-600) / 0.42);
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-surface-800) / 0.96),
-      rgb(var(--color-surface-900) / 0.98)
-    );
+    @apply absolute bottom-full left-0 z-50 mb-2 w-[18.5rem] overflow-hidden rounded-xl;
+    border: 1px solid rgb(var(--color-surface-600) / 0.32);
+    background: rgb(var(--color-surface-900) / 0.98);
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
-      0 16px 40px rgb(0 0 0 / 0.38),
-      0 0 0 1px rgb(0 0 0 / 0.18);
-    backdrop-filter: blur(18px);
+      0 12px 32px rgb(0 0 0 / 0.32),
+      0 0 0 1px rgb(0 0 0 / 0.12);
+    backdrop-filter: blur(16px);
   }
 
-  .composer-model-panel-header {
-    @apply flex items-start justify-between gap-3 border-b border-surface-700/45 px-3.5 py-3;
-  }
-
-  .composer-model-panel-title {
-    @apply inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-surface-400;
-  }
-
-  .composer-model-panel-icon {
-    @apply text-primary-300/80;
-  }
-
-  .composer-model-panel-active {
-    @apply max-w-[9rem] truncate text-right text-xs font-medium text-surface-200;
-  }
-
-  .composer-model-panel-header-actions {
-    @apply flex min-w-0 items-center gap-1.5;
-  }
-
-  .composer-model-favorite-btn {
-    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-surface-500 transition hover:text-surface-200 disabled:opacity-45;
-    border: 1px solid rgb(var(--color-surface-600) / 0.35);
-    background: rgb(var(--color-surface-900) / 0.45);
-  }
-
-  .composer-model-favorite-btn.is-active {
-    @apply text-primary-200;
-    border-color: rgb(var(--color-primary-500) / 0.35);
-    background-color: rgb(var(--color-primary-500) / 0.12);
-  }
-
-  .composer-model-list-section {
-    @apply px-3.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-surface-500;
-  }
-
-  .composer-model-panel-section {
-    @apply border-b border-surface-700/40 px-3.5 py-3;
-  }
-
-  .composer-model-panel-section-search {
-    @apply py-2.5;
-  }
-
-  .composer-model-panel-label {
-    @apply mb-2 block text-[10px] font-medium uppercase tracking-[0.14em] text-surface-500;
-  }
-
-  .composer-model-depth-segment {
-    @apply grid grid-cols-3 gap-1 rounded-xl p-1;
-    background: rgb(var(--color-surface-900) / 0.55);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
-  }
-
-  .composer-model-depth-segment-btn {
-    @apply rounded-lg px-2 py-1.5 text-[11px] font-medium text-surface-400 transition hover:text-surface-200 disabled:opacity-45;
-  }
-
-  .composer-model-depth-segment-btn-active {
-    @apply text-surface-50;
-    background: linear-gradient(
-      180deg,
-      rgb(var(--color-surface-700) / 0.85),
-      rgb(var(--color-surface-800) / 0.95)
-    );
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.08),
-      0 1px 3px rgb(0 0 0 / 0.22);
+  .composer-model-panel-search {
+    @apply border-b border-surface-700/35 px-3 py-2.5;
   }
 
   .composer-model-search {
-    @apply flex items-center gap-2 rounded-xl px-3 py-2;
-    border: 1px solid rgb(var(--color-surface-600) / 0.35);
-    background: rgb(var(--color-surface-900) / 0.45);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
-  }
-
-  .composer-model-search:focus-within {
-    border-color: rgb(var(--color-primary-500) / 0.35);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.04),
-      0 0 0 3px rgb(var(--color-primary-500) / 0.08);
+    @apply flex items-center gap-2;
   }
 
   .composer-model-search-icon {
@@ -1345,62 +1243,70 @@
   }
 
   .composer-model-search-input {
-    @apply min-w-0 flex-1 border-0 bg-transparent text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none;
+    @apply min-w-0 flex-1 border-0 bg-transparent text-[13px] text-surface-100 placeholder:text-surface-500 focus:outline-none;
   }
 
   .composer-model-list {
-    @apply max-h-56 overflow-y-auto py-1.5;
+    @apply max-h-52 overflow-y-auto py-1;
   }
 
   .composer-model-list-item {
-    @apply mx-1.5 flex w-[calc(100%-0.75rem)] items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition;
+    @apply flex w-full items-center gap-3 px-3 py-2 text-left transition-colors;
   }
 
   .composer-model-list-item:hover {
-    background: rgb(var(--color-surface-800) / 0.72);
+    background: rgb(var(--color-surface-800) / 0.55);
   }
 
   .composer-model-list-item-active {
-    background: linear-gradient(
-      90deg,
-      rgb(var(--color-primary-500) / 0.14),
-      rgb(var(--color-surface-800) / 0.55)
-    );
-    box-shadow: inset 2px 0 0 rgb(var(--color-primary-400) / 0.85);
-  }
-
-  .composer-model-list-badge {
-    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[9px] font-semibold tracking-[0.05em] text-surface-300;
-    background: rgb(var(--color-surface-700) / 0.55);
-    border: 1px solid rgb(var(--color-surface-600) / 0.35);
-  }
-
-  .composer-model-list-item-active .composer-model-list-badge {
-    @apply text-primary-100;
-    border-color: rgb(var(--color-primary-500) / 0.28);
-    background: rgb(var(--color-primary-500) / 0.18);
-  }
-
-  .composer-model-list-copy {
-    @apply min-w-0 flex-1;
+    background: rgb(var(--color-surface-800) / 0.35);
   }
 
   .composer-model-list-name {
-    @apply block truncate text-sm font-medium text-surface-100;
+    @apply min-w-0 flex-1 truncate text-[13px] text-surface-100;
   }
 
-  .composer-model-list-hint {
-    @apply block truncate text-[10px] text-surface-500;
+  .composer-model-list-tier {
+    @apply ml-1.5 text-[12px] text-surface-500;
   }
 
   .composer-model-list-check {
-    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-primary-200;
-    background: rgb(var(--color-primary-500) / 0.18);
-    box-shadow: 0 0 10px rgb(var(--color-primary-500) / 0.2);
+    @apply shrink-0 text-surface-300;
   }
 
   .composer-model-list-empty {
     @apply flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-xs text-surface-500;
+  }
+
+  .composer-model-turn-settings {
+    @apply space-y-2 border-t border-surface-700/35 px-3 py-2.5;
+  }
+
+  .composer-model-turn-row {
+    @apply flex items-center gap-2;
+  }
+
+  .composer-model-turn-label {
+    @apply w-16 shrink-0 text-[11px] text-surface-500;
+  }
+
+  .composer-model-turn-pills {
+    @apply flex min-w-0 flex-1 flex-wrap gap-1;
+  }
+
+  .composer-model-turn-pill {
+    @apply rounded-md px-2 py-1 text-[11px] text-surface-400 transition hover:text-surface-200 disabled:opacity-45;
+    background: rgb(var(--color-surface-800) / 0.45);
+  }
+
+  .composer-model-turn-pill-active {
+    @apply text-surface-100;
+    background: rgb(var(--color-surface-700) / 0.75);
+  }
+
+  .composer-model-turn-select {
+    @apply min-w-0 flex-1 rounded-md border-0 px-2 py-1 text-[11px] text-surface-200 focus:outline-none focus:ring-1 focus:ring-surface-600 disabled:opacity-45;
+    background: rgb(var(--color-surface-800) / 0.55);
   }
 
   .composer-model-mobile-note {
@@ -1416,7 +1322,7 @@
   }
 
   .composer-model-panel-footer {
-    @apply flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-xs font-medium text-surface-400 transition hover:bg-surface-800/55 hover:text-surface-100;
+    @apply flex w-full items-center justify-between gap-2 border-t border-surface-700/35 px-3 py-2.5 text-left text-[12px] text-surface-500 transition hover:bg-surface-800/45 hover:text-surface-300;
   }
 
   .chat-tool-footnote > summary {
@@ -2742,6 +2648,14 @@
     @apply overflow-hidden rounded-2xl;
     background: rgb(var(--color-surface-800) / 0.72);
     border: 1px solid rgb(var(--color-surface-600) / 0.28);
+  }
+
+  .mobile-turn-sheet-section-label {
+    @apply px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-surface-500;
+  }
+
+  .mobile-turn-sheet-section-gap {
+    @apply h-2;
   }
 
   .mobile-turn-sheet-group-secondary {

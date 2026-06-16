@@ -10,6 +10,7 @@
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildMobileModelDropdownOptions,
+    groupChatModelOptions,
     type ChatModelPickOption,
   } from "$lib/utils/chatModelPicker";
   import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
@@ -34,8 +35,12 @@
   let sheetView = $state<SheetView>("main");
   let loading = $state(true);
   let options = $state<ChatModelPickOption[]>([]);
+  let catalogSnapshot = $state<Awaited<ReturnType<typeof listProviders>> | null>(null);
 
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
+  const groupedOptions = $derived(
+    groupChatModelOptions(options, catalogSnapshot, runtime.provider),
+  );
   const modelLabel = $derived(resolveModelDisplayLabel(runtime.provider, runtime.model));
   const voiceLabel = $derived(voicePresets.activePreset.name);
   const depthLabel = $derived(
@@ -97,6 +102,7 @@
       if (workshopDefaults.loaded) {
         favorites = workshopDefaults.favoriteModels();
       }
+      catalogSnapshot = catalog;
       options = buildMobileModelDropdownOptions(
         catalog,
         probe,
@@ -254,25 +260,31 @@
                   <p class="mobile-turn-sheet-empty">No pinned models yet.</p>
                 {:else}
                   <div class="mobile-turn-sheet-group" role="listbox" aria-label="Model">
-                    {#each options as option, index (option.key)}
-                      <button
-                        type="button"
-                        class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
-                        role="option"
-                        aria-selected={option.key === activeKey}
-                        disabled={runtime.savingControls}
-                        onclick={() => void selectModel(option)}
-                      >
-                        <span class="mobile-turn-sheet-row-copy">
-                          <span class="mobile-turn-sheet-row-title">{option.label}</span>
-                          {#if option.hint}
-                            <span class="mobile-turn-sheet-row-subtitle">{option.hint}</span>
+                    {#each groupedOptions as group, groupIndex (group.provider)}
+                      {#if groupIndex > 0}
+                        <div class="mobile-turn-sheet-section-gap" aria-hidden="true"></div>
+                      {/if}
+                      <p class="mobile-turn-sheet-section-label">{group.label}</p>
+                      {#each group.options as option, index (option.key)}
+                        <button
+                          type="button"
+                          class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
+                          role="option"
+                          aria-selected={option.key === activeKey}
+                          disabled={runtime.savingControls}
+                          onclick={() => void selectModel(option)}
+                        >
+                          <span class="mobile-turn-sheet-row-copy">
+                            <span class="mobile-turn-sheet-row-title">{option.label}</span>
+                            {#if option.hint}
+                              <span class="mobile-turn-sheet-row-subtitle">{option.hint}</span>
+                            {/if}
+                          </span>
+                          {#if option.key === activeKey}
+                            <Check size={18} strokeWidth={2.5} class="mobile-turn-sheet-row-check" />
                           {/if}
-                        </span>
-                        {#if option.key === activeKey}
-                          <Check size={18} strokeWidth={2.5} class="mobile-turn-sheet-row-check" />
-                        {/if}
-                      </button>
+                        </button>
+                      {/each}
                     {/each}
                   </div>
                 {/if}

@@ -17,6 +17,101 @@ export interface ChatModelPickOption {
   favorite?: boolean;
 }
 
+export interface ChatModelPickGroup {
+  provider: string;
+  label: string;
+  options: ChatModelPickOption[];
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+  deepseek: "DeepSeek",
+  groq: "Groq",
+  xai: "xAI",
+  ollama: "Ollama",
+  openrouter: "OpenRouter",
+  "medousa-local": "Medousa Local",
+};
+
+export function resolveProviderLabel(
+  catalog: ProvidersListResult | null,
+  providerId: string,
+): string {
+  const id = providerId.trim().toLowerCase();
+  const fromCatalog = catalog?.providers.find((entry) => entry.id.toLowerCase() === id);
+  if (fromCatalog) return fromCatalog.label;
+  return PROVIDER_LABELS[id] ?? (id ? id.charAt(0).toUpperCase() + id.slice(1) : "Provider");
+}
+
+export function groupChatModelOptions(
+  options: ChatModelPickOption[],
+  catalog: ProvidersListResult | null,
+  activeProvider?: string,
+): ChatModelPickGroup[] {
+  const byProvider = new Map<string, ChatModelPickOption[]>();
+  for (const option of options) {
+    const provider = option.provider.trim().toLowerCase();
+    const list = byProvider.get(provider) ?? [];
+    list.push(option);
+    byProvider.set(provider, list);
+  }
+  const active = activeProvider?.trim().toLowerCase() ?? "";
+  return Array.from(byProvider.entries())
+    .map(([provider, groupOptions]) => ({
+      provider,
+      label: resolveProviderLabel(catalog, provider),
+      options: groupOptions,
+    }))
+    .sort((left, right) => {
+      if (active) {
+        if (left.provider === active && right.provider !== active) return -1;
+        if (right.provider === active && left.provider !== active) return 1;
+      }
+      return left.label.localeCompare(right.label);
+    });
+}
+
+export function groupNonFavoriteChatModelOptions(
+  options: ChatModelPickOption[],
+  catalog: ProvidersListResult | null,
+  activeProvider?: string,
+): ChatModelPickGroup[] {
+  return groupChatModelOptions(
+    options.filter((option) => !option.favorite),
+    catalog,
+    activeProvider,
+  );
+}
+
+export function mergeLiveProviderModels(
+  options: ChatModelPickOption[],
+  providerId: string,
+  liveModels: string[],
+  catalog: ProvidersListResult | null,
+): ChatModelPickOption[] {
+  if (!liveModels.length) return options;
+  const provider = providerId.trim().toLowerCase();
+  const seen = new Set(options.map((option) => option.key));
+  const next = [...options];
+  for (const model of liveModels) {
+    const trimmed = model.trim();
+    if (!trimmed) continue;
+    const key = modelPickKey(provider, trimmed);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push({
+      key,
+      provider,
+      model: trimmed,
+      label: resolveModelDisplayLabel(provider, trimmed),
+      hint: resolveProviderLabel(catalog, provider),
+    });
+  }
+  return next;
+}
+
 export function buildChatModelOptions(
   catalog: ProvidersListResult,
   probe: ProvidersProbeResult | null,

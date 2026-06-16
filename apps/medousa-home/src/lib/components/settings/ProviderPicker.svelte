@@ -5,6 +5,7 @@
   import { filterProviders, groupProvidersByCategory } from "$lib/types/providers";
   import {
     findCatalogProvider,
+    listProviderModels,
     listProviders,
     probeProviders,
     validateProviderKey,
@@ -49,6 +50,9 @@
   let loading = $state(true);
   let validating = $state(false);
   let validatedOk = $state<boolean | null>(null);
+  let liveModels = $state<string[]>([]);
+  let loadingModels = $state(false);
+  let modelsMessage = $state<string | null>(null);
 
   const selected = $derived(
     catalog ? findCatalogProvider(catalog, providerId) : undefined,
@@ -93,6 +97,8 @@
 
   function selectProvider(entry: ProviderCatalogEntry) {
     validatedOk = null;
+    liveModels = [];
+    modelsMessage = null;
     onProviderChange(entry.id, entry);
     onModelChange(
       entry.id === "ollama"
@@ -105,6 +111,33 @@
       onBaseUrlChange?.("");
     }
     onStatus?.(null);
+  }
+
+  async function runBrowseModels() {
+    if (!selected) return;
+    loadingModels = true;
+    modelsMessage = null;
+    try {
+      const result = await listProviderModels({
+        provider: selected.id,
+        apiKey: apiKey.trim() || undefined,
+        baseUrl: baseUrl.trim() || selected.defaultBaseUrl || undefined,
+      });
+      liveModels = result.models;
+      if (result.models.length === 0) {
+        modelsMessage = "No models returned — enter a model ID manually.";
+      } else {
+        modelsMessage = `${result.models.length} models from ${result.source}`;
+        if (!model.trim() || !result.models.includes(model.trim())) {
+          onModelChange(result.models[0] ?? model);
+        }
+      }
+    } catch (err) {
+      liveModels = [];
+      modelsMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      loadingModels = false;
+    }
   }
 
   async function runValidate() {
@@ -122,6 +155,9 @@
       onStatus?.(result.message, result.ok);
       if (result.suggestedModel?.trim()) {
         onModelChange(result.suggestedModel);
+      }
+      if (result.ok) {
+        await runBrowseModels();
       }
     } catch (err) {
       validatedOk = false;
@@ -242,6 +278,21 @@
               <option value={name}>{name}</option>
             {/each}
           </select>
+        {:else if liveModels.length > 0}
+          <select
+            class="select mt-2 w-full font-mono text-sm"
+            value={model}
+            disabled={disabled || validating || loadingModels}
+            onchange={(event) =>
+              onModelChange((event.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each liveModels as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+          {#if modelsMessage}
+            <p class="workshop-faint mt-1.5 text-xs">{modelsMessage}</p>
+          {/if}
         {:else}
           <input
             class="input mt-2 w-full font-mono text-sm"
@@ -250,8 +301,32 @@
             oninput={(event) =>
               onModelChange((event.currentTarget as HTMLInputElement).value)}
           />
+          {#if modelsMessage}
+            <p class="workshop-faint mt-1.5 text-xs text-warning-400">{modelsMessage}</p>
+          {/if}
         {/if}
       </label>
+
+      {#if selected.id !== "ollama" && selected.id !== "medousa-local"}
+        <button
+          type="button"
+          class="btn variant-ghost-surface min-h-9 text-sm"
+          disabled={
+            disabled ||
+            validating ||
+            loadingModels ||
+            (selected.needsApiKey && !apiKey.trim())
+          }
+          onclick={() => void runBrowseModels()}
+        >
+          {#if loadingModels}
+            <LoaderCircle class="mr-2 inline h-4 w-4 animate-spin" aria-hidden="true" />
+            Loading models…
+          {:else}
+            Browse live models
+          {/if}
+        </button>
+      {/if}
 
       {#if showValidate && (selected.needsApiKey || selected.id === "ollama")}
         <button

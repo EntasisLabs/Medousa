@@ -8,7 +8,8 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { formatToolName, formatTurnPhase } from "$lib/utils/formatTurn";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
-  import type { DepthMode, RuntimeTab } from "$lib/types/runtime";
+  import type { DepthMode, ReasoningEffortMode, RuntimeTab } from "$lib/types/runtime";
+  import { REASONING_EFFORT_OPTIONS } from "$lib/types/reasoningEffort";
   import {
     workshopRuntimeReadHint,
     workshopRuntimeRoutingHint,
@@ -183,7 +184,7 @@
       </div>
 
       <p class="workshop-faint border-t border-surface-500/40 py-2.5 font-mono text-[11px]">
-        {runtime.modelLabel()} · depth {runtime.depthMode}
+        {runtime.modelLabel()} · depth {runtime.depthMode} · reasoning {runtime.reasoningEffort}
       </p>
     {:else if runtime.activeTab === "jobs"}
       {#if runtime.stats}
@@ -380,6 +381,29 @@
             {/each}
           </div>
           <p class="workshop-faint mt-3">{runtime.depthHint()}</p>
+        </div>
+
+        <div class="workshop-inset p-4">
+          <h2 class="text-sm font-semibold text-surface-100">Reasoning effort</h2>
+          <p class="workshop-faint mt-1 text-xs">
+            Provider-native reasoning depth — separate from answer stance above.
+          </p>
+          <div class="mt-4 flex flex-wrap gap-2">
+            {#each REASONING_EFFORT_OPTIONS as option (option.id)}
+              <button
+                type="button"
+                class="rounded-container-token px-3 py-2 text-sm transition {runtime.reasoningEffort ===
+                option.id
+                  ? 'bg-primary-500/20 font-medium text-primary-200'
+                  : 'bg-surface-800 text-surface-300 hover:text-surface-100'}"
+                disabled={runtime.savingControls}
+                title={option.hint}
+                onclick={() => runtime.setReasoningEffort(option.id as ReasoningEffortMode)}
+              >
+                {option.label}
+              </button>
+            {/each}
+          </div>
         </div>
 
         {#if runtime.controlsMessage}

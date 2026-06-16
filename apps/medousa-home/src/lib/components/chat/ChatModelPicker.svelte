@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search, Sparkles, Star } from "@lucide/svelte";
+  import { ArrowUpRight, Check, ChevronDown, LoaderCircle, Search } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
@@ -8,26 +8,30 @@
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { workshopModelOnHostHint } from "$lib/platformCopy";
-  import { loadTuiDefaultsSummary, persistTuiFavoriteModels } from "$lib/config";
+  import { loadTuiDefaultsSummary } from "$lib/config";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildChatModelOptions,
     depthModeLabel,
     filterChatModelOptions,
-    providerMonogram,
+    groupNonFavoriteChatModelOptions,
+    mergeLiveProviderModels,
+    resolveProviderLabel,
     type ChatModelPickOption,
   } from "$lib/utils/chatModelPicker";
-  import { listProviders, probeProviders } from "$lib/utils/providersApi";
+  import { listProviderModels, listProviders, probeProviders } from "$lib/utils/providersApi";
   import {
-    isFavoriteModel,
     normalizeFavoriteModels,
     resolveModelDisplayLabel,
-    toggleFavoriteModel,
     type FavoriteModel,
   } from "$lib/utils/modelCatalog";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
+  import {
+    REASONING_EFFORT_OPTIONS,
+    reasoningEffortLabel,
+  } from "$lib/types/reasoningEffort";
   import { allVoicePresets } from "$lib/types/voicePresets";
-  import type { DepthMode } from "$lib/types/runtime";
+  import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
 
   interface Props {
     disabled?: boolean;
@@ -46,17 +50,44 @@
   let menuEl: HTMLDivElement | undefined = $state();
   let triggerEl: HTMLButtonElement | undefined = $state();
 
+  let loadingLiveModels = $state(false);
+
   const displayName = $derived(resolveModelDisplayLabel(runtime.provider, runtime.model));
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
   const filtered = $derived(filterChatModelOptions(options, search));
-  const favoriteOptions = $derived(filtered.filter((option) => option.favorite));
-  const otherOptions = $derived(filtered.filter((option) => !option.favorite));
-  const activeIsFavorite = $derived(isFavoriteModel(favorites, runtime.provider, runtime.model));
+  const groupedOptions = $derived(
+    groupNonFavoriteChatModelOptions(filtered, catalogSnapshot, runtime.provider),
+  );
+  const visibleOptions = $derived.by(() => {
+    if (search.trim()) return filtered;
+    const seen = new Set<string>();
+    const merged: ChatModelPickOption[] = [];
+    const push = (option: ChatModelPickOption) => {
+      if (seen.has(option.key)) return;
+      seen.add(option.key);
+      merged.push(option);
+    };
+    for (const option of filtered.filter((entry) => entry.favorite)) {
+      push(option);
+    }
+    for (const group of groupedOptions) {
+      for (const option of group.options) {
+        push(option);
+      }
+    }
+    return merged;
+  });
   const nativeMobileReadonly = $derived(readonly || isTauriMobilePlatform());
-  const providerBadge = $derived(providerMonogram(runtime.provider));
   const depthLabel = $derived(depthModeLabel(runtime.depthMode));
+  const reasoningLabel = $derived(reasoningEffortLabel(runtime.reasoningEffort));
   const voiceLabel = $derived(voicePresets.activePreset.name);
   const voiceOptions = $derived(allVoicePresets(workshopDefaults.draft.customVoicePresets));
+
+  function optionProviderLabel(option: ChatModelPickOption): string | null {
+    const provider = option.provider.trim().toLowerCase();
+    if (provider === runtime.provider.trim().toLowerCase()) return null;
+    return resolveProviderLabel(catalogSnapshot, provider);
+  }
 
   onMount(() => {
     void bootstrap();
@@ -113,36 +144,42 @@
     catalog: NonNullable<typeof catalogSnapshot>,
     probe: typeof probeSnapshot,
     nextFavorites: FavoriteModel[],
+    liveModels: string[] = [],
   ) {
-    options = buildChatModelOptions(
+    const base = buildChatModelOptions(
       catalog,
       probe,
       runtime.provider,
       runtime.model,
       nextFavorites,
     );
+    options = liveModels.length
+      ? mergeLiveProviderModels(base, runtime.provider, liveModels, catalog)
+      : base;
   }
 
-  async function toggleActiveFavorite(event: MouseEvent) {
-    event.stopPropagation();
-    if (nativeMobileReadonly || runtime.savingControls) return;
-    const next = toggleFavoriteModel(favorites, runtime.provider, runtime.model);
-    favorites = next;
-    workshopDefaults.draft = { ...workshopDefaults.draft, favoriteModels: next };
-    if (catalogSnapshot) {
-      rebuildOptions(catalogSnapshot, probeSnapshot, next);
-    }
+  async function refreshLiveModelsForActiveProvider() {
+    if (nativeMobileReadonly || !catalogSnapshot) return;
+    loadingLiveModels = true;
     try {
-      await persistTuiFavoriteModels(next);
+      const result = await listProviderModels({ provider: runtime.provider });
+      if (result.models.length > 0) {
+        rebuildOptions(catalogSnapshot, probeSnapshot, favorites, result.models);
+      }
     } catch {
-      // Favorites still update locally; persist retries on next settings save.
+      // Catalog picks still work when live listing is unavailable.
+    } finally {
+      loadingLiveModels = false;
     }
   }
 
   function toggleMenu() {
     if (disabled || nativeMobileReadonly || runtime.savingControls) return;
     open = !open;
-    if (open) search = "";
+    if (open) {
+      search = "";
+      void refreshLiveModelsForActiveProvider();
+    }
   }
 
   async function selectOption(option: ChatModelPickOption) {
@@ -159,6 +196,11 @@
     await runtime.setDepthMode(mode);
   }
 
+  async function selectReasoning(mode: ReasoningEffortMode) {
+    if (mode === runtime.reasoningEffort || runtime.savingControls) return;
+    await runtime.setReasoningEffort(mode);
+  }
+
   async function selectVoice(voiceId: string) {
     if (voiceId === voicePresets.activeVoiceId || voicePresets.saving) return;
     await voicePresets.setActiveVoiceId(voiceId);
@@ -167,7 +209,10 @@
   function openMenu() {
     if (disabled || runtime.savingControls) return;
     open = !open;
-    if (open) search = "";
+    if (open) {
+      search = "";
+      void refreshLiveModelsForActiveProvider();
+    }
   }
 
   function openModelsSettings() {
@@ -189,13 +234,12 @@
     disabled={disabled || runtime.savingControls}
     aria-haspopup="listbox"
     aria-expanded={open}
-    title="{runtime.modelLabel()} · {voiceLabel} · {depthLabel} depth"
+    title="{displayName} · {voiceLabel} · {depthLabel} · {reasoningLabel}"
     onclick={nativeMobileReadonly ? openMenu : toggleMenu}
   >
-    <span class="composer-model-trigger-badge" aria-hidden="true">{providerBadge}</span>
     <span class="composer-model-trigger-copy">
       <span class="composer-model-trigger-name">{displayName}</span>
-      <span class="composer-model-trigger-meta">{voiceLabel} · {depthLabel}</span>
+      <span class="composer-model-trigger-meta">{voiceLabel} · {depthLabel} · {reasoningLabel}</span>
     </span>
     {#if runtime.savingControls}
       <LoaderCircle size={13} class="composer-model-trigger-spinner animate-spin" />
@@ -205,71 +249,9 @@
   </button>
 
   {#if open}
-    <div bind:this={menuEl} class="composer-model-panel" role="dialog" aria-label="Model picker">
-      <div class="composer-model-panel-header">
-        <div class="composer-model-panel-title">
-          <Sparkles size={14} class="composer-model-panel-icon" />
-          <span>Model</span>
-        </div>
-        <div class="composer-model-panel-header-actions">
-          {#if !nativeMobileReadonly}
-            <button
-              type="button"
-              class="composer-model-favorite-btn {activeIsFavorite ? 'is-active' : ''}"
-              disabled={runtime.savingControls}
-              aria-pressed={activeIsFavorite}
-              title={activeIsFavorite ? "Remove from favorites" : "Add to favorites"}
-              onclick={(event) => void toggleActiveFavorite(event)}
-            >
-              <Star size={14} fill={activeIsFavorite ? "currentColor" : "none"} />
-            </button>
-          {/if}
-          <span class="composer-model-panel-active">{displayName}</span>
-        </div>
-      </div>
-
-      <div class="composer-model-panel-section">
-        <span class="composer-model-panel-label">Voice</span>
-        <div class="composer-model-depth-segment" role="group" aria-label="Voice">
-          {#each voiceOptions as option (option.id)}
-            <button
-              type="button"
-              class="composer-model-depth-segment-btn {voicePresets.activeVoiceId === option.id
-                ? 'composer-model-depth-segment-btn-active'
-                : ''}"
-              disabled={voicePresets.saving}
-              aria-pressed={voicePresets.activeVoiceId === option.id}
-              title={option.description}
-              onclick={() => void selectVoice(option.id)}
-            >
-              {option.name}
-            </button>
-          {/each}
-        </div>
-      </div>
-
-      <div class="composer-model-panel-section">
-        <span class="composer-model-panel-label">Answer depth</span>
-        <div class="composer-model-depth-segment" role="group" aria-label="Answer depth">
-          {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
-            <button
-              type="button"
-              class="composer-model-depth-segment-btn {runtime.depthMode === option.id
-                ? 'composer-model-depth-segment-btn-active'
-                : ''}"
-              disabled={runtime.savingControls}
-              aria-pressed={runtime.depthMode === option.id}
-              title={option.hint}
-              onclick={() => void selectDepth(option.id)}
-            >
-              {option.label}
-            </button>
-          {/each}
-        </div>
-      </div>
-
+    <div bind:this={menuEl} class="composer-model-panel" role="dialog" aria-label="Choose model">
       {#if !nativeMobileReadonly}
-        <div class="composer-model-panel-section composer-model-panel-section-search">
+        <div class="composer-model-panel-search">
           <label class="composer-model-search">
             <Search size={14} class="composer-model-search-icon" />
             <input
@@ -282,47 +264,16 @@
         </div>
 
         <ul class="composer-model-list" role="listbox">
-          {#if loading}
+          {#if loading || loadingLiveModels}
             <li class="composer-model-list-empty">
               <LoaderCircle size={16} class="animate-spin opacity-60" />
-              <span>Loading models…</span>
+              <span>{loading ? "Loading models…" : "Refreshing models…"}</span>
             </li>
-          {:else if filtered.length === 0}
+          {:else if visibleOptions.length === 0}
             <li class="composer-model-list-empty">No matches</li>
           {:else}
-            {#if favoriteOptions.length > 0 && !search.trim()}
-              <li class="composer-model-list-section" aria-hidden="true">Favorites</li>
-              {#each favoriteOptions as option (option.key)}
-                <li>
-                  <button
-                    type="button"
-                    class="composer-model-list-item {option.key === activeKey
-                      ? 'composer-model-list-item-active'
-                      : ''}"
-                    role="option"
-                    aria-selected={option.key === activeKey}
-                    onclick={() => void selectOption(option)}
-                  >
-                    <span class="composer-model-list-badge">{providerMonogram(option.provider)}</span>
-                    <span class="composer-model-list-copy">
-                      <span class="composer-model-list-name">{option.label}</span>
-                      {#if option.hint}
-                        <span class="composer-model-list-hint">{option.hint}</span>
-                      {/if}
-                    </span>
-                    {#if option.key === activeKey}
-                      <span class="composer-model-list-check" aria-hidden="true">
-                        <Check size={14} strokeWidth={2.75} />
-                      </span>
-                    {/if}
-                  </button>
-                </li>
-              {/each}
-              {#if otherOptions.length > 0}
-                <li class="composer-model-list-section" aria-hidden="true">More models</li>
-              {/if}
-            {/if}
-            {#each (search.trim() ? filtered : otherOptions) as option (option.key)}
+            {#each visibleOptions as option (option.key)}
+              {@const providerLabel = optionProviderLabel(option)}
               <li>
                 <button
                   type="button"
@@ -333,23 +284,82 @@
                   aria-selected={option.key === activeKey}
                   onclick={() => void selectOption(option)}
                 >
-                  <span class="composer-model-list-badge">{providerMonogram(option.provider)}</span>
-                  <span class="composer-model-list-copy">
-                    <span class="composer-model-list-name">{option.label}</span>
-                    {#if option.hint}
-                      <span class="composer-model-list-hint">{option.hint}</span>
+                  <span class="composer-model-list-name">
+                    {option.label}
+                    {#if providerLabel}
+                      <span class="composer-model-list-tier">{providerLabel}</span>
+                    {:else if option.hint && option.hint !== "Active"}
+                      <span class="composer-model-list-tier">{option.hint}</span>
                     {/if}
                   </span>
                   {#if option.key === activeKey}
-                    <span class="composer-model-list-check" aria-hidden="true">
-                      <Check size={14} strokeWidth={2.75} />
-                    </span>
+                    <Check size={15} strokeWidth={2.5} class="composer-model-list-check" />
                   {/if}
                 </button>
               </li>
             {/each}
           {/if}
         </ul>
+
+        <div class="composer-model-turn-settings" aria-label="Turn settings">
+          <div class="composer-model-turn-row">
+            <span class="composer-model-turn-label">Voice</span>
+            <div class="composer-model-turn-pills" role="group" aria-label="Voice">
+              {#each voiceOptions as option (option.id)}
+                <button
+                  type="button"
+                  class="composer-model-turn-pill {voicePresets.activeVoiceId === option.id
+                    ? 'composer-model-turn-pill-active'
+                    : ''}"
+                  disabled={voicePresets.saving}
+                  aria-pressed={voicePresets.activeVoiceId === option.id}
+                  title={option.description}
+                  onclick={() => void selectVoice(option.id)}
+                >
+                  {option.name}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="composer-model-turn-row">
+            <span class="composer-model-turn-label">Stance</span>
+            <div class="composer-model-turn-pills" role="group" aria-label="Answer depth">
+              {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
+                <button
+                  type="button"
+                  class="composer-model-turn-pill {runtime.depthMode === option.id
+                    ? 'composer-model-turn-pill-active'
+                    : ''}"
+                  disabled={runtime.savingControls}
+                  aria-pressed={runtime.depthMode === option.id}
+                  title={option.hint}
+                  onclick={() => void selectDepth(option.id)}
+                >
+                  {option.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="composer-model-turn-row">
+            <span class="composer-model-turn-label">Reasoning</span>
+            <select
+              class="composer-model-turn-select"
+              value={runtime.reasoningEffort}
+              disabled={runtime.savingControls}
+              aria-label="Reasoning effort"
+              onchange={(event) =>
+                void selectReasoning(
+                  (event.currentTarget as HTMLSelectElement).value as ReasoningEffortMode,
+                )}
+            >
+              {#each REASONING_EFFORT_OPTIONS as option (option.id)}
+                <option value={option.id} title={option.hint}>{option.label}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
       {:else}
         <div class="composer-model-mobile-note">
           <p class="composer-model-mobile-title">{runtime.modelLabel()}</p>
@@ -358,7 +368,7 @@
       {/if}
 
       <button type="button" class="composer-model-panel-footer" onclick={openModelsSettings}>
-        <span>{nativeMobileReadonly ? "Open Models" : "Models in Settings"}</span>
+        <span>{nativeMobileReadonly ? "Open Models" : "Add models"}</span>
         <ArrowUpRight size={14} />
       </button>
     </div>
