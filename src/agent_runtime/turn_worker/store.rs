@@ -136,7 +136,7 @@ impl TurnWorkerStore {
         fs::write(path, body)
     }
 
-    fn persist(&self) {
+    fn persist(&self, work_id: &str, stasis_job_id: Option<&str>) {
         let mut guard = self.records.lock().expect("turn worker records");
         Self::prune_map(&mut guard);
         let body = match serde_json::to_string_pretty(&*guard) {
@@ -148,6 +148,22 @@ impl TurnWorkerStore {
         };
         drop(guard);
         crate::workspace::persist::queue_snapshot_turn_workers(body);
+        Self::notify_turn_worker_changed(work_id, stasis_job_id);
+    }
+
+    fn notify_turn_worker_changed(work_id: &str, stasis_job_id: Option<&str>) {
+        crate::workspace::domain_event::notify_workspace_event(
+            crate::workspace::domain_event::WorkspaceDomainEvent::TurnWorkerChanged {
+                work_id: work_id.to_string(),
+            },
+        );
+        if let Some(job_id) = stasis_job_id.filter(|value| !value.is_empty()) {
+            crate::workspace::domain_event::notify_workspace_event(
+                crate::workspace::domain_event::WorkspaceDomainEvent::StasisJobChanged {
+                    job_id: job_id.to_string(),
+                },
+            );
+        }
     }
 
     fn prune_map(map: &mut HashMap<String, TurnWorkRecord>) {
@@ -193,10 +209,12 @@ impl TurnWorkerStore {
     }
 
     pub fn insert(&self, record: TurnWorkRecord) {
+        let work_id = record.work_id.clone();
+        let stasis_job_id = record.stasis_job_id.clone();
         let mut guard = self.records.lock().expect("turn worker records");
-        guard.insert(record.work_id.clone(), record);
+        guard.insert(work_id.clone(), record);
         drop(guard);
-        self.persist();
+        self.persist(&work_id, stasis_job_id.as_deref());
     }
 
     pub fn get(&self, work_id: &str) -> Option<TurnWorkRecord> {
@@ -267,7 +285,10 @@ impl TurnWorkerStore {
         record.updated_at = Utc::now();
         let cloned = record.clone();
         drop(guard);
-        self.persist();
+        self.persist(
+            &cloned.work_id,
+            cloned.stasis_job_id.as_deref(),
+        );
         Some(cloned)
     }
 
@@ -283,7 +304,7 @@ impl TurnWorkerStore {
         }
         let snapshot = record.clone();
         drop(guard);
-        self.persist();
+        self.persist(&snapshot.work_id, snapshot.stasis_job_id.as_deref());
         Some(snapshot)
     }
 }

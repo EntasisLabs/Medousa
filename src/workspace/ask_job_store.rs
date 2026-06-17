@@ -119,7 +119,7 @@ impl AskJobStore {
         fs::write(path, body)
     }
 
-    fn persist(&self) {
+    fn persist(&self, job_id: &str) {
         let mut guard = self.records.lock().expect("ask job records");
         Self::prune_map(&mut guard);
         let body = match serde_json::to_string_pretty(&*guard) {
@@ -131,6 +131,15 @@ impl AskJobStore {
         };
         drop(guard);
         crate::workspace::persist::queue_snapshot_ask_jobs(body);
+        Self::notify_ask_job_changed(job_id);
+    }
+
+    fn notify_ask_job_changed(job_id: &str) {
+        crate::workspace::domain_event::notify_workspace_event(
+            crate::workspace::domain_event::WorkspaceDomainEvent::AskJobChanged {
+                job_id: job_id.to_string(),
+            },
+        );
     }
 
     fn prune_map(map: &mut HashMap<String, AskJobRecord>) {
@@ -168,10 +177,11 @@ impl AskJobStore {
     }
 
     pub fn register_pending(&self, record: AskJobRecord) {
+        let job_id = record.job_id.clone();
         let mut guard = self.records.lock().expect("ask job records");
-        guard.insert(record.job_id.clone(), record);
+        guard.insert(job_id.clone(), record);
         drop(guard);
-        self.persist();
+        self.persist(&job_id);
     }
 
     pub fn set_interim_text(&self, job_id: &str, interim_text: String) {
@@ -191,7 +201,7 @@ impl AskJobStore {
         }
         record.updated_at_utc = Utc::now();
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn mark_running(&self, job_id: &str) {
@@ -202,7 +212,7 @@ impl AskJobStore {
         record.status = AskJobStatus::Running;
         record.updated_at_utc = Utc::now();
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn mark_succeeded(&self, job_id: &str, output_text: String) {
@@ -217,7 +227,7 @@ impl AskJobStore {
         record.updated_at_utc = now;
         record.finished_at_utc = Some(now);
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn mark_failed(&self, job_id: &str, error: String) {
@@ -231,7 +241,7 @@ impl AskJobStore {
         record.updated_at_utc = now;
         record.finished_at_utc = Some(now);
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn reset_for_retry(&self, job_id: &str) -> Option<AskJobRecord> {
@@ -252,7 +262,7 @@ impl AskJobStore {
         record.updated_at_utc = now;
         let snapshot = record.clone();
         drop(guard);
-        self.persist();
+        self.persist(job_id);
         Some(snapshot)
     }
 
@@ -269,7 +279,7 @@ impl AskJobStore {
         record.updated_at_utc = now;
         record.finished_at_utc = Some(now);
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn archive(&self, job_id: &str, purge_body: bool) -> Option<AskJobRecord> {
@@ -284,7 +294,7 @@ impl AskJobStore {
         }
         let snapshot = record.clone();
         drop(guard);
-        self.persist();
+        self.persist(job_id);
         Some(snapshot)
     }
 
@@ -296,7 +306,7 @@ impl AskJobStore {
         record.journal_path = Some(path);
         record.updated_at_utc = Utc::now();
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn set_notified_channel(&self, job_id: &str, channel: String) {
@@ -307,7 +317,7 @@ impl AskJobStore {
         record.notified_channel = Some(channel);
         record.updated_at_utc = Utc::now();
         drop(guard);
-        self.persist();
+        self.persist(job_id);
     }
 
     pub fn get(&self, job_id: &str) -> Option<AskJobRecord> {

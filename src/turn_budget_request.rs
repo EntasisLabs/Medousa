@@ -196,6 +196,7 @@ impl TurnBudgetRequestStore {
             guard.insert(request_id.clone(), record);
         }
         self.persist();
+        notify_budget_request_changed(&request_id);
 
         let (tx, rx) = oneshot::channel();
         self.waiters
@@ -308,6 +309,7 @@ impl TurnBudgetRequestStore {
         let updated = record.clone();
         drop(guard);
         self.persist();
+        notify_budget_request_changed(request_id);
         self.signal_waiter(
             request_id,
             BudgetResolution::Approved {
@@ -339,6 +341,7 @@ impl TurnBudgetRequestStore {
         let updated = record.clone();
         drop(guard);
         self.persist();
+        notify_budget_request_changed(request_id);
         self.signal_waiter(request_id, BudgetResolution::Denied);
         Ok(updated)
     }
@@ -356,8 +359,17 @@ impl TurnBudgetRequestStore {
         record.resolved_at_utc = Some(record.updated_at_utc);
         drop(guard);
         self.persist();
+        notify_budget_request_changed(request_id);
         Ok(())
     }
+}
+
+fn notify_budget_request_changed(request_id: &str) {
+    crate::workspace::domain_event::notify_workspace_event(
+        crate::workspace::domain_event::WorkspaceDomainEvent::BudgetRequestChanged {
+            request_id: request_id.to_string(),
+        },
+    );
 }
 
 #[cfg(test)]

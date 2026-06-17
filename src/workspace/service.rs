@@ -8,9 +8,10 @@ use stasis::application::runtime::runtime_factory::RuntimeComposition;
 
 use crate::daemon_api::{
     WorkCardDetail, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
-    WorkspaceFeedResponse, WorkspaceSnapshot, WorkspaceSnapshotQuery,
+    WorkspaceFeedResponse, WorkspaceRebuildResponse, WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
 use crate::workspace::card::{parse_column_filter, project_workspace_items, ProjectedWorkItem};
+use crate::workspace::domain_event::notify_workspace_invalidate;
 use crate::workspace::event::filter_events_by_card;
 use crate::workspace::projector::{apply_projection_to_store, workspace_hub};
 use crate::workspace::store::workspace_store;
@@ -18,10 +19,10 @@ use crate::workspace::store::workspace_store;
 pub struct WorkspaceService;
 
 impl WorkspaceService {
-    /// Notify the projector — does not block on a full rescan.
+    /// Notify the projector — visible-card reconcile, not a full Stasis scan.
     pub async fn sync_runtime(runtime: &RuntimeComposition, _include_terminal: bool) {
-        if let Some(hub) = workspace_hub() {
-            hub.trigger_refresh();
+        if workspace_hub().is_some() {
+            notify_workspace_invalidate();
             return;
         }
         let _ = legacy_sync_and_project(runtime, true).await;
@@ -29,10 +30,29 @@ impl WorkspaceService {
 
     pub async fn refresh_now(runtime: &RuntimeComposition) {
         if let Some(hub) = workspace_hub() {
-            hub.refresh_now().await;
+            hub.rebuild_full().await;
             return;
         }
         let _ = legacy_sync_and_project(runtime, true).await;
+    }
+
+    pub async fn rebuild(runtime: &RuntimeComposition) -> anyhow::Result<WorkspaceRebuildResponse> {
+        if let Some(hub) = workspace_hub() {
+            hub.rebuild_full().await;
+            let snapshot = hub.snapshot();
+            return Ok(WorkspaceRebuildResponse {
+                workspace_revision: snapshot.revision,
+                card_count: snapshot.items.len(),
+                message: format!("rebuilt workspace with {} cards", snapshot.items.len()),
+            });
+        }
+
+        let items = legacy_sync_and_project(runtime, true).await?;
+        Ok(WorkspaceRebuildResponse {
+            workspace_revision: workspace_store().revision(),
+            card_count: items.len(),
+            message: format!("rebuilt workspace with {} cards", items.len()),
+        })
     }
 
     pub async fn list_cards(
@@ -60,7 +80,11 @@ impl WorkspaceService {
             if let Some(item) = hub.card_detail(card_id) {
                 return Ok(Some(item.detail));
             }
-            hub.refresh_now().await;
+            hub.reconcile_now().await;
+            if let Some(item) = hub.card_detail(card_id) {
+                return Ok(Some(item.detail));
+            }
+            hub.rebuild_full().await;
             return Ok(hub.card_detail(card_id).map(|item| item.detail));
         }
 

@@ -1295,6 +1295,13 @@ pub struct WorkspaceCardActionResponse {
     pub associations: Option<WorkCardAssociations>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceRebuildResponse {
+    pub workspace_revision: u64,
+    pub card_count: usize,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ManuscriptCatalogQuery {
     pub prefix: Option<String>,

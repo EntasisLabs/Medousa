@@ -13,8 +13,8 @@ use stasis::application::runtime::runtime_factory::RuntimeComposition;
 
 use crate::daemon_api::{
     WorkCardDetail, WorkspaceCardActionResponse, WorkspaceCardsQuery, WorkspaceCardsResponse,
-    WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceSnapshot,
-    WorkspaceSnapshotQuery, WorkspaceStreamQuery,
+    WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest, WorkspaceRebuildResponse,
+    WorkspaceSnapshot, WorkspaceSnapshotQuery, WorkspaceStreamQuery,
 };
 use crate::workspace::WorkspaceService;
 use crate::workspace::actions::{archive_card, cancel_card, link_vault_card, retry_card, CardActionError};
@@ -75,6 +75,15 @@ pub async fn get_workspace_snapshot(
     Query(query): Query<WorkspaceSnapshotQuery>,
 ) -> Result<Json<WorkspaceSnapshot>, (StatusCode, String)> {
     WorkspaceService::snapshot(state.composition, &query)
+        .await
+        .map(Json)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+}
+
+pub async fn rebuild_workspace(
+    State(state): State<WorkspaceHandlerState>,
+) -> Result<Json<WorkspaceRebuildResponse>, (StatusCode, String)> {
+    WorkspaceService::rebuild(state.composition.as_ref())
         .await
         .map(Json)
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))

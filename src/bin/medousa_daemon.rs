@@ -600,6 +600,10 @@ async fn main() -> Result<()> {
             get(medousa::workspace_handlers::get_workspace_snapshot),
         )
         .route(
+            "/v1/workspace/rebuild",
+            post(medousa::workspace_handlers::rebuild_workspace),
+        )
+        .route(
             "/v1/workspace/stream",
             get(medousa::workspace_handlers::workspace_stream),
         )
@@ -812,6 +816,11 @@ async fn run_scheduler_loop(
                 }
 
                 if let Some(ref job_id) = report.processed_job {
+                    medousa::workspace::notify_workspace_event(
+                        medousa::workspace::WorkspaceDomainEvent::StasisJobChanged {
+                            job_id: job_id.clone(),
+                        },
+                    );
                     if job_succeeded(state.composition(), job_id).await {
                         let _ = maybe_resume_agent_turn_from_child_job(&state, job_id).await;
                     }
@@ -1511,7 +1520,9 @@ async fn retry_ask_workspace_card(
     )
     .await;
 
-    medousa::workspace::WorkspaceService::sync_runtime(state.composition(), true).await;
+    medousa::workspace::notify_workspace_event(medousa::workspace::WorkspaceDomainEvent::AskJobChanged {
+        job_id: job_id.clone(),
+    });
 
     Ok(medousa::daemon_api::WorkspaceCardActionResponse {
         workspace_revision: medousa::workspace::store::workspace_store().revision(),
@@ -2047,6 +2058,7 @@ async fn spawn_turn_ticket(
         response_depth_mode: interactive_request.response_depth_mode.clone(),
     };
     let ask_job_id = workspace_card_id.clone();
+    let ask_job_id_for_notify = ask_job_id.clone();
     let session_hooks = medousa::agent_runtime::InteractiveTurnSessionHooks {
         cancelled_turns: Some(cancelled_interactive_turns),
         turn_ticket_registry: Some(turn_tickets.clone()),
@@ -2069,7 +2081,15 @@ async fn spawn_turn_ticket(
         .await;
 
         medousa::turn_ticket::clear_turn_after_run(&turn_tickets, &turn_id_for_task).await;
-        let _ = medousa::workspace::WorkspaceService::sync_runtime(&composition, true).await;
+        if let Some(job_id) = ask_job_id_for_notify.as_deref() {
+            medousa::workspace::notify_workspace_event(
+                medousa::workspace::WorkspaceDomainEvent::AskJobChanged {
+                    job_id: job_id.to_string(),
+                },
+            );
+        } else {
+            medousa::workspace::notify_workspace_invalidate();
+        }
 
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut guard = stream_registry.write().await;

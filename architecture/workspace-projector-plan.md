@@ -1,6 +1,6 @@
 # Workspace projector — phased plan
 
-> **Status:** Wave 1 in progress  
+> **Status:** Waves 1–3 shipped  
 > **Date:** 2026-06-07  
 > **Problem:** Work board and chat feel frozen under research/worker load despite low CPU/RAM — state is re-derived on every read instead of maintained as a materialized view.
 
@@ -89,13 +89,19 @@ flowchart LR
 
 ## Wave 3 — Incremental projection
 
+**Status:** Shipped (2026-06-07)
+
 **Goal:** Cost scales with **active** work, not historical job count.
 
 | Item | Change |
 |------|--------|
-| Typed events | `JobStateChanged`, `WorkerUpdated`, `AskFinished`, … |
-| Partial project | Rebuild one card from source record |
-| Full scan | Startup + explicit `POST /workspace/rebuild` only |
+| Typed events | `WorkspaceDomainEvent` — job/worker/ask/budget changes |
+| Incremental projector | Single-card projection via `incremental.rs`; 50ms event coalesce |
+| Visible reconcile | Generic invalidate re-projects board cards only (not full Stasis scan) |
+| Full scan | Boot, `POST /v1/workspace/rebuild`, 60s safety reconcile, explicit `refresh_now` |
+| Store hooks | Ask/worker/budget stores emit events on mutation; scheduler emits `StasisJobChanged` |
+
+**Removed:** 1 Hz full Stasis scan from projector loop.
 
 ---
 
@@ -121,6 +127,7 @@ Extract projector as sidecar or consume Stasis change feed. Same HTTP/SSE contra
 | Area | Path |
 |------|------|
 | Projector + read model | `src/workspace/projector.rs` |
+| Incremental projection | `src/workspace/incremental.rs`, `src/workspace/domain_event.rs` |
 | Async persist writer | `src/workspace/persist.rs` |
 | Service (read API) | `src/workspace/service.rs` |
 | SSE broadcaster | `src/workspace/feed.rs` |
