@@ -17,7 +17,7 @@ pub const COGNITION_TOOLS_DISCOVER: &str = "cognition_tools_discover";
 
 pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
 
-/// Always-visible host console tools (~8+).
+/// Always-visible host console tools (~12+).
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
     "cognition_capability_search",
@@ -25,6 +25,8 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_spawn_turn_worker",
     "cognition_memory_context",
     "cognition_memory_store",
+    "cognition_identity_recall",
+    "cognition_identity_remember",
     "cognition_web_search",
     "cognition_vault_search",
     "cognition_turn_begin_work",
@@ -264,6 +266,8 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_spawn_turn_worker" => "Delegate execution to workshop lane",
         "cognition_memory_context" => "Load Locus AVEC + session memory context",
         "cognition_memory_store" => "Store episodic STTP node in Locus memory",
+        "cognition_identity_recall" => "Look up preferences, people, and identity facts",
+        "cognition_identity_remember" => "Remember durable personal facts in identity memory",
         "cognition_vault_search" => "Search vault notes",
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_turn_begin_work" => "Progress line before heavy tools",
@@ -596,8 +600,10 @@ mod tests {
     #[test]
     fn bootstrap_host_tools_are_small() {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
-        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 12);
+        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 16);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
+        assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
     }
 
     #[test]
@@ -607,6 +613,8 @@ mod tests {
         let allow = host_bus_tool_names();
         let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
         assert!(!before.contains("cognition_memory_schema"));
+        assert!(before.contains("cognition_identity_remember"));
+        assert!(before.contains("cognition_identity_recall"));
 
         unlock_session_domains(&session_id, ToolSurfaceLane::Host, &["memory"]).expect("unlock");
         let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
