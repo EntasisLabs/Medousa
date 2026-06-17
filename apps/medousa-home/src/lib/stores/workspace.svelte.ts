@@ -139,7 +139,10 @@ export class WorkspaceStore {
 
   private handleCardUpserted(card: WorkCard) {
     const previous = this.previousColumns.get(card.id);
-    if (previous !== "done" && card.column === "done") {
+    const transitionedToDone =
+      previous !== undefined && previous !== "done" && card.column === "done";
+
+    if (transitionedToDone) {
       if (isAskJobId(card.id)) {
         void notifyAskComplete(card.title, card.id);
         this.pendingAskCompletion = {

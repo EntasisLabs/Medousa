@@ -4,6 +4,12 @@ import { isTauriMobilePlatform } from "$lib/platform";
 
 let permissionReady: boolean | null = null;
 const budgetNotified = new Set<string>();
+const workNotified = new Set<string>();
+
+/** macOS notification APIs are not safe under concurrent tokio worker calls — serialize. */
+const NOTIFICATION_MIN_GAP_MS = 300;
+let notificationChain: Promise<void> = Promise.resolve();
+let lastNotificationSentAt = 0;
 
 async function notificationApi() {
   return import("@tauri-apps/plugin-notification");
@@ -44,14 +50,42 @@ function notificationId(seed: string): number {
   return Math.abs(hash) || 1;
 }
 
-function rememberBudgetNotification(requestId: string): boolean {
-  if (budgetNotified.has(requestId)) return false;
-  budgetNotified.add(requestId);
-  if (budgetNotified.size > 128) {
-    const oldest = budgetNotified.values().next().value;
-    if (oldest) budgetNotified.delete(oldest);
+function rememberOnce(set: Set<string>, key: string, limit = 256): boolean {
+  if (set.has(key)) return false;
+  set.add(key);
+  if (set.size > limit) {
+    const oldest = set.values().next().value;
+    if (oldest) set.delete(oldest);
   }
   return true;
+}
+
+function rememberBudgetNotification(requestId: string): boolean {
+  return rememberOnce(budgetNotified, requestId, 128);
+}
+
+function rememberWorkNotification(seed: string): boolean {
+  return rememberOnce(workNotified, seed, 256);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function enqueueNotification(task: () => Promise<void>): void {
+  notificationChain = notificationChain
+    .then(async () => {
+      const elapsed = Date.now() - lastNotificationSentAt;
+      const wait = NOTIFICATION_MIN_GAP_MS - elapsed;
+      if (wait > 0) {
+        await sleep(wait);
+      }
+      await task();
+      lastNotificationSentAt = Date.now();
+    })
+    .catch(() => {
+      // Keep the queue alive after a failed notification.
+    });
 }
 
 async function sendWorkNotification(
@@ -61,14 +95,18 @@ async function sendWorkNotification(
   cardId: string,
 ) {
   if (!notificationsEnabled()) return;
+  if (!rememberWorkNotification(seed)) return;
   if (!(await ensureNotificationPermission())) return;
-  const { sendNotification } = await notificationApi();
-  sendNotification({
-    id: notificationId(seed),
-    title,
-    body,
-    actionTypeId: "medousa-work",
-    extra: { cardId, kind: "work" } satisfies WorkNotificationExtra,
+
+  enqueueNotification(async () => {
+    const { sendNotification } = await notificationApi();
+    sendNotification({
+      id: notificationId(seed),
+      title,
+      body,
+      actionTypeId: "medousa-work",
+      extra: { cardId, kind: "work" } satisfies WorkNotificationExtra,
+    });
   });
 }
 
