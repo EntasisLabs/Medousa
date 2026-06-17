@@ -11,7 +11,7 @@
 
   $effect(() => {
     if (layout.activitySheetOpen) {
-      void workspace.prefetchActivityCardDetails();
+      workspace.scheduleActivityCardPrefetch();
     }
   });
 </script>

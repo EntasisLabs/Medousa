@@ -18,6 +18,7 @@ use crate::workspace::store::workspace_store;
 
 const WRAPPING_UP_STALE: Duration = Duration::hours(2);
 
+#[derive(Debug, Clone)]
 pub struct ProjectedWorkItem {
     pub card: WorkCard,
     pub detail: WorkCardDetail,

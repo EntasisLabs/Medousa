@@ -199,9 +199,12 @@ export class WorkspaceStore {
       void this.refreshSelectedCard();
     }
 
-    if (this.shouldPrefetchDetail(card)) {
-      void this.cacheCardDetail(card.id, previous);
-    } else if (this.shouldRefreshCardDetail(card, previous)) {
+    if (this.shouldRefreshCardDetail(card, previous)) {
+      void this.cacheCardDetail(card.id, previous, true);
+    } else if (
+      this.shouldPrefetchDetail(card) &&
+      !this.cardDetailsCache.has(card.id)
+    ) {
       void this.cacheCardDetail(card.id, previous);
     } else if (previous !== card.column) {
       chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
@@ -333,9 +336,27 @@ export class WorkspaceStore {
     return collectActivityCardIds(this.feed);
   }
 
+  private activityPrefetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  scheduleActivityCardPrefetch() {
+    if (this.activityPrefetchTimer) {
+      clearTimeout(this.activityPrefetchTimer);
+    }
+    this.activityPrefetchTimer = setTimeout(() => {
+      this.activityPrefetchTimer = null;
+      void this.prefetchActivityCardDetails();
+    }, 300);
+  }
+
   async prefetchActivityCardDetails() {
-    const targets = this.activityCardIds();
-    await Promise.all(targets.map((id) => this.cacheCardDetail(id)));
+    const targets = this.activityCardIds().filter(
+      (id) => !this.cardDetailsCache.has(id),
+    );
+    const concurrency = 3;
+    for (let i = 0; i < targets.length; i += concurrency) {
+      const batch = targets.slice(i, i + concurrency);
+      await Promise.all(batch.map((id) => this.cacheCardDetail(id)));
+    }
   }
 
   private shouldPrefetchDetail(card: WorkCard): boolean {
@@ -353,7 +374,21 @@ export class WorkspaceStore {
     return isAskJobId(card.id);
   }
 
-  private async cacheCardDetail(id: string, previousColumn?: string) {
+  private async cacheCardDetail(
+    id: string,
+    previousColumn?: string,
+    force = false,
+  ) {
+    if (!force) {
+      const cached = this.cardDetailsCache.get(id);
+      if (cached) {
+        const card = this.cards.find((item) => item.id === id);
+        if (card) {
+          chat.onWorkerCardDetail(cached, card.column, previousColumn);
+        }
+        return;
+      }
+    }
     try {
       const detail = await getWorkspaceCard(id);
       this.cardDetailsCache.set(id, detail);

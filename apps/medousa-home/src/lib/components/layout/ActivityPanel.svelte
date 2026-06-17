@@ -53,7 +53,7 @@
 
   $effect(() => {
     if (events.length > 0) {
-      void workspace.prefetchActivityCardDetails();
+      workspace.scheduleActivityCardPrefetch();
       activityView.pruneToFeed(new Set(events.map((event) => event.id)));
     }
   });

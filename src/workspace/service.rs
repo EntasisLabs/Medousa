@@ -1,67 +1,38 @@
-//! Workspace orchestration — sync runtime projections, feed, snapshot.
+//! Workspace orchestration — read from materialized view, invalidate via projector.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 
 use crate::daemon_api::{
     WorkCardDetail, WorkspaceCardsQuery, WorkspaceCardsResponse, WorkspaceFeedQuery,
     WorkspaceFeedResponse, WorkspaceSnapshot, WorkspaceSnapshotQuery,
 };
-use crate::workspace::card::{
-    counts_by_column, parse_column_filter, project_workspace_items, ProjectedWorkItem,
-};
-use crate::workspace::event::{event_for_column_transition, filter_events_by_card};
+use crate::workspace::card::{parse_column_filter, project_workspace_items, ProjectedWorkItem};
+use crate::workspace::event::filter_events_by_card;
+use crate::workspace::projector::{apply_projection_to_store, workspace_hub};
 use crate::workspace::store::workspace_store;
 
 pub struct WorkspaceService;
 
 impl WorkspaceService {
-    pub async fn sync_runtime(runtime: &RuntimeComposition, include_terminal: bool) {
-        let _ = Self::sync_and_project(runtime, include_terminal).await;
+    /// Notify the projector — does not block on a full rescan.
+    pub async fn sync_runtime(runtime: &RuntimeComposition, _include_terminal: bool) {
+        if let Some(hub) = workspace_hub() {
+            hub.trigger_refresh();
+            return;
+        }
+        let _ = legacy_sync_and_project(runtime, true).await;
     }
 
-    async fn sync_and_project(
-        runtime: &RuntimeComposition,
-        include_terminal: bool,
-    ) -> anyhow::Result<Vec<ProjectedWorkItem>> {
-        let items = project_workspace_items(runtime, include_terminal).await?;
-        Self::apply_projection_to_store(&items);
-        Ok(items)
-    }
-
-    fn apply_projection_to_store(items: &[ProjectedWorkItem]) {
-        let store = workspace_store();
-        let active_ids = items
-            .iter()
-            .map(|item| item.card.id.0.clone())
-            .collect::<std::collections::HashSet<_>>();
-
-        for item in items {
-            let previous = store.previous_column(&item.card.id.0);
-            if previous != Some(item.card.column) {
-                if let Some(event) =
-                    event_for_column_transition(&item.detail, previous, item.card.column)
-                {
-                    store.append_event(event);
-                }
-                store.remember_column(&item.card.id.0, item.card.column);
-            }
+    pub async fn refresh_now(runtime: &RuntimeComposition) {
+        if let Some(hub) = workspace_hub() {
+            hub.refresh_now().await;
+            return;
         }
-
-        let stale_states: Vec<String> = store
-            .card_states_snapshot()
-            .into_keys()
-            .filter(|card_id| !active_ids.contains(card_id))
-            .collect();
-        for card_id in stale_states {
-            store.prune_card_state(&card_id);
-        }
-
-        let cutoff = Utc::now() - Duration::days(7);
-        store.prune_feed_older_than(cutoff);
+        let _ = legacy_sync_and_project(runtime, true).await;
     }
 
     pub async fn list_cards(
@@ -70,7 +41,7 @@ impl WorkspaceService {
     ) -> anyhow::Result<WorkspaceCardsResponse> {
         let include_terminal = query.include_terminal.unwrap_or(false);
         let limit = query.limit.unwrap_or(50).clamp(1, 200);
-        let mut items = Self::sync_and_project(runtime.as_ref(), include_terminal).await?;
+        let mut items = load_projected_items(runtime.as_ref(), include_terminal).await?;
         items = apply_card_filters(items, query);
         items.truncate(limit);
 
@@ -84,7 +55,16 @@ impl WorkspaceService {
         runtime: Arc<RuntimeComposition>,
         card_id: &str,
     ) -> anyhow::Result<Option<WorkCardDetail>> {
-        let items = Self::sync_and_project(runtime.as_ref(), true).await?;
+        let card_id = card_id.trim();
+        if let Some(hub) = workspace_hub() {
+            if let Some(item) = hub.card_detail(card_id) {
+                return Ok(Some(item.detail));
+            }
+            hub.refresh_now().await;
+            return Ok(hub.card_detail(card_id).map(|item| item.detail));
+        }
+
+        let items = legacy_sync_and_project(runtime.as_ref(), true).await?;
         Ok(items
             .into_iter()
             .find(|item| item.card.id.0 == card_id)
@@ -123,8 +103,6 @@ impl WorkspaceService {
         query: &WorkspaceSnapshotQuery,
     ) -> anyhow::Result<WorkspaceSnapshot> {
         let feed_tail_limit = query.feed_tail_limit.unwrap_or(20).clamp(1, 100);
-        let items = Self::sync_and_project(runtime.as_ref(), true).await?;
-        let cards = items.iter().map(|item| item.card.clone()).collect::<Vec<_>>();
         let revision = workspace_store().revision();
 
         if query.since_revision.is_some_and(|since| since >= revision) {
@@ -137,14 +115,47 @@ impl WorkspaceService {
             });
         }
 
+        if let Some(hub) = workspace_hub() {
+            let snap = hub.snapshot();
+            return Ok(WorkspaceSnapshot {
+                workspace_revision: snap.revision,
+                server_time_utc: Utc::now(),
+                cards: snap.cards.as_ref().clone(),
+                counts_by_column: snap.counts_by_column.clone(),
+                feed_tail: workspace_store().feed_tail(feed_tail_limit),
+            });
+        }
+
+        let items = legacy_sync_and_project(runtime.as_ref(), true).await?;
+        let cards = items.iter().map(|item| item.card.clone()).collect::<Vec<_>>();
+
         Ok(WorkspaceSnapshot {
             workspace_revision: revision,
             server_time_utc: Utc::now(),
             cards: cards.clone(),
-            counts_by_column: counts_by_column(&cards),
+            counts_by_column: crate::workspace::card::counts_by_column(&cards),
             feed_tail: workspace_store().feed_tail(feed_tail_limit),
         })
     }
+}
+
+async fn load_projected_items(
+    runtime: &RuntimeComposition,
+    include_terminal: bool,
+) -> anyhow::Result<Vec<ProjectedWorkItem>> {
+    if let Some(hub) = workspace_hub() {
+        return Ok(hub.projected_items(include_terminal));
+    }
+    legacy_sync_and_project(runtime, include_terminal).await
+}
+
+async fn legacy_sync_and_project(
+    runtime: &RuntimeComposition,
+    include_terminal: bool,
+) -> anyhow::Result<Vec<ProjectedWorkItem>> {
+    let items = project_workspace_items(runtime, include_terminal).await?;
+    apply_projection_to_store(&items);
+    Ok(items)
 }
 
 fn apply_card_filters(

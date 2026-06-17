@@ -427,6 +427,11 @@ async fn main() -> Result<()> {
         ),
     );
 
+    medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
+    if let Some(hub) = medousa::workspace::workspace_hub() {
+        hub.refresh_now().await;
+    }
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/stats", get(stats))

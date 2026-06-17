@@ -108,7 +108,7 @@ pub async fn cancel_card(
         }
     };
 
-    WorkspaceService::sync_runtime(runtime.as_ref(), true).await;
+    WorkspaceService::refresh_now(runtime.as_ref()).await;
     Ok(WorkspaceCardActionResponse {
         workspace_revision: workspace_store().revision(),
         card_id: card_id.to_string(),
@@ -209,7 +209,7 @@ pub async fn archive_card(
         }
     };
 
-    WorkspaceService::sync_runtime(runtime.as_ref(), true).await;
+    WorkspaceService::refresh_now(runtime.as_ref()).await;
     Ok(WorkspaceCardActionResponse {
         workspace_revision: workspace_store().revision(),
         card_id: card_id.to_string(),
@@ -250,7 +250,7 @@ pub async fn retry_card(
         .await
         .map_err(|err| CardActionError::Internal(err.to_string()))?;
 
-    WorkspaceService::sync_runtime(runtime.as_ref(), true).await;
+    WorkspaceService::refresh_now(runtime.as_ref()).await;
     Ok(WorkspaceCardActionResponse {
         workspace_revision: workspace_store().revision(),
         card_id: card_id.to_string(),
