@@ -122,11 +122,15 @@ impl AskJobStore {
     fn persist(&self) {
         let mut guard = self.records.lock().expect("ask job records");
         Self::prune_map(&mut guard);
-        let snapshot = guard.clone();
+        let body = match serde_json::to_string_pretty(&*guard) {
+            Ok(body) => body,
+            Err(err) => {
+                eprintln!("ask_job_store: serialize failed: {err}");
+                return;
+            }
+        };
         drop(guard);
-        if let Err(err) = Self::write_map(&snapshot) {
-            eprintln!("ask_job_store: persist failed: {err}");
-        }
+        crate::workspace::persist::queue_snapshot_ask_jobs(body);
     }
 
     fn prune_map(map: &mut HashMap<String, AskJobRecord>) {

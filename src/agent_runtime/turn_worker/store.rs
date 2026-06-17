@@ -139,11 +139,15 @@ impl TurnWorkerStore {
     fn persist(&self) {
         let mut guard = self.records.lock().expect("turn worker records");
         Self::prune_map(&mut guard);
-        let snapshot = guard.clone();
+        let body = match serde_json::to_string_pretty(&*guard) {
+            Ok(body) => body,
+            Err(err) => {
+                eprintln!("turn_worker_store: serialize failed: {err}");
+                return;
+            }
+        };
         drop(guard);
-        if let Err(err) = Self::write_map(&snapshot) {
-            eprintln!("turn_worker_store: persist failed: {err}");
-        }
+        crate::workspace::persist::queue_snapshot_turn_workers(body);
     }
 
     fn prune_map(map: &mut HashMap<String, TurnWorkRecord>) {

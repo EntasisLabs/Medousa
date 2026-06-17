@@ -1,8 +1,9 @@
 //! Append-only workspace feed + revision persistence.
 
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 
@@ -12,6 +13,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::daemon_api::{WorkBoardColumn, WorkCardAssociations, WorkspaceEvent};
 use crate::session;
+use crate::workspace::persist::{
+    queue_append_feed_line, queue_snapshot_associations, queue_snapshot_card_states,
+    queue_write_revision,
+};
 
 const FEED_FILE: &str = "workspace/feed.jsonl";
 const REVISION_FILE: &str = "workspace/revision";
@@ -122,8 +127,7 @@ impl WorkspaceStore {
         let mut guard = self.revision.lock().expect("revision");
         *guard = guard.saturating_add(1);
         let value = *guard;
-        let _ = std::fs::create_dir_all(Self::workspace_dir());
-        let _ = std::fs::write(Self::path(REVISION_FILE), value.to_string());
+        queue_write_revision(value);
         value
     }
 
@@ -131,22 +135,11 @@ impl WorkspaceStore {
         {
             let mut feed = self.feed.lock().expect("feed");
             feed.push(event.clone());
-            Self::append_feed_line(&event);
-        }
-        self.bump_revision()
-    }
-
-    fn append_feed_line(event: &WorkspaceEvent) {
-        let _ = std::fs::create_dir_all(Self::workspace_dir());
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(Self::path(FEED_FILE))
-        {
-            if let Ok(line) = serde_json::to_string(event) {
-                let _ = writeln!(file, "{line}");
+            if let Ok(line) = serde_json::to_string(&event) {
+                queue_append_feed_line(line);
             }
         }
+        self.bump_revision()
     }
 
     pub fn list_feed(
@@ -235,9 +228,8 @@ impl WorkspaceStore {
 
     fn persist_card_states(&self) {
         let snapshot = self.card_states.read().expect("card states").clone();
-        let _ = std::fs::create_dir_all(Self::workspace_dir());
         if let Ok(raw) = serde_json::to_string_pretty(&snapshot) {
-            let _ = std::fs::write(Self::path(CARD_STATE_FILE), raw);
+            queue_snapshot_card_states(raw);
         }
     }
 
@@ -269,9 +261,8 @@ impl WorkspaceStore {
                 locus_node_ids: assoc.locus_node_ids.clone(),
             })
             .collect::<Vec<_>>();
-        let _ = std::fs::create_dir_all(Self::workspace_dir());
         if let Ok(raw) = serde_json::to_string_pretty(&rows) {
-            let _ = std::fs::write(Self::path(ASSOC_FILE), raw);
+            queue_snapshot_associations(raw);
         }
     }
 

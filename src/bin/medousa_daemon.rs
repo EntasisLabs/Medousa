@@ -427,6 +427,7 @@ async fn main() -> Result<()> {
         ),
     );
 
+    medousa::workspace::init_persist_writer();
     medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
     if let Some(hub) = medousa::workspace::workspace_hub() {
         hub.refresh_now().await;
@@ -780,6 +781,7 @@ async fn main() -> Result<()> {
         .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
             let _ = shutdown_tx.send(true);
+            medousa::workspace::flush_persist_writer().await;
             println!("medousa-daemon stopping");
             remove_surrealkv_lock(&parse_backend(Some(&state.backend)));
         })

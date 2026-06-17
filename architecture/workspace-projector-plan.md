@@ -44,7 +44,9 @@ flowchart LR
 
 ---
 
-## Wave 1 — State hygiene (ship first)
+## Wave 1 — State hygiene (shipped)
+
+**Status:** Shipped (2026-06-07)
 
 **Goal:** Board and chat stay responsive during research; no full rescan per card fetch.
 
@@ -68,13 +70,20 @@ flowchart LR
 
 ## Wave 2 — Async I/O boundary
 
+**Status:** Shipped (2026-06-07)
+
 **Goal:** Remove blocking disk from async handler paths.
 
 | Item | Change |
 |------|--------|
-| `FeedWriter` actor | `mpsc<PersistOp>` + `tokio::fs` append JSONL |
-| Debounced files | `card_states.json`, `turn_workers.json`, ask store — write at most every 1–2s |
-| Mutex migration | Replace `std::sync::Mutex` on hot paths with projector-owned state or `tokio::sync` |
+| `FeedWriter` actor | `src/workspace/persist.rs` — `mpsc` + `tokio::fs` |
+| Feed + revision | Append JSONL and revision file async (immediate queue) |
+| Snapshot files | `card_states.json`, `associations.json`, `ask_jobs.json`, `turn_workers.json` debounced 1.5s |
+| Daemon boot | `init_persist_writer()` before workspace hub |
+| Shutdown | `flush_persist_writer()` on graceful ctrl-c |
+| Fallback | Sync disk write when writer not initialized (tests) |
+
+**Next (Wave 3):** Incremental projection events.
 
 ---
 
@@ -112,6 +121,7 @@ Extract projector as sidecar or consume Stasis change feed. Same HTTP/SSE contra
 | Area | Path |
 |------|------|
 | Projector + read model | `src/workspace/projector.rs` |
+| Async persist writer | `src/workspace/persist.rs` |
 | Service (read API) | `src/workspace/service.rs` |
 | SSE broadcaster | `src/workspace/feed.rs` |
 | Feed / revision disk | `src/workspace/store.rs` |
