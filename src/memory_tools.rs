@@ -15,18 +15,39 @@ use stasis::ports::outbound::memory::memory_models::{
     MemorySortField, MemoryStrictnessMode,
 };
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 
 use crate::events::TuiEvent;
 use crate::locus_memory::{
     CANONICAL_STTP_SCHEMA_EXAMPLE, filter_nodes_by_context_keywords,
-    ingest_profile_name, normalize_context_keywords, normalize_tiers, recall_session_id_for_context,
-    resolve_locus_ingest_profile,
+    ingest_profile_name, normalize_context_keywords, normalize_tiers,
+    resolve_locus_ingest_profile, resolve_memory_tool_session_id,
     memory_node_to_json, schema_first_guidance, sttp_node_to_json, store_failure_payload,
     validate_limit, avec_to_json,
 };
+use crate::turn_continuation::TurnContinuationScope;
 
 const DEFAULT_RECALL_AVEC: (f32, f32, f32, f32) = (0.82, 0.31, 0.88, 0.74);
+
+async fn resolve_optional_locus_session_scope(
+    input: &Value,
+    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    fallback_chat_session_id: &str,
+    workshop_dynamic: bool,
+) -> Option<String> {
+    if input.get("session_id").is_some_and(Value::is_null) {
+        return None;
+    }
+    Some(
+        resolve_memory_tool_session_id(
+            input,
+            turn_scope,
+            fallback_chat_session_id,
+            workshop_dynamic,
+        )
+        .await,
+    )
+}
 
 async fn emit_invoked(event_tx: &mpsc::Sender<TuiEvent>, tool_name: &str, summary: &str) {
     let _ = event_tx
@@ -108,21 +129,27 @@ impl StasisTool for CognitionMemorySchemaTool {
 pub struct CognitionMemoryStoreTool {
     writer: Arc<dyn MemoryContextWriter>,
     profile_name: &'static str,
-    default_session_id: String,
+    fallback_chat_session_id: String,
+    workshop_dynamic: bool,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
 impl CognitionMemoryStoreTool {
     pub fn new(
         writer: Arc<dyn MemoryContextWriter>,
-        default_session_id: String,
+        fallback_chat_session_id: String,
+        workshop_dynamic: bool,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         let profile_name = ingest_profile_name(resolve_locus_ingest_profile());
         Self {
             writer,
             profile_name,
-            default_session_id,
+            fallback_chat_session_id,
+            workshop_dynamic,
+            turn_scope,
             event_tx,
         }
     }
@@ -184,13 +211,13 @@ impl StasisTool for CognitionMemoryStoreTool {
                 )
             })?;
 
-        let session_id = input
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or(self.default_session_id.as_str())
-            .to_string();
+        let session_id = resolve_memory_tool_session_id(
+            &input,
+            &self.turn_scope,
+            &self.fallback_chat_session_id,
+            self.workshop_dynamic,
+        )
+        .await;
 
         emit_invoked(&self.event_tx, self.name(), &session_id).await;
 
@@ -247,19 +274,25 @@ impl StasisTool for CognitionMemoryStoreTool {
 
 pub struct CognitionMemoryCalibrateTool {
     calibration: Arc<CalibrationService>,
-    default_session_id: String,
+    fallback_chat_session_id: String,
+    workshop_dynamic: bool,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
 impl CognitionMemoryCalibrateTool {
     pub fn new(
         locus_store: Arc<dyn NodeStore>,
-        default_session_id: String,
+        fallback_chat_session_id: String,
+        workshop_dynamic: bool,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             calibration: Arc::new(CalibrationService::new(locus_store)),
-            default_session_id,
+            fallback_chat_session_id,
+            workshop_dynamic,
+            turn_scope,
             event_tx,
         }
     }
@@ -293,13 +326,13 @@ impl StasisTool for CognitionMemoryCalibrateTool {
     }
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = input
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or(self.default_session_id.as_str())
-            .to_string();
+        let session_id = resolve_memory_tool_session_id(
+            &input,
+            &self.turn_scope,
+            &self.fallback_chat_session_id,
+            self.workshop_dynamic,
+        )
+        .await;
         let stability = input
             .get("stability")
             .and_then(|v| v.as_f64())
@@ -345,7 +378,9 @@ impl StasisTool for CognitionMemoryCalibrateTool {
 pub struct CognitionMemoryContextTool {
     context_query: Arc<ContextQueryService>,
     memory_reader: Arc<dyn MemoryContextReader>,
-    default_session_id: String,
+    fallback_chat_session_id: String,
+    workshop_dynamic: bool,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -353,13 +388,17 @@ impl CognitionMemoryContextTool {
     pub fn new(
         locus_store: Arc<dyn NodeStore>,
         memory_reader: Arc<dyn MemoryContextReader>,
-        default_session_id: String,
+        fallback_chat_session_id: String,
+        workshop_dynamic: bool,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             context_query: Arc::new(ContextQueryService::new(locus_store)),
             memory_reader,
-            default_session_id,
+            fallback_chat_session_id,
+            workshop_dynamic,
+            turn_scope,
             event_tx,
         }
     }
@@ -429,13 +468,16 @@ impl StasisTool for CognitionMemoryContextTool {
         let session_scope = if global {
             None
         } else {
-            input
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-                .or_else(|| Some(self.default_session_id.clone()))
+            Some(
+                resolve_optional_locus_session_scope(
+                    &input,
+                    &self.turn_scope,
+                    &self.fallback_chat_session_id,
+                    self.workshop_dynamic,
+                )
+                .await
+                .expect("non-global session scope"),
+            )
         };
         let session_scope = session_scope.as_deref();
 
@@ -543,7 +585,9 @@ impl StasisTool for CognitionMemoryContextTool {
 pub struct CognitionMemoryListTool {
     context_query: Arc<ContextQueryService>,
     memory_reader: Arc<dyn MemoryContextReader>,
-    default_session_id: String,
+    fallback_chat_session_id: String,
+    workshop_dynamic: bool,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -551,13 +595,17 @@ impl CognitionMemoryListTool {
     pub fn new(
         locus_store: Arc<dyn NodeStore>,
         memory_reader: Arc<dyn MemoryContextReader>,
-        default_session_id: String,
+        fallback_chat_session_id: String,
+        workshop_dynamic: bool,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             context_query: Arc::new(ContextQueryService::new(locus_store)),
             memory_reader,
-            default_session_id,
+            fallback_chat_session_id,
+            workshop_dynamic,
+            turn_scope,
             event_tx,
         }
     }
@@ -599,13 +647,13 @@ impl StasisTool for CognitionMemoryListTool {
         let session_id = if global {
             None
         } else {
-            input
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-                .or_else(|| Some(self.default_session_id.clone()))
+            resolve_optional_locus_session_scope(
+                &input,
+                &self.turn_scope,
+                &self.fallback_chat_session_id,
+                self.workshop_dynamic,
+            )
+            .await
         };
 
         let keywords = normalize_context_keywords(
@@ -677,14 +725,18 @@ impl CognitionMemoryRecallTool {
     pub fn new(
         locus_store: Arc<dyn NodeStore>,
         memory_reader: Arc<dyn MemoryContextReader>,
-        default_session_id: String,
+        fallback_chat_session_id: String,
+        workshop_dynamic: bool,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             context_tool: CognitionMemoryContextTool::new(
                 locus_store,
                 memory_reader,
-                default_session_id,
+                fallback_chat_session_id,
+                workshop_dynamic,
+                turn_scope,
                 event_tx.clone(),
             ),
             event_tx,
@@ -727,6 +779,17 @@ impl StasisTool for CognitionMemoryRecallTool {
         emit_invoked(&self.event_tx, self.name(), query).await;
 
         let (s, f, l, a) = DEFAULT_RECALL_AVEC;
+        let session_id = match input.get("session_id") {
+            Some(value) if value.is_null() => serde_json::Value::Null,
+            Some(value) => value.clone(),
+            None => json!(resolve_memory_tool_session_id(
+                &input,
+                &self.context_tool.turn_scope,
+                &self.context_tool.fallback_chat_session_id,
+                self.context_tool.workshop_dynamic,
+            )
+            .await),
+        };
         let wrapped = json!({
             "stability": s,
             "friction": f,
@@ -734,7 +797,7 @@ impl StasisTool for CognitionMemoryRecallTool {
             "autonomy": a,
             "context_keywords": [query],
             "limit": limit,
-            "session_id": recall_session_id_for_context(&input),
+            "session_id": session_id,
         });
         self.context_tool.invoke(wrapped).await
     }

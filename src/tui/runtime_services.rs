@@ -234,29 +234,39 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionMemoryCalibrateTool::new(
         locus_store.clone(),
         session_id.to_string(),
+        workshop_operator_identity,
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMemoryStoreTool::new(
         memory_writer.clone(),
         session_id.to_string(),
+        workshop_operator_identity,
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMemoryContextTool::new(
         locus_store.clone(),
         memory_reader.clone(),
         session_id.to_string(),
+        workshop_operator_identity,
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMemoryListTool::new(
         locus_store.clone(),
         memory_reader.clone(),
         session_id.to_string(),
+        workshop_operator_identity,
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMemoryRecallTool::new(
         locus_store.clone(),
         memory_reader.clone(),
         session_id.to_string(),
+        workshop_operator_identity,
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemeModulesSearchTool::new(event_tx.clone()))?;

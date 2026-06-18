@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import { X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { identity } from "$lib/stores/identity.svelte";
@@ -71,7 +73,12 @@
   <div class="workshop-header px-3 py-3">
     <div>
       <p class="text-sm font-semibold text-surface-100">Identity recall</p>
-      <p class="workshop-faint truncate">{chat.sessionId}</p>
+      <p class="workshop-faint truncate">
+        {userProfiles.activeDisplayName}
+        {#if settings.showEngineDetailsInChat}
+          · {chat.sessionId}
+        {/if}
+      </p>
     </div>
     {#if onClose || variant === "sheet"}
       <button
@@ -111,12 +118,15 @@
 
         {#if identity.context.user}
           <div class="workshop-inset p-3">
-            <dt class="workshop-label">User</dt>
+            <dt class="workshop-label">You · {userProfiles.activeDisplayName}</dt>
             <dd class="mt-1 font-medium text-surface-100">
-              {identity.context.user.user_id}
+              {identity.context.user.timezone}
             </dd>
             <dd class="workshop-faint mt-0.5">
-              {identity.context.user.timezone} · {identity.context.user.status}
+              {identity.context.user.status}
+              {#if settings.showEngineDetailsInChat}
+                · {identity.context.user.user_id}
+              {/if}
             </dd>
           </div>
         {/if}

@@ -828,6 +828,47 @@ pub struct IdentityContextRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserProfileRecordDto {
+    pub profile_id: String,
+    pub display_name: String,
+    pub created_at: DateTime<Utc>,
+    pub is_default: bool,
+    #[serde(default)]
+    pub archived: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListUserProfilesResponse {
+    pub profiles: Vec<UserProfileRecordDto>,
+    pub active_profile_id: String,
+    pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateUserProfileRequest {
+    pub slug: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateUserProfileResponse {
+    pub profile: UserProfileRecordDto,
+    pub active_profile_id: String,
+    pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetActiveUserProfileRequest {
+    pub profile_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetActiveUserProfileResponse {
+    pub active_profile_id: String,
+    pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum ArtifactCommandSpec {
     Lookup { query: Option<String> },

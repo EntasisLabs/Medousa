@@ -17,6 +17,7 @@ use surrealdb::Surreal;
 use surrealdb_types::SurrealValue;
 use tokio::runtime::Handle;
 
+use crate::identity_memory::DEFAULT_USER_ID;
 use crate::session::{
     atomic_write, medousa_data_dir, ConversationTurn, SessionHistorySummary,
 };
@@ -40,6 +41,7 @@ const SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD last_verification_confidence ON TABLE session_catalog TYPE option<float>",
     "DEFINE FIELD last_verification_coverage ON TABLE session_catalog TYPE option<float>",
     "DEFINE FIELD last_verification_verified ON TABLE session_catalog TYPE option<bool>",
+    "DEFINE FIELD profile_id ON TABLE session_catalog TYPE option<string>",
     "DEFINE INDEX idx_session_catalog_session_id ON TABLE session_catalog COLUMNS session_id UNIQUE",
 ];
 
@@ -68,6 +70,9 @@ pub struct SessionCatalogRow {
     pub last_verification_coverage: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_verification_verified: Option<bool>,
+    /// Active profile when the session was created or last written (`user:work`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
 }
 
 impl SessionCatalogRow {
@@ -83,6 +88,7 @@ impl SessionCatalogRow {
             last_verification_confidence: None,
             last_verification_coverage: None,
             last_verification_verified: None,
+            profile_id: None,
         }
     }
 
@@ -98,7 +104,25 @@ impl SessionCatalogRow {
             last_verification_confidence: None,
             last_verification_coverage: None,
             last_verification_verified: None,
+            profile_id: None,
         }
+    }
+}
+
+fn active_workshop_profile_id() -> String {
+    crate::user_profiles::resolve_workshop_identity_user_id()
+}
+
+fn stamp_profile_id(row: &mut SessionCatalogRow) {
+    if row.profile_id.is_none() {
+        row.profile_id = Some(active_workshop_profile_id());
+    }
+}
+
+pub fn row_matches_profile(row: &SessionCatalogRow, active_profile_id: &str) -> bool {
+    match row.profile_id.as_deref() {
+        None => active_profile_id == DEFAULT_USER_ID,
+        Some(stored) => stored == active_profile_id,
     }
 }
 
@@ -757,6 +781,7 @@ pub fn record_turn_appended(session_id: &str, turn: &ConversationTurn) {
         }
     }
 
+    stamp_profile_id(&mut row);
     catalog_store().upsert_row(&row);
 }
 
@@ -771,6 +796,7 @@ pub fn set_display_name(session_id: &str, display_name: &str) {
         .unwrap_or_else(|| SessionCatalogRow::named_session(session_id, None));
 
     row.display_name = Some(display_name.to_string());
+    stamp_profile_id(&mut row);
     catalog_store().upsert_row(&row);
 }
 
@@ -787,10 +813,19 @@ pub fn ensure_named_session(session_id: &str, display_name: Option<String>) {
         return;
     }
 
-    catalog_store().upsert_row(&SessionCatalogRow::named_session(
-        session_id,
+    catalog_store().upsert_row(&SessionCatalogRow {
+        session_id: session_id.to_string(),
+        preview: "(named session)".to_string(),
+        turn_count: 0,
+        last_activity_at: None,
         display_name,
-    ));
+        verification_run_count: 0,
+        last_verification_at: None,
+        last_verification_confidence: None,
+        last_verification_coverage: None,
+        last_verification_verified: None,
+        profile_id: Some(active_workshop_profile_id()),
+    });
 }
 
 pub fn record_verification(
@@ -831,13 +866,14 @@ pub fn session_has_activity(session_id: &str) -> bool {
 static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 
 pub fn list_sessions(limit: usize) -> Vec<SessionHistorySummary> {
-    list_sessions_page(limit, None, None).sessions
+    list_sessions_page(limit, None, None, None).sessions
 }
 
 pub fn list_sessions_page(
     limit: usize,
     query: Option<&str>,
     cursor: Option<&str>,
+    active_profile_id: Option<&str>,
 ) -> SessionListPage {
     let limit = limit.max(1);
     let decoded_cursor = cursor.and_then(decode_list_cursor);
@@ -848,7 +884,13 @@ pub fn list_sessions_page(
         decoded_cursor.as_ref(),
     );
     let has_more = rows.len() > limit;
-    let page_rows: Vec<_> = rows.into_iter().take(limit).collect();
+    let page_rows: Vec<_> = rows
+        .into_iter()
+        .filter(|row| {
+            active_profile_id.is_none_or(|profile_id| row_matches_profile(row, profile_id))
+        })
+        .take(limit)
+        .collect();
     let next_cursor = if has_more {
         page_rows.last().map(encode_list_cursor)
     } else {
@@ -957,6 +999,7 @@ fn backfill_from_legacy_stores(limit: usize) -> Result<usize, String> {
             last_verification_confidence: summary.last_verification_confidence,
             last_verification_coverage: summary.last_verification_coverage,
             last_verification_verified: summary.last_verification_verified,
+            profile_id: None,
         };
 
         if let Some((record, coverage)) = verification_by_session.get(&summary.session_id) {
@@ -1098,6 +1141,20 @@ mod tests {
     }
 
     #[test]
+    fn row_matches_profile_legacy_visible_under_default_only() {
+        let legacy = SessionCatalogRow::empty_session("legacy-sess");
+        assert!(row_matches_profile(&legacy, DEFAULT_USER_ID));
+        assert!(!row_matches_profile(&legacy, "user:work"));
+
+        let work = SessionCatalogRow {
+            profile_id: Some("user:work".to_string()),
+            ..SessionCatalogRow::empty_session("work-sess")
+        };
+        assert!(row_matches_profile(&work, "user:work"));
+        assert!(!row_matches_profile(&work, DEFAULT_USER_ID));
+    }
+
+    #[test]
     fn list_sessions_page_filters_query_and_cursor() {
         let tmp = std::env::temp_dir().join(format!(
             "medousa-catalog-page-test-{}",
@@ -1124,15 +1181,15 @@ mod tests {
             record_turn_appended(session_id, &turn);
         }
 
-        let page = list_sessions_page(10, Some(&needle), None);
+        let page = list_sessions_page(10, Some(&needle), None, None);
         assert_eq!(page.sessions.len(), 1);
         assert_eq!(page.sessions[0].session_id, "sess-alpha");
 
-        let first = list_sessions_page(1, None, None);
+        let first = list_sessions_page(1, None, None, None);
         assert_eq!(first.sessions.len(), 1);
         assert!(first.next_cursor.is_some());
 
-        let second = list_sessions_page(1, None, first.next_cursor.as_deref());
+        let second = list_sessions_page(1, None, first.next_cursor.as_deref(), None);
         assert_eq!(second.sessions.len(), 1);
         assert_ne!(second.sessions[0].session_id, first.sessions[0].session_id);
     }

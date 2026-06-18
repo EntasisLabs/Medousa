@@ -13,6 +13,88 @@ use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::{
     MemoryAvecState, MemoryNode, MemoryStoreRequest, MemoryStoreResponse,
 };
+use tokio::sync::RwLock;
+
+use crate::turn_continuation::TurnContinuationScope;
+
+pub const LOCUS_TENANT_SCOPE_PREFIX: &str = "tenant:";
+pub const LOCUS_TENANT_SCOPE_SEPARATOR: &str = "::session:";
+pub const LOCUS_DEFAULT_TENANT: &str = "default";
+/// Chat session id for identity→Locus STTP bridge nodes (scoped per active profile).
+pub const IDENTITY_BRIDGE_CHAT_SESSION: &str = "medousa-identity";
+
+/// Build a Locus session key for a profile + chat session.
+///
+/// Default profile keeps legacy plain `chat_session_id` (tenant `default` in locus-core).
+/// Other profiles use `tenant:{slug}::session:{chatSessionId}`.
+pub fn scoped_locus_session(profile_slug: &str, chat_session_id: &str) -> String {
+    let chat = chat_session_id.trim();
+    let slug = profile_slug.trim();
+    if slug.is_empty() || slug == LOCUS_DEFAULT_TENANT {
+        chat.to_string()
+    } else {
+        format!("{LOCUS_TENANT_SCOPE_PREFIX}{slug}{LOCUS_TENANT_SCOPE_SEPARATOR}{chat}")
+    }
+}
+
+/// Mirror of `locus-core-rs` tenant derivation for tests and diagnostics.
+pub fn derive_locus_tenant_id(session_id: &str) -> String {
+    session_id
+        .strip_prefix(LOCUS_TENANT_SCOPE_PREFIX)
+        .and_then(|remainder| remainder.split_once(LOCUS_TENANT_SCOPE_SEPARATOR))
+        .map(|(tenant, _)| tenant)
+        .filter(|tenant| !tenant.trim().is_empty())
+        .unwrap_or(LOCUS_DEFAULT_TENANT)
+        .to_string()
+}
+
+pub fn parse_scoped_locus_session(session_id: &str) -> Option<(String, String)> {
+    session_id
+        .strip_prefix(LOCUS_TENANT_SCOPE_PREFIX)
+        .and_then(|remainder| remainder.split_once(LOCUS_TENANT_SCOPE_SEPARATOR))
+        .map(|(tenant, chat)| (tenant.to_string(), chat.to_string()))
+}
+
+/// Scope the current chat session under the active workshop profile.
+pub fn resolve_workshop_locus_session(chat_session_id: &str) -> String {
+    let profile_id = crate::user_profiles::resolve_workshop_identity_user_id();
+    let slug = crate::user_profiles::profile_slug_from_id(&profile_id).unwrap_or(LOCUS_DEFAULT_TENANT);
+    scoped_locus_session(slug, chat_session_id)
+}
+
+pub fn identity_bridge_locus_session() -> String {
+    resolve_workshop_locus_session(IDENTITY_BRIDGE_CHAT_SESSION)
+}
+
+/// Resolve Locus session for memory tools: explicit arg → turn scope chat id → fallback.
+pub async fn resolve_memory_tool_session_id(
+    input: &Value,
+    turn_scope: &RwLock<Option<TurnContinuationScope>>,
+    fallback_chat_session_id: &str,
+    workshop_dynamic: bool,
+) -> String {
+    if let Some(explicit) = input
+        .get("session_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return explicit.to_string();
+    }
+
+    let scoped_chat_session_id = turn_scope
+        .read()
+        .await
+        .as_ref()
+        .map(|scope| scope.session_id.clone())
+        .unwrap_or_else(|| fallback_chat_session_id.to_string());
+
+    if workshop_dynamic {
+        resolve_workshop_locus_session(&scoped_chat_session_id)
+    } else {
+        scoped_chat_session_id
+    }
+}
 
 pub const CANONICAL_STTP_SCHEMA_EXAMPLE: &str = r#"Canonical STTP node example (call cognition_memory_schema for this text):
 
@@ -342,6 +424,30 @@ mod tests {
         assert_eq!(
             recall_session_id_for_context(&serde_json::json!({ "session_id": "abc-123" })),
             serde_json::json!("abc-123")
+        );
+    }
+
+    #[test]
+    fn scoped_session_encodes_tenant_slug() {
+        assert_eq!(
+            scoped_locus_session("work", "abc-123"),
+            "tenant:work::session:abc-123"
+        );
+        assert_eq!(derive_locus_tenant_id("tenant:work::session:abc-123"), "work");
+    }
+
+    #[test]
+    fn default_profile_keeps_legacy_plain_session_key() {
+        assert_eq!(scoped_locus_session("default", "abc-123"), "abc-123");
+        assert_eq!(derive_locus_tenant_id("abc-123"), "default");
+    }
+
+    #[test]
+    fn parse_scoped_session_round_trips() {
+        let scoped = scoped_locus_session("home", "sess-1");
+        assert_eq!(
+            parse_scoped_locus_session(&scoped),
+            Some(("home".to_string(), "sess-1".to_string()))
         );
     }
 }

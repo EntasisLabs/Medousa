@@ -340,7 +340,7 @@ pub async fn maybe_store_identity_sttp_bridge(
 
     let stored = writer
         .store_context(&MemoryStoreRequest {
-            session_id: LOCUS_IDENTITY_BRIDGE_SESSION.to_string(),
+            session_id: crate::locus_memory::identity_bridge_locus_session(),
             raw_node: node.to_string(),
         })
         .await?;

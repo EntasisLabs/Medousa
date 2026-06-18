@@ -1,5 +1,6 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
+  import UserProfilesPanel from "$lib/components/settings/UserProfilesPanel.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
 
@@ -60,7 +61,9 @@
     </p>
   </header>
 
-  <div class="mt-5 space-y-5">
+  <UserProfilesPanel {mobile} />
+
+  <div class="mt-8 space-y-5">
     {#each fields as field (field.key)}
       <label class="block">
         <span class="block text-sm font-medium text-surface-100">{field.label}</span>

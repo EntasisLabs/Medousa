@@ -8,6 +8,7 @@
     Orbit,
     Radio,
     Settings,
+    UserRound,
     Zap,
   } from "@lucide/svelte";
   import type { Component } from "svelte";
@@ -24,6 +25,8 @@
     onSelect: (surface: Surface) => void;
     chatActivity?: number;
     workActivity?: number;
+    activeProfileLabel?: string;
+    onOpenProfiles?: () => void;
   }
 
   let {
@@ -31,6 +34,8 @@
     onSelect,
     chatActivity = 0,
     workActivity = 0,
+    activeProfileLabel = "Personal",
+    onOpenProfiles,
   }: Props = $props();
 
   const lifeOrbit: NavItem[] = [
@@ -130,6 +135,18 @@
       </button>
     {/each}
   </div>
+
+  {#if onOpenProfiles}
+    <button
+      type="button"
+      class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-300"
+      title="Profile: {activeProfileLabel}"
+      aria-label="Switch profile ({activeProfileLabel})"
+      onclick={onOpenProfiles}
+    >
+      <UserRound {...utilityIconProps} />
+    </button>
+  {/if}
 
   <button
     type="button"

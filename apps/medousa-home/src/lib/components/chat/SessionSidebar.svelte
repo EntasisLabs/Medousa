@@ -2,6 +2,7 @@
   import { Pencil, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
   import { formatSessionLabel } from "$lib/utils/formatSession";
 
@@ -224,8 +225,11 @@
             </li>
           {:else}
             {#if pinned.length === 0}
-              <li class="workshop-muted px-3 py-6 text-center">
-                No sessions yet
+              <li class="workshop-muted px-3 py-6 text-center text-xs leading-relaxed">
+                No chats for {userProfiles.activeDisplayName} yet.
+                <span class="mt-2 block workshop-faint">
+                  Work and home stay separate — switch profile anytime in Settings → Memory.
+                </span>
               </li>
             {/if}
           {/each}

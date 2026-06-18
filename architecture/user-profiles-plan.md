@@ -1,6 +1,6 @@
 # User profiles — switchable world models (work / home / …)
 
-> **Status:** Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (identity runtime wiring)  
+> **Status:** Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ (Home UI)  
 > **Date:** 2026-06-07  
 > **Related:** [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md), [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md), [medousa-home-m11-settings-charter-plan.md](medousa-home-m11-settings-charter-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md)
 
@@ -190,23 +190,26 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 
 ---
 
-### Phase 3 — Locus tenant scoping (reuse existing core)
+### Phase 3 — Locus tenant scoping (reuse existing core) ✅
 
 **Goal:** Episodic memory isolated per profile using **scoped session keys** — no Stasis `MemoryScope.tenant_id` dependency for v1.
 
-| Task | Detail |
-|------|--------|
-| 3.1 | `scoped_locus_session(profile_slug, chat_session_id) -> String` helper in `src/locus_memory.rs` |
-| 3.2 | Memory tool default session: scoped key from active profile + turn session |
-| 3.3 | Recall/find: same scoped session (or profile-wide recall policy — see decision below) |
-| 3.4 | Session catalog: store `profile_id` on session metadata; list/filter by active profile |
-| 3.5 | Migration: existing sessions stay in tenant `default`; optional one-time “Move to profile…” (Phase 4 UI) |
-| 3.6 | Verify Surreal queries filter `tenant_id` correctly for scoped keys (regression test against `locus-core-rs` behavior) |
+| Task | Detail | Status |
+|------|--------|--------|
+| 3.1 | `scoped_locus_session(profile_slug, chat_session_id)` in `src/locus_memory.rs` | ✅ |
+| 3.2 | Memory tool default session: scoped key from active profile + turn session | ✅ |
+| 3.3 | Recall/find: scoped to current chat session within profile tenant (v1 policy) | ✅ |
+| 3.4 | Session catalog: `profile_id` metadata; list filtered by active profile | ✅ |
+| 3.5 | Migration: legacy sessions stay in tenant `default` (plain session keys) | ✅ |
+| 3.6 | `derive_locus_tenant_id` regression tests mirroring locus-core-rs | ✅ |
 
-**Recall policy (v1 decision — locked):**
+**Implementation notes:**
 
-- **Default:** recall scoped to current chat session within active profile tenant (safest).
-- **Global recall within profile:** `session_ids: null` + filter nodes whose session matches `tenant:{profile}::session:*` — defer until Phase 4 unless needed for manuscripts.
+- Default profile (`user:default`) keeps **plain** chat session ids → Locus tenant `default` (legacy data untouched).
+- Other profiles use `tenant:{slug}::session:{chatSessionId}`.
+- Memory tools read chat session from `turn_scope` (set on every daemon turn) + `resolve_workshop_locus_session`.
+- Turn-start cheap recall uses scoped session id.
+- Identity STTP bridge stores under profile-scoped `medousa-identity` session.
 
 **Exit:** Work profile chat stores/recalls only under `tenant:work::session:*`; home profile under `tenant:home::session:*`; legacy sessions unchanged.
 
@@ -214,18 +217,25 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 
 ---
 
-### Phase 4 — Home UI
+### Phase 4 — Home UI ✅
 
 **Goal:** Operator-facing profile switcher and settings.
 
-| Task | Detail |
-|------|--------|
-| 4.1 | Profile switcher in utility rail / Settings → Memory (charter M11) |
-| 4.2 | Create/rename/delete profile (delete = archive — do not wipe graph without confirm) |
-| 4.3 | Session list shows only active profile’s sessions |
-| 4.4 | Identity drawer: display name + profile label; hide raw `user_id` from normie UI |
-| 4.5 | Switch profile mid-session: soft reload identity store + optional “start new chat” nudge |
-| 4.6 | Empty state copy: “Work and home stay separate — switch profile anytime” |
+| Task | Detail | Status |
+|------|--------|--------|
+| 4.1 | Profile switcher in utility rail / Settings → Memory (charter M11) | ✅ |
+| 4.2 | Create profile (rename/delete/archive deferred — no daemon HTTP yet) | partial ✅ |
+| 4.3 | Session list shows only active profile’s sessions | ✅ (daemon filter + refresh on switch) |
+| 4.4 | Identity drawer: display name + profile label; hide raw `user_id` | ✅ |
+| 4.5 | Switch profile mid-session: reload identity + sessions + new-chat nudge | ✅ |
+| 4.6 | Empty state copy | ✅ |
+
+**Implementation notes:**
+
+- `userProfiles.svelte.ts` store + Tauri `identity_list_profiles` / `create` / `set_active`
+- `UserProfilesPanel.svelte` in Settings → Memory; rail User icon opens Memory section
+- `IdentityDrawer` shows active profile name; raw `user_id` only when engine details enabled
+- Profile switch toast in `ChatPanel` with “New chat” action
 
 **Exit:** Normie can create Work/Home profiles and switch without CLI; chat + identity feel coherent.
 

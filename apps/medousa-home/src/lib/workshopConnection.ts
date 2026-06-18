@@ -7,6 +7,7 @@ import { vault } from "$lib/stores/vault.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
 import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
+import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
   budgetRequestIdFromStreamEvent,
@@ -206,6 +207,7 @@ async function loadWorkshopDefaults(connected: boolean): Promise<void> {
     if (connected) {
       await workshopDefaults.load(true);
       await voicePresets.load(true);
+      await userProfiles.load();
       await settings.hydrateWorkRetentionFromDaemon();
       void runtime.refresh();
     }
@@ -280,8 +282,10 @@ export async function reconnectWorkshop(
   if (health.ok) {
     runtime.resetWorkshopRuntime();
     workshopDefaults.resetForReconnect();
+    userProfiles.resetForReconnect();
     await runtime.loadWorkshopRuntime({ connected: true });
     await workshopDefaults.load(true);
+    await userProfiles.load();
     await settings.hydrateWorkRetentionFromDaemon();
     await startWorkshopStreams();
   }

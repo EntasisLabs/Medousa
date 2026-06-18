@@ -10,6 +10,7 @@
   import { connection } from "$lib/stores/connection.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import {
     createTurnTicket,
@@ -352,6 +353,35 @@
         aria-hidden="true"
       ></span>
       <span class="min-w-0 truncate">{phaseLine}</span>
+    </div>
+  {/if}
+
+  {#if userProfiles.switchNotice && visible}
+    <div
+      class="chat-restore-toast {mobile ? 'chat-restore-toast-mobile' : ''}"
+      role="status"
+    >
+      <span class="min-w-0">{userProfiles.switchNotice}</span>
+      <div class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          class="chat-restore-toast-dismiss text-primary-300"
+          onclick={() => {
+            void chat.newSession();
+            userProfiles.dismissSwitchNotice();
+          }}
+        >
+          New chat
+        </button>
+        <button
+          type="button"
+          class="chat-restore-toast-dismiss"
+          aria-label="Dismiss"
+          onclick={() => userProfiles.dismissSwitchNotice()}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   {/if}
 

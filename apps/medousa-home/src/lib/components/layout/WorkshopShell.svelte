@@ -12,6 +12,7 @@
   import StatusBar from "$lib/components/layout/StatusBar.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { layoutDesktopRails } from "$lib/utils/desktopRails";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
@@ -78,6 +79,11 @@
     navigateToSurface(surface);
   }
 
+  function openProfileSettings() {
+    settingsNav.openSection("memory");
+    navigateToSurface("settings");
+  }
+
   function handleSurfaceSelect(surface: Surface) {
     navigateToSurface(surface);
   }
@@ -100,6 +106,8 @@
       onSelect={handleSurfaceSelect}
       chatActivity={chat.backgroundActivity}
       workActivity={workspace.inMotionCount()}
+      activeProfileLabel={userProfiles.activeDisplayName}
+      onOpenProfiles={openProfileSettings}
     />
 
     <div class="workshop-main relative flex min-w-0 flex-1 flex-col">

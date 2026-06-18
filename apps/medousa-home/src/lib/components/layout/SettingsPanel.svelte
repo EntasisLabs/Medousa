@@ -11,6 +11,7 @@
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
   import type { SettingsSectionId } from "$lib/types/settings";
@@ -46,6 +47,7 @@
       const pending = settingsNav.takePending();
       if (pending) activeSection = pending;
       void workshopDefaults.load();
+      void userProfiles.load();
     }
   });
 

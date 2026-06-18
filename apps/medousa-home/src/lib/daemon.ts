@@ -585,6 +585,28 @@ export async function getIdentityContext(request: {
   return invoke<IdentityContextResponse>("identity_get_context", { request });
 }
 
+export async function listUserProfiles(): Promise<
+  import("$lib/types/userProfile").ListUserProfilesResponse
+> {
+  return invoke("identity_list_profiles");
+}
+
+export async function createUserProfile(
+  slug: string,
+  displayName: string,
+): Promise<import("$lib/types/userProfile").CreateUserProfileResponse> {
+  return invoke("identity_create_profile", {
+    slug,
+    displayName,
+  });
+}
+
+export async function setActiveUserProfile(
+  profileId: string,
+): Promise<import("$lib/types/userProfile").SetActiveUserProfileResponse> {
+  return invoke("identity_set_active_profile", { profileId });
+}
+
 export async function listLocusNodes(options?: {
   sessionId?: string;
   limit?: number;

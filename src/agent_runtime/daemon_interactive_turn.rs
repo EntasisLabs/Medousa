@@ -654,11 +654,19 @@ pub async fn run_agent_turn(
     continuation_scope: Option<TurnContinuationScope>,
 ) {
     let previous_scope = agent_rt.turn_scope.read().await.clone();
-    if let Some(scope) = continuation_scope.clone() {
-        *agent_rt.turn_scope.write().await = Some(scope);
-    }
-
-    let turn_correlation_id = continuation_scope.as_ref().map(|scope| scope.turn_correlation_id.clone());
+    let turn_correlation_id = continuation_scope
+        .as_ref()
+        .map(|scope| scope.turn_correlation_id.clone());
+    let effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
+        turn_correlation_id: _turn_id.to_string(),
+        session_id: request.session_id.clone(),
+        original_prompt: request.prompt.clone(),
+        delivery_target: None,
+        provider: request.provider.clone(),
+        model: request.model.clone(),
+        response_depth_mode: request.response_depth_mode.clone(),
+    });
+    *agent_rt.turn_scope.write().await = Some(effective_scope);
     let outcome: Arc<RwLock<Option<TurnOutcome>>> = Arc::new(RwLock::new(None));
     let tracking_sink: SharedAgentStreamSink = Arc::new(TurnOutcomeTrackingSink {
         inner: sink,

@@ -708,7 +708,9 @@ pub fn list_history_sessions_page(
     let searching = query.is_some() || cursor.is_some();
 
     crate::session_catalog::ensure_catalog_populated(limit.max(500));
-    let mut page = crate::session_catalog::list_sessions_page(limit, query, cursor);
+    let active_profile = crate::user_profiles::resolve_workshop_identity_user_id();
+    let mut page =
+        crate::session_catalog::list_sessions_page(limit, query, cursor, Some(&active_profile));
 
     if searching {
         enrich_session_summaries(&mut page.sessions);

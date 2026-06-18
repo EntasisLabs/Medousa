@@ -125,7 +125,7 @@ pub fn resolve_prompt_with_context_pack(
 
 pub async fn cheap_memory_recall_probe(
     tui_rt: &TuiRuntime,
-    session_id: &str,
+    chat_session_id: &str,
     prompt: &str,
 ) -> CheapRecallProbe {
     let query_text = truncate_text_for_budget(prompt, CHEAP_RECALL_QUERY_MAX_CHARS)
@@ -135,12 +135,14 @@ pub async fn cheap_memory_recall_probe(
         return CheapRecallProbe::default();
     }
 
+    let locus_session_id = crate::locus_memory::resolve_workshop_locus_session(chat_session_id);
+
     let mut request = MemoryRecallRequest {
         query_text: Some(query_text),
         limit: CHEAP_RECALL_LIMIT,
         ..Default::default()
     };
-    request.scope.session_ids = Some(vec![session_id.to_string()]);
+    request.scope.session_ids = Some(vec![locus_session_id.clone()]);
 
     match tui_rt.memory_reader.recall(&request).await {
         Ok(response) => {
@@ -149,7 +151,8 @@ pub async fn cheap_memory_recall_probe(
                 .into_iter()
                 .take(CHEAP_RECALL_MAX_KEYS)
                 .collect::<Vec<_>>();
-            let snippets = hydrate_recall_snippets(tui_rt, session_id, &node_sync_keys).await;
+            let snippets =
+                hydrate_recall_snippets(tui_rt, &locus_session_id, &node_sync_keys).await;
 
             CheapRecallProbe {
                 attempted: true,
