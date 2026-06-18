@@ -16,7 +16,13 @@ import type {
   SessionSummary,
 } from "$lib/types/session";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
-import type { IdentityContextResponse } from "$lib/types/identity";
+import type {
+  IdentityContextResponse,
+  IdentityDigestPreviewResponse,
+  IdentityExportMarkdownResponse,
+  IdentityRememberRequest,
+  IdentityRememberResponse,
+} from "$lib/types/identity";
 import type {
   LocusNodeDetailResponse,
   LocusNodesListResponse,
@@ -53,6 +59,9 @@ export interface DaemonHealth {
   backend?: string | null;
   worker_id?: string | null;
   tool_registry_count?: number | null;
+  agent_runtime_version?: string | null;
+  last_agent_turn_at_utc?: string | null;
+  last_agent_turn_latency_ms?: number | null;
   active_profile_id?: string | null;
   active_profile_display_name?: string | null;
 }
@@ -587,6 +596,41 @@ export async function getIdentityContext(request: {
   mode?: string;
 }): Promise<IdentityContextResponse> {
   return invoke<IdentityContextResponse>("identity_get_context", { request });
+}
+
+export async function rememberIdentityFact(
+  request: IdentityRememberRequest,
+): Promise<IdentityRememberResponse> {
+  return invoke("identity_remember", { request });
+}
+
+export async function getIdentityDigestPreview(request?: {
+  user_id?: string;
+  relationship_limit?: number;
+  mode?: string;
+}): Promise<IdentityDigestPreviewResponse> {
+  return invoke("identity_digest_preview", {
+    request: {
+      mode: request?.mode ?? "cognitive",
+      relationship_limit: request?.relationship_limit ?? 32,
+      user_id: request?.user_id ?? null,
+      persona_id: null,
+      channel_id: null,
+      policy_profile: null,
+    },
+  });
+}
+
+export async function exportIdentityMarkdown(request?: {
+  user_id?: string;
+  dir?: string | null;
+}): Promise<IdentityExportMarkdownResponse> {
+  return invoke("identity_export_markdown", {
+    request: {
+      user_id: request?.user_id ?? null,
+      dir: request?.dir ?? null,
+    },
+  });
 }
 
 export async function listUserProfiles(): Promise<

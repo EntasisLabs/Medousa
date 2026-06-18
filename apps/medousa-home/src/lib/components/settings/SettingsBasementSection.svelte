@@ -4,6 +4,7 @@
   import {
     getMedousaConfigPaths,
     openConfigPath,
+    openConnectionRunbook,
     type MedousaConfigPaths,
   } from "$lib/config";
   import { getDaemonUrl, setDaemonUrl, type DaemonHealth } from "$lib/daemon";
@@ -14,6 +15,7 @@
     type ConnectionPrefsSummary,
   } from "$lib/connection";
   import { reconnectWorkshop } from "$lib/workshopConnection";
+  import { restartEngine, waitForEngine } from "$lib/utils/providersApi";
   import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
@@ -41,10 +43,18 @@
   let connectionPrefs = $state<ConnectionPrefsSummary | null>(null);
   let prefsBusy = $state(false);
   let prefsMessage = $state<string | null>(null);
+  let restartingEngine = $state(false);
+  let restartMessage = $state<string | null>(null);
+  let runbookError = $state<string | null>(null);
 
   const connected = $derived(Boolean(health?.ok));
   const connectionLabel = $derived(connectionHumanLabel(settings.daemonUrl));
   const backendLabel = $derived(health?.backend ?? "unknown backend");
+  const lastTurnLabel = $derived(formatLastTurn(health?.last_agent_turn_at_utc));
+  const toolsReadyLabel = $derived(
+    health?.tool_registry_count != null ? String(health.tool_registry_count) : "—",
+  );
+  const engineVersionLabel = $derived(health?.agent_runtime_version ?? "—");
 
   const workshopFiles = $derived(
     configPaths
@@ -89,6 +99,58 @@
       return `Remote · ${host}`;
     } catch {
       return trimmed;
+    }
+  }
+
+  function formatLastTurn(iso: string | null | undefined): string {
+    if (!iso) return "No turns yet";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 60_000) return "Just now";
+    if (diffMs < 3_600_000) {
+      const minutes = Math.floor(diffMs / 60_000);
+      return `${minutes}m ago`;
+    }
+    if (diffMs < 86_400_000) {
+      const hours = Math.floor(diffMs / 3_600_000);
+      return `${hours}h ago`;
+    }
+    return date.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  async function restartWorkshopEngine() {
+    if (!isTauri() || mobile) return;
+    restartingEngine = true;
+    restartMessage = null;
+    try {
+      const result = await restartEngine();
+      restartMessage = result.message;
+      const wait = await waitForEngine(30);
+      if (!wait.ok) {
+        restartMessage = wait.message;
+      } else {
+        restartMessage = "Engine restarted.";
+      }
+      await reconnectWorkshop(onDaemonHealth);
+    } catch (err) {
+      restartMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      restartingEngine = false;
+    }
+  }
+
+  async function openRunbook() {
+    runbookError = null;
+    try {
+      await openConnectionRunbook();
+    } catch (err) {
+      runbookError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -288,6 +350,67 @@
     {/if}
   </div>
 
+  {#if isTauri() && !mobile}
+    <div class="settings-connection-card mt-6">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold text-surface-50">Workshop health</h3>
+          <p class="workshop-faint mt-0.5 text-xs">
+            Medousa engine on this device — version and recent activity.
+          </p>
+        </div>
+        <span
+          class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium {connected
+            ? 'bg-success-500/15 text-success-400'
+            : 'bg-warning-500/15 text-warning-400'}"
+        >
+          {connected ? "Running" : "Offline"}
+        </span>
+      </div>
+
+      <dl class="mt-4 space-y-2 text-xs">
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="workshop-label">Engine</dt>
+          <dd class="font-mono text-surface-300">{engineVersionLabel}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="workshop-label">Last activity</dt>
+          <dd class="text-surface-300">{lastTurnLabel}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="workshop-label">Tools ready</dt>
+          <dd class="font-mono text-surface-300">{toolsReadyLabel}</dd>
+        </div>
+        {#if health?.active_profile_display_name}
+          <div class="flex items-baseline justify-between gap-4">
+            <dt class="workshop-label">Profile</dt>
+            <dd class="text-surface-300">{health.active_profile_display_name}</dd>
+          </div>
+        {/if}
+      </dl>
+
+      <button
+        type="button"
+        class="btn btn-sm variant-soft-surface mt-4"
+        disabled={restartingEngine}
+        onclick={() => void restartWorkshopEngine()}
+      >
+        {restartingEngine ? "Restarting…" : "Restart engine"}
+      </button>
+      {#if restartMessage}
+        <p
+          class="mt-2 text-xs {restartMessage.toLowerCase().includes('restart') ||
+          restartMessage.toLowerCase().includes('ready') ||
+          restartMessage.toLowerCase().includes('running')
+            ? 'text-success-400'
+            : 'text-warning-400'}"
+        >
+          {restartMessage}
+        </p>
+      {/if}
+    </div>
+  {/if}
+
   {#if isTauri() && !mobile && connectionPrefs}
     <div class="settings-toggle-list mt-6">
       <label class="settings-toggle-row">
@@ -454,6 +577,20 @@
           </div>
         {/if}
       </dl>
+      <p class="workshop-faint mt-4 text-xs leading-relaxed">
+        If chat freezes while status stays green, restart the engine above or open the connection
+        guide.
+      </p>
+      <button
+        type="button"
+        class="workshop-text-action mt-2 text-xs"
+        onclick={() => void openRunbook()}
+      >
+        Open connection troubleshooting guide →
+      </button>
+      {#if runbookError}
+        <p class="mt-2 text-xs text-warning-400">{runbookError}</p>
+      {/if}
     {/if}
   </div>
 </section>

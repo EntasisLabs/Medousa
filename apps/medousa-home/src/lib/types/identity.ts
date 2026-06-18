@@ -46,3 +46,33 @@ export interface IdentityContextResponse {
   policy_profiles?: Array<{ policy_profile_id: string; graph_max_depth: number }>;
   flattened_claims?: IdentityClaim[];
 }
+
+export interface IdentityRememberRequest {
+  user_id?: string | null;
+  fact_kind: "preference" | "person" | "note" | string;
+  subject: string;
+  statement: string;
+  attributes?: string[];
+  source?: string | null;
+}
+
+export interface IdentityRememberResponse {
+  committed: boolean;
+  requires_confirmation: boolean;
+  proposal_ids: string[];
+  digest_preview?: string | null;
+  message: string;
+}
+
+export interface IdentityDigestPreviewResponse {
+  digest_text: string;
+  preference_count: number;
+  contact_count: number;
+  relationship_count: number;
+  claim_count: number;
+}
+
+export interface IdentityExportMarkdownResponse {
+  export_dir: string;
+  files: string[];
+}

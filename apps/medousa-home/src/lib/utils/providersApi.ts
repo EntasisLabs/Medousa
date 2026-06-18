@@ -236,6 +236,23 @@ export async function requireEngineReady(options?: {
   return health;
 }
 
+export async function restartEngine(options?: {
+  privateBrain?: boolean;
+}): Promise<DaemonStartResult> {
+  if (!isTauri()) {
+    return {
+      started: false,
+      alreadyRunning: false,
+      logPath: "",
+      message: "Unavailable in browser dev mode",
+    };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<DaemonStartResult>("daemon_restart", {
+    request: { privateBrain: options?.privateBrain ?? false },
+  });
+}
+
 export async function applyWizardScreen1(
   request: WizardApplyScreen1Request,
 ): Promise<WizardApplyScreen1Result> {

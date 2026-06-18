@@ -146,6 +146,43 @@ pub async fn export_identity_markdown(
     })
 }
 
+pub async fn compile_identity_digest_preview(
+    store: &dyn IdentityMemoryStore,
+    user_id: Option<&str>,
+) -> Result<crate::cognitive_identity::RankedDigest> {
+    let user_id = user_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| crate::identity_memory::resolve_identity_user_id(None));
+
+    let context = store
+        .get_identity_context(
+            &crate::identity_memory::build_identity_context_request(
+                user_id.clone(),
+                crate::identity_memory::resolve_identity_persona_id(),
+                crate::identity_memory::resolve_identity_channel_id(None),
+                32,
+                IdentityContextMode::Cognitive,
+            ),
+        )
+        .await
+        .context("load identity context for digest preview")?;
+
+    let snapshot = CognitiveIdentitySnapshot {
+        user_id,
+        user: context.user,
+        contacts: context.contacts,
+        relationships: context.relationships,
+        error: None,
+    };
+
+    Ok(compile_relational_memory_digest_with_options(
+        &snapshot,
+        DigestCompileOptions::from_product_config(DEFAULT_RELATIONAL_DIGEST_BUDGET),
+    ))
+}
+
 pub async fn write_identity_markdown_export(
     store: &dyn IdentityMemoryStore,
     user_id: Option<&str>,

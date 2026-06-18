@@ -74,3 +74,8 @@ export async function persistTuiVoicePrefs(prefs: {
 export async function openConfigPath(path: string): Promise<void> {
   await openPath(path);
 }
+
+export async function openConnectionRunbook(): Promise<void> {
+  const path = await invoke<string>("connection_runbook_path");
+  await openPath(path);
+}

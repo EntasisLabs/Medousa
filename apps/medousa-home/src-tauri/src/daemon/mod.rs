@@ -182,6 +182,13 @@ pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth
             backend: Some(detail.backend),
             worker_id: Some(detail.worker_id),
             tool_registry_count: Some(detail.tool_registry_count),
+            agent_runtime_version: if detail.agent_runtime_version.is_empty() {
+                None
+            } else {
+                Some(detail.agent_runtime_version)
+            },
+            last_agent_turn_at_utc: detail.last_agent_turn_at_utc,
+            last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms,
             active_profile_id: if detail.active_profile_id.is_empty() {
                 None
             } else {
@@ -199,6 +206,9 @@ pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth
             backend: None,
             worker_id: None,
             tool_registry_count: None,
+            agent_runtime_version: None,
+            last_agent_turn_at_utc: None,
+            last_agent_turn_latency_ms: None,
             active_profile_id: None,
             active_profile_display_name: None,
         }),

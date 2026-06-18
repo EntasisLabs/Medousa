@@ -5,7 +5,26 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), and **centralized agent runtime + host/worker bus + Specialists** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
 
-Remaining focus: **attachments**, **Iroh pairing**, **distribution**, and operator-surface polish.
+Remaining focus: **polish & package** (normie exposure), **attachments**, **Iroh pairing**, and **distribution**.
+
+Full plan: **[polish-and-package-plan.md](polish-and-package-plan.md)**
+
+---
+
+## 0. Polish & package (normie continuity)
+
+**Goal:** Expose shipped engine (memory, vault, plugins, AVEC) — install, trust, teach, provenance — without new runtime work.
+
+| Phase | Theme | Status |
+|-------|--------|--------|
+| P0 Trust baseline | Sidecar, Iroh smoke, health | ⬜ |
+| P1 First ten minutes | Wizard epilogue, guided win | ⬜ |
+| P2 Teach Medousa | Identity from Home | ⬜ |
+| P3 Continuity surfaces | Unified search, provenance | ⬜ |
+| P4 Workshop exposure | Skills import, Services | ⬜ |
+| P5 App affordances | Share, context menus, P5 attach | ⬜ |
+| P6 Package & ship | Signed bundles, updates | ⬜ |
+| P7 Promise & copy | README / empty states | ⬜ |
 
 ---
 
@@ -78,7 +97,10 @@ Gemma matrix + routing — [embedded-local-inference-plan.md](embedded-local-inf
 
 ## Suggested order
 
-1. Iroh Phase 0 smoke + Phase 2 mobile pairing  
-2. P5a local attachments  
-3. Desktop distribution CI  
-4. Doctor config summary + finish configuration reference
+1. **Polish P0–P2** — trust + first ten minutes + teach Medousa ([polish-and-package-plan.md](polish-and-package-plan.md))  
+2. **Polish P3** — unified search + provenance  
+3. Iroh Phase 0 smoke + Phase 2 mobile pairing  
+4. P5a local attachments (+ Polish P5 app affordances)  
+5. Desktop distribution CI (Polish P6)  
+6. Doctor config summary + finish configuration reference  
+7. Polish P4 workshop exposure + P7 copy (parallel)

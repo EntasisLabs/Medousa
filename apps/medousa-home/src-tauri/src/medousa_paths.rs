@@ -362,6 +362,24 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
 }
 
 #[tauri::command]
+pub fn connection_runbook_path() -> Result<String, String> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let candidates = [
+        manifest.join("../../docs/runbooks/connection-reliability.md"),
+        manifest.join("../../../docs/runbooks/connection-reliability.md"),
+    ];
+    for path in candidates {
+        if path.is_file() {
+            return Ok(path.display().to_string());
+        }
+    }
+    Err(
+        "Connection troubleshooting guide not found on this install. See docs/runbooks/connection-reliability.md in the Medousa repo."
+            .to_string(),
+    )
+}
+
+#[tauri::command]
 pub fn medousa_config_paths() -> MedousaConfigPaths {
     let data = medousa_data_dir();
     let config = medousa_config_dir();

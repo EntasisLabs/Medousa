@@ -45,6 +45,11 @@
     { id: "context", label: "Context", icon: Orbit },
   ];
 
+  function navTitle(item: NavItem): string {
+    if (item.id === "context") return "Threads & memory";
+    return item.label;
+  }
+
   const capability: NavItem[] = [{ id: "skills", label: "Skills", icon: Zap }];
 
   const utility: NavItem[] = [
@@ -91,8 +96,8 @@
       <button
         type="button"
         class={railBtnClass(item.id, "life")}
-        title={item.label}
-        aria-label={badge > 0 ? `${item.label} (${badge} active)` : item.label}
+        title={navTitle(item)}
+        aria-label={badge > 0 ? `${navTitle(item)} (${badge} active)` : navTitle(item)}
         aria-current={active === item.id ? "page" : undefined}
         onclick={() => onSelect(item.id)}
       >

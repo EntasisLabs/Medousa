@@ -9,6 +9,7 @@
     WORKSHOP_DEFAULTS_TABS,
     type WorkshopDefaultsTab,
   } from "$lib/types/workshopDefaults";
+  import { HOST_BUS_CHARTER_OPTIONS } from "$lib/types/settings";
   import { workshopDefaultsMirrorHint } from "$lib/platformCopy";
 
   interface Props {
@@ -25,7 +26,21 @@
       : WORKSHOP_DEFAULTS_TABS,
   );
 
+  const hostBusLabelById = Object.fromEntries(
+    HOST_BUS_CHARTER_OPTIONS.map((option) => [option.id, option.label]),
+  ) as Record<string, string>;
+
   const policyOptions = ["balanced", "strict", "analytical", "fast"];
+
+  const advancedToolRoundLabels: [string, keyof typeof workshopDefaults.draft][] = [
+    ["Tool rounds per turn", "maxToolRounds"],
+    ["Specialist tool rounds per turn", "hostBusMaxToolRounds"],
+    ["Heavy-turn tool budget", "activationToolIntentMaxRounds"],
+    ["Short-turn tool budget", "activationShortTurnMaxToolRounds"],
+    ["Follow-up tool budget", "continuationMaxToolRounds"],
+    ["Stuck-turn retries", "maxTextOnlyStuckContinues"],
+    ["Restricted-turn tool budget", "classifierRestrictedMaxToolRounds"],
+  ];
 
   $effect(() => {
     if (visible && !workshopDefaults.loaded) {
@@ -230,14 +245,16 @@
           </select>
         </label>
         <label class="block">
-          <span class="workshop-label">Host turn bus mode</span>
+          <span class="workshop-label">When to bring in Specialists</span>
           <select
             class="select mt-1 w-full"
             value={workshopDefaults.draft.hostTurnBusMode ?? "auto"}
             onchange={(e) => textField("hostTurnBusMode", e)}
           >
             {#each HOST_TURN_BUS_OPTIONS as option (option)}
-              <option value={option}>{option}</option>
+              <option value={option}>
+                {hostBusLabelById[option] ?? option}
+              </option>
             {/each}
           </select>
         </label>
@@ -268,15 +285,7 @@
             Try other web providers when the preferred one fails
           </span>
         </label>
-        {#each [
-          ["Max tool rounds", "maxToolRounds"],
-          ["Host bus max tool rounds", "hostBusMaxToolRounds"],
-          ["Activation tool intent max rounds", "activationToolIntentMaxRounds"],
-          ["Activation short turn max rounds", "activationShortTurnMaxToolRounds"],
-          ["Continuation max tool rounds", "continuationMaxToolRounds"],
-          ["Max text-only stuck continues", "maxTextOnlyStuckContinues"],
-          ["Classifier restricted max rounds", "classifierRestrictedMaxToolRounds"],
-        ] as row (row[1])}
+        {#each advancedToolRoundLabels as row (row[1])}
           <label class="block">
             <span class="workshop-label">{row[0]}</span>
             <input

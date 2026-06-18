@@ -205,6 +205,50 @@ pub struct SetActiveUserProfileResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityRememberRequest {
+    pub user_id: Option<String>,
+    /// `preference` | `person` | `note`
+    pub fact_kind: String,
+    pub subject: String,
+    pub statement: String,
+    #[serde(default)]
+    pub attributes: Vec<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityRememberResponse {
+    pub committed: bool,
+    pub requires_confirmation: bool,
+    pub proposal_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest_preview: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityDigestPreviewResponse {
+    pub digest_text: String,
+    pub preference_count: usize,
+    pub contact_count: usize,
+    pub relationship_count: usize,
+    pub claim_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityExportMarkdownRequest {
+    pub user_id: Option<String>,
+    pub dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityExportMarkdownResponse {
+    pub export_dir: String,
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportUserProfileRequest {
     pub profile_id: String,
     #[serde(default = "default_profile_export_session_limit")]

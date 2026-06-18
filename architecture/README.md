@@ -49,6 +49,7 @@ Living documentation for system shape, component boundaries, and active roadmap.
 
 | Doc | Topic |
 |-----|--------|
+| [polish-and-package-plan.md](polish-and-package-plan.md) | **Normie polish** — exposure, trust, app affordances, copy |
 | [ROADMAP.md](ROADMAP.md) | Current priorities (attachments, Iroh, distribution, …) |
 | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Encrypted phone ↔ desktop transport |
 | [media-and-attachments-plan.md](media-and-attachments-plan.md) | Local chat attachments (P5) |

@@ -225,6 +225,12 @@ pub struct DaemonHealth {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_registry_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_runtime_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_agent_turn_at_utc: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_agent_turn_latency_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_profile_display_name: Option<String>,
@@ -461,6 +467,10 @@ pub struct HealthResponse {
     pub agent_runtime_version: String,
     #[serde(default)]
     pub tool_registry_count: usize,
+    #[serde(default)]
+    pub last_agent_turn_latency_ms: Option<u64>,
+    #[serde(default)]
+    pub last_agent_turn_at_utc: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub active_profile_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -878,6 +888,49 @@ pub struct SetActiveUserProfileRequest {
 pub struct SetActiveUserProfileResponse {
     pub active_profile_id: String,
     pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityRememberRequest {
+    pub user_id: Option<String>,
+    pub fact_kind: String,
+    pub subject: String,
+    pub statement: String,
+    #[serde(default)]
+    pub attributes: Vec<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityRememberResponse {
+    pub committed: bool,
+    pub requires_confirmation: bool,
+    pub proposal_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest_preview: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityDigestPreviewResponse {
+    pub digest_text: String,
+    pub preference_count: usize,
+    pub contact_count: usize,
+    pub relationship_count: usize,
+    pub claim_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityExportMarkdownRequest {
+    pub user_id: Option<String>,
+    pub dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityExportMarkdownResponse {
+    pub export_dir: String,
+    pub files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

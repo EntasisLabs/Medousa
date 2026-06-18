@@ -141,9 +141,9 @@
   </div>
 
   <div class="mt-6">
-    <span class="block text-sm font-medium text-surface-100">Delegation</span>
+    <span class="block text-sm font-medium text-surface-100">When to bring in Specialists</span>
     <span class="workshop-faint mt-0.5 block text-xs">
-      When to bring specialist models into a turn
+      How often she routes a turn through specialist models
     </span>
     <div class="mt-3 grid gap-2 sm:grid-cols-3">
       {#each HOST_BUS_CHARTER_OPTIONS as option (option.id)}

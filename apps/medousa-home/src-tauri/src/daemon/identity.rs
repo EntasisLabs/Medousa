@@ -1,6 +1,8 @@
 use crate::daemon::types::{
     CreateUserProfileRequest, CreateUserProfileResponse, IdentityContextRequest,
-    ListUserProfilesResponse, SetActiveUserProfileRequest, SetActiveUserProfileResponse,
+    IdentityDigestPreviewResponse, IdentityExportMarkdownRequest, IdentityExportMarkdownResponse,
+    IdentityRememberRequest, IdentityRememberResponse, ListUserProfilesResponse,
+    SetActiveUserProfileRequest, SetActiveUserProfileResponse,
 };
 use serde_json::Value;
 use tauri::State;
@@ -48,4 +50,28 @@ pub async fn identity_set_active_profile(
         &SetActiveUserProfileRequest { profile_id },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn identity_remember(
+    state: State<'_, DaemonState>,
+    request: IdentityRememberRequest,
+) -> Result<IdentityRememberResponse, String> {
+    workshop_http::post_json(&state, "/v1/identity/remember", &request).await
+}
+
+#[tauri::command]
+pub async fn identity_digest_preview(
+    state: State<'_, DaemonState>,
+    request: IdentityContextRequest,
+) -> Result<IdentityDigestPreviewResponse, String> {
+    workshop_http::post_json(&state, "/v1/identity/digest-preview", &request).await
+}
+
+#[tauri::command]
+pub async fn identity_export_markdown(
+    state: State<'_, DaemonState>,
+    request: IdentityExportMarkdownRequest,
+) -> Result<IdentityExportMarkdownResponse, String> {
+    workshop_http::post_json(&state, "/v1/identity/export-markdown", &request).await
 }

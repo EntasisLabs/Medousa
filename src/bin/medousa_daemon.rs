@@ -45,7 +45,8 @@ use medousa::daemon_api::{
     CreateUserProfileRequest, CreateUserProfileResponse, ListUserProfilesResponse,
     SetActiveUserProfileRequest, SetActiveUserProfileResponse, UserProfileRecordDto,
     ExportUserProfileRequest, ExportUserProfileResponse, ImportUserProfileRequest,
-    ImportUserProfileResponse,
+    ImportUserProfileResponse, IdentityDigestPreviewResponse, IdentityExportMarkdownRequest,
+    IdentityExportMarkdownResponse, IdentityRememberRequest, IdentityRememberResponse,
     DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
     UpdateRecurringResponse, RuntimeConfigCommandRequest,
@@ -77,6 +78,7 @@ use stasis::ports::outbound::memory::identity_memory_models::{
     ProposeEntityUpdateRequest, ProposeEntityUpdateResponse, RollbackEntityVersionRequest,
     RollbackEntityVersionResponse,
 };
+use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::dashboard::{
@@ -498,6 +500,9 @@ async fn main() -> Result<()> {
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))
+        .route("/v1/identity/remember", post(identity_remember))
+        .route("/v1/identity/digest-preview", post(identity_digest_preview))
+        .route("/v1/identity/export-markdown", post(identity_export_markdown))
         .route("/v1/identity/profiles", get(list_user_profiles).post(create_user_profile))
         .route("/v1/identity/profiles/active", put(set_active_user_profile))
         .route("/v1/identity/profiles/export", post(export_user_profile))
@@ -2783,6 +2788,165 @@ async fn identity_get_context(
         .map_err(internal_error)?;
 
     Ok(Json(response))
+}
+
+async fn identity_remember(
+    State(state): State<AppState>,
+    Json(request): Json<IdentityRememberRequest>,
+) -> Result<Json<IdentityRememberResponse>, (StatusCode, String)> {
+    let user_id = normalize_optional_text(request.user_id.as_deref())
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let subject = request.subject.trim();
+    let statement = request.statement.trim();
+    if subject.is_empty() || statement.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "subject and statement are required".to_string(),
+        ));
+    }
+
+    let source = medousa::identity_write_policy::parse_update_source(
+        request.source.as_deref().or(Some("user_direct")),
+    )
+    .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+
+    let store = state.platform.medousa_identity_store();
+    let writer = medousa::cognitive_identity_writer::CognitiveIdentityWriter::new(store, None);
+    let reason = "home teach medousa";
+
+    let result = match request.fact_kind.trim().to_ascii_lowercase().as_str() {
+        "preference" => {
+            writer
+                .remember_preference(
+                    &user_id,
+                    subject,
+                    serde_json::Value::String(statement.to_string()),
+                    source,
+                    1.0,
+                    reason,
+                )
+                .await
+        }
+        "person" => {
+            writer
+                .remember_contact(
+                    &user_id,
+                    subject,
+                    statement,
+                    &request.attributes,
+                    &[],
+                    source,
+                    1.0,
+                    reason,
+                )
+                .await
+        }
+        "note" => {
+            writer
+                .remember_note(&user_id, subject, statement, source, 1.0, reason)
+                .await
+        }
+        other => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("unsupported fact_kind '{other}', expected preference|person|note"),
+            ));
+        }
+    }
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+
+    let message = if result.committed {
+        format!("Remembered {subject}")
+    } else if result.requires_confirmation {
+        "Saved as a proposal — confirmation may be required".to_string()
+    } else {
+        "Could not commit this fact".to_string()
+    };
+
+    Ok(Json(IdentityRememberResponse {
+        committed: result.committed,
+        requires_confirmation: result.requires_confirmation,
+        proposal_ids: result.proposal_ids,
+        digest_preview: result.digest_preview,
+        message,
+    }))
+}
+
+async fn identity_digest_preview(
+    State(state): State<AppState>,
+    Json(request): Json<IdentityContextRequest>,
+) -> Result<Json<IdentityDigestPreviewResponse>, (StatusCode, String)> {
+    let user_id = normalize_optional_text(request.user_id.as_deref())
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let store = state.platform.medousa_identity_store();
+    let relationship_limit = request.relationship_limit.unwrap_or(32).clamp(1, 64);
+    let mode = parse_identity_context_mode_label(request.mode.as_deref());
+
+    let context = store
+        .get_identity_context(&build_identity_context_request(
+            user_id.clone(),
+            normalize_optional_text(request.persona_id.as_deref())
+                .unwrap_or_else(resolve_identity_persona_id),
+            normalize_optional_text(request.channel_id.as_deref())
+                .unwrap_or_else(|| resolve_identity_channel_id(request.policy_profile.as_deref())),
+            relationship_limit,
+            mode,
+        ))
+        .await
+        .map_err(internal_error)?;
+
+    let ranked = medousa::identity_markdown::compile_identity_digest_preview(
+        store.as_ref(),
+        Some(user_id.as_str()),
+    )
+    .await
+    .map_err(internal_error)?;
+
+    Ok(Json(IdentityDigestPreviewResponse {
+        digest_text: ranked.text,
+        preference_count: context
+            .user
+            .as_ref()
+            .map(|user| user.preferences.len())
+            .unwrap_or(0),
+        contact_count: context.contacts.len(),
+        relationship_count: context.relationships.len(),
+        claim_count: context.flattened_claims.len(),
+    }))
+}
+
+async fn identity_export_markdown(
+    State(state): State<AppState>,
+    Json(request): Json<IdentityExportMarkdownRequest>,
+) -> Result<Json<IdentityExportMarkdownResponse>, (StatusCode, String)> {
+    let user_id = normalize_optional_text(request.user_id.as_deref())
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let dir = request
+        .dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(medousa::identity_markdown::identity_markdown_export_dir);
+
+    let store = state.platform.medousa_identity_store();
+    let written = medousa::identity_markdown::write_identity_markdown_export(
+        store.as_ref(),
+        Some(user_id.as_str()),
+        dir.as_path(),
+    )
+    .await
+    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    Ok(Json(IdentityExportMarkdownResponse {
+        export_dir: written.display().to_string(),
+        files: vec![
+            "SOUL.md".to_string(),
+            "USER.md".to_string(),
+            "PEOPLE.md".to_string(),
+            "IDENTITY.md".to_string(),
+        ],
+    }))
 }
 
 async fn identity_propose_update(

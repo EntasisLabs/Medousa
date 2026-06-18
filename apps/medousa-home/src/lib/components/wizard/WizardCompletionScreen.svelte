@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { LoaderCircle } from "@lucide/svelte";
+  import { LoaderCircle, MessageCircle, Orbit, BookOpen } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { checkDaemonHealth, type DaemonHealth } from "$lib/daemon";
   import { requireEngineReady } from "$lib/utils/providersApi";
@@ -63,13 +63,15 @@
 
 <div class="flex h-full flex-col items-center justify-center text-center">
   <p class="text-3xl" aria-hidden="true">🎉</p>
-  <h2 class="mt-4 text-2xl font-semibold text-surface-50">You're ready</h2>
-  <p class="mt-3 max-w-sm text-sm leading-relaxed text-surface-300">
+  <h2 class="mt-4 text-2xl font-semibold text-surface-50">Your workshop is ready</h2>
+  <p class="mt-3 max-w-md text-sm leading-relaxed text-surface-300">
     {#if health?.ok}
       {#if isTauriMobilePlatform()}
-        You're linked to Medousa on your computer. Open Chat when you're ready.
+        You're linked to Medousa on your computer. She remembers what you share and leaves notes
+        you can find again.
       {:else}
-        Medousa is running on this computer. Ask anything when you're back in the app.
+        Medousa is running on this computer. Share something on your mind — she'll hold the thread
+        and can turn work into notes in your Library.
       {/if}
     {:else if isTauriMobilePlatform()}
       Setup is saved. Link to your computer in Settings → Connection if chat stays offline.
@@ -87,12 +89,46 @@
     <span>{statusLine}</span>
   </div>
 
-  <div
-    class="mt-8 w-full max-w-md rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-5 text-left"
-    aria-hidden="true"
-  >
-    <p class="text-sm text-surface-500">Preview — you'll type in chat next</p>
-  </div>
+  {#if health?.ok}
+    <div class="mt-8 w-full max-w-md text-left">
+      <p class="text-xs font-medium uppercase tracking-wide text-surface-500">Try this first</p>
+      <ul class="mt-3 space-y-2">
+        <li
+          class="flex items-start gap-3 rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-3"
+        >
+          <MessageCircle class="mt-0.5 h-4 w-4 shrink-0 text-primary-300" aria-hidden="true" />
+          <div>
+            <p class="text-sm font-medium text-surface-100">Chat</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-surface-400">
+              Tell her what's on your mind — a worry, a plan, a messy list.
+            </p>
+          </div>
+        </li>
+        <li
+          class="flex items-start gap-3 rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-3"
+        >
+          <Orbit class="mt-0.5 h-4 w-4 shrink-0 text-primary-300" aria-hidden="true" />
+          <div>
+            <p class="text-sm font-medium text-surface-100">Context</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-surface-400">
+              After a few turns, open Threads &amp; memory to see what she's holding.
+            </p>
+          </div>
+        </li>
+        <li
+          class="flex items-start gap-3 rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-3"
+        >
+          <BookOpen class="mt-0.5 h-4 w-4 shrink-0 text-primary-300" aria-hidden="true" />
+          <div>
+            <p class="text-sm font-medium text-surface-100">Library</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-surface-400">
+              Ask her to save a guide or checklist — it lands here as stone you can revisit.
+            </p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  {/if}
 
   <button
     type="button"
@@ -100,6 +136,6 @@
     disabled={wizard.busy || checking || starting || (!isTauriMobilePlatform() && !health?.ok && isTauri())}
     onclick={() => void wizard.finish()}
   >
-    Start talking →
+    {health?.ok ? "Start with chat →" : "Continue anyway →"}
   </button>
 </div>
