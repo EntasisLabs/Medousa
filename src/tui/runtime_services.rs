@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 
 use crate::engine_context::EngineExecutionLane;
 use crate::identity_memory::{
-    resolve_identity_channel_id, resolve_identity_persona_id, resolve_identity_user_id,
+    resolve_identity_channel_id, resolve_identity_persona_id, resolve_tool_identity_user_id,
 };
 use crate::identity_tools::{
     CognitionIdentityCommitTool, CognitionIdentityContextTool, CognitionIdentityProposeTool,
@@ -88,6 +88,7 @@ pub(crate) async fn build_tui_runtime_services(
     base_url: Option<&str>,
     allowed_grapheme_modules: Vec<String>,
     session_id: &str,
+    workshop_operator_identity: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> anyhow::Result<TuiRuntime> {
     let wire_config = LocalStasisWireConfig {
@@ -113,6 +114,7 @@ pub(crate) async fn build_tui_runtime_services(
         base_url,
         allowed_grapheme_modules,
         session_id,
+        workshop_operator_identity,
         event_tx,
     )
     .await
@@ -130,6 +132,7 @@ pub(crate) async fn assemble_tui_runtime(
     base_url: Option<&str>,
     allowed_grapheme_modules: Vec<String>,
     session_id: &str,
+    workshop_operator_identity: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> anyhow::Result<TuiRuntime> {
     let resolved_provider = crate::resolve_llm_provider(provider);
@@ -167,7 +170,8 @@ pub(crate) async fn assemble_tui_runtime(
     let identity_service = Arc::new(IdentityMemoryService::new(
         identity_memory_store.clone() as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
     ));
-    let identity_user_id = resolve_identity_user_id(Some(session_id));
+    let identity_user_id =
+        resolve_tool_identity_user_id(session_id, workshop_operator_identity);
     let identity_persona_id = resolve_identity_persona_id();
     let identity_channel_id = resolve_identity_channel_id(Some("interactive"));
     tool_registry.register_tool(CognitionIdentityContextTool::new(

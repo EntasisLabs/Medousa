@@ -6,12 +6,11 @@ export class IdentityStore {
   loading = $state(false);
   error = $state<string | null>(null);
 
-  async refresh(options?: { sessionId?: string; relationshipLimit?: number }) {
+  async refresh(options?: { relationshipLimit?: number }) {
     this.loading = true;
     this.error = null;
     try {
       this.context = await getIdentityContext({
-        channel_id: options?.sessionId,
         mode: "cognitive",
         relationship_limit: options?.relationshipLimit ?? 24,
       });
@@ -23,8 +22,9 @@ export class IdentityStore {
     }
   }
 
-  async refreshForSession(sessionId: string) {
-    await this.refresh({ sessionId, relationshipLimit: 8 });
+  /** @deprecated Session id is not an identity principal; use refresh(). */
+  async refreshForSession(_sessionId: string) {
+    await this.refresh({ relationshipLimit: 8 });
   }
 
   clear() {

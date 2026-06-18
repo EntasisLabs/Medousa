@@ -2654,6 +2654,7 @@ pub async fn build_tui_runtime(
     base_url: Option<&str>,
     allowed_grapheme_modules: Vec<String>,
     session_id: &str,
+    workshop_operator_identity: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> anyhow::Result<TuiRuntime> {
     build_tui_runtime_services(
@@ -2663,6 +2664,7 @@ pub async fn build_tui_runtime(
         base_url,
         allowed_grapheme_modules,
         session_id,
+        workshop_operator_identity,
         event_tx,
     )
     .await

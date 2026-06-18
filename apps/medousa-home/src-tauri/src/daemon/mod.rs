@@ -313,7 +313,7 @@ pub async fn interactive_turn_send(
         surface: Some(TurnSurfaceContext {
             channel_surface: Some(channel_surface),
             channel_id: Some(session_id.clone()),
-            user_id: Some(session_id),
+            user_id: None,
         }),
         media_refs: Vec::new(),
     };

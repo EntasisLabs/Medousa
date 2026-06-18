@@ -144,6 +144,7 @@ async fn build_platform_inner(
         config.base_url.as_deref(),
         config.allowed_grapheme_modules,
         &config.session_id,
+        true,
         event_tx,
     )
     .await

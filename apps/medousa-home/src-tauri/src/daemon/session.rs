@@ -272,7 +272,7 @@ pub async fn turn_create(
     let surface = channel_surface.map(|channel_surface| TurnSurfaceContext {
         channel_surface: Some(channel_surface),
         channel_id: Some(trimmed_session.to_string()),
-        user_id: Some(trimmed_session.to_string()),
+        user_id: None,
     });
 
     let body = CreateTurnTicketBody {

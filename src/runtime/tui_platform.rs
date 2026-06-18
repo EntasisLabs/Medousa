@@ -172,6 +172,7 @@ async fn assemble_tui_agent(
         config.base_url.as_deref(),
         config.allowed_grapheme_modules.clone(),
         &config.session_id,
+        false,
         event_tx,
     )
     .await?;

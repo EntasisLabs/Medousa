@@ -71,6 +71,7 @@ Quick list:
 
 | Doc | Topic |
 |-----|-------|
+| [user-profiles-plan.md](user-profiles-plan.md) | Switchable identity + Locus tenants (work / home profiles) |
 | [media-and-attachments-plan.md](media-and-attachments-plan.md) | P5 media |
 | [embedded-local-inference-plan.md](embedded-local-inference-plan.md) | Embedded catalog expansion |
 | [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) | Phase E cloud auth, Phase F packaging |

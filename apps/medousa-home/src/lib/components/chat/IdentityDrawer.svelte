@@ -15,7 +15,7 @@
 
   $effect(() => {
     if (open) {
-      void identity.refreshForSession(chat.sessionId);
+      void identity.refresh({ relationshipLimit: 8 });
     }
   });
 

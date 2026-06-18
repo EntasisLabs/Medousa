@@ -103,6 +103,18 @@ pub fn resolve_identity_user_id(explicit: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_USER_ID.to_string())
 }
 
+/// Identity principal for cognition tools at runtime assembly time.
+///
+/// Workshop/daemon surfaces use the canonical operator user (`user:default` or env override).
+/// TUI keeps session-scoped identity for power-user isolation.
+pub fn resolve_tool_identity_user_id(session_id: &str, workshop_operator: bool) -> String {
+    if workshop_operator {
+        resolve_identity_user_id(None)
+    } else {
+        resolve_identity_user_id(Some(session_id))
+    }
+}
+
 pub fn resolve_identity_channel_id(policy_profile: Option<&str>) -> String {
     if let Some(profile) = policy_profile.and_then(trimmed_non_empty) {
         return format!("channel:{}", profile.to_ascii_lowercase());
@@ -711,7 +723,8 @@ mod tests {
     use super::{
         build_seeded_identity_memory_store, full_identity_context_request,
         is_identity_user_preferences_decode_error, resolve_identity_channel_id,
-        resolve_identity_persona_id, resolve_identity_user_id,
+        resolve_identity_persona_id, resolve_identity_user_id, resolve_tool_identity_user_id,
+        DEFAULT_USER_ID,
     };
     use stasis::prelude::StasisError;
 
@@ -749,5 +762,17 @@ mod tests {
     fn explicit_user_id_wins_over_env_defaults() {
         let resolved = resolve_identity_user_id(Some("user:explicit"));
         assert_eq!(resolved, "user:explicit");
+    }
+
+    #[test]
+    fn workshop_operator_identity_ignores_runtime_session_label() {
+        let resolved = resolve_tool_identity_user_id("daemon-agent-runtime", true);
+        assert_eq!(resolved, DEFAULT_USER_ID);
+    }
+
+    #[test]
+    fn tui_session_scoped_identity_uses_session_id() {
+        let resolved = resolve_tool_identity_user_id("tui-session-abc", false);
+        assert_eq!(resolved, "tui-session-abc");
     }
 }

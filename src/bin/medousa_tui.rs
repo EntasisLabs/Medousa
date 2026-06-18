@@ -1413,6 +1413,7 @@ mod tests {
             None,
             parse_allowed_modules(&settings.allowed_modules),
             "test-session",
+            false,
             event_tx.clone(),
         )
         .await

@@ -46,6 +46,7 @@ pub async fn build_daemon_agent_runtime_from_composition(
         base_url,
         allowed_grapheme_modules,
         "daemon-agent-runtime",
+        true,
         event_tx,
     )
     .await?;
@@ -86,6 +87,7 @@ pub async fn build_daemon_agent_runtime(
         base_url,
         allowed_grapheme_modules,
         "daemon-agent-runtime",
+        true,
         event_tx,
     )
     .await?;
