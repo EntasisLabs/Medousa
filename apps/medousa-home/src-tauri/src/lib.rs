@@ -9,6 +9,7 @@ mod daemon;
 mod messaging;
 mod medousa_paths;
 mod pairing;
+mod pairing_client;
 mod capabilities;
 mod composer_stt;
 mod mcp_gateway;
@@ -95,6 +96,8 @@ pub fn run() {
             pairing::pairing_fetch_status,
             pairing::pairing_revoke,
             pairing::pairing_wait_ready,
+            pairing::pairing_complete_from_qr,
+            pairing::pairing_load_credentials,
             pairing::bonjour_status,
             mcp_gateway::mcp_gateway_load_config,
             mcp_gateway::mcp_gateway_status,

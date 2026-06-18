@@ -80,6 +80,7 @@ pub mod ingest_stream;
 pub mod interactive_turn_runtime;
 pub mod pairing;
 pub mod pairing_handlers;
+pub mod iroh_transport;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
 pub mod reasoning_effort;

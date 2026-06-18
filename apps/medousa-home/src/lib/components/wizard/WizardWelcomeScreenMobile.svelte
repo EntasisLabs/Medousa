@@ -5,6 +5,7 @@
   import { inferDevDaemonUrl, isLoopbackDaemonUrl } from "$lib/daemonConnection";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
+  import { completePairingFromQr } from "$lib/utils/pairingClient";
   import {
     workshopPairingFromHostHint,
     workshopPairingStepsHint,
@@ -133,6 +134,20 @@
           "Could not connect yet. Check that Medousa is running on your computer and on the same Wi‑Fi.";
         return;
       }
+
+      if (connectMode === "pair" && pairLink.trim()) {
+        try {
+          const paired = await completePairingFromQr({
+            qrUrl: pairLink.trim(),
+            daemonUrl: daemonUrl.trim(),
+          });
+          statusMessage = `Paired with ${paired.workshopPeerName} — you're ready to talk.`;
+        } catch (err) {
+          wizard.error = err instanceof Error ? err.message : String(err);
+          return;
+        }
+      }
+
       await wizard.continue("mobile-client");
     } finally {
       wizard.busy = false;

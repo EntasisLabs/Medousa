@@ -52,6 +52,7 @@ pub struct PairStatusResponse {
     pub device_id: String,
     pub peer_name: String,
     pub protocol_version: String,
+    pub daemon_public_key: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -228,6 +229,7 @@ impl PairingService {
             device_id: self.identity.device_id.clone(),
             peer_name: self.peer_name.clone(),
             protocol_version: PROTOCOL_VERSION.to_string(),
+            daemon_public_key: verifying_key_to_b64(self.identity.verifying_key()),
         })
     }
 

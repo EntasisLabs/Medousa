@@ -778,6 +778,30 @@ async fn main() -> Result<()> {
         });
     }
 
+    #[cfg(feature = "iroh-transport")]
+    let _iroh_gateway = if medousa::iroh_transport::iroh_enabled_from_env() {
+        let upstream = format!("http://{addr}");
+        match medousa::iroh_transport::spawn_workshop_gateway(&upstream).await {
+            Ok((router, ticket)) => {
+                println!("medousa-daemon iroh gateway active (MEDOUSA_IROH=1, ALPN medousa-http/1)");
+                println!("medousa-daemon iroh ticket: {ticket}");
+                Some(router)
+            }
+            Err(err) => {
+                eprintln!("medousa-daemon iroh gateway failed: {err:#}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(not(feature = "iroh-transport"))]
+    if medousa::iroh_transport::iroh_enabled_from_env() {
+        eprintln!(
+            "medousa-daemon: MEDOUSA_IROH=1 requires rebuild with --features iroh-transport"
+        );
+    }
+
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),

@@ -117,10 +117,28 @@ Full plan: [media-and-attachments-plan.md](media-and-attachments-plan.md)
 
 ---
 
+## 7. Iroh P2P pairing (active epic)
+
+**Goal:** Scan once; phone reaches workshop over encrypted P2P (direct or relay). Trust stays Ed25519 pairing; transport becomes Iroh.
+
+Full phased plan: **[iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md)**
+
+| Phase | Deliverable | Status |
+|-------|-------------|--------|
+| 0 | `src/iroh_transport/`, `medousa iroh`, `MEDOUSA_IROH=1` daemon gateway | ✅ started — smoke test pending |
+| 1 | QR v2 + `GET /pair/iroh-ticket` + `daemonPublicKey` on status | 🔄 `daemonPublicKey` ✅ |
+| 2 | Mobile init/verify ceremony + credential persistence | 🔄 wizard wired |
+| 3 | Phone Iroh FFI transport + bearer on requests | ⬜ |
+| 4 | Relay hardening + diagnostics | ⬜ |
+
+---
+
 ## Suggested implementation order
 
-1. **P5a local attachments** (envelope → store → UI → extract)  
-2. Finish configuration reference + doctor summary  
-3. Provider picker + API key UI  
-4. MCP add-server (daemon write path + Home form)  
-5. Capabilities toggles (web search first)
+1. **Iroh Phase 0 smoke** (`cargo check --features iroh-transport`, ticket → `/health`)  
+2. **Iroh Phase 2** — iOS sim pairing over LAN HTTP  
+3. **P5a local attachments** (envelope → store → UI → extract)  
+4. Finish configuration reference + doctor summary  
+5. Provider picker + API key UI  
+6. MCP add-server (daemon write path + Home form)  
+7. Capabilities toggles (web search first)

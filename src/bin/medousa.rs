@@ -34,6 +34,9 @@ mod onboard_wizard;
 #[path = "medousa/pair_cli.rs"]
 mod pair_cli;
 
+#[path = "medousa/iroh_cli.rs"]
+mod iroh_cli;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OnboardProfile {
     daemon_url: Option<String>,
@@ -75,6 +78,7 @@ fn main() -> Result<()> {
         "workspace" => run_workspace(&args[1..]),
         "vault" => run_vault(&args[1..]),
         "pair" => pair_cli::run_pair(&args[1..]),
+        "iroh" => iroh_cli::run_iroh(&args[1..]),
         "models" => medousa::local_inference_cli::run_models_command(&args[1..]),
         "help" | "--help" | "-h" => {
             print_help();

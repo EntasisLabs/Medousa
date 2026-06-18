@@ -33,6 +33,9 @@ dirs = "6"
 toml = "0.8"
 keyring = "2.3"
 base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+sha2 = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

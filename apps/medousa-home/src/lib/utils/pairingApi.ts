@@ -21,6 +21,7 @@ export interface PairingStatusResponse {
   deviceId: string;
   peerName: string;
   protocolVersion: string;
+  daemonPublicKey: string;
 }
 
 export interface PairingQrImage {
@@ -61,6 +62,7 @@ export async function fetchPairingStatus(): Promise<PairingStatusResponse> {
       deviceId: "",
       peerName: "",
       protocolVersion: "1.0.0",
+      daemonPublicKey: "",
     };
   }
   return invoke<PairingStatusResponse>("pairing_fetch_status");

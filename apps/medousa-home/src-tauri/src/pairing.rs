@@ -30,6 +30,7 @@ pub struct PairingStatusResponse {
     pub device_id: String,
     pub peer_name: String,
     pub protocol_version: String,
+    pub daemon_public_key: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,7 +53,7 @@ pub struct BonjourStatus {
     pub message: String,
 }
 
-fn pairing_client() -> Result<Client, String> {
+fn pairing_http_client() -> Result<Client, String> {
     Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(10))
@@ -84,7 +85,7 @@ fn pairing_unavailable_message(status: reqwest::StatusCode, body: &str) -> Strin
 #[tauri::command]
 pub async fn pairing_fetch_qr(state: State<'_, DaemonState>) -> Result<PairingQrResponse, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_client()?;
+    let client = pairing_http_client()?;
     let response = client
         .get(format!("{base}/qr"))
         .send()
@@ -138,7 +139,7 @@ pub async fn pairing_fetch_qr_image(
     state: State<'_, DaemonState>,
 ) -> Result<PairingQrImage, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_client()?;
+    let client = pairing_http_client()?;
     fetch_qr_image_once(&base, &client).await
 }
 
@@ -151,7 +152,7 @@ pub async fn pairing_wait_ready(
     let poll = Duration::from_millis(750);
     let started = Instant::now();
     let base = daemon_base(&state)?;
-    let client = pairing_client()?;
+    let client = pairing_http_client()?;
     let mut last_error = "Pairing is still starting…".to_string();
 
     while started.elapsed() < timeout {
@@ -170,7 +171,7 @@ pub async fn pairing_fetch_status(
     state: State<'_, DaemonState>,
 ) -> Result<PairingStatusResponse, String> {
     let base = daemon_base(&state)?;
-    let client = pairing_client()?;
+    let client = pairing_http_client()?;
     let response = client
         .get(format!("{base}/pair/status"))
         .send()
@@ -197,7 +198,7 @@ pub async fn pairing_revoke(
         return Err("pairing_id is required".to_string());
     }
     let base = daemon_base(&state)?;
-    let client = pairing_client()?;
+    let client = pairing_http_client()?;
     let response = client
         .delete(format!("{base}/pair/{trimmed}"))
         .send()
@@ -209,6 +210,18 @@ pub async fn pairing_revoke(
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     Err(pairing_unavailable_message(status, &body))
+}
+
+#[tauri::command]
+pub async fn pairing_complete_from_qr(
+    request: crate::pairing_client::PairCompleteFromQrRequest,
+) -> Result<crate::pairing_client::PairCompleteFromQrResult, String> {
+    crate::pairing_client::pair_complete_from_qr(request).await
+}
+
+#[tauri::command]
+pub fn pairing_load_credentials() -> Option<crate::pairing_client::PairingCredentialsSummary> {
+    crate::pairing_client::load_pairing_credentials_summary()
 }
 
 #[tauri::command]

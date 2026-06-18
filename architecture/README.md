@@ -28,6 +28,7 @@ Documentation for Medousa's runtime, surfaces, and shipped product work.
 |------|-----|-------|
 | **Normie onboarding** | [normie-product-gap-analysis.md](normie-product-gap-analysis.md) | Phases A–D ✅ |
 | **Wizard + pairing** | [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) | LAN QR, BYOM, engine sidecar |
+| **Iroh P2P pairing** | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Phased epic: Iroh transport + mobile trust ceremony |
 | **Home shell** | [medousa-home-tauri-design.md](medousa-home-tauri-design.md) | Tauri, IPC, streams |
 | **Nav tiers** | [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md) | Life orbit / capability / utility rail |
 | **Work Hub** | [medousa-home-work-hub-plan.md](medousa-home-work-hub-plan.md) | Manifestation grid, trays, pop-out |
@@ -55,7 +56,7 @@ Code anchors: `src/medousa_tool_loop.rs`, `src/agent_runtime/`, `src/bin/medousa
 
 ## Active work
 
-See **[NEXT.md](NEXT.md)** — configuration reference, provider picker, MCP/capabilities UI.
+See **[NEXT.md](NEXT.md)** — configuration reference, provider picker, MCP/capabilities UI, **Iroh P2P pairing** ([iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md)).
 
 Quick list:
 
