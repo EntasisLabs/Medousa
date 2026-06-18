@@ -179,6 +179,7 @@ pub(crate) async fn assemble_tui_runtime(
         identity_user_id.clone(),
         identity_persona_id,
         identity_channel_id,
+        workshop_operator_identity,
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionIdentityProposeTool::new(
@@ -193,12 +194,14 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionIdentityRecallTool::new(
         identity_memory_store.clone(),
         identity_user_id.clone(),
+        workshop_operator_identity,
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionIdentityRememberTool::new(
         identity_memory_store.clone(),
         Some(memory_writer.clone()),
         identity_user_id.clone(),
+        workshop_operator_identity,
         event_tx.clone(),
     ))?;
     crate::manuscript_tools::register_manuscript_tools(&mut tool_registry)?;
@@ -407,6 +410,7 @@ pub(crate) async fn assemble_tui_runtime(
         mcp_gateway_client,
         workflow_registry,
         locus_store,
+        medousa_identity_store: identity_memory_store.clone(),
         identity_memory_store: identity_memory_store
             .clone() as Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
         memory_reader,

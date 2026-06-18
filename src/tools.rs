@@ -2629,6 +2629,7 @@ pub struct TuiRuntime {
     pub mcp_gateway_client: Arc<McpGatewayClient>,
     pub workflow_registry: Arc<crate::workflow::WorkflowRegistry>,
     pub locus_store: Arc<dyn NodeStore>,
+    pub medousa_identity_store: Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>,
     pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,

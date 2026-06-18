@@ -216,6 +216,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             voice_preset_id: None,
             voice_appendix: None,
             media_refs: Vec::new(),
+            identity_user_id: None,
         };
 
         let output = Arc::new(Mutex::new(None));

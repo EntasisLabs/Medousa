@@ -118,6 +118,8 @@ pub struct PrepareTurnPromptParams<'a> {
     pub suggested_capability_ids: Option<&'a [String]>,
     pub voice_preset_id: Option<&'a str>,
     pub voice_appendix: Option<&'a str>,
+    /// Resolved identity principal for turn-start digest and channel policy (active profile on daemon).
+    pub identity_user_id: &'a str,
 }
 
 pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> PreparedTurnPrompt {
@@ -142,11 +144,13 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         params.final_route.map(|route| route.policy_profile.as_str()),
         Some(params.prompt),
         manuscript_ctx.as_ref(),
+        params.identity_user_id,
     )
     .await;
     let channel_policy = channel_policy_probe(
         params.tui_rt,
         params.final_route.map(|route| route.policy_profile.as_str()),
+        params.identity_user_id,
     )
     .await;
 

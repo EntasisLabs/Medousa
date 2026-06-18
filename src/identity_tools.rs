@@ -16,7 +16,6 @@ use tokio::sync::mpsc;
 use crate::events::TuiEvent;
 use crate::identity_memory::{
     build_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
-    resolve_identity_user_id,
 };
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 
@@ -76,11 +75,26 @@ fn parse_utc_optional(value: Option<&str>, field: &str) -> Result<Option<DateTim
 
 // ── cognition_identity_context ────────────────────────────────────────────────
 
+fn resolve_effective_identity_user_id(
+    input: &Value,
+    default_user_id: &str,
+    workshop_dynamic: bool,
+) -> String {
+    optional_str(input.get("user_id").and_then(Value::as_str)).unwrap_or_else(|| {
+        if workshop_dynamic {
+            crate::user_profiles::resolve_workshop_identity_user_id()
+        } else {
+            default_user_id.to_string()
+        }
+    })
+}
+
 pub struct CognitionIdentityContextTool {
     service: Arc<IdentityMemoryService>,
     default_user_id: String,
     default_persona_id: String,
     default_channel_id: String,
+    workshop_dynamic: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -90,6 +104,7 @@ impl CognitionIdentityContextTool {
         default_user_id: String,
         default_persona_id: String,
         default_channel_id: String,
+        workshop_dynamic: bool,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -97,6 +112,7 @@ impl CognitionIdentityContextTool {
             default_user_id,
             default_persona_id,
             default_channel_id,
+            workshop_dynamic,
             event_tx,
         }
     }
@@ -133,8 +149,11 @@ impl StasisTool for CognitionIdentityContextTool {
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
         emit_invoked(&self.event_tx, self.name(), "identity context").await;
-        let user_id = optional_str(input.get("user_id").and_then(Value::as_str))
-            .unwrap_or_else(|| self.default_user_id.clone());
+        let user_id = resolve_effective_identity_user_id(
+            &input,
+            &self.default_user_id,
+            self.workshop_dynamic,
+        );
         let persona_id = optional_str(input.get("persona_id").and_then(Value::as_str))
             .unwrap_or_else(|| self.default_persona_id.clone());
         let channel_id = optional_str(input.get("channel_id").and_then(Value::as_str))
@@ -283,6 +302,7 @@ impl StasisTool for CognitionIdentityProposeTool {
 pub struct CognitionIdentityRecallTool {
     store: Arc<MedousaIdentityMemoryStore>,
     default_user_id: String,
+    workshop_dynamic: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -290,11 +310,13 @@ impl CognitionIdentityRecallTool {
     pub fn new(
         store: Arc<MedousaIdentityMemoryStore>,
         default_user_id: String,
+        workshop_dynamic: bool,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             store,
             default_user_id,
+            workshop_dynamic,
             event_tx,
         }
     }
@@ -340,8 +362,11 @@ impl StasisTool for CognitionIdentityRecallTool {
             .and_then(Value::as_u64)
             .unwrap_or(8)
             .clamp(1, 20) as usize;
-        let user_id = optional_str(input.get("user_id").and_then(Value::as_str))
-            .unwrap_or_else(|| self.default_user_id.clone());
+        let user_id = resolve_effective_identity_user_id(
+            &input,
+            &self.default_user_id,
+            self.workshop_dynamic,
+        );
 
         emit_invoked(&self.event_tx, self.name(), query).await;
 
@@ -376,6 +401,7 @@ impl StasisTool for CognitionIdentityRecallTool {
 pub struct CognitionIdentityRememberTool {
     writer: Arc<CognitiveIdentityWriter>,
     default_user_id: String,
+    workshop_dynamic: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -384,11 +410,13 @@ impl CognitionIdentityRememberTool {
         store: Arc<MedousaIdentityMemoryStore>,
         memory_writer: Option<Arc<dyn MemoryContextWriter>>,
         default_user_id: String,
+        workshop_dynamic: bool,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             writer: Arc::new(CognitiveIdentityWriter::new(store, memory_writer)),
             default_user_id,
+            workshop_dynamic,
             event_tx,
         }
     }
@@ -510,8 +538,11 @@ impl StasisTool for CognitionIdentityRememberTool {
             .and_then(Value::as_str)
             .unwrap_or(statement)
             .to_string();
-        let user_id = optional_str(input.get("user_id").and_then(Value::as_str))
-            .unwrap_or_else(|| self.default_user_id.clone());
+        let user_id = resolve_effective_identity_user_id(
+            &input,
+            &self.default_user_id,
+            self.workshop_dynamic,
+        );
 
         emit_invoked(
             &self.event_tx,
@@ -736,7 +767,11 @@ pub fn default_identity_tool_ids(
     session_user_id: Option<&str>,
     policy_profile: Option<&str>,
 ) -> (String, String, String) {
-    let user_id = resolve_identity_user_id(session_user_id);
+    let user_id = session_user_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
     let persona_id = resolve_identity_persona_id();
     let channel_id = resolve_identity_channel_id(policy_profile);
     (user_id, persona_id, channel_id)
@@ -746,7 +781,7 @@ pub fn default_identity_tool_ids(
 mod remember_tests {
     use super::*;
     use crate::cognitive_identity::{compile_relational_memory_digest, load_cognitive_identity_snapshot};
-    use crate::identity_memory::build_seeded_medousa_identity_store;
+    use crate::identity_memory::{build_seeded_medousa_identity_store, resolve_identity_user_id};
     use stasis::application::orchestration::tool_registry::StasisTool;
     use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
     use tokio::sync::mpsc;
@@ -756,7 +791,13 @@ mod remember_tests {
         let store = build_seeded_medousa_identity_store().expect("store");
         let user_id = resolve_identity_user_id(None);
         let (event_tx, _rx) = mpsc::channel(4);
-        let remember = CognitionIdentityRememberTool::new(store.clone(), None, user_id.clone(), event_tx.clone());
+        let remember = CognitionIdentityRememberTool::new(
+            store.clone(),
+            None,
+            user_id.clone(),
+            false,
+            event_tx.clone(),
+        );
         remember
             .invoke(json!({
                 "fact_kind": "preference",
@@ -777,7 +818,7 @@ mod remember_tests {
             .await
             .expect("remember person");
 
-        let recall = CognitionIdentityRecallTool::new(store, user_id, event_tx);
+        let recall = CognitionIdentityRecallTool::new(store, user_id, false, event_tx);
         let result = recall
             .invoke(json!({ "query": "Mario", "limit": 5 }))
             .await
@@ -798,7 +839,13 @@ mod remember_tests {
         let store = build_seeded_medousa_identity_store().expect("store");
         let user_id = resolve_identity_user_id(None);
         let (event_tx, _rx) = mpsc::channel(4);
-        let tool = CognitionIdentityRememberTool::new(store.clone(), None, user_id.clone(), event_tx);
+        let tool = CognitionIdentityRememberTool::new(
+            store.clone(),
+            None,
+            user_id.clone(),
+            false,
+            event_tx,
+        );
 
         let pref = tool
             .invoke(json!({

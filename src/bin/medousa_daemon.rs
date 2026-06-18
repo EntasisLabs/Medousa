@@ -9,7 +9,7 @@ use anyhow::{Context, Result, anyhow};
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::{get, patch, post};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Timelike, Utc};
 use futures_util::stream::{self, Stream};
@@ -30,7 +30,6 @@ use medousa::verification_store::persist_verification;
 use medousa::identity_memory::{
     build_identity_context_request, full_identity_context_request,
     parse_identity_context_mode_label, resolve_identity_channel_id, resolve_identity_persona_id,
-    resolve_identity_user_id,
 };
 use medousa::daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, DEFAULT_DAEMON_BIND,
@@ -43,6 +42,8 @@ use medousa::daemon_api::{
     TurnTicketResponse, SessionActiveTurnsResponse, TurnTicketRecord,
     IdentityContextRequest, JobCitationResponse, JobEvidenceReportResponse, JobReportResponse,
     JobResultResponse, InteractiveTurnStreamEvent, RuntimeDefaultsResponse,
+    CreateUserProfileRequest, CreateUserProfileResponse, ListUserProfilesResponse,
+    SetActiveUserProfileRequest, SetActiveUserProfileResponse, UserProfileRecordDto,
     DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
     UpdateRecurringResponse, RuntimeConfigCommandRequest,
@@ -50,6 +51,7 @@ use medousa::daemon_api::{
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
 use medousa::session_mapping;
+use medousa::user_profiles::{ProfileRecord, UserProfileRegistry};
 use medousa::{
     PlatformBuildConfig, apply_daemon_env, build_daemon_platform, channel_delivery,
     load_product_config, parse_backend, remove_surrealkv_lock,
@@ -108,7 +110,7 @@ struct AppState {
     backend: String,
     worker_id: String,
     identity_service: Arc<IdentityMemoryService>,
-    identity_default_user_id: String,
+    profile_registry: Arc<std::sync::RwLock<UserProfileRegistry>>,
     last_tick_at: Arc<RwLock<Option<chrono::DateTime<Utc>>>>,
     last_heartbeat_report: Arc<RwLock<Option<TickReport>>>,
     heartbeat_policy: HeartbeatLanePolicy,
@@ -121,6 +123,13 @@ struct AppState {
 impl AppState {
     fn composition(&self) -> &RuntimeComposition {
         self.platform.composition()
+    }
+
+    fn workshop_identity_user_id(&self) -> String {
+        self.profile_registry
+            .read()
+            .expect("profile registry lock")
+            .resolve_active_user_id()
     }
 }
 
@@ -331,7 +340,8 @@ async fn main() -> Result<()> {
         .context("failed to build medousa platform runtime")?;
 
     let identity_service = platform.identity_service();
-    let identity_default_user_id = resolve_identity_user_id(None);
+    let profile_registry = Arc::new(std::sync::RwLock::new(UserProfileRegistry::load_or_bootstrap()));
+    medousa::user_profiles::init_workshop_profile_registry(profile_registry.clone());
 
     if once {
         let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy).await?;
@@ -407,7 +417,7 @@ async fn main() -> Result<()> {
         backend: backend_name,
         worker_id: worker_id.clone(),
         identity_service,
-        identity_default_user_id,
+        profile_registry,
         last_tick_at: Arc::new(RwLock::new(None)),
         last_heartbeat_report: Arc::new(RwLock::new(None)),
         heartbeat_policy,
@@ -486,6 +496,8 @@ async fn main() -> Result<()> {
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))
+        .route("/v1/identity/profiles", get(list_user_profiles).post(create_user_profile))
+        .route("/v1/identity/profiles/active", put(set_active_user_profile))
         .route("/v1/identity/update/propose", post(identity_propose_update))
         .route("/v1/identity/update/commit", post(identity_commit_update))
         .route("/v1/identity/history", post(identity_list_history))
@@ -1453,6 +1465,7 @@ async fn enqueue_ask(
         voice_preset_id: None,
         voice_appendix: None,
         media_refs: Vec::new(),
+        identity_user_id: None,
     };
     let interactive_request =
         build_interactive_request_from_ticket(&ticket_request, provider, model, stage_routing);
@@ -1992,6 +2005,7 @@ fn build_interactive_request_from_ticket(
         voice_preset_id: request.voice_preset_id.clone(),
         voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
+        identity_user_id: request.identity_user_id.clone(),
     }
 }
 
@@ -2287,6 +2301,7 @@ async fn start_interactive_turn(
         voice_preset_id: request.voice_preset_id.clone(),
         voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
+        identity_user_id: request.identity_user_id.clone(),
     };
 
     let (provider, model) = (ticket_request.provider.clone(), ticket_request.model.clone());
@@ -2497,7 +2512,7 @@ async fn resolve_identity_context_for_request(
     relationship_limit: usize,
 ) -> Result<ResolvedIdentityContext, (StatusCode, String)> {
     let user_id = normalize_optional_text(user_id_override)
-        .unwrap_or_else(|| state.identity_default_user_id.clone());
+        .unwrap_or_else(|| state.workshop_identity_user_id());
     let persona_id = normalize_optional_text(persona_id_override)
         .unwrap_or_else(resolve_identity_persona_id);
     let channel_id = normalize_optional_text(channel_id_override)
@@ -2559,12 +2574,86 @@ fn normalize_optional_text(value: Option<&str>) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn profile_record_to_dto(record: &ProfileRecord) -> UserProfileRecordDto {
+    UserProfileRecordDto {
+        profile_id: record.profile_id.clone(),
+        display_name: record.display_name.clone(),
+        created_at: record.created_at,
+        is_default: record.is_default,
+        archived: record.archived,
+    }
+}
+
+async fn list_user_profiles(
+    State(state): State<AppState>,
+) -> Result<Json<ListUserProfilesResponse>, (StatusCode, String)> {
+    let registry = state
+        .profile_registry
+        .read()
+        .map_err(|_| internal_error("profile registry lock poisoned"))?;
+    Ok(Json(ListUserProfilesResponse {
+        profiles: registry
+            .list_profiles()
+            .into_iter()
+            .map(|record| profile_record_to_dto(&record))
+            .collect(),
+        active_profile_id: registry.active_profile_id().to_string(),
+        resolved_user_id: registry.resolve_active_user_id(),
+    }))
+}
+
+async fn create_user_profile(
+    State(state): State<AppState>,
+    Json(request): Json<CreateUserProfileRequest>,
+) -> Result<Json<CreateUserProfileResponse>, (StatusCode, String)> {
+    let identity_store = state.platform.medousa_identity_store();
+    let profile = {
+        let mut registry = state
+            .profile_registry
+            .write()
+            .map_err(|_| internal_error("profile registry lock poisoned"))?;
+        registry.create_profile(&request.slug, &request.display_name)
+    }
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    medousa::identity_memory::seed_workshop_profile_user(identity_store.as_ref(), &profile.profile_id)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let registry = state
+        .profile_registry
+        .read()
+        .map_err(|_| internal_error("profile registry lock poisoned"))?;
+    let active_profile_id = registry.active_profile_id().to_string();
+    let resolved_user_id = registry.resolve_active_user_id();
+    Ok(Json(CreateUserProfileResponse {
+        profile: profile_record_to_dto(&profile),
+        active_profile_id,
+        resolved_user_id,
+    }))
+}
+
+async fn set_active_user_profile(
+    State(state): State<AppState>,
+    Json(request): Json<SetActiveUserProfileRequest>,
+) -> Result<Json<SetActiveUserProfileResponse>, (StatusCode, String)> {
+    let mut registry = state
+        .profile_registry
+        .write()
+        .map_err(|_| internal_error("profile registry lock poisoned"))?;
+    let resolved_user_id = registry
+        .set_active_profile(&request.profile_id)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    Ok(Json(SetActiveUserProfileResponse {
+        active_profile_id: registry.active_profile_id().to_string(),
+        resolved_user_id,
+    }))
+}
+
 async fn identity_get_context(
     State(state): State<AppState>,
     Json(request): Json<IdentityContextRequest>,
 ) -> Result<Json<GetIdentityContextResponse>, (StatusCode, String)> {
     let user_id = normalize_optional_text(request.user_id.as_deref())
-        .unwrap_or_else(|| state.identity_default_user_id.clone());
+        .unwrap_or_else(|| state.workshop_identity_user_id());
     let persona_id = normalize_optional_text(request.persona_id.as_deref())
         .unwrap_or_else(resolve_identity_persona_id);
     let channel_id = normalize_optional_text(request.channel_id.as_deref())

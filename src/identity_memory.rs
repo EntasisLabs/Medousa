@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use serde::Deserialize;
 use surrealdb::Surreal;
@@ -22,7 +22,7 @@ use crate::identity_store_ext::{wrap_in_memory, wrap_surreal};
 use crate::runtime::surreal_startup::timed_step;
 
 const DEFAULT_PERSONA_ID: &str = "persona:default";
-const DEFAULT_USER_ID: &str = "user:default";
+pub const DEFAULT_USER_ID: &str = "user:default";
 const DEFAULT_CHANNEL_ID: &str = "channel:default";
 const DEFAULT_PERSONA_DISPLAY_NAME: &str = "Medousa";
 
@@ -109,7 +109,7 @@ pub fn resolve_identity_user_id(explicit: Option<&str>) -> String {
 /// TUI keeps session-scoped identity for power-user isolation.
 pub fn resolve_tool_identity_user_id(session_id: &str, workshop_operator: bool) -> String {
     if workshop_operator {
-        resolve_identity_user_id(None)
+        crate::user_profiles::resolve_workshop_identity_user_id()
     } else {
         resolve_identity_user_id(Some(session_id))
     }
@@ -602,6 +602,123 @@ fn seed_baseline_identity_store(store: &InMemoryIdentityMemoryStore) -> std::res
         },
         now,
     ))?;
+
+    Ok(())
+}
+
+/// Seed a workshop profile user row and persona/channel edges (shared persona/channels must exist).
+pub async fn seed_workshop_profile_user(
+    store: &crate::identity_store_ext::MedousaIdentityMemoryStore,
+    user_id: &str,
+) -> Result<()> {
+    let user_id = user_id.trim();
+    if user_id.is_empty() {
+        anyhow::bail!("profile user_id must not be empty");
+    }
+
+    let now = Utc::now();
+    let persona_id = resolve_identity_persona_id();
+    let interactive_policy = default_policy_profile_for_lane(EngineExecutionLane::Interactive);
+    let scheduled_policy = default_policy_profile_for_lane(EngineExecutionLane::Scheduled);
+    let heartbeat_policy = default_policy_profile_for_lane(EngineExecutionLane::Heartbeat);
+    let interactive_channel_id = resolve_identity_channel_id(Some(interactive_policy));
+    let scheduled_channel_id = resolve_identity_channel_id(Some(scheduled_policy));
+    let heartbeat_channel_id = resolve_identity_channel_id(Some(heartbeat_policy));
+
+    store
+        .upsert_user_entity(UserEntity {
+            user_id: user_id.to_string(),
+            timezone: resolve_identity_timezone(),
+            language_variant: resolve_non_empty_env("MEDOUSA_IDENTITY_USER_LANGUAGE"),
+            preferences: Default::default(),
+            status: "active".to_string(),
+            version: 1,
+            updated_at: now,
+        })
+        .await
+        .map_err(|err| anyhow!("seed profile user {user_id}: {err}"))?;
+
+    store
+        .upsert_relationship_entity(default_relationship(
+            &format!(
+                "rel:{}:{}",
+                stable_id_segment(&persona_id),
+                stable_id_segment(user_id)
+            ),
+            entity_ref("PersonaEntity", &persona_id),
+            entity_ref("UserEntity", user_id),
+            RelationshipKind::AssistantUser,
+            Some(interactive_policy.to_string()),
+            AutonomyScope {
+                allow: vec![
+                    "analysis".to_string(),
+                    "planning".to_string(),
+                    "drafting".to_string(),
+                    "external_read".to_string(),
+                ],
+                deny: vec![
+                    "external_posting".to_string(),
+                    "financial_transfer".to_string(),
+                ],
+                approval_required: vec![
+                    "system_config_change".to_string(),
+                    "destructive_command".to_string(),
+                    "external_write".to_string(),
+                    "external_side_effect".to_string(),
+                ],
+            },
+            now,
+        ))
+        .await
+        .map_err(|err| anyhow!("seed profile persona edge for {user_id}: {err}"))?;
+
+    for (channel_id, policy, allow, deny, approval) in [
+        (
+            interactive_channel_id.as_str(),
+            interactive_policy,
+            vec!["interactive_reply".to_string()],
+            vec!["silent_background_action".to_string()],
+            vec!["high_impact_action".to_string()],
+        ),
+        (
+            scheduled_channel_id.as_str(),
+            scheduled_policy,
+            vec![
+                "scheduled_report".to_string(),
+                "scheduled_monitor".to_string(),
+            ],
+            vec!["interactive_interrupt".to_string()],
+            vec!["external_side_effect".to_string()],
+        ),
+        (
+            heartbeat_channel_id.as_str(),
+            heartbeat_policy,
+            vec!["heartbeat_notify".to_string()],
+            vec!["heartbeat_execute_mutation".to_string()],
+            vec!["heartbeat_escalation".to_string()],
+        ),
+    ] {
+        store
+            .upsert_relationship_entity(default_relationship(
+                &format!(
+                    "rel:{}:{}",
+                    stable_id_segment(user_id),
+                    stable_id_segment(channel_id)
+                ),
+                entity_ref("UserEntity", user_id),
+                entity_ref("ChannelProfileEntity", channel_id),
+                RelationshipKind::UserChannel,
+                Some(policy.to_string()),
+                AutonomyScope {
+                    allow,
+                    deny,
+                    approval_required: approval,
+                },
+                now,
+            ))
+            .await
+            .map_err(|err| anyhow!("seed profile channel edge for {user_id}: {err}"))?;
+    }
 
     Ok(())
 }

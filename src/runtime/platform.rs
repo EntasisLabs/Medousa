@@ -43,6 +43,10 @@ impl MedousaPlatformRuntime {
         self.agent.identity_memory_store.clone()
     }
 
+    pub fn medousa_identity_store(&self) -> Arc<crate::identity_store_ext::MedousaIdentityMemoryStore> {
+        self.agent.medousa_identity_store.clone()
+    }
+
     pub fn identity_service(&self) -> Arc<IdentityMemoryService> {
         Arc::new(IdentityMemoryService::new(self.identity_store()))
     }

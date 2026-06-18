@@ -803,6 +803,11 @@ async fn run_agent_turn_inner(
         .as_deref()
         .filter(|ids| !ids.is_empty());
 
+    let identity_user_id =
+        crate::user_profiles::resolve_workshop_identity_user_id_for_turn(
+            request.identity_user_id.as_deref(),
+        );
+
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &session_id,
         prompt: &effective_prompt,
@@ -826,6 +831,7 @@ async fn run_agent_turn_inner(
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty()),
+        identity_user_id: &identity_user_id,
     })
     .await;
 

@@ -792,6 +792,7 @@ mod tests {
             voice_preset_id: None,
             voice_appendix: None,
             media_refs: Vec::new(),
+            identity_user_id: None,
         };
         let target = delivery_target_from_interactive_turn(&request, "turn-1");
         assert_eq!(target.channel, "home-ios");

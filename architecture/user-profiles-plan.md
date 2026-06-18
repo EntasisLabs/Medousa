@@ -1,6 +1,6 @@
 # User profiles — switchable world models (work / home / …)
 
-> **Status:** Phase 0 in progress (principal alignment)  
+> **Status:** Phase 0 ✅ · Phase 1 ✅ · Phase 2 ✅ (identity runtime wiring)  
 > **Date:** 2026-06-07  
 > **Related:** [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md), [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md), [medousa-home-m11-settings-charter-plan.md](medousa-home-m11-settings-charter-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md)
 
@@ -129,7 +129,7 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 
 **Goal:** Single workshop operator resolves to one seeded identity user before profile UX exists.
 
-**Status:** 🔄 In progress — identity tools + Home surface aligned on `user:default`; drawer no longer passes session as channel id.
+**Status:** ✅ Complete
 
 | Task | Detail | Status |
 |------|--------|--------|
@@ -149,14 +149,16 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 
 **Goal:** Data model for named profiles; create/list/switch without full UI polish.
 
-| Task | Detail |
-|------|--------|
-| 1.1 | `ProfileRecord`: `{ profile_id, display_name, created_at, is_default }` persisted in workshop settings (Surreal or existing settings store) |
-| 1.2 | Bootstrap: ensure `user:default` profile exists (“Personal” or “Default”) |
-| 1.3 | `POST /identity/profiles`, `GET /identity/profiles`, `PUT /identity/profiles/active` daemon routes |
-| 1.4 | On profile create: seed baseline `UserEntity` (+ persona/channel edges mirroring `seed_baseline_identity_store`) |
-| 1.5 | `ActiveProfileResolver`: env `MEDOUSA_IDENTITY_USER_ID` overrides settings (power user); else settings; else `user:default` |
-| 1.6 | CLI: `medousa identity profiles list|create|use` |
+**Status:** ✅ Complete — `user_profiles.json`, daemon routes, CLI.
+
+| Task | Detail | Status |
+|------|--------|--------|
+| 1.1 | `ProfileRecord`: `{ profile_id, display_name, created_at, is_default }` persisted in workshop settings | ✅ `~/.local/share/medousa/user_profiles.json` |
+| 1.2 | Bootstrap: ensure `user:default` profile exists (“Personal”) | ✅ `UserProfileRegistry::load_or_bootstrap` |
+| 1.3 | `POST /identity/profiles`, `GET /identity/profiles`, `PUT /identity/profiles/active` daemon routes | ✅ `/v1/identity/profiles` |
+| 1.4 | On profile create: seed baseline `UserEntity` (+ persona/channel edges) | ✅ `seed_workshop_profile_user` |
+| 1.5 | `ActiveProfileResolver`: env `MEDOUSA_IDENTITY_USER_ID` overrides settings | ✅ `resolve_active_user_id` + daemon context default |
+| 1.6 | CLI: `medousa identity profiles list\|create\|use` | ✅ `medousa identity-profiles …` |
 
 **Exit:** Can create `user:work` via API/CLI; switching active profile changes resolved `user_id` for identity context reads.
 
@@ -164,18 +166,25 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 
 ---
 
-### Phase 2 — Runtime wiring (identity path)
+### Phase 2 — Runtime wiring (identity path) ✅
 
 **Goal:** Every identity touchpoint uses active profile.
 
-| Task | Detail |
-|------|--------|
-| 2.1 | `default_identity_tool_ids(active_profile_id, policy_profile)` at tool registration |
-| 2.2 | Turn-start relational digest compiled for active profile |
-| 2.3 | `GET /identity/context?user_id=` defaults to active profile |
-| 2.4 | Interactive turn request: optional `identity_user_id` override (internal/debug); default = active profile |
-| 2.5 | Heartbeat / recurring jobs: config `scheduled_profile_id` or inherit active (document choice) |
-| 2.6 | STTP bridge on identity commit: scoped Locus session under profile tenant (Phase 3 encoding) |
+| Task | Detail | Status |
+|------|--------|--------|
+| 2.1 | Identity tools resolve active profile at invoke time (`workshop_dynamic` on daemon) | ✅ |
+| 2.2 | Turn-start relational digest compiled for active profile | ✅ |
+| 2.3 | `GET /identity/context?user_id=` defaults to active profile | ✅ (Phase 1) |
+| 2.4 | Interactive turn request: optional `identity_user_id` override (internal/debug); default = active profile | ✅ |
+| 2.5 | Heartbeat / recurring jobs: inherit active profile at turn time via `resolve_workshop_identity_user_id()` | ✅ |
+| 2.6 | STTP bridge on identity commit: scoped Locus session under profile tenant (Phase 3 encoding) | deferred |
+
+**Implementation notes:**
+
+- `init_workshop_profile_registry(Arc<RwLock<UserProfileRegistry>>)` shares daemon registry with runtime paths.
+- `resolve_workshop_identity_user_id()` / `resolve_workshop_identity_user_id_for_turn()` — env override, then active profile.
+- `CognitionIdentityContextTool` / `Recall` / `Remember` — `workshop_dynamic: true` on daemon re-reads active profile each invoke.
+- `prepare_turn_prompt` — `identity_user_id` drives `identity_context_probe` + `channel_policy_probe`.
 
 **Exit:** Switch profile → next turn’s digest + remember/recall identity tools target new `UserEntity`.
 

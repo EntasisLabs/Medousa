@@ -18,7 +18,6 @@ use crate::identity_manuscript::{
 };
 use crate::identity_memory::{
     policy_identity_context_request, resolve_identity_channel_id, resolve_identity_persona_id,
-    resolve_identity_user_id,
 };
 use crate::stage_routing::StageRoute;
 use crate::tools::TuiRuntime;
@@ -174,6 +173,7 @@ pub async fn cheap_memory_recall_probe(
 pub async fn channel_policy_probe(
     tui_rt: &TuiRuntime,
     policy_profile: Option<&str>,
+    identity_user_id: &str,
 ) -> ChannelAmbientPolicy {
     let effective_policy_profile = policy_profile
         .map(str::trim)
@@ -181,7 +181,7 @@ pub async fn channel_policy_probe(
         .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
 
     let request = policy_identity_context_request(
-        resolve_identity_user_id(None),
+        identity_user_id.to_string(),
         resolve_identity_persona_id(),
         resolve_identity_channel_id(effective_policy_profile),
         4,
@@ -205,16 +205,16 @@ pub async fn identity_context_probe(
     policy_profile: Option<&str>,
     query_hints: Option<&str>,
     manuscript: Option<&ManuscriptContext>,
+    identity_user_id: &str,
 ) -> IdentityContextProbe {
     let effective_policy_profile = policy_profile
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .or_else(|| Some(default_policy_profile_for_lane(EngineExecutionLane::Interactive)));
-    let identity_user_id = resolve_identity_user_id(None);
 
     let snapshot = load_cognitive_identity_snapshot(
         Some(&tui_rt.identity_memory_store),
-        &identity_user_id,
+        identity_user_id,
         effective_policy_profile,
         8,
     )

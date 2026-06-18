@@ -133,6 +133,8 @@ pub struct InteractiveTurnRequest {
     pub surface: Option<TurnSurfaceContext>,
     #[serde(default)]
     pub media_refs: Vec<MediaRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_user_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

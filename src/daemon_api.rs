@@ -157,6 +157,48 @@ pub struct IdentityContextRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserProfileRecordDto {
+    pub profile_id: String,
+    pub display_name: String,
+    pub created_at: DateTime<Utc>,
+    pub is_default: bool,
+    #[serde(default)]
+    pub archived: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListUserProfilesResponse {
+    pub profiles: Vec<UserProfileRecordDto>,
+    pub active_profile_id: String,
+    pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateUserProfileRequest {
+    /// Short slug (`work`, `home`) — stored as `user:{slug}`.
+    pub slug: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateUserProfileResponse {
+    pub profile: UserProfileRecordDto,
+    pub active_profile_id: String,
+    pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetActiveUserProfileRequest {
+    pub profile_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetActiveUserProfileResponse {
+    pub active_profile_id: String,
+    pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnqueueResponse {
     pub job_id: String,
     pub queue: String,
@@ -636,6 +678,9 @@ pub struct InteractiveTurnRequest {
     /// User media uploaded to local medousa/media/ before this turn (P5a).
     #[serde(default)]
     pub media_refs: Vec<MediaRef>,
+    /// Optional identity principal override (debug/internal). Default: active workshop profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_user_id: Option<String>,
 }
 
 /// Reference to a user file stored locally under medousa/media/ (not inline bytes).
@@ -709,6 +754,9 @@ pub struct CreateTurnTicketRequest {
     /// User media uploaded to local medousa/media/ before this turn (P5a).
     #[serde(default)]
     pub media_refs: Vec<MediaRef>,
+    /// Optional identity principal override (debug/internal). Default: active workshop profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_user_id: Option<String>,
 }
 
 fn default_persist_user_turn() -> bool {

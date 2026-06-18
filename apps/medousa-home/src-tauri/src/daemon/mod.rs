@@ -316,6 +316,7 @@ pub async fn interactive_turn_send(
             user_id: None,
         }),
         media_refs: Vec::new(),
+        identity_user_id: None,
     };
 
     let config = workshop_http::transport_config(&state);

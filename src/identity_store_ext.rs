@@ -89,6 +89,13 @@ pub struct MedousaIdentityMemoryStore {
 }
 
 impl MedousaIdentityMemoryStore {
+    pub async fn upsert_user_entity(&self, user: UserEntity) -> StasisResult<()> {
+        match &self.backing {
+            Backing::InMemory { store, .. } => store.upsert_user(user),
+            Backing::Surreal { store, .. } => store.upsert_user(user).await,
+        }
+    }
+
     pub async fn upsert_contact_entity(&self, contact: ContactEntity) -> StasisResult<()> {
         match &self.backing {
             Backing::InMemory { store, .. } => store.upsert_contact(contact),

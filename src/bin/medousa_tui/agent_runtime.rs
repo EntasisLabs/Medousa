@@ -355,6 +355,8 @@ pub(crate) async fn start_prompt_run(
     }
 
     let tui_surface = medousa::TurnSurfaceContext::tui();
+    let identity_user_id =
+        medousa::identity_memory::resolve_tool_identity_user_id(&state.session_id, false);
     let prepared = turn_orchestrator::prepare_turn_prompt(PrepareTurnPromptParams {
         session_id: &state.session_id,
         prompt: &prompt,
@@ -370,6 +372,7 @@ pub(crate) async fn start_prompt_run(
         suggested_capability_ids: None,
         voice_preset_id: None,
         voice_appendix: None,
+        identity_user_id: &identity_user_id,
     })
     .await;
 
@@ -676,6 +679,7 @@ async fn attempt_daemon_interactive_turn(
         voice_preset_id: None,
         voice_appendix: None,
         media_refs: Vec::new(),
+        identity_user_id: None,
     };
 
     daemon_start_interactive_turn(&state.daemon_url, &request)

@@ -70,6 +70,7 @@ fn main() -> Result<()> {
         "doctor" => run_doctor(&args[1..]),
         "identity-export" => run_identity_export(&args[1..]),
         "identity-remember" => run_identity_remember(&args[1..]),
+        "identity-profiles" => run_identity_profiles(&args[1..]),
         "manuscript-list" => run_manuscript_list(),
         "manuscript-validate" => run_manuscript_validate(&args[1..]),
         "manuscript-install" => run_manuscript_install(&args[1..]),
@@ -1619,6 +1620,115 @@ fn run_identity_remember(args: &[String]) -> Result<()> {
     if let Some(preview) = result.digest_preview.as_deref() {
         println!("digest_preview:\n{preview}");
     }
+    Ok(())
+}
+
+fn run_identity_profiles(args: &[String]) -> Result<()> {
+    if args.is_empty() {
+        return Err(anyhow!(
+            "usage: medousa identity-profiles list|create <slug> [display_name]|use <profile_id> [--daemon-url <url>]"
+        ));
+    }
+
+    let daemon_url = find_arg_value(args, "--daemon-url")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .context("build HTTP client")?;
+
+    match args[0].as_str() {
+        "list" => {
+            let response = client
+                .get(format!("{daemon_url}/v1/identity/profiles"))
+                .send()
+                .context("GET /v1/identity/profiles")?
+                .error_for_status()
+                .context("list profiles")?;
+            let payload: medousa::daemon_api::ListUserProfilesResponse =
+                response.json().context("decode profiles list")?;
+            println!(
+                "active_profile_id={} resolved_user_id={}",
+                payload.active_profile_id, payload.resolved_user_id
+            );
+            for profile in payload.profiles {
+                let marker = if profile.profile_id == payload.active_profile_id {
+                    "*"
+                } else {
+                    " "
+                };
+                println!(
+                    "{marker} {} ({}) default={}",
+                    profile.display_name, profile.profile_id, profile.is_default
+                );
+            }
+        }
+        "create" => {
+            let slug = args
+                .get(1)
+                .map(String::as_str)
+                .or_else(|| find_arg_value(args, "--slug"))
+                .ok_or_else(|| anyhow!("missing slug: medousa identity-profiles create <slug> [display_name]"))?;
+            let display_name = args
+                .get(2)
+                .cloned()
+                .or_else(|| find_arg_value(args, "--name").map(str::to_string))
+                .unwrap_or_else(|| slug.to_string());
+            let response = client
+                .post(format!("{daemon_url}/v1/identity/profiles"))
+                .json(&medousa::daemon_api::CreateUserProfileRequest {
+                    slug: slug.to_string(),
+                    display_name,
+                })
+                .send()
+                .context("POST /v1/identity/profiles")?
+                .error_for_status()
+                .context("create profile")?;
+            let payload: medousa::daemon_api::CreateUserProfileResponse =
+                response.json().context("decode create profile")?;
+            println!(
+                "created profile {} ({}) resolved_user_id={}",
+                payload.profile.display_name, payload.profile.profile_id, payload.resolved_user_id
+            );
+        }
+        "use" => {
+            let profile_id = args
+                .get(1)
+                .map(String::as_str)
+                .or_else(|| find_arg_value(args, "--profile-id"))
+                .ok_or_else(|| {
+                    anyhow!("missing profile_id: medousa identity-profiles use <profile_id>")
+                })?;
+            let profile_id = if profile_id.contains(':') {
+                profile_id.to_string()
+            } else {
+                medousa::user_profiles::format_profile_id(profile_id)
+            };
+            let response = client
+                .put(format!("{daemon_url}/v1/identity/profiles/active"))
+                .json(&medousa::daemon_api::SetActiveUserProfileRequest { profile_id })
+                .send()
+                .context("PUT /v1/identity/profiles/active")?
+                .error_for_status()
+                .context("set active profile")?;
+            let payload: medousa::daemon_api::SetActiveUserProfileResponse =
+                response.json().context("decode set active profile")?;
+            println!(
+                "active_profile_id={} resolved_user_id={}",
+                payload.active_profile_id, payload.resolved_user_id
+            );
+        }
+        other => {
+            return Err(anyhow!(
+                "unknown identity-profiles command '{other}'. use list|create|use"
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -3299,6 +3409,7 @@ fn print_help() {
     println!("  medousa models probe|catalog|list|download|remove|engine-status|engine-load [--daemon-url <url>]");
     println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
     println!("  medousa identity-remember --kind <preference|person|note> --subject <key|name> --statement <text> [--source user_direct] [--attributes a,b]");
+    println!("  medousa identity-profiles list|create <slug> [display_name]|use <profile_id> [--daemon-url <url>]");
     println!("  medousa manuscript-list");
     println!("  medousa manuscript-validate <id>");
     println!("  medousa manuscript-install <path-to.yaml> [--project]");
