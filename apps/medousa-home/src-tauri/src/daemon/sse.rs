@@ -52,6 +52,12 @@ pub async fn stream_sse_json<T, F>(
         };
 
         let Some(chunk) = next else {
+            if !*cancel_rx.borrow() {
+                let _ = app.emit(
+                    error_event,
+                    serde_json::json!({ "message": "SSE stream ended unexpectedly" }),
+                );
+            }
             break;
         };
 

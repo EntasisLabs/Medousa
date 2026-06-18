@@ -5,11 +5,8 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { hideChatPopout, isTauri } from "$lib/window";
-  import {
-    onInteractiveEvent,
-    onInteractiveError,
-    stopInteractiveStream,
-  } from "$lib/daemon";
+  import { onInteractiveEvent, onInteractiveError } from "$lib/daemon";
+  import { isRecoverableStreamError } from "$lib/utils/streamEvents";
   import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 
   onMount(() => {
@@ -28,13 +25,16 @@
         }),
       );
       unlisteners.push(
-        onInteractiveError((message) => chat.setError(message)),
+        onInteractiveError((message) =>
+          chat.noteStreamFailure(message, {
+            recoverable: isRecoverableStreamError(message),
+          }),
+        ),
       );
     })();
 
     return () => {
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
-      stopInteractiveStream();
     };
   });
 

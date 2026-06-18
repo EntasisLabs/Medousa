@@ -52,7 +52,10 @@ export interface ChatMessage {
 export interface PendingBudgetApproval {
   turnId: string;
   messageId: string | null;
+  /** Daemon budget request id (approve/deny API). */
   requestId: string;
+  /** Workspace card id for navigation — same as requestId for turn.budget_request cards. */
+  workCardId: string;
   requestedRounds: number | null;
   message: string;
 }

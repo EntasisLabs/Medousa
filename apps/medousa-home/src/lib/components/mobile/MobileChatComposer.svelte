@@ -1,6 +1,7 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
+  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -118,12 +119,13 @@
 </script>
 
 <form class="mobile-chat-composer" onsubmit={submit}>
+  <DaemonPortalChip compact class="mx-3 mb-2" />
   <BudgetApprovalBar
     mobile
     onOpenWork={() => {
       switchMobileTab("work");
       const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-      if (pending) void workspace.selectCard(pending.requestId);
+      if (pending) void workspace.selectCard(pending.workCardId);
     }}
   />
   <ChatComposerBar

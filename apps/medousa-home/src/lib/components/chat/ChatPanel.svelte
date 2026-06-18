@@ -537,7 +537,7 @@
       onOpenWork={() => {
         workspace.workView = "kanban";
         const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
-        if (pending) void workspace.selectCard(pending.requestId);
+        if (pending) void workspace.selectCard(pending.workCardId);
       }}
     />
     <form class="chat-composer" onsubmit={submit}>

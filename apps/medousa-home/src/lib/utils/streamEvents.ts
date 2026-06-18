@@ -14,6 +14,17 @@ export function isBudgetApprovalStreamEvent(
   );
 }
 
+/** Transport-level SSE failures that should reattach rather than settle turns. */
+export function isRecoverableStreamError(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed) return true;
+  return (
+    trimmed.includes("SSE stream ended unexpectedly") ||
+    trimmed.includes("cannot reach") ||
+    trimmed.startsWith("HTTP ")
+  );
+}
+
 export function isHandoffStreamEvent(event: InteractiveTurnStreamEvent): boolean {
   return isWorkerHandoffStreamEvent(event) || isBudgetApprovalStreamEvent(event);
 }

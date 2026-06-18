@@ -154,6 +154,7 @@
         : "Auto-start turned off.";
     } catch (err) {
       prefsMessage = err instanceof Error ? err.message : String(err);
+      await loadConnectionPrefsState();
     } finally {
       prefsBusy = false;
     }

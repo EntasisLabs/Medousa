@@ -223,6 +223,19 @@ export async function waitForEngine(
 /** @deprecated Use waitForEngine */
 export const waitForDaemonCore = waitForEngine;
 
+/** Start the engine and block until health is OK — throws if startup fails. */
+export async function requireEngineReady(options?: {
+  privateBrain?: boolean;
+  timeoutSeconds?: number;
+}): Promise<DaemonWaitHealthResult> {
+  await startEngine({ privateBrain: options?.privateBrain ?? false });
+  const health = await waitForEngine(options?.timeoutSeconds ?? 45);
+  if (!health.ok) {
+    throw new Error(health.message || "Medousa engine did not start");
+  }
+  return health;
+}
+
 export async function applyWizardScreen1(
   request: WizardApplyScreen1Request,
 ): Promise<WizardApplyScreen1Result> {

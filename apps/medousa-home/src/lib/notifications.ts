@@ -140,6 +140,11 @@ export async function notifyAskComplete(title: string, cardId: string) {
   }
 }
 
+/** Workspace card id for a turn budget request (notification tap + work board). */
+export function budgetWorkCardId(requestId: string): string {
+  return requestId.trim();
+}
+
 /** Local push on iOS/Android when a turn pauses for tool-round budget approval. */
 export async function notifyBudgetApprovalRequired(
   title: string,
@@ -147,7 +152,7 @@ export async function notifyBudgetApprovalRequired(
   detail?: string,
 ) {
   if (!isTauriMobilePlatform()) return;
-  const trimmedId = requestId.trim();
+  const trimmedId = budgetWorkCardId(requestId);
   if (!trimmedId || !rememberBudgetNotification(trimmedId)) return;
 
   const summary = detail?.trim() || title.trim() || "Turn needs more tool rounds";
@@ -170,9 +175,10 @@ export function budgetRequestIdFromStreamEvent(
   event: InteractiveTurnStreamEvent,
 ): string | null {
   const explicit = event.budget_request_id?.trim();
-  if (explicit) return explicit;
+  if (explicit) return budgetWorkCardId(explicit);
   const match = event.message.match(/\(request ([^)]+)\)/);
-  return match?.[1]?.trim() ?? null;
+  const parsed = match?.[1]?.trim();
+  return parsed ? budgetWorkCardId(parsed) : null;
 }
 
 const turnTerminalNotified = new Set<string>();

@@ -6,7 +6,6 @@ import {
   listSessions,
   setSessionDisplayName,
   startInteractiveStream,
-  stopInteractiveStream,
   stopInteractiveStreamTurn,
 } from "$lib/daemon";
 import type {
@@ -154,6 +153,7 @@ export class ChatStore {
         turnId,
         messageId: turn.messageId,
         requestId,
+        workCardId: turn.workspaceCardId?.trim() || requestId,
         requestedRounds: turn.requestedRounds ?? null,
         message: "Medousa needs more tool rounds to finish this task.",
       });
@@ -163,6 +163,13 @@ export class ChatStore {
 
   clearBudgetAlert() {
     this.budgetAlert = null;
+  }
+
+  hasPendingBudgetApproval(requestId: string): boolean {
+    const id = requestId.trim();
+    if (!id) return false;
+    if (this.budgetAlert?.requestId === id) return true;
+    return this.pendingBudgetApprovals.some((item) => item.requestId === id);
   }
 
   noteBudgetResolved(requestId: string) {
@@ -353,8 +360,8 @@ export class ChatStore {
           this.historyNotice = "Reconnected to live turn";
         }
       }
-    } catch {
-      // Best-effort resume reconcile.
+    } catch (err) {
+      this.noteResumeFailure(err);
     }
   }
 
@@ -574,7 +581,8 @@ export class ChatStore {
 
       await this.pruneStreamOwnership();
       return attached;
-    } catch {
+    } catch (err) {
+      this.noteResumeFailure(err);
       return false;
     }
   }
@@ -621,6 +629,11 @@ export class ChatStore {
         stopInteractiveStreamTurn(turnId).catch(() => undefined),
       ),
     );
+  }
+
+  /** Stop every turn-scoped SSE listener Home owns (keeps Rust slots in sync). */
+  async stopOwnedInteractiveStreams(): Promise<void> {
+    await this.clearStreamOwnership();
   }
 
   private async pruneStreamOwnership() {
@@ -696,19 +709,31 @@ export class ChatStore {
     const sessionId = this.sessionId.trim();
     if (!sessionId) return;
 
+    const turnId = this.activeTurnId;
+
     try {
       await cancelActiveSessionTurn(sessionId);
     } catch {
-      // Best-effort — still stop the local listener below.
+      // Best-effort — still settle local state below.
     }
 
-    await stopInteractiveStream();
-    this.streamOwners.clear();
+    if (turnId) {
+      if (this.assistantId) {
+        this.finishMessage(this.assistantId);
+      }
+      this.settleTurn(turnId);
+      return;
+    }
+
+    const ownedTurnIds = [...this.streamOwners.entries()]
+      .filter(([, owner]) => owner.sessionId === sessionId)
+      .map(([id]) => id);
+    this.evictStreamOwners(ownedTurnIds);
+    for (const ownedTurnId of ownedTurnIds) {
+      await stopInteractiveStreamTurn(ownedTurnId).catch(() => undefined);
+    }
     this.activeTurnId = null;
     this.assistantId = null;
-    this.turns = new Map();
-    this.workers = new Map();
-    this.backgroundActivity = 0;
   }
 
   /** Workspace/worker or budget card settled — drop one background pulse unit. */
@@ -1759,6 +1784,7 @@ export class ChatStore {
         turnId: event.turn_id,
         messageId,
         requestId: budgetRequestId,
+        workCardId: budgetRequestId,
         requestedRounds,
         message: statusLine,
       };
@@ -1798,6 +1824,39 @@ export class ChatStore {
     if (this.assistantId) {
       this.finishMessage(this.assistantId);
     }
+  }
+
+  /** SSE / stream transport failure — evict stale owners so reattach can succeed. */
+  noteStreamFailure(message: string, options?: { recoverable?: boolean }) {
+    this.streamError = message;
+    this.evictStreamOwners();
+    if (options?.recoverable !== false) {
+      return;
+    }
+    if (this.assistantId) {
+      this.finishMessage(this.assistantId);
+    }
+    for (const [turnId, turn] of this.turns) {
+      if (turn.terminal || turn.mode === "background") continue;
+      if (turn.phase === "budget_blocked" || turn.phase === "worker_handoff") continue;
+      this.settleTurn(turnId);
+    }
+  }
+
+  noteResumeFailure(err: unknown) {
+    const detail = err instanceof Error ? err.message : String(err);
+    this.historyNotice = `Reconnect issue: ${detail}`;
+  }
+
+  /** Drop local SSE ownership without stopping daemon streams (already dead). */
+  evictStreamOwners(turnIds?: string[]) {
+    if (turnIds) {
+      for (const turnId of turnIds) {
+        this.streamOwners.delete(turnId);
+      }
+      return;
+    }
+    this.streamOwners.clear();
   }
 
   prefillDraft(text: string) {

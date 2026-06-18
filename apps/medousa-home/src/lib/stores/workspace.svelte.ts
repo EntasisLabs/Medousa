@@ -11,6 +11,7 @@ import { chat } from "$lib/stores/chat.svelte";
 import { settings } from "$lib/stores/settings.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
 import {
+  budgetWorkCardId,
   notifyAskComplete,
   notifyBudgetApprovalRequired,
   notifyCardDone,
@@ -166,9 +167,14 @@ export class WorkspaceStore {
       isTauriMobilePlatform() &&
       previous !== "blocked" &&
       card.column === "blocked" &&
-      card.status_label === "needs approval"
+      card.status_label === "needs approval" &&
+      !chat.hasPendingBudgetApproval(card.id)
     ) {
-      void notifyBudgetApprovalRequired(card.title, card.id);
+      void notifyBudgetApprovalRequired(
+        card.title,
+        budgetWorkCardId(card.id),
+        card.status_label,
+      );
     }
     if (
       previous === "in_flight" &&
@@ -236,8 +242,8 @@ export class WorkspaceStore {
       this.columnCounts = snapshot.counts_by_column;
       this.syncColumnMemory();
       chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
-    } catch {
-      // Best-effort — SSE upserts remain primary.
+    } catch (err) {
+      this.streamError = err instanceof Error ? err.message : String(err);
     } finally {
       this.reconcilingCards = false;
     }

@@ -122,7 +122,7 @@
         keywords: `work card ${item.requestId}`,
         run: async () => {
           onOpenWork?.();
-          await workspace.selectCard(item.requestId);
+          await workspace.selectCard(item.workCardId);
           onClose();
         },
       },

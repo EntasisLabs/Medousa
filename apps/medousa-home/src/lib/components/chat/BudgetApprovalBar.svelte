@@ -66,7 +66,7 @@
   async function openWorkCard() {
     if (!pending) return;
     onOpenWork?.();
-    await workspace.selectCard(pending.requestId);
+    await workspace.selectCard(pending.workCardId);
   }
 </script>
 

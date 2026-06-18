@@ -3,7 +3,7 @@
   import { LoaderCircle } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { checkDaemonHealth, type DaemonHealth } from "$lib/daemon";
-  import { startEngine, waitForEngine } from "$lib/utils/providersApi";
+  import { requireEngineReady } from "$lib/utils/providersApi";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
 
@@ -41,10 +41,17 @@
 
       starting = true;
       statusLine = "Starting Medousa…";
-      await startEngine();
-      const wait = await waitForEngine(30);
-      health = await checkDaemonHealth();
-      statusLine = wait.ok ? wait.message : wait.message;
+      try {
+        const wait = await requireEngineReady({ timeoutSeconds: 30 });
+        health = await checkDaemonHealth();
+        statusLine = wait.message;
+      } catch (err) {
+        health = await checkDaemonHealth();
+        statusLine =
+          err instanceof Error
+            ? err.message
+            : "Medousa engine did not start — go back and finish setup, or try again.";
+      }
     } catch (err) {
       statusLine = err instanceof Error ? err.message : String(err);
     } finally {
@@ -64,8 +71,10 @@
       {:else}
         Medousa is running on this computer. Ask anything when you're back in the app.
       {/if}
+    {:else if isTauriMobilePlatform()}
+      Setup is saved. Link to your computer in Settings → Connection if chat stays offline.
     {:else}
-      Setup is saved. If chat doesn't connect right away, check Settings → Connection.
+      The engine is not running yet. Go back to finish setup, or check Settings → Connection.
     {/if}
   </p>
 

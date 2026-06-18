@@ -15,7 +15,7 @@
   } from "$lib/utils/chatModelPicker";
   import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
-  import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
+  import { mobileComposerRoutingHint } from "$lib/platformCopy";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
   import {
@@ -254,6 +254,7 @@
           {#if panelVisible}
             <div class="mobile-turn-sheet-panel" in:fade={subPanelIn} out:fade={subPanelOut}>
               {#if displayView === "main"}
+                <p class="mobile-turn-sheet-routing-hint">{mobileComposerRoutingHint()}</p>
                 {#if loading}
                   <p class="mobile-turn-sheet-empty">Loading models…</p>
                 {:else if options.length === 0}

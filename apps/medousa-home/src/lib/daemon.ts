@@ -327,7 +327,11 @@ export function onWorkspaceEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
   return listen<string>("workspace://event", (event) => {
-    handler(JSON.parse(event.payload) as T);
+    try {
+      handler(JSON.parse(event.payload) as T);
+    } catch {
+      // Ignore malformed SSE payloads.
+    }
   });
 }
 
@@ -343,7 +347,11 @@ export function onInteractiveEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
   return listen<string>("interactive://event", (event) => {
-    handler(JSON.parse(event.payload) as T);
+    try {
+      handler(JSON.parse(event.payload) as T);
+    } catch {
+      // Ignore malformed SSE payloads.
+    }
   });
 }
 

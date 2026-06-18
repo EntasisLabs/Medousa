@@ -2,23 +2,25 @@ import type { InteractiveTurnOptions } from "$lib/daemon";
 import { homeChannelSurface, isTauriMobilePlatform } from "$lib/platform";
 import { runtime } from "$lib/stores/runtime.svelte";
 
-/** Options for POST /v1/interactive/turn. Mobile omits model routing so the Mac daemon uses tui_defaults. */
+/** Options for POST /v1/interactive/turn. */
 export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
   const channelSurface = homeChannelSurface();
-  if (isTauriMobilePlatform()) {
-    return {
-      responseDepthMode: runtime.depthMode,
-      reasoningEffort: runtime.reasoningEffort,
-      channelSurface,
-    };
+  const shared = {
+    responseDepthMode: runtime.depthMode,
+    reasoningEffort: runtime.reasoningEffort,
+    channelSurface,
+  };
+
+  // Companion shells load runtime from the workshop daemon — pass explicit routing so
+  // composer model picks match turn requests once defaults are hydrated.
+  if (isTauriMobilePlatform() && !runtime.defaultsLoaded) {
+    return shared;
   }
 
   return {
+    ...shared,
     provider: runtime.provider,
     model: runtime.model,
-    responseDepthMode: runtime.depthMode,
-    reasoningEffort: runtime.reasoningEffort,
     stageRouting: runtime.stageRouting,
-    channelSurface,
   };
 }

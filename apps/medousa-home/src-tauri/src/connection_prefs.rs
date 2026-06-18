@@ -85,12 +85,13 @@ pub struct ConnectionSetAutostartRequest {
 
 #[tauri::command]
 pub fn connection_set_autostart(request: ConnectionSetAutostartRequest) -> Result<(), String> {
+    if request.enabled {
+        crate::autostart::install_autostart()?;
+    } else {
+        crate::autostart::remove_autostart()?;
+    }
+
     let mut prefs = load_connection_prefs();
     prefs.autostart_enabled = request.enabled;
-    save_connection_prefs(&prefs)?;
-    if request.enabled {
-        crate::autostart::install_autostart()
-    } else {
-        crate::autostart::remove_autostart()
-    }
+    save_connection_prefs(&prefs)
 }

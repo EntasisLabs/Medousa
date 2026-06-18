@@ -14,7 +14,7 @@ import {
   notifyTurnTicketTerminal,
   notifyWorkerHandoff,
 } from "$lib/notifications";
-import { isWorkerHandoffStreamEvent } from "$lib/utils/streamEvents";
+import { isWorkerHandoffStreamEvent, isRecoverableStreamError } from "$lib/utils/streamEvents";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { haptic } from "$lib/haptics";
 import {
@@ -24,7 +24,6 @@ import {
   onWorkspaceEvent,
   onWorkspaceError,
   startWorkspaceStream,
-  stopInteractiveStream,
   stopWorkspaceStream,
   type DaemonHealth,
 } from "$lib/daemon";
@@ -35,6 +34,92 @@ export type WorkshopConnection = {
   getHealth: () => DaemonHealth | null;
   refreshHealth: () => Promise<DaemonHealth | null>;
 };
+
+const MAX_STREAM_RECONNECT_DELAY_MS = 30_000;
+
+let workshopTeardown = false;
+let workspaceReconnectAttempt = 0;
+let workspaceReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let interactiveRecoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelScheduledStreamRecovery() {
+  if (workspaceReconnectTimer) {
+    clearTimeout(workspaceReconnectTimer);
+    workspaceReconnectTimer = null;
+  }
+  workspaceReconnectAttempt = 0;
+  if (interactiveRecoverTimer) {
+    clearTimeout(interactiveRecoverTimer);
+    interactiveRecoverTimer = null;
+  }
+}
+
+function scheduleWorkspaceStreamReconnect() {
+  if (workshopTeardown || workspaceReconnectTimer) return;
+
+  const delayMs = Math.min(
+    1_000 * 2 ** workspaceReconnectAttempt,
+    MAX_STREAM_RECONNECT_DELAY_MS,
+  );
+  workspaceReconnectAttempt += 1;
+
+  workspaceReconnectTimer = setTimeout(() => {
+    workspaceReconnectTimer = null;
+    void recoverWorkspaceStream();
+  }, delayMs);
+}
+
+async function recoverWorkspaceStream(): Promise<void> {
+  if (workshopTeardown) return;
+
+  try {
+    const health = await checkDaemonHealth();
+    connection.setHealth(health);
+    if (!health.ok) {
+      scheduleWorkspaceStreamReconnect();
+      return;
+    }
+
+    await stopWorkspaceStream();
+    await startWorkspaceStream(workspace.revision || undefined);
+    workspaceReconnectAttempt = 0;
+    void chat.tryReattachActiveTurn(workspace.cards);
+  } catch {
+    scheduleWorkspaceStreamReconnect();
+  }
+}
+
+function scheduleInteractiveStreamRecover() {
+  if (workshopTeardown || interactiveRecoverTimer) return;
+
+  interactiveRecoverTimer = setTimeout(() => {
+    interactiveRecoverTimer = null;
+    void recoverInteractiveStreams();
+  }, 500);
+}
+
+async function recoverInteractiveStreams(): Promise<void> {
+  const needsStream = [...chat.turns.values()].some(
+    (turn) =>
+      !turn.terminal &&
+      turn.mode === "interactive" &&
+      turn.phase !== "worker_handoff" &&
+      turn.phase !== "budget_blocked",
+  );
+  const attached = await chat.tryReattachActiveTurn(workspace.cards);
+  if (!attached && needsStream) {
+    chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
+  } else if (attached) {
+    chat.streamError = null;
+  }
+}
+
+/** Restart SSE pipes without a full settings/runtime reload. */
+async function restartWorkshopStreamsLite(): Promise<void> {
+  await stopWorkspaceStream();
+  await startWorkspaceStream(workspace.revision || undefined);
+  void chat.tryReattachActiveTurn(workspace.cards);
+}
 
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
@@ -50,7 +135,12 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
       }
     }),
   );
-  unlisteners.push(onWorkspaceError((message) => workspace.setError(message)));
+  unlisteners.push(
+    onWorkspaceError((message) => {
+      workspace.setError(message);
+      scheduleWorkspaceStreamReconnect();
+    }),
+  );
   unlisteners.push(
     onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
       const turnBefore = chat.turns.get(event.turn_id);
@@ -82,10 +172,18 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
       }
     }),
   );
-  unlisteners.push(onInteractiveError((message) => chat.setError(message)));
+  unlisteners.push(
+    onInteractiveError((message) => {
+      chat.noteStreamFailure(message, {
+        recoverable: isRecoverableStreamError(message),
+      });
+      scheduleInteractiveStreamRecover();
+    }),
+  );
 }
 
 async function startWorkshopStreams(): Promise<void> {
+  cancelScheduledStreamRecovery();
   await stopWorkspaceStream();
   await startWorkspaceStream(workspace.revision || undefined);
   void recurring.refresh();
@@ -125,6 +223,12 @@ export async function resumeWorkshop(
     chat.hydrateAskThreads(workspace.cards),
     workspace.reconcileCardsFromSnapshot(),
   ]);
+
+  try {
+    await restartWorkshopStreamsLite();
+  } catch {
+    scheduleWorkspaceStreamReconnect();
+  }
 }
 
 export function attachWorkshopForegroundResume(
@@ -144,13 +248,14 @@ export function attachWorkshopForegroundResume(
 export async function reconnectWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<DaemonHealth> {
+  cancelScheduledStreamRecovery();
   await ensureMobileDaemonUrl();
   const health = await checkDaemonHealth();
   connection.setHealth(health);
   onHealthChange(health);
 
   await stopWorkspaceStream();
-  stopInteractiveStream();
+  await chat.stopOwnedInteractiveStreams();
 
   if (health.ok) {
     runtime.resetWorkshopRuntime();
@@ -170,6 +275,7 @@ export async function reconnectWorkshop(
 export function connectWorkshop(options: {
   onHealthChange: (health: DaemonHealth | null) => void;
 }): () => void {
+  workshopTeardown = false;
   settings.applyTheme();
   const unlisteners: Promise<() => void>[] = [];
   registerStreamListeners(unlisteners);
@@ -201,10 +307,14 @@ export function connectWorkshop(options: {
   })();
 
   return () => {
+    workshopTeardown = true;
+    cancelScheduledStreamRecovery();
     detachForeground();
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
-    stopWorkspaceStream();
-    stopInteractiveStream();
+    void (async () => {
+      await stopWorkspaceStream();
+      await chat.stopOwnedInteractiveStreams();
+    })();
   };
 }
 

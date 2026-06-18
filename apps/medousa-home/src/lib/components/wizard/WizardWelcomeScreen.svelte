@@ -12,6 +12,7 @@
   import type { ProviderCatalogEntry } from "$lib/types/providers";
   import {
     probeProviders,
+    requireEngineReady,
     startEngine,
     validateProviderKey,
     waitForEngine,
@@ -144,12 +145,16 @@
     statusMessage = "Starting Medousa…";
     validating = true;
     try {
-      await startEngine({ privateBrain: false }).catch(() => undefined);
-      await waitForEngine(45);
+      await requireEngineReady({ privateBrain: false, timeoutSeconds: 45 });
       await wizard.skipCurrent();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : String(err);
+      statusMessage =
+        message || "Medousa engine did not start — try again or finish setup before continuing.";
+      wizard.error = statusMessage;
     } finally {
       validating = false;
-      statusMessage = null;
     }
   }
 

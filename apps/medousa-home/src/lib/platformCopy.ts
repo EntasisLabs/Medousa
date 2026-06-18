@@ -44,6 +44,10 @@ export function companionTurnRoutingHint(): string {
   return `This device sends turns to ${workshopHostPhrase()} — model and routing live there.`;
 }
 
+export function mobileComposerRoutingHint(): string {
+  return `Model and stance update ${workshopHostPhrase()} — your next message uses what you pick here.`;
+}
+
 export function workshopPairingFromHostHint(): string {
   return `Paste the pairing link from ${workshopHostPhrase()}, or switch to Enter address.`;
 }
