@@ -22,6 +22,14 @@ pub struct PairingCredentialsSummary {
     pub daemon_url: String,
     pub paired_at: String,
     pub has_session_token: bool,
+    pub iroh_available: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkshopTransportConfig {
+    pub lan_base: String,
+    pub iroh_ticket: Option<String>,
+    pub session_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +40,10 @@ struct PairingCredentialsFile {
     workshop_device_id: String,
     daemon_url: String,
     paired_at: String,
+    #[serde(default)]
+    iroh_ticket: Option<String>,
+    #[serde(default)]
+    workshop_endpoint_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -170,12 +182,19 @@ pub async fn pair_complete_from_qr(
         .session_token
         .ok_or_else(|| "Pairing verify succeeded but session token was missing".to_string())?;
 
+    let iroh_ticket = if let Some(ticket) = parsed_qr.iroh_ticket.clone() {
+        Some(ticket)
+    } else {
+        fetch_iroh_ticket(&client, &daemon_url).await.ok()
+    };
+
     save_pairing_credentials(
         &pairing_id,
         &identity.phone_id,
         &status.device_id,
         &daemon_url,
         &session_token,
+        iroh_ticket.as_deref(),
     )?;
 
     Ok(PairCompleteFromQrResult {
@@ -196,7 +215,30 @@ pub fn load_pairing_credentials_summary() -> Option<PairingCredentialsSummary> {
         daemon_url: file.daemon_url,
         paired_at: file.paired_at,
         has_session_token: read_session_token().is_some(),
+        iroh_available: file.iroh_ticket.as_ref().is_some_and(|t| !t.trim().is_empty()),
     })
+}
+
+pub fn load_workshop_transport_config(lan_base: &str) -> Option<WorkshopTransportConfig> {
+    let file = read_credentials_file()?;
+    let lan = lan_base.trim().trim_end_matches('/').to_string();
+    Some(WorkshopTransportConfig {
+        lan_base: if lan.is_empty() { file.daemon_url.clone() } else { lan },
+        iroh_ticket: file
+            .iroh_ticket
+            .as_ref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        session_token: read_session_token(),
+    })
+}
+
+pub async fn send_pair_heartbeat(lan_base: &str) -> Result<(), String> {
+    let Some(config) = load_workshop_transport_config(lan_base) else {
+        return Ok(());
+    };
+    crate::workshop_transport::workshop_get(&config, "/pair/heartbeat").await?;
+    Ok(())
 }
 
 fn verify_qr_trust(parsed: &ParsedQr, status: &PairStatusPayload) -> Result<(), String> {
@@ -227,6 +269,31 @@ fn verify_qr_trust(parsed: &ParsedQr, status: &PairStatusPayload) -> Result<(), 
         )
         .map_err(|err| format!("Pairing link signature invalid: {err}"))
     }
+}
+
+async fn fetch_iroh_ticket(client: &Client, daemon_url: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TicketPayload {
+        ticket: String,
+        available: bool,
+    }
+    let response = client
+        .get(format!("{daemon_url}/pair/iroh-ticket"))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("iroh ticket unavailable (HTTP {})", response.status()));
+    }
+    let payload = response
+        .json::<TicketPayload>()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !payload.available || payload.ticket.trim().is_empty() {
+        return Err("workshop iroh ticket not available".to_string());
+    }
+    Ok(payload.ticket)
 }
 
 async fn fetch_pair_status(client: &Client, daemon_url: &str) -> Result<PairStatusPayload, String> {
@@ -393,6 +460,7 @@ fn save_pairing_credentials(
     workshop_device_id: &str,
     daemon_url: &str,
     session_token: &str,
+    iroh_ticket: Option<&str>,
 ) -> Result<(), String> {
     store_session_token(session_token)?;
     let path = pairing_credentials_path();
@@ -405,6 +473,11 @@ fn save_pairing_credentials(
         workshop_device_id: workshop_device_id.to_string(),
         daemon_url: daemon_url.to_string(),
         paired_at: chrono::Utc::now().to_rfc3339(),
+        iroh_ticket: iroh_ticket
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        workshop_endpoint_id: None,
     };
     let body = serde_json::to_string_pretty(&file).map_err(|err| err.to_string())?;
     fs::write(path, body).map_err(|err| err.to_string())

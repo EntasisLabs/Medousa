@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
+use futures_util::StreamExt;
 use httparse::{Request, Status, EMPTY_HEADER};
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
@@ -104,10 +105,7 @@ async fn proxy_stream(
     recv: &mut iroh::endpoint::RecvStream,
 ) -> Result<()> {
     let raw = read_http_request(recv).await?;
-    let response = forward_request(upstream, &raw).await?;
-    send.write_all(&response).await.context("write HTTP response")?;
-    send.finish().context("finish send stream")?;
-    Ok(())
+    forward_request_stream(upstream, &raw, send).await
 }
 
 async fn read_http_request(recv: &mut iroh::endpoint::RecvStream) -> Result<Vec<u8>> {
@@ -138,7 +136,11 @@ async fn read_http_request(recv: &mut iroh::endpoint::RecvStream) -> Result<Vec<
     Ok(buf)
 }
 
-async fn forward_request(upstream: &str, raw: &[u8]) -> Result<Vec<u8>> {
+async fn forward_request_stream(
+    upstream: &str,
+    raw: &[u8],
+    send: &mut iroh::endpoint::SendStream,
+) -> Result<()> {
     let (method, path, header_end) = parse_request_line(raw)?;
     if method != "GET" && method != "HEAD" && method != "POST" && method != "PUT" && method != "DELETE"
     {
@@ -160,7 +162,7 @@ async fn forward_request(upstream: &str, raw: &[u8]) -> Result<Vec<u8>> {
 
     let url = format!("{upstream}{path}");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(600))
         .build()
         .context("build upstream HTTP client")?;
     let mut builder = client.request(method.parse().context("invalid method")?, &url);
@@ -180,13 +182,10 @@ async fn forward_request(upstream: &str, raw: &[u8]) -> Result<Vec<u8>> {
     let response = builder.send().await.context("upstream HTTP request")?;
     let status = response.status();
     let response_headers = response.headers().clone();
-    let response_body = response
-        .bytes()
-        .await
-        .context("read upstream response body")?;
-    if response_body.len() > MAX_RESPONSE_BYTES {
-        bail!("upstream response exceeds {MAX_RESPONSE_BYTES} bytes");
-    }
+    let is_event_stream = response_headers
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.contains("text/event-stream"));
 
     let mut out = format!(
         "HTTP/1.1 {} {}\r\n",
@@ -202,10 +201,38 @@ async fn forward_request(upstream: &str, raw: &[u8]) -> Result<Vec<u8>> {
         };
         out.push_str(&format!("{name}: {value}\r\n"));
     }
-    out.push_str(&format!("Content-Length: {}\r\n\r\n", response_body.len()));
-    let mut bytes = out.into_bytes();
-    bytes.extend_from_slice(&response_body);
-    Ok(bytes)
+    if is_event_stream {
+        out.push_str("\r\n");
+        send.write_all(out.as_bytes())
+            .await
+            .context("write HTTP response headers")?;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.context("read upstream SSE chunk")?;
+            send.write_all(&chunk).await.context("write SSE chunk")?;
+        }
+    } else {
+        let response_body = response
+            .bytes()
+            .await
+            .context("read upstream response body")?;
+        if response_body.len() > MAX_RESPONSE_BYTES {
+            bail!("upstream response exceeds {MAX_RESPONSE_BYTES} bytes");
+        }
+        if !response_headers.contains_key(reqwest::header::CONTENT_LENGTH) {
+            out.push_str(&format!("Content-Length: {}\r\n", response_body.len()));
+        }
+        out.push_str("\r\n");
+        send.write_all(out.as_bytes())
+            .await
+            .context("write HTTP response headers")?;
+        send.write_all(&response_body)
+            .await
+            .context("write HTTP response body")?;
+    }
+
+    send.finish().context("finish send stream")?;
+    Ok(())
 }
 
 fn parse_request_line(raw: &[u8]) -> Result<(String, String, usize)> {

@@ -227,6 +227,12 @@ pub fn pairing_load_credentials() -> Option<crate::pairing_client::PairingCreden
 }
 
 #[tauri::command]
+pub async fn pairing_send_heartbeat(state: State<'_, DaemonState>) -> Result<(), String> {
+    let base = daemon_base(&state)?;
+    crate::pairing_client::send_pair_heartbeat(&base).await
+}
+
+#[tauri::command]
 pub async fn bonjour_status(state: State<'_, DaemonState>) -> Result<BonjourStatus, String> {
     let base = daemon_base(&state)?;
     let service_type = "_medousa._tcp.local.".to_string();

@@ -16,6 +16,7 @@ import {
 } from "$lib/notifications";
 import { isWorkerHandoffStreamEvent, isRecoverableStreamError } from "$lib/utils/streamEvents";
 import { isTauriMobilePlatform } from "$lib/platform";
+import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import { haptic } from "$lib/haptics";
 import {
   checkDaemonHealth,
@@ -213,6 +214,10 @@ async function loadWorkshopDefaults(connected: boolean): Promise<void> {
 export async function resumeWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<void> {
+  if (isTauriMobilePlatform()) {
+    void sendPairingHeartbeat().catch(() => {});
+  }
+
   const health = await checkDaemonHealth();
   connection.setHealth(health);
   onHealthChange(health);

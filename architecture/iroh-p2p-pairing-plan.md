@@ -131,7 +131,7 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 - [x] Phone Ed25519 identity + `pairing_complete_from_qr` Tauri command
 - [x] Wire wizard connect path (`pair` mode → init/verify)
 - [x] Persist session token + pairing id in app secure storage
-- [ ] `Authorization: Bearer` on mobile daemon requests (heartbeat in Phase 3)
+- [x] `Authorization: Bearer` on mobile workshop transport (health, turn, SSE, heartbeat)
 - [x] Verify QR signature via `daemonPublicKey` on `/pair/status`
 
 **Exit:** iOS simulator completes `/pair/init` + `/pair/verify` over LAN HTTP; device appears in Settings → Phone list.
@@ -140,17 +140,20 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 
 ---
 
-### Phase 3 — Phone transport over Iroh
+### Phase 3 — Phone transport over Iroh *(wired — LTE smoke pending)*
 
 **Goal:** Replace LAN HTTP as default when paired.
 
-- [ ] Embed `iroh-ffi` in Tauri iOS/Android (Swift/Kotlin)
-- [ ] Local loopback proxy in Home: `daemon.ts` → Iroh → workshop
-- [ ] SSE streams over tunneled HTTP (validate `/v1/workspace/stream`, interactive SSE)
-- [ ] Fallback: LAN `a=` hint when on same network
-- [ ] Heartbeat `/pair/heartbeat` over Iroh with stored bearer
+- [x] Rust Iroh client in Tauri mobile via `medousa` crate (`iroh-transport` feature) — deferred Swift/Kotlin FFI
+- [x] `workshop_transport` routes health, turn POST, SSE streams (LAN probe → Iroh fallback)
+- [x] SSE streams over tunneled HTTP (`/v1/workspace/stream`, interactive turn SSE)
+- [x] Fallback: LAN when `/health` reachable within 1.5s; else Iroh ticket from credentials
+- [x] Heartbeat `/pair/heartbeat` on foreground resume with stored bearer
+- [ ] Full mobile daemon IPC through transport (vault, session, jobs still LAN-only today)
 
 **Exit:** Phone on LTE reaches home Mac daemon; chat + workspace stream work.
+
+**Key files:** `apps/medousa-home/src-tauri/src/workshop_transport.rs`, `src/iroh_transport/http_client.rs`, `src/lib/workshopConnection.ts`
 
 ---
 

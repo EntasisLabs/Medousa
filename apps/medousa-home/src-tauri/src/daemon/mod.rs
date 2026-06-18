@@ -14,18 +14,19 @@ pub mod vault;
 pub mod workspace_card;
 pub mod turn_budget;
 
-use crate::daemon::sse::stream_sse_json;
+use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
     DaemonHealth, HealthResponse, InteractiveTurnAccepted, InteractiveTurnRequest,
     InteractiveTurnResponse, InteractiveTurnStreamEvent, StageRoutingMatrix,
     TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
+use crate::workshop_transport;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
 pub struct DaemonState {
@@ -169,38 +170,21 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
 #[tauri::command]
 pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let client = daemon_http_client()?;
-    let url = format!("{base}/health");
-    match client.get(&url).send().await {
-        Ok(response) if response.status().is_success() => {
-            let detail = response.json::<HealthResponse>().await.ok();
-            let message = detail
-                .as_ref()
-                .map(|health| {
-                    format!(
-                        "connected to {base} · {} tools",
-                        health.tool_registry_count
-                    )
-                })
-                .unwrap_or_else(|| format!("connected to {base}"));
-            Ok(DaemonHealth {
-                ok: true,
-                message,
-                backend: detail.as_ref().map(|h| h.backend.clone()),
-                worker_id: detail.as_ref().map(|h| h.worker_id.clone()),
-                tool_registry_count: detail.map(|h| h.tool_registry_count),
-            })
-        }
-        Ok(response) => Ok(DaemonHealth {
-            ok: false,
-            message: format!("daemon returned HTTP {}", response.status()),
-            backend: None,
-            worker_id: None,
-            tool_registry_count: None,
+    let config = workshop_transport::config_from_lan_base(&base);
+    match workshop_transport::workshop_get_json::<HealthResponse>(&config, "/health").await {
+        Ok(detail) => Ok(DaemonHealth {
+            ok: true,
+            message: format!(
+                "connected to {} · {} tools",
+                config.lan_base, detail.tool_registry_count
+            ),
+            backend: Some(detail.backend),
+            worker_id: Some(detail.worker_id),
+            tool_registry_count: Some(detail.tool_registry_count),
         }),
         Err(err) => Ok(DaemonHealth {
             ok: false,
-            message: format!("cannot reach {base}: {err}"),
+            message: err,
             backend: None,
             worker_id: None,
             tool_registry_count: None,
@@ -215,29 +199,34 @@ pub async fn workspace_stream_start(
     since_revision: Option<u64>,
 ) -> Result<(), String> {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let mut url = format!("{base}/v1/workspace/stream");
+    let mut path = "/v1/workspace/stream".to_string();
     if let Some(revision) = since_revision {
-        url.push_str(&format!("?since_revision={revision}"));
+        path.push_str(&format!("?since_revision={revision}"));
     }
 
+    let config = workshop_transport::config_from_lan_base(&base);
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
-    let client = Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(600))
-        .build()
-        .map_err(|err| err.to_string())?;
 
     tokio::spawn(async move {
-        stream_sse_json::<WorkspaceStreamEvent, _>(
-            &app,
-            &client,
-            &url,
-            "workspace://event",
-            "workspace://error",
-            |_event| {},
-            cancel_rx,
-        )
-        .await;
+        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
+            Ok(source) => {
+                stream_sse_json_workshop::<WorkspaceStreamEvent, _>(
+                    &app,
+                    source,
+                    "workspace://event",
+                    "workspace://error",
+                    |_event| {},
+                    cancel_rx,
+                )
+                .await;
+            }
+            Err(err) => {
+                let _ = app.emit(
+                    "workspace://error",
+                    serde_json::json!({ "message": err }),
+                );
+            }
+        }
     });
 
     Ok(())
@@ -329,21 +318,13 @@ pub async fn interactive_turn_send(
         media_refs: Vec::new(),
     };
 
-    let client = daemon_http_client()?;
-    let response = client
-        .post(format!("{base}/v1/interactive/turn"))
-        .json(&request)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("interactive turn failed ({status}): {body}"));
-    }
-
-    let parsed: InteractiveTurnResponse = response.json().await.map_err(|err| err.to_string())?;
+    let config = workshop_transport::config_from_lan_base(&base);
+    let parsed: InteractiveTurnResponse = workshop_transport::workshop_post_json(
+        &config,
+        "/v1/interactive/turn",
+        &request,
+    )
+    .await?;
     Ok(InteractiveTurnAccepted {
         turn_id: parsed.turn_id,
         stream_url: rewrite_stream_url_for_client(&parsed.stream_url, &base),
@@ -361,23 +342,40 @@ pub async fn interactive_stream_start(
     let turn_id = extract_turn_id_from_stream_url(&stream_url)
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
     let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
-    let client = Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(600))
-        .build()
-        .map_err(|err| err.to_string())?;
+
+    let config = workshop_transport::config_from_lan_base(&daemon_url);
+    let path = reqwest::Url::parse(&stream_url)
+        .ok()
+        .map(|url| {
+            let mut path = url.path().to_string();
+            if let Some(query) = url.query() {
+                path.push('?');
+                path.push_str(query);
+            }
+            path
+        })
+        .unwrap_or_else(|| stream_url.clone());
 
     tokio::spawn(async move {
-        stream_sse_json::<InteractiveTurnStreamEvent, _>(
-            &app,
-            &client,
-            &stream_url,
-            "interactive://event",
-            "interactive://error",
-            |_event| {},
-            cancel_rx,
-        )
-        .await;
+        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
+            Ok(source) => {
+                stream_sse_json_workshop::<InteractiveTurnStreamEvent, _>(
+                    &app,
+                    source,
+                    "interactive://event",
+                    "interactive://error",
+                    |_event| {},
+                    cancel_rx,
+                )
+                .await;
+            }
+            Err(err) => {
+                let _ = app.emit(
+                    "interactive://error",
+                    serde_json::json!({ "message": err }),
+                );
+            }
+        }
     });
 
     Ok(())
