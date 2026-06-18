@@ -4,14 +4,37 @@ use anyhow::{Context, Result, bail};
 use httparse::{Request, Status, EMPTY_HEADER};
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
-use iroh::{Endpoint, endpoint::presets};
+use iroh::{Endpoint, SecretKey, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 use super::ALPN;
 
 const MAX_REQUEST_BYTES: usize = 256 * 1024;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+/// Snapshot of a live workshop Iroh endpoint for QR v2 and `/pair/iroh-ticket`.
+#[derive(Debug, Clone)]
+pub struct IrohWorkshopInfo {
+    pub ticket: String,
+    pub endpoint_id: String,
+}
+
+/// Keeps the Iroh router alive for the process lifetime.
+pub struct WorkshopGateway {
+    router: Router,
+    info: IrohWorkshopInfo,
+}
+
+impl WorkshopGateway {
+    pub fn info(&self) -> &IrohWorkshopInfo {
+        &self.info
+    }
+
+    pub async fn shutdown(self) -> Result<()> {
+        self.router.shutdown().await.context("shutdown iroh router")
+    }
+}
 
 #[derive(Debug, Clone)]
 struct HttpProxy {
@@ -35,25 +58,44 @@ impl ProtocolHandler for HttpProxy {
     }
 }
 
-/// Bind an Iroh endpoint + HTTP proxy router. Keeps running until the returned router is dropped.
-pub async fn spawn_workshop_gateway(upstream: &str) -> Result<(Router, EndpointTicket)> {
+/// Bind an ephemeral Iroh endpoint + HTTP proxy router.
+pub async fn spawn_workshop_gateway(upstream: &str) -> Result<WorkshopGateway> {
+    spawn_workshop_gateway_with_secret(upstream, SecretKey::generate()).await
+}
+
+/// Bind a stable Iroh endpoint derived from the pairing identity seed.
+pub async fn spawn_workshop_gateway_with_secret(
+    upstream: &str,
+    secret_key: SecretKey,
+) -> Result<WorkshopGateway> {
     let upstream = normalize_upstream(upstream)?;
-    let endpoint = Endpoint::bind(presets::N0)
+    let endpoint = Endpoint::builder(presets::N0)
+        .secret_key(secret_key)
+        .bind()
         .await
         .context("bind iroh endpoint")?;
     endpoint.online().await;
     let ticket = EndpointTicket::new(endpoint.addr());
+    let endpoint_id = endpoint.addr().id.to_string();
+    let info = IrohWorkshopInfo {
+        ticket: ticket.to_string(),
+        endpoint_id,
+    };
     let proxy = HttpProxy {
         upstream: Arc::new(upstream),
     };
     let router = Router::builder(endpoint)
         .accept(ALPN, proxy)
         .spawn();
-    Ok((router, ticket))
+    Ok(WorkshopGateway { router, info })
 }
 
-pub fn workshop_ticket_from_router(router: &Router) -> Result<EndpointTicket> {
-    Ok(EndpointTicket::new(router.endpoint().addr()))
+pub fn workshop_ticket_from_router(router: &Router) -> Result<IrohWorkshopInfo> {
+    let ticket = EndpointTicket::new(router.endpoint().addr());
+    Ok(IrohWorkshopInfo {
+        ticket: ticket.to_string(),
+        endpoint_id: router.endpoint().addr().id.to_string(),
+    })
 }
 
 async fn proxy_stream(

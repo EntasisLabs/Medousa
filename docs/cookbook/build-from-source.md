@@ -56,7 +56,9 @@ Runtime overrides:
 - `MEDOUSA_LOCAL_ENGINE_CPU=1` — force CPU even when Metal/CUDA is available
 - `MEDOUSA_LOCAL_ENGINE_CUDA=1` — prefer CUDA when the binary was built with `embedded-inference-cuda`
 
-Desktop app sidecar builds pick features automatically via `scripts/prepare-engine-sidecar.sh` (`MEDOUSA_EMBEDDED_INFERENCE=auto|metal|cuda|cpu`).
+Desktop app sidecar builds (`scripts/prepare-engine-sidecar.sh`) include **embedded inference** and **iroh-transport** by default (`MEDOUSA_EMBEDDED_INFERENCE=auto|metal|cuda|cpu`, opt out of Iroh with `--without-iroh` or `MEDOUSA_WITH_IROH=0`).
+
+Release tarball builds (`scripts/release/build.sh`) include **iroh-transport** by default; add `--with-inference` for embedded Gemma. Opt out of Iroh with `--without-iroh`. At runtime the Iroh gateway is on when compiled in (opt out with `MEDOUSA_IROH=0`).
 
 Or install full CLI set:
 

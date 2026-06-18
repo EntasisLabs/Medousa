@@ -11,33 +11,76 @@ BINARIES_DIR="${HOME_DIR}/src-tauri/binaries"
 
 TARGET="${CARGO_BUILD_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 SIDEcar_NAME="medousa_daemon-${TARGET}"
+# Full-private desktop sidecar: Iroh + embedded inference by default.
+WITH_IROH=1
 
-resolve_inference_features() {
+usage() {
+  cat <<'EOF'
+Usage: scripts/prepare-engine-sidecar.sh [options]
+
+Options:
+  --without-iroh  Omit iroh-transport (LAN-only pairing builds)
+  --with-iroh     Include iroh-transport (default for Medousa.app)
+  -h, --help      Show this help
+
+Environment:
+  MEDOUSA_EMBEDDED_INFERENCE   auto|metal|cuda|cpu (default: auto — always on for sidecar)
+  MEDOUSA_WITH_IROH            0|false|no to omit iroh-transport
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --without-iroh)
+      WITH_IROH=0
+      shift
+      ;;
+    --with-iroh)
+      WITH_IROH=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "${MEDOUSA_WITH_IROH:-}" in
+  0 | false | FALSE | no | NO | off | OFF)
+    WITH_IROH=0
+    ;;
+  1 | true | TRUE | yes | YES | on | ON)
+    WITH_IROH=1
+    ;;
+esac
+
+resolve_inference_feature() {
   local mode="${MEDOUSA_EMBEDDED_INFERENCE:-auto}"
   case "${mode}" in
     metal)
-      echo "--features embedded-inference-metal"
-      return
+      echo "embedded-inference-metal"
       ;;
     cuda)
-      echo "--features embedded-inference-cuda"
-      return
+      echo "embedded-inference-cuda"
       ;;
     cpu)
-      echo "--features embedded-inference"
-      return
+      echo "embedded-inference"
       ;;
     auto)
       case "${TARGET}" in
         *-apple-*)
-          echo "--features embedded-inference-metal"
+          echo "embedded-inference-metal"
           ;;
         *)
-          # CPU builds work everywhere; set MEDOUSA_EMBEDDED_INFERENCE=cuda when building on a CUDA host.
-          echo "--features embedded-inference"
+          echo "embedded-inference"
           ;;
       esac
-      return
       ;;
     *)
       echo "error: unknown MEDOUSA_EMBEDDED_INFERENCE=${mode} (expected auto|metal|cuda|cpu)" >&2
@@ -46,18 +89,13 @@ resolve_inference_features() {
   esac
 }
 
-FEATURES=()
-case "$(resolve_inference_features)" in
-  "--features embedded-inference-metal")
-    FEATURES=(--features embedded-inference-metal)
-    ;;
-  "--features embedded-inference-cuda")
-    FEATURES=(--features embedded-inference-cuda)
-    ;;
-  *)
-    FEATURES=(--features embedded-inference)
-    ;;
-esac
+CARGO_FEATURES=()
+CARGO_FEATURES+=("$(resolve_inference_feature)")
+if [[ "${WITH_IROH}" -eq 1 ]]; then
+  CARGO_FEATURES+=("iroh-transport")
+fi
+FEATURES_CSV="$(IFS=,; echo "${CARGO_FEATURES[*]}")"
+FEATURES=(--features "${FEATURES_CSV}")
 
 mkdir -p "${BINARIES_DIR}"
 

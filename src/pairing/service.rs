@@ -13,8 +13,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::crypto::{
-    PROTOCOL_VERSION, QR_SCHEME, base64url_decode, base64url_encode, hash_session_token,
-    parse_verifying_key, qr_signing_message, sign_message, verify_message, verifying_key_to_b64,
+    PROTOCOL_VERSION, QR_SCHEME, QR_SCHEME_V2, base64url_decode, base64url_encode, hash_session_token,
+    parse_verifying_key, qr_signing_message, qr_signing_message_v2, sign_message, verify_message,
+    verifying_key_to_b64,
 };
 use super::identity::DeviceIdentity;
 use super::store::{PairedDeviceRecord, PairingStore};
@@ -53,6 +54,23 @@ pub struct PairStatusResponse {
     pub peer_name: String,
     pub protocol_version: String,
     pub daemon_public_key: String,
+    pub iroh_available: bool,
+    pub qr_protocol_version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IrohTicketResponse {
+    pub ticket: String,
+    pub endpoint_id: String,
+    pub available: bool,
+}
+
+/// Live workshop Iroh bootstrap material for QR v2.
+#[derive(Debug, Clone)]
+pub struct IrohWorkshopInfo {
+    pub ticket: String,
+    pub endpoint_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -143,6 +161,7 @@ pub struct PairingService {
     peer_name: String,
     model_descriptor: Option<String>,
     auth_required: bool,
+    iroh: Option<IrohWorkshopInfo>,
     active_qr: RwLock<Option<ActiveQrSession>>,
     pending_sessions: RwLock<HashMap<Uuid, PendingPairSession>>,
     init_attempts: RwLock<HashMap<String, Vec<Instant>>>,
@@ -154,6 +173,7 @@ impl PairingService {
         advertise_address: String,
         peer_name: String,
         model_descriptor: Option<String>,
+        iroh: Option<IrohWorkshopInfo>,
     ) -> Self {
         let store = PairingStore::new(identity.signing_key());
         Self {
@@ -163,10 +183,23 @@ impl PairingService {
             peer_name,
             model_descriptor,
             auth_required: true,
+            iroh,
             active_qr: RwLock::new(None),
             pending_sessions: RwLock::new(HashMap::new()),
             init_attempts: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn iroh_ticket(&self) -> Option<IrohTicketResponse> {
+        self.iroh.as_ref().map(|info| IrohTicketResponse {
+            ticket: info.ticket.clone(),
+            endpoint_id: info.endpoint_id.clone(),
+            available: true,
+        })
+    }
+
+    pub fn iroh_available(&self) -> bool {
+        self.iroh.is_some()
     }
 
     pub fn device_id(&self) -> &str {
@@ -190,8 +223,11 @@ impl PairingService {
     }
 
     pub fn capability_flags(&self) -> String {
-        // pairing_v1 + web_transcript + voice_push + file_push + brain_sync
-        "001F".to_string()
+        let mut flags: u16 = 0x001F;
+        if self.iroh.is_some() {
+            flags |= 0x0020;
+        }
+        format!("{flags:04X}")
     }
 
     pub fn mdns_service_type(&self) -> &'static str {
@@ -230,6 +266,12 @@ impl PairingService {
             peer_name: self.peer_name.clone(),
             protocol_version: PROTOCOL_VERSION.to_string(),
             daemon_public_key: verifying_key_to_b64(self.identity.verifying_key()),
+            iroh_available: self.iroh.is_some(),
+            qr_protocol_version: if self.should_emit_qr_v2() {
+                super::crypto::QR_PROTOCOL_V2.to_string()
+            } else {
+                super::crypto::QR_PROTOCOL_V1.to_string()
+            },
         })
     }
 
@@ -459,20 +501,43 @@ impl PairingService {
     }
 
     fn build_qr_url(&self, session: &ActiveQrSession) -> Result<String> {
+        let name = urlencoding::encode(&self.peer_name);
+        let address = urlencoding::encode(&self.advertise_address);
+
+        if self.should_emit_qr_v2() {
+            let iroh = self
+                .iroh
+                .as_ref()
+                .expect("iroh workshop info required for qr v2");
+            let message = qr_signing_message_v2(
+                &self.advertise_address,
+                &self.identity.device_id,
+                &session.token_b64,
+                &iroh.ticket,
+            );
+            let signature = sign_message(self.identity.signing_key(), &message);
+            let ticket = urlencoding::encode(&iroh.ticket);
+            let endpoint_id = urlencoding::encode(&iroh.endpoint_id);
+            return Ok(format!(
+                "{QR_SCHEME_V2}?a={address}&d={}&t={}&s={signature}&n={name}&k={ticket}&e={endpoint_id}",
+                self.identity.device_id, session.token_b64,
+            ));
+        }
+
         let message = qr_signing_message(
             &self.advertise_address,
             &self.identity.device_id,
             &session.token_b64,
         );
         let signature = sign_message(self.identity.signing_key(), &message);
-        let name = urlencoding::encode(&self.peer_name);
         Ok(format!(
-            "{QR_SCHEME}?a={}&d={}&t={}&s={}&n={name}",
-            urlencoding::encode(&self.advertise_address),
-            self.identity.device_id,
-            session.token_b64,
-            signature,
+            "{QR_SCHEME}?a={address}&d={}&t={}&s={signature}&n={name}",
+            self.identity.device_id, session.token_b64,
         ))
+    }
+
+    fn should_emit_qr_v2(&self) -> bool {
+        self.iroh.is_some() && !pairing_qr_v1_from_env()
     }
 
     async fn resolve_short_code(&self, code: &str) -> Result<String> {
@@ -572,6 +637,10 @@ pub fn pairing_enabled_from_env() -> bool {
     !truthy_env("MEDOUSA_PAIRING_DISABLE")
 }
 
+pub fn pairing_qr_v1_from_env() -> bool {
+    truthy_env("MEDOUSA_PAIRING_QR_V1")
+}
+
 pub fn mdns_enabled_from_env() -> bool {
     pairing_enabled_from_env() && !truthy_env("MEDOUSA_MDNS_DISABLE")
 }
@@ -607,6 +676,20 @@ mod tests {
             "127.0.0.1:7419".to_string(),
             "Test Workshop".to_string(),
             Some("llama3.2:3b".to_string()),
+            None,
+        ))
+    }
+
+    fn test_service_with_iroh() -> Arc<PairingService> {
+        Arc::new(PairingService::new(
+            DeviceIdentity::generate_ephemeral(),
+            "127.0.0.1:7419".to_string(),
+            "Test Workshop".to_string(),
+            Some("llama3.2:3b".to_string()),
+            Some(IrohWorkshopInfo {
+                ticket: "test-iroh-ticket".to_string(),
+                endpoint_id: "abc123".repeat(8),
+            }),
         ))
     }
 
@@ -616,6 +699,21 @@ mod tests {
         let qr = service.current_qr().await.expect("qr");
         assert!(qr.url.contains("medousa://pair/1.0"));
         assert!(qr.url.contains(&service.device_id().to_string()));
+    }
+
+    #[tokio::test]
+    async fn qr_v2_url_contains_iroh_ticket() {
+        let service = test_service_with_iroh();
+        let qr = service.current_qr().await.expect("qr");
+        assert!(qr.url.contains("medousa://pair/2.0"));
+        assert!(qr.url.contains("k=test-iroh-ticket"));
+        assert!(qr.url.contains("e="));
+    }
+
+    #[test]
+    fn capability_flags_set_relay_bit_with_iroh() {
+        let service = test_service_with_iroh();
+        assert_eq!(service.capability_flags(), "003F");
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 # Iroh P2P pairing — phased epic
 
-> **Status:** Phase 0 code landed (smoke pending) · Phase 1 partial (`daemonPublicKey`) · Phase 2 mobile handshake wired  
+> **Status:** Phase 0 code landed (smoke pending) · Phase 1 QR v2 landed · Phase 2 mobile handshake wired  
 > **Date:** 2026-06-07  
 > **Supersedes:** deferred “Phase E cloud relay” transport story in [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) (relay layer only — cloud auth remains Phase E)  
 > **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [CONNECTION-RELIABILITY.md](../apps/medousa-home/docs/CONNECTION-RELIABILITY.md)
@@ -99,7 +99,7 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 | `src/iroh_transport/` — ALPN `medousa-http/1`, HTTP proxy to upstream | ✅ |
 | `medousa iroh workshop` — bind endpoint, print ticket, proxy to `--upstream` | ✅ |
 | `medousa iroh curl <ticket> /health` — client smoke test | ✅ |
-| `MEDOUSA_IROH=1` — daemon spawns gateway alongside axum | ✅ |
+| `MEDOUSA_IROH=1` — daemon spawns gateway alongside axum | ✅ (default when built with `iroh-transport`; opt out: `MEDOUSA_IROH=0`) |
 | Unit/integration test or documented manual smoke | Pending |
 
 **Exit:** Two terminals — workshop prints ticket; curl returns daemon health JSON through Iroh.
@@ -108,19 +108,19 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 
 ---
 
-### Phase 1 — QR v2 + daemon ticket endpoint
+### Phase 1 — QR v2 + daemon ticket endpoint *(landed)*
 
 **Goal:** Desktop QR encodes Iroh ticket; hybrid LAN + relay bootstrap.
 
-- [ ] Stable workshop Iroh identity derived from `~/.medousa/identity/` seed (document KDF / domain separation)
-- [ ] `GET /pair/iroh-ticket` — JSON `{ ticket, endpointId }`
-- [ ] QR v2 URL builder in `PairingService` when Iroh gateway live
-- [x] `GET /pair/status` exposes `daemonPublicKey` for mobile sig verify
-- [ ] Set mDNS `pf` bit 5 (`relay_capable`) when Iroh enabled
-- [ ] `medousa pair qr` prints v2 URL when available
-- [ ] Docs + fixture tests for v2 signing message
+- [x] Stable workshop Iroh identity derived from `~/.medousa/identity/` seed (`SHA256("medousa-iroh-workshop-v1" || ed25519_seed)`)
+- [x] `GET /pair/iroh-ticket` — JSON `{ ticket, endpointId, available }`
+- [x] QR v2 URL builder in `PairingService` when Iroh gateway live
+- [x] `GET /pair/status` exposes `daemonPublicKey` + `irohAvailable` + `qrProtocolVersion`
+- [x] Set mDNS `pf` bit 5 (`relay_capable`) when Iroh enabled (`003F`)
+- [x] `medousa pair qr` prints v2 protocol hint when URL is `pair/2.0`
+- [x] Fixture tests for v2 signing message
 
-**Exit:** Scan v2 QR on LAN; phone completes pairing over Iroh tunnel (Phase 2 client).
+**Exit:** Scan v2 QR on LAN; phone completes pairing over Iroh tunnel (Phase 3 transport).
 
 ---
 
@@ -185,6 +185,16 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 | `iroh-ffi` | 1.0 | Tauri mobile (Phase 3) |
 
 **Rust MSRV:** iroh 1.0 requires Rust 1.91+ — bump CI/toolchain when enabling in release builds.
+
+### Workshop Iroh identity (Phase 1)
+
+The Iroh endpoint secret is **not** the raw Ed25519 pairing seed. Derivation:
+
+```text
+iroh_secret = SHA256( "medousa-iroh-workshop-v1" || ed25519_signing_key_32_bytes )
+```
+
+Implementation: `src/iroh_transport/identity.rs`. Same pairing identity file → same workshop `EndpointId` across restarts.
 
 ---
 

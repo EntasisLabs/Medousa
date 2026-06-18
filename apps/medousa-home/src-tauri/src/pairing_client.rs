@@ -87,6 +87,7 @@ struct ParsedQr {
     qr_token: String,
     signature: String,
     peer_name: String,
+    iroh_ticket: Option<String>,
 }
 
 struct PhoneIdentity {
@@ -206,14 +207,26 @@ fn verify_qr_trust(parsed: &ParsedQr, status: &PairStatusPayload) -> Result<(), 
         );
     }
     let daemon_public_key = parse_verifying_key(&status.daemon_public_key)?;
-    verify_qr_url_signature(
-        &daemon_public_key,
-        &parsed.advertise_address,
-        &parsed.device_id,
-        &parsed.qr_token,
-        &parsed.signature,
-    )
-    .map_err(|err| format!("Pairing link signature invalid: {err}"))
+    if let Some(iroh_ticket) = &parsed.iroh_ticket {
+        verify_qr_url_signature_v2(
+            &daemon_public_key,
+            &parsed.advertise_address,
+            &parsed.device_id,
+            &parsed.qr_token,
+            iroh_ticket,
+            &parsed.signature,
+        )
+        .map_err(|err| format!("Pairing link signature invalid: {err}"))
+    } else {
+        verify_qr_url_signature(
+            &daemon_public_key,
+            &parsed.advertise_address,
+            &parsed.device_id,
+            &parsed.qr_token,
+            &parsed.signature,
+        )
+        .map_err(|err| format!("Pairing link signature invalid: {err}"))
+    }
 }
 
 async fn fetch_pair_status(client: &Client, daemon_url: &str) -> Result<PairStatusPayload, String> {
@@ -301,6 +314,7 @@ fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr, String> {
     let peer_name = query_param(&url, "n")
         .map(|value| urlencoding::decode(&value).map(|decoded| decoded.into_owned()).unwrap_or(value))
         .unwrap_or_else(|| "Medousa".to_string());
+    let iroh_ticket = query_param(&url, "k");
 
     Ok(ParsedQr {
         advertise_address,
@@ -308,6 +322,7 @@ fn parse_pair_qr_url(raw: &str) -> Result<ParsedQr, String> {
         qr_token,
         signature,
         peer_name,
+        iroh_ticket,
     })
 }
 
@@ -529,6 +544,18 @@ fn verify_qr_url_signature(
     signature_b64: &str,
 ) -> Result<(), String> {
     let message = format!("{address}|{device_id}|{token_b64}");
+    verify_message(verifying_key, &message, signature_b64)
+}
+
+fn verify_qr_url_signature_v2(
+    verifying_key: &VerifyingKey,
+    address: &str,
+    device_id: &str,
+    token_b64: &str,
+    iroh_ticket: &str,
+    signature_b64: &str,
+) -> Result<(), String> {
+    let message = format!("{address}|{device_id}|{token_b64}|{iroh_ticket}");
     verify_message(verifying_key, &message, signature_b64)
 }
 

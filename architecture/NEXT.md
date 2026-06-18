@@ -126,7 +126,7 @@ Full phased plan: **[iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md)**
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | 0 | `src/iroh_transport/`, `medousa iroh`, `MEDOUSA_IROH=1` daemon gateway | ✅ started — smoke test pending |
-| 1 | QR v2 + `GET /pair/iroh-ticket` + `daemonPublicKey` on status | 🔄 `daemonPublicKey` ✅ |
+| 1 | QR v2 + `GET /pair/iroh-ticket` + `daemonPublicKey` on status | ✅ |
 | 2 | Mobile init/verify ceremony + credential persistence | 🔄 wizard wired |
 | 3 | Phone Iroh FFI transport + bearer on requests | ⬜ |
 | 4 | Relay hardening + diagnostics | ⬜ |

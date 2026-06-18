@@ -632,14 +632,56 @@ async fn main() -> Result<()> {
         .with_state(medousa::turn_budget_handlers::TurnBudgetHandlerState);
 
     let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
+    #[cfg(feature = "iroh-transport")]
+    let mut iroh_gateway_hold: Option<medousa::iroh_transport::WorkshopGateway> = None;
     let pairing_router = if medousa::pairing::pairing_enabled_from_env() {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
+        #[cfg(feature = "iroh-transport")]
+        let iroh_info = if medousa::iroh_transport::iroh_enabled_from_env() {
+            let upstream = format!("http://{addr}");
+            let secret = medousa::iroh_transport::secret_key_from_pairing_identity(
+                identity.signing_key(),
+            );
+            match medousa::iroh_transport::spawn_workshop_gateway_with_secret(&upstream, secret)
+                .await
+            {
+                Ok(gateway) => {
+                    let info = medousa::pairing::IrohWorkshopInfo {
+                        ticket: gateway.info().ticket.clone(),
+                        endpoint_id: gateway.info().endpoint_id.clone(),
+                    };
+                    eprintln!(
+                        "medousa-daemon: iroh gateway active (endpoint_id={})",
+                        info.endpoint_id
+                    );
+                    eprintln!("medousa-daemon: iroh ticket: {}", info.ticket);
+                    iroh_gateway_hold = Some(gateway);
+                    Some(info)
+                }
+                Err(err) => {
+                    eprintln!("medousa-daemon: iroh gateway failed: {err:#}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        #[cfg(not(feature = "iroh-transport"))]
+        let iroh_info: Option<medousa::pairing::IrohWorkshopInfo> = if medousa::iroh_transport::iroh_enabled_from_env() {
+            eprintln!(
+                "medousa-daemon: MEDOUSA_IROH=1 requires rebuild with --features iroh-transport"
+            );
+            None
+        } else {
+            None
+        };
         let pairing_service = Arc::new(medousa::pairing::PairingService::new(
             identity,
             medousa::pairing::resolve_advertise_address(&bind),
             medousa::pairing::resolve_peer_name(),
             model.map(|value| value.to_string()),
+            iroh_info,
         ));
         if medousa::pairing::mdns_should_advertise(&bind) {
             let mut txt = std::collections::HashMap::new();
@@ -779,28 +821,7 @@ async fn main() -> Result<()> {
     }
 
     #[cfg(feature = "iroh-transport")]
-    let _iroh_gateway = if medousa::iroh_transport::iroh_enabled_from_env() {
-        let upstream = format!("http://{addr}");
-        match medousa::iroh_transport::spawn_workshop_gateway(&upstream).await {
-            Ok((router, ticket)) => {
-                println!("medousa-daemon iroh gateway active (MEDOUSA_IROH=1, ALPN medousa-http/1)");
-                println!("medousa-daemon iroh ticket: {ticket}");
-                Some(router)
-            }
-            Err(err) => {
-                eprintln!("medousa-daemon iroh gateway failed: {err:#}");
-                None
-            }
-        }
-    } else {
-        None
-    };
-    #[cfg(not(feature = "iroh-transport"))]
-    if medousa::iroh_transport::iroh_enabled_from_env() {
-        eprintln!(
-            "medousa-daemon: MEDOUSA_IROH=1 requires rebuild with --features iroh-transport"
-        );
-    }
+    let _iroh_gateway_hold = iroh_gateway_hold;
 
     axum::serve(
         listener,

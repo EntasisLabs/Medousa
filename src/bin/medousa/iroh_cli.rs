@@ -38,18 +38,20 @@ fn run_workshop(args: &[String]) -> Result<()> {
         .build()
         .context("build tokio runtime")?;
     rt.block_on(async {
-        let (router, ticket) = spawn_workshop_gateway(&upstream).await?;
+        let gateway = spawn_workshop_gateway(&upstream).await?;
+        let info = gateway.info();
         println!("Medousa Iroh workshop gateway");
         println!("Upstream: {upstream}");
         println!("ALPN: medousa-http/1");
+        println!("Endpoint ID: {}", info.endpoint_id);
         println!();
         println!("Ticket (share with phone / curl client):");
-        println!("{ticket}");
+        println!("{}", info.ticket);
         println!();
-        println!("Example: medousa iroh curl '{ticket}' /health");
+        println!("Example: medousa iroh curl '{}' /health", info.ticket);
         println!("Press Ctrl+C to stop.");
         tokio::signal::ctrl_c().await.context("wait for ctrl-c")?;
-        router.shutdown().await.context("shutdown iroh router")?;
+        gateway.shutdown().await?;
         Ok(())
     })
 }
@@ -90,13 +92,13 @@ fn run_workshop_once(args: &[String], exit_after_ticket: bool) -> Result<()> {
         .build()
         .context("build tokio runtime")?;
     rt.block_on(async {
-        let (router, ticket) = spawn_workshop_gateway(&upstream).await?;
-        println!("{ticket}");
+        let gateway = spawn_workshop_gateway(&upstream).await?;
+        println!("{}", gateway.info().ticket);
         if exit_after_ticket {
-            router.shutdown().await.context("shutdown iroh router")?;
+            gateway.shutdown().await?;
         } else {
             tokio::signal::ctrl_c().await.context("wait for ctrl-c")?;
-            router.shutdown().await.context("shutdown iroh router")?;
+            gateway.shutdown().await?;
         }
         Ok(())
     })
@@ -120,5 +122,5 @@ fn print_iroh_help() {
     println!("  medousa iroh ticket [--upstream <url>]   # print ticket and exit");
     println!();
     println!("Requires build with --features iroh-transport");
-    println!("Daemon: set MEDOUSA_IROH=1 to spawn gateway alongside medousa_daemon");
+    println!("Iroh gateway is on by default when built with iroh-transport (opt out: MEDOUSA_IROH=0)");
 }

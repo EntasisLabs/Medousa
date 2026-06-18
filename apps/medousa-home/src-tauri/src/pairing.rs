@@ -31,6 +31,8 @@ pub struct PairingStatusResponse {
     pub peer_name: String,
     pub protocol_version: String,
     pub daemon_public_key: String,
+    pub iroh_available: bool,
+    pub qr_protocol_version: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

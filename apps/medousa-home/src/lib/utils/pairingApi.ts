@@ -22,6 +22,14 @@ export interface PairingStatusResponse {
   peerName: string;
   protocolVersion: string;
   daemonPublicKey: string;
+  irohAvailable: boolean;
+  qrProtocolVersion: string;
+}
+
+export interface IrohTicketResponse {
+  ticket: string;
+  endpointId: string;
+  available: boolean;
 }
 
 export interface PairingQrImage {
@@ -63,6 +71,8 @@ export async function fetchPairingStatus(): Promise<PairingStatusResponse> {
       peerName: "",
       protocolVersion: "1.0.0",
       daemonPublicKey: "",
+      irohAvailable: false,
+      qrProtocolVersion: "1.0",
     };
   }
   return invoke<PairingStatusResponse>("pairing_fetch_status");

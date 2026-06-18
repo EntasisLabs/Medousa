@@ -17,6 +17,7 @@ pub struct PairingApiState {
 pub fn routes() -> Router<PairingApiState> {
     Router::new()
         .route("/pair/status", get(pair_status))
+        .route("/pair/iroh-ticket", get(get_iroh_ticket))
         .route("/qr", get(get_qr))
         .route("/qr/image", get(get_qr_image))
         .route("/qr.png", get(get_qr_png))
@@ -36,6 +37,15 @@ async fn pair_status(
         .await
         .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+async fn get_iroh_ticket(
+    State(state): State<PairingApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    match state.service.iroh_ticket() {
+        Some(response) => Ok(Json(serde_json::to_value(response).unwrap_or_default())),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 async fn get_qr(

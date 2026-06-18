@@ -87,6 +87,11 @@ fn run_pair_qr(daemon_url: &str, args: &[String]) -> Result<()> {
         .unwrap_or("-");
 
     println!("Pairing URL:\n{url}");
+    if url.contains("medousa://pair/2.0") {
+        println!("Protocol: QR v2 (LAN + Iroh relay)");
+    } else {
+        println!("Protocol: QR v1 (LAN only)");
+    }
     println!("Short code: {short_code}");
     println!("Expires: {expires_at}");
 

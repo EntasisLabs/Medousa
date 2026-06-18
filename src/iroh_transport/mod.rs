@@ -6,32 +6,36 @@
 pub mod client;
 #[cfg(feature = "iroh-transport")]
 pub mod gateway;
+#[cfg(feature = "iroh-transport")]
+pub mod identity;
 
 #[cfg(feature = "iroh-transport")]
 pub use client::fetch_http_path;
 #[cfg(feature = "iroh-transport")]
-pub use gateway::{spawn_workshop_gateway, workshop_ticket_from_router};
+pub use gateway::{
+    IrohWorkshopInfo, WorkshopGateway, spawn_workshop_gateway, spawn_workshop_gateway_with_secret,
+    workshop_ticket_from_router,
+};
+#[cfg(feature = "iroh-transport")]
+pub use identity::secret_key_from_pairing_identity;
 
 /// Application-layer protocol identifier for Medousa HTTP tunneling.
 pub const ALPN: &[u8] = b"medousa-http/1";
 
 #[cfg(feature = "iroh-transport")]
 pub fn iroh_enabled_from_env() -> bool {
-    std::env::var("MEDOUSA_IROH")
+    match std::env::var("MEDOUSA_IROH")
         .ok()
-        .map(|value| {
-            let trimmed = value.trim().to_ascii_lowercase();
-            trimmed == "1" || trimmed == "true" || trimmed == "yes"
-        })
-        .unwrap_or(false)
+        .map(|value| value.trim().to_ascii_lowercase())
+    {
+        Some(value) if matches!(value.as_str(), "0" | "false" | "no" | "off") => false,
+        Some(value) if matches!(value.as_str(), "1" | "true" | "yes" | "on") => true,
+        Some(_) => true,
+        None => true,
+    }
 }
 
 #[cfg(not(feature = "iroh-transport"))]
 pub fn iroh_enabled_from_env() -> bool {
     false
-}
-
-#[cfg(not(feature = "iroh-transport"))]
-pub fn spawn_workshop_gateway(_upstream: &str) -> anyhow::Result<()> {
-    anyhow::bail!("iroh transport disabled — rebuild with --features iroh-transport")
 }
