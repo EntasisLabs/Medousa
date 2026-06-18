@@ -1,6 +1,5 @@
 <script lang="ts">
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
-  import { isTauriMobilePlatform } from "$lib/platform";
 
   interface Props {
     mobile?: boolean;
@@ -8,8 +7,6 @@
   }
 
   let { mobile = false, compact = false }: Props = $props();
-
-  const readOnly = $derived(mobile && isTauriMobilePlatform());
 
   let createSlug = $state("");
   let createName = $state("");
@@ -74,7 +71,7 @@
             class="settings-profile-quick-btn {profile.profile_id === userProfiles.activeProfileId
               ? 'settings-profile-quick-btn-active'
               : ''}"
-            disabled={readOnly || userProfiles.saving}
+            disabled={userProfiles.saving}
             onclick={() => switchProfile(profile.profile_id)}
           >
             {profile.display_name}
@@ -83,9 +80,8 @@
       </div>
     </div>
 
-    {#if !readOnly}
-      {#if showCreate}
-        <form class="mt-4 space-y-3" onsubmit={submitCreate}>
+    {#if showCreate}
+      <form class="mt-4 space-y-3" onsubmit={submitCreate}>
           <label class="block">
             <span class="workshop-label">Slug</span>
             <input
@@ -141,7 +137,6 @@
         >
           + Add profile (work, home, …)
         </button>
-      {/if}
     {/if}
 
     {#if userProfiles.message}

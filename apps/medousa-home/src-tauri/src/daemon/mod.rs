@@ -182,6 +182,16 @@ pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth
             backend: Some(detail.backend),
             worker_id: Some(detail.worker_id),
             tool_registry_count: Some(detail.tool_registry_count),
+            active_profile_id: if detail.active_profile_id.is_empty() {
+                None
+            } else {
+                Some(detail.active_profile_id)
+            },
+            active_profile_display_name: if detail.active_profile_display_name.is_empty() {
+                None
+            } else {
+                Some(detail.active_profile_display_name)
+            },
         }),
         Err(err) => Ok(DaemonHealth {
             ok: false,
@@ -189,6 +199,8 @@ pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth
             backend: None,
             worker_id: None,
             tool_registry_count: None,
+            active_profile_id: None,
+            active_profile_display_name: None,
         }),
     }
 }

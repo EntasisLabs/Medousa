@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import MobileToast from "$lib/components/mobile/MobileToast.svelte";
+  import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
   import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
@@ -145,6 +147,11 @@
   </main>
 
   <MobileBottomChrome />
+
+  <MobileToast
+    message={userProfiles.remoteChangeNotice}
+    onDismiss={() => userProfiles.dismissRemoteChangeNotice()}
+  />
 
   <SessionSidebar
     variant="sheet"

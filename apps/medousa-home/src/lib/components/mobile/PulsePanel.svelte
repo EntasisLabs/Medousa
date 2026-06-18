@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import { Bell } from "@lucide/svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -89,6 +90,7 @@
       ></span>
       <span class="truncate text-xs text-surface-300">{pulse.statusLine}</span>
     </button>
+    <ProfileSwitcherCompact />
     <button
       type="button"
       class="mobile-icon-btn shrink-0"

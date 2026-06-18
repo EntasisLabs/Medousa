@@ -71,6 +71,9 @@ pub struct TurnLedgerRecord {
     pub rounds_executed: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scratch: Option<TurnScratchpad>,
+    /// Workshop profile active when the event was recorded (`user:{slug}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_profile_id: Option<String>,
 }
 
 /// Tracks tool-round budget and user-visible interim replies without bloating the transcript.
@@ -168,11 +171,16 @@ pub fn turn_ledger_path(session_id: &str) -> PathBuf {
 }
 
 pub fn append_turn_ledger_record(session_id: &str, record: &TurnLedgerRecord) {
+    let mut record = record.clone();
+    if record.active_profile_id.is_none() {
+        record.active_profile_id =
+            Some(crate::user_profiles::resolve_workshop_active_profile_id());
+    }
     let path = turn_ledger_path(session_id);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let Ok(line) = serde_json::to_string(record) else {
+    let Ok(line) = serde_json::to_string(&record) else {
         return;
     };
     if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -280,6 +288,7 @@ pub fn record_fsm_continue(
         missing_tools: missing_tools.to_vec(),
         rounds_executed,
         scratch: Some(scratch.clone()),
+        active_profile_id: None,
     }
 }
 
@@ -298,6 +307,7 @@ pub fn record_tool_round(
         missing_tools: Vec::new(),
         rounds_executed,
         scratch: Some(scratch.clone()),
+        active_profile_id: None,
     }
 }
 
@@ -316,6 +326,7 @@ pub fn record_finalized(
         missing_tools: Vec::new(),
         rounds_executed,
         scratch: None,
+        active_profile_id: None,
     }
 }
 
@@ -336,6 +347,7 @@ pub fn record_stuck(
         missing_tools: Vec::new(),
         rounds_executed,
         scratch: None,
+        active_profile_id: None,
     }
 }
 
@@ -370,6 +382,19 @@ pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::agent_runtime::turn_completion::TurnCompletionDecision;
+
+    #[test]
+    fn turn_ledger_record_stamps_active_profile_id() {
+        let record = record_tool_round(1, 1, &["cognition_memory_recall".to_string()], &TurnScratchpad::default());
+        assert!(record.active_profile_id.is_none());
+        let session = "test-ledger-profile-stamp";
+        append_turn_ledger_record(session, &record);
+        let path = turn_ledger_path(session);
+        let raw = std::fs::read_to_string(&path).expect("ledger file");
+        let parsed: TurnLedgerRecord = serde_json::from_str(raw.lines().next().unwrap()).expect("json");
+        assert!(parsed.active_profile_id.is_some());
+        let _ = std::fs::remove_file(path);
+    }
 
     #[test]
     fn discipline_trips_after_three_stuck_continues() {

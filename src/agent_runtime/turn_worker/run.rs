@@ -394,6 +394,7 @@ fn ledger_bus_event(session_id: &str, stream_turn_id: u64, kind: TurnLedgerEvent
         missing_tools: Vec::new(),
         rounds_executed: 0,
         scratch: None,
+        active_profile_id: None,
     };
     persist_ledger_record(Some(session_id), &record);
 }

@@ -14,8 +14,8 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
-    CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode, ContactEntity,
-    RelationshipEntity,
+    CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode, ChannelProfileEntity,
+    ContactEntity, RelationshipEntity,
     EntityUpdateProposalRecord, GetIdentityContextRequest, GetIdentityContextResponse,
     IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse, PersonaEntity,
     ProposalState, ProposeEntityUpdateRequest, ProposeEntityUpdateResponse,
@@ -100,6 +100,16 @@ impl MedousaIdentityMemoryStore {
         match &self.backing {
             Backing::InMemory { store, .. } => store.upsert_contact(contact),
             Backing::Surreal { store, .. } => store.upsert_contact(contact).await,
+        }
+    }
+
+    pub async fn upsert_channel_entity(
+        &self,
+        channel: ChannelProfileEntity,
+    ) -> StasisResult<()> {
+        match &self.backing {
+            Backing::InMemory { store, .. } => store.upsert_channel(channel),
+            Backing::Surreal { store, .. } => store.upsert_channel(channel).await,
         }
     }
 

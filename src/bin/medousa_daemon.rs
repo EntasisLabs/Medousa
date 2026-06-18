@@ -44,6 +44,8 @@ use medousa::daemon_api::{
     JobResultResponse, InteractiveTurnStreamEvent, RuntimeDefaultsResponse,
     CreateUserProfileRequest, CreateUserProfileResponse, ListUserProfilesResponse,
     SetActiveUserProfileRequest, SetActiveUserProfileResponse, UserProfileRecordDto,
+    ExportUserProfileRequest, ExportUserProfileResponse, ImportUserProfileRequest,
+    ImportUserProfileResponse,
     DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
     UpdateRecurringResponse, RuntimeConfigCommandRequest,
@@ -498,6 +500,8 @@ async fn main() -> Result<()> {
         .route("/v1/identity/context", post(identity_get_context))
         .route("/v1/identity/profiles", get(list_user_profiles).post(create_user_profile))
         .route("/v1/identity/profiles/active", put(set_active_user_profile))
+        .route("/v1/identity/profiles/export", post(export_user_profile))
+        .route("/v1/identity/profiles/import", post(import_user_profile))
         .route("/v1/identity/update/propose", post(identity_propose_update))
         .route("/v1/identity/update/commit", post(identity_commit_update))
         .route("/v1/identity/history", post(identity_list_history))
@@ -983,7 +987,25 @@ async fn tick_runtime(
     })
 }
 
+fn active_profile_snapshot(
+    registry: &medousa::user_profiles::UserProfileRegistry,
+) -> (String, String) {
+    let active_profile_id = registry.active_profile_id().to_string();
+    let active_profile_display_name = registry
+        .list_profiles()
+        .into_iter()
+        .find(|profile| profile.profile_id == active_profile_id)
+        .map(|profile| profile.display_name)
+        .unwrap_or_else(|| "Personal".to_string());
+    (active_profile_id, active_profile_display_name)
+}
+
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
+    let (active_profile_id, active_profile_display_name) = state
+        .profile_registry
+        .read()
+        .map(|registry| active_profile_snapshot(&registry))
+        .unwrap_or_default();
     Json(HealthResponse {
         status: "ok".to_string(),
         backend: state.backend,
@@ -993,6 +1015,8 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         tool_registry_count: state.agent_tool_registry_count,
         last_agent_turn_latency_ms: *state.last_agent_turn_latency_ms.read().await,
         last_agent_turn_at_utc: *state.last_agent_turn_at.read().await,
+        active_profile_id,
+        active_profile_display_name,
     })
 }
 
@@ -1059,6 +1083,11 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
         medousa::stage_routing::StageRoutingMatrix::default_for(&provider, &model)
     });
     let retention = medousa::workspace::retention::WorkspaceRetentionConfig::from_tui_defaults(&saved);
+    let (active_profile_id, active_profile_display_name) = state
+        .profile_registry
+        .read()
+        .map(|registry| active_profile_snapshot(&registry))
+        .unwrap_or_default();
     Json(RuntimeDefaultsResponse {
         backend: state.backend.clone(),
         provider,
@@ -1069,6 +1098,8 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
         stage_routing,
         work_card_hide_after_hours: retention.hide_after_hours,
         work_card_wipe_after_days: retention.wipe_after_days,
+        active_profile_id,
+        active_profile_display_name,
     })
 }
 
@@ -2642,9 +2673,87 @@ async fn set_active_user_profile(
     let resolved_user_id = registry
         .set_active_profile(&request.profile_id)
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    let active_profile_id = registry.active_profile_id().to_string();
+    eprintln!(
+        "[medousa] active profile set to {active_profile_id} ({resolved_user_id})"
+    );
     Ok(Json(SetActiveUserProfileResponse {
-        active_profile_id: registry.active_profile_id().to_string(),
+        active_profile_id,
         resolved_user_id,
+    }))
+}
+
+async fn export_user_profile(
+    State(state): State<AppState>,
+    Json(request): Json<ExportUserProfileRequest>,
+) -> Result<Json<ExportUserProfileResponse>, (StatusCode, String)> {
+    let registry = state
+        .profile_registry
+        .read()
+        .map_err(|_| internal_error("profile registry lock poisoned"))?
+        .clone();
+    let identity_store = state.platform.medousa_identity_store();
+    let locus_store = state.platform.agent_handle().locus_store.clone();
+    let bundle = medousa::profile_portability::export_profile_bundle(
+        &registry,
+        identity_store.as_ref(),
+        locus_store,
+        &request.profile_id,
+        request.session_limit,
+        request.node_limit_per_session,
+    )
+    .await
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    Ok(Json(ExportUserProfileResponse { bundle }))
+}
+
+async fn import_user_profile(
+    State(state): State<AppState>,
+    Json(request): Json<ImportUserProfileRequest>,
+) -> Result<Json<ImportUserProfileResponse>, (StatusCode, String)> {
+    let identity_store = state.platform.medousa_identity_store();
+    let locus_store = state.platform.agent_handle().locus_store.clone();
+    let mut registry = state
+        .profile_registry
+        .read()
+        .map_err(|_| internal_error("profile registry lock poisoned"))?
+        .clone();
+    let summary = medousa::profile_portability::import_profile_bundle(
+        &mut registry,
+        identity_store.as_ref(),
+        locus_store,
+        &request.bundle,
+        request.dry_run,
+    )
+    .await
+    .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+    if !request.dry_run && summary.created_profile {
+        *state
+            .profile_registry
+            .write()
+            .map_err(|_| internal_error("profile registry lock poisoned"))? = registry;
+    }
+    let message = if summary.dry_run {
+        format!(
+            "dry-run: would import {} locus nodes across {} sessions for {}",
+            summary.locus_nodes_imported, summary.locus_sessions_touched, summary.profile_id
+        )
+    } else {
+        format!(
+            "imported {} locus nodes across {} sessions for {}",
+            summary.locus_nodes_imported, summary.locus_sessions_touched, summary.profile_id
+        )
+    };
+    Ok(Json(ImportUserProfileResponse {
+        dry_run: summary.dry_run,
+        profile_id: summary.profile_id,
+        created_profile: summary.created_profile,
+        identity_user_imported: summary.identity_user_imported,
+        contacts_imported: summary.contacts_imported,
+        relationships_imported: summary.relationships_imported,
+        locus_nodes_imported: summary.locus_nodes_imported,
+        locus_sessions_touched: summary.locus_sessions_touched,
+        message,
     }))
 }
 

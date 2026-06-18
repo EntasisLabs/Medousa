@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import { ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
@@ -175,6 +176,7 @@
       mediaRefs,
       voicePresetId: voice.voicePresetId,
       voiceAppendix: voice.voiceAppendix,
+      identityUserId: opts.identityUserId,
     });
     chat.beginTurn(userContent, accepted, mediaRefs);
     chat.clearPendingMedia();
@@ -317,6 +319,9 @@
         {/if}
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
+        {#if mobile}
+          <ProfileSwitcherCompact />
+        {/if}
         <button
           type="button"
           class="{mobile ? 'mobile-icon-btn' : 'workshop-rail-btn'}"

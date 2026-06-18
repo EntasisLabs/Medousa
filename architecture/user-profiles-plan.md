@@ -243,34 +243,49 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 
 ---
 
-### Phase 5 — Mobile + transport parity
+### Phase 5 — Mobile + transport parity ✅
 
 **Goal:** Paired phone uses same active profile as desktop (eventual consistency acceptable v1).
 
 | Task | Detail |
 |------|--------|
-| 5.1 | Persist `active_profile_id` in workshop settings readable over daemon API |
-| 5.2 | Mobile Home: profile switcher (compact) or read-only badge + link to desktop Settings |
-| 5.3 | Iroh/LAN transport: identity context + turn requests include resolved profile |
-| 5.4 | Conflict: last-writer-wins on active profile across surfaces; log notice |
+| 5.1 | Persist `active_profile_id` in workshop settings readable over daemon API | ✅ `/health` + `/runtime/defaults` |
+| 5.2 | Mobile Home: profile switcher (compact) or read-only badge + link to desktop Settings | ✅ `ProfileSwitcherCompact` on Pulse + Chat |
+| 5.3 | Iroh/LAN transport: identity context + turn requests include resolved profile | ✅ `identity_user_id` on turn tickets |
+| 5.4 | Conflict: last-writer-wins on active profile across surfaces; log notice | ✅ `syncOnResume` + `remoteChangeNotice` + daemon log |
+
+**Implementation notes:**
+
+- `ProfileSwitcherCompact.svelte` — bottom sheet on Pulse + Chat headers (hidden when only default profile)
+- Mobile Settings → Memory: full switch + create (no longer read-only)
+- `userProfiles.syncOnResume()` on foreground resume; toast via `MobileToast`
+- Turn tickets pass `identity_user_id` from `userProfiles.resolvedUserId`
 
 **Exit:** LTE paired phone recalls/stores under same tenant as desktop for active profile.
 
 ---
 
-### Phase 6 — Hardening & optional upstream wiring
+### Phase 6 — Portability, channel policies & observability ✅
 
-**Goal:** Close gaps with MCP/SDK parity and system jobs.
+**Goal:** Optional profile portability, profile-aware channel policies, and turn-level profile metrics — without MCP gateway or upstream Locus SDK changes (session-id scoping is sufficient for tenancy).
 
-| Task | Detail |
-|------|--------|
-| 6.1 | Evaluate threading `tenant_id` through Stasis `MemoryScope` when `locus-sdk` honors it on recall (upstream) |
-| 6.2 | MCP gateway: map turn context `user_id` → Locus tenant for external tool parity |
-| 6.3 | Profile export/import (identity subgraph + Locus tenant rekey via `batch_rekey_scopes_async`) |
-| 6.4 | Profile-scoped channel policies (`channel:work` via `resolve_identity_channel_id`) |
-| 6.5 | Metrics: `active_profile_id` on turn ledger rows |
+| Task | Detail | Status |
+|------|--------|--------|
+| ~~6.1~~ | ~~Thread `tenant_id` through Stasis `MemoryScope` (upstream locus-sdk)~~ | **Deferred** |
+| ~~6.2~~ | ~~MCP gateway: map turn `user_id` → Locus tenant~~ | **Out of scope** |
+| 6.3 | Profile export/import (identity subgraph + Locus sessions) | ✅ CLI + daemon API |
+| 6.4 | Profile-scoped channel policies (`channel:work` via `resolve_identity_channel_id`) | ✅ |
+| 6.5 | Metrics: `active_profile_id` on turn ledger rows | ✅ |
 
-**Exit:** External MCP clients and internal workshop behave identically on tenancy; optional portability story.
+**Implementation notes:**
+
+- **6.5** — `TurnLedgerRecord.active_profile_id` stamped on every JSONL append via `resolve_workshop_active_profile_id()`
+- **6.4** — `workshop_interactive_channel_id()` + `profile_channel_id_for_user_id()`; profile channels seeded on create
+- **6.3** — `profile_portability.rs`; `POST /v1/identity/profiles/export|import`; CLI `identity-profiles export|import`
+
+**Exit:** Operators can move a profile between machines; channel policy and metrics reflect active profile.
+
+**Code anchors:** `src/profile_portability.rs`, `src/identity_memory.rs`, `src/agent_runtime/turn_ledger.rs`, `src/bin/medousa.rs`
 
 ---
 
@@ -325,7 +340,7 @@ Profile slugs must match `^[a-z][a-z0-9_-]{0,31}$`.
 ## What we should not do
 
 - Use chat `session_id` as identity `user_id`.
-- Require Stasis/Locus SDK changes before shipping Phase 0–4 (scoped sessions are sufficient).
+- Require Stasis/Locus SDK changes before shipping profile features (scoped sessions are sufficient; 6.1/6.2 deferred).
 - Collide with reserved `medousa-prompts-*` tenant ids.
 - Ship profile “auth” or PIN lock in v1 (misleading for security expectations).
 - Block Iroh/mobile work on this epic — Phase 0 is small and can land independently.
@@ -344,7 +359,7 @@ Phase 0 (principal fix) ──► Phase 1 (registry) ──► Phase 2 (identity
                         ▼                                                               ▼
                  Phase 4 (Home UI)                                              Phase 5 (mobile)
                         │
-                        └──────────────────────────────► Phase 6 (hardening / MCP)
+                        └──────────────────────────────► Phase 6 (portability / metrics)
 ```
 
 **Recommended first slice:** Phase 0 only — fixes production identity bug; zero UX surface area.

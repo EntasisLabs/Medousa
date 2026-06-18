@@ -63,6 +63,29 @@ pub fn resolve_workshop_identity_user_id() -> String {
     identity_env_override_user_id().unwrap_or_else(registry_active_identity_user_id)
 }
 
+/// Active profile id from registry (`user:{slug}`), ignoring env user override.
+pub fn resolve_workshop_active_profile_id() -> String {
+    if let Some(registry) = workshop_registry_slot()
+        .read()
+        .expect("workshop profile registry lock")
+        .as_ref()
+    {
+        return registry
+            .read()
+            .expect("profile registry lock")
+            .active_profile_id()
+            .to_string();
+    }
+    UserProfileRegistry::load_or_bootstrap()
+        .active_profile_id()
+        .to_string()
+}
+
+/// Profile id for a specific registry record (export/import), not the active profile.
+pub fn profile_id_for_slug(slug: &str) -> String {
+    format_profile_id(slug)
+}
+
 /// Per-turn override (debug) or active workshop profile.
 pub fn resolve_workshop_identity_user_id_for_turn(explicit: Option<&str>) -> String {
     explicit
@@ -304,6 +327,7 @@ fn normalize_display_name(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, RwLock as StdRwLock};
 
     #[test]
     fn normalizes_slug_and_formats_profile_id() {
@@ -324,6 +348,30 @@ mod tests {
         assert_eq!(doc.active_profile_id, DEFAULT_USER_ID);
         assert_eq!(doc.profiles.len(), 1);
         assert!(doc.profiles[0].is_default);
+    }
+
+    #[test]
+    fn workshop_interactive_channel_uses_profile_slug() {
+        let registry = Arc::new(StdRwLock::new(UserProfileRegistry {
+            document: UserProfilesDocument {
+                active_profile_id: "user:work".to_string(),
+                profiles: vec![
+                    default_profile_record(),
+                    ProfileRecord {
+                        profile_id: "user:work".to_string(),
+                        display_name: "Work".to_string(),
+                        created_at: Utc::now(),
+                        is_default: false,
+                        archived: false,
+                    },
+                ],
+            },
+        }));
+        init_workshop_profile_registry(registry);
+        assert_eq!(
+            crate::identity_memory::workshop_interactive_channel_id(),
+            "channel:work"
+        );
     }
 
     #[test]

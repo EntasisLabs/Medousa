@@ -51,6 +51,7 @@
       mediaRefs,
       voicePresetId: voice.voicePresetId,
       voiceAppendix: voice.voiceAppendix,
+      identityUserId: opts.identityUserId,
     });
     chat.beginTurn(userContent, accepted, mediaRefs);
     chat.clearPendingMedia();

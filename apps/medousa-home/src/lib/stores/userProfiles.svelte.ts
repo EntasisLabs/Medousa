@@ -2,6 +2,7 @@ import {
   createUserProfile,
   listUserProfiles,
   setActiveUserProfile,
+  type DaemonHealth,
 } from "$lib/daemon";
 import type { UserProfileRecord } from "$lib/types/userProfile";
 import { chat } from "$lib/stores/chat.svelte";
@@ -19,6 +20,9 @@ export class UserProfilesStore {
   message = $state<string | null>(null);
   /** After switching profile mid-conversation — nudge to start fresh chat. */
   switchNotice = $state<string | null>(null);
+  /** Active profile changed on another device (last-writer-wins). */
+  remoteChangeNotice = $state<string | null>(null);
+  private localSwitchPending = false;
 
   activeProfile = $derived(
     this.profiles.find((profile) => profile.profile_id === this.activeProfileId) ?? null,
@@ -30,7 +34,19 @@ export class UserProfilesStore {
     this.activeDisplayName.trim().charAt(0).toUpperCase() || "P",
   );
 
-  async load() {
+  hasMultipleProfiles = $derived(this.profiles.length > 1);
+
+  applyHealthSnapshot(health: DaemonHealth | null) {
+    if (!health?.ok || !health.active_profile_id) return;
+    if (this.localSwitchPending) return;
+    if (this.activeProfileId && health.active_profile_id !== this.activeProfileId) {
+      return;
+    }
+    this.activeProfileId = health.active_profile_id;
+  }
+
+  async load(options?: { suppressRemoteNotice?: boolean }) {
+    const previousActive = this.activeProfileId;
     this.loading = true;
     this.error = null;
     try {
@@ -38,16 +54,42 @@ export class UserProfilesStore {
       this.profiles = response.profiles.filter((profile) => !profile.archived);
       this.activeProfileId = response.active_profile_id;
       this.resolvedUserId = response.resolved_user_id;
+
+      if (
+        previousActive &&
+        response.active_profile_id !== previousActive &&
+        !this.localSwitchPending &&
+        !options?.suppressRemoteNotice
+      ) {
+        const remoteProfile = this.profiles.find(
+          (profile) => profile.profile_id === response.active_profile_id,
+        );
+        const label = remoteProfile?.display_name ?? "Another profile";
+        this.remoteChangeNotice = `${label} is now active — switched on another device.`;
+        await Promise.all([
+          identity.refresh({ relationshipLimit: 8 }),
+          chat.refreshSessions({ force: true }),
+        ]);
+      }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
       this.loading = false;
+      this.localSwitchPending = false;
     }
+  }
+
+  /** Foreground resume: cheap health hint + full profile sync. */
+  async syncOnResume(health?: DaemonHealth | null) {
+    this.applyHealthSnapshot(health ?? null);
+    await this.load();
   }
 
   async setActive(profileId: string) {
     if (profileId === this.activeProfileId) return;
     const hadConversation = chat.messages.length > 0;
+    this.localSwitchPending = true;
+    this.remoteChangeNotice = null;
     this.saving = true;
     this.error = null;
     this.message = null;
@@ -55,7 +97,7 @@ export class UserProfilesStore {
       const response = await setActiveUserProfile(profileId);
       this.activeProfileId = response.active_profile_id;
       this.resolvedUserId = response.resolved_user_id;
-      await this.load();
+      await this.load({ suppressRemoteNotice: true });
       await Promise.all([
         identity.refresh({ relationshipLimit: 8 }),
         chat.refreshSessions({ force: true }),
@@ -67,6 +109,7 @@ export class UserProfilesStore {
         this.message = `Switched to ${this.activeDisplayName}`;
       }
     } catch (err) {
+      this.localSwitchPending = false;
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
       this.saving = false;
@@ -91,7 +134,7 @@ export class UserProfilesStore {
     this.message = null;
     try {
       await createUserProfile(normalizedSlug, normalizedName);
-      await this.load();
+      await this.load({ suppressRemoteNotice: true });
       this.message = `Created ${normalizedName}`;
       return true;
     } catch (err) {
@@ -106,6 +149,10 @@ export class UserProfilesStore {
     this.switchNotice = null;
   }
 
+  dismissRemoteChangeNotice() {
+    this.remoteChangeNotice = null;
+  }
+
   clearMessage() {
     this.message = null;
     this.error = null;
@@ -118,6 +165,8 @@ export class UserProfilesStore {
     this.error = null;
     this.message = null;
     this.switchNotice = null;
+    this.remoteChangeNotice = null;
+    this.localSwitchPending = false;
   }
 }
 

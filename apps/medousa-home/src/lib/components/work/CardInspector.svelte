@@ -264,6 +264,7 @@
         channelSurface: opts.channelSurface,
         voicePresetId: voice.voicePresetId,
         voiceAppendix: voice.voiceAppendix,
+        identityUserId: opts.identityUserId,
       });
       chat.beginTurn(prompt, accepted);
       await chat.startTurnStream(

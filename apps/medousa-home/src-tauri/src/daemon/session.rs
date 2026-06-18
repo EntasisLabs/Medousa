@@ -203,6 +203,8 @@ struct CreateTurnTicketBody {
     voice_preset_id: Option<String>,
     #[serde(default)]
     voice_appendix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    identity_user_id: Option<String>,
 }
 
 fn default_persist_user_turn() -> bool {
@@ -228,6 +230,7 @@ pub async fn turn_create(
     media_refs: Option<Vec<MediaRef>>,
     voice_preset_id: Option<String>,
     voice_appendix: Option<String>,
+    identity_user_id: Option<String>,
 ) -> Result<TurnTicketResponse, String> {
     let trimmed_session = session_id.trim();
     if trimmed_session.is_empty() {
@@ -291,6 +294,9 @@ pub async fn turn_create(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
         voice_appendix: voice_appendix
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        identity_user_id: identity_user_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
     };

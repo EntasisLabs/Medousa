@@ -224,6 +224,10 @@ pub struct DaemonHealth {
     pub worker_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_registry_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_profile_display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -457,6 +461,10 @@ pub struct HealthResponse {
     pub agent_runtime_version: String,
     #[serde(default)]
     pub tool_registry_count: usize,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -582,6 +590,10 @@ pub struct RuntimeDefaultsResponse {
     pub stage_routing: StageRoutingMatrix,
     pub work_card_hide_after_hours: u32,
     pub work_card_wipe_after_days: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

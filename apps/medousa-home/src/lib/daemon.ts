@@ -53,6 +53,8 @@ export interface DaemonHealth {
   backend?: string | null;
   worker_id?: string | null;
   tool_registry_count?: number | null;
+  active_profile_id?: string | null;
+  active_profile_display_name?: string | null;
 }
 
 export interface InteractiveTurnAccepted {
@@ -146,6 +148,7 @@ export async function createTurnTicket(
     mediaRefs: request.mediaRefs ?? null,
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
+    identityUserId: request.identityUserId ?? null,
   });
 }
 
@@ -205,6 +208,7 @@ export interface InteractiveTurnOptions {
   reasoningEffort?: string;
   stageRouting?: StageRoutingMatrix;
   channelSurface?: string;
+  identityUserId?: string;
 }
 
 export async function sendInteractiveTurn(

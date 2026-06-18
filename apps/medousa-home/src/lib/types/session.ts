@@ -100,4 +100,5 @@ export interface CreateTurnTicketRequest {
   mediaRefs?: import("$lib/types/media").MediaRef[];
   voicePresetId?: string;
   voiceAppendix?: string;
+  identityUserId?: string;
 }

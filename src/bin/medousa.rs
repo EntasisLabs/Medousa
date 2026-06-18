@@ -1626,7 +1626,7 @@ fn run_identity_remember(args: &[String]) -> Result<()> {
 fn run_identity_profiles(args: &[String]) -> Result<()> {
     if args.is_empty() {
         return Err(anyhow!(
-            "usage: medousa identity-profiles list|create <slug> [display_name]|use <profile_id> [--daemon-url <url>]"
+            "usage: medousa identity-profiles list|create <slug> [display_name]|use <profile_id>|export <profile_id> [--out file.json]|import <file.json> [--dry-run] [--daemon-url <url>]"
         ));
     }
 
@@ -1636,8 +1636,9 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
         .map(str::to_string)
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string());
 
+    let long_running = matches!(args[0].as_str(), "export" | "import");
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(if long_running { 120 } else { 15 }))
         .build()
         .context("build HTTP client")?;
 
@@ -1722,9 +1723,79 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
                 payload.active_profile_id, payload.resolved_user_id
             );
         }
+        "export" => {
+            let profile_id = args
+                .get(1)
+                .map(String::as_str)
+                .or_else(|| find_arg_value(args, "--profile-id"))
+                .ok_or_else(|| {
+                    anyhow!("missing profile_id: medousa identity-profiles export <profile_id>")
+                })?;
+            let profile_id = if profile_id.contains(':') {
+                profile_id.to_string()
+            } else {
+                medousa::user_profiles::format_profile_id(profile_id)
+            };
+            let response = client
+                .post(format!("{daemon_url}/v1/identity/profiles/export"))
+                .json(&medousa::daemon_api::ExportUserProfileRequest {
+                    profile_id,
+                    session_limit: find_arg_value(args, "--session-limit")
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(500),
+                    node_limit_per_session: find_arg_value(args, "--node-limit")
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(500),
+                })
+                .send()
+                .context("POST /v1/identity/profiles/export")?
+                .error_for_status()
+                .context("export profile")?;
+            let payload: medousa::daemon_api::ExportUserProfileResponse =
+                response.json().context("decode profile export")?;
+            let encoded = serde_json::to_string_pretty(&payload.bundle).context("encode bundle")?;
+            if let Some(out_path) = find_arg_value(args, "--out") {
+                std::fs::write(out_path, &encoded).context("write export file")?;
+                println!(
+                    "exported {} ({} locus nodes) -> {out_path}",
+                    payload.bundle.profile_id, payload.bundle.locus.node_count
+                );
+            } else {
+                println!("{encoded}");
+            }
+        }
+        "import" => {
+            let path = args
+                .get(1)
+                .ok_or_else(|| anyhow!("missing file: medousa identity-profiles import <file.json>"))?;
+            let raw = std::fs::read_to_string(path)
+                .with_context(|| format!("read import file {path}"))?;
+            let bundle: medousa::profile_portability::ProfileExportBundle =
+                serde_json::from_str(&raw).context("parse profile export bundle")?;
+            let dry_run = args.iter().any(|arg| arg == "--dry-run");
+            let response = client
+                .post(format!("{daemon_url}/v1/identity/profiles/import"))
+                .json(&medousa::daemon_api::ImportUserProfileRequest { bundle, dry_run })
+                .send()
+                .context("POST /v1/identity/profiles/import")?
+                .error_for_status()
+                .context("import profile")?;
+            let payload: medousa::daemon_api::ImportUserProfileResponse =
+                response.json().context("decode profile import")?;
+            println!("{}", payload.message);
+            println!(
+                "profile_id={} created_profile={} contacts={} relationships={} locus_nodes={} sessions={}",
+                payload.profile_id,
+                payload.created_profile,
+                payload.contacts_imported,
+                payload.relationships_imported,
+                payload.locus_nodes_imported,
+                payload.locus_sessions_touched,
+            );
+        }
         other => {
             return Err(anyhow!(
-                "unknown identity-profiles command '{other}'. use list|create|use"
+                "unknown identity-profiles command '{other}'. use list|create|use|export|import"
             ));
         }
     }
@@ -3409,7 +3480,7 @@ fn print_help() {
     println!("  medousa models probe|catalog|list|download|remove|engine-status|engine-load [--daemon-url <url>]");
     println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
     println!("  medousa identity-remember --kind <preference|person|note> --subject <key|name> --statement <text> [--source user_direct] [--attributes a,b]");
-    println!("  medousa identity-profiles list|create <slug> [display_name]|use <profile_id> [--daemon-url <url>]");
+    println!("  medousa identity-profiles list|create <slug> [display_name]|use <profile_id>|export <profile_id> [--out file.json]|import <file.json> [--dry-run] [--daemon-url <url>]");
     println!("  medousa manuscript-list");
     println!("  medousa manuscript-validate <id>");
     println!("  medousa manuscript-install <path-to.yaml> [--project]");

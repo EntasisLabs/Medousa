@@ -849,6 +849,7 @@ impl MedousaToolLoopPipeline {
                                 missing_tools: Vec::new(),
                                 rounds_executed,
                                 scratch: Some(turn_ctx.scratchpad.clone()),
+                                active_profile_id: None,
                             },
                         );
                     }

@@ -1,6 +1,7 @@
 import type { InteractiveTurnOptions } from "$lib/daemon";
 import { homeChannelSurface, isTauriMobilePlatform } from "$lib/platform";
 import { runtime } from "$lib/stores/runtime.svelte";
+import { userProfiles } from "$lib/stores/userProfiles.svelte";
 
 /** Options for POST /v1/interactive/turn. */
 export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
@@ -9,6 +10,7 @@ export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
     responseDepthMode: runtime.depthMode,
     reasoningEffort: runtime.reasoningEffort,
     channelSurface,
+    identityUserId: userProfiles.resolvedUserId ?? undefined,
   };
 
   // Companion shells load runtime from the workshop daemon — pass explicit routing so

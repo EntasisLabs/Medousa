@@ -97,6 +97,12 @@ pub struct HealthResponse {
     pub last_agent_turn_latency_ms: Option<u64>,
     #[serde(default)]
     pub last_agent_turn_at_utc: Option<DateTime<Utc>>,
+    /// Active workshop identity profile (`user:{slug}`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_id: String,
+    /// Human label for `active_profile_id`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_display_name: String,
 }
 
 fn default_agent_runtime_version() -> String {
@@ -196,6 +202,48 @@ pub struct SetActiveUserProfileRequest {
 pub struct SetActiveUserProfileResponse {
     pub active_profile_id: String,
     pub resolved_user_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportUserProfileRequest {
+    pub profile_id: String,
+    #[serde(default = "default_profile_export_session_limit")]
+    pub session_limit: usize,
+    #[serde(default = "default_profile_export_node_limit")]
+    pub node_limit_per_session: usize,
+}
+
+fn default_profile_export_session_limit() -> usize {
+    500
+}
+
+fn default_profile_export_node_limit() -> usize {
+    500
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportUserProfileResponse {
+    pub bundle: crate::profile_portability::ProfileExportBundle,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportUserProfileRequest {
+    pub bundle: crate::profile_portability::ProfileExportBundle,
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportUserProfileResponse {
+    pub dry_run: bool,
+    pub profile_id: String,
+    pub created_profile: bool,
+    pub identity_user_imported: bool,
+    pub contacts_imported: usize,
+    pub relationships_imported: usize,
+    pub locus_nodes_imported: usize,
+    pub locus_sessions_touched: usize,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -440,6 +488,12 @@ pub struct RuntimeDefaultsResponse {
     pub stage_routing: StageRoutingMatrix,
     pub work_card_hide_after_hours: u32,
     pub work_card_wipe_after_days: u32,
+    /// Active workshop identity profile (`user:{slug}`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_id: String,
+    /// Human label for `active_profile_id`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub active_profile_display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

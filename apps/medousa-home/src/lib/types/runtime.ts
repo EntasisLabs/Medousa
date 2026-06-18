@@ -73,6 +73,8 @@ export interface RuntimeDefaultsResponse {
   stage_routing: StageRoutingMatrix;
   work_card_hide_after_hours: number;
   work_card_wipe_after_days: number;
+  active_profile_id?: string;
+  active_profile_display_name?: string;
 }
 
 export interface StageRouteCommandResponse {

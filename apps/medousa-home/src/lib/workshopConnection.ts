@@ -244,6 +244,7 @@ export async function resumeWorkshop(
     chat.reconcileOnResume({ notice: false }, workspace.cards),
     chat.hydrateAskThreads(workspace.cards),
     workspace.reconcileCardsFromSnapshot(),
+    userProfiles.syncOnResume(health),
   ]);
 
   try {

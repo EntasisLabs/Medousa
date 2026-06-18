@@ -869,6 +869,17 @@ pub fn list_sessions(limit: usize) -> Vec<SessionHistorySummary> {
     list_sessions_page(limit, None, None, None).sessions
 }
 
+/// Chat session ids belonging to a specific profile (export/import).
+pub fn list_chat_session_ids_for_profile(profile_id: &str, limit: usize) -> Vec<String> {
+    let limit = limit.max(1);
+    catalog_store()
+        .list_rows_page(limit, None, None)
+        .into_iter()
+        .filter(|row| row_matches_profile(row, profile_id))
+        .map(|row| row.session_id)
+        .collect()
+}
+
 pub fn list_sessions_page(
     limit: usize,
     query: Option<&str>,

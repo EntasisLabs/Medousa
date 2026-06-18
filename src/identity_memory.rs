@@ -117,12 +117,33 @@ pub fn resolve_tool_identity_user_id(session_id: &str, workshop_operator: bool) 
 
 pub fn resolve_identity_channel_id(policy_profile: Option<&str>) -> String {
     if let Some(profile) = policy_profile.and_then(trimmed_non_empty) {
+        if profile.eq_ignore_ascii_case("interactive") {
+            return workshop_interactive_channel_id();
+        }
         return format!("channel:{}", profile.to_ascii_lowercase());
     }
 
     resolve_non_empty_env("MEDOUSA_IDENTITY_CHANNEL_ID")
         .or_else(|| resolve_non_empty_env("STASIS_DEFAULT_CHANNEL_ID"))
         .unwrap_or_else(|| DEFAULT_CHANNEL_ID.to_string())
+}
+
+/// Interactive-lane channel for the active workshop profile (`channel:work`, `channel:interactive`, …).
+pub fn workshop_interactive_channel_id() -> String {
+    match crate::user_profiles::profile_slug_from_id(
+        &crate::user_profiles::resolve_workshop_active_profile_id(),
+    ) {
+        Some(slug) if slug != "default" => format!("channel:{slug}"),
+        _ => "channel:interactive".to_string(),
+    }
+}
+
+/// Profile-scoped channel id for a given identity user principal.
+pub fn profile_channel_id_for_user_id(user_id: &str) -> String {
+    match crate::user_profiles::profile_slug_from_id(user_id) {
+        Some(slug) if slug != "default" => format!("channel:{slug}"),
+        _ => "channel:interactive".to_string(),
+    }
 }
 
 pub fn build_seeded_medousa_identity_store() -> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
@@ -621,9 +642,21 @@ pub async fn seed_workshop_profile_user(
     let interactive_policy = default_policy_profile_for_lane(EngineExecutionLane::Interactive);
     let scheduled_policy = default_policy_profile_for_lane(EngineExecutionLane::Scheduled);
     let heartbeat_policy = default_policy_profile_for_lane(EngineExecutionLane::Heartbeat);
-    let interactive_channel_id = resolve_identity_channel_id(Some(interactive_policy));
+    let interactive_channel_id = profile_channel_id_for_user_id(user_id);
     let scheduled_channel_id = resolve_identity_channel_id(Some(scheduled_policy));
     let heartbeat_channel_id = resolve_identity_channel_id(Some(heartbeat_policy));
+
+    if interactive_channel_id != "channel:interactive" {
+        store
+            .upsert_channel_entity(default_channel(
+                &interactive_channel_id,
+                "home",
+                true,
+                now,
+            ))
+            .await
+            .map_err(|err| anyhow!("seed profile channel {interactive_channel_id}: {err}"))?;
+    }
 
     store
         .upsert_user_entity(UserEntity {
