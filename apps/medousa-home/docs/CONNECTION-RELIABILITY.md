@@ -37,7 +37,7 @@ Symptoms: frozen workspace board, chat stuck mid-stream, popout close killing ma
 |---|------|--------|
 | B1 | `noteStreamFailure` evicts stale `streamOwners`; recoverable vs fatal | Done |
 | B2 | `cancelActiveTurn` evicts/stops only session-owned streams | Done |
-| B3 | Resume/reattach failures → `historyNotice` / `streamError` | Done |
+| B3 | Resume/reattach failures → console warn (no toast spam); merge skipped mid-stream | Done |
 | B4 | Workspace reconcile failures → `workspace.streamError` | Done |
 | B5 | Budget: `budgetWorkCardId` + `workCardId` on pending approvals | Done |
 | B6 | Skip duplicate budget push when chat already has pending approval | Done |

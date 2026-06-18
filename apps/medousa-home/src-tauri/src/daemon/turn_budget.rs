@@ -2,9 +2,9 @@ use crate::daemon::types::{
     TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
     TurnBudgetRequestResponse,
 };
-use reqwest::Client;
 use tauri::State;
 
+use super::workshop_http;
 use super::DaemonState;
 
 fn default_home_resolved_by() -> String {
@@ -29,7 +29,6 @@ pub async fn turn_budget_approve(
     extra_rounds: Option<usize>,
     resolved_by: Option<String>,
 ) -> Result<TurnBudgetRequestResponse, String> {
-    let base = state.daemon_url.lock().map_err(|_| "daemon url lock poisoned")?.clone();
     let encoded = urlencoding::encode(request_id.trim());
     let body = TurnBudgetApproveRequest {
         extra_rounds,
@@ -40,17 +39,12 @@ pub async fn turn_budget_approve(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    Client::new()
-        .post(format!("{base}/v1/turns/budget-requests/{encoded}/approve"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::post_json(
+        &state,
+        &format!("/v1/turns/budget-requests/{encoded}/approve"),
+        &body,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -59,7 +53,6 @@ pub async fn turn_budget_deny(
     request_id: String,
     resolved_by: Option<String>,
 ) -> Result<TurnBudgetRequestResponse, String> {
-    let base = state.daemon_url.lock().map_err(|_| "daemon url lock poisoned")?.clone();
     let encoded = urlencoding::encode(request_id.trim());
     let body = TurnBudgetDenyRequest {
         resolved_by: Some(
@@ -69,17 +62,12 @@ pub async fn turn_budget_deny(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    Client::new()
-        .post(format!("{base}/v1/turns/budget-requests/{encoded}/deny"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::post_json(
+        &state,
+        &format!("/v1/turns/budget-requests/{encoded}/deny"),
+        &body,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -87,21 +75,10 @@ pub async fn turn_budget_list(
     state: State<'_, DaemonState>,
     pending_only: Option<bool>,
 ) -> Result<TurnBudgetRequestListResponse, String> {
-    let base = state.daemon_url.lock().map_err(|_| "daemon url lock poisoned")?.clone();
-    let pending = pending_only.unwrap_or(true);
-    let url = if pending {
-        format!("{base}/v1/turns/budget-requests?status=pending&limit=20")
+    let path = if pending_only.unwrap_or(true) {
+        "/v1/turns/budget-requests?status=pending&limit=20".to_string()
     } else {
-        format!("{base}/v1/turns/budget-requests?limit=20")
+        "/v1/turns/budget-requests?limit=20".to_string()
     };
-    Client::new()
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?
-        .error_for_status()
-        .map_err(|err| err.to_string())?
-        .json()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::get_json(&state, &path).await
 }

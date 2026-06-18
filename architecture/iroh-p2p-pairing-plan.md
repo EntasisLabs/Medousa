@@ -149,11 +149,13 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 - [x] SSE streams over tunneled HTTP (`/v1/workspace/stream`, interactive turn SSE)
 - [x] Fallback: LAN when `/health` reachable within 1.5s; else Iroh ticket from credentials
 - [x] Heartbeat `/pair/heartbeat` on foreground resume with stored bearer
-- [ ] Full mobile daemon IPC through transport (vault, session, jobs still LAN-only today)
+- [x] Full mobile daemon IPC through transport (sessions, vault, jobs, media, runtime, …)
 
 **Exit:** Phone on LTE reaches home Mac daemon; chat + workspace stream work.
 
-**Key files:** `apps/medousa-home/src-tauri/src/workshop_transport.rs`, `src/iroh_transport/http_client.rs`, `src/lib/workshopConnection.ts`
+**Key files:** `apps/medousa-home/src-tauri/src/workshop_transport.rs`, `src/daemon/workshop_http.rs`, `src/iroh_transport/http_client.rs`
+
+**Performance:** Route decision cached (15s LAN / 45s Iroh) with deduped LAN probe; shared reqwest + Iroh endpoint (no per-request bind); auto-fallback to Iroh on LAN connection failure.
 
 ---
 

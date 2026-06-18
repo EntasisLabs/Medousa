@@ -13,6 +13,7 @@ pub mod types;
 pub mod vault;
 pub mod workspace_card;
 pub mod turn_budget;
+pub mod workshop_http;
 
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
@@ -164,13 +165,13 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
     }
     *state.daemon_url.lock().expect("daemon url lock") = trimmed.clone();
     persist_daemon_url(&trimmed)?;
+    workshop_transport::invalidate_workshop_route_cache();
     Ok(())
 }
 
 #[tauri::command]
 pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let config = workshop_transport::config_from_lan_base(&base);
+    let config = workshop_http::transport_config(&state);
     match workshop_transport::workshop_get_json::<HealthResponse>(&config, "/health").await {
         Ok(detail) => Ok(DaemonHealth {
             ok: true,
@@ -198,13 +199,12 @@ pub async fn workspace_stream_start(
     state: State<'_, DaemonState>,
     since_revision: Option<u64>,
 ) -> Result<(), String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let mut path = "/v1/workspace/stream".to_string();
     if let Some(revision) = since_revision {
         path.push_str(&format!("?since_revision={revision}"));
     }
 
-    let config = workshop_transport::config_from_lan_base(&base);
+    let config = workshop_http::transport_config(&state);
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
 
     tokio::spawn(async move {
@@ -318,7 +318,7 @@ pub async fn interactive_turn_send(
         media_refs: Vec::new(),
     };
 
-    let config = workshop_transport::config_from_lan_base(&base);
+    let config = workshop_http::transport_config(&state);
     let parsed: InteractiveTurnResponse = workshop_transport::workshop_post_json(
         &config,
         "/v1/interactive/turn",
@@ -343,7 +343,7 @@ pub async fn interactive_stream_start(
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
     let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
 
-    let config = workshop_transport::config_from_lan_base(&daemon_url);
+    let config = workshop_http::transport_config(&state);
     let path = reqwest::Url::parse(&stream_url)
         .ok()
         .map(|url| {

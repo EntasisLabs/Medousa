@@ -1,9 +1,9 @@
 use crate::daemon::types::{
     CapabilityListResponse, CapabilityResolveResponse, ManuscriptCatalogResponse,
 };
-use reqwest::Client;
 use tauri::State;
 
+use super::workshop_http;
 use super::DaemonState;
 
 #[tauri::command]
@@ -13,61 +13,24 @@ pub async fn catalog_list_manuscripts(
     limit: Option<usize>,
     skills_only: Option<bool>,
 ) -> Result<ManuscriptCatalogResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let mut url = format!("{base}/v1/manuscripts");
-    let mut params = Vec::new();
+    let mut query = Vec::new();
     if let Some(value) = prefix.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
-        params.push(format!("prefix={}", urlencoding::encode(value)));
+        query.push(("prefix", value.to_string()));
     }
     if let Some(value) = limit {
-        params.push(format!("limit={value}"));
+        query.push(("limit", value.to_string()));
     }
     if let Some(value) = skills_only {
-        params.push(format!("skills_only={value}"));
+        query.push(("skills_only", value.to_string()));
     }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
-
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("manuscript catalog failed ({status}): {body}"));
-    }
-    response
-        .json::<ManuscriptCatalogResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::get_json_query(&state, "/v1/manuscripts", &query).await
 }
 
 #[tauri::command]
 pub async fn catalog_list_capabilities(
     state: State<'_, DaemonState>,
 ) -> Result<CapabilityListResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let url = format!("{base}/v1/capabilities");
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("capability catalog failed ({status}): {body}"));
-    }
-    response
-        .json::<CapabilityListResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::get_json(&state, "/v1/capabilities").await
 }
 
 #[tauri::command]
@@ -75,42 +38,13 @@ pub async fn catalog_get_capability(
     state: State<'_, DaemonState>,
     capability_id: String,
 ) -> Result<CapabilityResolveResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let id = capability_id.trim();
-    let url = format!("{base}/v1/capabilities/{}", urlencoding::encode(id));
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("capability detail failed ({status}): {body}"));
-    }
-    response
-        .json::<CapabilityResolveResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::get_json(&state, &format!("/v1/capabilities/{}", urlencoding::encode(id))).await
 }
 
 #[tauri::command]
 pub async fn catalog_reindex_capabilities(
     state: State<'_, DaemonState>,
 ) -> Result<serde_json::Value, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let url = format!("{base}/v1/capabilities/reindex");
-    let client = Client::new();
-    let response = client
-        .post(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("capability reindex failed ({status}): {body}"));
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::post_empty_json(&state, "/v1/capabilities/reindex").await
 }

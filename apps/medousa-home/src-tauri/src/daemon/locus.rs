@@ -1,22 +1,8 @@
-use reqwest::Client;
 use serde_json::Value;
 use tauri::State;
 
+use super::workshop_http;
 use super::DaemonState;
-
-fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
-    Ok(state
-        .daemon_url
-        .lock()
-        .expect("daemon url lock")
-        .clone())
-}
-
-async fn map_http_error(response: reqwest::Response) -> String {
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    format!("HTTP {status}: {body}")
-}
 
 #[tauri::command]
 pub async fn locus_list_nodes(
@@ -25,33 +11,17 @@ pub async fn locus_list_nodes(
     limit: Option<usize>,
     q: Option<String>,
 ) -> Result<Value, String> {
-    let base = daemon_base(&state)?;
-    let client = Client::new();
-    let mut url = format!("{base}/v1/locus/nodes");
-    let mut params = Vec::new();
+    let mut query = Vec::new();
     if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
-        params.push(format!("session_id={}", urlencoding::encode(session_id.trim())));
+        query.push(("session_id", session_id.trim().to_string()));
     }
     if let Some(limit) = limit {
-        params.push(format!("limit={limit}"));
+        query.push(("limit", limit.to_string()));
     }
     if let Some(q) = q.filter(|value| !value.trim().is_empty()) {
-        params.push(format!("q={}", urlencoding::encode(q.trim())));
+        query.push(("q", q.trim().to_string()));
     }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
-
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::get_json_query(&state, "/v1/locus/nodes", &query).await
 }
 
 #[tauri::command]
@@ -59,21 +29,10 @@ pub async fn locus_get_node(
     state: State<'_, DaemonState>,
     sync_key: String,
 ) -> Result<Value, String> {
-    let base = daemon_base(&state)?;
     let trimmed = sync_key.trim();
     if trimmed.is_empty() {
         return Err("sync_key is required".to_string());
     }
     let encoded = urlencoding::encode(trimmed);
-    let url = format!("{base}/v1/locus/nodes/{encoded}");
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::get_json(&state, &format!("/v1/locus/nodes/{encoded}")).await
 }

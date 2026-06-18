@@ -2,10 +2,10 @@ use crate::daemon::types::{
     MediaRef, SessionHistoryListResponse, SessionHistoryResponse, StageRoutingMatrix,
     TurnSurfaceContext,
 };
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use super::workshop_http;
 use super::DaemonState;
 
 #[tauri::command]
@@ -16,11 +16,8 @@ pub async fn session_list(
     q: Option<String>,
     cursor: Option<String>,
 ) -> Result<SessionHistoryListResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let capped = limit.unwrap_or(50).clamp(1, 200);
     let include_verification = include_verification.unwrap_or(false);
-    let url = format!("{base}/v1/sessions");
-    let client = Client::new();
     let mut query = vec![
         ("limit", capped.to_string()),
         ("include_verification", include_verification.to_string()),
@@ -31,18 +28,7 @@ pub async fn session_list(
     if let Some(page_cursor) = cursor.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
         query.push(("cursor", page_cursor.to_string()));
     }
-    let response = client
-        .get(&url)
-        .query(&query)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("session list failed ({status}): {body}"));
-    }
-    response.json::<SessionHistoryListResponse>().await.map_err(|err| err.to_string())
+    workshop_http::get_json_query(&state, "/v1/sessions", &query).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +43,6 @@ pub async fn session_set_display_name(
     session_id: String,
     display_name: String,
 ) -> Result<SessionSetDisplayNameResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed_id = session_id.trim();
     if trimmed_id.is_empty() {
         return Err("session_id is required".to_string());
@@ -67,23 +52,12 @@ pub async fn session_set_display_name(
         return Err("display name must not be empty".to_string());
     }
 
-    let url = format!("{base}/v1/sessions/{trimmed_id}/name");
-    let client = Client::new();
-    let response = client
-        .put(&url)
-        .json(&serde_json::json!({ "display_name": trimmed_name }))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("session rename failed ({status}): {body}"));
-    }
-    response
-        .json::<SessionSetDisplayNameResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::put_json(
+        &state,
+        &format!("/v1/sessions/{trimmed_id}/name"),
+        &serde_json::json!({ "display_name": trimmed_name }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -91,24 +65,11 @@ pub async fn session_get_history(
     state: State<'_, DaemonState>,
     session_id: String,
 ) -> Result<SessionHistoryResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    let url = format!("{base}/v1/sessions/{trimmed}/history");
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("session history failed ({status}): {body}"));
-    }
-    response.json::<SessionHistoryResponse>().await.map_err(|err| err.to_string())
+    workshop_http::get_json(&state, &format!("/v1/sessions/{trimmed}/history")).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,27 +102,11 @@ pub async fn session_get_active_turn(
     state: State<'_, DaemonState>,
     session_id: String,
 ) -> Result<ActiveSessionTurnResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    let url = format!("{base}/v1/sessions/{trimmed}/active-turn");
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("active turn lookup failed ({status}): {body}"));
-    }
-    response
-        .json::<ActiveSessionTurnResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::get_json(&state, &format!("/v1/sessions/{trimmed}/active-turn")).await
 }
 
 #[tauri::command]
@@ -169,27 +114,11 @@ pub async fn session_cancel_active_turn(
     state: State<'_, DaemonState>,
     session_id: String,
 ) -> Result<CancelActiveSessionTurnResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    let url = format!("{base}/v1/sessions/{trimmed}/active-turn");
-    let client = Client::new();
-    let response = client
-        .post(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("active turn cancel failed ({status}): {body}"));
-    }
-    response
-        .json::<CancelActiveSessionTurnResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::post_empty_json(&state, &format!("/v1/sessions/{trimmed}/active-turn")).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -300,7 +229,6 @@ pub async fn turn_create(
     voice_preset_id: Option<String>,
     voice_appendix: Option<String>,
 ) -> Result<TurnTicketResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed_session = session_id.trim();
     if trimmed_session.is_empty() {
         return Err("session_id is required".to_string());
@@ -367,22 +295,7 @@ pub async fn turn_create(
             .filter(|value| !value.is_empty()),
     };
 
-    let client = Client::new();
-    let response = client
-        .post(format!("{base}/v1/turns"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("turn create failed ({status}): {body}"));
-    }
-    response
-        .json::<TurnTicketResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::post_json(&state, "/v1/turns", &body).await
 }
 
 #[tauri::command]
@@ -391,26 +304,14 @@ pub async fn turn_list_session(
     session_id: String,
     active_only: Option<bool>,
 ) -> Result<SessionTurnsResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
     let active = active_only.unwrap_or(true);
-    let url = format!("{base}/v1/sessions/{trimmed}/turns?active={active}");
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("session turns failed ({status}): {body}"));
-    }
-    response
-        .json::<SessionTurnsResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::get_json(
+        &state,
+        &format!("/v1/sessions/{trimmed}/turns?active={active}"),
+    )
+    .await
 }

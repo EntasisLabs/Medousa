@@ -5,11 +5,14 @@ use httparse::{Response, Status, EMPTY_HEADER};
 use iroh::{Endpoint, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::OnceCell;
 
 use super::ALPN;
 
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_BODY_CHUNK: usize = 64 * 1024;
+
+static WORKSHOP_CLIENT: OnceCell<Endpoint> = OnceCell::const_new();
 
 pub struct IrohHttpResponse {
     pub status: u16,
@@ -51,6 +54,18 @@ impl IrohHttpBody {
     }
 }
 
+async fn shared_client_endpoint() -> Result<&'static Endpoint> {
+    WORKSHOP_CLIENT
+        .get_or_try_init(|| async {
+            let endpoint = Endpoint::bind(presets::N0)
+                .await
+                .context("bind iroh client endpoint")?;
+            endpoint.online().await;
+            Ok(endpoint)
+        })
+        .await
+}
+
 pub async fn iroh_http_request(
     ticket: &str,
     method: &str,
@@ -59,10 +74,7 @@ pub async fn iroh_http_request(
     body: Option<&[u8]>,
 ) -> Result<IrohHttpResponse> {
     let ticket = EndpointTicket::from_str(ticket).map_err(|err| anyhow::anyhow!("{err}"))?;
-    let endpoint = Endpoint::bind(presets::N0)
-        .await
-        .context("bind iroh client endpoint")?;
-    endpoint.online().await;
+    let endpoint = shared_client_endpoint().await?;
 
     let conn = endpoint
         .connect(ticket.endpoint_addr().clone(), ALPN)
@@ -166,7 +178,7 @@ fn parse_response_headers(raw: &[u8], header_end: usize) -> Result<(u16, Vec<(St
 
 pub async fn iroh_http_get_text(ticket: &str, path: &str) -> Result<String> {
     let mut response = iroh_http_request(ticket, "GET", path, &[], None).await?;
-    let mut body = response.body.buffer.clone();
+    let mut body = Vec::new();
     while let Some(chunk) = response.body.read_chunk().await? {
         body.extend_from_slice(&chunk);
     }

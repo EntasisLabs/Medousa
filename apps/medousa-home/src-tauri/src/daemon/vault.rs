@@ -2,9 +2,10 @@ use crate::daemon::types::{
     VaultBacklinksResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultSearchResponse,
     VaultWriteResponse,
 };
-use crate::daemon::DaemonState;
-use reqwest::Client;
 use tauri::State;
+
+use super::workshop_http;
+use super::DaemonState;
 
 fn encode_note_path(path: &str) -> String {
     path.split('/')
@@ -14,50 +15,20 @@ fn encode_note_path(path: &str) -> String {
         .join("/")
 }
 
-fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
-    Ok(state
-        .daemon_url
-        .lock()
-        .expect("daemon url lock")
-        .clone())
-}
-
-async fn map_http_error(response: reqwest::Response) -> String {
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    format!("HTTP {status}: {body}")
-}
-
 #[tauri::command]
 pub async fn vault_list_notes(
     state: State<'_, DaemonState>,
     prefix: Option<String>,
     limit: Option<usize>,
 ) -> Result<VaultNotesListResponse, String> {
-    let base = daemon_base(&state)?;
-    let client = Client::new();
-    let mut url = format!("{base}/v1/vault/notes");
-    let mut params = Vec::new();
+    let mut query = Vec::new();
     if let Some(prefix) = prefix.filter(|value| !value.trim().is_empty()) {
-        params.push(format!("prefix={}", urlencoding::encode(prefix.trim())));
+        query.push(("prefix", prefix.trim().to_string()));
     }
     if let Some(limit) = limit {
-        params.push(format!("limit={limit}"));
+        query.push(("limit", limit.to_string()));
     }
-    if !params.is_empty() {
-        url.push('?');
-        url.push_str(&params.join("&"));
-    }
-
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::get_json_query(&state, "/v1/vault/notes", &query).await
 }
 
 #[tauri::command]
@@ -65,18 +36,8 @@ pub async fn vault_get_note(
     state: State<'_, DaemonState>,
     path: String,
 ) -> Result<VaultNoteContentResponse, String> {
-    let base = daemon_base(&state)?;
     let encoded = encode_note_path(path.trim());
-    let client = Client::new();
-    let response = client
-        .get(format!("{base}/v1/vault/notes/{encoded}"))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::get_json(&state, &format!("/v1/vault/notes/{encoded}")).await
 }
 
 #[tauri::command]
@@ -86,21 +47,22 @@ pub async fn vault_save_note(
     content: String,
     content_hash: Option<String>,
 ) -> Result<VaultWriteResponse, String> {
-    let base = daemon_base(&state)?;
     let encoded = encode_note_path(path.trim());
-    let client = Client::new();
-    let mut request = client
-        .put(format!("{base}/v1/vault/notes/{encoded}"))
-        .header("content-type", "text/markdown; charset=utf-8")
-        .body(content);
+    let mut extra_headers: Vec<(String, String)> = Vec::new();
     if let Some(hash) = content_hash.filter(|value| !value.trim().is_empty()) {
-        request = request.header("if-match", hash);
+        extra_headers.push(("if-match".to_string(), hash));
     }
-    let response = request.send().await.map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::put_raw(
+        &state,
+        &format!("/v1/vault/notes/{encoded}"),
+        "text/markdown; charset=utf-8",
+        content.as_bytes(),
+        &extra_headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect::<Vec<_>>(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -109,22 +71,11 @@ pub async fn vault_create_note(
     path: String,
     content: String,
 ) -> Result<VaultWriteResponse, String> {
-    let base = daemon_base(&state)?;
-    let client = Client::new();
     let body = serde_json::json!({
         "path": path.trim(),
         "content": content,
     });
-    let response = client
-        .post(format!("{base}/v1/vault/notes"))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::post_json(&state, "/v1/vault/notes", &body).await
 }
 
 #[tauri::command]
@@ -132,18 +83,8 @@ pub async fn vault_delete_note(
     state: State<'_, DaemonState>,
     path: String,
 ) -> Result<serde_json::Value, String> {
-    let base = daemon_base(&state)?;
     let encoded = encode_note_path(path.trim());
-    let client = Client::new();
-    let response = client
-        .delete(format!("{base}/v1/vault/notes/{encoded}"))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::delete_json(&state, &format!("/v1/vault/notes/{encoded}")).await
 }
 
 #[tauri::command]
@@ -152,19 +93,16 @@ pub async fn vault_search(
     query: String,
     limit: Option<usize>,
 ) -> Result<VaultSearchResponse, String> {
-    let base = daemon_base(&state)?;
-    let encoded = urlencoding::encode(query.trim());
     let limit = limit.unwrap_or(20);
-    let client = Client::new();
-    let response = client
-        .get(format!("{base}/v1/vault/search?q={encoded}&limit={limit}"))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::get_json_query(
+        &state,
+        "/v1/vault/search",
+        &[
+            ("q", query.trim().to_string()),
+            ("limit", limit.to_string()),
+        ],
+    )
+    .await
 }
 
 #[tauri::command]
@@ -172,16 +110,10 @@ pub async fn vault_backlinks(
     state: State<'_, DaemonState>,
     path: String,
 ) -> Result<VaultBacklinksResponse, String> {
-    let base = daemon_base(&state)?;
-    let encoded = urlencoding::encode(path.trim());
-    let client = Client::new();
-    let response = client
-        .get(format!("{base}/v1/vault/backlinks?path={encoded}"))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(map_http_error(response).await);
-    }
-    response.json().await.map_err(|err| err.to_string())
+    workshop_http::get_json_query(
+        &state,
+        "/v1/vault/backlinks",
+        &[("path", path.trim().to_string())],
+    )
+    .await
 }

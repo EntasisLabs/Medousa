@@ -345,20 +345,33 @@ export class ChatStore {
 
     const epoch = this.transcriptEpoch;
     try {
-      await this.tryReattachActiveTurn(cards);
+      const attached = await this.tryReattachActiveTurn(cards);
       if (epoch !== this.transcriptEpoch) return;
+
+      const liveStream =
+        this.messages.some((message) => message.streaming) ||
+        [...this.turns.values()].some(
+          (turn) => !turn.terminal && turn.mode === "interactive",
+        );
+
+      // Merging daemon history mid-stream duplicates local user/assistant bubbles.
+      if (liveStream) {
+        this.sanitizeTranscript();
+        if (attached && options?.notice !== false && this.historyNotice == null) {
+          this.historyNotice = "Reconnected to live turn";
+        }
+        return;
+      }
 
       const history = await getSessionHistory(sessionId);
       if (epoch !== this.transcriptEpoch) return;
 
       const daemonMessages = mapTurns(history.turns, { sessionId });
       this.messages = mergeTranscript(this.messages, daemonMessages);
+      this.sanitizeTranscript();
 
-      if (options?.notice !== false && history.turns.length > 0 && this.historyNotice == null) {
-        const active = [...this.turns.values()].some((turn) => !turn.terminal);
-        if (active) {
-          this.historyNotice = "Reconnected to live turn";
-        }
+      if (attached && options?.notice !== false && this.historyNotice == null) {
+        this.historyNotice = "Reconnected to live turn";
       }
     } catch (err) {
       this.noteResumeFailure(err);
@@ -470,6 +483,7 @@ export class ChatStore {
         id: crypto.randomUUID(),
         role: "user",
         content: userContent,
+        turnId: ticket.turn_id,
         lane,
         askJobId: isAsk ? askJobId : null,
         mediaAttachments:
@@ -1845,7 +1859,7 @@ export class ChatStore {
 
   noteResumeFailure(err: unknown) {
     const detail = err instanceof Error ? err.message : String(err);
-    this.historyNotice = `Reconnect issue: ${detail}`;
+    console.warn("[chat] resume reconcile failed:", detail);
   }
 
   /** Drop local SSE ownership without stopping daemon streams (already dead). */

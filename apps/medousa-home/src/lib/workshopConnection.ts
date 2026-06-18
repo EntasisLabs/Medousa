@@ -42,6 +42,9 @@ let workshopTeardown = false;
 let workspaceReconnectAttempt = 0;
 let workspaceReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let interactiveRecoverTimer: ReturnType<typeof setTimeout> | null = null;
+let resumeWorkshopInFlight = false;
+let lastResumeWorkshopAt = 0;
+const RESUME_DEBOUNCE_MS = 3_000;
 
 function cancelScheduledStreamRecovery() {
   if (workspaceReconnectTimer) {
@@ -190,7 +193,7 @@ async function startWorkshopStreams(): Promise<void> {
   void recurring.refresh();
   await Promise.all([
     chat.refreshSessions({ force: true }),
-    chat.ensureSessionHydrated({ notice: true }),
+    chat.ensureSessionHydrated({ notice: false }),
   ]);
   void chat.tryReattachActiveTurn(workspace.cards);
   void chat.hydrateAskThreads(workspace.cards);
@@ -214,11 +217,23 @@ async function loadWorkshopDefaults(connected: boolean): Promise<void> {
 export async function resumeWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<void> {
+  const now = Date.now();
+  if (resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
+    return;
+  }
+  resumeWorkshopInFlight = true;
+  lastResumeWorkshopAt = now;
+
   if (isTauriMobilePlatform()) {
     void sendPairingHeartbeat().catch(() => {});
   }
 
-  const health = await checkDaemonHealth();
+  let health: DaemonHealth;
+  try {
+    health = await checkDaemonHealth();
+  } finally {
+    resumeWorkshopInFlight = false;
+  }
   connection.setHealth(health);
   onHealthChange(health);
   if (!health.ok) return;

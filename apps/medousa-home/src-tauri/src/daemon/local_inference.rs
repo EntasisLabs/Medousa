@@ -1,9 +1,8 @@
-use crate::daemon::sse::stream_sse_json;
+use crate::daemon::sse::stream_sse_json_workshop;
+use crate::daemon::workshop_http;
 use crate::daemon::DaemonState;
-use reqwest::Client;
 use std::sync::Mutex;
-use std::time::Duration;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -73,90 +72,25 @@ impl LocalInferenceStreamState {
     }
 }
 
-async fn daemon_get<T: serde::de::DeserializeOwned>(
-    state: &State<'_, DaemonState>,
-    path: &str,
-) -> Result<T, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|err| err.to_string())?;
-    let response = client
-        .get(format!("{base}{path}"))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("daemon GET {path} failed ({status}): {body}"));
-    }
-    response.json::<T>().await.map_err(|err| err.to_string())
-}
-
-async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
-    state: &State<'_, DaemonState>,
-    path: &str,
-    body: &B,
-) -> Result<T, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let client = Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|err| err.to_string())?;
-    let response = client
-        .post(format!("{base}{path}"))
-        .json(body)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("daemon POST {path} failed ({status}): {body}"));
-    }
-    response.json::<T>().await.map_err(|err| err.to_string())
-}
-
-async fn daemon_delete<T: serde::de::DeserializeOwned>(
-    state: &State<'_, DaemonState>,
-    path: &str,
-) -> Result<T, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let client = Client::new();
-    let response = client
-        .delete(format!("{base}{path}"))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("daemon DELETE {path} failed ({status}): {body}"));
-    }
-    response.json::<T>().await.map_err(|err| err.to_string())
-}
-
 #[tauri::command]
 pub async fn local_inference_hardware(
     state: State<'_, DaemonState>,
 ) -> Result<LocalHardwareResponse, String> {
-    daemon_get(&state, "/v1/local/hardware").await
+    workshop_http::get_json(&state, "/v1/local/hardware").await
 }
 
 #[tauri::command]
 pub async fn local_inference_catalog(
     state: State<'_, DaemonState>,
 ) -> Result<LocalCatalogResponse, String> {
-    daemon_get(&state, "/v1/local/catalog").await
+    workshop_http::get_json(&state, "/v1/local/catalog").await
 }
 
 #[tauri::command]
 pub async fn local_inference_models(
     state: State<'_, DaemonState>,
 ) -> Result<LocalModelsResponse, String> {
-    daemon_get(&state, "/v1/local/models").await
+    workshop_http::get_json(&state, "/v1/local/models").await
 }
 
 #[tauri::command]
@@ -174,7 +108,7 @@ pub async fn local_inference_start_download(
     struct Response {
         job: ModelDownloadProgress,
     }
-    let response: Response = daemon_post(
+    let response: Response = workshop_http::post_json(
         &state,
         "/v1/local/models/download",
         &Body {
@@ -190,7 +124,7 @@ pub async fn local_inference_download_status(
     state: State<'_, DaemonState>,
     job_id: String,
 ) -> Result<ModelDownloadProgress, String> {
-    daemon_get(
+    workshop_http::get_json(
         &state,
         &format!("/v1/local/models/download/{}", job_id.trim()),
     )
@@ -207,7 +141,7 @@ pub async fn local_inference_load_engine(
     struct Body {
         model_id: Option<String>,
     }
-    daemon_post(
+    workshop_http::post_json(
         &state,
         "/v1/local/engine/load",
         &Body {
@@ -223,7 +157,7 @@ pub async fn local_inference_load_engine(
 pub async fn local_inference_engine_status(
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
-    daemon_get(&state, "/v1/local/engine/status").await
+    workshop_http::get_json(&state, "/v1/local/engine/status").await
 }
 
 #[tauri::command]
@@ -231,7 +165,7 @@ pub async fn local_inference_remove_model(
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<serde_json::Value, String> {
-    daemon_delete(
+    workshop_http::delete_json(
         &state,
         &format!("/v1/local/models/{}", model_id.trim()),
     )
@@ -251,24 +185,29 @@ pub async fn local_inference_stream_download(
     let (cancel_tx, cancel_rx) = watch::channel(false);
     *stream_state.cancel.lock().expect("lock") = Some(cancel_tx);
 
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    let url = format!("{base}/v1/local/models/download/{}/events", job_id.trim());
-    let client = Client::builder()
-        .timeout(Duration::from_secs(3600))
-        .build()
-        .map_err(|err| err.to_string())?;
+    let config = workshop_http::transport_config(&state);
+    let path = format!("/v1/local/models/download/{}/events", job_id.trim());
 
     tauri::async_runtime::spawn(async move {
-        stream_sse_json::<ModelDownloadProgress, _>(
-            &app,
-            &client,
-            &url,
-            "model_download_progress",
-            "model_download_progress://error",
-            |_| {},
-            cancel_rx,
-        )
-        .await;
+        match workshop_http::get_bytes_stream_for_config(&config, &path).await {
+            Ok(source) => {
+                stream_sse_json_workshop::<ModelDownloadProgress, _>(
+                    &app,
+                    source,
+                    "model_download_progress",
+                    "model_download_progress://error",
+                    |_| {},
+                    cancel_rx,
+                )
+                .await;
+            }
+            Err(err) => {
+                let _ = app.emit(
+                    "model_download_progress://error",
+                    serde_json::json!({ "message": err }),
+                );
+            }
+        }
     });
     Ok(())
 }

@@ -29,6 +29,14 @@ export function mergeTranscript(
     if (message.turnId && localTurnIds.has(message.turnId)) {
       continue;
     }
+    if (message.role === "user") {
+      const duplicateUser = merged.some(
+        (existing) =>
+          existing.role === "user" &&
+          existing.content.trim() === message.content.trim(),
+      );
+      if (duplicateUser) continue;
+    }
     if (!message.turnId && message.role === "assistant" && message.content.trim()) {
       const duplicate = merged.some(
         (existing) =>

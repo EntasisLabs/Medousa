@@ -1,7 +1,9 @@
 use crate::daemon::types::{MediaUploadResponse, MediaRef};
-use crate::daemon::{daemon_http_client, DaemonState};
-use reqwest::multipart;
+use crate::workshop_transport::MultipartField;
 use tauri::State;
+
+use super::workshop_http;
+use super::DaemonState;
 
 #[tauri::command]
 pub async fn media_upload(
@@ -12,7 +14,6 @@ pub async fn media_upload(
     bytes: Vec<u8>,
     label: Option<String>,
 ) -> Result<MediaUploadResponse, String> {
-    let base = state.daemon_url.lock().expect("daemon url lock").clone();
     let session_id = session_id.trim();
     if session_id.is_empty() {
         return Err("session_id is required".to_string());
@@ -34,38 +35,30 @@ pub async fn media_upload(
         mime.to_string()
     };
 
-    let mut form = multipart::Form::new().part(
-        "file",
-        multipart::Part::bytes(bytes)
-            .file_name(filename.clone())
-            .mime_str(&mime)
-            .map_err(|err| err.to_string())?,
-    );
+    let mut fields = vec![MultipartField {
+        name: "file".to_string(),
+        filename: Some(filename),
+        mime: Some(mime),
+        data: bytes,
+    }];
     if let Some(label) = label
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        form = form.text("label", label);
+        fields.push(MultipartField {
+            name: "label".to_string(),
+            filename: None,
+            mime: None,
+            data: label.into_bytes(),
+        });
     }
 
-    let client = daemon_http_client()?;
-    let response = client
-        .post(format!("{base}/v1/media/upload?session_id={session_id}"))
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("media upload failed ({status}): {body}"));
-    }
-
-    response
-        .json::<MediaUploadResponse>()
-        .await
-        .map_err(|err| err.to_string())
+    workshop_http::post_multipart(
+        &state,
+        &format!("/v1/media/upload?session_id={session_id}"),
+        &fields,
+    )
+    .await
 }
 
 #[tauri::command]
