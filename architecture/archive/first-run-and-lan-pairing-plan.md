@@ -1,16 +1,16 @@
-# Normie onboarding + LAN pairing
+# First-run onboarding + LAN pairing
 
-> **Status:** Shipped — Phases A–D complete (2026-06-07); Phase E/F deferred ([gap analysis](normie-product-gap-analysis.md), [NEXT.md](NEXT.md))  
+> **Status:** Shipped — Phases A–D complete (2026-06-07); Phase E/F deferred ([gap analysis](first-run-gap-analysis-2026-06.md), [ROADMAP.md](../ROADMAP.md))  
 > **Date:** 2026-06-11  
 > **Epic target:** Phase 1 LAN Magic — **core path landed**  
-> **Supersedes:** informal `strategy/medousa-normie-onboarding-strategy.md` references (strategy doc not yet in repo)  
-> **Related:** [medousa-home-plan.md](medousa-home-plan.md), [medousa-home-mobile-plan.md](medousa-home-mobile-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md), [embedded-local-inference-plan.md](embedded-local-inference-plan.md), [component-daemon.md](component-daemon.md)
+> **Supersedes:** informal first-run onboarding strategy references (strategy doc not yet in repo)  
+> **Related:** [medousa-home-plan.md](medousa-home-plan.md), [medousa-home-mobile-plan.md](medousa-home-mobile-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md), [durable-turn-worker-plan.md](../durable-turn-worker-plan.md), [embedded-local-inference-plan.md](../embedded-local-inference-plan.md), [component-daemon.md](../component-daemon.md)
 
 ## Product promise
 
 **Download → chat in 90 seconds, zero terminal.**
 
-A normie opens **Medousa**, picks how the brain thinks, optionally pairs a phone on the same Wi‑Fi, and lands in chat. No `medousa setup`, no engine jargon, no JSON files.
+A new user opens **Medousa**, picks how the brain thinks, optionally pairs a phone on the same Wi‑Fi, and lands in chat. No `medousa setup`, no engine jargon, no JSON files.
 
 Marketing line: *Your second brain — always here, always yours, always private.*
 

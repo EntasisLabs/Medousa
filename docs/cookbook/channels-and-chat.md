@@ -57,4 +57,4 @@ Phone app talks to **Medousa Engine** on your Mac over Wi‑Fi. Desktop **Medous
 
 Dev: `medousa start daemon --public` — see [build-from-source.md](build-from-source.md) (MOBILE-DEV.md).
 
-Protocol: [normie-onboarding-and-lan-pairing-plan.md](../../architecture/normie-onboarding-and-lan-pairing-plan.md)
+Protocol: [first-run-and-lan-pairing-plan.md](../../architecture/archive/first-run-and-lan-pairing-plan.md)

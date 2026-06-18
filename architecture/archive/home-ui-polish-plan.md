@@ -75,4 +75,4 @@
 3. **D1 + D2 + D3** — retention settings + engine TTL + tray clear
 4. **C2** — mobile “daemon defaults” affordance
 
-See also: [NEXT.md](NEXT.md) (normie operator surface).
+See also: [ROADMAP.md](../ROADMAP.md) (operator surface).

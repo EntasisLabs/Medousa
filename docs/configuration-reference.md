@@ -2,11 +2,11 @@
 
 > **Status:** Active — operator reference (2026-06-07)  
 > **Audience:** Power users, self-hosters, contributors  
-> **Related:** [cookbook/install-and-self-host.md](cookbook/install-and-self-host.md), [mcp-gateway-setup.md](mcp-gateway-setup.md), [architecture/NEXT.md](../architecture/NEXT.md)
+> **Related:** [cookbook/install-and-self-host.md](cookbook/install-and-self-host.md), [mcp-gateway-setup.md](mcp-gateway-setup.md), [architecture/ROADMAP.md](../architecture/ROADMAP.md)
 
 non-devs configure Medousa through the **app wizard and Settings**. This document lists **every environment override** the engine and app honor today. When a setting moves into the UI, it stays here for automation and CI.
 
-**Check effective config:** `medousa doctor` (runtime health + paths). A dedicated `doctor --config` summary is planned ([NEXT.md](../architecture/NEXT.md)).
+**Check effective config:** `medousa doctor` (runtime health + paths). A dedicated `doctor --config` summary is planned ([ROADMAP.md](../architecture/ROADMAP.md)).
 
 ---
 
@@ -54,7 +54,7 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_LOCAL_ENGINE_CPU` | Force CPU-only inference | unset |
 | `HF_TOKEN` | Hugging Face downloads (Gemma catalog) | unset |
 
-25+ providers are supported via [rust-genai](https://github.com/jeremychone/rust-genai). The Home wizard currently surfaces OpenAI, Anthropic, Google, and Ollama only — see [NEXT.md](../architecture/NEXT.md).
+25+ providers are supported via [rust-genai](https://github.com/jeremychone/rust-genai). The Home wizard currently surfaces OpenAI, Anthropic, Google, and Ollama only — see [ROADMAP.md](../architecture/ROADMAP.md).
 
 ---
 
@@ -163,7 +163,7 @@ File: `~/.config/medousa/capabilities.toml` — bindings for grapheme ops and MC
 | `MEDOUSA_PAIRING_ADVERTISE` | Force mDNS when not `--public` |
 | `MEDOUSA_PAIRING_DISABLE_TLS` | Dev only — plaintext pairing |
 
-See [normie-onboarding-and-lan-pairing-plan.md](../architecture/normie-onboarding-and-lan-pairing-plan.md).
+See [first-run-and-lan-pairing-plan.md](../architecture/archive/first-run-and-lan-pairing-plan.md).
 
 ---
 
@@ -182,7 +182,7 @@ See [normie-onboarding-and-lan-pairing-plan.md](../architecture/normie-onboardin
 | `MEDOUSA_WHATSAPP_DELIVER_URL` | WhatsApp deliver endpoint |
 | `MEDOUSA_WHATSAPP_DELIVER_BIND` | WhatsApp deliver bind |
 
-Channel tokens belong in `product_config.json` for normie flow; env vars remain for headless adapters.
+Channel tokens belong in `product_config.json` for the Home app flow; env vars remain for headless adapters.
 
 ---
 

@@ -1,9 +1,9 @@
-# Normie product gap analysis (“Steve Jobs” pass)
+# First-run product gap analysis
 
-> **Status:** Complete — Phases A–D shipped (2026-06-07); next work → [NEXT.md](NEXT.md)  
+> **Status:** Complete — Phases A–D shipped (2026-06-07); next work → [ROADMAP.md](../ROADMAP.md)  
 > **Date:** 2026-06-12  
 > **Audience:** Product + engineering  
-> **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)
+> **Related:** [first-run-and-lan-pairing-plan.md](first-run-and-lan-pairing-plan.md), [session-catalog-index-plan.md](session-catalog-index-plan.md), [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md)
 
 ## The pitch vs. the product
 
@@ -11,7 +11,7 @@
 
 **Reality today:** Download the app → maybe find an engine → pick a provider → wonder why it says offline → learn what a daemon is → give up or become a power user by accident.
 
-The **vision is right** (see normie onboarding plan). **Packaging and path consistency** are not yet Jobs-level: we built a workshop for builders and wrapped a welcome screen around it.
+The **vision is right** (see [first-run-and-lan-pairing-plan.md](first-run-and-lan-pairing-plan.md)). **Packaging and path consistency** still need polish: we built a workshop for builders and wrapped a welcome screen around it.
 
 ---
 
@@ -176,9 +176,9 @@ Product layout, Work Hub manifestations, nav tiers, chat presentation, and onboa
 | Track | Doc |
 |-------|-----|
 | Env + paths catalog | [docs/configuration-reference.md](../docs/configuration-reference.md) |
-| Provider picker + API keys in UI | [NEXT.md](NEXT.md) |
-| MCP server add/edit in UI | [NEXT.md](NEXT.md) |
-| Capabilities toggles in UI | [NEXT.md](NEXT.md) |
+| Provider picker + API keys in UI | [ROADMAP.md](../ROADMAP.md) |
+| MCP server add/edit in UI | [ROADMAP.md](../ROADMAP.md) |
+| Capabilities toggles in UI | [ROADMAP.md](../ROADMAP.md) |
 
 Deferred: Phase E cloud auth, Phase F accessibility/packaging.
 
@@ -188,5 +188,5 @@ Deferred: Phase E cloud auth, Phase F accessibility/packaging.
 
 | Date | Change |
 |------|--------|
-| 2026-06-07 | Phases A–D marked complete; pointer to NEXT.md |
+| 2026-06-07 | Phases A–D marked complete; pointer to ROADMAP.md |
 | 2026-06-12 | Initial gap analysis + Phase A kickoff |

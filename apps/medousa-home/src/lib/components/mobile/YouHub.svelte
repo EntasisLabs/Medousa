@@ -69,7 +69,7 @@
   {#if layout.youDestination === "hub"}
     <header class="mobile-you-header">
       <h1 class="text-lg font-semibold tracking-tight text-surface-50">You</h1>
-      <p class="workshop-faint mt-1 text-sm">The back room — only when you need it</p>
+      <p class="workshop-faint mt-1 text-sm">Settings & tools — only when you need them</p>
     </header>
     <div class="mobile-you-scroll flex-1 overflow-y-auto px-4 pb-4">
       {#each YOU_HUB_SECTIONS as section (section.title)}

@@ -538,6 +538,6 @@ pub fn print_doctor_local_inference(daemon_url: &str, daemon_healthy: bool, verb
     }
 }
 
-pub fn print_normie_home_hint() {
+pub fn print_home_app_hint() {
     println!("[info] Ready to chat? Open Medousa.");
 }

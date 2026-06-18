@@ -2,8 +2,8 @@
 
 > **Status:** Phase 0 code landed (smoke pending) · Phase 1 QR v2 landed · Phase 2 mobile handshake wired  
 > **Date:** 2026-06-07  
-> **Supersedes:** deferred “Phase E cloud relay” transport story in [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) (relay layer only — cloud auth remains Phase E)  
-> **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [CONNECTION-RELIABILITY.md](../apps/medousa-home/docs/CONNECTION-RELIABILITY.md)
+> **Supersedes:** deferred “Phase E cloud relay” transport story in [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing-plan.md) (relay layer only — cloud auth remains Phase E)  
+> **Related:** [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing-plan.md), [connection-reliability.md](../docs/runbooks/connection-reliability.md)
 
 ## Product promise
 
@@ -167,7 +167,7 @@ If `k` absent (v1 compat), verify with v1 message `{a}|{d}|{t}` only.
 - [ ] Public `n0` preset documented as dev/hobby; privacy copy in Settings
 - [ ] Revoke/regenerate Iroh endpoint on “Forget phone”
 - [ ] Connection diagnostics UI (direct vs relay, RTT) — optional Iroh Services metrics
-- [ ] Remove manual IP entry from normie wizard (Advanced only)
+- [ ] Remove manual IP entry from first-run wizard (Advanced only)
 
 **Exit:** Dogfood checklist passes on Wi‑Fi, LTE, and “Mac slept / woke”.
 

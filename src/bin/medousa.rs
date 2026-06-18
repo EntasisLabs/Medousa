@@ -702,7 +702,7 @@ fn run_onboard(args: &[String]) -> Result<()> {
         )
         .green()
     );
-    medousa::local_inference_cli::print_normie_home_hint();
+    medousa::local_inference_cli::print_home_app_hint();
 
     if selected.launch_tui {
         println!("{}", "Launching Medousa chat...".magenta().bold());
@@ -2373,7 +2373,7 @@ fn print_daemon_ready_messages(plan: &DaemonLaunchPlan, already_running: bool) {
         );
     }
     if !plan.private_brain {
-        medousa::local_inference_cli::print_normie_home_hint();
+        medousa::local_inference_cli::print_home_app_hint();
     }
 }
 

@@ -11,7 +11,7 @@
 | **Desktop app (Tauri)** | Local build only | `.dmg` / `.app` on Mac via `npm run build:desktop` |
 | **Mobile** | Separate | TestFlight / stores — see `apps/medousa-home/MOBILE-DEV.md` |
 
-The product README links to [GitHub Releases](https://github.com/EntasisLabs/Medousa/releases), but releases today contain **CLI tarballs only**, not the Medousa.app installers normies expect.
+The product README links to [GitHub Releases](https://github.com/EntasisLabs/Medousa/releases), but releases today contain **CLI tarballs only**, not the Medousa.app installers most users expect.
 
 ### What already works (Mac, manual)
 
@@ -70,5 +70,5 @@ Tag v*  →  CI builds per OS  →  GitHub Release assets
 ## Related
 
 - `scripts/release/publish.sh --ci vX.Y.Z` — tag triggers CLI matrix today
-- `architecture/normie-product-gap-analysis.md` — A1 sidecar bundling (shipped)
-- `architecture/normie-onboarding-and-lan-pairing-plan.md` — Phase F packaging (deferred)
+- `architecture/archive/first-run-gap-analysis-2026-06.md` — A1 sidecar bundling (shipped)
+- `architecture/archive/first-run-and-lan-pairing-plan.md` — Phase F packaging (deferred)

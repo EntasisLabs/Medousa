@@ -21,7 +21,7 @@ npm run tauri build
 
 Artifacts: `apps/medousa-home/src-tauri/target/release/`
 
-Design notes: [architecture/medousa-home-tauri-design.md](../../architecture/medousa-home-tauri-design.md)
+Design notes: [architecture/archive/medousa-home-tauri-design.md](../../architecture/archive/medousa-home-tauri-design.md)
 
 ---
 

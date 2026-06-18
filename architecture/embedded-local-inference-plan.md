@@ -4,7 +4,7 @@
 > **Date:** 2026-06-07 (Gemma 4 catalog lock — June 2026 releases)  
 > **Default brain:** **Gemma 4** family — hero model **Gemma 4 12B Unified** (June 3, 2026) on 16 GB+ Macs  
 > **Goal:** non-devs never install Ollama. Medousa Core downloads a curated Gemma 4 build, runs it in-process, and exposes it to the existing turn pipeline. Home (desktop + iPhone) stays a portal.  
-> **Related:** [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md), [component-daemon.md](component-daemon.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md)
+> **Related:** [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing-plan.md), [component-daemon.md](component-daemon.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md)
 
 ---
 
@@ -16,13 +16,13 @@
 - Power users can still use Ollama, cloud BYOK, or custom HF URLs later.
 - Phone app never hosts the model — it connects to Core on the Mac (see mobile wizard).
 
-This closes the gap called out in the normie onboarding epic: **Screen 1 Offline path** and **Recommended managed AI** eventually share the same “Medousa-hosted model” story, but v1 ships with a **local embedded Gemma 4 engine** first (privacy, no cloud dependency).
+This closes the gap called out in the first-run onboarding epic: **Screen 1 Offline path** and **Recommended managed AI** eventually share the same “Medousa-hosted model” story, but v1 ships with a **local embedded Gemma 4 engine** first (privacy, no cloud dependency).
 
 ---
 
 ## Why Gemma 4 (June 2026)
 
-Google’s Gemma 4 line is the curated default for Medousa — not because it’s trendy, but because it matches the product shape: **strong reasoning on normie hardware**, multimodal headroom for future vault/vision work, and explicit **laptop / 16 GB unified memory** targeting.
+Google’s Gemma 4 line is the curated default for Medousa — not because it’s trendy, but because it matches the product shape: **strong reasoning on typical laptop hardware**, multimodal headroom for future vault/vision work, and explicit **laptop / 16 GB unified memory** targeting.
 
 | Release | Model | Why it matters for Medousa |
 |---------|-------|---------------------------|
@@ -125,7 +125,7 @@ non-devs never browse Hugging Face. We ship a **signed manifest** in the repo (u
 | **`gemma-4-12b-it`** | **Gemma 4 12B — recommended** | C+ | `google/gemma-4-12B-it` (Unified, Jun 2026) | **~7–9 GB** Q4 class | ~12–16 GB | **Hero model** — wizard “Recommended / Offline” |
 | **`gemma-4-26b-a4b-it`** | Gemma 4 26B MoE — deep | D/E | `google/gemma-4-26B-A4B-it` UQFF / Q4 GGUF | **~17 GB** | ~20 GB+ | Optional “think harder” toggle |
 
-Official instruct variants: `-it` suffix. Base weights are not offered in the normie catalog.
+Official instruct variants: `-it` suffix. Base weights are not offered in the Home catalog.
 
 ### Example manifest entry (hero model)
 
@@ -168,7 +168,7 @@ Official instruct variants: `-it` suffix. Base weights are not offered in the no
 
 | Rule | Rationale |
 |------|-----------|
-| **Gemma 4 only in normie catalog** | One family, one voice; tier = size variant not brand hop |
+| **Gemma 4 only in Home catalog** | One family, one voice; tier = size variant not brand hop |
 | **`-it` instruct weights only** | Chat out of the box |
 | **UQFF / QAT first, GGUF fallback** | mistral.rs native path; GGUF via llama.cpp until gemma4 GGUF in mistral.rs |
 | **≤4 curated SKUs at launch** | E2B, E4B, 12B hero, 26B optional |
@@ -252,7 +252,7 @@ Buttons: **Download Gemma 4** · **Pick another size** · **Use cloud key instea
 | `engine_http` | `src/local_inference/http.rs` | Loopback OpenAI shim (or mount on axum `:7419/v1/local/...`) |
 | `handlers` | `src/local_inference_handlers.rs` | `GET /models/catalog`, `POST /models/download`, progress SSE |
 
-**Feature flag:** `embedded-inference` in `medousa/Cargo.toml` — default **off** in dev until Phase 1 lands; **on** in normie release builds.
+**Feature flag:** `embedded-inference` in `medousa/Cargo.toml` — default **off** in dev until Phase 1 lands; **on** in release app builds.
 
 **Idle RAM discipline:** engine **not loaded** until first chat or explicit preload; target remains ~30 MB daemon idle without weights mapped.
 
@@ -273,7 +273,7 @@ Buttons: **Download Gemma 4** · **Pick another size** · **Use cloud key instea
 
 Internal chat: `http://127.0.0.1:7421/v1/chat/completions` (mistral.rs OpenAI server) — not exposed off localhost.
 
-**Tauri events (Home):** reuse `model_download_progress` from normie onboarding spec; add `local_engine_ready`.
+**Tauri events (Home):** reuse `model_download_progress` from first-run onboarding spec; add `local_engine_ready`.
 
 ---
 
@@ -285,9 +285,9 @@ Internal chat: `http://127.0.0.1:7421/v1/chat/completions` (mistral.rs OpenAI se
 | **Desktop Screen 1 — BYOM** | Keep Ollama detect + cloud keys; “Medousa offline model” card when catalog available |
 | **Mobile Screen 1** | Unchanged — connect to Mac; Mac owns model |
 | **Settings → Voice** | Show tier, installed local model, download/remove, re-run hardware probe |
-| **TUI / CLI** | `medousa start daemon --inference` (dev); `medousa models …` — never the normie path |
+| **TUI / CLI** | `medousa start daemon --inference` (dev); `medousa models …` — not the Home app path |
 
-Cross-ref: [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) Phase C/E offline + recommended paths.
+Cross-ref: [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing-plan.md) Phase C/E offline + recommended paths.
 
 ---
 
@@ -341,7 +341,7 @@ Cross-ref: [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan
 
 - On-phone embedded inference (separate “Pocket” product later)
 - Merging daemon into Home single binary (SDK/sidecar — post-v1)
-- Arbitrary HF model IDs from normie UI
+- Arbitrary HF model IDs from Home UI
 - Fine-tuning or LoRA training
 - Replacing Ollama for power users who already have it
 

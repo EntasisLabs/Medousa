@@ -35,7 +35,7 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 |-------|----------------|
 | [Engine overview](engine/README.md) | Why corps embed Medousa Engine, topology, trust model |
 | [HTTP API reference](engine/http-api.md) | Routes, contracts, interactive turns, local inference |
-| [Architecture (deep)](../architecture/README.md) | Component boundaries, shipped plans, [active work](../architecture/NEXT.md) |
+| [Architecture (deep)](../architecture/README.md) | Component boundaries, shipped plans, [roadmap](../architecture/ROADMAP.md) |
 
 ### Existing setup guides
 
@@ -68,4 +68,4 @@ App development lives under `apps/medousa-home/` — see [Build from source](coo
 
 ## Contributing
 
-Implementation history lives in [`architecture/`](../architecture/). **Active work:** [`architecture/NEXT.md`](../architecture/NEXT.md). Shipped milestone index: [`architecture/archive/`](../architecture/archive/).
+Implementation history lives in [`architecture/`](../architecture/). **Active work:** [`architecture/ROADMAP.md`](../architecture/ROADMAP.md). Shipped milestone index: [`architecture/archive/`](../architecture/archive/). ADRs: [`docs/architecture/decisions/`](architecture/decisions/README.md).

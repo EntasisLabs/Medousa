@@ -1,10 +1,11 @@
-# Medousa Architecture Map
+# Medousa architecture
 
-Documentation for Medousa's runtime, surfaces, and shipped product work.
+Living documentation for system shape, component boundaries, and active roadmap.
 
-**Download the app:** [../README.md](../README.md)  
-**Developers & operators:** [../docs/README.md](../docs/README.md)  
-**What's next:** [NEXT.md](NEXT.md)  
+**Product README:** [../README.md](../README.md)  
+**Developer docs:** [../docs/README.md](../docs/README.md)  
+**Active roadmap:** [ROADMAP.md](ROADMAP.md)  
+**Architecture decisions (ADRs):** [../docs/architecture/decisions/README.md](../docs/architecture/decisions/README.md)  
 **Historical milestone plans:** [archive/README.md](archive/README.md)
 
 ---
@@ -15,70 +16,11 @@ Documentation for Medousa's runtime, surfaces, and shipped product work.
 |-----|---------|
 | [system-overview.md](system-overview.md) | End-to-end system shape |
 | [interaction-and-state-model.md](interaction-and-state-model.md) | Who owns what state |
+| [enterprise-architecture-and-flow-guide.md](enterprise-architecture-and-flow-guide.md) | Topology, flows, accountability framing |
 | [component-daemon.md](component-daemon.md) | Engine HTTP API, persistence |
 | [component-cli.md](component-cli.md) | `medousa` CLI |
 | [component-tui.md](component-tui.md) | Terminal workspace |
 | [component-mcp-gateway.md](component-mcp-gateway.md) | MCP Client gateway |
-
----
-
-## Shipped product (Medousa app)
-
-| Area | Doc | Notes |
-|------|-----|-------|
-| **Normie onboarding** | [normie-product-gap-analysis.md](normie-product-gap-analysis.md) | Phases A–D ✅ |
-| **Wizard + pairing** | [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) | LAN QR, BYOM, engine sidecar |
-| **Iroh P2P pairing** | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Phased epic: Iroh transport + mobile trust ceremony |
-| **Home shell** | [medousa-home-tauri-design.md](medousa-home-tauri-design.md) | Tauri, IPC, streams |
-| **Nav tiers** | [medousa-home-product-ux-plan.md](medousa-home-product-ux-plan.md) | Life orbit / capability / utility rail |
-| **Work Hub** | [medousa-home-work-hub-plan.md](medousa-home-work-hub-plan.md) | Manifestation grid, trays, pop-out |
-| **Chat presentation** | [presentation-and-envelope-plan.md](presentation-and-envelope-plan.md) | Tool chips, Obsidian markdown, `parts[]` |
-| **Session catalog** | [session-catalog-index-plan.md](session-catalog-index-plan.md) | Fast list, search, rename |
-| **Settings charter** | [medousa-home-m11-settings-charter-plan.md](medousa-home-m11-settings-charter-plan.md) | Memory, voice, connection |
-
-Implementation: `apps/medousa-home/`
-
----
-
-## Shipped runtime (turn loop & workers)
-
-| Doc | Topic |
-|-----|-------|
-| [turn-loop-single-writer-plan.md](turn-loop-single-writer-plan.md) | FSM, `begin_work`, single writer |
-| [turn-control-tools-plan.md](turn-control-tools-plan.md) | `finish`, budget request, `checkpoint` |
-| [turn-state-machine-plan.md](turn-state-machine-plan.md) | Completion state machine |
-| [async-chat-unlock-plan.md](async-chat-unlock-plan.md) | Async chat + worker synthesis |
-| [continuity-first-redesign.md](continuity-first-redesign.md) | Tool slices, runtime limits |
-
-Code anchors: `src/medousa_tool_loop.rs`, `src/agent_runtime/`, `src/bin/medousa_daemon.rs`
-
----
-
-## Active work
-
-See **[NEXT.md](NEXT.md)** — configuration reference, provider picker, MCP/capabilities UI, **Iroh P2P pairing** ([iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md)).
-
-Quick list:
-
-1. [`docs/configuration-reference.md`](../docs/configuration-reference.md) — env + paths catalog  
-2. LLM providers surfaced in Home (genai catalog)  
-3. MCP server add/edit without TOML  
-4. Capabilities toggles without TOML  
-
----
-
-## Future / deferred (not blockers)
-
-| Doc | Topic |
-|-----|-------|
-| [user-profiles-plan.md](user-profiles-plan.md) | Switchable identity + Locus tenants (work / home profiles) |
-| [media-and-attachments-plan.md](media-and-attachments-plan.md) | P5 media |
-| [embedded-local-inference-plan.md](embedded-local-inference-plan.md) | Embedded catalog expansion |
-| [normie-onboarding-and-lan-pairing-plan.md](normie-onboarding-and-lan-pairing-plan.md) | Phase E cloud auth, Phase F packaging |
-| [durable-turn-worker-plan.md](durable-turn-worker-plan.md) | Durable worker hardening |
-| [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) | Recall ranking |
-
-Full historical index: [archive/README.md](archive/README.md)
 
 ---
 
@@ -90,7 +32,35 @@ Full historical index: [archive/README.md](archive/README.md)
 
 ---
 
-## Primary code anchors
+## Active epics & roadmaps
+
+| Doc | Topic |
+|-----|--------|
+| [ROADMAP.md](ROADMAP.md) | Current priorities (attachments, Iroh, distribution, …) |
+| [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Encrypted phone ↔ desktop transport |
+| [media-and-attachments-plan.md](media-and-attachments-plan.md) | Local chat attachments (P5) |
+| [embedded-local-inference-plan.md](embedded-local-inference-plan.md) | Embedded Gemma engine |
+| [desktop-distribution-plan.md](desktop-distribution-plan.md) | Signed app bundles |
+| [durable-turn-worker-plan.md](durable-turn-worker-plan.md) | Durable worker hardening |
+
+Future / deferred (not blockers):
+
+| Doc | Topic |
+|-----|--------|
+| [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) | Recall ranking + manuscripts |
+| [cognitive-identity-memory-plan.md](cognitive-identity-memory-plan.md) | Identity memory phases |
+| [worker-continuity-plan.md](worker-continuity-plan.md) | Worker continuity |
+| [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md) | Context lanes |
+| [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md) | Ingester |
+| [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md) | Agent runtime |
+| [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md) | Channel delivery |
+| [recurring-delivery-roadmap.md](recurring-delivery-roadmap.md) | Recurring delivery |
+| [dlq-replay-turn-continuation-plan.md](dlq-replay-turn-continuation-plan.md) | DLQ replay |
+| [tui-performance-target-plan.md](tui-performance-target-plan.md) | TUI performance |
+
+---
+
+## Code anchors
 
 | Path | Role |
 |------|------|
@@ -99,7 +69,6 @@ Full historical index: [archive/README.md](archive/README.md)
 | `src/bin/medousa_daemon.rs` | Engine |
 | `src/bin/medousa_tui.rs` | TUI |
 | `src/bin/medousa.rs` | CLI + doctor |
-| `src/session.rs` | Sessions + history |
-| `src/capability_catalog.rs` | Capabilities manifest |
-| `src/mcp_gateway/` | MCP gateway |
+| `src/user_profiles.rs` | Workshop profile registry |
+| `src/locus_memory.rs` | Locus session scoping |
 | `apps/medousa-home/` | Medousa app (Tauri + Svelte) |

@@ -80,7 +80,7 @@ Plan: [embedded-local-inference-plan.md](../../architecture/embedded-local-infer
 | GET | `/qr` | Pairing QR payload |
 | GET | `/pair/status` | Paired devices |
 
-Protocol: [normie-onboarding-and-lan-pairing-plan.md](../../architecture/normie-onboarding-and-lan-pairing-plan.md)
+Protocol: [first-run-and-lan-pairing-plan.md](../../architecture/archive/first-run-and-lan-pairing-plan.md)
 
 ---
 
