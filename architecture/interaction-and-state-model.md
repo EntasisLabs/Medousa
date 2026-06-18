@@ -2,20 +2,25 @@
 
 This document describes how Medousa behaves at runtime across interaction surfaces and where state is owned.
 
+**Turn engine (host/worker/FSM/lanes):** [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md)
+
+---
+
 ## End-to-End Interaction Flows
 
 ## 1) TUI chat turn
 
 1. user submits prompt from chat input
-2. TUI starts prompt run through tool loop execution path
-3. streaming chunks update visible conversation incrementally
-4. tool events are emitted into observability stream
-5. final response is committed to conversation history
+2. TUI calls daemon `POST /v1/interactive/turn` (primary) or local `execute_local_turn` fallback
+3. shared agent runtime runs tool loop + FSM + optional worker delegation
+4. streaming chunks update visible conversation incrementally
+5. tool events are emitted into observability stream
+6. final response is committed to conversation history
 
 State touched:
 
 - in-memory: conversation buffers, processing flags, overlay state
-- persisted user state: session history append
+- persisted user state: session history append (+ optional scratch metadata)
 
 ## 2) TUI script execution flow
 
@@ -54,17 +59,38 @@ State touched:
 - runtime backend durable stores
 - daemon in-memory service metadata (for example last_tick_at)
 
-## Agent turn bus (planned)
+## 5) Daemon interactive turn (Home, TUI, ingest)
 
-Host/worker delegation and pending-work lifecycle are **daemon agent runtime** concerns, not TUI-specific. Any comms medium (TUI SSE, Telegram ingest, `interactive/turn`, `jobs/ask`) should observe the same bus events and session ledger. See [turn-worker-bus-plan.md](turn-worker-bus-plan.md).
+1. adapter POSTs turn request (optional `manuscript_id`, routing, depth)
+2. `run_agent_turn` prepares prompt probes and runs host tool loop
+3. host may delegate via `cognition_spawn_turn_worker` → worker lane → synthesis
+4. SSE stream events + turn ledger JSONL record lifecycle
+5. session history append on terminal outcome
 
-For unlocking sync chat → async conversation UX, see [async-chat-unlock-plan.md](async-chat-unlock-plan.md).
+State touched:
+
+- agent runtime in-memory: turn workers store, stream sinks, ask job results
+- persisted: session files, turn ledger, `workspace/turn_workers.json`, Locus/identity stores
+
+See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md) for FSM, host bus, and specialist/manuscript wiring.
+
+---
+
+## Agent turn bus (shipped)
+
+Host/worker delegation, synthesis, and pending-work lifecycle are **daemon agent runtime** concerns, not TUI-specific. Any comms medium (Home SSE, TUI, Telegram ingest, `interactive/turn`, `jobs/ask`) uses the same `run_agent_turn` path and observes the same bus semantics.
+
+Historical design notes: [archive/turn-worker-bus-plan.md](archive/turn-worker-bus-plan.md).
+
+Async chat unlock (sync UI → background workers): [archive/async-chat-unlock-plan.md](archive/async-chat-unlock-plan.md).
+
+---
 
 ## State Domains
 
-## A) UI state domain (TUI)
+## A) UI state domain (TUI / Home)
 
-Owned by TuiState:
+Owned by client stores (`TuiState`, Home Svelte stores):
 
 - mode and panel projections
 - drafts and editor buffers
@@ -77,12 +103,13 @@ Properties:
 
 ## B) user persistence domain
 
-Owned by session.rs:
+Owned by session.rs + profile registry:
 
 - session history files
 - defaults (settings/routing/depth)
 - last-session pointer
 - secure key material (keyring/file fallback)
+- user profiles (`user_profiles.json`)
 
 Properties:
 
@@ -91,12 +118,13 @@ Properties:
 
 ## C) runtime execution domain
 
-Owned by Stasis backend:
+Owned by Stasis backend + agent runtime stores:
 
 - jobs and lifecycle transitions
 - attempts and diagnostics
 - recurring definitions
 - outbox event progression
+- turn worker records (`TurnWorkRecord`)
 
 Properties:
 
@@ -118,9 +146,9 @@ For TUI runtime/env overrides:
 
 ## Coupling Boundaries
 
-- TUI <-> runtime: in-process through TuiRuntime and event channel
-- CLI <-> runtime: direct in-process orchestration calls
-- CLI <-> daemon: HTTP API contract only
-- daemon <-> runtime: direct runtime orchestration and scheduler tick
+- TUI / Home ↔ daemon: HTTP + SSE (`/v1/interactive/turn`); local TUI fallback in-process only
+- CLI ↔ runtime: direct in-process orchestration calls
+- CLI ↔ daemon: HTTP API contract only
+- daemon ↔ runtime: `MedousaAgentRuntime` + scheduler tick
 
-This separation keeps transport semantics explicit while preserving shared execution primitives.
+Adapters stay thin; orchestration lives in `src/agent_runtime/`. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md).

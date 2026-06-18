@@ -3,7 +3,7 @@
 > **Status:** In progress — Phase 0–1 landing  
 > **Date:** 2026-06-07  
 > **Supersedes:** in-process-only execution described as end-state in [turn-worker-phase1.md](turn-worker-phase1.md)  
-> **Related:** [turn-worker-bus-plan.md](turn-worker-bus-plan.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [dlq-replay-turn-continuation-plan.md](dlq-replay-turn-continuation-plan.md), [async-chat-tier3-plan.md](async-chat-tier3-plan.md)
+> **Related:** [archive/turn-worker-bus-plan.md](archive/turn-worker-bus-plan.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [dlq-replay-turn-continuation-plan.md](dlq-replay-turn-continuation-plan.md), [archive/async-chat-tier3-plan.md](archive/async-chat-tier3-plan.md)
 
 ## Product promise
 

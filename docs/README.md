@@ -35,7 +35,7 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 |-------|----------------|
 | [Engine overview](engine/README.md) | Why corps embed Medousa Engine, topology, trust model |
 | [HTTP API reference](engine/http-api.md) | Routes, contracts, interactive turns, local inference |
-| [Architecture (deep)](../architecture/README.md) | Component boundaries, shipped plans, [roadmap](../architecture/ROADMAP.md) |
+| [Architecture (deep)](../architecture/README.md) | Component boundaries; [turn runtime](../architecture/turn-runtime-and-lanes.md), [roadmap](../architecture/ROADMAP.md) |
 
 ### Existing setup guides
 

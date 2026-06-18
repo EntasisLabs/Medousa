@@ -3,7 +3,7 @@
 > **Status:** Living document (updated 2026-06)  
 > **Historical plans:** [archive/README.md](archive/README.md)
 
-First-run UX, Home shell milestones, turn-loop FSM, and **user profiles** (Phases 0–6) are **shipped**. See [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
+First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), and **centralized agent runtime + host/worker bus + Specialists** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
 
 Remaining focus: **attachments**, **Iroh pairing**, **distribution**, and operator-surface polish.
 

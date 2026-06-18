@@ -2,7 +2,7 @@
 
 > Created: 2026-05-31  
 > Status: **Phase 1–2 implemented** (scratchpad + host user/tool lane split). Phase 3+ below remain planning.  
-> Related: [turn-worker-bus-plan.md](turn-worker-bus-plan.md), [turn-ledger-phase0.md](turn-ledger-phase0.md), [tool-loop-interim-text-fix.md](tool-loop-interim-text-fix.md), [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md)
+> Related: [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [archive/turn-worker-bus-plan.md](archive/turn-worker-bus-plan.md), [archive/turn-ledger-phase0.md](archive/turn-ledger-phase0.md), [archive/tool-loop-interim-text-fix.md](archive/tool-loop-interim-text-fix.md), [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md)
 
 ## Summary
 

@@ -1,7 +1,8 @@
 # Centralized Agent Runtime — Roadmap
 
 > Created: 2026-05-31  
-> Status: Planned (successor to outbox delivery)  
+> **Status:** Phases 0–4 ✅ shipped (`centralized-v1`) · Phase 5 hardening open  
+> **Canonical runtime guide:** [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md)  
 > Related: [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md), [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md), [component-tui.md](component-tui.md)
 
 ## Thesis
@@ -12,15 +13,17 @@ Telegram, Discord, CLI, and daemon ingest should **not** run separate brains (`w
 
 Outbox → channel delivery (Phase 5 ingester track) solved **how replies reach users**. This track solves **what generates the reply**.
 
-## Current State (three brains, one product)
+## Current state (2026-06)
 
-| Surface | Execution path today | Tooling / loops |
-|---------|----------------------|-----------------|
-| **TUI (preferred)** | `POST /v1/interactive/turn` → direct LLM stream | Minimal — no tool loop |
-| **TUI (fallback)** | Local `build_tui_runtime` → `ToolLoopPipeline` | **Gold standard** |
-| **Ingest (Telegram/Discord/CLI)** | `agent_session` Stasis job on scheduler | Different shape; mock search tool only |
+| Surface | Execution path | Notes |
+|---------|----------------|-------|
+| **Home / TUI (primary)** | `POST /v1/interactive/turn` → `run_agent_turn` | Full tool loop, FSM, host/worker bus |
+| **Ingest (Telegram/Discord/CLI)** | `POST /v1/ingest` → `run_agent_turn` | Same engine as interactive |
+| **API ask/report** | `/v1/jobs/ask`, `/v1/jobs/report` → `run_agent_turn` | Poll for result |
+| **Recurring agent turns** | Stasis tick → `recurring_agent_turn` → `run_agent_turn` | Manuscript-aware |
+| **TUI fallback** | Local `execute_local_turn` | `MEDOUSA_TUI_LOCAL_RUNTIME=1` / offline dev |
 
-Verified May 2026: outbox delivery works after diagnostics extraction fix, but ingest still does not match TUI quality or architecture.
+Host/worker delegation, turn FSM, and specialists (manuscripts) run on this shared stack — see [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md).
 
 ## Target Architecture
 
@@ -161,25 +164,19 @@ Point all ingress at daemon agent turns.
 | TUI `build_tui_runtime` in hot path | Daemon-hosted; local only offline |
 | Ingest SSE job polling | Agent turn SSE + outbox delivery |
 
-## Code Anchors (today)
+## Code anchors
 
 | Area | Path |
 |------|------|
-| TUI turn orchestration (extract source) | `src/bin/medousa_tui/agent_runtime.rs` |
-| Turn activation / prior messages | `src/bin/medousa_tui/turn_services.rs` |
+| Agent runtime module | `src/agent_runtime/mod.rs` |
+| Turn entry | `src/agent_runtime/daemon_interactive_turn.rs` — `run_agent_turn` |
+| Orchestration | `src/agent_runtime/turn_orchestrator.rs` |
+| TUI fallback glue | `src/bin/medousa_tui/agent_runtime.rs` |
 | Runtime assembly | `src/tui/runtime_services.rs`, `src/tools.rs` |
-| Daemon simplified turn (replace) | `run_interactive_turn_stream_task` in `medousa_daemon.rs` |
-| Ingest agent_session (replace) | ~~`start_ingest_ask_stream`~~ → `run_agent_turn` + `IngestAgentStreamSink` |
-| Delivery (keep) | `src/channel_delivery.rs`, outbox webhook |
+| Delivery | `src/channel_delivery.rs`, outbox webhook |
 
-## Suggested Phase 1 PR Slices
+## Host / worker bus (shipped)
 
-1. **Scaffold** — `src/agent_runtime/mod.rs`, `MedousaAgentRuntime` type alias/wrapper, no behavior change
-2. **Turn services** — move `turn_services.rs` + tests
-3. **Orchestrator core** — move activation, prior messages, context pack, continuation (no TuiEvent; callback/trait for stream sink)
-4. **TUI rewiring** — TUI imports shared module; delete duplicated code from bin
-5. **CI** — prompt fixture tests comparing output structure pre/post
+Interactive turns use the **daemon-owned bus**: host orchestrates, workers execute, synthesis re-enters the same stream. Not a separate legacy path.
 
-## Future: host / worker bus
-
-Interactive turns today remain a **single monolithic tool loop** per message. Planned evolution: **daemon-owned bus** (host delegates, worker executes, ledger + synthesis) with **comms adapters** (TUI, Telegram, API) as transport only — see [turn-worker-bus-plan.md](turn-worker-bus-plan.md).
+See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md) and [archive/turn-worker-bus-plan.md](archive/turn-worker-bus-plan.md).

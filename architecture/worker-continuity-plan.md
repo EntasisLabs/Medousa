@@ -1,8 +1,8 @@
 # Worker continuity plan — same collaborator, workshop hat
 
-> **Status:** Phase A in progress  
-> **Date:** 2026-05-30  
-> **Related:** [turn-worker-bus-plan.md](turn-worker-bus-plan.md), [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md), [turn-worker-phase1.md](turn-worker-phase1.md)
+> **Status:** Phase A ✅ shipped · Phases B–E open  
+> **Date:** 2026-05-30 (updated 2026-06)  
+> **Related:** [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [archive/turn-worker-bus-plan.md](archive/turn-worker-bus-plan.md), [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md), [archive/turn-worker-phase1.md](archive/turn-worker-phase1.md)
 
 ## Problem
 
