@@ -15,7 +15,7 @@ export const SETTINGS_SECTIONS: {
 }[] = [
   { id: "room", label: "Room", hint: "Theme & atmosphere" },
   { id: "rhythm", label: "Rhythm", hint: "How she interrupts you" },
-  { id: "memory", label: "Memory", hint: "What stays vivid" },
+  { id: "memory", label: "Memory", hint: "How long chats stay vivid" },
   { id: "models", label: "Models", hint: "Chat & dictation" },
   { id: "voice", label: "Voice", hint: "Stance & answer depth" },
   { id: "reach", label: "Reach", hint: "What she may touch" },

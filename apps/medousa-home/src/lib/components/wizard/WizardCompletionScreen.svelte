@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { LoaderCircle, MessageCircle, Orbit, BookOpen } from "@lucide/svelte";
+  import { LoaderCircle, MessageCircle, Orbit, BookOpen, UserRound } from "@lucide/svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { checkDaemonHealth, type DaemonHealth } from "$lib/daemon";
   import { requireEngineReady } from "$lib/utils/providersApi";
@@ -101,6 +101,17 @@
             <p class="text-sm font-medium text-surface-100">Chat</p>
             <p class="mt-0.5 text-xs leading-relaxed text-surface-400">
               Tell her what's on your mind — a worry, a plan, a messy list.
+            </p>
+          </div>
+        </li>
+        <li
+          class="flex items-start gap-3 rounded-xl border border-surface-500/35 bg-surface-950/60 px-4 py-3"
+        >
+          <UserRound class="mt-0.5 h-4 w-4 shrink-0 text-primary-300" aria-hidden="true" />
+          <div>
+            <p class="text-sm font-medium text-surface-100">Profiles</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-surface-400">
+              Teach her who you are — partner, timezone, preferences — in plain language.
             </p>
           </div>
         </li>

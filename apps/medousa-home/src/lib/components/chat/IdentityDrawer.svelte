@@ -5,7 +5,6 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { identity } from "$lib/stores/identity.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { settingsNav } from "$lib/stores/settingsNav.svelte";
 
   interface Props {
     open: boolean;
@@ -198,11 +197,10 @@
           class="workshop-text-action mt-2 block text-sm"
           onclick={() => {
             close();
-            settingsNav.openSection("memory");
-            layout.navigateDesktop("settings");
+            layout.navigateDesktop("profiles");
           }}
         >
-          Teach Medousa in Settings →
+          Open Profiles →
         </button>
       </dl>
     {/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronDown } from "@lucide/svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { haptic } from "$lib/haptics";
 
   interface Props {
@@ -27,6 +28,13 @@
     if (userProfiles.profiles.length === 0 && !userProfiles.loading) {
       void userProfiles.load();
     }
+  }
+
+  function openFullProfiles() {
+    haptic("light");
+    sheetOpen = false;
+    layout.setMobileTab("you");
+    layout.openYou("profiles");
   }
 </script>
 
@@ -101,6 +109,13 @@
             {/each}
           </div>
         {/if}
+        <button
+          type="button"
+          class="workshop-text-action mt-4 text-sm"
+          onclick={openFullProfiles}
+        >
+          Teach Medousa &amp; manage profiles →
+        </button>
       </div>
     </div>
   </div>

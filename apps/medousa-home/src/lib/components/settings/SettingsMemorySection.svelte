@@ -1,7 +1,5 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
-  import MemoryAndYouPanel from "$lib/components/settings/MemoryAndYouPanel.svelte";
-  import UserProfilesPanel from "$lib/components/settings/UserProfilesPanel.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
 
@@ -58,20 +56,13 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Memory</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Who she knows you are — and how long she keeps the conversation close.
+      How long she keeps the conversation close — and when a long thread starts to fade.
+    </p>
+    <p class="workshop-faint mt-2 text-xs">
+      To teach who you are or switch work/home profiles, open
+      <span class="text-surface-300">Profiles</span> in the sidebar.
     </p>
   </header>
-
-  <UserProfilesPanel {mobile} />
-
-  <MemoryAndYouPanel {mobile} />
-
-  <div class="mt-8 border-t border-surface-500/35 pt-8">
-    <h3 class="text-sm font-semibold text-surface-100">Conversation memory</h3>
-    <p class="workshop-faint mt-1 text-xs">
-      How long she keeps recent chat turns vivid — separate from who you are.
-    </p>
-  </div>
 
   <div class="mt-5 space-y-5">
     {#each fields as field (field.key)}

@@ -18,6 +18,7 @@
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
+  import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import CronPanel from "$lib/components/cron/CronPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
@@ -79,11 +80,6 @@
     navigateToSurface(surface);
   }
 
-  function openProfileSettings() {
-    settingsNav.openSection("memory");
-    navigateToSurface("settings");
-  }
-
   function handleSurfaceSelect(surface: Surface) {
     navigateToSurface(surface);
   }
@@ -107,7 +103,6 @@
       chatActivity={chat.backgroundActivity}
       workActivity={workspace.inMotionCount()}
       activeProfileLabel={userProfiles.activeDisplayName}
-      onOpenProfiles={openProfileSettings}
     />
 
     <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
@@ -141,6 +136,8 @@
                 await chat.switchSession(sessionId);
               }}
             />
+          {:else if activeSurface === "profiles"}
+            <ProfilesPanel visible={true} onOpenChat={() => goToSurface("chat")} />
           {:else if activeSurface === "skills"}
             <SkillsPanel
               visible={true}

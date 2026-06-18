@@ -67,11 +67,14 @@ pub fn run() {
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
+        // Quit when the main window closes. Previously we hid to tray (prevent_close),
+        // which left medousa-home running invisibly — including when launched from Cursor.
+        // The hidden chat-popout window would also keep the process alive if we only
+        // destroyed main; exit(0) tears down the whole app. Use tray → Hide to background.
         builder = builder.on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if window.label() == "main" {
-                    let _ = window.hide();
-                    api.prevent_close();
+                    window.app_handle().exit(0);
                 }
             }
         });

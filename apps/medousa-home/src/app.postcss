@@ -3645,4 +3645,23 @@
     background-color: rgb(var(--color-primary-500) / 0.1);
     box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.6);
   }
+
+  .profiles-panel {
+    @apply min-h-0;
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  .profiles-panel-embedded {
+    @apply min-h-0;
+  }
+
+  .profiles-teach-dock {
+    @apply shrink-0 border-t border-surface-500/35 px-4 py-3;
+    background-color: rgb(var(--color-surface-950) / 0.92);
+    backdrop-filter: blur(8px);
+  }
+
+  .profiles-quick-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-surface-500/40 bg-surface-900/50 px-3 py-1.5 text-xs text-surface-300 transition hover:border-primary-400/40 hover:text-surface-100 disabled:opacity-50;
+  }
 }

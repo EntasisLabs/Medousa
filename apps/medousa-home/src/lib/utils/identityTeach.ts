@@ -1,4 +1,13 @@
+import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import type { IdentityRememberRequest } from "$lib/types/identity";
+
+/** Attach active profile user id when the daemon has resolved one. */
+export function withIdentityUserId(
+  request: IdentityRememberRequest,
+): IdentityRememberRequest {
+  const userId = userProfiles.resolvedUserId;
+  return userId ? { ...request, user_id: userId } : request;
+}
 
 /** Best-effort parse of free-text teaching into identity remember fields. */
 export function parseIdentityTeachInput(text: string): IdentityRememberRequest {

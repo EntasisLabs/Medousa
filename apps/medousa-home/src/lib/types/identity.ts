@@ -23,11 +23,20 @@ export interface IdentityContact {
   display_name: string;
 }
 
+export interface IdentityEntityRef {
+  entity_type: string;
+  entity_id: string;
+}
+
 export interface IdentityRelationship {
   relationship_id: string;
   relationship_kind: string | Record<string, unknown>;
   trust_level: number;
   confidence: number;
+  last_transition_reason?: string | null;
+  policy_tags?: string[];
+  source_entity_ref?: IdentityEntityRef;
+  target_entity_ref?: IdentityEntityRef;
 }
 
 export interface IdentityClaim {

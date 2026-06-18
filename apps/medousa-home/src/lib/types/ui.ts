@@ -4,6 +4,7 @@ export type Surface =
   | "work"
   | "library"
   | "context"
+  | "profiles"
   | "skills"
   | "cron"
   | "messaging"

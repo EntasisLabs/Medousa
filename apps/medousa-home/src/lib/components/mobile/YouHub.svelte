@@ -9,8 +9,10 @@
     Radio,
     Settings,
     Sparkles,
+    UserRound,
   } from "@lucide/svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
+  import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import CronPanel from "$lib/components/cron/CronPanel.svelte";
   import MobileLibraryPanel from "$lib/components/mobile/MobileLibraryPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
@@ -39,6 +41,7 @@
   let { visible, health, revision, onOpenChat, onDaemonHealth }: Props = $props();
 
   const destinationIcons: Record<Exclude<YouDestination, "hub">, Component> = {
+    profiles: UserRound,
     library: BookOpen,
     context: Orbit,
     skills: Sparkles,
@@ -114,7 +117,16 @@
       <h1 class="min-w-0 truncate text-sm font-semibold">{activeLabel}</h1>
     </header>
     <div class="min-h-0 flex-1 overflow-hidden">
-      {#if layout.youDestination === "library"}
+      {#if layout.youDestination === "profiles"}
+        <ProfilesPanel
+          visible={true}
+          embedded={true}
+          mobile={true}
+          onOpenChat={async () => {
+            await onOpenChat();
+          }}
+        />
+      {:else if layout.youDestination === "library"}
         <MobileLibraryPanel visible={true} />
       {:else if layout.youDestination === "context"}
         <ContextPanel
