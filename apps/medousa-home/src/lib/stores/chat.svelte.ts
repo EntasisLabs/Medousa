@@ -48,6 +48,7 @@ import {
 } from "$lib/utils/streamEvents";
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
+import type { VaultNoteContextScope } from "$lib/utils/vaultNoteBridge";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
@@ -71,6 +72,8 @@ export class ChatStore {
   sessionId = $state(loadSessionId());
   messages = $state<ChatMessage[]>([]);
   draft = $state("");
+  /** Vault note scope when chat opened from Library (Phase D3). */
+  vaultNoteContext = $state<VaultNoteContextScope | null>(null);
   /** Files uploaded to local daemon, waiting to send with the next turn. */
   pendingMediaRefs = $state<MediaRef[]>([]);
   pendingMediaUploading = $state(false);
@@ -1875,6 +1878,15 @@ export class ChatStore {
 
   prefillDraft(text: string) {
     this.draft = text;
+  }
+
+  prefillFromVaultNote(scope: VaultNoteContextScope, draft: string) {
+    this.vaultNoteContext = scope;
+    this.draft = draft;
+  }
+
+  clearVaultNoteContext() {
+    this.vaultNoteContext = null;
   }
 
   clearPendingMedia() {

@@ -4,6 +4,11 @@ import {
   wrapWithFrontmatter,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
+import {
+  DEFAULT_KANBAN_COLUMNS,
+  serializeKanbanColumns,
+  wrapWithKanbanFrontmatter,
+} from "$lib/utils/markdownKanban";
 
 export function slugifyTitle(title: string): string {
   const slug = title
@@ -52,6 +57,7 @@ export type VaultTemplateId =
   | "daily"
   | "weekly"
   | "project"
+  | "board"
   | "ledger"
   | "inbox"
   | "bug"
@@ -68,7 +74,10 @@ export const VAULT_TEMPLATES_BY_SPACE: Record<string, VaultTemplateOption[]> = {
     { id: "weekly", label: "Weekly review" },
     { id: "blank", label: "Blank journal note" },
   ],
-  projects: [{ id: "project", label: "Project" }],
+  projects: [
+    { id: "project", label: "Project" },
+    { id: "board", label: "Kanban board" },
+  ],
   finance: [{ id: "ledger", label: "Ledger" }],
   inbox: [{ id: "inbox", label: "Quick capture" }],
   bugs: [{ id: "bug", label: "Bug report" }],
@@ -168,6 +177,13 @@ export function projectNoteTemplate(title: string): string {
   );
 }
 
+export function projectBoardTemplate(title: string): string {
+  const trimmed = title.trim() || "Board";
+  return wrapWithKanbanFrontmatter(
+    `# ${trimmed}\n\n${serializeKanbanColumns(DEFAULT_KANBAN_COLUMNS)}`,
+  );
+}
+
 export function financeLedgerTemplate(title: string): string {
   const trimmed = title.trim() || "Ledger";
   return withKind(
@@ -217,6 +233,8 @@ export function contentForTemplate(
       return weeklyReviewTemplate(date);
     case "project":
       return projectNoteTemplate(title);
+    case "board":
+      return projectBoardTemplate(title);
     case "ledger":
       return financeLedgerTemplate(title);
     case "bug":

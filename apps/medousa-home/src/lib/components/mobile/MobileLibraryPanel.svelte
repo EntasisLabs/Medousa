@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { ChevronLeft, MoreHorizontal } from "@lucide/svelte";
+  import { ChevronLeft, MessageCircle, MoreHorizontal } from "@lucide/svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import VaultSpaceChips from "$lib/components/vault/VaultSpaceChips.svelte";
@@ -8,13 +8,16 @@
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
 
   interface Props {
     visible: boolean;
+    onOpenChat?: () => void | Promise<void>;
   }
 
-  let { visible }: Props = $props();
+  let { visible, onOpenChat }: Props = $props();
 
   let listScrollEl = $state<HTMLDivElement | null>(null);
 
@@ -60,6 +63,20 @@
   );
 
   const saveWhisper = $derived(vault.saveWhisper());
+
+  async function handleTalkAboutNote() {
+    if (!vault.selectedPath || !onOpenChat) return;
+    if (vault.dirty) await vault.flushSave();
+    const { scope, draft } = prepareTalkAboutNote(
+      vault.selectedPath,
+      vault.title,
+      vault.content,
+      vault.wikilinksOut,
+      vault.backlinks,
+    );
+    chat.prefillFromVaultNote(scope, draft);
+    await onOpenChat();
+  }
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
@@ -139,6 +156,18 @@
         <span class="shrink-0 text-xs text-surface-400">{saveWhisper}</span>
       {/if}
       {#if vault.selectedPath}
+        {#if onOpenChat}
+          <button
+            type="button"
+            class="mobile-icon-btn shrink-0 text-primary-300"
+            aria-label="Talk about this note"
+            title="Talk about this note"
+            disabled={vault.noteLoading}
+            onclick={() => void handleTalkAboutNote()}
+          >
+            <MessageCircle size={18} strokeWidth={1.75} />
+          </button>
+        {/if}
         <button
           type="button"
           class="btn btn-sm shrink-0 {vault.editorMode === 'edit'

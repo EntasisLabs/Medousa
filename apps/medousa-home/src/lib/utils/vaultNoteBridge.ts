@@ -7,6 +7,46 @@ import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
 const DAILY_PATH = /^journal\/\d{4}-\d{2}-\d{2}\.md$/;
 
+export interface VaultNoteContextScope {
+  path: string;
+  title: string;
+  linkCount: number;
+}
+
+export function buildVaultNoteContextScope(
+  path: string,
+  title: string,
+  wikilinksOut: string[],
+  backlinks: string[],
+): VaultNoteContextScope {
+  return {
+    path,
+    title: vaultDisplayTitle(title, path),
+    linkCount: wikilinksOut.length + backlinks.length,
+  };
+}
+
+/** UI hint for scoped chat context (D3). */
+export function vaultContextScopeHint(scope: VaultNoteContextScope): string {
+  if (scope.linkCount === 0) return "This page";
+  const n = scope.linkCount;
+  return `This page + ${n} linked note${n === 1 ? "" : "s"}`;
+}
+
+export function prepareTalkAboutNote(
+  path: string,
+  title: string,
+  content: string,
+  wikilinksOut: string[],
+  backlinks: string[],
+): { scope: VaultNoteContextScope; draft: string } {
+  const scope = buildVaultNoteContextScope(path, title, wikilinksOut, backlinks);
+  return {
+    scope,
+    draft: buildAskAboutNoteDraft(path, title, content, scope.linkCount),
+  };
+}
+
 export function noteExcerpt(content: string, maxChars = 1200): string {
   const body = stripFrontmatter(content).content.trim();
   if (body.length <= maxChars) return body;
@@ -17,10 +57,15 @@ export function buildAskAboutNoteDraft(
   path: string,
   title: string,
   content: string,
+  linkCount = 0,
 ): string {
   const label = vaultDisplayTitle(title, path);
   const excerpt = noteExcerpt(content);
-  return `I'm reading my vault note "${label}" (\`${path}\`).\n\n${excerpt}\n\nHelp me think through this note.`;
+  const linkHint =
+    linkCount > 0
+      ? `\n\nAlso consider the ${linkCount} linked note${linkCount === 1 ? "" : "s"} from this page.`
+      : "";
+  return `I'm reading my vault note "${label}" (\`${path}\`).\n\n${excerpt}${linkHint}\n\nHelp me think through this note.`;
 }
 
 export function buildWorkAskFromNote(

@@ -4,6 +4,7 @@
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -198,6 +199,7 @@
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
     chat.draft = "";
+    chat.clearVaultNoteContext();
 
     try {
       if (slash && slash.kind !== "ask") {
@@ -576,6 +578,9 @@
       }}
     />
     <form class="chat-composer" onsubmit={submit}>
+      {#if chat.vaultNoteContext}
+        <VaultChatContextChip class="mx-4 mb-2" />
+      {/if}
       {#if slashHint?.length}
         <ul class="mx-4 mb-1 space-y-0.5 text-[11px] text-surface-500">
           {#each slashHint as hint (hint)}

@@ -2,6 +2,7 @@
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
+  import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -73,6 +74,7 @@
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
     chat.draft = "";
+    chat.clearVaultNoteContext();
 
     try {
       if (slash && slash.kind !== "ask") {
@@ -121,6 +123,9 @@
 
 <form class="mobile-chat-composer" onsubmit={submit}>
   <DaemonPortalChip compact class="mx-3 mb-2" />
+  {#if chat.vaultNoteContext}
+    <VaultChatContextChip compact class="mx-3 mb-2" />
+  {/if}
   <BudgetApprovalBar
     mobile
     onOpenWork={() => {

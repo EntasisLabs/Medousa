@@ -35,3 +35,37 @@ export function formatDiffChip(stats: LineDiffStats): string {
   if (stats.changed > 0 && parts.length === 0) parts.push(`~${stats.changed}`);
   return parts.join(" ") || "edited";
 }
+
+export interface DiffPreviewLine {
+  kind: "add" | "remove" | "change";
+  text: string;
+}
+
+/** First few line changes for mobile proposal preview — not a full diff view. */
+export function diffPreviewLines(
+  before: string,
+  after: string,
+  maxLines = 5,
+): DiffPreviewLine[] {
+  const beforeLines = before.split("\n");
+  const afterLines = after.split("\n");
+  const maxLen = Math.max(beforeLines.length, afterLines.length);
+  const lines: DiffPreviewLine[] = [];
+
+  for (let i = 0; i < maxLen && lines.length < maxLines; i += 1) {
+    const left = beforeLines[i];
+    const right = afterLines[i];
+    if (left === undefined && right !== undefined) {
+      lines.push({ kind: "add", text: right });
+    } else if (right === undefined && left !== undefined) {
+      lines.push({ kind: "remove", text: left });
+    } else if (left !== right && left !== undefined && right !== undefined) {
+      lines.push({ kind: "remove", text: left });
+      if (lines.length < maxLines) {
+        lines.push({ kind: "add", text: right });
+      }
+    }
+  }
+
+  return lines;
+}

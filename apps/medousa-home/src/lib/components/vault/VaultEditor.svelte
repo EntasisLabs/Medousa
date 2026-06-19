@@ -10,12 +10,15 @@
   import {
     buildAskAboutNoteDraft,
     buildWorkAskFromNote,
+    prepareTalkAboutNote,
   } from "$lib/utils/vaultNoteBridge";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
   import { findLedgerTable } from "$lib/utils/markdownTable";
+  import { findKanbanBoard, noteHasKanbanBoard } from "$lib/utils/markdownKanban";
   import VaultEmptyState from "./VaultEmptyState.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
   import LedgerTableEditor from "./LedgerTableEditor.svelte";
+  import KanbanBoardEditor from "./KanbanBoardEditor.svelte";
   import VaultMarkdownPreview from "./VaultMarkdownPreview.svelte";
   import VaultNoteLinksPanel from "./VaultNoteLinksPanel.svelte";
   import VaultConflictBar from "./VaultConflictBar.svelte";
@@ -57,6 +60,8 @@
 
   const labelByPath = $derived(vault.labelByPath());
   const hasLedgerTable = $derived(Boolean(findLedgerTable(vault.content)));
+  const hasKanbanBoard = $derived(noteHasKanbanBoard(vault.content));
+  const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(vault.content) : null);
 
   const showLedgerTable = $derived(
     !mobile &&
@@ -66,8 +71,15 @@
       hasLedgerTable,
   );
 
+  const showKanbanBoard = $derived(
+    vault.editorMode === "edit" &&
+      hasKanbanBoard &&
+      vault.boardEditMode === "board" &&
+      kanbanBoard !== null,
+  );
+
   const showMarkdownEditor = $derived(
-    vault.editorMode === "edit" && !showLedgerTable,
+    vault.editorMode === "edit" && !showLedgerTable && !showKanbanBoard,
   );
 
   const showSplitEditor = $derived(
@@ -113,9 +125,14 @@
   async function handleAskAboutNote() {
     if (!vault.selectedPath || !onOpenChat) return;
     if (vault.dirty) await vault.flushSave();
-    chat.prefillDraft(
-      buildAskAboutNoteDraft(vault.selectedPath, vault.title, vault.content),
+    const { scope, draft } = prepareTalkAboutNote(
+      vault.selectedPath,
+      vault.title,
+      vault.content,
+      vault.wikilinksOut,
+      vault.backlinks,
     );
+    chat.prefillFromVaultNote(scope, draft);
     onOpenChat();
   }
 
@@ -318,6 +335,15 @@
             {vault.ledgerEditMode === "table" ? "Raw markdown" : "Table view"}
           </button>
         {/if}
+        {#if hasKanbanBoard && vault.editorMode === "edit"}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={() => vault.toggleBoardEditMode()}
+          >
+            {vault.boardEditMode === "board" ? "Raw markdown" : "Board view"}
+          </button>
+        {/if}
 
         {#if showMarkdownEditor && (!vault.isWriteFirstKind || vault.isAuthoringSource)}
           <button
@@ -444,7 +470,7 @@
     </p>
   {/if}
 
-  <VaultProposalBar />
+  <VaultProposalBar {mobile} />
   <VaultConflictBar />
   <VaultAttachmentBar disabled={vault.noteLoading || vault.saving} />
   <VaultAttachmentPreview />
@@ -463,6 +489,13 @@
             content={vault.content}
             disabled={vault.saving}
             onchange={(next) => vault.markDirty(next)}
+          />
+        {:else if showKanbanBoard}
+          <KanbanBoardEditor
+            content={vault.content}
+            disabled={vault.saving}
+            onchange={(next) => vault.markDirty(next)}
+            onWikilink={handleWikilink}
           />
         {:else if showMarkdownEditor}
           <VaultMarkdownEditor

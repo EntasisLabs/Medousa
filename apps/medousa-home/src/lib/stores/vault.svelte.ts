@@ -80,6 +80,7 @@ import {
   normalizeVaultNotePath,
   setNoteTitleInContent,
 } from "$lib/utils/vaultNoteTitle";
+import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -111,6 +112,8 @@ export class VaultStore {
   authoringMode = $state<VaultAuthoringMode>("write");
   /** Ledger notes: table-first editing (M7c.2). */
   ledgerEditMode = $state<"table" | "raw">("table");
+  /** Board notes: kanban-first editing (Phase E). */
+  boardEditMode = $state<"board" | "raw">("board");
   showSystemNotes = $state(loadShowSystemNotes());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
@@ -534,6 +537,9 @@ export class VaultStore {
     this.editorMode = "edit";
     if (this.selectedKind === "ledger") {
       this.ledgerEditMode = "table";
+    }
+    if (noteHasKanbanBoard(response.content) || this.selectedKind === "board") {
+      this.boardEditMode = "board";
     }
     this.bumpContentSync();
   }
@@ -997,6 +1003,10 @@ export class VaultStore {
 
   toggleLedgerEditMode() {
     this.ledgerEditMode = this.ledgerEditMode === "table" ? "raw" : "table";
+  }
+
+  toggleBoardEditMode() {
+    this.boardEditMode = this.boardEditMode === "board" ? "raw" : "board";
   }
 
   async linkAttachmentFiles() {

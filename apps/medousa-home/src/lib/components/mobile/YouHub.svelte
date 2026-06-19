@@ -127,7 +127,12 @@
           }}
         />
       {:else if layout.youDestination === "library"}
-        <MobileLibraryPanel visible={true} />
+        <MobileLibraryPanel
+          visible={true}
+          onOpenChat={async () => {
+            await onOpenChat();
+          }}
+        />
       {:else if layout.youDestination === "context"}
         <ContextPanel
           visible={true}

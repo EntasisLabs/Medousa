@@ -4,6 +4,7 @@ export type VaultNoteKind =
   | "daily"
   | "project"
   | "ledger"
+  | "board"
   | "inbox"
   | "bug"
   | "note";
@@ -12,6 +13,7 @@ const KNOWN_KINDS = new Set<VaultNoteKind>([
   "daily",
   "project",
   "ledger",
+  "board",
   "inbox",
   "bug",
   "note",
@@ -29,6 +31,9 @@ export function normalizeKind(value: string | null | undefined): VaultNoteKind {
     case "ledger":
     case "finance":
       return "ledger";
+    case "board":
+    case "boards":
+      return "board";
     case "inbox":
     case "capture":
       return "inbox";
@@ -49,6 +54,7 @@ export function resolveKindFromPath(path: string): VaultNoteKind {
   if (path.startsWith("journal/")) return "daily";
   if (path.startsWith("projects/")) return "project";
   if (path.startsWith("finance/")) return "ledger";
+  if (path.startsWith("boards/")) return "board";
   if (path.startsWith("inbox/")) return "inbox";
   if (path.startsWith("bugs/")) return "bug";
   return "note";
@@ -70,6 +76,8 @@ export function kindForSpace(spaceId: string): VaultNoteKind {
       return "project";
     case "finance":
       return "ledger";
+    case "boards":
+      return "board";
     case "inbox":
       return "inbox";
     case "bugs":
@@ -87,6 +95,8 @@ export function kindLabel(kind: VaultNoteKind): string {
       return "Project";
     case "ledger":
       return "Ledger";
+    case "board":
+      return "Board";
     case "inbox":
       return "Inbox";
     case "bug":
@@ -104,6 +114,8 @@ export function kindBadgeClass(kind: VaultNoteKind): string {
       return "variant-soft-secondary";
     case "ledger":
       return "variant-soft-success";
+    case "board":
+      return "variant-soft-secondary";
     case "inbox":
       return "variant-soft-warning";
     case "bug":

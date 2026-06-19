@@ -185,8 +185,8 @@ A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → 
 - [x] Phase B core (mobile preview→edit, header chrome, note actions)
 - [ ] Phase B polish (compact format bar on small screens)
 - [x] Phase C complete (heading ids, wikilink+heading scroll, unresolved affordance, TOC block)
-- [ ] Phase D complete
-- [ ] Phase E spec frozen + shipped
+- [x] Phase D complete (mobile talk-about-note, proposal diff UX, scoped context chip)
+- [x] Phase E spec frozen + shipped (markdown kanban board editor)
 - [ ] Phase F spec frozen + shipped
 
 ---
@@ -199,7 +199,12 @@ A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → 
 | `mobileNavigation.ts` | Tab switch behavior |
 | `components/mobile/MobileLibraryPanel.svelte` | Mobile notes list + reader |
 | `components/vault/VaultEditor.svelte` | Edit/preview chrome |
+| `utils/vaultNoteBridge.ts` | Vault ↔ chat bridge, scoped context |
+| `components/vault/VaultChatContextChip.svelte` | Chat composer note scope chip |
+| `components/vault/VaultProposalBar.svelte` | Agent/server proposal merge UX |
 | `components/vault/VaultMarkdownEditor.svelte` | Source editor |
+| `utils/markdownKanban.ts` | Kanban board parse/serialize |
+| `components/vault/KanbanBoardEditor.svelte` | Board view editor |
 | `components/vault/LedgerTableEditor.svelte` | Precedent for structured markdown UI |
 | `utils/markdownTable.ts` | Table parse/replace |
 | `markdown/preprocess.ts` | Wikilink preprocessing |
