@@ -16,6 +16,10 @@ const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
 const ACTIVITY_COLLAPSED_KEY = "medousa-home-activity-collapsed";
 const VAULT_SIDEBAR_COLLAPSED_KEY = "medousa-home-vault-sidebar-collapsed";
 const MOBILE_TAB_KEY = "medousa-home-mobile-tab";
+const YOU_DESTINATION_KEY = "medousa-home-you-destination";
+const LIBRARY_VIEW_KEY = "medousa-home-library-view";
+
+export type LibraryView = "list" | "reader";
 
 export class LayoutStore {
   isMobile = $state(
@@ -26,7 +30,9 @@ export class LayoutStore {
   /** Bumped on every explicit nav action so keyed panels remount even when revisiting the same surface/tab. */
   navigationEpoch = $state(0);
   mobileTab = $state<MobileTab>(loadMobileTab());
-  youDestination = $state<YouDestination>("hub");
+  youDestination = $state<YouDestination>(loadYouDestination());
+  libraryView = $state<LibraryView>(loadLibraryView());
+  libraryListScrollTop = $state(0);
   activitySheetOpen = $state(false);
   askSheetOpen = $state(false);
   activityWidth = $state(loadWidth(ACTIVITY_WIDTH_KEY, 288));
@@ -166,10 +172,21 @@ export class LayoutStore {
   openYou(destination: YouDestination) {
     this.youDestination = destination;
     this.mobileTab = "you";
+    saveYouDestination(destination);
   }
 
   backToYouHub() {
     this.youDestination = "hub";
+    saveYouDestination("hub");
+  }
+
+  setLibraryView(view: LibraryView) {
+    this.libraryView = view;
+    saveLibraryView(view);
+  }
+
+  setLibraryListScrollTop(scrollTop: number) {
+    this.libraryListScrollTop = Math.max(0, scrollTop);
   }
 
   setActivitySheetOpen(open: boolean) {
@@ -196,6 +213,42 @@ function loadMobileTab(): MobileTab {
     return stored;
   }
   return "pulse";
+}
+
+function loadYouDestination(): YouDestination {
+  if (typeof localStorage === "undefined") return "hub";
+  const stored = localStorage.getItem(YOU_DESTINATION_KEY);
+  const valid: YouDestination[] = [
+    "hub",
+    "profiles",
+    "library",
+    "context",
+    "skills",
+    "cron",
+    "messaging",
+    "settings",
+    "runtime",
+  ];
+  if (stored && valid.includes(stored as YouDestination)) {
+    return stored as YouDestination;
+  }
+  return "hub";
+}
+
+function saveYouDestination(destination: YouDestination) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(YOU_DESTINATION_KEY, destination);
+}
+
+function loadLibraryView(): LibraryView {
+  if (typeof localStorage === "undefined") return "list";
+  const stored = localStorage.getItem(LIBRARY_VIEW_KEY);
+  return stored === "reader" ? "reader" : "list";
+}
+
+function saveLibraryView(view: LibraryView) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(LIBRARY_VIEW_KEY, view);
 }
 
 function loadWidth(key: string, fallback: number): number {

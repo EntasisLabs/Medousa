@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { ChevronLeft } from "@lucide/svelte";
+  import { onMount, tick } from "svelte";
+  import { ChevronLeft, MoreHorizontal } from "@lucide/svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import VaultSpaceChips from "$lib/components/vault/VaultSpaceChips.svelte";
   import VaultKindBadge from "$lib/components/vault/VaultKindBadge.svelte";
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
   interface Props {
     visible: boolean;
@@ -14,16 +16,21 @@
 
   let { visible }: Props = $props();
 
-  let view = $state<"list" | "reader">("list");
+  let listScrollEl = $state<HTMLDivElement | null>(null);
 
-  $effect(() => {
-    if (!visible) {
-      view = "list";
-    }
-  });
+  const view = $derived(layout.libraryView);
 
   onMount(() => {
     void vault.refreshNotes();
+  });
+
+  $effect(() => {
+    if (!visible || view !== "list" || !listScrollEl) return;
+    void tick().then(() => {
+      if (listScrollEl) {
+        listScrollEl.scrollTop = layout.libraryListScrollTop;
+      }
+    });
   });
 
   function handleSearchInput(event: Event) {
@@ -31,19 +38,37 @@
     void vault.runSearch(value);
   }
 
+  function handleListScroll(event: Event) {
+    layout.setLibraryListScrollTop((event.currentTarget as HTMLDivElement).scrollTop);
+  }
+
   async function openNote(path: string) {
     await vault.openNote(path);
-    view = "reader";
+    vault.enterPreviewMode();
+    layout.setLibraryView("reader");
   }
 
   function backToList() {
-    view = "list";
+    layout.setLibraryView("list");
   }
+
+  const readerTitle = $derived(
+    vault.selectedPath
+      ? (vault.labelByPath().get(vault.selectedPath) ??
+        vaultDisplayTitle(vault.title, vault.selectedPath))
+      : "Note",
+  );
+
+  const saveWhisper = $derived(vault.saveWhisper());
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if view === "list"}
-    <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto">
+    <div
+      bind:this={listScrollEl}
+      class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto"
+      onscroll={handleListScroll}
+    >
       <div class="space-y-2 border-b border-surface-500/40 p-3">
         <input
           class="input w-full text-sm"
@@ -109,7 +134,32 @@
       >
         <ChevronLeft size={20} strokeWidth={1.75} />
       </button>
-      <p class="min-w-0 truncate text-sm font-medium text-surface-100">Note</p>
+      <p class="min-w-0 flex-1 truncate text-sm font-medium text-surface-100">{readerTitle}</p>
+      {#if saveWhisper}
+        <span class="shrink-0 text-xs text-surface-400">{saveWhisper}</span>
+      {/if}
+      {#if vault.selectedPath}
+        <button
+          type="button"
+          class="btn btn-sm shrink-0 {vault.editorMode === 'edit'
+            ? 'variant-soft-primary'
+            : 'variant-ghost-surface'}"
+          onclick={() =>
+            vault.editorMode === "edit"
+              ? vault.enterPreviewMode()
+              : vault.enterEditMode()}
+        >
+          {vault.editorMode === "edit" ? "Preview" : "Edit"}
+        </button>
+        <button
+          type="button"
+          class="mobile-icon-btn shrink-0"
+          aria-label="Note actions"
+          onclick={() => vault.openNoteActions()}
+        >
+          <MoreHorizontal size={18} strokeWidth={1.75} />
+        </button>
+      {/if}
     </header>
     <VaultEditor visible={true} mobile={true} />
   {/if}

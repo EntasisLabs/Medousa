@@ -132,6 +132,12 @@
     if (slashMenuEl?.handleMenuKeydown(event)) {
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      textareaEl?.select();
+      captureSelection();
+      return;
+    }
     if (event.key === "Escape" && slashOpen) {
       event.preventDefault();
       closeSlashMenu();

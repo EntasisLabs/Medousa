@@ -75,11 +75,9 @@ export function switchMobileTab(tab: MobileTab): void {
     layout.setSessionDrawerOpen(false);
     layout.setIdentityDrawerOpen(false);
   }
-  layout.setMobileTab(tab, { bump: true });
-  if (tab === "you") {
-    layout.backToYouHub();
-  } else if (tab === "chat") {
-    layout.backToYouHub();
+  const changed = layout.mobileTab !== tab;
+  layout.setMobileTab(tab, { bump: changed });
+  if (tab === "chat") {
     void chat.refreshSessions();
     void chat.ensureSessionHydrated();
   }

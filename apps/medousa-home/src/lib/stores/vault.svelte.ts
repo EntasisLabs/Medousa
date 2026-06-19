@@ -454,6 +454,12 @@ export class VaultStore {
     saveLastSpace(space.id);
   }
 
+  /** When sidebar filter is All, keep All after drag-move; otherwise focus destination space. */
+  applySpaceFilterAfterMove(path: string, title: string, filterWasAll: boolean) {
+    if (filterWasAll) return;
+    this.focusSpaceForPath(path, title);
+  }
+
   async refreshNotes() {
     this.error = null;
     try {
@@ -857,6 +863,7 @@ export class VaultStore {
 
     this.saving = true;
     this.error = null;
+    const filterWasAll = this.activeSpaceFilter === null;
     try {
       if (this.dirty) {
         const saved = await this.save({ source: "manual" });
@@ -866,7 +873,7 @@ export class VaultStore {
       await createVaultNote(newPath, response.content);
       await deleteVaultNote(sourcePath);
       await this.refreshNotes();
-      this.focusSpaceForPath(newPath, response.note.title);
+      this.applySpaceFilterAfterMove(newPath, response.note.title, filterWasAll);
       await this.openNote(newPath);
       return newPath;
     } catch (err) {
@@ -898,6 +905,7 @@ export class VaultStore {
 
     this.saving = true;
     this.error = null;
+    const filterWasAll = this.activeSpaceFilter === null;
     try {
       if (this.notes.some((note) => note.path === newPath)) {
         this.error = "A note already exists at that path.";
@@ -907,7 +915,7 @@ export class VaultStore {
       await createVaultNote(newPath, response.content);
       await deleteVaultNote(sourcePath);
       await this.refreshNotes();
-      this.focusSpaceForPath(newPath, response.note.title);
+      this.applySpaceFilterAfterMove(newPath, response.note.title, filterWasAll);
       if (this.selectedPath === sourcePath) {
         await this.openNote(newPath);
       }

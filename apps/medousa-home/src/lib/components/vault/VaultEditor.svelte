@@ -67,11 +67,12 @@
   );
 
   const showMarkdownEditor = $derived(
-    !mobile && vault.editorMode === "edit" && !showLedgerTable,
+    vault.editorMode === "edit" && !showLedgerTable,
   );
 
   const showSplitEditor = $derived(
-    showMarkdownEditor &&
+    !mobile &&
+      showMarkdownEditor &&
       layout.vaultSplitEnabled &&
       (!vault.isWriteFirstKind || vault.isAuthoringSource),
   );
@@ -81,8 +82,7 @@
   );
 
   const showPreviewOnly = $derived(
-    mobile ||
-      vault.editorMode === "preview" ||
+    vault.editorMode === "preview" ||
       (!showMarkdownEditor && !showLedgerTable),
   );
 
