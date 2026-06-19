@@ -49,7 +49,7 @@ import {
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
 import { formatDiffChip, lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
-import { resolveWikilinkTarget } from "$lib/utils/resolveWikilink";
+import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
 import {
   addAttachments,
   guessMimeFromPath,
@@ -126,6 +126,11 @@ export class VaultStore {
   noteActionsOpen = $state(false);
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
   contentRevision = $state(0);
+  /** Heading fragment from `[[note#Section]]` waiting for preview scroll. */
+  pendingHeadingScroll = $state<string | null>(null);
+  headingScrollRequest = $state(0);
+  newNotePrefillTitle = $state("");
+  newNotePrefillPath = $state<string | null>(null);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -495,6 +500,9 @@ export class VaultStore {
     } finally {
       this.noteLoading = false;
       this.loading = false;
+      if (this.pendingHeadingScroll) {
+        this.headingScrollRequest += 1;
+      }
     }
   }
 
@@ -564,8 +572,35 @@ export class VaultStore {
   }
 
   openWikilink(rawTarget: string) {
-    const path = this.resolveWikilinkPath(rawTarget);
-    if (path) void this.openNote(path);
+    const decoded = decodeURIComponent(rawTarget.trim());
+    const { pathToken, heading } = parseWikilinkTarget(decoded);
+    const path = resolveWikilinkTarget(
+      pathToken || decoded,
+      this.selectedPath,
+      this.notes,
+    );
+    if (!path) {
+      this.openNewNoteDialogForWikilink(decoded);
+      return;
+    }
+
+    if (heading) {
+      this.pendingHeadingScroll = heading;
+    }
+
+    if (path === this.selectedPath) {
+      if (heading) {
+        this.headingScrollRequest += 1;
+      }
+      this.enterPreviewMode();
+      return;
+    }
+
+    void this.openNote(path).then(() => {
+      if (heading) {
+        this.enterPreviewMode();
+      }
+    });
   }
 
   async refreshBacklinks(path: string) {
@@ -1028,11 +1063,23 @@ export class VaultStore {
   }
 
   openNewNoteDialog() {
+    this.newNotePrefillTitle = "";
+    this.newNoteDialogOpen = true;
+  }
+
+  openNewNoteDialogForWikilink(rawTarget: string) {
+    const { pathToken } = parseWikilinkTarget(rawTarget);
+    const token = pathToken || rawTarget.trim();
+    const stem = token.split("/").pop()?.replace(/\.md$/i, "") ?? token;
+    this.newNotePrefillTitle = stem.replace(/[-_]+/g, " ");
+    this.newNotePrefillPath = suggestPathForWikilinkToken(rawTarget, this.selectedPath);
     this.newNoteDialogOpen = true;
   }
 
   closeNewNoteDialog() {
     this.newNoteDialogOpen = false;
+    this.newNotePrefillTitle = "";
+    this.newNotePrefillPath = null;
   }
 }
 

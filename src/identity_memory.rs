@@ -308,7 +308,8 @@ pub async fn build_seeded_medousa_identity_store_for_db(
     } else {
         eprintln!("medousa-daemon: identity baseline already present — seed no-op");
     }
-    repair_surreal_identity_user_preferences(&db).await?;
+    // Preferences repair runs lazily on decode errors in `MedousaIdentityMemoryStore` —
+    // avoid a bulk UPDATE on every startup (contends with delivery wiring on shared Surreal).
     Ok(wrap_surreal(store, db))
 }
 

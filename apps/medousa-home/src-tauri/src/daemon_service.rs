@@ -325,9 +325,22 @@ pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonS
     }
 
     if is_bind_reachable(bind) {
-        return Err(format!(
-            "Port {bind} is open but the engine is not responding. Try restarting from Settings → Connection."
-        ));
+        let wait = daemon_wait_healthy(Some(DaemonWaitHealthRequest {
+            timeout_seconds: 45,
+            poll_ms: 500,
+        }))
+        .await?;
+        if wait.ok {
+            return Ok(DaemonStartResult {
+                started: false,
+                already_running: true,
+                pid: None,
+                log_path: daemon_log_path().to_string_lossy().to_string(),
+                message: format!("Medousa Engine is ready at {base_url}"),
+            });
+        }
+        stop_daemon_process();
+        tokio::time::sleep(Duration::from_millis(750)).await;
     }
 
     let backend = resolve_backend();

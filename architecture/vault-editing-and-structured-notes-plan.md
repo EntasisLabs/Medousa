@@ -70,7 +70,7 @@ Living plan for **Library** as the “Obsidian × Notion, AI-native” notebook:
 | C1 | Stable `id` slugs on rendered headings |
 | C2 | `[[note#Heading]]` → open note + scroll to heading |
 | C3 | Unresolved wikilink: gentle affordance (stub / pick note) |
-| C4 | Optional auto-TOC block from headings |
+| C4 | Optional auto-TOC block from headings — ` ```medousa-toc``` ` |
 | C5 | Wikilink styling + mobile tap feedback |
 
 **Acceptance:** `[[projects#Tasks]]` lands on the right section; external `[text](url)` opens in new tab.
@@ -184,7 +184,7 @@ A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → 
 - [x] Phase A complete (nav persistence, move filter, ⌘A)
 - [x] Phase B core (mobile preview→edit, header chrome, note actions)
 - [ ] Phase B polish (compact format bar on small screens)
-- [ ] Phase C complete
+- [x] Phase C complete (heading ids, wikilink+heading scroll, unresolved affordance, TOC block)
 - [ ] Phase D complete
 - [ ] Phase E spec frozen + shipped
 - [ ] Phase F spec frozen + shipped

@@ -3,6 +3,7 @@
   import { ChevronRight, Laptop, LoaderCircle, QrCode, Wifi } from "@lucide/svelte";
   import { checkDaemonHealth, getDaemonUrl, setDaemonUrl } from "$lib/daemon";
   import { inferDevDaemonUrl, isLoopbackDaemonUrl } from "$lib/daemonConnection";
+  import { setPairDeepLinkHandler } from "$lib/mobileNative";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
   import { completePairingFromQr } from "$lib/utils/pairingClient";
@@ -24,6 +25,17 @@
 
   onMount(() => {
     void loadInitialUrl();
+
+    setPairDeepLinkHandler((url) => {
+      if (applyPairLink(url)) {
+        connectMode = "pair";
+        statusMessage = "Pairing link received — tap Continue when ready.";
+      }
+    });
+
+    return () => {
+      setPairDeepLinkHandler(null);
+    };
   });
 
   async function loadInitialUrl() {

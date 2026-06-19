@@ -438,6 +438,7 @@ async fn wire_existing_daemon_composition(
                 &RuntimeComposition::Surreal(rt.clone()),
                 None,
             );
+            eprintln!("medousa-daemon: registering delivery routing publisher…");
             let routing_publisher = RuntimeFactory::build_endpoint_routing_publisher(
                 endpoint_store.clone(),
                 status_store,
@@ -445,6 +446,7 @@ async fn wire_existing_daemon_composition(
                 None,
             );
             rt.register_event_publisher(routing_publisher)?;
+            eprintln!("medousa-daemon: registering stasis job handlers…");
             register_daemon_handlers(
                 &rt,
                 &chat_client,
@@ -457,21 +459,30 @@ async fn wire_existing_daemon_composition(
                 &thread_store,
                 &cluster_store,
             )?;
+            eprintln!("medousa-daemon: registering workflow job handlers…");
             workflow::register_workflow_job_handlers(
                 &rt,
                 workflow_registry.clone(),
                 prompt_pipeline.clone(),
             )?;
             let composition = RuntimeComposition::Surreal(rt);
+            eprintln!("medousa-daemon: registering openshell sandbox handler…");
             crate::openshell_sandbox_run::register_openshell_sandbox_run_handler(&composition)
                 .await
                 .context("register openshell sandbox run handler")?;
-            channel_delivery::seed_internal_outbox_endpoint_for_runtime(
-                &composition,
-                None,
-                config.deliver_webhook_url,
-            )
-            .await?;
+            eprintln!("medousa-daemon: seeding internal outbox delivery endpoint…");
+            timed_step("delivery outbox seed", || async {
+                channel_delivery::seed_internal_outbox_endpoint_for_runtime(
+                    &composition,
+                    None,
+                    config.deliver_webhook_url,
+                )
+                .await
+                .map_err(|err| anyhow::anyhow!("{err}"))
+            })
+            .await
+            .context("failed to seed internal outbox delivery endpoint")?;
+            eprintln!("medousa-daemon: delivery wiring complete");
             Ok(composition)
         }
     }

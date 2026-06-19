@@ -138,6 +138,8 @@ export function preprocessColorSpans(source: string): string {
   return out.join("\n");
 }
 
+import { preprocessTableOfContents } from "./toc";
+
 export function preprocessMarkdown(
   source: string,
   titleByPath?: Map<string, string>,
@@ -145,5 +147,7 @@ export function preprocessMarkdown(
   const normalized = source.replace(/\r\n/g, "\n");
   const withHighlights = preprocessHighlights(normalized);
   const withColors = preprocessColorSpans(withHighlights);
-  return preprocessCallouts(preprocessWikilinks(withColors, titleByPath));
+  const withWikilinks = preprocessWikilinks(withColors, titleByPath);
+  const withCallouts = preprocessCallouts(withWikilinks);
+  return preprocessTableOfContents(withCallouts);
 }

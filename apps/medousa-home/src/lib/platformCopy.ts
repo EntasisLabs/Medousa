@@ -53,7 +53,7 @@ export function workshopPairingFromHostHint(): string {
 }
 
 export function workshopQrScanHint(): string {
-  return `Scan the QR on ${workshopHostPhrase()} with your camera app, then paste the medousa:// link here`;
+  return `Scan the QR on ${workshopHostPhrase()} — it should open Medousa and fill the pairing link here`;
 }
 
 export function workshopPairingStepsHint(): string {

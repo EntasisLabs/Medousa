@@ -31,12 +31,13 @@ pub fn routes() -> Router<PairingApiState> {
 async fn pair_status(
     State(state): State<PairingApiState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    state
-        .service
-        .pair_status()
-        .await
-        .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    match state.service.pair_status().await {
+        Ok(response) => Ok(Json(serde_json::to_value(response).unwrap_or_default())),
+        Err(err) => {
+            eprintln!("medousa-daemon: GET /pair/status failed: {err:#}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn get_iroh_ticket(

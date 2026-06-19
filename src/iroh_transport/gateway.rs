@@ -115,6 +115,9 @@ async fn read_http_request(recv: &mut iroh::endpoint::RecvStream) -> Result<Vec<
         if buf.len() >= MAX_REQUEST_BYTES {
             bail!("HTTP request exceeds {MAX_REQUEST_BYTES} bytes");
         }
+        if request_complete(&buf)? {
+            return Ok(buf);
+        }
         let read = recv
             .read(&mut chunk)
             .await
@@ -126,14 +129,33 @@ async fn read_http_request(recv: &mut iroh::endpoint::RecvStream) -> Result<Vec<
             break;
         }
         buf.extend_from_slice(&chunk[..read]);
-        if buf.windows(4).any(|window| window == b"\r\n\r\n") {
-            break;
-        }
     }
     if buf.is_empty() {
         bail!("empty HTTP request");
     }
-    Ok(buf)
+    if request_complete(&buf)? {
+        Ok(buf)
+    } else {
+        bail!("truncated HTTP body");
+    }
+}
+
+fn request_complete(raw: &[u8]) -> Result<bool> {
+    let mut headers = [EMPTY_HEADER; 32];
+    let mut request = Request::new(&mut headers);
+    match request.parse(raw).context("parse HTTP request")? {
+        Status::Complete(header_end) => {
+            let content_length = request
+                .headers
+                .iter()
+                .find(|header| header.name.eq_ignore_ascii_case("Content-Length"))
+                .and_then(|header| std::str::from_utf8(header.value).ok())
+                .and_then(|value| value.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            Ok(raw.len() >= header_end + content_length)
+        }
+        Status::Partial => Ok(false),
+    }
 }
 
 async fn forward_request_stream(
@@ -152,10 +174,10 @@ async fn forward_request_stream(
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
     let body = if content_length > 0 {
-        if raw.len() < header_end + 4 + content_length {
+        if raw.len() < header_end + content_length {
             bail!("truncated HTTP body");
         }
-        &raw[header_end + 4..header_end + 4 + content_length]
+        &raw[header_end..header_end + content_length]
     } else {
         &[]
     };
@@ -291,4 +313,24 @@ fn normalize_upstream(raw: &str) -> Result<String> {
         bail!("upstream must be http:// or https://");
     }
     Ok(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_complete_waits_for_post_body() {
+        let headers = b"POST /v1/interactive/turn HTTP/1.1\r\nHost: medousa-workshop\r\nContent-Length: 11\r\nConnection: close\r\n\r\n";
+        assert!(!request_complete(headers).expect("headers only"));
+        let mut full = headers.to_vec();
+        full.extend_from_slice(b"{\"msg\":\"hi\"}");
+        assert!(request_complete(&full).expect("headers + body"));
+    }
+
+    #[test]
+    fn request_complete_for_get_without_body() {
+        let get = b"GET /health HTTP/1.1\r\nHost: medousa-workshop\r\nConnection: close\r\n\r\n";
+        assert!(request_complete(get).expect("GET"));
+    }
 }

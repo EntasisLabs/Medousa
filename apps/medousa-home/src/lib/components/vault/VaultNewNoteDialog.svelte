@@ -21,7 +21,7 @@
     if (open && !wasOpen) {
       spaceId = vault.defaultCreateSpaceId;
       templateId = defaultTemplateForSpace(spaceId);
-      title = "";
+      title = vault.newNotePrefillTitle.trim();
     }
     wasOpen = open;
   });
@@ -57,7 +57,15 @@
       class="card w-full max-w-md space-y-4 p-5 shadow-xl"
       onsubmit={handleCreateCustom}
     >
-      <h3 id="new-note-title" class="text-base font-semibold">New note</h3>
+      <h3 id="new-note-title" class="text-base font-semibold">
+        {vault.newNotePrefillTitle ? "Create linked note" : "New note"}
+      </h3>
+      {#if vault.newNotePrefillPath}
+        <p class="text-xs text-surface-400">
+          For wikilink
+          <span class="font-mono text-surface-300">{vault.newNotePrefillPath}</span>
+        </p>
+      {/if}
 
       <label class="block space-y-1 text-left text-sm">
         <span class="text-surface-400">Space</span>

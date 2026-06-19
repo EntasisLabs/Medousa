@@ -1624,6 +1624,47 @@
     @apply bg-primary-500/25 text-primary-100 underline decoration-primary-400/60;
   }
 
+  .markdown-wikilink-unresolved {
+    @apply bg-warning-500/15 text-warning-200;
+  }
+
+  .markdown-wikilink-unresolved:hover {
+    @apply bg-warning-500/25 text-warning-100 decoration-warning-400/60;
+  }
+
+  .markdown-wikilink:active {
+    @apply scale-[0.98];
+  }
+
+  .markdown-heading {
+    scroll-margin-top: 4.5rem;
+  }
+
+  .markdown-heading-flash {
+    @apply rounded-md ring-2 ring-primary-400/50 transition-shadow duration-700;
+    --tw-ring-offset-color: rgb(var(--color-surface-950));
+  }
+
+  .markdown-toc {
+    @apply mb-4 rounded-lg border border-surface-500/40 bg-surface-900/40 px-4 py-3;
+  }
+
+  .markdown-toc-title {
+    @apply mb-2 text-xs font-semibold uppercase tracking-wide text-surface-400;
+  }
+
+  .markdown-toc-list {
+    @apply space-y-1 text-sm;
+  }
+
+  .markdown-toc-link {
+    @apply text-primary-200 underline decoration-primary-500/40 underline-offset-2 hover:text-primary-100;
+  }
+
+  .markdown-heading-link {
+    @apply text-primary-200 underline decoration-primary-500/40 underline-offset-2;
+  }
+
   .vault-editor-header {
     @apply border-b border-surface-500/35 bg-surface-900/30;
   }

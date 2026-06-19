@@ -59,9 +59,18 @@ impl PairingStore {
             if path.file_name().and_then(|name| name.to_str()) == Some("revoked.json") {
                 continue;
             }
-            let record = self.read_record(&path)?;
-            if !revoked.pairing_ids.contains(&record.pairing_id) {
-                out.push(record);
+            match self.read_record(&path) {
+                Ok(record) => {
+                    if !revoked.pairing_ids.contains(&record.pairing_id) {
+                        out.push(record);
+                    }
+                }
+                Err(err) => {
+                    eprintln!(
+                        "medousa-daemon: skipping unreadable pairing record {} ({err:#})",
+                        path.display()
+                    );
+                }
             }
         }
         out.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
@@ -226,5 +235,24 @@ mod tests {
         let decoded = store.decrypt(&envelope).expect("decrypt");
         let loaded: PairedDeviceRecord = serde_json::from_slice(&decoded).expect("parse");
         assert_eq!(loaded.pairing_id, record.pairing_id);
+    }
+
+    #[test]
+    fn list_paired_skips_unreadable_records() {
+        let identity = DeviceIdentity::generate_ephemeral();
+        let store = PairingStore::new(identity.signing_key());
+        fs::create_dir_all(pairings_dir()).expect("pairings dir");
+        let corrupt_path = pairings_dir().join("corrupt-test-phone.json");
+        fs::write(
+            &corrupt_path,
+            br#"{"nonce":"bad","ciphertext":"bad"}"#,
+        )
+        .expect("write corrupt record");
+        let listed = store.list_paired().expect("list should not fail");
+        assert!(
+            listed.iter().all(|record| record.phone_id != "corrupt-test-phone"),
+            "corrupt record should be skipped"
+        );
+        let _ = fs::remove_file(corrupt_path);
     }
 }
