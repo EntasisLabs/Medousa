@@ -332,23 +332,11 @@ pub fn recall_identity_facts(
             let display_name = contact_id
                 .and_then(|id| contact_names.get(id).copied())
                 .unwrap_or_else(|| contact_id.unwrap_or("unknown"));
-            let detail = relationship
-                .last_transition_reason
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .or_else(|| {
-                    if relationship.policy_tags.is_empty() {
-                        None
-                    } else {
-                        Some(relationship.policy_tags.join(", "))
-                    }
-                })
-                .unwrap_or_else(|| "no details".to_string());
+            let detail = relationship_social_detail(relationship);
             let searchable = format!(
-                "{display_name} {} {}",
-                relationship.policy_tags.join(" "),
-                detail
+                "{display_name} {kind} {tags} {detail}",
+                kind = relationship.relationship_kind.as_str(),
+                tags = relationship.policy_tags.join(" "),
             );
             let mut score = score_query_match(&query_tokens, &searchable);
             if score <= 0.0 {
@@ -477,19 +465,7 @@ fn collect_scored_digest_lines(
                 .copied()
                 .unwrap_or(contact_id);
             let kind = relationship.relationship_kind.as_str();
-            let detail = relationship
-                .last_transition_reason
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .or_else(|| {
-                    if relationship.policy_tags.is_empty() {
-                        None
-                    } else {
-                        Some(relationship.policy_tags.join(", "))
-                    }
-                })
-                .unwrap_or_else(|| "no details".to_string());
+            let detail = relationship_social_detail(relationship);
 
             let mut score = relationship.recency_score * relationship.confidence;
             if options
@@ -592,6 +568,69 @@ fn contact_id_for_relationship(relationship: &RelationshipEntity) -> Option<&str
     None
 }
 
+fn format_policy_tag(tag: &str) -> Option<String> {
+    let trimmed = tag.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((prefix, value)) = trimmed.split_once(':') {
+        let value = value.trim();
+        if value.is_empty() {
+            return Some(trimmed.to_string());
+        }
+        match prefix.trim().to_ascii_lowercase().as_str() {
+            "role" => Some(value.replace('_', " ")),
+            "employer" => Some(format!("at {value}")),
+            _ => Some(value.to_string()),
+        }
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn policy_tags_detail(tags: &[String]) -> Option<String> {
+    let parts: Vec<String> = tags.iter().filter_map(|tag| format_policy_tag(tag)).collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
+    }
+}
+
+fn relationship_kind_label(kind: &str) -> String {
+    if kind == "knows" {
+        return "knows".to_string();
+    }
+    kind.split('_')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    first.to_ascii_uppercase().to_string() + chars.as_str()
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn relationship_social_detail(relationship: &RelationshipEntity) -> String {
+    let kind = relationship.relationship_kind.as_str();
+    if let Some(tags) = policy_tags_detail(&relationship.policy_tags) {
+        if kind == "knows" {
+            return tags;
+        }
+        return format!("{} · {}", relationship_kind_label(kind), tags);
+    }
+    if kind == "knows" {
+        "no details".to_string()
+    } else {
+        relationship_kind_label(kind)
+    }
+}
+
 fn value_to_plain(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
@@ -663,7 +702,7 @@ mod tests {
                 parent_relationship_id: None,
                 governing_relationship_ids: vec![],
                 derived_from_relationship_id: None,
-                last_transition_reason: Some("Mario is an engineer at Google".to_string()),
+                last_transition_reason: Some("patch_applied".to_string()),
                 transition_receipt_id: None,
                 version: 1,
                 created_at: Utc::now(),
@@ -702,7 +741,7 @@ mod tests {
                 parent_relationship_id: None,
                 governing_relationship_ids: vec![],
                 derived_from_relationship_id: None,
-                last_transition_reason: Some(format!("Person {idx} detail")),
+                last_transition_reason: Some("patch_applied".to_string()),
                 transition_receipt_id: None,
                 version: 1,
                 created_at: Utc::now(),
@@ -718,6 +757,43 @@ mod tests {
             });
         }
         snapshot
+    }
+
+    #[test]
+    fn relationship_social_detail_uses_kind_and_tags_not_audit_reason() {
+        let relationship = RelationshipEntity {
+            relationship_id: "rel:blue".to_string(),
+            source_entity_ref: EntityRef {
+                entity_type: "UserEntity".to_string(),
+                entity_id: "user:default".to_string(),
+            },
+            target_entity_ref: EntityRef {
+                entity_type: "ContactEntity".to_string(),
+                entity_id: "contact:blue".to_string(),
+            },
+            relationship_kind: RelationshipKind::parse("partner"),
+            status: RelationshipStatus::Active,
+            trust_level: 0.9,
+            confidence: 0.95,
+            strength_score: 0.9,
+            recency_score: 0.9,
+            autonomy_scope: Default::default(),
+            approval_profile_id: None,
+            interruption_policy: Default::default(),
+            escalation_policy: Default::default(),
+            policy_tags: vec![],
+            provenance: UpdateSource::UserDirect,
+            parent_relationship_id: None,
+            governing_relationship_ids: vec![],
+            derived_from_relationship_id: None,
+            last_transition_reason: Some("patch_applied".to_string()),
+            transition_receipt_id: None,
+            version: 1,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        assert_eq!(relationship_social_detail(&relationship), "Partner");
     }
 
     #[test]
@@ -850,7 +926,7 @@ mod tests {
                 parent_relationship_id: None,
                 governing_relationship_ids: vec![],
                 derived_from_relationship_id: None,
-                last_transition_reason: Some("Mario is an engineer at Google".to_string()),
+                last_transition_reason: Some("patch_applied".to_string()),
                 transition_receipt_id: None,
                 version: 1,
                 created_at: Utc::now(),

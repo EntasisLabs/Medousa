@@ -125,6 +125,7 @@ impl CognitiveIdentityWriter {
             .await?;
 
         let relationship_id = relationship_id_for_user_contact(user_id, &contact_id);
+        let relationship_kind = relationship_kind_from_statement(statement);
         let relationship = RelationshipEntity {
             relationship_id: relationship_id.clone(),
             source_entity_ref: EntityRef {
@@ -135,7 +136,7 @@ impl CognitiveIdentityWriter {
                 entity_type: "ContactEntity".to_string(),
                 entity_id: contact_id,
             },
-            relationship_kind: RelationshipKind::Knows,
+            relationship_kind: relationship_kind.clone(),
             status: RelationshipStatus::Active,
             trust_level: 0.75,
             confidence: confidence.clamp(0.0, 1.0),
@@ -150,7 +151,7 @@ impl CognitiveIdentityWriter {
             parent_relationship_id: None,
             governing_relationship_ids: Vec::new(),
             derived_from_relationship_id: None,
-            last_transition_reason: Some(statement.to_string()),
+            last_transition_reason: None,
             transition_receipt_id: None,
             version: 1,
             created_at: now,
@@ -159,8 +160,8 @@ impl CognitiveIdentityWriter {
         self.store.upsert_relationship_entity(relationship).await?;
 
         let patch = json!({
+            "relationship_kind": relationship_kind.as_str(),
             "policy_tags": attributes,
-            "last_transition_reason": statement,
             "recency_score": 1.0,
             "confidence": confidence.clamp(0.0, 1.0),
         });
@@ -407,6 +408,32 @@ fn slugify_token(raw: &str) -> String {
         .join("_")
 }
 
+/// Map a user-facing role ("partner", "colleague", "dog") to `RelationshipKind`.
+pub fn relationship_kind_from_statement(statement: &str) -> RelationshipKind {
+    let trimmed = statement.trim();
+    if trimmed.is_empty() {
+        return RelationshipKind::Knows;
+    }
+
+    const MY_ROLE: &str = " is my ";
+    let role_text = if let Some(idx) = trimmed.to_ascii_lowercase().find(MY_ROLE) {
+        trimmed[(idx + MY_ROLE.len())..].trim()
+    } else {
+        trimmed
+    };
+
+    if role_text.split_whitespace().count() > 3 {
+        return RelationshipKind::Knows;
+    }
+
+    let token = role_text
+        .split_whitespace()
+        .next()
+        .unwrap_or(role_text)
+        .trim();
+    RelationshipKind::parse(&slugify_token(token))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,6 +445,60 @@ mod tests {
             contact_id_from_display_name("Mario"),
             "contact:mario"
         );
+    }
+
+    #[test]
+    fn relationship_kind_from_statement_maps_social_roles() {
+        assert_eq!(
+            relationship_kind_from_statement("partner").as_str(),
+            "partner"
+        );
+        assert_eq!(
+            relationship_kind_from_statement("colleague").as_str(),
+            "colleague"
+        );
+        assert_eq!(
+            relationship_kind_from_statement("Mario is my partner").as_str(),
+            "partner"
+        );
+        assert_eq!(
+            relationship_kind_from_statement("Mario is an engineer at Google").as_str(),
+            "knows"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_direct_remember_contact_sets_relationship_kind() {
+        let store = build_seeded_medousa_identity_store().expect("store");
+        let writer = CognitiveIdentityWriter::new(store.clone(), None);
+        let user_id = crate::identity_memory::resolve_identity_user_id(None);
+
+        let result = writer
+            .remember_contact(
+                &user_id,
+                "Blue",
+                "partner",
+                &[],
+                &[],
+                UpdateSource::UserDirect,
+                1.0,
+                "home teach medousa",
+            )
+            .await
+            .expect("remember contact");
+
+        assert!(result.committed, "{result:?}");
+
+        let store_dyn = store as Arc<dyn IdentityMemoryStore>;
+        let snapshot =
+            load_cognitive_identity_snapshot(Some(&store_dyn), &user_id, Some("interactive"), 8)
+                .await;
+        let rel = snapshot
+            .relationships
+            .iter()
+            .find(|relationship| relationship.target_entity_ref.entity_id == "contact:blue")
+            .expect("blue relationship");
+        assert_eq!(rel.relationship_kind.as_str(), "partner");
     }
 
     #[tokio::test]

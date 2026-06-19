@@ -21,12 +21,51 @@ export function profileKindLabel(kind: ProfileShelfKind): string {
   return KIND_LABELS[kind];
 }
 
-function relationshipKind(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && "type" in value) {
-    return String((value as { type?: string }).type ?? "connection");
+function relationshipKindSlug(value: unknown): string {
+  if (typeof value === "string") return value.trim().toLowerCase();
+  if (value && typeof value === "object") {
+    if ("type" in value) {
+      const typed = value as { type?: string; value?: string };
+      if (typed.type === "Legacy" && typed.value?.trim()) {
+        return typed.value.trim().toLowerCase();
+      }
+      if (typed.type?.trim()) return typed.type.trim().toLowerCase();
+    }
   }
-  return "connection";
+  return "knows";
+}
+
+function capitalizeWord(word: string): string {
+  if (!word) return word;
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+function formatRelationshipKind(value: unknown): string {
+  const slug = relationshipKindSlug(value);
+  if (slug === "knows") return "Knows";
+  return slug
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map(capitalizeWord)
+    .join(" ");
+}
+
+function formatPolicyTags(tags: string[]): string | null {
+  const parts = tags
+    .map((tag) => {
+      const trimmed = tag.trim();
+      if (!trimmed) return null;
+      const colon = trimmed.indexOf(":");
+      if (colon === -1) return trimmed;
+      const prefix = trimmed.slice(0, colon).trim().toLowerCase();
+      const value = trimmed.slice(colon + 1).trim();
+      if (!value) return trimmed;
+      if (prefix === "role") return value.replace(/_/g, " ");
+      if (prefix === "employer") return `at ${value}`;
+      return value;
+    })
+    .filter((part): part is string => Boolean(part?.trim()));
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 function humanizePrefKey(key: string): string {
@@ -49,12 +88,16 @@ function contactIdForRelationship(rel: IdentityRelationship): string | null {
 
 function relationshipRole(rel: IdentityRelationship | undefined): string | null {
   if (!rel) return null;
-  const reason = rel.last_transition_reason?.trim();
-  if (reason) return reason;
-  if (rel.policy_tags && rel.policy_tags.length > 0) {
-    return rel.policy_tags.join(", ");
+  const kindLabel = formatRelationshipKind(rel.relationship_kind);
+  const tagDetail =
+    rel.policy_tags && rel.policy_tags.length > 0
+      ? formatPolicyTags(rel.policy_tags)
+      : null;
+
+  if (kindLabel !== "Knows") {
+    return tagDetail ? `${kindLabel} · ${tagDetail}` : kindLabel;
   }
-  return null;
+  return tagDetail;
 }
 
 export function buildProfileShelfEntries(
@@ -147,11 +190,12 @@ export function buildProfileShelfEntries(
     const contactId = contactIdForRelationship(rel);
     if (contactId && contactIds.has(contactId)) continue;
 
-    const role = relationshipRole(rel) ?? relationshipKind(rel.relationship_kind);
+    const role =
+      relationshipRole(rel) ?? formatRelationshipKind(rel.relationship_kind);
     entries.push({
       id: `relationship:${rel.relationship_id}`,
       kind: "relationship",
-      title: role.charAt(0).toUpperCase() + role.slice(1),
+      title: role,
       subtitle: `Trust ${(rel.trust_level * 100).toFixed(0)}% · ${(rel.confidence * 100).toFixed(0)}% confidence`,
       searchText: [role, rel.relationship_id, "relationship"].join(" "),
       trustLevel: rel.trust_level,
@@ -161,7 +205,7 @@ export function buildProfileShelfEntries(
       relationshipId: rel.relationship_id,
       meta: {
         relationship_id: rel.relationship_id,
-        kind: relationshipKind(rel.relationship_kind),
+        kind: relationshipKindSlug(rel.relationship_kind),
       },
     });
   }

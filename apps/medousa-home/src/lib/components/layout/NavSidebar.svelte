@@ -145,8 +145,8 @@
     'profiles'
       ? 'workshop-rail-btn-active'
       : ''}"
-    title="Profiles — {activeProfileLabel}"
-    aria-label="Profiles ({activeProfileLabel})"
+    title="You — {activeProfileLabel}"
+    aria-label="You ({activeProfileLabel})"
     aria-current={active === "profiles" ? "page" : undefined}
     onclick={() => onSelect("profiles")}
   >

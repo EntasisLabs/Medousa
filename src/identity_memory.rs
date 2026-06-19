@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,11 +8,13 @@ use serde::Deserialize;
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 use surrealdb_types::SurrealValue;
+use stasis::domain::errors::Result as StasisResult;
+use stasis::infrastructure::memory::identity_context_filter::collect_contact_ids;
 use stasis::infrastructure::memory::in_memory_identity_memory_store::InMemoryIdentityMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::ports::outbound::memory::identity_memory_models::{
     AutonomyScope, ChannelProfileEntity, EntityRef, EscalationPolicy, GetIdentityContextRequest,
-    IdentityContextMode, InterruptionPolicy, PersonaEntity, PolicyProfileEntity,
+    GetIdentityContextResponse, IdentityContextMode, InterruptionPolicy, PersonaEntity, PolicyProfileEntity,
     RelationshipEntity, RelationshipKind, RelationshipStatus, UpdateSource, UserEntity,
 };
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
@@ -866,6 +869,66 @@ fn trimmed_non_empty(value: &str) -> Option<&str> {
     } else {
         Some(trimmed)
     }
+}
+
+fn is_user_contact_relationship(relationship: &RelationshipEntity, user_id: &str) -> bool {
+    (relationship.source_entity_ref.entity_type == "UserEntity"
+        && relationship.source_entity_ref.entity_id == user_id
+        && relationship.target_entity_ref.entity_type == "ContactEntity")
+        || (relationship.target_entity_ref.entity_type == "UserEntity"
+            && relationship.target_entity_ref.entity_id == user_id
+            && relationship.source_entity_ref.entity_type == "ContactEntity")
+}
+
+/// Stasis `RelationshipKind::is_social()` omits `Legacy` roles such as `partner` or `dog`.
+/// Medousa treats user↔contact legacy kinds as cognitive-social for prompts and UI.
+pub fn relationship_kind_visible_in_cognitive_context(
+    relationship: &RelationshipEntity,
+    user_id: &str,
+) -> bool {
+    if relationship.relationship_kind.is_social() {
+        return true;
+    }
+    if matches!(relationship.relationship_kind, RelationshipKind::Legacy(_)) {
+        return is_user_contact_relationship(relationship, user_id);
+    }
+    false
+}
+
+pub fn apply_medousa_cognitive_context_filter(
+    mut response: GetIdentityContextResponse,
+    user_id: &str,
+) -> GetIdentityContextResponse {
+    response
+        .relationships
+        .retain(|relationship| relationship_kind_visible_in_cognitive_context(relationship, user_id));
+    response.policy_profiles.clear();
+    response.flattened_claims.clear();
+
+    let allowed_contacts: HashSet<String> = collect_contact_ids(&response.relationships)
+        .into_iter()
+        .collect();
+    response
+        .contacts
+        .retain(|contact| allowed_contacts.contains(&contact.contact_id));
+    response
+}
+
+pub async fn get_medousa_cognitive_identity_context(
+    store: &dyn IdentityMemoryStore,
+    request: &GetIdentityContextRequest,
+) -> StasisResult<GetIdentityContextResponse> {
+    let mut full_request = request.clone();
+    full_request.mode = IdentityContextMode::Full;
+    let response = store.get_identity_context(&full_request).await?;
+    Ok(apply_medousa_cognitive_context_filter(response, &request.user_id))
+}
+
+pub async fn get_medousa_cognitive_identity_context_in_memory(
+    store: &InMemoryIdentityMemoryStore,
+    request: &GetIdentityContextRequest,
+) -> StasisResult<GetIdentityContextResponse> {
+    get_medousa_cognitive_identity_context(store, request).await
 }
 
 #[cfg(test)]

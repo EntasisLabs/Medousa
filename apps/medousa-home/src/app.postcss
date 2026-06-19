@@ -3664,4 +3664,90 @@
   .profiles-quick-chip {
     @apply inline-flex items-center gap-1.5 rounded-full border border-surface-500/40 bg-surface-900/50 px-3 py-1.5 text-xs text-surface-300 transition hover:border-primary-400/40 hover:text-surface-100 disabled:opacity-50;
   }
+
+  .profiles-field-view {
+    @apply relative flex h-full min-h-0 flex-col;
+  }
+
+  .profiles-field-whisper {
+    @apply pointer-events-none absolute left-4 top-3 z-10 text-[11px] text-surface-500;
+  }
+
+  .profiles-field-viewport {
+    @apply relative h-full min-h-0 flex-1 cursor-grab overflow-hidden;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 45%, rgb(var(--color-primary-500) / 0.06), transparent 70%),
+      rgb(var(--color-surface-950));
+  }
+
+  .profiles-field-viewport-dragging {
+    @apply cursor-grabbing;
+  }
+
+  .profiles-field-loading {
+    @apply flex h-full items-center justify-center text-sm text-surface-500;
+  }
+
+  .profiles-field-svg {
+    @apply absolute left-0 top-0 touch-none;
+  }
+
+  .profiles-field-labels {
+    @apply pointer-events-none absolute left-0 top-0;
+  }
+
+  .profiles-field-label {
+    @apply pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 text-center;
+  }
+
+  .profiles-field-label-center {
+    @apply max-w-[10rem];
+  }
+
+  .profiles-field-label-name {
+    @apply text-sm font-semibold text-surface-50 drop-shadow-sm;
+  }
+
+  .profiles-field-label-person {
+    @apply rounded-full border border-surface-500/30 px-2.5 py-1 text-xs font-medium text-surface-100 backdrop-blur-sm transition hover:border-primary-400/50;
+    background-color: rgb(var(--color-surface-950) / 0.7);
+  }
+
+  .profiles-field-label-active {
+    @apply border-primary-400/60 bg-primary-500/20 text-primary-100;
+  }
+
+  .profiles-field-blob-selected {
+    filter: brightness(1.15);
+  }
+
+  .profiles-focus-card {
+    @apply pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4;
+  }
+
+  .profiles-focus-card-inner {
+    @apply pointer-events-auto w-full max-w-md rounded-2xl border border-surface-500/40 px-4 py-4 shadow-xl;
+    background-color: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(12px);
+  }
+
+  .profiles-focus-close {
+    @apply absolute right-3 top-3;
+  }
+
+  .profiles-focus-kicker {
+    @apply text-[11px] font-medium uppercase tracking-[0.12em] text-primary-300/80;
+  }
+
+  .profiles-focus-title {
+    @apply mt-1 text-lg font-semibold text-surface-50;
+  }
+
+  .profiles-focus-voice {
+    @apply mt-2 text-sm leading-relaxed text-surface-300;
+  }
+
+  .profiles-focus-actions {
+    @apply mt-4 flex flex-wrap gap-2;
+  }
 }

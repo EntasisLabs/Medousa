@@ -109,21 +109,25 @@ ContactEntity {
 
 ```text
 UserEntity → ContactEntity
-  relationship_kind: knows | colleague
+  relationship_kind: partner | colleague | knows | Legacy("dog")
   policy_tags: ["role:engineer", "employer:google"]
-  last_transition_reason: "Mario is an engineer at Google"
+  last_transition_reason: "patch_applied"  # audit only — Stasis commit reason
   confidence, recency_score
 ```
+
+Human-facing role labels come from **`relationship_kind`** (+ optional **`policy_tags`** nuance). Do not store operator prose in `last_transition_reason`.
+
+Stasis 0.4.0 maps roles like `partner` and `dog` to `RelationshipKind::Legacy("…")`. Medousa's cognitive context loader keeps user↔contact legacy kinds visible (Stasis `is_social()` alone would drop them).
 
 Preference-as-edge (when the target is not a contact):
 
 ```text
 UserEntity → ConceptEntity (entity_ref only; no backing row required for v1)
   relationship_kind: prefers
-  last_transition_reason: "User prefers matcha over coffee"
+  last_transition_reason: "patch_applied"  # audit only
 ```
 
-Prefer **user.preferences** for simple key/value prefs; use **prefers** edges when the target is relational or needs tags/history.
+Prefer **user.preferences** for simple key/value prefs; store the human statement in the preference value (or `policy_tags` on a `prefers` edge). Use **prefers** edges when the target is relational or needs tags/history.
 
 ### Delegation (worker continuity Phase B)
 
@@ -159,7 +163,7 @@ Aligns with [worker-continuity-plan.md](worker-continuity-plan.md) Phase B — s
 | Inferred fact commits | **`user_direct` auto-commits**; `model_inferred` propose-only unless operator confirms (relationship_kind is `confirm_required` in Stasis) |
 | Confidence floor | Keep `auto_commit_min_confidence: 0.85` for model_inferred when we add explicit confirm UX later |
 | Multi-user | `MEDOUSA_IDENTITY_USER_ID` / per-channel user id via existing `resolve_identity_user_id` |
-| Conflict handling | **Last-write-wins** on `preferences.<key>`; relationship updates bump `recency_score` and append `last_transition_reason` (history via `list_entity_history`) |
+| Conflict handling | **Last-write-wins** on `preferences.<key>`; relationship updates bump `recency_score` and set audit `last_transition_reason` (e.g. `patch_applied`; history via `list_entity_history`). Semantic role changes go in **`relationship_kind`** and nuance in **`policy_tags`**. |
 | Locus bridge | On identity commit with `sttp_bridge_node`, store to session `medousa-identity` (audit, not primary recall) |
 | Digest budget | Max ~800 chars turn-start relational block; truncate lowest `recency_score` edges first |
 
@@ -242,7 +246,7 @@ Aligns with [worker-continuity-plan.md](worker-continuity-plan.md) Phase B — s
 
 1. Extend `IdentityProductConfig`:
    - `model_inferred_auto_commit_fields` prefix rules for `preferences.*`
-   - Allow `policy_tags`, `last_transition_reason`, `recency_score`, contact `display_name`, `aliases`
+   - Allow `policy_tags`, audit `last_transition_reason`, `recency_score`, contact `display_name`, `aliases`
 2. `identity_write_policy.rs` — prefix match for nested preference paths; document deny rules for autonomy widen (unchanged).
 3. Internal service `CognitiveIdentityWriter` (not necessarily public API):
    - `remember_preference(user_id, key, value, source, confidence, reason)`

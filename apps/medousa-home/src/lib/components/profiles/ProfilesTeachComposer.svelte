@@ -7,18 +7,34 @@
 
   interface Props {
     readOnly?: boolean;
+    prefill?: string;
+    focusNonce?: number;
     onRemembered?: (
       parsed: IdentityRememberRequest,
       result: IdentityRememberResponse,
     ) => void | Promise<void>;
   }
 
-  let { readOnly = false, onRemembered }: Props = $props();
+  let {
+    readOnly = false,
+    prefill = "",
+    focusNonce = 0,
+    onRemembered,
+  }: Props = $props();
 
   let text = $state("");
   let busy = $state(false);
   let flash = $state<string | null>(null);
   let flashOk = $state(true);
+  let inputEl: HTMLTextAreaElement | undefined = $state();
+
+  $effect(() => {
+    focusNonce;
+    if (prefill) {
+      text = prefill;
+      inputEl?.focus();
+    }
+  });
 
   async function submit() {
     const parsed = withIdentityUserId(parseIdentityTeachInput(text));
@@ -59,6 +75,7 @@
   {/if}
   <div class="composer-bar max-w-3xl">
     <textarea
+      bind:this={inputEl}
       class="composer-bar-input min-h-[2.5rem] w-full flex-1 resize-none bg-transparent py-1 text-sm leading-relaxed text-surface-100 placeholder:text-surface-500 focus:outline-none"
       rows="1"
       placeholder="Tell her something she should remember…"

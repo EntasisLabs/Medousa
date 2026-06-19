@@ -17,7 +17,7 @@ use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, CommitOutcomeCode, ChannelProfileEntity,
     ContactEntity, RelationshipEntity,
     EntityUpdateProposalRecord, GetIdentityContextRequest, GetIdentityContextResponse,
-    IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse, PersonaEntity,
+    IdentityContextMode, IdentityEntityType, ListEntityHistoryRequest, ListEntityHistoryResponse, PersonaEntity,
     ProposalState, ProposeEntityUpdateRequest, ProposeEntityUpdateResponse,
     RollbackEntityVersionRequest, RollbackEntityVersionResponse, UpdateSource, UpdateTier,
     UserEntity,
@@ -1021,9 +1021,33 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
         request: &GetIdentityContextRequest,
     ) -> StasisResult<GetIdentityContextResponse> {
         match &self.backing {
-            Backing::InMemory { store, .. } => store.get_identity_context(request).await,
+            Backing::InMemory { store, .. } => {
+                if request.mode == IdentityContextMode::Cognitive {
+                    crate::identity_memory::get_medousa_cognitive_identity_context_in_memory(
+                        store, request,
+                    )
+                    .await
+                } else {
+                    store.get_identity_context(request).await
+                }
+            }
             Backing::Surreal { store, db, .. } => {
-                match store.get_identity_context(request).await {
+                async fn fetch_identity_context(
+                    store: &SurrealIdentityMemoryStore,
+                    request: &GetIdentityContextRequest,
+                ) -> StasisResult<GetIdentityContextResponse> {
+                    if request.mode == IdentityContextMode::Cognitive {
+                        crate::identity_memory::get_medousa_cognitive_identity_context(
+                            store,
+                            request,
+                        )
+                        .await
+                    } else {
+                        store.get_identity_context(request).await
+                    }
+                }
+
+                match fetch_identity_context(store, request).await {
                     Ok(response) => Ok(response),
                     Err(err) if is_identity_user_preferences_decode_error(&err) => {
                         if let Err(repair_err) =
@@ -1041,7 +1065,7 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
                                 "medousa-daemon: identity user preferences bulk repair failed err={repair_err}"
                             );
                         }
-                        store.get_identity_context(request).await
+                        fetch_identity_context(store, request).await
                     }
                     Err(err) => Err(err),
                 }
