@@ -3682,6 +3682,27 @@
     cursor: grabbing;
   }
 
+  body.vault-kanban-dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  body.vault-kanban-dragging [data-kanban-drop-column] {
+    cursor: grabbing;
+  }
+
+  .vault-kanban-column--drop-active {
+    box-shadow: inset 0 0 0 2px rgb(var(--color-primary-400) / 0.45);
+  }
+
+  .vault-kanban-card--drop-active {
+    box-shadow: inset 0 0 0 2px rgb(var(--color-primary-300) / 0.55);
+  }
+
+  .vault-kanban-card--dragging {
+    opacity: 0.55;
+  }
+
   .vault-tree-row--drop-active {
     background-color: rgb(var(--color-primary-500) / 0.1);
     box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.6);

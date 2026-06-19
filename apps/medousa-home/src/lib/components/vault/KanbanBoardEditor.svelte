@@ -1,10 +1,17 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { GripVertical } from "@lucide/svelte";
   import {
     kanbanColumnsFromContent,
     replaceKanbanBoard,
     type KanbanColumn,
   } from "$lib/utils/markdownKanban";
+  import {
+    cancelKanbanPointerDrag,
+    currentKanbanDragSource,
+    startKanbanPointerDrag,
+    type KanbanDropTarget,
+  } from "$lib/utils/vaultKanbanDrag";
 
   interface Props {
     content: string;
@@ -17,17 +24,46 @@
 
   let columns = $state<KanbanColumn[]>([]);
   let syncedContent = $state("");
-  let dragFrom = $state<{ columnIndex: number; cardIndex: number } | null>(null);
+  let dropHighlight = $state<KanbanDropTarget | null>(null);
+
+  function columnsEqual(left: KanbanColumn[], right: KanbanColumn[]): boolean {
+    if (left.length !== right.length) return false;
+    return left.every((column, columnIndex) => {
+      const other = right[columnIndex];
+      if (column.title !== other.title) return false;
+      if (column.cards.length !== other.cards.length) return false;
+      return column.cards.every(
+        (card, cardIndex) =>
+          card.text === other.cards[cardIndex].text &&
+          card.checked === other.cards[cardIndex].checked,
+      );
+    });
+  }
 
   $effect(() => {
+    if (currentKanbanDragSource()) return;
     if (content === syncedContent) return;
-    columns = kanbanColumnsFromContent(content);
+    const parsedFromProp = kanbanColumnsFromContent(content);
+    const parsedFromSynced = syncedContent
+      ? kanbanColumnsFromContent(syncedContent)
+      : null;
+    if (parsedFromSynced && columnsEqual(parsedFromSynced, columns)) {
+      return;
+    }
+    columns = parsedFromProp;
     syncedContent = content;
+  });
+
+  onDestroy(() => {
+    cancelKanbanPointerDrag(() => {
+      dropHighlight = null;
+    });
   });
 
   function emitColumns(nextColumns: KanbanColumn[]) {
     columns = nextColumns;
-    const updated = replaceKanbanBoard(content, nextColumns);
+    const base = syncedContent || content;
+    const updated = replaceKanbanBoard(base, nextColumns);
     if (updated) {
       syncedContent = updated;
       onchange(updated);
@@ -99,24 +135,44 @@
     emitColumns(next);
   }
 
-  function handleDragStart(columnIndex: number, cardIndex: number) {
-    dragFrom = { columnIndex, cardIndex };
-  }
-
-  function handleDragOver(event: DragEvent) {
+  function handleGripPointerDown(
+    event: PointerEvent,
+    columnIndex: number,
+    cardIndex: number,
+  ) {
+    if (disabled) return;
     event.preventDefault();
+    event.stopPropagation();
+    startKanbanPointerDrag(
+      { columnIndex, cardIndex },
+      (target) => {
+        dropHighlight = target;
+      },
+      (from, to) => {
+        moveCard(from.columnIndex, from.cardIndex, to.columnIndex, to.cardIndex);
+      },
+      event,
+    );
   }
 
-  function handleDropOnColumn(columnIndex: number) {
-    if (!dragFrom) return;
-    moveCard(dragFrom.columnIndex, dragFrom.cardIndex, columnIndex);
-    dragFrom = null;
+  function columnDropActive(columnIndex: number): boolean {
+    return (
+      dropHighlight?.columnIndex === columnIndex && dropHighlight.cardIndex === undefined
+    );
   }
 
-  function handleDropOnCard(columnIndex: number, cardIndex: number) {
-    if (!dragFrom) return;
-    moveCard(dragFrom.columnIndex, dragFrom.cardIndex, columnIndex, cardIndex);
-    dragFrom = null;
+  function cardDropActive(columnIndex: number, cardIndex: number): boolean {
+    return (
+      dropHighlight?.columnIndex === columnIndex &&
+      dropHighlight.cardIndex === cardIndex
+    );
+  }
+
+  function cardDragging(columnIndex: number, cardIndex: number): boolean {
+    const source = currentKanbanDragSource();
+    return (
+      source?.columnIndex === columnIndex && source.cardIndex === cardIndex
+    );
   }
 
   function cardTextParts(text: string): Array<{ kind: "text" | "wikilink"; value: string }> {
@@ -146,18 +202,23 @@
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
   <div class="flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/40 px-4 py-2">
-    <p class="text-xs text-surface-400">Board view · columns are `##` headings in markdown</p>
+    <p class="text-xs text-surface-400">
+      Board view · drag cards by the grip handle
+    </p>
   </div>
 
   <div class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3">
     <div class="flex h-full min-h-[240px] gap-2">
       {#each columns as column, columnIndex (column.title + columnIndex)}
         <section
-          class="flex min-h-0 w-[min(17rem,78vw)] shrink-0 flex-col rounded-md border border-surface-500/40 bg-surface-900/35"
+          class="flex min-h-0 w-[min(17rem,78vw)] shrink-0 flex-col rounded-md border border-surface-500/40 bg-surface-900/35 {columnDropActive(
+            columnIndex,
+          )
+            ? 'vault-kanban-column--drop-active'
+            : ''}"
           role="region"
           aria-label="{column.title} column"
-          ondragover={handleDragOver}
-          ondrop={() => handleDropOnColumn(columnIndex)}
+          data-kanban-drop-column={columnIndex}
         >
           <header class="border-b border-surface-500/40 px-2.5 py-2">
             <input
@@ -177,25 +238,35 @@
             </p>
           </header>
 
-          <div class="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5">
+          <div
+            class="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-1.5"
+            role="list"
+            aria-label="{column.title} cards"
+          >
             {#each column.cards as card, cardIndex (columnIndex + "-" + cardIndex)}
               <article
-                class="workshop-kanban-card group relative rounded-md border border-surface-500/35 bg-surface-950/50 p-2"
-                draggable={!disabled}
-                ondragstart={() => handleDragStart(columnIndex, cardIndex)}
-                ondragover={handleDragOver}
-                ondrop={(event) => {
-                  event.stopPropagation();
-                  handleDropOnCard(columnIndex, cardIndex);
-                }}
+                class="workshop-kanban-card group relative rounded-md border border-surface-500/35 bg-surface-950/50 p-2 {cardDragging(
+                  columnIndex,
+                  cardIndex,
+                )
+                  ? 'vault-kanban-card--dragging'
+                  : ''} {cardDropActive(columnIndex, cardIndex)
+                  ? 'vault-kanban-card--drop-active'
+                  : ''}"
+                role="listitem"
+                data-kanban-drop-card
+                data-column-index={columnIndex}
+                data-card-index={cardIndex}
               >
                 <div class="flex items-start gap-2">
                   <button
                     type="button"
-                    class="mt-0.5 shrink-0 text-surface-600"
-                    aria-hidden="true"
-                    tabindex={-1}
-                    disabled={disabled}
+                    class="mt-0.5 shrink-0 cursor-grab border-0 bg-transparent p-0 text-surface-600 active:cursor-grabbing"
+                    aria-label="Drag card"
+                    title="Drag to move"
+                    {disabled}
+                    onpointerdown={(event) =>
+                      handleGripPointerDown(event, columnIndex, cardIndex)}
                   >
                     <GripVertical size={14} strokeWidth={1.75} />
                   </button>
@@ -249,7 +320,9 @@
                 </div>
               </article>
             {:else}
-              <p class="px-2 py-4 text-center text-xs text-surface-500">Drop cards here</p>
+              <p class="px-2 py-4 text-center text-xs text-surface-500">
+                Drop cards here
+              </p>
             {/each}
           </div>
 
