@@ -1,5 +1,6 @@
 <script lang="ts">
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
+  import { COLOR_THEME_GROUP_LABELS, COLOR_THEME_GROUPS } from "$lib/types/colorThemes";
 </script>
 
 <section class="settings-section">
@@ -10,8 +11,8 @@
     </p>
   </header>
 
-  {#each ["workshop", "apple"] as group (group)}
-    <p class="workshop-label mt-6">{group === "workshop" ? "Workshop" : "Apple"}</p>
+  {#each COLOR_THEME_GROUPS as group (group)}
+    <p class="workshop-label mt-6">{COLOR_THEME_GROUP_LABELS[group]}</p>
     <div class="mt-2 grid gap-2 lg:grid-cols-2">
       {#each COLOR_THEME_OPTIONS.filter((option) => option.group === group) as option (option.id)}
         <button

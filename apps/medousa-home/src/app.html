@@ -8,32 +8,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual"
     />
     <title>Medousa</title>
-    <script>
-      (function () {
-        try {
-          var dark = localStorage.getItem("medousa-home-dark-mode") !== "0";
-          var stored = localStorage.getItem("medousa-home-color-theme");
-          var ids = ["medousa", "black-lily", "cupertino", "graphite", "midnight"];
-          var themeId = ids.indexOf(stored) >= 0 ? stored : "medousa";
-          var names = {
-            medousa: { dark: "medousa", light: "medousa-light" },
-            "black-lily": { dark: "black-lily", light: "black-lily-light" },
-            cupertino: { dark: "cupertino-dark", light: "cupertino-light" },
-            graphite: { dark: "graphite-dark", light: "graphite-light" },
-            midnight: { dark: "midnight-dark", light: "midnight-light" },
-          };
-          var skeletonTheme = names[themeId][dark ? "dark" : "light"];
-          document.documentElement.classList.toggle("dark", dark);
-          document.documentElement.dataset.theme = skeletonTheme;
-          if (
-            window.__TAURI_INTERNALS__ &&
-            /iPhone|iPad|iPod/i.test(navigator.userAgent)
-          ) {
-            document.documentElement.dataset.nativeShell = "ios";
-          }
-        } catch (_) {}
-      })();
-    </script>
+    <!-- MEDOUSA_THEME_BOOT -->
     %sveltekit.head%
   </head>
   <body

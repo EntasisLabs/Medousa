@@ -13,6 +13,22 @@ import {
 import { blackLilyTheme } from "./black-lily-theme";
 import { blackLilyLightTheme, medousaLightTheme } from "./themes/light-themes";
 import { medousaTheme } from "./medousa-theme";
+import {
+  catppuccinLatteTheme,
+  catppuccinMochaTheme,
+  githubDarkTheme,
+  githubLightTheme,
+  oneDarkLightTheme,
+  oneDarkTheme,
+  tokyoDayTheme,
+  tokyoNightTheme,
+  draculaTheme,
+  draculaLightTheme,
+  nordTheme,
+  nordLightTheme,
+  solarizedDarkTheme,
+  solarizedLightTheme,
+} from "./themes/familiar-themes";
 
 export default {
   darkMode: "class",
@@ -41,6 +57,20 @@ export default {
           graphiteDarkTheme,
           midnightLightTheme,
           midnightDarkTheme,
+          oneDarkTheme,
+          oneDarkLightTheme,
+          catppuccinMochaTheme,
+          catppuccinLatteTheme,
+          tokyoNightTheme,
+          tokyoDayTheme,
+          githubDarkTheme,
+          githubLightTheme,
+          draculaTheme,
+          draculaLightTheme,
+          nordTheme,
+          nordLightTheme,
+          solarizedDarkTheme,
+          solarizedLightTheme,
         ],
       },
     }),
