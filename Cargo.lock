@@ -779,6 +779,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core 0.5.6",
+ "base64 0.22.1",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -798,8 +799,10 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "sha1",
  "sync_wrapper 1.0.2",
  "tokio",
+ "tokio-tungstenite 0.29.0",
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
@@ -6402,6 +6405,7 @@ dependencies = [
  "futures-util",
  "genai 0.6.5",
  "grapheme-compiler",
+ "grapheme-lsp",
  "grapheme-runtime",
  "grapheme-sdk",
  "hmac 0.12.1",

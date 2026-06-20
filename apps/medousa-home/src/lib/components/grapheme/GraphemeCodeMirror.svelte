@@ -1,0 +1,76 @@
+<script lang="ts">
+  import { onDestroy, onMount } from "svelte";
+  import { basicSetup } from "codemirror";
+  import { EditorState } from "@codemirror/state";
+  import { EditorView, keymap } from "@codemirror/view";
+  import { indentWithTab } from "@codemirror/commands";
+  import type { LSPClient } from "@codemirror/lsp-client";
+  import {
+    graphemeEditorTheme,
+    graphemeLanguageSupport,
+  } from "$lib/grapheme/graphemeEditorTheme";
+
+  interface Props {
+    value: string;
+    documentUri: string;
+    client: LSPClient | null;
+    readOnly?: boolean;
+    onchange?: (value: string) => void;
+  }
+
+  let {
+    value,
+    documentUri,
+    client,
+    readOnly = false,
+    onchange,
+  }: Props = $props();
+
+  let host: HTMLDivElement | undefined = $state();
+  let view: EditorView | undefined;
+
+  onMount(() => {
+    if (!host) return;
+    const extensions = [
+      basicSetup,
+      graphemeEditorTheme,
+      graphemeLanguageSupport,
+      keymap.of([indentWithTab]),
+      EditorView.lineWrapping,
+      EditorState.readOnly.of(readOnly),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          onchange?.(update.state.doc.toString());
+        }
+      }),
+    ];
+    if (client) {
+      extensions.push(client.plugin(documentUri, "grapheme"));
+    }
+    view = new EditorView({
+      parent: host,
+      state: EditorState.create({
+        doc: value,
+        extensions,
+      }),
+    });
+  });
+
+  onDestroy(() => {
+    view?.destroy();
+    view = undefined;
+  });
+
+  $effect(() => {
+    if (!view || view.state.doc.toString() === value) return;
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: value,
+      },
+    });
+  });
+</script>
+
+<div bind:this={host} class="grapheme-codemirror-host min-h-0 flex-1"></div>

@@ -19,12 +19,14 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md)
 
 | Phase | Theme | Status |
 |-------|--------|--------|
-| W0 Automations honesty | Run history, delivery picker, nav rename | 🔄 |
-| W1 Workshop browse | Grapheme modules, script library, Connections | ⬜ |
-| W2 Specialist create | Import wizard, editor-lite, allowlist preview | ⬜ |
-| W3 Flows v1 | Workflow composer, run/schedule from Home | ⬜ |
-| W4 Flows from history | Tool slice → replay steps | ⬜ |
-| W5 Grapheme depth | Script editor, WASM hot-load | ⬜ |
+| W0 Automations honesty | Run history, delivery picker, nav rename | ✅ |
+| W1 Workshop browse | Grapheme modules, script library, Connections | ✅ |
+| W2 Specialist create | Import wizard, editor-lite, allowlist preview | ✅ |
+| W3 Flows v1 | Workflow composer, run/schedule from Home | ✅ |
+| W4 Flows from history | Tool slice → replay steps | ✅ |
+| W5 Grapheme depth | Save/compile/allowlist/WASM APIs | ✅ |
+| W5.5–W5.6 Script workshop | Tabs + CodeMirror + `grapheme-lsp` + vault chrome | ✅ |
+| W5.7 Workshop bridges | Add to flow; module insert from editor | 🔄 |
 
 ---
 

@@ -73,8 +73,18 @@
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
     layout.navigateDesktop("automations", { bump: true });
-    if (mobile) switchMobileTab("automations");
+    if (mobile) layout.openYou("automations");
   }
+  const sessionLabel = $derived.by(() => {
+    const session = chat.sessions.find((entry) => entry.session_id === chat.sessionId);
+    if (session) return formatSessionLabel(session);
+    return formatSessionLabel({
+      session_id: chat.sessionId,
+      preview: "",
+      turns: 0,
+      verification_runs: 0,
+    });
+  });
   const recentSessions = $derived(
     chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
   );

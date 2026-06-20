@@ -177,6 +177,7 @@ pub fn run() {
             daemon::grapheme::grapheme_compile_source,
             daemon::grapheme::grapheme_load_module,
             daemon::grapheme::grapheme_get_lifecycle,
+            daemon::grapheme::grapheme_get_lsp_workspace,
             daemon::runtime::runtime_get_stats,
             daemon::runtime::runtime_get_defaults,
             daemon::runtime::runtime_get_delivery_status,

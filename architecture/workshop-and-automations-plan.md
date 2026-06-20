@@ -316,6 +316,8 @@ Priority order for implementation:
 | `GET /v1/tool-history/slices` | Cross-session index (new store) | W4 |
 | `POST /v1/workflows/from-slice` | Promote slice → draft flow | W4 |
 | `POST /v1/grapheme/modules/load` | WASM hot-load (SDK) | W5 |
+| `GET /v1/grapheme/lsp/workspace` | LSP workspace root (script library) | W5.6 |
+| `WS /v1/grapheme/lsp` | `grapheme-lsp` JSON-RPC bridge | W5.6 |
 
 Existing routes to keep using:
 - `GET /v1/jobs/{job_id}/result`, `/report`
@@ -439,16 +441,28 @@ flowchart LR
 
 **Goal:** Normie-grade script workshop; WASM when ready.
 
-| ID | Deliverable | Acceptance |
-|----|-------------|------------|
-| W5.1 | In-app script editor | Save to script library |
-| W5.2 | Module allowlist editor | Workshop + per-specialist; daemon enforces on run |
-| W5.3 | WASM module attach | `activate_module_generation` via daemon; UI shows lifecycle events |
-| W5.4 | AOT / compile hints | Advanced compile path for repeat runs |
+| ID | Deliverable | Acceptance | Status |
+|----|-------------|------------|--------|
+| W5.1 | In-app script editor | Save to script library | ✅ |
+| W5.2 | Module allowlist editor | Workshop + per-specialist; daemon enforces on run | ✅ (workshop allowlist) |
+| W5.3 | WASM module attach | `activate_module_generation` via daemon; UI shows lifecycle events | ✅ |
+| W5.4 | AOT / compile hints | Advanced compile path for repeat runs | ✅ |
+| W5.5 | Script editor shell | Vault-style chrome, tab strip, status bar, metadata drawer | ✅ |
+| W5.6 | LSP authoring | `grapheme-lsp` via daemon WebSocket; CodeMirror diagnostics/completion/hover | ✅ |
+| W5.7 | Workshop bridges | Run/save/allowlist/compile in editor; Add to flow; module insert | 🔄 (run/save/compile wired; flow + module insert pending) |
 
 **Exit:** Grapheme replaces OpenShell for typical automation users.
 
-**Code anchors:** `grapheme-sdk` `GraphemeRuntimeSession`, `PolicyAwareToolRegistry`, `tools.rs`.
+**Editor thesis (W5.5–W5.7):** TUI discipline (dirty buffer, status line, run/save policy) + vault product chrome + **`grapheme-lsp`** as the authoring brain. Multi-script **tabs** for flow-building workflows. Not a general IDE — no debugger/git/extensions host.
+
+**Code anchors:** `grapheme-sdk`, `grapheme-lsp`, `grapheme_workshop.rs`, `grapheme_script/store.rs`, `GraphemeScriptEditorPanel.svelte`, `grapheme_lsp_bridge.rs`, TUI `editor_runtime.rs`, `VaultEditor.svelte`.
+
+**API additions (W5.6):**
+
+| Route | Purpose |
+|-------|---------|
+| `GET /v1/grapheme/lsp/workspace` | Script library root URI for LSP initialize |
+| `GET /v1/grapheme/lsp` (WebSocket) | JSON-RPC ↔ `grapheme-lsp` stdio bridge |
 
 ---
 
@@ -513,11 +527,11 @@ Update [polish-and-package-plan.md](polish-and-package-plan.md) P4 section to po
 | Manuscripts / specialists | `src/identity_manuscript.rs`, `src/manuscript_handlers.rs`, `src/skill_import.rs` |
 | Recurring + delivery | `src/recurring_handlers.rs`, `src/recurring_delivery.rs`, `src/recurring_agent_turn.rs` |
 | Workflows | `src/workflow.rs`, `src/workflow_plan.rs`, `src/runtime_tools.rs` |
-| Grapheme | `src/tools.rs`, `src/bridge_tools.rs`, `src/grapheme_script/`, `src/runtime/stasis_wire.rs` |
+| Grapheme | `src/tools.rs`, `src/bridge_tools.rs`, `src/grapheme_script/`, `src/grapheme_workshop.rs`, `src/grapheme_lsp_bridge.rs`, `src/runtime/stasis_wire.rs` |
 | Tool history | `src/turn_slice.rs`, `src/turn_parts.rs`, `src/tool_history_tools.rs`, `src/artifact_store.rs` |
 | Capabilities + MCP | `src/capability_catalog.rs`, `src/mcp_gateway/`, `src/mcp_daemon_handlers.rs` |
 | Stasis admin dashboard | `stasis-rs` `dashboard/handlers.rs` (mounted in `src/bin/medousa_daemon.rs`) |
-| Home UI | `apps/medousa-home/src/lib/components/skills/`, `cron/`, `stores/recurring.svelte.ts` |
+| Home UI | `apps/medousa-home/src/lib/components/skills/`, `components/grapheme/`, `stores/graphemeScriptEditor.svelte.ts`, `cron/`, `stores/recurring.svelte.ts` |
 | Tauri bridge | `apps/medousa-home/src-tauri/src/daemon/recurring.rs`, `catalog.rs`, `mcp_gateway.rs` |
 
 ---

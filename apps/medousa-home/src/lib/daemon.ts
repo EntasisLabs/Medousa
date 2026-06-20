@@ -56,6 +56,7 @@ import type {
   GraphemeAllowlistResponse,
   GraphemeCompileResponse,
   GraphemeLifecycleResponse,
+  GraphemeLspWorkspaceResponse,
   GraphemeModuleDetailResponse,
   GraphemeModuleLoadRequest,
   GraphemeModuleLoadResponse,
@@ -888,6 +889,18 @@ export async function loadGraphemeModule(
 
 export async function getGraphemeLifecycle(): Promise<GraphemeLifecycleResponse> {
   return invoke<GraphemeLifecycleResponse>("grapheme_get_lifecycle");
+}
+
+export async function getGraphemeLspWorkspace(): Promise<GraphemeLspWorkspaceResponse> {
+  return invoke<GraphemeLspWorkspaceResponse>("grapheme_get_lsp_workspace");
+}
+
+export function daemonWebSocketUrl(path: string): Promise<string> {
+  return getDaemonUrl().then((base) => {
+    const normalized = base.replace(/\/$/, "");
+    const wsBase = normalized.replace(/^http/i, "ws");
+    return `${wsBase}${path.startsWith("/") ? path : `/${path}`}`;
+  });
 }
 
 export async function listWorkflows(

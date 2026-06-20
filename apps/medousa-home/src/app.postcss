@@ -1757,6 +1757,31 @@
     @apply rounded border border-surface-500/50 bg-surface-800/80 px-1.5 py-0.5 font-mono text-[10px] text-surface-300;
   }
 
+  .grapheme-script-editor {
+    @apply bg-surface-900/20;
+  }
+
+  .grapheme-codemirror-host {
+    @apply min-h-0 flex-1 overflow-hidden;
+    background-color: rgb(var(--color-surface-950) / 0.4);
+  }
+
+  .grapheme-codemirror-host .cm-editor {
+    @apply h-full outline-none;
+  }
+
+  .grapheme-codemirror-host .cm-scroller {
+    @apply min-h-0 flex-1 overflow-auto font-mono text-[13px] leading-relaxed;
+  }
+
+  .grapheme-script-side-pane {
+    @apply bg-surface-900/30;
+  }
+
+  .grapheme-run-output {
+    background-color: rgb(var(--color-surface-950) / 0.6);
+  }
+
   .vault-link-chip {
     @apply rounded-container-token px-2 py-1.5 text-xs text-primary-300 transition-colors hover:bg-primary-500/10 hover:text-primary-200;
   }

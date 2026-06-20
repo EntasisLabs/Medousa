@@ -1,8 +1,8 @@
 use crate::daemon::types::{
     GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
-    GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeModuleDetailResponse,
-    GraphemeModuleLoadRequest, GraphemeModuleLoadResponse, GraphemeModuleOpsResponse,
-    GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
+    GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeLspWorkspaceResponse,
+    GraphemeModuleDetailResponse, GraphemeModuleLoadRequest, GraphemeModuleLoadResponse,
+    GraphemeModuleOpsResponse, GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
     GraphemeScriptDetailResponse, GraphemeScriptSaveRequest, GraphemeScriptSaveResponse,
     GraphemeScriptsListResponse,
 };
@@ -146,4 +146,11 @@ pub async fn grapheme_get_lifecycle(
     state: State<'_, DaemonState>,
 ) -> Result<GraphemeLifecycleResponse, String> {
     workshop_http::get_json(&state, "/v1/grapheme/lifecycle").await
+}
+
+#[tauri::command]
+pub async fn grapheme_get_lsp_workspace(
+    state: State<'_, DaemonState>,
+) -> Result<GraphemeLspWorkspaceResponse, String> {
+    workshop_http::get_json(&state, "/v1/grapheme/lsp/workspace").await
 }

@@ -1141,6 +1141,13 @@ pub struct GraphemeLifecycleResponse {
     pub events: Vec<GraphemeLifecycleEventDto>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeLspWorkspaceResponse {
+    pub root_path: String,
+    pub root_uri: String,
+    pub scripts_dir: String,
+}
+
 // ── Workflows (Flows) ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

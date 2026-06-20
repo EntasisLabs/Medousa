@@ -1,4 +1,6 @@
 <script lang="ts">
+  import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
+  import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeModuleSummary, GraphemeScriptEntry } from "$lib/types/grapheme";
 
@@ -92,7 +94,7 @@
     selectedScriptId = null;
     selectedModuleId = null;
     workshop.clearModuleDetail();
-    void workshop.openScriptInEditor(entry.id);
+    void graphemeScriptEditor.openScriptById(entry.id);
   }
 
   function startNewScript() {
@@ -100,7 +102,7 @@
     selectedScriptId = null;
     selectedModuleId = null;
     workshop.clearModuleDetail();
-    workshop.resetEditor();
+    graphemeScriptEditor.openNewTab();
   }
 
   function effectBadgeClass(effect: string): string {
@@ -115,9 +117,12 @@
   }
 
   async function runSelectedScript(scriptId: string) {
-    await workshop.openScriptInEditor(scriptId);
-    if (workshop.editorBody.trim()) {
-      await workshop.runScriptSource(workshop.editorBody);
+    subTab = "editor";
+    await graphemeScriptEditor.openScriptById(scriptId);
+    const body = graphemeScriptEditor.activeTab?.body ?? "";
+    if (body.trim()) {
+      graphemeScriptEditor.sidePane = "diagnostics";
+      await workshop.runScriptSource(body);
     }
   }
 </script>
@@ -157,6 +162,7 @@
         onclick={() => {
           subTab = "editor";
           search = "";
+          graphemeScriptEditor.ensureInitialTab();
         }}
       >
         Editor
@@ -180,127 +186,7 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     {#if subTab === "editor"}
-      <div class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3">
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <button type="button" class="workshop-text-action text-sm" onclick={startNewScript}>
-            New script
-          </button>
-          {#if workshop.editorSaved}
-            <span class="text-xs text-success-400">
-              Saved {workshop.editorSaved.name}
-            </span>
-          {/if}
-        </div>
-
-        <div class="space-y-3">
-          <label class="block">
-            <span class="workshop-label">Name</span>
-            <input
-              class="input mt-1 w-full text-sm"
-              type="text"
-              placeholder="My automation script"
-              bind:value={workshop.editorName}
-            />
-          </label>
-
-          <label class="block">
-            <span class="workshop-label">Intent (optional)</span>
-            <input
-              class="input mt-1 w-full text-sm"
-              type="text"
-              placeholder="What this script does"
-              bind:value={workshop.editorIntent}
-            />
-          </label>
-
-          <label class="block">
-            <span class="workshop-label">Tags (comma-separated)</span>
-            <input
-              class="input mt-1 w-full text-sm"
-              type="text"
-              placeholder="cron, reports"
-              bind:value={workshop.editorTags}
-            />
-          </label>
-
-          <label class="block">
-            <span class="workshop-label">Source</span>
-            <textarea
-              class="input mt-1 min-h-48 w-full font-mono text-xs"
-              placeholder={'grapheme.run("core.echo", {"message": "hello"})'}
-              bind:value={workshop.editorBody}
-            ></textarea>
-          </label>
-
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="workshop-text-action"
-              disabled={workshop.editorBusy}
-              onclick={() => void workshop.saveEditorScript()}
-            >
-              {workshop.editorBusy ? "Saving…" : "Save to library"}
-            </button>
-            <button
-              type="button"
-              class="workshop-text-action"
-              disabled={workshop.compileBusy || !workshop.editorBody.trim()}
-              onclick={() => void workshop.compileEditorSource("check")}
-            >
-              {workshop.compileBusy ? "Checking…" : "Check compile"}
-            </button>
-            <button
-              type="button"
-              class="workshop-text-action"
-              disabled={workshop.compileBusy || !workshop.editorBody.trim()}
-              onclick={() => void workshop.compileEditorSource("aot")}
-            >
-              AOT hints
-            </button>
-            <button
-              type="button"
-              class="workshop-text-action"
-              disabled={workshop.runBusy || !workshop.editorBody.trim()}
-              onclick={() => void workshop.runScriptSource(workshop.editorBody)}
-            >
-              {workshop.runBusy ? "Running…" : "Run in sandbox"}
-            </button>
-          </div>
-
-          {#if workshop.editorError}
-            <p class="text-sm text-error-400">{workshop.editorError}</p>
-          {/if}
-          {#if workshop.compileError}
-            <p class="text-sm text-error-400">{workshop.compileError}</p>
-          {:else if workshop.compileResult}
-            <div class="rounded-md border border-surface-500/35 px-3 py-2 text-xs">
-              <p class="font-medium text-surface-100">
-                {workshop.compileResult.mode} ·
-                {workshop.compileResult.validated ? "valid" : "invalid"}
-              </p>
-              {#if workshop.compileResult.artifact_id}
-                <p class="workshop-faint mt-1 font-mono">
-                  {workshop.compileResult.artifact_id}
-                </p>
-              {/if}
-              {#each workshop.compileResult.compile_hints as hint (hint)}
-                <p class="mt-1 text-surface-300">{hint}</p>
-              {/each}
-              {#each workshop.compileResult.lint_warnings as warning (warning)}
-                <p class="mt-1 text-warning-400">{warning}</p>
-              {/each}
-            </div>
-          {/if}
-          {#if workshop.runError}
-            <p class="text-sm text-error-400">{workshop.runError}</p>
-          {:else if workshop.runResult}
-            <p class="text-xs text-surface-300">
-              {workshop.runResult.result.succeeded ? "Succeeded" : "Failed"} · job
-              {workshop.runResult.result.job_id ?? "—"}
-            </p>
-          {/if}
-        </div>
-      </div>
+      <GraphemeScriptEditorPanel {visible} />
     {:else}
       <div
         class="workshop-list-pane mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3 {mobileDetailOpen

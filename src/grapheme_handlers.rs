@@ -13,6 +13,7 @@ use crate::daemon_api::{
     GraphemeModuleOpsResponse, GraphemeRunRequest, GraphemeRunResponse, GraphemeScriptDetailResponse,
     GraphemeScriptEntryDto, GraphemeScriptsListQuery, GraphemeScriptsListResponse,
 };
+use crate::grapheme_lsp_bridge::{get_lsp_workspace, grapheme_lsp_ws};
 use crate::grapheme_script::service::GraphemeScriptService;
 use crate::grapheme_workshop::{
     compile_source, enforce_grapheme_allowlist, get_allowlist, lifecycle_events, load_wasm_module,
@@ -301,6 +302,14 @@ pub fn grapheme_router(state: GraphemeApiState) -> axum::Router {
         .route(
             "/v1/grapheme/lifecycle",
             get(get_grapheme_lifecycle),
+        )
+        .route(
+            "/v1/grapheme/lsp/workspace",
+            get(get_lsp_workspace),
+        )
+        .route(
+            "/v1/grapheme/lsp",
+            get(grapheme_lsp_ws),
         )
         .route(
             "/v1/grapheme/scripts/{script_id}",

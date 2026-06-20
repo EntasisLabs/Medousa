@@ -154,3 +154,9 @@ export interface GraphemeLifecycleEvent {
 export interface GraphemeLifecycleResponse {
   events: GraphemeLifecycleEvent[];
 }
+
+export interface GraphemeLspWorkspaceResponse {
+  root_path: string;
+  root_uri: string;
+  scripts_dir: string;
+}
