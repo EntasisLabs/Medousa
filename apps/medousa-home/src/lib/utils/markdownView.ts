@@ -201,6 +201,21 @@ export function renderMedousaViewError(message: string): string {
   return `<div class="medousa-view medousa-view-error" role="note"><p class="medousa-view-error-text">${escapeHtml(message)}</p></div>`;
 }
 
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function rowsToCsv(headers: string[], rows: string[][]): string {
+  const lines = [
+    headers.map(csvEscape).join(","),
+    ...rows.map((row) => row.map((cell) => csvEscape(cell ?? "")).join(",")),
+  ];
+  return lines.join("\n");
+}
+
 export function renderMedousaViewTable(resolved: ResolvedViewTable): string {
   const { headers, rows, sourcePath, sourceLabel } = resolved;
   const headerCells = headers
@@ -215,11 +230,15 @@ export function renderMedousaViewTable(resolved: ResolvedViewTable): string {
           )
           .join("")
       : `<tr><td colspan="${Math.max(headers.length, 1)}" class="medousa-view-empty">No matching rows</td></tr>`;
+  const csvPayload = encodeURIComponent(rowsToCsv(headers, rows));
 
   return `<div class="medousa-view" data-view-source="${escapeAttr(sourcePath)}">
   <div class="medousa-view-header">
     <span class="medousa-view-label">Query view</span>
-    <button type="button" class="medousa-view-edit-source" data-open-vault-note="${escapeAttr(sourcePath)}">Edit source</button>
+    <div class="medousa-view-actions">
+      <button type="button" class="medousa-view-copy-csv" data-copy-view-csv="${escapeAttr(csvPayload)}">Copy CSV</button>
+      <button type="button" class="medousa-view-edit-source" data-open-vault-note="${escapeAttr(sourcePath)}">Edit source</button>
+    </div>
   </div>
   <div class="medousa-view-table-wrap">
     <table class="medousa-view-table">

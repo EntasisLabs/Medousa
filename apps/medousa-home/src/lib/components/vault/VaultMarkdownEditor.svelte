@@ -9,6 +9,7 @@
     applyMarkdownFormat,
     applyMarkdownColor,
     insertSlashBlock,
+    insertTextAtCursor,
     insertVaultWikilink,
     shouldOpenSlashMenu,
     slashMenuFilter,
@@ -71,6 +72,15 @@
 
   $effect(() => {
     vault.setCompositionHold(slashOpen);
+  });
+
+  $effect(() => {
+    vault.editorInsertRequest;
+    const insert = vault.takeEditorInsert();
+    if (!insert || !textareaEl) return;
+    captureSelection();
+    const result = insertTextAtCursor(draft, selectionStart, insert);
+    void applyEdit(result);
   });
 
   function captureSelection() {

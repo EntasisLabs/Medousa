@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Paperclip, Table2, X } from "@lucide/svelte";
+  import { Paperclip, Table2, X, ImagePlus } from "@lucide/svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { attachmentFileName } from "$lib/utils/vaultAttachments";
+  import { attachmentFileName, isImageAttachment } from "$lib/utils/vaultAttachments";
   import {
     bindVaultAttachmentLongPress,
     openVaultAttachmentContextMenu,
@@ -32,6 +32,11 @@
     event.preventDefault();
     event.stopPropagation();
     openVaultAttachmentContextMenu(attachmentPath, notePath, event.clientX, event.clientY);
+  }
+
+  function handleInsertEmbed(attachment: { path: string; label: string; mime?: string }) {
+    if (!isImageAttachment(attachment)) return;
+    void vault.insertImageEmbed(attachment.path);
   }
 </script>
 
@@ -87,6 +92,18 @@
           >
             {attachment.label || attachmentFileName(attachment)}
           </button>
+          {#if isImageAttachment(attachment) && vault.editorMode === "edit"}
+            <button
+              type="button"
+              class="inline-flex h-6 w-6 items-center justify-center rounded-full text-surface-500 hover:bg-surface-700 hover:text-primary-200"
+              aria-label="Insert image embed"
+              title="Insert embed"
+              {disabled}
+              onclick={() => handleInsertEmbed(attachment)}
+            >
+              <ImagePlus size={12} strokeWidth={2} />
+            </button>
+          {/if}
           <button
             type="button"
             class="inline-flex h-6 w-6 items-center justify-center rounded-full text-surface-500 hover:bg-surface-700 hover:text-surface-200"

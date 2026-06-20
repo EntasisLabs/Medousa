@@ -102,11 +102,6 @@ export async function openAttachmentPath(path: string): Promise<void> {
 }
 
 export async function attachmentPreviewUrl(path: string): Promise<string | null> {
-  if (!isTauri() || !path.trim()) return null;
-  try {
-    const { convertFileSrc } = await import("@tauri-apps/api/core");
-    return convertFileSrc(path);
-  } catch {
-    return null;
-  }
+  const { localFilePreviewUrl } = await import("$lib/utils/vaultFilesystem");
+  return localFilePreviewUrl(path);
 }

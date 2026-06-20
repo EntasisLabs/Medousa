@@ -86,6 +86,10 @@ import {
 } from "$lib/utils/vaultNoteTitle";
 import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
 import { togglePreviewTaskInContent } from "$lib/utils/vaultPreviewTasks";
+import {
+  embedPathForNote,
+  formatImageEmbedMarkdown,
+} from "$lib/utils/vaultLocalImages";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 
@@ -142,6 +146,8 @@ export class VaultStore {
   headingScrollRequest = $state(0);
   newNotePrefillTitle = $state("");
   newNotePrefillPath = $state<string | null>(null);
+  pendingEditorInsert = $state<string | null>(null);
+  editorInsertRequest = $state(0);
 
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   private savedWhisperTimer: ReturnType<typeof setTimeout> | null = null;
@@ -459,6 +465,25 @@ export class VaultStore {
     );
     if (!next || next === this.content) return;
     this.markDirty(next);
+  }
+
+  queueEditorInsert(text: string) {
+    this.pendingEditorInsert = text;
+    this.editorInsertRequest += 1;
+  }
+
+  takeEditorInsert(): string | null {
+    const text = this.pendingEditorInsert;
+    this.pendingEditorInsert = null;
+    return text;
+  }
+
+  async insertImageEmbed(imagePath: string) {
+    if (!this.selectedPath || !imagePath.trim()) return;
+    this.enterEditMode();
+    const embedPath = await embedPathForNote(imagePath, this.selectedPath);
+    const alt = embedPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "image";
+    this.queueEditorInsert(formatImageEmbedMarkdown(embedPath, alt));
   }
 
   setActiveSpaceFilter(spaceId: string | null) {

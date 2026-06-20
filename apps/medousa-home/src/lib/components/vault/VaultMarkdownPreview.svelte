@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { renderMarkdownPreview, type MarkdownRenderOptions } from "$lib/markdown/render";
   import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
+  import { hydrateLocalImages } from "$lib/markdown/hydrateLocalImages";
   import { hydrateMermaid } from "$lib/markdown/mermaid";
   import { vault } from "$lib/stores/vault.svelte";
   import { scrollToHeadingInContainer } from "$lib/utils/headingSlug";
@@ -13,6 +14,7 @@
     bindVaultLongPress,
     handleVaultNoteContextMenuEvent,
   } from "$lib/utils/vaultContextMenuEvents";
+  import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
 
   interface Props {
     content: string;
@@ -38,6 +40,7 @@
     knownPaths: new Set(vault.notes.map((note) => note.path)),
     interactiveTasks:
       !needsAsyncResolve && Boolean(vault.selectedPath) && !vault.proposalActive,
+    resolveLocalImages: Boolean(vault.selectedPath),
   }));
 
   const previewHtml = $derived(
@@ -90,9 +93,11 @@
 
   $effect(() => {
     previewHtml;
+    vault.selectedPath;
     if (!container) return;
     void hydrateCodeBlocks(container);
     void hydrateMermaid(container);
+    void hydrateLocalImages(container, vault.selectedPath);
   });
 
   $effect(() => {
@@ -128,6 +133,20 @@
       event.preventDefault();
       const path = openSource.getAttribute("data-open-vault-note");
       if (path) void vault.openNote(path);
+      return;
+    }
+
+    const copyCsv = (event.target as HTMLElement).closest("[data-copy-view-csv]");
+    if (copyCsv) {
+      event.preventDefault();
+      const payload = copyCsv.getAttribute("data-view-csv");
+      if (payload) {
+        try {
+          void copyTextToClipboard(decodeURIComponent(payload));
+        } catch {
+          // ignore malformed payloads
+        }
+      }
       return;
     }
 

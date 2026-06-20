@@ -13,6 +13,7 @@
   import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
   import { isTauri } from "$lib/window";
   import { getVaultNote } from "$lib/daemon";
+  import { guessMimeFromPath, isImageAttachment } from "$lib/utils/vaultAttachments";
 
   interface MenuItem {
     id: string;
@@ -125,12 +126,31 @@
     }
 
     const { path, notePath } = target;
+    const attachment = {
+      path,
+      label: path.split(/[/\\]/).pop() ?? path,
+      mime: guessMimeFromPath(path),
+    };
+    const canEmbedImage =
+      isImageAttachment(attachment) &&
+      vault.selectedPath === notePath &&
+      vault.editorMode === "edit" &&
+      !vault.proposalActive;
+
     return [
       {
         id: "copy-path",
         label: "Copy path",
         onClick: async () => {
           await copyTextToClipboard(path);
+        },
+      },
+      {
+        id: "insert-embed",
+        label: "Insert embed",
+        hidden: !canEmbedImage,
+        onClick: async () => {
+          await vault.insertImageEmbed(path);
         },
       },
       {

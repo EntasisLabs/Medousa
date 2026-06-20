@@ -6,12 +6,14 @@ import type { VaultNote } from "$lib/types/vault";
 import { plainHeadingText, uniqueHeadingSlug } from "$lib/markdown/headingRender";
 import { escapeAttr, escapeHtml } from "./escape";
 import { preprocessMarkdown } from "./preprocess";
+import { isLocalImageHref, isRemoteImageHref } from "$lib/utils/vaultLocalImages";
 
 export interface MarkdownRenderOptions {
   titleByPath?: Map<string, string>;
   sourcePath?: string | null;
   knownPaths?: ReadonlySet<string>;
   interactiveTasks?: boolean;
+  resolveLocalImages?: boolean;
 }
 
 let previewTaskCheckboxIndex = 0;
@@ -114,6 +116,20 @@ function configureMarked(): void {
         previewTaskCheckboxIndex += 1;
         return `<input ${checked ? 'checked="" ' : ""}type="checkbox" class="vault-preview-task" data-vault-task="${index}" aria-label="Toggle task"> `;
       },
+      image({ href, title, text }: Tokens.Image) {
+        const alt = escapeHtml(text || title || "");
+        const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+        if (
+          activeRenderOptions.resolveLocalImages &&
+          href &&
+          !isRemoteImageHref(href) &&
+          isLocalImageHref(href)
+        ) {
+          return `<figure class="markdown-image markdown-image-local"><img class="markdown-local-image" data-local-image="${escapeAttr(href)}" alt="${alt}"${titleAttr} loading="lazy" decoding="async"></figure>`;
+        }
+        const safeHref = escapeAttr(href ?? "");
+        return `<figure class="markdown-image"><img src="${safeHref}" alt="${alt}"${titleAttr} loading="lazy" decoding="async"></figure>`;
+      },
     },
   });
 }
@@ -145,8 +161,14 @@ function sanitizeHtml(html: string): string {
       "data-vault-task",
       "data-transclude-path",
       "data-transclude-heading",
+      "data-local-image",
+      "data-view-csv",
+      "data-copy-view-csv",
+      "src",
+      "loading",
+      "decoding",
     ],
-    ADD_TAGS: ["input", "mark", "span", "nav", "aside", "header", "button"],
+    ADD_TAGS: ["input", "mark", "span", "nav", "aside", "header", "button", "figure", "figcaption"],
   });
 }
 

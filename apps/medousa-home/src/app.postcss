@@ -1673,12 +1673,17 @@
     @apply flex flex-wrap items-center justify-between gap-2 border-b border-surface-500/35 px-4 py-2;
   }
 
-  .medousa-view-label {
-    @apply text-xs font-semibold uppercase tracking-wide text-surface-400;
+  .medousa-view-actions {
+    @apply flex items-center gap-3;
   }
 
+  .medousa-view-copy-csv,
   .medousa-view-edit-source {
     @apply text-xs text-primary-200 underline decoration-primary-500/40 underline-offset-2 hover:text-primary-100;
+  }
+
+  .medousa-view-label {
+    @apply text-xs font-semibold uppercase tracking-wide text-surface-400;
   }
 
   .medousa-view-table-wrap {
@@ -3800,6 +3805,19 @@
 
   .markdown-transclusion-body {
     @apply px-4 py-3 text-sm;
+  }
+
+  .markdown-image {
+    @apply my-4;
+  }
+
+  .markdown-image img,
+  .markdown-local-image {
+    @apply h-auto max-w-full rounded-lg border border-surface-500/35 bg-surface-900/40;
+  }
+
+  .markdown-local-image--missing {
+    @apply min-h-24 min-w-[8rem] border-dashed opacity-60;
   }
 
   .profiles-panel {

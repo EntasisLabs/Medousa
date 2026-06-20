@@ -364,6 +364,20 @@ export function slashMenuFilter(content: string, cursorIndex: number): string {
   return match?.[1]?.toLowerCase() ?? "";
 }
 
+export function insertTextAtCursor(
+  content: string,
+  cursorIndex: number,
+  insert: string,
+): EditResult {
+  const next = `${content.slice(0, cursorIndex)}${insert}${content.slice(cursorIndex)}`;
+  const cursor = cursorIndex + insert.length;
+  return {
+    content: next,
+    selectionStart: cursor,
+    selectionEnd: cursor,
+  };
+}
+
 export function shouldOpenSlashMenu(content: string, cursorIndex: number): boolean {
   const lineStart = lineStartIndex(content, cursorIndex);
   const linePrefix = content.slice(lineStart, cursorIndex);

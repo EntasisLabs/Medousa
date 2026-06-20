@@ -9,9 +9,28 @@ export async function resolveVaultNoteAbsolutePath(
   const relative = vaultRelativePath.trim().replace(/^\/+/, "");
   if (!relative) return null;
   try {
-    const paths = await getMedousaConfigPaths();
-    const root = `${paths.dataDir.replace(/\/+$/, "")}/vault`;
+    const root = await getVaultRootAbsolutePath();
+    if (!root) return null;
     return `${root}/${relative}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function getVaultRootAbsolutePath(): Promise<string | null> {
+  try {
+    const paths = await getMedousaConfigPaths();
+    return `${paths.dataDir.replace(/\/+$/, "")}/vault`;
+  } catch {
+    return null;
+  }
+}
+
+export async function localFilePreviewUrl(absolutePath: string): Promise<string | null> {
+  if (!isTauri() || !absolutePath.trim()) return null;
+  try {
+    const { convertFileSrc } = await import("@tauri-apps/api/core");
+    return convertFileSrc(absolutePath.replace(/\\/g, "/"));
   } catch {
     return null;
   }
