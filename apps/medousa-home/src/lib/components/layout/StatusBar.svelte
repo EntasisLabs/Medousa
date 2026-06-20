@@ -90,7 +90,7 @@
         class="text-surface-300 transition hover:text-primary-300"
         onclick={onOpenCron}
       >
-        {cronActiveCount} cron active
+        {cronActiveCount} automations active
       </button>
     {:else if cronTotalCount > 0}
       <span>{cronActiveCount} cron active</span>

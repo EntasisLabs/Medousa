@@ -5,8 +5,8 @@ export type Surface =
   | "library"
   | "context"
   | "profiles"
-  | "skills"
-  | "cron"
+  | "workshop"
+  | "automations"
   | "messaging"
   | "runtime"
   | "settings";

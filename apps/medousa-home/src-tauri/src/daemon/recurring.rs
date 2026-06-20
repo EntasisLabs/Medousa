@@ -1,6 +1,7 @@
 use crate::daemon::types::{
-    DeleteRecurringResponse, RecurringListResponse, RegisterRecurringPromptRequest,
-    RegisterRecurringResponse, UpdateRecurringRequest, UpdateRecurringResponse,
+    DeleteRecurringResponse, RecurringDeliveryResponse, RecurringListResponse,
+    RecurringRunsResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
+    UpdateRecurringRequest, UpdateRecurringResponse,
 };
 use tauri::State;
 
@@ -48,4 +49,28 @@ pub async fn recurring_delete(
     recurring_id: String,
 ) -> Result<DeleteRecurringResponse, String> {
     workshop_http::delete_json(&state, &format!("/v1/recurring/{}", recurring_id.trim())).await
+}
+
+#[tauri::command]
+pub async fn recurring_list_runs(
+    state: State<'_, DaemonState>,
+    recurring_id: String,
+    limit: Option<usize>,
+) -> Result<RecurringRunsResponse, String> {
+    let encoded = urlencoding::encode(recurring_id.trim());
+    let path = if let Some(limit) = limit {
+        format!("/v1/recurring/{encoded}/runs?limit={limit}")
+    } else {
+        format!("/v1/recurring/{encoded}/runs")
+    };
+    workshop_http::get_json(&state, &path).await
+}
+
+#[tauri::command]
+pub async fn recurring_get_delivery(
+    state: State<'_, DaemonState>,
+    recurring_id: String,
+) -> Result<RecurringDeliveryResponse, String> {
+    let encoded = urlencoding::encode(recurring_id.trim());
+    workshop_http::get_json(&state, &format!("/v1/recurring/{encoded}/delivery")).await
 }

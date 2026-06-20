@@ -148,18 +148,20 @@ flowchart LR
 
 **Goal:** MCP + OpenShell + Grapheme + skills import — **discoverable**, not TUI-only.
 
+> **Superseded in detail by** [workshop-and-automations-plan.md](workshop-and-automations-plan.md) (W1–W5). Keep this section as a polish-plan crosswalk.
+
 | ID | Deliverable | Type | Acceptance |
 |----|-------------|------|------------|
-| P4.1 | **Services** tab polish | Exposure | MCP health, test connection, plain labels (already partial — finish empty states) |
-| P4.2 | **Skills import wizard** | Exposure | Folder picker → Hermes/OpenClaw `SKILL.md` → manuscript install; progress + open specialty |
-| P4.3 | Specialist gallery | Exposure | Shipped `.medousa/manuscripts` examples + user installs with one-line description |
-| P4.4 | Grapheme **Workshop** (lite) | Exposure | List scripts/modules; run from Home; link “Open full workshop in Terminal” for TUI editor |
-| P4.5 | OpenShell policy visibility | Exposure | Show active sandbox policy per skill; no raw YAML unless Advanced |
-| P4.6 | WASM modules | Deferred | Document “future”; no false UI until hot-load exposed |
+| P4.1 | **Services** tab polish | Exposure | → W1 Connections |
+| P4.2 | **Skills import wizard** | Exposure | → W2.1 |
+| P4.3 | Specialist gallery | Exposure | → W2 Specialists tab |
+| P4.4 | Grapheme **Workshop** (lite) | Exposure | → W1 Modules + W5 |
+| P4.5 | OpenShell policy visibility | Exposure | → W2.4 Advanced |
+| P4.6 | WASM modules | Deferred | → W5.3 |
 
-**Code anchors:** `SkillsPanel.svelte`, `McpServersPanel.svelte`, `src/identity_manuscript.rs`, `src/skill_ingest.rs`, `src/grapheme_*`, TUI script editor for power path.
+**Code anchors:** `WorkshopPanel.svelte` (was `SkillsPanel`), `McpServersPanel.svelte`, `src/identity_manuscript.rs`, `src/skill_ingest.rs`, `src/grapheme_*`.
 
-**Exit:** README “bring your skills” is one Home gesture, not a doc hunt.
+**Exit:** README “bring your skills” is one Home gesture — see W2 exit in workshop-and-automations-plan.
 
 ---
 

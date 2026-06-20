@@ -172,10 +172,10 @@
       {#if !embedded}
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 class="text-base font-semibold text-surface-50">Skills &amp; Tools</h1>
+            <h1 class="text-base font-semibold text-surface-50">Workshop</h1>
             <p class="workshop-header-line mt-1">
               {#if activeTab === "skills"}
-                Manuscripts she can run · {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
+                Specialists &amp; skills · {filteredSkills.length} specialist{filteredSkills.length === 1 ? "" : "s"}
               {:else if activeTab === "tools"}
                 Tools she can reach · {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
               {:else}

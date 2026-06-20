@@ -215,7 +215,7 @@
     {:else if runtime.activeTab === "schedule"}
       <div class="space-y-3">
         <p class="workshop-muted text-sm">
-          Cron jobs live in the dedicated Cron workspace — search, pause, and create from one list.
+          Cron jobs live in Automations — search, pause, and create from one list.
         </p>
         <p class="workshop-faint">
           {recurring.activeCount().enabled}/{recurring.activeCount().total} active
@@ -226,7 +226,7 @@
             class="btn btn-sm variant-soft-primary"
             onclick={onOpenCron}
           >
-            Open Cron jobs
+            Open Automations
           </button>
         {/if}
       </div>

@@ -5,8 +5,8 @@ export type YouDestination =
   | "profiles"
   | "library"
   | "context"
-  | "skills"
-  | "cron"
+  | "workshop"
+  | "automations"
   | "messaging"
   | "settings"
   | "runtime";
@@ -26,8 +26,8 @@ export const YOU_DESTINATIONS: {
   { id: "profiles", label: "Profiles", hint: "Who you are — teach her facts" },
   { id: "library", label: "Notes", hint: "Your vault" },
   { id: "context", label: "Context", hint: "What she remembers about you" },
-  { id: "skills", label: "Skills", hint: "Run in chat" },
-  { id: "cron", label: "Schedule", hint: "Recurring prompts" },
+  { id: "workshop", label: "Workshop", hint: "Specialists, tools & connections" },
+  { id: "automations", label: "Automations", hint: "Schedules & run history" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "settings", label: "Preferences", hint: "Models, voice, rhythm & reach" },
   { id: "runtime", label: "Workshop", hint: "Live pulse, jobs & delivery" },
@@ -41,11 +41,11 @@ export const YOU_HUB_SECTIONS: {
   {
     title: "Stay in touch",
     subtitle: "Notes, memory, skills, and channels",
-    destinations: ["profiles", "library", "context", "skills", "messaging"],
+    destinations: ["profiles", "library", "context", "workshop", "messaging"],
   },
   {
     title: "Workshop",
-    subtitle: "Schedule, preferences, and tuning",
-    destinations: ["cron", "settings", "runtime"],
+    subtitle: "Automations, preferences, and tuning",
+    destinations: ["automations", "settings", "runtime"],
   },
 ];

@@ -5,13 +5,30 @@
 
 First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6), and **centralized agent runtime + host/worker bus + Specialists** are **shipped**. See [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [ADR-002](../docs/architecture/decisions/adr-002-user-profiles.md).
 
-Remaining focus: **polish & package** (normie exposure), **attachments**, **Iroh pairing**, and **distribution**.
+Remaining focus: **Workshop + Automations** (Home exposure of Grapheme/Stasis/MCP), **polish & package**, **attachments**, **Iroh pairing**, and **distribution**.
 
-Full plan: **[polish-and-package-plan.md](polish-and-package-plan.md)**
+Full plans: **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
 
 ---
 
-## 0. Polish & package (normie continuity)
+## 0. Workshop & Automations (Home — active)
+
+**Goal:** Replace thin Cron + Skills surfaces with paired **Workshop** (configure specialists, skills palette, modules, connections) and **Automations** (schedules, flows, run history, delivery). Default `agent_turn`; Grapheme default, OpenShell advanced; Stasis dashboard admin-only.
+
+Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md)
+
+| Phase | Theme | Status |
+|-------|--------|--------|
+| W0 Automations honesty | Run history, delivery picker, nav rename | 🔄 |
+| W1 Workshop browse | Grapheme modules, script library, Connections | ⬜ |
+| W2 Specialist create | Import wizard, editor-lite, allowlist preview | ⬜ |
+| W3 Flows v1 | Workflow composer, run/schedule from Home | ⬜ |
+| W4 Flows from history | Tool slice → replay steps | ⬜ |
+| W5 Grapheme depth | Script editor, WASM hot-load | ⬜ |
+
+---
+
+## 1. Polish & package (normie continuity)
 
 **Goal:** Expose shipped engine (memory, vault, plugins, AVEC) — install, trust, teach, provenance — without new runtime work.
 
@@ -21,14 +38,14 @@ Full plan: **[polish-and-package-plan.md](polish-and-package-plan.md)**
 | P1 First ten minutes | Wizard epilogue, guided win | ⬜ |
 | P2 Teach Medousa | Identity from Home | ⬜ |
 | P3 Continuity surfaces | Unified search, provenance | ⬜ |
-| P4 Workshop exposure | Skills import, Services | ⬜ |
+| P4 Workshop exposure | Superseded by [workshop-and-automations-plan.md](workshop-and-automations-plan.md) W1–W2 | ⬜ |
 | P5 App affordances | Share, context menus, P5 attach | ⬜ |
 | P6 Package & ship | Signed bundles, updates | ⬜ |
 | P7 Promise & copy | README / empty states | ⬜ |
 
 ---
 
-## 1. Local attachments (P5 — active)
+## 2. Local attachments (P5 — active)
 
 **Goal:** Attach files in Home chat; bytes on disk under `medousa/media/`; references in `parts[]`; localhost upload only.
 
@@ -42,7 +59,7 @@ Full plan: [media-and-attachments-plan.md](media-and-attachments-plan.md)
 
 ---
 
-## 2. Iroh P2P pairing (active)
+## 3. Iroh P2P pairing (active)
 
 **Goal:** Scan once; phone reaches workshop over encrypted P2P (direct or relay).
 
@@ -60,7 +77,7 @@ Runbook: [connection-reliability](../docs/runbooks/connection-reliability.md)
 
 ---
 
-## 3. Configuration & operator surface
+## 4. Configuration & operator surface
 
 | Deliverable | Status |
 |-------------|--------|
@@ -72,13 +89,13 @@ Runbook: [connection-reliability](../docs/runbooks/connection-reliability.md)
 
 ---
 
-## 4. Desktop distribution
+## 5. Desktop distribution
 
 Signed `.app` / `.msi` / AppImage in CI — [desktop-distribution-plan.md](desktop-distribution-plan.md)
 
 ---
 
-## 5. Embedded local inference
+## 6. Embedded local inference
 
 Gemma matrix + routing — [embedded-local-inference-plan.md](embedded-local-inference-plan.md)
 
@@ -97,10 +114,12 @@ Gemma matrix + routing — [embedded-local-inference-plan.md](embedded-local-inf
 
 ## Suggested order
 
-1. **Polish P0–P2** — trust + first ten minutes + teach Medousa ([polish-and-package-plan.md](polish-and-package-plan.md))  
-2. **Polish P3** — unified search + provenance  
-3. Iroh Phase 0 smoke + Phase 2 mobile pairing  
-4. P5a local attachments (+ Polish P5 app affordances)  
-5. Desktop distribution CI (Polish P6)  
-6. Doctor config summary + finish configuration reference  
-7. Polish P4 workshop exposure + P7 copy (parallel)
+1. **W0 Automations honesty** — run history, delivery, nav rename ([workshop-and-automations-plan.md](workshop-and-automations-plan.md))  
+2. **W1 Workshop browse** — Grapheme modules, Connections polish  
+3. Polish **P0–P2** — trust + first ten minutes + teach Medousa  
+4. **W2 Specialist create** — import wizard + editor-lite  
+5. **W3 Flows v1** — workflow composer in Home  
+6. Iroh Phase 2 mobile pairing + P5a attachments (parallel where possible)  
+7. **W4 Flows from history** — tool slice → replay (differentiated bet)  
+8. Desktop distribution CI (Polish P6)  
+9. **W5 Grapheme depth** — WASM when daemon wired

@@ -1,6 +1,6 @@
 import { chat } from "$lib/stores/chat.svelte";
 import { connection } from "$lib/stores/connection.svelte";
-import { recurring } from "$lib/stores/recurring.svelte";
+import { automations } from "$lib/stores/automations.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { settings } from "$lib/stores/settings.svelte";
 import { vault } from "$lib/stores/vault.svelte";
@@ -192,7 +192,7 @@ async function startWorkshopStreams(): Promise<void> {
   cancelScheduledStreamRecovery();
   await stopWorkspaceStream();
   await startWorkspaceStream(workspace.revision || undefined);
-  void recurring.refresh();
+  void automations.refresh();
   await Promise.all([
     chat.refreshSessions({ force: true }),
     chat.ensureSessionHydrated({ notice: false }),

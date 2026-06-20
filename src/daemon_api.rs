@@ -439,11 +439,14 @@ pub struct RegisterRecurringPromptRequest {
     pub delivery: Option<serde_json::Value>,
     /// Medousa session id for `delivery.mode=linked_channel` (defaults to `recurring-{id}`).
     pub session_id: Option<String>,
-    /// `prompt` (single LLM, default) or `agent_turn` (full Medousa tool loop per tick).
+    /// `agent_turn` (default) or `prompt` (single LLM, no tools).
     pub execution_mode: Option<String>,
     /// Optional YAML identity manuscript (loads task template, tool allowlist, pins).
     #[serde(default)]
     pub manuscript_id: Option<String>,
+    /// Human-readable title for Automations list rows.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -475,6 +478,14 @@ pub struct RecurringDefinitionEntry {
     pub manuscript_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -491,6 +502,44 @@ pub struct UpdateRecurringRequest {
     pub cron_expr: Option<String>,
     #[serde(default)]
     pub timezone: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// Replace delivery binding; pass `{ "delivery": null }` to clear channel push.
+    #[serde(default)]
+    pub delivery: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RecurringRunsQuery {
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringRunEntry {
+    pub job_id: String,
+    pub status: String,
+    pub is_terminal: bool,
+    pub attempt_count: usize,
+    pub latest_outcome: Option<String>,
+    pub output_text: Option<String>,
+    pub scheduled_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringRunsResponse {
+    pub recurring_id: String,
+    pub count: usize,
+    pub runs: Vec<RecurringRunEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringDeliveryResponse {
+    pub recurring_id: String,
+    pub delivery_label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

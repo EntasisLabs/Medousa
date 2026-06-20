@@ -41,6 +41,8 @@ pub struct RecurringAgentTurnJobPayload {
     pub scheduled_tool_allowlist: Vec<String>,
     #[serde(default)]
     pub max_tool_rounds: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 impl RecurringAgentTurnJobPayload {
@@ -91,6 +93,7 @@ pub fn build_recurring_agent_turn_payload(
         manuscript_id,
         scheduled_tool_allowlist,
         max_tool_rounds,
+        display_name: None,
     }
 }
 

@@ -49,10 +49,12 @@
     return item.label;
   }
 
-  const capability: NavItem[] = [{ id: "skills", label: "Skills", icon: Zap }];
+  const workshopNav: NavItem[] = [
+    { id: "workshop", label: "Workshop", icon: Zap },
+    { id: "automations", label: "Automations", icon: Calendar },
+  ];
 
   const utility: NavItem[] = [
-    { id: "cron", label: "Cron", icon: Calendar },
     { id: "messaging", label: "Messaging", icon: Radio },
     { id: "runtime", label: "Runtime", icon: Activity },
   ];
@@ -98,7 +100,7 @@
 
     <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
 
-    {#each capability as item (item.id)}
+    {#each workshopNav as item (item.id)}
       {@const Icon = item.icon}
       <button
         type="button"

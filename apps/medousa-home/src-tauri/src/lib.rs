@@ -176,6 +176,8 @@ pub fn run() {
             daemon::recurring::recurring_register_prompt,
             daemon::recurring::recurring_update,
             daemon::recurring::recurring_delete,
+            daemon::recurring::recurring_list_runs,
+            daemon::recurring::recurring_get_delivery,
             daemon::identity::identity_get_context,
             daemon::identity::identity_list_profiles,
             daemon::identity::identity_create_profile,

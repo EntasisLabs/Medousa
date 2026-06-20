@@ -13,13 +13,13 @@
   } from "@lucide/svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
-  import CronPanel from "$lib/components/cron/CronPanel.svelte";
+  import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import MobileLibraryPanel from "$lib/components/mobile/MobileLibraryPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import RuntimePanel from "$lib/components/runtime/RuntimePanel.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
-  import { cronDraft } from "$lib/stores/cron.svelte";
+  import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import {
     YOU_DESTINATIONS,
@@ -44,8 +44,8 @@
     profiles: UserRound,
     library: BookOpen,
     context: Orbit,
-    skills: Sparkles,
-    cron: Calendar,
+    workshop: Sparkles,
+    automations: Calendar,
     messaging: Radio,
     settings: Settings,
     runtime: Activity,
@@ -142,23 +142,24 @@
             await onOpenChat(sessionId);
           }}
         />
-      {:else if layout.youDestination === "skills"}
+      {:else if layout.youDestination === "workshop"}
         <SkillsPanel
           visible={true}
           embedded={true}
           mobile={true}
           {onOpenChat}
           onScheduleSkill={(entry) => {
-            cronDraft.openCreate({
+            automationDraft.openCreate({
+              display_name: entry.name,
               prompt: `Run ${entry.name} on schedule`,
               cron_expr: "0 9 * * *",
               manuscript_id: entry.id,
             });
-            layout.openYou("cron");
+            layout.openYou("automations");
           }}
         />
-      {:else if layout.youDestination === "cron"}
-        <CronPanel visible={true} embedded={true} mobile={true} />
+      {:else if layout.youDestination === "automations"}
+        <AutomationsPanel visible={true} embedded={true} mobile={true} />
       {:else if layout.youDestination === "messaging"}
         <MessagingPanel visible={true} {health} embedded={true} mobile={true} />
       {:else if layout.youDestination === "settings"}
@@ -176,7 +177,7 @@
           embedded={true}
           mobile={true}
           inMotionCount={workspace.inMotionCount()}
-          onOpenCron={() => layout.openYou("cron")}
+          onOpenCron={() => layout.openYou("automations")}
         />
       {/if}
     </div>

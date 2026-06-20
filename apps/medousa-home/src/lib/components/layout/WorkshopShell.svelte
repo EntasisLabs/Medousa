@@ -19,16 +19,16 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import ContextPanel from "$lib/components/context/ContextPanel.svelte";
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
-  import CronPanel from "$lib/components/cron/CronPanel.svelte";
+  import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
-  import { cronDraft } from "$lib/stores/cron.svelte";
+  import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { recurring } from "$lib/stores/recurring.svelte";
+  import { automations } from "$lib/stores/automations.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -140,21 +140,22 @@
             />
           {:else if activeSurface === "profiles"}
             <ProfilesPanel visible={true} onOpenChat={() => goToSurface("chat")} />
-          {:else if activeSurface === "skills"}
+          {:else if activeSurface === "workshop"}
             <SkillsPanel
               visible={true}
               onOpenChat={() => goToSurface("chat")}
               onScheduleSkill={(entry) => {
-                cronDraft.openCreate({
+                automationDraft.openCreate({
+                  display_name: entry.name,
                   prompt: `Run ${entry.name} on schedule`,
                   cron_expr: "0 9 * * *",
                   manuscript_id: entry.id,
                 });
-                navigateToSurface("cron");
+                navigateToSurface("automations");
               }}
             />
-          {:else if activeSurface === "cron"}
-            <CronPanel visible={true} />
+          {:else if activeSurface === "automations"}
+            <AutomationsPanel visible={true} />
           {:else if activeSurface === "messaging"}
             <MessagingPanel visible={true} health={daemonHealth} />
           {:else if activeSurface === "work"}
@@ -168,7 +169,7 @@
             <RuntimePanel
               visible={true}
               inMotionCount={workspace.inMotionCount()}
-              onOpenCron={() => navigateToSurface("cron")}
+              onOpenCron={() => navigateToSurface("automations")}
             />
           {:else if activeSurface === "settings"}
             <SettingsPanel
@@ -238,12 +239,12 @@
         workshopLabel={workshops.hasMultipleWorkshops ? workshops.activeLabel : null}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}
-        cronActiveCount={recurring.activeCount().enabled}
-        cronTotalCount={recurring.activeCount().total}
+        cronActiveCount={automations.activeCount().enabled}
+        cronTotalCount={automations.activeCount().total}
         pendingDeliveries={runtime.delivery?.pending_job_deliveries ?? null}
         lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
         onOpenRuntime={() => navigateToSurface("runtime")}
-        onOpenCron={() => navigateToSurface("cron")}
+        onOpenCron={() => navigateToSurface("automations")}
       />
 
       {#if workspace.inMotionCount() > 0 && activeSurface !== "work"}

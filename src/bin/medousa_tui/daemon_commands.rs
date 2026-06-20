@@ -213,6 +213,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         session_id: None,
         execution_mode: None,
         manuscript_id: None,
+        display_name: None,
     };
 
     let response = client

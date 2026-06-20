@@ -581,6 +581,19 @@ export async function enqueueDaemonAsk(
   });
 }
 
+export async function listRecurringRuns(
+  recurringId: string,
+  limit?: number,
+): Promise<import("$lib/types/recurring").RecurringRunsResponse> {
+  return invoke("recurring_list_runs", { recurringId, limit: limit ?? null });
+}
+
+export async function getRecurringDelivery(
+  recurringId: string,
+): Promise<import("$lib/types/recurring").RecurringDeliveryResponse> {
+  return invoke("recurring_get_delivery", { recurringId });
+}
+
 export async function listRecurring(
   enabledOnly?: boolean,
 ): Promise<RecurringListResponse> {
@@ -703,6 +716,7 @@ export async function deleteRecurring(
 export async function registerRecurringPrompt(request: {
   prompt: string;
   cron_expr: string;
+  display_name?: string;
   manuscript_id?: string;
   timezone?: string;
   execution_mode?: string;
@@ -711,6 +725,7 @@ export async function registerRecurringPrompt(request: {
   enabled?: boolean;
   max_attempts?: number;
   queue?: string;
+  delivery?: Record<string, unknown> | null;
 }): Promise<RegisterRecurringResponse> {
   return invoke<RegisterRecurringResponse>("recurring_register_prompt", {
     request: {
@@ -726,10 +741,11 @@ export async function registerRecurringPrompt(request: {
       max_attempts: request.max_attempts ?? 1,
       policy_profile: request.policy_profile ?? "scheduled",
       model_hint: request.model_hint ?? null,
-      delivery: null,
+      delivery: request.delivery ?? null,
       session_id: null,
-      execution_mode: request.execution_mode ?? null,
+      execution_mode: request.execution_mode ?? "agent_turn",
       manuscript_id: request.manuscript_id ?? null,
+      display_name: request.display_name ?? null,
     },
   });
 }

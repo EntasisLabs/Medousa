@@ -47,7 +47,8 @@ use medousa::daemon_api::{
     ExportUserProfileRequest, ExportUserProfileResponse, ImportUserProfileRequest,
     ImportUserProfileResponse, IdentityDigestPreviewResponse, IdentityExportMarkdownRequest,
     IdentityExportMarkdownResponse, IdentityRememberRequest, IdentityRememberResponse,
-    DeleteRecurringResponse, RecurringListQuery, RecurringListResponse,
+    DeleteRecurringResponse, RecurringDeliveryResponse, RecurringListQuery, RecurringListResponse,
+    RecurringRunsQuery, RecurringRunsResponse,
     RegisterRecurringPromptRequest, RegisterRecurringResponse, UpdateRecurringRequest,
     UpdateRecurringResponse, RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
@@ -490,6 +491,14 @@ async fn main() -> Result<()> {
         .route(
             "/v1/recurring/{recurring_id}",
             patch(update_recurring_definition).delete(delete_recurring_definition),
+        )
+        .route(
+            "/v1/recurring/{recurring_id}/runs",
+            get(list_recurring_runs_handler),
+        )
+        .route(
+            "/v1/recurring/{recurring_id}/delivery",
+            get(get_recurring_delivery_handler),
         )
         .route("/v1/interactive/turn", post(start_interactive_turn))
         .route(
@@ -1798,6 +1807,37 @@ async fn delete_recurring_definition(
         })
 }
 
+async fn list_recurring_runs_handler(
+    State(state): State<AppState>,
+    AxumPath(recurring_id): AxumPath<String>,
+    Query(query): Query<RecurringRunsQuery>,
+) -> Result<Json<RecurringRunsResponse>, (StatusCode, String)> {
+    medousa::recurring_handlers::list_recurring_runs(
+        state.composition(),
+        recurring_id.trim(),
+        query,
+    )
+    .await
+    .map(Json)
+    .map_err(|err| {
+        let message = err.to_string();
+        if message.contains("not found") {
+            (StatusCode::NOT_FOUND, message)
+        } else {
+            (StatusCode::INTERNAL_SERVER_ERROR, message)
+        }
+    })
+}
+
+async fn get_recurring_delivery_handler(
+    AxumPath(recurring_id): AxumPath<String>,
+) -> Result<Json<RecurringDeliveryResponse>, (StatusCode, String)> {
+    medousa::recurring_handlers::get_recurring_delivery(recurring_id.trim())
+        .await
+        .map(Json)
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+}
+
 async fn register_recurring_prompt(
     State(state): State<AppState>,
     Json(request): Json<RegisterRecurringPromptRequest>,
@@ -1876,11 +1916,7 @@ async fn register_recurring_prompt(
                 .as_ref()
                 .and_then(|ctx| ctx.schedule_execution_mode.as_deref())
         })
-        .unwrap_or(if manuscript_ctx.is_some() {
-            "agent_turn"
-        } else {
-            "prompt"
-        })
+        .unwrap_or("agent_turn")
         .trim()
         .to_ascii_lowercase();
 
@@ -1949,11 +1985,16 @@ async fn register_recurring_prompt(
             return Err((
                 StatusCode::BAD_REQUEST,
                 format!(
-                    "execution_mode={other} is invalid; use prompt or agent_turn"
+                    "execution_mode={other} is invalid; use agent_turn or prompt"
                 ),
             ));
         }
     };
+
+    let payload_template_ref = medousa::recurring_handlers::inject_display_name_into_payload(
+        &payload_template_ref,
+        request.display_name.as_deref(),
+    );
 
     let mut definition = RecurringDefinition {
         id: recurring_id.clone(),

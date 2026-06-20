@@ -573,6 +573,7 @@ async fn run_daemon_watch_add(
         session_id: None,
         execution_mode: None,
         manuscript_id: None,
+        display_name: None,
     };
 
     let response = client

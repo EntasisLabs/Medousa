@@ -775,6 +775,14 @@ pub struct RecurringDefinitionEntry {
     pub manuscript_id: Option<String>,
     #[serde(default)]
     pub prompt_excerpt: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub execution_mode: Option<String>,
+    #[serde(default)]
+    pub delivery_label: Option<String>,
+    #[serde(default)]
+    pub last_run_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -801,6 +809,8 @@ pub struct RegisterRecurringPromptRequest {
     pub execution_mode: Option<String>,
     #[serde(default)]
     pub manuscript_id: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -820,6 +830,37 @@ pub struct UpdateRecurringRequest {
     pub cron_expr: Option<String>,
     #[serde(default)]
     pub timezone: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub delivery: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringRunEntry {
+    pub job_id: String,
+    pub status: String,
+    pub is_terminal: bool,
+    pub attempt_count: usize,
+    pub latest_outcome: Option<String>,
+    pub output_text: Option<String>,
+    pub scheduled_at_utc: DateTime<Utc>,
+    pub updated_at_utc: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringRunsResponse {
+    pub recurring_id: String,
+    pub count: usize,
+    pub runs: Vec<RecurringRunEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringDeliveryResponse {
+    pub recurring_id: String,
+    pub delivery_label: String,
+    #[serde(default)]
+    pub delivery: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
