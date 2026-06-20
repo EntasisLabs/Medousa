@@ -1892,6 +1892,98 @@
     background-color: rgb(var(--color-surface-950) / 0.3);
   }
 
+  .scripts-workbench-doc-name {
+    @apply rounded px-1 py-0.5;
+  }
+
+  .scripts-workbench-doc-name:focus {
+    background-color: rgb(var(--color-surface-800) / 0.6);
+  }
+
+  .scripts-workbench-titlebar {
+    background-color: rgb(var(--color-surface-900) / 0.45);
+  }
+
+  .scripts-workbench-titlebar-actions {
+    @apply border-l border-surface-500/30 pl-1;
+  }
+
+  .scripts-workbench-toolbar-btn {
+    @apply rounded-md p-1.5 text-surface-400 transition hover:bg-surface-800 hover:text-surface-100 disabled:pointer-events-none disabled:opacity-35;
+  }
+
+  .scripts-workbench-toolbar-btn-active {
+    @apply bg-surface-800 text-primary-300;
+  }
+
+  .scripts-workbench-toolbar-btn-primary {
+    @apply text-primary-300 hover:bg-primary-500/15 hover:text-primary-200;
+  }
+
+  .scripts-workbench-toolbar-btn-run {
+    @apply text-success-400 hover:bg-success-500/10 hover:text-success-300;
+  }
+
+  .scripts-workbench-status-bar {
+    @apply grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-surface-500/45 px-3 py-1 text-[10px];
+    background-color: rgb(var(--color-primary-500) / 0.08);
+    min-height: 1.375rem;
+  }
+
+  .scripts-workbench-status-item {
+    @apply truncate text-surface-400;
+  }
+
+  .scripts-workbench-status-center {
+    @apply cursor-pointer transition hover:text-surface-200;
+  }
+
+  .script-editor-tab-rename {
+    @apply rounded-sm;
+  }
+
+  .scripts-workbench-modules-split {
+    @apply border-t border-surface-500/35;
+  }
+
+  .scripts-workbench-module-pick:focus-visible {
+    @apply outline-none ring-2 ring-primary-500/40 ring-inset;
+  }
+
+  .scripts-workbench-module-detail {
+    background-color: rgb(var(--color-surface-900) / 0.35);
+  }
+
+  .scripts-workbench-meta-chip {
+    @apply rounded px-1.5 py-0.5 text-[10px] text-surface-400;
+    background-color: rgb(var(--color-surface-800) / 0.7);
+  }
+
+  .scripts-workbench-effect-chip {
+    @apply rounded px-1.5 py-0.5 text-[10px];
+    background-color: rgb(var(--color-surface-800) / 0.5);
+  }
+
+  .scripts-workbench-effect-chip-muted {
+    @apply text-surface-500;
+  }
+
+  .scripts-workbench-effect-chip-default {
+    @apply text-surface-300;
+  }
+
+  .scripts-workbench-effect-chip-warning {
+    @apply text-warning-400;
+  }
+
+  .scripts-workbench-op-card:focus-visible {
+    @apply outline-none ring-2 ring-primary-500/40;
+  }
+
+  .scripts-workbench-template-row:focus-visible {
+    @apply outline-none ring-2 ring-primary-500/40 ring-inset;
+  }
+
   .scripts-workbench-center {
     background-color: rgb(var(--color-surface-900) / 0.2);
   }

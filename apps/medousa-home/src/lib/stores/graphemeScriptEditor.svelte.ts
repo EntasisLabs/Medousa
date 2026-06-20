@@ -172,8 +172,15 @@ export class GraphemeScriptEditorStore {
   patchActiveTab(patch: Partial<Pick<ScriptEditorTab, "name" | "body" | "intent" | "tags">>) {
     const active = this.activeTab;
     if (!active) return;
+    this.patchTab(active.tabId, patch);
+  }
+
+  patchTab(
+    tabId: string,
+    patch: Partial<Pick<ScriptEditorTab, "name" | "body" | "intent" | "tags">>,
+  ) {
     this.tabs = this.tabs.map((tab) =>
-      tab.tabId === active.tabId
+      tab.tabId === tabId
         ? {
             ...tab,
             ...patch,

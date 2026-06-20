@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Plus, X } from "@lucide/svelte";
+  import ScriptEditorTabStrip from "$lib/components/automations/ScriptEditorTabStrip.svelte";
   import GraphemeCodeMirror from "$lib/components/grapheme/GraphemeCodeMirror.svelte";
   import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
   import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
@@ -180,13 +180,12 @@
 </script>
 
 <div class="grapheme-script-editor flex min-h-0 flex-1 flex-col overflow-hidden">
+  {#if !workbenchMode}
   <header class="workshop-header shrink-0 border-b border-surface-500/40 px-4 py-3">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
-        {#if !workbenchMode}
-          <p class="text-sm font-semibold text-surface-50">Script editor</p>
-          <p class="workshop-header-line mt-0.5">Grapheme · run, save, add to flow</p>
-        {/if}
+        <p class="text-sm font-semibold text-surface-50">Script editor</p>
+        <p class="workshop-header-line mt-0.5">Grapheme · run, save, add to flow</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button
@@ -245,53 +244,19 @@
       <p class="mt-2 text-xs text-error-400">{flowError}</p>
     {/if}
 
-    {#if !workbenchMode}
-      <div class="mt-3 px-1">
-        <WorkshopJourneyBanner compact />
-      </div>
-    {/if}
+    <div class="mt-3 px-1">
+      <WorkshopJourneyBanner compact />
+    </div>
 
-    <div class="mt-3 flex items-center gap-1 overflow-x-auto border-b border-surface-600/50 pb-px">
-      {#each graphemeScriptEditor.tabs as tab (tab.tabId)}
-        <div
-          class="group flex max-w-[220px] items-center gap-1 rounded-t-md border border-b-0 px-2 py-1 text-[11px] {graphemeScriptEditor.activeTabId ===
-          tab.tabId
-            ? 'border-surface-500/60 bg-surface-900 text-primary-300'
-            : 'border-transparent bg-transparent text-surface-400 hover:bg-surface-800/70'}"
-        >
-          <button
-            type="button"
-            class="min-w-0 truncate"
-            onclick={() => graphemeScriptEditor.selectTab(tab.tabId)}
-          >
-            {tab.dirty ? "*" : ""}{tab.name}
-          </button>
-          {#if graphemeScriptEditor.tabs.length > 1}
-            <button
-              type="button"
-              class="rounded p-0.5 text-surface-500 opacity-0 transition group-hover:opacity-100 hover:text-surface-200"
-              aria-label="Close tab"
-              onclick={() => graphemeScriptEditor.closeTab(tab.tabId)}
-            >
-              <X size={12} strokeWidth={2} />
-            </button>
-          {/if}
-        </div>
-      {/each}
-      <button
-        type="button"
-        class="rounded-md p-1 text-surface-400 hover:bg-surface-800 hover:text-surface-100"
-        aria-label="New script tab"
-        onclick={() => graphemeScriptEditor.openNewTab()}
-      >
-        <Plus size={14} strokeWidth={2} />
-      </button>
+    <div class="mt-3 border-b border-surface-600/50 pb-px">
+      <ScriptEditorTabStrip />
     </div>
   </header>
+  {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      {#if showRecipePicker && settings.showWorkshopGuidance}
+      {#if showRecipePicker && settings.showWorkshopGuidance && !workbenchMode}
         <div class="shrink-0 border-b border-surface-500/35 px-4 py-3">
           <GraphemeRecipeCards
             compact
