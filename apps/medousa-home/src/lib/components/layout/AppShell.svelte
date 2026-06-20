@@ -7,10 +7,12 @@
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultQuickSwitcher from "$lib/components/vault/VaultQuickSwitcher.svelte";
+  import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { applyNativeMobileShellLayout, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
 
   let commandPaletteOpen = $state(false);
@@ -89,3 +91,11 @@
 <VaultGarageImportWizard />
 <VaultContextMenu />
 <VaultQuickSwitcher open={quickSwitcherOpen} onClose={() => (quickSwitcherOpen = false)} />
+{#if !layout.isMobile}
+  <VaultNoteWorkshop
+    onOpenFullChat={() => {
+      layout.navigateDesktop("chat", { bump: true });
+      void chat.ensureSessionHydrated();
+    }}
+  />
+{/if}

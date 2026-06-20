@@ -3820,6 +3820,50 @@
     @apply min-h-24 min-w-[8rem] border-dashed opacity-60;
   }
 
+  .vault-note-workshop {
+    @apply fixed z-[85] flex w-[26rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-surface-500/45 bg-surface-900 shadow-2xl;
+    height: min(560px, calc(100vh - 3rem));
+  }
+
+  .vault-note-workshop-header {
+    @apply flex cursor-grab items-center gap-2 border-b border-surface-500/40 bg-surface-900/95 px-3 py-2 active:cursor-grabbing;
+  }
+
+  .vault-note-workshop-icon-btn {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .vault-note-workshop-body {
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .vault-note-workshop-dock {
+    @apply fixed bottom-4 right-4 z-[85] flex max-w-[16rem] items-center gap-2 rounded-full border border-primary-500/35 bg-surface-900/95 px-4 py-2 text-sm text-primary-100 shadow-xl backdrop-blur-sm transition hover:border-primary-400/50 hover:bg-surface-800;
+  }
+
+  .vault-workshop-chat-panel {
+    @apply min-h-0;
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  .vault-workshop-chat-body {
+    @apply min-h-0 flex-1;
+  }
+
+  .vault-workshop-chat-scroll {
+    @apply h-full overflow-y-auto px-3 py-3;
+  }
+
+  .vault-workshop-chat-composer {
+    @apply shrink-0 border-t border-surface-500/35 px-3 pb-2 pt-2;
+    background-color: rgb(var(--color-surface-900) / 0.8);
+  }
+
+  .vault-workshop-chat-composer .composer-voice-status,
+  .vault-workshop-chat-composer .composer-attachment-chips {
+    @apply mb-1;
+  }
+
   .profiles-panel {
     @apply min-h-0;
     background-color: rgb(var(--color-surface-950));

@@ -38,6 +38,8 @@
     visible: boolean;
     showPopout?: boolean;
     mobile?: boolean;
+    embedded?: boolean;
+    workshop?: boolean;
     onOpenContext?: () => void;
     onOpenConnection?: () => void;
   }
@@ -46,6 +48,8 @@
     visible,
     showPopout = true,
     mobile = false,
+    embedded = false,
+    workshop = false,
     onOpenContext,
     onOpenConnection,
   }: Props = $props();
@@ -199,7 +203,9 @@
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
     chat.draft = "";
-    chat.clearVaultNoteContext();
+    if (!chat.pinVaultNoteContext) {
+      chat.clearVaultNoteContext();
+    }
 
     try {
       if (slash && slash.kind !== "ask") {
@@ -265,8 +271,13 @@
 <section
   class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible
     ? ''
-    : 'hidden'} {mobile ? 'mobile-chat-panel' : 'chat-pane'}"
+    : 'hidden'} {embedded
+    ? 'vault-workshop-chat-panel'
+    : mobile
+      ? 'mobile-chat-panel'
+      : 'chat-pane'}"
 >
+  {#if !embedded}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-2">
@@ -352,6 +363,7 @@
       <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
     {/if}
   </header>
+  {/if}
 
   {#if mobile && chat.liveStreamActive && phaseLine}
     <div class="mobile-chat-phase" aria-live="polite">
@@ -409,15 +421,17 @@
     </div>
   {/if}
 
-  <div class="{mobile ? 'mobile-chat-body' : 'chat-body'}">
+  <div class="{embedded ? 'vault-workshop-chat-body' : mobile ? 'mobile-chat-body' : 'chat-body'}">
     <div
       bind:this={scrollEl}
       onscroll={onScroll}
-      class="{mobile
-        ? 'mobile-chat-scroll space-y-3'
-        : 'chat-scroll space-y-4'}"
+      class="{embedded
+        ? 'vault-workshop-chat-scroll space-y-3'
+        : mobile
+          ? 'mobile-chat-scroll space-y-3'
+          : 'chat-scroll space-y-4'}"
     >
-      {#if askThreads.length > 0}
+      {#if askThreads.length > 0 && !embedded}
         {#if mobile}
           <button
             type="button"
@@ -473,7 +487,7 @@
         {/if}
       {/if}
 
-      {#if workerThreads.length > 0}
+      {#if workerThreads.length > 0 && !embedded}
         {#if mobile}
           <button
             type="button"
@@ -525,8 +539,23 @@
         <ChatMessageList messages={chatMessages} sessionId={chat.sessionId} {mobile} />
       {:else if showChatEmptyState}
       <div
-        class="flex min-h-[200px] flex-col justify-center {mobile ? 'px-1 pb-4' : 'px-2'}"
+        class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
       >
+        {#if workshop && chat.vaultNoteContext}
+          <p class="text-sm text-surface-400">Ask about this note — links, edits, or next steps.</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            {#each ["What links here?", "Summarize this note", "Suggest edits"] as prompt (prompt)}
+              <button
+                type="button"
+                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-xs text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
+                disabled={connection.offline || chat.composerBlocked}
+                onclick={() => void sendStarterPrompt(prompt)}
+              >
+                {prompt}
+              </button>
+            {/each}
+          </div>
+        {:else}
         <p class="text-sm text-surface-400 {mobile ? '' : 'mt-8'}">What are you working on?</p>
         <div class="mt-4 flex flex-wrap gap-2">
           {#each STARTER_PROMPTS as prompt (prompt)}
@@ -540,7 +569,8 @@
             </button>
           {/each}
         </div>
-        {#if recentSessions.length > 0}
+        {/if}
+        {#if recentSessions.length > 0 && !embedded}
           <ul class="mt-5 space-y-1.5">
             {#each recentSessions as session (session.session_id)}
               <li>
@@ -570,6 +600,7 @@
   </div>
 
   {#if !mobile}
+    {#if !embedded}
     <BudgetApprovalBar
       onOpenWork={() => {
         workspace.workView = "kanban";
@@ -577,18 +608,22 @@
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
     />
-    <form class="chat-composer" onsubmit={submit}>
+    {/if}
+    <form class="{embedded ? 'vault-workshop-chat-composer' : 'chat-composer'}" onsubmit={submit}>
       {#if chat.vaultNoteContext}
-        <VaultChatContextChip class="mx-4 mb-2" />
+        <VaultChatContextChip compact={workshop} class={workshop ? "mb-2" : "mx-4 mb-2"} />
       {/if}
       {#if slashHint?.length}
-        <ul class="mx-4 mb-1 space-y-0.5 text-[11px] text-surface-500">
+        <ul
+          class="{workshop ? 'mb-1' : 'mx-4 mb-1'} space-y-0.5 text-[11px] text-surface-500"
+        >
           {#each slashHint as hint (hint)}
             <li>{hint}</li>
           {/each}
         </ul>
       {/if}
       <ChatComposerBar
+        mobile={workshop}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
         onkeydown={handleKeydown}

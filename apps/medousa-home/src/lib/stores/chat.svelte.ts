@@ -74,6 +74,7 @@ export class ChatStore {
   draft = $state("");
   /** Vault note scope when chat opened from Library (Phase D3). */
   vaultNoteContext = $state<VaultNoteContextScope | null>(null);
+  pinVaultNoteContext = $state(false);
   /** Files uploaded to local daemon, waiting to send with the next turn. */
   pendingMediaRefs = $state<MediaRef[]>([]);
   pendingMediaUploading = $state(false);
@@ -1880,13 +1881,19 @@ export class ChatStore {
     this.draft = text;
   }
 
-  prefillFromVaultNote(scope: VaultNoteContextScope, draft: string) {
+  prefillFromVaultNote(
+    scope: VaultNoteContextScope,
+    draft: string,
+    options?: { pin?: boolean },
+  ) {
     this.vaultNoteContext = scope;
     this.draft = draft;
+    this.pinVaultNoteContext = options?.pin ?? false;
   }
 
   clearVaultNoteContext() {
     this.vaultNoteContext = null;
+    this.pinVaultNoteContext = false;
   }
 
   clearPendingMedia() {

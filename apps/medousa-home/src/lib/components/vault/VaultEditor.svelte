@@ -5,6 +5,7 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
   import { formatCardTitle } from "$lib/utils/formatWork";
   import {
@@ -123,6 +124,28 @@
   });
 
   async function handleAskAboutNote() {
+    if (!vault.selectedPath) return;
+    if (vault.dirty) await vault.flushSave();
+    const { scope, draft } = prepareTalkAboutNote(
+      vault.selectedPath,
+      vault.title,
+      vault.content,
+      vault.wikilinksOut,
+      vault.backlinks,
+    );
+    chat.prefillFromVaultNote(scope, draft, { pin: true });
+    void chat.ensureSessionHydrated();
+
+    if (!mobile) {
+      noteWorkshop.openForNote(vault.selectedPath);
+      return;
+    }
+
+    if (!onOpenChat) return;
+    onOpenChat();
+  }
+
+  async function handleAskInChatTab() {
     if (!vault.selectedPath || !onOpenChat) return;
     if (vault.dirty) await vault.flushSave();
     const { scope, draft } = prepareTalkAboutNote(
@@ -132,7 +155,7 @@
       vault.wikilinksOut,
       vault.backlinks,
     );
-    chat.prefillFromVaultNote(scope, draft);
+    chat.prefillFromVaultNote(scope, draft, { pin: true });
     onOpenChat();
   }
 
@@ -276,6 +299,15 @@
             onclick={() => void handleAskAboutNote()}
           >
             Ask about note
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            disabled={vault.noteLoading}
+            title="Open scoped thread in Chat tab"
+            onclick={() => void handleAskInChatTab()}
+          >
+            Chat tab
           </button>
         {/if}
         {#if vault.selectedPath && !mobile && onOpenWork}

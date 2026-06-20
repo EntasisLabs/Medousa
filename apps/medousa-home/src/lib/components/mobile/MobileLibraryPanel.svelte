@@ -80,7 +80,7 @@
       vault.wikilinksOut,
       vault.backlinks,
     );
-    chat.prefillFromVaultNote(scope, draft);
+    chat.prefillFromVaultNote(scope, draft, { pin: true });
     await onOpenChat();
   }
 </script>

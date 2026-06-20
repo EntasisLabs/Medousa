@@ -306,7 +306,7 @@ G: context (G1) → preview todos (G2) → slash/switcher/templates (G3) → ima
 - [x] Phase G2 — preview checkboxes + optional inline completion stamp
 - [x] Phase G3 — slash expansion, quick switcher, user templates, transclusion, mobile format bar
 - [x] Phase G4 — local image embeds + insert embed from attachments
-- [ ] Phase G5 — floating note workshop modal (Ask about note)
+- [x] Phase G5 — floating note workshop modal (Ask about note)
 
 ---
 
