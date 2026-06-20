@@ -14,6 +14,7 @@ pub mod types;
 pub mod vault;
 pub mod workspace_card;
 pub mod turn_budget;
+pub mod workflow;
 pub mod workshop_http;
 
 use crate::daemon::sse::stream_sse_json_workshop;

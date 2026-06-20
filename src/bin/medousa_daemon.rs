@@ -573,6 +573,12 @@ async fn main() -> Result<()> {
         },
     );
 
+    let workflow_router = medousa::workflow_handlers::workflow_router(
+        medousa::workflow_handlers::WorkflowApiState {
+            composition: Arc::new(state.composition().clone()),
+        },
+    );
+
     let policy_router = Router::new()
         .route(
             "/v1/mcp/policy/evaluate",
@@ -773,6 +779,7 @@ async fn main() -> Result<()> {
         .merge(catalog_router)
         .merge(capability_router)
         .merge(grapheme_router)
+        .merge(workflow_router)
         .merge(policy_router)
         .merge(vault_router)
         .merge(medousa::locus_handlers::locus_router(

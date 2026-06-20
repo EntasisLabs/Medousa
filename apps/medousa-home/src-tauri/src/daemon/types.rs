@@ -1057,6 +1057,178 @@ pub struct GraphemeRunResponse {
     pub result: serde_json::Value,
 }
 
+// ── Workflows (Flows) ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkflowStepSpecDto {
+    Grapheme {
+        id: String,
+        source: String,
+    },
+    Prompt {
+        id: String,
+        user_prompt: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system_prompt: Option<String>,
+    },
+    Mcp {
+        id: String,
+        server_id: String,
+        tool_name: String,
+        #[serde(default)]
+        args: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effect_class: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRunRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    pub steps: Vec<WorkflowStepSpecDto>,
+    #[serde(default)]
+    pub on_failure: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowListEntry {
+    pub workflow_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub status: String,
+    pub strategy: String,
+    pub mode: String,
+    pub root_job_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_job_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_recurring_id: Option<String>,
+    pub created_at_utc: DateTime<Utc>,
+    pub step_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowsListResponse {
+    pub count: usize,
+    pub workflows: Vec<WorkflowListEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStepResultDto {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowDetailResponse {
+    pub workflow_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub status: String,
+    pub strategy: String,
+    pub mode: String,
+    pub on_failure: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub root_job_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_job_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_recurring_id: Option<String>,
+    pub created_at_utc: DateTime<Utc>,
+    pub steps: Vec<WorkflowStepSpecDto>,
+    pub step_results: Vec<WorkflowStepResultDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRunResponse {
+    pub workflow_id: String,
+    pub status: String,
+    pub strategy: String,
+    pub root_job_id: String,
+    pub job_type: String,
+    pub lane: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPlanRequest {
+    pub goal: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowScheduleSuggestion {
+    pub cron_expr: String,
+    pub timezone: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPlanResponse {
+    pub goal: String,
+    pub confidence: String,
+    pub execute_with: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_workflow: Option<WorkflowRunRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_schedule: Option<WorkflowScheduleSuggestion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_tool_input: Option<serde_json::Value>,
+    pub notes: Vec<String>,
+    pub assumptions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowScheduleRequest {
+    #[serde(flatten)]
+    pub workflow: WorkflowRunRequest,
+    pub cron_expr: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurring_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowScheduleResponse {
+    pub workflow_id: String,
+    pub status: String,
+    pub recurring_id: String,
+    pub cron_expr: String,
+    pub timezone: String,
+    pub next_run_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub materialized_job_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRunsResponse {
+    pub workflow_id: String,
+    pub count: usize,
+    pub runs: Vec<RecurringRunEntry>,
+}
+
 // ── Identity & artifacts ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

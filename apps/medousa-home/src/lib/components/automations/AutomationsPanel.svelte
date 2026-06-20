@@ -1,5 +1,6 @@
 <script lang="ts">
   import AutomationCreateForm from "$lib/components/automations/AutomationCreateForm.svelte";
+  import FlowsPanel from "$lib/components/automations/FlowsPanel.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
@@ -10,6 +11,8 @@
     RecurringDefinitionEntry,
   } from "$lib/types/recurring";
 
+  type AutomationsSection = "schedules" | "flows";
+
   interface Props {
     visible: boolean;
     mobile?: boolean;
@@ -17,6 +20,8 @@
   }
 
   let { visible, mobile = false, embedded = false }: Props = $props();
+
+  let section = $state<AutomationsSection>("schedules");
 
   let search = $state("");
   let selectedId = $state<string | null>(null);
@@ -73,7 +78,9 @@
 
   $effect(() => {
     if (!visible) return;
-    void automations.refresh();
+    if (section === "schedules") {
+      void automations.refresh();
+    }
   });
 
   $effect(() => {
@@ -134,6 +141,33 @@
     ? 'cron-panel-mobile'
     : ''} {visible ? '' : 'hidden'}"
 >
+  {#if section === "flows"}
+    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        {#if !embedded}
+          <div>
+            <h1 class="text-base font-semibold text-surface-50">Automations</h1>
+            <p class="workshop-header-line mt-1">Schedules and multi-step flows</p>
+          </div>
+        {/if}
+      </div>
+      <div class="workshop-tabs mt-3">
+        {#each [
+          { id: "schedules", label: "Schedules" },
+          { id: "flows", label: "Flows" },
+        ] as tab (tab.id)}
+          <button
+            type="button"
+            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
+            onclick={() => (section = tab.id as AutomationsSection)}
+          >
+            {tab.label}
+          </button>
+        {/each}
+      </div>
+    </header>
+    <FlowsPanel visible={true} {mobile} {embedded} />
+  {:else}
   {#if !mobileDetailOpen}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       {#if !embedded}
@@ -181,6 +215,21 @@
           />
         </div>
       </label>
+
+      <div class="workshop-tabs mt-3">
+        {#each [
+          { id: "schedules", label: "Schedules" },
+          { id: "flows", label: "Flows" },
+        ] as tab (tab.id)}
+          <button
+            type="button"
+            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
+            onclick={() => (section = tab.id as AutomationsSection)}
+          >
+            {tab.label}
+          </button>
+        {/each}
+      </div>
     </header>
   {/if}
 
@@ -456,4 +505,5 @@
       {/if}
     </aside>
   </div>
+  {/if}
 </section>

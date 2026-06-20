@@ -65,6 +65,17 @@ import type {
   ManuscriptImportResponse,
   UpdateManuscriptRequest,
 } from "$lib/types/manuscript";
+import type {
+  WorkflowDetailResponse,
+  WorkflowPlanRequest,
+  WorkflowPlanResponse,
+  WorkflowRunRequest,
+  WorkflowRunResponse,
+  WorkflowRunsResponse,
+  WorkflowScheduleRequest,
+  WorkflowScheduleResponse,
+  WorkflowsListResponse,
+} from "$lib/types/workflow";
 
 export interface DaemonHealth {
   ok: boolean;
@@ -827,4 +838,44 @@ export async function runGraphemeSource(
   source: string,
 ): Promise<GraphemeRunResponse> {
   return invoke<GraphemeRunResponse>("grapheme_run_source", { source });
+}
+
+export async function listWorkflows(
+  limit?: number,
+): Promise<WorkflowsListResponse> {
+  return invoke<WorkflowsListResponse>("workflow_list", { limit: limit ?? null });
+}
+
+export async function getWorkflow(
+  workflowId: string,
+): Promise<WorkflowDetailResponse> {
+  return invoke<WorkflowDetailResponse>("workflow_get", { workflowId });
+}
+
+export async function runWorkflow(
+  request: WorkflowRunRequest,
+): Promise<WorkflowRunResponse> {
+  return invoke<WorkflowRunResponse>("workflow_run", { request });
+}
+
+export async function planWorkflow(
+  request: WorkflowPlanRequest,
+): Promise<WorkflowPlanResponse> {
+  return invoke<WorkflowPlanResponse>("workflow_plan", { request });
+}
+
+export async function scheduleWorkflow(
+  request: WorkflowScheduleRequest,
+): Promise<WorkflowScheduleResponse> {
+  return invoke<WorkflowScheduleResponse>("workflow_schedule", { request });
+}
+
+export async function listWorkflowRuns(
+  workflowId: string,
+  limit?: number,
+): Promise<WorkflowRunsResponse> {
+  return invoke<WorkflowRunsResponse>("workflow_list_runs", {
+    workflowId,
+    limit: limit ?? null,
+  });
 }

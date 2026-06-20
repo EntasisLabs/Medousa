@@ -102,6 +102,7 @@ pub mod stage_routing;
 pub mod bridge_tools;
 pub mod runtime;
 pub mod runtime_tools;
+pub mod workflow_handlers;
 pub mod workflow;
 pub mod workflow_plan;
 pub mod workshop_env;

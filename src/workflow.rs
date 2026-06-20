@@ -223,6 +223,14 @@ impl WorkflowRegistry {
             record.scheduled_recurring_id = Some(recurring_id);
         }
     }
+
+    pub async fn list(&self, limit: usize) -> Vec<WorkflowRecord> {
+        let guard = self.inner.read().await;
+        let mut records: Vec<_> = guard.values().cloned().collect();
+        records.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        records.truncate(limit.clamp(1, 500));
+        records
+    }
 }
 
 pub fn encode_workflow_payload(payload: &MedousaWorkflowPayload) -> stasis::prelude::Result<String> {
