@@ -54,10 +54,11 @@ Sources: VS Code Marketplace install trends, Obsidian community downloads (2026 
 - [x] Dracula, Nord, Solarized Dark (+ light pairs)
 - [x] Token-only — no new `app.postcss` overrides for familiars
 
-#### T4 — Polish & optional per-server theme
+#### T4 — Polish & per-workshop theme ✅
 
-- [ ] Accent-only picker (Obsidian-style) — stretch
-- [ ] Per-workshop default theme (requires Part B M1 registry)
+- [x] Per-workshop default theme (`clientState.colorThemeId` + apply on switch)
+- [x] Settings Room saves palette for active workshop
+- [ ] Accent-only picker (Obsidian-style) — stretch / deferred
 
 ### Technical notes
 
@@ -120,9 +121,11 @@ One active connection at a time:
 - [x] Status bar shows active workshop when multiple saved
 - [ ] Turn tags include `workshop_id` in UI (defer — no cross-workshop turns in v1)
 
-#### M4 — Team / enterprise
+#### M4 — Team / enterprise ✅
 
-- [ ] Server branding, invite rotation, per-server theme default
+- [x] Server branding — icon, accent color, tagline in registry + Settings
+- [x] Invite rotation — `POST /qr/rotate` + “Rotate invite” in Phone pairing
+- [x] Per-server theme default (shared with T4)
 
 #### M5 — Optional multi-live
 
@@ -148,7 +151,8 @@ Multi-daemon M0 ADR ✅
 Multi-daemon M1 ✅  (registry + switcher)
 Multi-daemon M2 ✅  (QR join + switch prompt)
 Multi-daemon M3     (polish — mostly done)
-Themes T4 per-server    (after M1)
+Multi-daemon M4 ✅  (branding + invite rotation)
+Themes T4 ✅        (per-workshop room theme)
 ```
 
 ---

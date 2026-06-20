@@ -48,6 +48,13 @@ export interface BonjourStatus {
   message: string;
 }
 
+export async function rotatePairingInvite(): Promise<PairingQrResponse> {
+  if (!isTauri()) {
+    throw new Error("Pairing requires the Medousa desktop app");
+  }
+  return invoke<PairingQrResponse>("pairing_rotate_invite");
+}
+
 export async function fetchPairingQr(): Promise<PairingQrResponse> {
   if (!isTauri()) {
     throw new Error("Pairing requires the Medousa desktop app");

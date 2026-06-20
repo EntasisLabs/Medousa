@@ -1,18 +1,21 @@
 <script lang="ts">
-  import { Building2, ChevronDown, Home, Plus } from "@lucide/svelte";
+  import { Check, Plus, Settings2 } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { haptic } from "$lib/haptics";
-  import type { WorkshopIcon, WorkshopServer } from "$lib/types/workshopRegistry";
+  import type { WorkshopServer } from "$lib/types/workshopRegistry";
+  import {
+    workshopBrandCssVars,
+    workshopHostLabel,
+    workshopMonogram,
+  } from "$lib/types/workshopRegistry";
   import { isTauri } from "$lib/window";
 
   interface Props {
-    /** Hide pill when only one workshop (ignored for `rail`). */
     hideWhenSingle?: boolean;
-    /** Mobile sheet, desktop header pill, or left-rail Slack-style monogram. */
     variant?: "mobile" | "desktop" | "rail";
   }
 
@@ -28,11 +31,9 @@
   );
 
   const showRail = $derived(variant === "rail");
+  const isRailMenu = $derived(variant === "rail");
 
-  function workshopIcon(icon: WorkshopIcon | undefined) {
-    if (icon === "building" || icon === "team") return Building2;
-    return Home;
-  }
+  const activeBrandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
 
   async function pickWorkshop(workshopId: string) {
     haptic("light");
@@ -63,25 +64,32 @@
     }
   }
 
-  function kindLabel(workshop: WorkshopServer): string {
-    return workshop.kind === "local" ? "This device" : "Paired";
+  function workshopMeta(workshop: WorkshopServer): string {
+    const host = workshopHostLabel(workshop.url, workshop.kind);
+    if (workshop.id === workshops.activeWorkshopId) {
+      if (connection.checking) return "Connecting…";
+      if (connection.online) return `Connected · ${host}`;
+      if (connection.offline) return `Offline · ${host}`;
+    }
+    if (workshop.kind === "local") return host;
+    return `Team · ${host}`;
   }
 
-  function connectionDotClass(workshopId: string): string {
-    if (workshopId !== workshops.activeWorkshopId) return "workshop-status-dot-muted";
-    if (connection.online) return "workshop-status-dot-live";
-    if (connection.offline) return "workshop-status-dot-warning";
-    return "workshop-status-dot-muted";
+  function avatarStyle(workshop: WorkshopServer): string | undefined {
+    return workshopBrandCssVars(workshop.brandColor);
   }
 </script>
 
 {#if showRail}
   <button
     type="button"
-    class="workshop-rail-btn workshop-rail-workshop-btn mb-3 font-semibold leading-none"
+    class="workshop-rail-btn workshop-rail-workshop-btn mb-3 font-semibold leading-none {sheetOpen
+      ? 'workshop-rail-workshop-btn-open'
+      : ''}"
+    style={activeBrandStyle}
     title="Switch workshop — {workshops.activeLabel}"
     aria-label="Switch workshop — {workshops.activeLabel}"
-    aria-haspopup="dialog"
+    aria-haspopup="menu"
     aria-expanded={sheetOpen}
     disabled={workshops.switching}
     onclick={openSheet}
@@ -97,7 +105,7 @@
       ? 'mobile-profile-pill shrink-0'
       : 'flex max-w-[9rem] shrink-0 items-center gap-1.5 rounded-lg border border-surface-500/35 bg-surface-900/60 px-2 py-1 text-surface-200 transition hover:border-surface-400/40 hover:bg-surface-800/70'}"
     aria-label="Switch workshop — {workshops.activeLabel}"
-    aria-haspopup="dialog"
+    aria-haspopup="menu"
     aria-expanded={sheetOpen}
     disabled={workshops.switching}
     onclick={openSheet}
@@ -105,7 +113,8 @@
     <span
       class="{variant === 'mobile'
         ? 'mobile-profile-monogram'
-        : 'flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-surface-700/80 text-[10px] font-semibold text-surface-100'}"
+        : 'workshop-switcher-avatar h-5 w-5 text-[10px]'}"
+      style={activeBrandStyle}
       aria-hidden="true"
     >
       {workshops.activeMonogram}
@@ -117,28 +126,29 @@
     >
       {workshops.activeLabel}
     </span>
-    <ChevronDown size={14} class="shrink-0 text-surface-500" strokeWidth={2} />
   </button>
 {/if}
 
 {#if workshops.pendingSwitchAfterPair}
   <div
-    class="mobile-sheet-backdrop {variant === 'rail' ? 'workshop-rail-sheet-backdrop' : ''}"
+    class="mobile-sheet-backdrop {isRailMenu ? 'workshop-rail-sheet-backdrop' : ''}"
     role="presentation"
     onclick={(event) => {
       if (event.target === event.currentTarget) workshops.dismissSwitchAfterPair();
     }}
   >
     <div
-      class="mobile-sheet max-w-sm {variant === 'rail' ? 'workshop-rail-sheet' : ''}"
+      class="mobile-sheet max-w-sm {isRailMenu ? 'workshop-rail-sheet' : ''}"
       role="alertdialog"
       aria-label="Switch to new workshop?"
     >
       <header class="mobile-sheet-header">
         <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-surface-50">Switch to {workshops.pendingSwitchAfterPairLabel}?</h2>
+          <h2 class="text-sm font-semibold text-surface-50">
+            Switch to {workshops.pendingSwitchAfterPairLabel}?
+          </h2>
           <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
-            Workshop joined. Switch now to talk to that engine, or stay on your current one.
+            You're connected. Switch now, or stay on your current workshop.
           </p>
         </div>
       </header>
@@ -168,14 +178,14 @@
 
 {#if workshops.confirmSwitchId}
   <div
-    class="mobile-sheet-backdrop {variant === 'rail' ? 'workshop-rail-sheet-backdrop' : ''}"
+    class="mobile-sheet-backdrop {isRailMenu ? 'workshop-rail-sheet-backdrop' : ''}"
     role="presentation"
     onclick={(event) => {
       if (event.target === event.currentTarget) workshops.cancelSwitchConfirm();
     }}
   >
     <div
-      class="mobile-sheet max-w-sm {variant === 'rail' ? 'workshop-rail-sheet' : ''}"
+      class="mobile-sheet max-w-sm {isRailMenu ? 'workshop-rail-sheet' : ''}"
       role="alertdialog"
       aria-label="Switch workshop?"
     >
@@ -183,8 +193,7 @@
         <div class="min-w-0">
           <h2 class="text-sm font-semibold text-surface-50">Switch workshop?</h2>
           <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
-            You have unsaved vault edits or a live turn. Switching reconnects to a different engine
-            and may interrupt it.
+            Unsaved vault edits or a live turn may be interrupted if you switch now.
           </p>
         </div>
       </header>
@@ -200,7 +209,6 @@
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface"
-          disabled={workshops.switching}
           onclick={() => workshops.cancelSwitchConfirm()}
         >
           Stay here
@@ -212,101 +220,127 @@
 
 {#if sheetOpen}
   <div
-    class="mobile-sheet-backdrop {variant === 'rail' ? 'workshop-rail-sheet-backdrop' : ''}"
+    class="mobile-sheet-backdrop {isRailMenu ? 'workshop-rail-sheet-backdrop' : ''}"
     role="presentation"
     onclick={(event) => {
       if (event.target === event.currentTarget) sheetOpen = false;
     }}
   >
     <div
-      class="mobile-sheet {variant === 'rail' ? 'workshop-rail-sheet' : ''}"
-      role="dialog"
+      class="{isRailMenu ? 'workshop-rail-sheet workshop-switcher-menu' : 'mobile-sheet'}"
+      role="menu"
       aria-label="Switch workshop"
     >
-      <header class="mobile-sheet-header">
+      <header class="{isRailMenu ? 'workshop-switcher-header' : 'mobile-sheet-header'}">
         <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-surface-50">Workshop</h2>
-          <p class="workshop-faint mt-0.5 text-xs">Which engine Medousa talks to</p>
+          <h2 class="{isRailMenu ? 'workshop-switcher-title' : 'text-sm font-semibold text-surface-50'}">
+            Workshops
+          </h2>
+          <p class="{isRailMenu ? 'workshop-switcher-subtitle' : 'workshop-faint mt-0.5 text-xs'}">
+            {isRailMenu ? "Pick where Medousa connects" : "Switch between your workshops"}
+          </p>
         </div>
-        <button
-          type="button"
-          class="btn btn-sm variant-ghost-surface shrink-0"
-          onclick={() => {
-            sheetOpen = false;
-          }}
-        >
-          Done
-        </button>
-      </header>
-
-      <div class="mobile-you-scroll px-4 pb-6 pt-2">
-        {#if workshops.loading && workshops.workshops.length === 0}
-          <p class="workshop-faint text-sm">Loading workshops…</p>
-        {:else if workshops.error}
-          <p class="text-sm text-error-400">{workshops.error}</p>
+        {#if !isRailMenu}
           <button
             type="button"
-            class="btn btn-sm variant-ghost-surface mt-3"
+            class="btn btn-sm variant-ghost-surface shrink-0"
+            onclick={() => {
+              sheetOpen = false;
+            }}
+          >
+            Done
+          </button>
+        {/if}
+      </header>
+
+      <div class="{isRailMenu ? 'workshop-switcher-list' : 'mobile-you-scroll px-4 pb-6 pt-2'}">
+        {#if workshops.loading && workshops.workshops.length === 0}
+          <p class="workshop-faint px-2 text-sm">Loading…</p>
+        {:else if workshops.error}
+          <p class="px-2 text-sm text-error-400">{workshops.error}</p>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface mx-2 mt-3"
             onclick={() => workshops.load()}
           >
             Retry
           </button>
         {:else}
-          <div class="space-y-2">
-            {#each workshops.workshops as workshop (workshop.id)}
-              {@const Icon = workshopIcon(workshop.icon)}
-              <button
-                type="button"
-                class="flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition {workshop.id ===
-                workshops.activeWorkshopId
-                  ? 'border-primary-500/40 bg-primary-500/10'
-                  : 'border-surface-500/30 bg-surface-950/40 hover:border-surface-400/35 hover:bg-surface-900/50'}"
-                disabled={workshops.switching}
-                onclick={() => pickWorkshop(workshop.id)}
+          {#each workshops.workshops as workshop (workshop.id)}
+            {@const isActive = workshop.id === workshops.activeWorkshopId}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={isActive}
+              class="workshop-switcher-row {isActive ? 'workshop-switcher-row-active' : ''}"
+              disabled={workshops.switching}
+              onclick={() => pickWorkshop(workshop.id)}
+            >
+              <span
+                class="workshop-switcher-avatar"
+                style={avatarStyle(workshop)}
+                aria-hidden="true"
               >
-                <span
-                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-800/80 text-surface-200"
-                  aria-hidden="true"
-                >
-                  <Icon size={16} strokeWidth={1.75} />
+                {workshopMonogram(workshop.label)}
+              </span>
+              <span class="workshop-switcher-row-body">
+                <span class="workshop-switcher-row-name">{workshop.label}</span>
+                <span class="workshop-switcher-row-meta">
+                  {#if workshop.tagline}
+                    {workshop.tagline}
+                  {:else}
+                    {workshopMeta(workshop)}
+                  {/if}
                 </span>
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center gap-2">
-                    <span class="{connectionDotClass(workshop.id)} shrink-0" aria-hidden="true"></span>
-                    <span class="truncate text-sm font-medium text-surface-50">
-                      {workshop.label}
-                    </span>
-                  </span>
-                  <span class="workshop-faint block truncate text-xs">
-                    {kindLabel(workshop)} · {workshop.url.replace(/^https?:\/\//, "")}
-                  </span>
-                </span>
-                {#if workshop.id === workshops.activeWorkshopId}
-                  <span class="badge variant-soft-primary shrink-0 text-[10px]">Active</span>
-                {/if}
-              </button>
-            {/each}
-          </div>
+              </span>
+              {#if isActive}
+                <Check size={16} strokeWidth={2.5} class="workshop-switcher-row-check" aria-hidden="true" />
+              {/if}
+            </button>
+          {/each}
+        {/if}
+      </div>
+
+      {#if !workshops.loading && !workshops.error}
+        <div class="{isRailMenu ? 'workshop-switcher-footer' : 'px-4 pb-4'}">
+          {#if isRailMenu}
+            <div class="workshop-switcher-divider" aria-hidden="true"></div>
+          {/if}
           <button
             type="button"
-            class="btn btn-sm variant-soft-primary mt-4 w-full"
+            role="menuitem"
+            class="{isRailMenu ? 'workshop-switcher-action' : 'btn btn-sm variant-soft-primary mt-4 w-full'}"
             disabled={workshops.atWorkshopLimit}
             onclick={() => {
               joinOpen = true;
             }}
           >
-            <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            Add workshop
+            {#if isRailMenu}
+              <span class="workshop-switcher-action-icon" aria-hidden="true">
+                <Plus size={14} strokeWidth={2} />
+              </span>
+            {:else}
+              <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            {/if}
+            Add a workshop
           </button>
-        {/if}
-        <button
-          type="button"
-          class="workshop-text-action mt-4 text-sm"
-          onclick={openConnectionSettings}
-        >
-          Manage workshops in Settings →
-        </button>
-      </div>
+          <button
+            type="button"
+            role="menuitem"
+            class="{isRailMenu
+              ? 'workshop-switcher-action mt-0.5'
+              : 'workshop-text-action mt-3 text-sm'}"
+            onclick={openConnectionSettings}
+          >
+            {#if isRailMenu}
+              <span class="workshop-switcher-action-icon" aria-hidden="true">
+                <Settings2 size={14} strokeWidth={2} />
+              </span>
+            {/if}
+            Manage in Settings
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}

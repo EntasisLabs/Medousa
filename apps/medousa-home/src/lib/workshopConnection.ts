@@ -324,6 +324,7 @@ export function connectWorkshop(options: {
         await startWorkshopStreams();
         await workshops.restoreLastSession();
       }
+      workshops.applyThemeForActiveWorkshop();
     } catch (err) {
       const failed = {
         ok: false,

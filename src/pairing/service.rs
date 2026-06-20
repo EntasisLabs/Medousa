@@ -291,6 +291,18 @@ impl PairingService {
         })
     }
 
+    /// Invalidate the current invite and mint a fresh QR (M4 invite rotation).
+    pub async fn rotate_qr(&self) -> Result<QrResponse> {
+        let mut guard = self.active_qr.write().await;
+        *guard = Some(self.build_qr_session()?);
+        let session = guard.as_ref().expect("qr session");
+        Ok(QrResponse {
+            url: self.build_qr_url(session)?,
+            expires_at: session.expires_at,
+            short_code: session.short_code.clone(),
+        })
+    }
+
     pub async fn current_short_code(&self) -> Result<String> {
         Ok(self.current_qr().await?.short_code)
     }

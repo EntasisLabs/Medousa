@@ -16,6 +16,7 @@
     formatCountdown,
     formatShortCode,
     revokePairingDevice,
+    rotatePairingInvite,
     secondsUntil,
     waitForPairingQr,
     type BonjourStatus,
@@ -123,6 +124,20 @@
     qrRefreshTimer = setInterval(() => {
       void refreshQr({ silent: true });
     }, 25_000);
+  }
+
+  async function rotateInvite() {
+    if (refreshing || qrLoading) return;
+    refreshing = true;
+    error = null;
+    try {
+      await rotatePairingInvite();
+      await loadPairingBundle(15);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      refreshing = false;
+    }
   }
 
   async function refreshAll() {
@@ -334,6 +349,14 @@
     >
       <RefreshCw class="h-3.5 w-3.5 {refreshing ? 'animate-spin' : ''}" aria-hidden="true" />
       Refresh QR
+    </button>
+    <button
+      type="button"
+      class="workshop-text-action ml-4 text-sm"
+      disabled={refreshing || !coreOnline}
+      onclick={() => void rotateInvite()}
+    >
+      Rotate invite
     </button>
     <button
       type="button"

@@ -815,6 +815,15 @@
     @apply ring-1 ring-inset ring-primary-500/35 hover:bg-primary-500/30 hover:text-surface-50;
   }
 
+  .workshop-rail-workshop-btn[style*="--workshop-brand"] {
+    background-color: color-mix(in srgb, var(--workshop-brand) 24%, transparent);
+    --tw-ring-color: color-mix(in srgb, var(--workshop-brand) 42%, transparent);
+  }
+
+  .workshop-rail-workshop-btn[style*="--workshop-brand"]:hover {
+    background-color: color-mix(in srgb, var(--workshop-brand) 34%, transparent);
+  }
+
   .workshop-rail-workshop-monogram {
     @apply block max-w-[2ch] truncate text-center tracking-tight;
   }
@@ -2386,12 +2395,106 @@
   }
 
   .workshop-rail-sheet-backdrop {
-    @apply items-start justify-start bg-transparent p-0;
-    background-color: rgb(var(--color-surface-950) / 0.35);
+    @apply items-start justify-start p-0;
+    background-color: rgb(var(--color-surface-950) / 0.28);
+    backdrop-filter: blur(2px);
   }
 
   .workshop-rail-sheet {
-    @apply ml-[52px] mt-2 max-h-[min(28rem,calc(100vh-1rem))] w-[min(22rem,calc(100vw-4rem))] rounded-xl rounded-tl-md border border-surface-500/45 shadow-2xl;
+    @apply ml-[52px] mt-2 max-h-[min(32rem,calc(100vh-1rem))] w-[min(17.5rem,calc(100vw-3.5rem))] overflow-hidden rounded-xl border border-surface-500/40 shadow-2xl;
+    background-color: rgb(var(--color-surface-900) / 0.96);
+    backdrop-filter: blur(16px);
+    animation: workshop-switcher-in 140ms ease-out;
+  }
+
+  @keyframes workshop-switcher-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .workshop-rail-workshop-btn-open {
+    @apply ring-2 ring-primary-400/50 ring-offset-2 ring-offset-surface-900;
+  }
+
+  .workshop-switcher-menu {
+    @apply flex min-h-0 flex-col;
+  }
+
+  .workshop-switcher-header {
+    @apply shrink-0 px-3 pb-2 pt-3;
+  }
+
+  .workshop-switcher-title {
+    @apply text-[13px] font-semibold tracking-tight text-surface-50;
+  }
+
+  .workshop-switcher-subtitle {
+    @apply mt-0.5 text-[11px] leading-snug text-surface-500;
+  }
+
+  .workshop-switcher-list {
+    @apply min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-1;
+  }
+
+  .workshop-switcher-row {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition;
+  }
+
+  .workshop-switcher-row:hover {
+    @apply bg-surface-800/55;
+  }
+
+  .workshop-switcher-row-active {
+    @apply bg-surface-800/70;
+  }
+
+  .workshop-switcher-avatar {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-semibold tracking-tight text-surface-50;
+    background-color: rgb(var(--color-primary-500) / 0.22);
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.28);
+  }
+
+  .workshop-switcher-avatar[style*="--workshop-brand"] {
+    background-color: color-mix(in srgb, var(--workshop-brand) 28%, rgb(var(--color-surface-900)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--workshop-brand) 45%, transparent);
+  }
+
+  .workshop-switcher-row-body {
+    @apply min-w-0 flex-1;
+  }
+
+  .workshop-switcher-row-name {
+    @apply truncate text-[13px] font-medium text-surface-50;
+  }
+
+  .workshop-switcher-row-meta {
+    @apply truncate text-[11px] text-surface-500;
+  }
+
+  .workshop-switcher-row-check {
+    @apply shrink-0 text-primary-300;
+  }
+
+  .workshop-switcher-divider {
+    @apply mx-3 my-1.5 h-px bg-surface-700/50;
+  }
+
+  .workshop-switcher-action {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-surface-200 transition hover:bg-surface-800/55;
+  }
+
+  .workshop-switcher-action-icon {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-800/80 text-surface-400;
+  }
+
+  .workshop-switcher-footer {
+    @apply shrink-0 border-t border-surface-700/40 px-2 py-1.5;
   }
 
   .mobile-story-overlay {

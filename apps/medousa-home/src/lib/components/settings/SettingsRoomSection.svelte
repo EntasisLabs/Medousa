@@ -1,13 +1,22 @@
 <script lang="ts">
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { COLOR_THEME_GROUP_LABELS, COLOR_THEME_GROUPS } from "$lib/types/colorThemes";
+  import { isTauri } from "$lib/window";
+
+  const roomHint = $derived.by(() => {
+    if (!isTauri()) {
+      return "The atmosphere of your workshop — palette and light.";
+    }
+    return `Palette for ${workshops.activeLabel} — switches when you change workshops.`;
+  });
 </script>
 
 <section class="settings-section">
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Room</h2>
     <p class="workshop-faint mt-1 text-sm">
-      The atmosphere of your workshop — palette and light.
+      {roomHint}
     </p>
   </header>
 

@@ -76,6 +76,11 @@
           "pattern": "^https?://"
         },
         "icon": { "$ref": "#/$defs/workshopIcon" },
+        "brandColor": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$"
+        },
+        "tagline": { "type": "string", "maxLength": 80 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
         "lastConnectedAt": { "type": "string", "format": "date-time" },

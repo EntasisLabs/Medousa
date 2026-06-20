@@ -41,6 +41,10 @@ export interface WorkshopServer {
   /** Canonical HTTP base (no trailing slash). */
   url: string;
   icon?: WorkshopIcon;
+  /** Hex brand accent for rail tile / switcher (M4). */
+  brandColor?: string;
+  /** Short subtitle under the workshop name. */
+  tagline?: string;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
@@ -163,6 +167,9 @@ function parseWorkshop(raw: unknown): WorkshopServer | null {
     updatedAt: record.updatedAt,
     lastConnectedAt:
       typeof record.lastConnectedAt === "string" ? record.lastConnectedAt : undefined,
+    brandColor:
+      typeof record.brandColor === "string" ? record.brandColor : undefined,
+    tagline: typeof record.tagline === "string" ? record.tagline : undefined,
     pairing,
     clientState:
       record.clientState && typeof record.clientState === "object"
@@ -202,4 +209,35 @@ export function workshopMonogram(label: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0]!.slice(0, 1).toUpperCase();
   return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
+}
+
+export function workshopBrandStyle(
+  brandColor: string | undefined,
+): string | undefined {
+  const trimmed = brandColor?.trim();
+  if (!trimmed || !/^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$/.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+/** CSS custom property for branded tiles (--workshop-brand). */
+export function workshopBrandCssVars(
+  brandColor: string | undefined,
+): string | undefined {
+  const color = workshopBrandStyle(brandColor);
+  return color ? `--workshop-brand:${color}` : undefined;
+}
+
+export function workshopHostLabel(url: string, kind: WorkshopKind): string {
+  if (kind === "local") return "This Mac";
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (host === "127.0.0.1" || host === "localhost" || host === "::1") {
+      return "This Mac";
+    }
+    return host;
+  } catch {
+    return "Remote";
+  }
 }

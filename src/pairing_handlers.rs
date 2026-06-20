@@ -19,6 +19,7 @@ pub fn routes() -> Router<PairingApiState> {
         .route("/pair/status", get(pair_status))
         .route("/pair/iroh-ticket", get(get_iroh_ticket))
         .route("/qr", get(get_qr))
+        .route("/qr/rotate", post(rotate_qr))
         .route("/qr/image", get(get_qr_image))
         .route("/qr.png", get(get_qr_png))
         .route("/pair/code", get(get_pair_code))
@@ -55,6 +56,17 @@ async fn get_qr(
     state
         .service
         .current_qr()
+        .await
+        .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+async fn rotate_qr(
+    State(state): State<PairingApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    state
+        .service
+        .rotate_qr()
         .await
         .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)

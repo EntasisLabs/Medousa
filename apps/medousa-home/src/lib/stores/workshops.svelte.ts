@@ -4,6 +4,7 @@ import {
   removeWorkshop,
   renameWorkshop,
   setActiveWorkshop,
+  updateWorkshopBranding,
   updateWorkshopClientState,
 } from "$lib/workshops";
 import { reconnectWorkshop } from "$lib/workshopConnection";
@@ -18,8 +19,11 @@ import {
   PERSONAL_WORKSHOP_ID,
   parseWorkshopRegistry,
   workshopMonogram,
+  type WorkshopIcon,
   type WorkshopRegistry,
+  type WorkshopServer,
 } from "$lib/types/workshopRegistry";
+import { isColorThemeId, type ColorThemeId } from "$lib/types/colorThemes";
 import { isTauri } from "$lib/platform";
 import { completePairingFromQr, type PairCompleteFromQrResult } from "$lib/utils/pairingClient";
 import { parsePairQrUrl } from "$lib/utils/pairingUrl";
@@ -41,6 +45,8 @@ export class WorkshopsStore {
   hasMultipleWorkshops = $derived(this.registry.workshops.length > 1);
   activeLabel = $derived(this.activeWorkshop?.label ?? "Personal");
   activeMonogram = $derived(workshopMonogram(this.activeLabel));
+  activeBrandColor = $derived(this.activeWorkshop?.brandColor);
+  activeColorThemeId = $derived(this.activeWorkshop?.clientState?.colorThemeId);
   atWorkshopLimit = $derived(this.registry.workshops.length >= MAX_WORKSHOPS);
 
   pendingSwitchAfterPairLabel = $derived.by(() => {
@@ -60,6 +66,7 @@ export class WorkshopsStore {
       this.registry = await loadWorkshopRegistry();
       const url = (await getDaemonUrl()).trim();
       if (url) settings.daemonUrl = url;
+      this.applyThemeForActiveWorkshop();
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -173,6 +180,7 @@ export class WorkshopsStore {
       await reconnectWorkshop((health) => {
         options?.onHealthChange?.(health);
       });
+      this.applyThemeForActiveWorkshop();
       await this.restoreLastSession();
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -193,6 +201,37 @@ export class WorkshopsStore {
     } catch {
       // Best-effort — session still works locally.
     }
+  }
+
+  applyThemeForActiveWorkshop() {
+    const themeId = this.activeWorkshop?.clientState?.colorThemeId;
+    if (isColorThemeId(themeId)) {
+      settings.setColorTheme(themeId, { persistWorkshop: false });
+      return;
+    }
+    settings.applyTheme();
+  }
+
+  async saveColorTheme(themeId: ColorThemeId) {
+    if (!isTauri()) return;
+    try {
+      this.registry = await updateWorkshopClientState(this.activeWorkshopId, {
+        colorThemeId: themeId,
+      });
+    } catch {
+      // Theme still applied locally.
+    }
+  }
+
+  async updateBranding(
+    workshopId: string,
+    patch: {
+      icon?: WorkshopIcon | null;
+      brandColor?: string | null;
+      tagline?: string | null;
+    },
+  ) {
+    this.registry = await updateWorkshopBranding(workshopId, patch);
   }
 
   async restoreLastSession() {

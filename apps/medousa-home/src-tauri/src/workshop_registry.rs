@@ -49,6 +49,10 @@ pub struct WorkshopServer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_connected_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tagline: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pairing: Option<WorkshopPairingRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_state: Option<WorkshopClientState>,
@@ -123,6 +127,8 @@ pub fn default_personal_workshop() -> WorkshopServer {
         created_at: iso.clone(),
         updated_at: iso,
         last_connected_at: None,
+        brand_color: None,
+        tagline: None,
         pairing: None,
         client_state: None,
     }
@@ -271,6 +277,8 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
             created_at: legacy.paired_at.clone(),
             updated_at: now_iso(),
             last_connected_at: None,
+            brand_color: None,
+            tagline: None,
             pairing: Some(WorkshopPairingRef {
                 pairing_id: legacy.pairing_id,
                 phone_id: legacy.phone_id,
@@ -367,6 +375,8 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
             created_at: iso.clone(),
             updated_at: iso,
             last_connected_at: None,
+            brand_color: None,
+            tagline: None,
             pairing: Some(pairing),
             client_state: None,
         });
@@ -485,6 +495,7 @@ pub fn workshops_remove(
 pub fn workshops_update_client_state(
     workshop_id: String,
     last_session_id: Option<String>,
+    color_theme_id: Option<String>,
 ) -> Result<WorkshopRegistry, String> {
     let trimmed_id = workshop_id.trim();
     if trimmed_id.is_empty() {
@@ -504,14 +515,98 @@ pub fn workshops_update_client_state(
         last_session_id: None,
         color_theme_id: None,
     });
-    if let Some(session_id) = last_session_id.map(|value| value.trim().to_string()) {
-        if session_id.is_empty() {
-            client_state.last_session_id = None;
+    if let Some(session_id) = last_session_id {
+        let trimmed = session_id.trim().to_string();
+        client_state.last_session_id = if trimmed.is_empty() {
+            None
         } else {
-            client_state.last_session_id = Some(session_id);
-        }
+            Some(trimmed)
+        };
+    }
+    if let Some(theme_id) = color_theme_id {
+        let trimmed = theme_id.trim().to_string();
+        client_state.color_theme_id = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        };
     }
     workshop.client_state = Some(client_state);
+    workshop.updated_at = now_iso();
+    save_registry(&registry)?;
+    load_registry()
+}
+
+fn normalize_brand_color(raw: &str) -> Result<Option<String>, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let upper = trimmed.to_uppercase();
+    if !upper.starts_with('#') {
+        return Err("Brand color must be a hex value like #7C3AED".to_string());
+    }
+    let hex = &upper[1..];
+    if hex.len() != 3 && hex.len() != 6 {
+        return Err("Brand color must be #RGB or #RRGGBB".to_string());
+    }
+    if !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err("Brand color must be a valid hex value".to_string());
+    }
+    Ok(Some(format!("#{hex}")))
+}
+
+fn normalize_icon(raw: Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = raw else {
+        return Ok(None);
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    match trimmed {
+        "home" | "building" | "team" => Ok(Some(trimmed.to_string())),
+        _ => Err("Icon must be home, building, or team".to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn workshops_update_branding(
+    workshop_id: String,
+    icon: Option<String>,
+    brand_color: Option<String>,
+    tagline: Option<String>,
+) -> Result<WorkshopRegistry, String> {
+    let trimmed_id = workshop_id.trim();
+    if trimmed_id.is_empty() {
+        return Err("Workshop id is required".to_string());
+    }
+
+    let mut registry = ensure_migrated()?;
+    let Some(workshop) = registry
+        .workshops
+        .iter_mut()
+        .find(|entry| entry.id == trimmed_id)
+    else {
+        return Err("Workshop not found".to_string());
+    };
+
+    if let Some(icon_value) = icon {
+        workshop.icon = normalize_icon(Some(icon_value))?;
+    }
+    if let Some(color_value) = brand_color {
+        workshop.brand_color = normalize_brand_color(&color_value)?;
+    }
+    if let Some(tagline_value) = tagline {
+        let trimmed = tagline_value.trim();
+        workshop.tagline = if trimmed.is_empty() {
+            None
+        } else if trimmed.len() > 80 {
+            return Err("Tagline must be 80 characters or fewer".to_string());
+        } else {
+            Some(trimmed.to_string())
+        };
+    }
     workshop.updated_at = now_iso();
     save_registry(&registry)?;
     load_registry()

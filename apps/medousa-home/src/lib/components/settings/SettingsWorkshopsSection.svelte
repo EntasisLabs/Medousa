@@ -8,7 +8,14 @@
     type WorkshopIcon,
     type WorkshopServer,
   } from "$lib/types/workshopRegistry";
+  import { COLOR_THEME_OPTIONS, isColorThemeId } from "$lib/types/colorThemes";
   import { isTauri } from "$lib/window";
+
+  const ICON_OPTIONS: { id: WorkshopIcon; label: string }[] = [
+    { id: "home", label: "Home" },
+    { id: "building", label: "Team" },
+    { id: "team", label: "Group" },
+  ];
 
   interface Props {
     onDaemonHealth?: () => void | Promise<void>;
@@ -19,6 +26,12 @@
   let renamingId = $state<string | null>(null);
   let renameDraft = $state("");
   let joinOpen = $state(false);
+  let brandingId = $state<string | null>(null);
+  let brandColorDraft = $state("");
+  let taglineDraft = $state("");
+  let iconDraft = $state<WorkshopIcon>("home");
+  let brandingBusy = $state(false);
+  let brandingError = $state<string | null>(null);
 
   onMount(() => {
     void workshops.load();
@@ -73,6 +86,36 @@
       });
     } catch {
       // Error surfaced on store.
+    }
+  }
+
+  function themeLabel(themeId: string | undefined): string | null {
+    if (!themeId || !isColorThemeId(themeId)) return null;
+    return COLOR_THEME_OPTIONS.find((option) => option.id === themeId)?.label ?? themeId;
+  }
+
+  function startBranding(workshop: WorkshopServer) {
+    brandingId = workshop.id;
+    brandColorDraft = workshop.brandColor ?? "";
+    taglineDraft = workshop.tagline ?? "";
+    iconDraft = workshop.icon ?? (workshop.kind === "local" ? "home" : "building");
+    brandingError = null;
+  }
+
+  async function saveBranding(workshopId: string) {
+    brandingBusy = true;
+    brandingError = null;
+    try {
+      await workshops.updateBranding(workshopId, {
+        icon: iconDraft,
+        brandColor: brandColorDraft.trim() || null,
+        tagline: taglineDraft.trim() || null,
+      });
+      brandingId = null;
+    } catch (err) {
+      brandingError = err instanceof Error ? err.message : String(err);
+    } finally {
+      brandingBusy = false;
     }
   }
 </script>
@@ -159,6 +202,14 @@
                 {#if workshop.id === workshops.activeWorkshopId}
                   <span class="badge variant-soft-primary mt-2 text-[10px]">Active</span>
                 {/if}
+                {#if themeLabel(workshop.clientState?.colorThemeId)}
+                  <p class="workshop-faint mt-1 text-[11px]">
+                    Room theme · {themeLabel(workshop.clientState?.colorThemeId)}
+                  </p>
+                {/if}
+                {#if workshop.tagline}
+                  <p class="mt-1 text-xs text-surface-300">{workshop.tagline}</p>
+                {/if}
               {/if}
             </div>
             {#if renamingId !== workshop.id}
@@ -180,6 +231,13 @@
                 >
                   Rename
                 </button>
+                <button
+                  type="button"
+                  class="workshop-text-action text-xs"
+                  onclick={() => startBranding(workshop)}
+                >
+                  Brand
+                </button>
                 {#if workshop.id !== PERSONAL_WORKSHOP_ID}
                   <button
                     type="button"
@@ -194,6 +252,70 @@
               </div>
             {/if}
           </div>
+          {#if brandingId === workshop.id}
+            <div class="mt-3 space-y-3 border-t border-surface-500/30 pt-3">
+              <div>
+                <span class="workshop-label">Icon</span>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  {#each ICON_OPTIONS as option (option.id)}
+                    <button
+                      type="button"
+                      class="btn btn-sm {iconDraft === option.id
+                        ? 'variant-filled-primary'
+                        : 'variant-ghost-surface'}"
+                      onclick={() => {
+                        iconDraft = option.id;
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+              <label class="block">
+                <span class="workshop-label">Accent color</span>
+                <input
+                  class="input mt-1 w-full font-mono text-xs"
+                  placeholder="#7C3AED"
+                  bind:value={brandColorDraft}
+                />
+              </label>
+              <label class="block">
+                <span class="workshop-label">Tagline</span>
+                <input
+                  class="input mt-1 w-full text-sm"
+                  maxlength={80}
+                  placeholder="Acme engineering brain"
+                  bind:value={taglineDraft}
+                />
+              </label>
+              <p class="workshop-faint text-xs">
+                Room theme is set in Settings → Room while this workshop is active.
+              </p>
+              {#if brandingError}
+                <p class="text-xs text-error-400">{brandingError}</p>
+              {/if}
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="btn btn-sm variant-filled-primary"
+                  disabled={brandingBusy}
+                  onclick={() => saveBranding(workshop.id)}
+                >
+                  Save brand
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm variant-ghost-surface"
+                  onclick={() => {
+                    brandingId = null;
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          {/if}
         </li>
       {/each}
     </ul>

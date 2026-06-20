@@ -191,6 +191,28 @@ pub async fn pairing_fetch_status(
 }
 
 #[tauri::command]
+pub async fn pairing_rotate_invite(
+    state: State<'_, DaemonState>,
+) -> Result<PairingQrResponse, String> {
+    let base = daemon_base(&state)?;
+    let client = pairing_http_client()?;
+    let response = client
+        .post(format!("{base}/qr/rotate"))
+        .send()
+        .await
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(pairing_unavailable_message(status, &body));
+    }
+    response
+        .json::<PairingQrResponse>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn pairing_revoke(
     state: State<'_, DaemonState>,
     pairing_id: String,

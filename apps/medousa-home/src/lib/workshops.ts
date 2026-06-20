@@ -3,6 +3,7 @@ import { isTauri } from "$lib/window";
 import {
   defaultWorkshopRegistry,
   parseWorkshopRegistry,
+  type WorkshopIcon,
   type WorkshopRegistry,
 } from "$lib/types/workshopRegistry";
 
@@ -45,13 +46,36 @@ export async function removeWorkshop(workshopId: string): Promise<WorkshopRegist
 
 export async function updateWorkshopClientState(
   workshopId: string,
-  clientState: { lastSessionId?: string | null },
+  patch: { lastSessionId?: string; colorThemeId?: string | null },
 ): Promise<WorkshopRegistry> {
   if (!isTauri()) return defaultWorkshopRegistry();
-  const raw = await invoke<unknown>("workshops_update_client_state", {
-    workshopId,
-    lastSessionId: clientState.lastSessionId ?? null,
-  });
+  const args: Record<string, unknown> = { workshopId };
+  if (patch.lastSessionId !== undefined) {
+    args.lastSessionId = patch.lastSessionId;
+  }
+  if (patch.colorThemeId !== undefined) {
+    args.colorThemeId = patch.colorThemeId;
+  }
+  const raw = await invoke<unknown>("workshops_update_client_state", args);
+  const parsed = parseWorkshopRegistry(raw);
+  if (!parsed) throw new Error("Invalid workshop registry response");
+  return parsed;
+}
+
+export async function updateWorkshopBranding(
+  workshopId: string,
+  patch: {
+    icon?: WorkshopIcon | null;
+    brandColor?: string | null;
+    tagline?: string | null;
+  },
+): Promise<WorkshopRegistry> {
+  if (!isTauri()) return defaultWorkshopRegistry();
+  const args: Record<string, unknown> = { workshopId };
+  if (patch.icon !== undefined) args.icon = patch.icon;
+  if (patch.brandColor !== undefined) args.brandColor = patch.brandColor;
+  if (patch.tagline !== undefined) args.tagline = patch.tagline;
+  const raw = await invoke<unknown>("workshops_update_branding", args);
   const parsed = parseWorkshopRegistry(raw);
   if (!parsed) throw new Error("Invalid workshop registry response");
   return parsed;

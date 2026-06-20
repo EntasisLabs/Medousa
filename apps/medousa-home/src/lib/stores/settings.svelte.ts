@@ -48,10 +48,16 @@ export class SettingsStore {
     this.applyTheme();
   }
 
-  setColorTheme(theme: ColorThemeId) {
+  setColorTheme(theme: ColorThemeId, options?: { persistWorkshop?: boolean }) {
     this.colorTheme = theme;
     localStorage.setItem(COLOR_THEME_KEY, theme);
     this.applyTheme();
+    if (options?.persistWorkshop === false) return;
+    if (isTauri()) {
+      void import("$lib/stores/workshops.svelte").then(({ workshops }) =>
+        workshops.saveColorTheme(theme),
+      );
+    }
   }
 
   setNotificationsEnabled(enabled: boolean) {
