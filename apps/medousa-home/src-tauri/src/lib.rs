@@ -193,6 +193,8 @@ pub fn run() {
             daemon::workflow::workflow_plan,
             daemon::workflow::workflow_schedule,
             daemon::workflow::workflow_list_runs,
+            daemon::tool_history::tool_history_list_slices,
+            daemon::tool_history::workflow_from_slice,
             daemon::identity::identity_get_context,
             daemon::identity::identity_list_profiles,
             daemon::identity::identity_create_profile,

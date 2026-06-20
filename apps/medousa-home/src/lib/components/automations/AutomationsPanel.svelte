@@ -1,17 +1,19 @@
 <script lang="ts">
   import AutomationCreateForm from "$lib/components/automations/AutomationCreateForm.svelte";
   import FlowsPanel from "$lib/components/automations/FlowsPanel.svelte";
+  import HistoryPanel from "$lib/components/automations/HistoryPanel.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
+  import { automationsNav, type AutomationsSection } from "$lib/stores/automationsNav.svelte";
   import { automations } from "$lib/stores/automations.svelte";
+  import { flowDraft } from "$lib/stores/flowDraft.svelte";
+  import { flows } from "$lib/stores/flows.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import type {
     AutomationDeliveryMode,
     RecurringDefinitionEntry,
   } from "$lib/types/recurring";
-
-  type AutomationsSection = "schedules" | "flows";
 
   interface Props {
     visible: boolean;
@@ -75,6 +77,22 @@
   const selectedRuns = $derived(
     selected ? (automations.runsById[selected.recurring_id] ?? []) : [],
   );
+
+  $effect(() => {
+    if (!visible) return;
+    const pending = automationsNav.consumeSection();
+    if (pending) section = pending;
+  });
+
+  $effect(() => {
+    if (!visible || !flowDraft.openComposer || flowDraft.pendingRefs.length === 0) return;
+    void flows
+      .applyFromSliceRefs(flowDraft.pendingRefs, flowDraft.seedDraft.name)
+      .finally(() => {
+        section = "flows";
+        flowDraft.clear();
+      });
+  });
 
   $effect(() => {
     if (!visible) return;
@@ -147,7 +165,7 @@
         {#if !embedded}
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Schedules and multi-step flows</p>
+            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay history</p>
           </div>
         {/if}
       </div>
@@ -155,6 +173,7 @@
         {#each [
           { id: "schedules", label: "Schedules" },
           { id: "flows", label: "Flows" },
+          { id: "history", label: "History" },
         ] as tab (tab.id)}
           <button
             type="button"
@@ -167,6 +186,38 @@
       </div>
     </header>
     <FlowsPanel visible={true} {mobile} {embedded} />
+  {:else if section === "history"}
+    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        {#if !embedded}
+          <div>
+            <h1 class="text-base font-semibold text-surface-50">Automations</h1>
+            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay history</p>
+          </div>
+        {/if}
+      </div>
+      <div class="workshop-tabs mt-3">
+        {#each [
+          { id: "schedules", label: "Schedules" },
+          { id: "flows", label: "Flows" },
+          { id: "history", label: "History" },
+        ] as tab (tab.id)}
+          <button
+            type="button"
+            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
+            onclick={() => (section = tab.id as AutomationsSection)}
+          >
+            {tab.label}
+          </button>
+        {/each}
+      </div>
+    </header>
+    <HistoryPanel
+      visible={true}
+      {mobile}
+      {embedded}
+      onOpenFlows={() => (section = "flows")}
+    />
   {:else}
   {#if !mobileDetailOpen}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
@@ -220,6 +271,7 @@
         {#each [
           { id: "schedules", label: "Schedules" },
           { id: "flows", label: "Flows" },
+          { id: "history", label: "History" },
         ] as tab (tab.id)}
           <button
             type="button"

@@ -76,6 +76,11 @@ import type {
   WorkflowScheduleResponse,
   WorkflowsListResponse,
 } from "$lib/types/workflow";
+import type {
+  ToolHistoryListResponse,
+  WorkflowFromSliceRequest,
+  WorkflowFromSliceResponse,
+} from "$lib/types/toolHistory";
 
 export interface DaemonHealth {
   ok: boolean;
@@ -878,4 +883,26 @@ export async function listWorkflowRuns(
     workflowId,
     limit: limit ?? null,
   });
+}
+
+export async function listToolHistorySlices(options?: {
+  limit?: number;
+  sessionLimit?: number;
+  sessionId?: string;
+  toolFilter?: string;
+  keyword?: string;
+}): Promise<ToolHistoryListResponse> {
+  return invoke<ToolHistoryListResponse>("tool_history_list_slices", {
+    limit: options?.limit ?? null,
+    sessionLimit: options?.sessionLimit ?? null,
+    sessionId: options?.sessionId ?? null,
+    toolFilter: options?.toolFilter ?? null,
+    keyword: options?.keyword ?? null,
+  });
+}
+
+export async function promoteWorkflowFromSlice(
+  request: WorkflowFromSliceRequest,
+): Promise<WorkflowFromSliceResponse> {
+  return invoke<WorkflowFromSliceResponse>("workflow_from_slice", { request });
 }

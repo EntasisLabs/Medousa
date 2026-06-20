@@ -45,9 +45,8 @@ export interface ChatMessage {
   /** Turn paused for operator tool-round budget approval. */
   budgetRequestId?: string | null;
   requestedRounds?: number | null;
-  /** User media attached to this message (local daemon refs). */
-  mediaAttachments?: import("$lib/types/media").ChatMediaAttachment[];
-}
+  /** Turn index in session history (1-based, matches slice_id turn:N). */
+  turnIndex?: number | null;
 
 export interface PendingBudgetApproval {
   turnId: string;

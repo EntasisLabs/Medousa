@@ -99,12 +99,29 @@ pub enum WorkflowStepSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effect_class: Option<String>,
     },
+    ToolReplay {
+        id: String,
+        tool_name: String,
+        #[serde(default)]
+        input: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_round: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        #[serde(default)]
+        requires_confirm: bool,
+    },
 }
 
 impl WorkflowStepSpec {
     pub fn id(&self) -> &str {
         match self {
-            Self::Grapheme { id, .. } | Self::Prompt { id, .. } | Self::Mcp { id, .. } => id,
+            Self::Grapheme { id, .. } | Self::Prompt { id, .. } | Self::Mcp { id, .. }
+            | Self::ToolReplay { id, .. } => id,
         }
     }
 }
@@ -662,6 +679,95 @@ async fn execute_workflow_step(
     workflow_id: &str,
     lane: McpTurnLane,
 ) -> WorkflowStepResult {
+    if let WorkflowStepSpec::ToolReplay {
+        id,
+        tool_name,
+        input,
+        requires_confirm,
+        ..
+    } = step
+    {
+        if *requires_confirm {
+            return WorkflowStepResult {
+                id: id.clone(),
+                kind: "tool_replay".to_string(),
+                status: "failed".to_string(),
+                output: None,
+                error: Some(
+                    "tool replay step requires operator confirmation after secret redaction"
+                        .to_string(),
+                ),
+            };
+        }
+        let entry = crate::tool_history_index::ToolHistoryRunEntry {
+            entry_id: id.clone(),
+            session_id: String::new(),
+            slice_id: String::new(),
+            turn_index: 0,
+            tool_round: 0,
+            run_id: id.clone(),
+            tool_name: tool_name.clone(),
+            status: "succeeded".to_string(),
+            input_summary: input
+                .get("summary")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            sanitized_input: input.clone(),
+            args_hash: String::new(),
+            redacted: false,
+            output_preview: None,
+            timestamp: Utc::now(),
+            session_preview: None,
+        };
+        let (native_step, _) = crate::tool_history_index::promote_run_to_step(&entry, id);
+        if matches!(native_step, WorkflowStepSpec::ToolReplay { .. }) {
+            return WorkflowStepResult {
+                id: id.clone(),
+                kind: "tool_replay".to_string(),
+                status: "failed".to_string(),
+                output: None,
+                error: Some(format!(
+                    "tool replay for '{tool_name}' is not executable without editing the flow step"
+                )),
+            };
+        }
+        return execute_native_workflow_step(
+            &native_step,
+            prior_outputs,
+            handoff,
+            workflow_engine,
+            prompt_pipeline,
+            mcp_client,
+            workflow_id,
+            lane,
+        )
+        .await;
+    }
+
+    execute_native_workflow_step(
+        step,
+        prior_outputs,
+        handoff,
+        workflow_engine,
+        prompt_pipeline,
+        mcp_client,
+        workflow_id,
+        lane,
+    )
+    .await
+}
+
+async fn execute_native_workflow_step(
+    step: &WorkflowStepSpec,
+    prior_outputs: &HashMap<String, Value>,
+    handoff: Option<&Value>,
+    workflow_engine: &Arc<dyn WorkflowEngine>,
+    prompt_pipeline: &PromptExecutionPipeline,
+    mcp_client: &McpGatewayClient,
+    workflow_id: &str,
+    lane: McpTurnLane,
+) -> WorkflowStepResult {
     match step {
         WorkflowStepSpec::Grapheme { id, source } => {
             let rendered_source = apply_step_refs(source, prior_outputs, handoff);
@@ -787,6 +893,13 @@ async fn execute_workflow_step(
                 },
             }
         }
+        WorkflowStepSpec::ToolReplay { id, .. } => WorkflowStepResult {
+            id: id.clone(),
+            kind: "tool_replay".to_string(),
+            status: "failed".to_string(),
+            output: None,
+            error: Some("unexpected nested tool replay step".to_string()),
+        },
     }
 }
 

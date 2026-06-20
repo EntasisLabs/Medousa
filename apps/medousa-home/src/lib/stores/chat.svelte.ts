@@ -2043,6 +2043,7 @@ function mapTurns(
     content: turn.content,
     lane,
     askJobId,
+    turnIndex: index + 1,
     answerState: turn.answer_state ?? null,
     tools: turn.tool_names?.length ? turn.tool_names : undefined,
     toolRuns: toolRunsFromParts(turn.parts ?? null),

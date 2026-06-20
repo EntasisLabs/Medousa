@@ -19,6 +19,8 @@ pub mod turn_slice;
 pub mod tool_bootstrap;
 pub mod tool_bootstrap_tools;
 pub mod tool_history_tools;
+pub mod tool_history_index;
+pub mod tool_history_handlers;
 pub mod grapheme_script;
 pub mod grapheme_script_tools;
 pub mod grapheme_handlers;

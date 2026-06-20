@@ -765,6 +765,11 @@ pub struct WorkflowRunsResponse {
     pub runs: Vec<RecurringRunEntry>,
 }
 
+pub use crate::tool_history_index::{
+    ToolHistoryListQuery, ToolHistoryListResponse, ToolHistoryRunEntry, ToolHistorySliceRef,
+    WorkflowFromSliceRequest, WorkflowFromSliceResponse,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonStatsResponse {
     pub enqueued_jobs: usize,

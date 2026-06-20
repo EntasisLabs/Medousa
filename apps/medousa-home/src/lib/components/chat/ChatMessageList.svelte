@@ -13,9 +13,12 @@
     sessionId: string;
     mobile?: boolean;
     compact?: boolean;
+    onPromoteToFlow?: (
+      ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
+    ) => void | Promise<void>;
   }
 
-  let { messages, sessionId, mobile = false, compact = false }: Props = $props();
+  let { messages, sessionId, mobile = false, compact = false, onPromoteToFlow }: Props = $props();
 
   function displayStatusLine(message: ChatMessage): string | null {
     return visibleChatStatusLine(message.statusLine, settings.showEngineDetailsInChat);
@@ -100,6 +103,9 @@
         <div class="mt-4">
           <ToolRunChips
             runs={message.toolRuns}
+            {sessionId}
+            turnIndex={message.turnIndex}
+            {onPromoteToFlow}
             compact={mobile}
             inspectorCollapsed={!message.streaming}
           />

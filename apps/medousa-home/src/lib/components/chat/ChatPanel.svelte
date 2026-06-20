@@ -34,6 +34,9 @@
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { switchMobileTab } from "$lib/mobileNavigation";
+  import { automationsNav } from "$lib/stores/automationsNav.svelte";
+  import { flowDraft } from "$lib/stores/flowDraft.svelte";
+  import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
 
   interface Props {
     visible: boolean;
@@ -66,7 +69,12 @@
   const showChatEmptyState = $derived(
     chatMessages.length === 0 && askThreads.length === 0 && workerThreads.length === 0,
   );
-  const sessionLabel = $derived(chat.currentSessionLabel());
+  function handlePromoteToFlow(ref: ToolHistorySliceRef) {
+    flowDraft.queuePromotion([ref]);
+    automationsNav.openSection("flows");
+    layout.navigateDesktop("automations", { bump: true });
+    if (mobile) switchMobileTab("automations");
+  }
   const recentSessions = $derived(
     chat.sessions.filter((session) => session.session_id !== chat.sessionId).slice(0, 4),
   );
@@ -481,7 +489,13 @@
                 {/if}
               </header>
               <div class="chat-ask-thread-body space-y-3">
-                <ChatMessageList messages={thread.messages} sessionId={chat.sessionId} {mobile} compact={true} />
+                <ChatMessageList
+                  messages={thread.messages}
+                  sessionId={chat.sessionId}
+                  {mobile}
+                  compact={true}
+                  onPromoteToFlow={handlePromoteToFlow}
+                />
               </div>
             </article>
           {/each}
@@ -529,7 +543,13 @@
                 </div>
               </header>
               <div class="chat-ask-thread-body space-y-3">
-                <ChatMessageList messages={thread.messages} sessionId={chat.sessionId} {mobile} compact={true} />
+                <ChatMessageList
+                  messages={thread.messages}
+                  sessionId={chat.sessionId}
+                  {mobile}
+                  compact={true}
+                  onPromoteToFlow={handlePromoteToFlow}
+                />
               </div>
             </article>
           {/each}
@@ -538,7 +558,12 @@
       {/if}
 
       {#if chatMessages.length > 0}
-        <ChatMessageList messages={chatMessages} sessionId={chat.sessionId} {mobile} />
+        <ChatMessageList
+          messages={chatMessages}
+          sessionId={chat.sessionId}
+          {mobile}
+          onPromoteToFlow={handlePromoteToFlow}
+        />
       {:else if showChatEmptyState}
       <div
         class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"

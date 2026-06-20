@@ -573,11 +573,12 @@ async fn main() -> Result<()> {
         },
     );
 
-    let workflow_router = medousa::workflow_handlers::workflow_router(
-        medousa::workflow_handlers::WorkflowApiState {
-            composition: Arc::new(state.composition().clone()),
-        },
-    );
+    let workflow_state = medousa::workflow_handlers::WorkflowApiState {
+        composition: Arc::new(state.composition().clone()),
+    };
+    let workflow_router = medousa::workflow_handlers::workflow_router(workflow_state.clone());
+    let tool_history_router =
+        medousa::tool_history_handlers::tool_history_router(workflow_state);
 
     let policy_router = Router::new()
         .route(
@@ -780,6 +781,7 @@ async fn main() -> Result<()> {
         .merge(capability_router)
         .merge(grapheme_router)
         .merge(workflow_router)
+        .merge(tool_history_router)
         .merge(policy_router)
         .merge(vault_router)
         .merge(medousa::locus_handlers::locus_router(

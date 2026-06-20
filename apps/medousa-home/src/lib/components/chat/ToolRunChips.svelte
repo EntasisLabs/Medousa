@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { ChevronDown, Route } from "@lucide/svelte";
+  import { ChevronDown, Route, Workflow } from "@lucide/svelte";
   import type { ToolRunState } from "$lib/types/chat";
+  import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
+  import { sliceRefFromChatToolRun } from "$lib/types/toolHistory";
   import type { ToolLineageSegment } from "$lib/utils/toolRunLineage";
   import {
     buildToolLineage,
@@ -13,13 +15,21 @@
 
   interface Props {
     runs: ToolRunState[];
-    /** Smaller timeline typography (e.g. ask rails); does not affect collapse behavior. */
+    sessionId?: string;
+    turnIndex?: number | null;
+    onPromoteToFlow?: (ref: ToolHistorySliceRef) => void | Promise<void>;
     compact?: boolean;
-    /** Collapse completed tool runs behind a summary badge; false while streaming shows the live timeline. */
     inspectorCollapsed?: boolean;
   }
 
-  let { runs, compact = false, inspectorCollapsed = true }: Props = $props();
+  let {
+    runs,
+    sessionId,
+    turnIndex = null,
+    onPromoteToFlow,
+    compact = false,
+    inspectorCollapsed = true,
+  }: Props = $props();
 
   const lineage = $derived(buildToolLineage(runs));
   const toolCount = $derived(runs.length);
@@ -68,6 +78,24 @@
       <p class="text-surface-500">
         {run.artifactRefs.length} receipt{run.artifactRefs.length === 1 ? "" : "s"}
       </p>
+    {/if}
+    {#if onPromoteToFlow && sessionId && turnIndex && run.status !== "running"}
+      <button
+        type="button"
+        class="workshop-text-action mt-1 inline-flex items-center gap-1 text-[10px]"
+        onclick={() =>
+          void onPromoteToFlow(
+            sliceRefFromChatToolRun({
+              sessionId,
+              turnIndex,
+              runId: run.runId,
+              toolRound: run.round,
+            }),
+          )}
+      >
+        <Workflow class="h-3 w-3" strokeWidth={2} />
+        Save as flow step
+      </button>
     {/if}
   </div>
 {/snippet}

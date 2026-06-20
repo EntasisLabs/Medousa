@@ -3,6 +3,7 @@ import {
   listWorkflowRuns,
   listWorkflows,
   planWorkflow,
+  promoteWorkflowFromSlice,
   runWorkflow,
   scheduleWorkflow,
 } from "$lib/daemon";
@@ -21,6 +22,7 @@ import {
 } from "$lib/types/workflow";
 import type { RecurringRunEntry } from "$lib/types/recurring";
 import type { AutomationDeliveryMode } from "$lib/types/recurring";
+import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
 
 export class FlowsStore {
   workflows = $state<WorkflowListEntry[]>([]);
@@ -228,6 +230,22 @@ export class FlowsStore {
     } finally {
       this.scheduling = false;
     }
+  }
+
+  async applyFromSliceRefs(refs: ToolHistorySliceRef[], name?: string) {
+    this.actionMessage = null;
+    const response = await promoteWorkflowFromSlice({ refs, name: name ?? null, run: false });
+    this.composerDraft = {
+      ...emptyFlowDraft(),
+      name: response.draft.name ?? "",
+      steps: response.draft.steps,
+    };
+    this.lastPlan = null;
+    this.composerOpen = true;
+    if (response.notes.length > 0) {
+      this.actionMessage = response.notes.join(" · ");
+    }
+    return response;
   }
 
   async rerun(request: WorkflowRunRequest) {

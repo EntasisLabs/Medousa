@@ -1081,6 +1081,22 @@ pub enum WorkflowStepSpecDto {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effect_class: Option<String>,
     },
+    ToolReplay {
+        id: String,
+        tool_name: String,
+        #[serde(default)]
+        input: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_round: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        #[serde(default)]
+        requires_confirm: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1227,6 +1243,61 @@ pub struct WorkflowRunsResponse {
     pub workflow_id: String,
     pub count: usize,
     pub runs: Vec<RecurringRunEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolHistoryRunEntry {
+    pub entry_id: String,
+    pub session_id: String,
+    pub slice_id: String,
+    pub turn_index: usize,
+    pub tool_round: usize,
+    pub run_id: String,
+    pub tool_name: String,
+    pub status: String,
+    pub input_summary: String,
+    pub sanitized_input: serde_json::Value,
+    pub args_hash: String,
+    pub redacted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_preview: Option<String>,
+    pub timestamp: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolHistoryListResponse {
+    pub count: usize,
+    pub runs: Vec<ToolHistoryRunEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolHistorySliceRef {
+    pub session_id: String,
+    pub slice_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_round: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowFromSliceRequest {
+    pub refs: Vec<ToolHistorySliceRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub run: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowFromSliceResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+    pub draft: WorkflowRunRequest,
+    pub promoted_count: usize,
+    pub notes: Vec<String>,
 }
 
 // ── Identity & artifacts ──────────────────────────────────────────────────────

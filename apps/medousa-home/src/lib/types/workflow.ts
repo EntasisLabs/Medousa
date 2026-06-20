@@ -24,10 +24,23 @@ export interface WorkflowStepMcp {
   effect_class?: string | null;
 }
 
+export interface WorkflowStepToolReplay {
+  kind: "tool_replay";
+  id: string;
+  tool_name: string;
+  input?: Record<string, unknown>;
+  session_id?: string | null;
+  slice_id?: string | null;
+  tool_round?: number | null;
+  run_id?: string | null;
+  requires_confirm?: boolean;
+}
+
 export type WorkflowStepSpec =
   | WorkflowStepGrapheme
   | WorkflowStepPrompt
-  | WorkflowStepMcp;
+  | WorkflowStepMcp
+  | WorkflowStepToolReplay;
 
 export interface WorkflowRunRequest {
   name?: string | null;

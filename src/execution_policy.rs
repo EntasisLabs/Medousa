@@ -95,6 +95,7 @@ pub fn classify_workflow_step(step: &WorkflowStepSpec) -> StepExecutionClass {
             }
             _ => StepExecutionClass::Mutating,
         },
+        WorkflowStepSpec::ToolReplay { .. } => StepExecutionClass::Mutating,
     }
 }
 
@@ -113,6 +114,7 @@ pub fn step_references_prior_outputs(step: &WorkflowStepSpec) -> bool {
             values
         }
         WorkflowStepSpec::Mcp { args, .. } => vec![args.to_string()],
+        WorkflowStepSpec::ToolReplay { input, .. } => vec![input.to_string()],
     };
 
     haystacks
