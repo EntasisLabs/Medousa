@@ -187,7 +187,7 @@ A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → 
 - [x] Phase C complete (heading ids, wikilink+heading scroll, unresolved affordance, TOC block)
 - [x] Phase D complete (mobile talk-about-note, proposal diff UX, scoped context chip)
 - [x] Phase E spec frozen + shipped (markdown kanban board editor)
-- [ ] Phase F spec frozen + shipped
+- [x] Phase F spec frozen + shipped (medousa-view query blocks)
 
 ---
 
@@ -206,6 +206,8 @@ A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → 
 | `utils/markdownKanban.ts` | Kanban board parse/serialize |
 | `components/vault/KanbanBoardEditor.svelte` | Board view editor |
 | `components/vault/LedgerTableEditor.svelte` | Precedent for structured markdown UI |
+| `utils/markdownView.ts` | View block parse/query/render |
+| `utils/resolveMedousaViews.ts` | Async source note fetch for views |
 | `utils/markdownTable.ts` | Table parse/replace |
 | `markdown/preprocess.ts` | Wikilink preprocessing |
 | `utils/resolveWikilink.ts` | Client wikilink resolution |

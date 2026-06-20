@@ -5,6 +5,8 @@
   import { hydrateMermaid } from "$lib/markdown/mermaid";
   import { vault } from "$lib/stores/vault.svelte";
   import { scrollToHeadingInContainer } from "$lib/utils/headingSlug";
+  import { hasMedousaViewBlocks } from "$lib/utils/markdownView";
+  import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
 
   interface Props {
@@ -17,6 +19,11 @@
   let { content, labelByPath, compact = false, onWikilink }: Props = $props();
 
   const body = $derived(stripFrontmatter(content).content);
+  const hasViewBlocks = $derived(hasMedousaViewBlocks(body));
+
+  let resolvedBody = $state("");
+  let viewsResolving = $state(false);
+  let resolveEpoch = 0;
 
   const renderOptions = $derived.by((): MarkdownRenderOptions => ({
     titleByPath: labelByPath,
@@ -25,8 +32,37 @@
   }));
 
   const previewHtml = $derived(
-    body ? renderMarkdownPreview(body, renderOptions) : "",
+    resolvedBody ? renderMarkdownPreview(resolvedBody, renderOptions) : "",
   );
+
+  $effect(() => {
+    const source = body;
+    const path = vault.selectedPath;
+    const fullContent = content;
+    vault.contentRevision;
+    labelByPath;
+
+    if (!hasMedousaViewBlocks(source)) {
+      resolvedBody = source;
+      viewsResolving = false;
+      return;
+    }
+
+    const epoch = ++resolveEpoch;
+    viewsResolving = true;
+    resolvedBody = "";
+    void resolveMedousaViews(source, {
+      sourcePath: path,
+      notes: vault.notes,
+      selectedPath: path,
+      selectedContent: fullContent,
+      labelByPath,
+    }).then((next) => {
+      if (epoch !== resolveEpoch) return;
+      resolvedBody = next;
+      viewsResolving = false;
+    });
+  });
 
   let container: HTMLElement | undefined = $state();
 
@@ -54,6 +90,14 @@
   }
 
   function handleClick(event: MouseEvent) {
+    const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
+    if (openSource) {
+      event.preventDefault();
+      const path = openSource.getAttribute("data-open-vault-note");
+      if (path) void vault.openNote(path);
+      return;
+    }
+
     const wikilink = (event.target as HTMLElement).closest("[data-wikilink]");
     if (wikilink && onWikilink) {
       event.preventDefault();
@@ -81,6 +125,13 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== "Enter" && event.key !== " ") return;
+    const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
+    if (openSource) {
+      event.preventDefault();
+      const path = openSource.getAttribute("data-open-vault-note");
+      if (path) void vault.openNote(path);
+      return;
+    }
     const wikilink = (event.target as HTMLElement).closest("[data-wikilink]");
     if (!wikilink || !onWikilink) return;
     event.preventDefault();
@@ -99,7 +150,9 @@
   onclick={handleClick}
   onkeydown={handleKeydown}
 >
-  {#if previewHtml}
+  {#if viewsResolving && hasViewBlocks && !previewHtml}
+    <p class="workshop-faint text-sm">Loading query views…</p>
+  {:else if previewHtml}
     {@html previewHtml}
   {:else}
     <p class="workshop-faint text-sm">Nothing to preview yet.</p>

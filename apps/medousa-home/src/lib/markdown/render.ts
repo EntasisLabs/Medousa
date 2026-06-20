@@ -120,6 +120,8 @@ function sanitizeHtml(html: string): string {
       "data-wikilink-unresolved",
       "data-heading-slug",
       "data-heading-link",
+      "data-open-vault-note",
+      "data-view-source",
       "id",
       "role",
       "tabindex",

@@ -58,6 +58,8 @@ export type VaultTemplateId =
   | "weekly"
   | "project"
   | "board"
+  | "database"
+  | "view"
   | "ledger"
   | "inbox"
   | "bug"
@@ -77,6 +79,8 @@ export const VAULT_TEMPLATES_BY_SPACE: Record<string, VaultTemplateOption[]> = {
   projects: [
     { id: "project", label: "Project" },
     { id: "board", label: "Kanban board" },
+    { id: "database", label: "Database table" },
+    { id: "view", label: "Query view" },
   ],
   finance: [{ id: "ledger", label: "Ledger" }],
   inbox: [{ id: "inbox", label: "Quick capture" }],
@@ -184,6 +188,38 @@ export function projectBoardTemplate(title: string): string {
   );
 }
 
+export function projectDatabaseTemplate(title: string): string {
+  const trimmed = title.trim() || "Database";
+  return withKind(
+    "project",
+    `# ${trimmed}
+
+| name | status | due |
+| ---- | ------ | --- |
+| Example row | doing | ${isoDateLocal()} |
+
+`,
+  );
+}
+
+export function projectViewTemplate(title: string): string {
+  const trimmed = title.trim() || "Active tasks";
+  return withKind(
+    "note",
+    `# ${trimmed}
+
+\`\`\`medousa-view
+from: projects/data.md
+table: first
+where: status != done
+sort: due
+columns: name, status, due
+\`\`\`
+
+`,
+  );
+}
+
 export function financeLedgerTemplate(title: string): string {
   const trimmed = title.trim() || "Ledger";
   return withKind(
@@ -235,6 +271,10 @@ export function contentForTemplate(
       return projectNoteTemplate(title);
     case "board":
       return projectBoardTemplate(title);
+    case "database":
+      return projectDatabaseTemplate(title);
+    case "view":
+      return projectViewTemplate(title);
     case "ledger":
       return financeLedgerTemplate(title);
     case "bug":

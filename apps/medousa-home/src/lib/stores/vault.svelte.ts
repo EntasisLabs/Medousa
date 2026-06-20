@@ -81,6 +81,7 @@ import {
   setNoteTitleInContent,
 } from "$lib/utils/vaultNoteTitle";
 import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
+import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -664,6 +665,7 @@ export class VaultStore {
         options?.force ? undefined : (this.contentHash ?? undefined),
       );
       this.applySaveResponse(response.note);
+      invalidateMedousaViewCache(this.selectedPath);
       this.clearProposal();
       this.markSaveEcho(this.selectedPath);
       this.flashSavedWhisper();
