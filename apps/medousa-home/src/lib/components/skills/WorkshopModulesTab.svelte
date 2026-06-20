@@ -1,5 +1,7 @@
 <script lang="ts">
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
+  import { prepareModuleInsert } from "$lib/grapheme/graphemeModuleSnippet";
+  import { formatGraphemeRunResult } from "$lib/grapheme/graphemeRunOutput";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeModuleSummary, GraphemeScriptEntry } from "$lib/types/grapheme";
@@ -124,6 +126,18 @@
       graphemeScriptEditor.sidePane = "diagnostics";
       await workshop.runScriptSource(body);
     }
+  }
+
+  function insertOpInEditor(op: string) {
+    subTab = "editor";
+    graphemeScriptEditor.ensureInitialTab();
+    if (selectedModuleId) {
+      graphemeScriptEditor.modulesPaneModuleId = selectedModuleId;
+    }
+    graphemeScriptEditor.sidePane = "modules";
+    const examples = workshop.moduleDetail?.examples ?? [];
+    const body = graphemeScriptEditor.activeTab?.body ?? "";
+    graphemeScriptEditor.queueInsert(prepareModuleInsert(body, op, examples));
   }
 </script>
 
@@ -393,6 +407,13 @@
                     <span class="text-[10px] uppercase tracking-wide text-surface-500">
                       {op.stability}
                     </span>
+                    <button
+                      type="button"
+                      class="workshop-text-action ml-auto text-[11px]"
+                      onclick={() => insertOpInEditor(op.op)}
+                    >
+                      Insert in editor
+                    </button>
                   </div>
                   <p class="workshop-faint mt-1">{op.output_type}</p>
                 </li>
@@ -523,10 +544,7 @@
           {#if workshop.runError}
             <p class="mt-3 text-xs text-error-400">{workshop.runError}</p>
           {:else if workshop.runResult}
-            <p class="mt-3 text-xs text-surface-300">
-              {workshop.runResult.result.succeeded ? "Succeeded" : "Failed"} · job
-              {workshop.runResult.result.job_id ?? "—"}
-            </p>
+            <pre class="grapheme-run-output mt-3 max-h-48 overflow-auto rounded-md border border-surface-500/35 p-2 font-mono text-[10px] leading-relaxed text-surface-200 whitespace-pre-wrap">{formatGraphemeRunResult(workshop.runResult.result)}</pre>
           {/if}
         {:else}
           <p class="workshop-muted text-sm">

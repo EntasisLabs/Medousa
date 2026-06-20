@@ -61,6 +61,20 @@
     view = undefined;
   });
 
+  export function insertText(text: string) {
+    if (!view || !text) return;
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert: text },
+      selection: { anchor: from + text.length },
+    });
+    onchange?.(view.state.doc.toString());
+  }
+
+  export function focusEditor() {
+    view?.focus();
+  }
+
   $effect(() => {
     if (!view || view.state.doc.toString() === value) return;
     view.dispatch({

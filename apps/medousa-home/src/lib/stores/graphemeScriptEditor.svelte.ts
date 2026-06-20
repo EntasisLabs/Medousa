@@ -35,7 +35,9 @@ export class GraphemeScriptEditorStore {
   activeTabId = $state<string | null>(null);
   lspWorkspace = $state<GraphemeLspWorkspaceResponse | null>(null);
   lspReady = $state(false);
-  sidePane = $state<"diagnostics" | "info">("diagnostics");
+  sidePane = $state<"diagnostics" | "info" | "modules">("diagnostics");
+  pendingInsert = $state<string | null>(null);
+  modulesPaneModuleId = $state<string | null>(null);
   compileResult = $state<import("$lib/types/grapheme").GraphemeCompileResponse | null>(
     null,
   );
@@ -219,6 +221,22 @@ export class GraphemeScriptEditorStore {
       tags: detail.script.tags,
       version: detail.script.version,
     });
+  }
+
+  queueInsert(text: string) {
+    this.pendingInsert = text;
+  }
+
+  clearPendingInsert() {
+    this.pendingInsert = null;
+  }
+
+  appendToActiveBody(text: string) {
+    const active = this.activeTab;
+    if (!active || !text) return;
+    const separator =
+      active.body.length === 0 ? "" : active.body.endsWith("\n") ? "" : "\n";
+    this.patchActiveTab({ body: `${active.body}${separator}${text}` });
   }
 }
 

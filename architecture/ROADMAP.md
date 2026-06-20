@@ -26,7 +26,7 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md)
 | W4 Flows from history | Tool slice → replay steps | ✅ |
 | W5 Grapheme depth | Save/compile/allowlist/WASM APIs | ✅ |
 | W5.5–W5.6 Script workshop | Tabs + CodeMirror + `grapheme-lsp` + vault chrome | ✅ |
-| W5.7 Workshop bridges | Add to flow; module insert from editor | 🔄 |
+| W5.7 Workshop bridges | Add to flow; module insert from editor | ✅ |
 
 ---
 

@@ -313,7 +313,7 @@
           </button>
         {/each}
       </div>
-    {:else}
+    {:else if activeTab === "skills"}
       <div class="mt-2 flex flex-wrap gap-1.5">
         {#each TOOL_FILTER_CHIPS as chip (chip.id)}
           <button

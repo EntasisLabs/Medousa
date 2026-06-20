@@ -449,7 +449,7 @@ flowchart LR
 | W5.4 | AOT / compile hints | Advanced compile path for repeat runs | ✅ |
 | W5.5 | Script editor shell | Vault-style chrome, tab strip, status bar, metadata drawer | ✅ |
 | W5.6 | LSP authoring | `grapheme-lsp` via daemon WebSocket; CodeMirror diagnostics/completion/hover | ✅ |
-| W5.7 | Workshop bridges | Run/save/allowlist/compile in editor; Add to flow; module insert | 🔄 (run/save/compile wired; flow + module insert pending) |
+| W5.7 | Workshop bridges | Run/save/allowlist/compile in editor; Add to flow; module insert | ✅ |
 
 **Exit:** Grapheme replaces OpenShell for typical automation users.
 

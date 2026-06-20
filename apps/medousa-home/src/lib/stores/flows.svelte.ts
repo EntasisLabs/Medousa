@@ -18,6 +18,7 @@ import type {
 } from "$lib/types/workflow";
 import {
   emptyFlowDraft,
+  newStepId,
   workflowRunRequestFromDraft,
 } from "$lib/types/workflow";
 import type { RecurringRunEntry } from "$lib/types/recurring";
@@ -96,6 +97,31 @@ export class FlowsStore {
     this.lastPlan = null;
     this.composerOpen = true;
     this.actionMessage = null;
+  }
+
+  openComposerWithGrapheme(source: string, scriptName?: string | null) {
+    const trimmed = source.trim();
+    if (!trimmed) {
+      throw new Error("Script source is empty.");
+    }
+    const label = scriptName?.trim() ?? "";
+    this.composerDraft = {
+      ...emptyFlowDraft(),
+      name: label,
+      goal: label ? `Flow using ${label}` : "Grapheme script step",
+      steps: [
+        {
+          kind: "grapheme",
+          id: newStepId("gph"),
+          source: trimmed,
+        },
+      ],
+    };
+    this.lastPlan = null;
+    this.composerOpen = true;
+    this.actionMessage = label
+      ? `Composer opened with ${label}`
+      : "Composer opened with Grapheme step";
   }
 
   closeComposer() {
