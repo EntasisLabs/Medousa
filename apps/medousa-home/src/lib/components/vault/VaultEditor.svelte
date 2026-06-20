@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { FileDown, MoreHorizontal, PanelLeftOpen } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -9,7 +9,6 @@
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
   import { formatCardTitle } from "$lib/utils/formatWork";
   import {
-    buildAskAboutNoteDraft,
     buildWorkAskFromNote,
     prepareTalkAboutNote,
   } from "$lib/utils/vaultNoteBridge";
@@ -29,6 +28,10 @@
   import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
   import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
+  import VaultFindBar from "./VaultFindBar.svelte";
+  import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
+  import { vaultFind } from "$lib/stores/vaultFind.svelte";
+  import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
 
   interface Props {
@@ -43,6 +46,7 @@
   let { visible, mobile = false, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
 
   let exportingPdf = $state(false);
+  let lastFindNotePath = $state<string | null>(null);
 
   const displayTitle = $derived(
     vault.selectedPath
@@ -118,10 +122,56 @@
       : [],
   );
 
+  const findSupported = $derived(
+    Boolean(vault.selectedPath) &&
+      !vault.noteLoading &&
+      (showMarkdownEditor ||
+        (showPreviewOnly && !showLedgerTable && !showKanbanBoard)),
+  );
+
+  const findSourceText = $derived(
+    showMarkdownEditor && vault.editorMode === "edit"
+      ? vault.content
+      : stripFrontmatter(vault.content).content,
+  );
+
+  const findMode = $derived<"edit" | "preview">(
+    showMarkdownEditor && vault.editorMode === "edit" ? "edit" : "preview",
+  );
+
+  const showNoteStatus = $derived(
+    Boolean(vault.selectedPath) &&
+      !vault.noteLoading &&
+      !showLedgerTable &&
+      !showKanbanBoard,
+  );
+
+  $effect(() => {
+    const path = vault.selectedPath;
+    if (path === lastFindNotePath) return;
+    lastFindNotePath = path;
+    vaultFind.reset();
+  });
+
   $effect(() => {
     if (vault.selectedPath && !mobile) {
       void workspace.prefetchVaultLinkedWork(vault.selectedPath);
     }
+  });
+
+  function syncFind() {
+    if (!vaultFind.open || !findSupported) return;
+    vaultFind.syncAndReveal(findMode);
+  }
+
+  $effect(() => {
+    if (!vaultFind.open || !findSupported) return;
+    vaultFind.query;
+    vaultFind.revealEpoch;
+    vaultFind.matchIndex;
+    vaultFind.sourceText;
+    findMode;
+    void tick().then(() => syncFind());
   });
 
   async function handleAskInChatTab() {
@@ -185,8 +235,31 @@
     }
   }
 
+  function handleFindShortcut(event: KeyboardEvent) {
+    if (!vault.selectedPath || !findSupported) return;
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
+    event.preventDefault();
+    event.stopPropagation();
+    vaultFind.setSourceText(findSourceText);
+    vaultFind.openFind();
+  }
+
   function handleKeydown(event: KeyboardEvent) {
-    if (!vault.selectedPath || mobile) return;
+    if (!vault.selectedPath) return;
+
+    if (vaultFind.open && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      vaultFind.close();
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      handleFindShortcut(event);
+      return;
+    }
+
+    if (mobile) return;
 
     const tag = (event.target as HTMLElement).tagName;
     const typing = tag === "TEXTAREA" || tag === "INPUT";
@@ -207,7 +280,7 @@
       return;
     }
 
-    if (event.key === "Escape" && vault.editorMode === "edit" && !typing) {
+    if (event.key === "Escape" && vault.editorMode === "edit" && !typing && !vaultFind.open) {
       if (vault.isWriteFirstKind && !vault.isAuthoringSource) {
         event.preventDefault();
         vault.enterPreviewMode();
@@ -221,8 +294,8 @@
   }
 
   onMount(() => {
-    window.addEventListener("keydown", handleKeydown);
-    return () => window.removeEventListener("keydown", handleKeydown);
+    window.addEventListener("keydown", handleKeydown, true);
+    return () => window.removeEventListener("keydown", handleKeydown, true);
   });
 </script>
 
@@ -252,8 +325,8 @@
         </div>
         {#if vault.selectedPath && vault.editorMode === "preview"}
           <p class="mt-1 text-[11px] text-surface-500">
-            Press <kbd class="vault-kbd">E</kbd> to edit · type <kbd class="vault-kbd">/</kbd> on a
-            new line for blocks
+            Press <kbd class="vault-kbd">E</kbd> to edit · <kbd class="vault-kbd">⌘F</kbd> to find
+            · type <kbd class="vault-kbd">/</kbd> on a new line for blocks
           </p>
         {/if}
       </div>
@@ -486,7 +559,8 @@
     </div>
   {:else}
     <div class="flex min-h-0 flex-1">
-      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         {#if showLedgerTable}
           <LedgerTableEditor
             content={vault.content}
@@ -528,6 +602,10 @@
             onWikilink={handleWikilink}
           />
         {/if}
+        </div>
+        {#if findSupported && vaultFind.open}
+          <VaultFindBar />
+        {/if}
       </div>
 
       {#if showLinksPanel}
@@ -539,6 +617,10 @@
         />
       {/if}
     </div>
+  {/if}
+
+  {#if showNoteStatus}
+    <VaultNoteStatusBar content={vault.content} editorMode={vault.editorMode} />
   {/if}
 
   {#if vault.selectedPath && !mobile && onOpenChat && !noteWorkshop.open}

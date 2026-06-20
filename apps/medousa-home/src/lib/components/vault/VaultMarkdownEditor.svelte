@@ -2,6 +2,8 @@
   import { tick, type Snippet } from "svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { vaultFind } from "$lib/stores/vaultFind.svelte";
+  import { syncTextareaFindScroll } from "$lib/utils/vaultFindInNote";
   import VaultFormatBar from "./VaultFormatBar.svelte";
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
   import VaultNotePicker from "./VaultNotePicker.svelte";
@@ -51,6 +53,7 @@
   }: Props = $props();
 
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
+  let textareaBackdropEl = $state<HTMLElement | null>(null);
   let slashMenuEl = $state<ReturnType<typeof VaultSlashMenu> | null>(null);
   let draft = $state("");
   let syncedKey = $state("");
@@ -82,6 +85,27 @@
     const result = insertTextAtCursor(draft, selectionStart, insert);
     void applyEdit(result);
   });
+
+  $effect(() => {
+    vaultFind.registerTextarea(textareaEl);
+    return () => vaultFind.registerTextarea(null);
+  });
+
+  $effect(() => {
+    vaultFind.registerTextareaBackdrop(textareaBackdropEl);
+    return () => vaultFind.registerTextareaBackdrop(null);
+  });
+
+  $effect(() => {
+    if (!vaultFind.open || vault.editorMode !== "edit") return;
+    draft;
+    vaultFind.setSourceText(draft);
+  });
+
+  function syncFindScroll() {
+    if (!textareaEl || !textareaBackdropEl || textareaBackdropEl.hidden) return;
+    syncTextareaFindScroll(textareaEl, textareaBackdropEl);
+  }
 
   function captureSelection() {
     if (!textareaEl) return;
@@ -164,6 +188,13 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      event.stopPropagation();
+      vaultFind.setSourceText(draft);
+      vaultFind.openFind();
+      return;
+    }
     if (slashMenuEl?.handleMenuKeydown(event)) {
       return;
     }
@@ -180,7 +211,9 @@
   }
 
   const textareaClass =
-    "vault-editor-textarea textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 text-sm leading-relaxed";
+    "vault-editor-textarea vault-find-editor-input textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 text-sm leading-relaxed";
+  const backdropClass =
+    "vault-find-editor-backdrop vault-editor-textarea textarea h-full w-full resize-none rounded-none border-0 bg-surface-950 text-sm leading-relaxed";
 </script>
 
 <div
@@ -209,13 +242,54 @@
         max={splitMax}
         onResize={onSplitResize}
       >
+        <div class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col">
+          <div
+            bind:this={textareaBackdropEl}
+            class={backdropClass}
+            hidden
+            aria-hidden="true"
+          ></div>
+          <textarea
+            bind:this={textareaEl}
+            class="{textareaClass} relative z-[1]"
+            bind:value={draft}
+            {disabled}
+            oninput={handleInput}
+            onkeydown={handleKeydown}
+            onscroll={syncFindScroll}
+            onselect={() => {
+              captureSelection();
+              syncSlashMenu();
+            }}
+            onkeyup={() => {
+              captureSelection();
+              syncSlashMenu();
+            }}
+            onmouseup={() => {
+              captureSelection();
+              syncSlashMenu();
+            }}
+            onclick={captureSelection}
+          ></textarea>
+        </div>
+      </SplitPane>
+      {@render preview()}
+    {:else}
+      <div class="vault-find-editor-shell relative flex min-h-0 flex-1 flex-col">
+        <div
+          bind:this={textareaBackdropEl}
+          class="{backdropClass} flex-1"
+          hidden
+          aria-hidden="true"
+        ></div>
         <textarea
           bind:this={textareaEl}
-          class={textareaClass}
+          class="{textareaClass} relative z-[1] flex-1"
           bind:value={draft}
           {disabled}
           oninput={handleInput}
           onkeydown={handleKeydown}
+          onscroll={syncFindScroll}
           onselect={() => {
             captureSelection();
             syncSlashMenu();
@@ -230,30 +304,7 @@
           }}
           onclick={captureSelection}
         ></textarea>
-      </SplitPane>
-      {@render preview()}
-    {:else}
-      <textarea
-        bind:this={textareaEl}
-        class="{textareaClass} flex-1"
-        bind:value={draft}
-        {disabled}
-        oninput={handleInput}
-        onkeydown={handleKeydown}
-        onselect={() => {
-          captureSelection();
-          syncSlashMenu();
-        }}
-        onkeyup={() => {
-          captureSelection();
-          syncSlashMenu();
-        }}
-        onmouseup={() => {
-          captureSelection();
-          syncSlashMenu();
-        }}
-        onclick={captureSelection}
-      ></textarea>
+      </div>
     {/if}
   </div>
 </div>

@@ -3916,6 +3916,87 @@
     @apply px-3 pb-3 text-xs text-surface-500;
   }
 
+  .vault-find-bar {
+    @apply pointer-events-auto absolute right-3 top-2.5 z-[90] flex max-w-[min(100%-1.5rem,20rem)] items-center rounded-md border border-surface-500/35 py-0.5 pl-2 pr-0.5 shadow-lg;
+    background-color: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(8px);
+  }
+
+  .vault-find-input {
+    @apply min-w-[6.5rem] flex-1 border-0 bg-transparent py-1 text-[13px] text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-0;
+  }
+
+  .vault-find-divider {
+    @apply mx-0.5 h-3.5 w-px shrink-0 bg-surface-500/35;
+  }
+
+  .vault-find-status {
+    @apply shrink-0 px-1 text-[11px] tabular-nums text-surface-500;
+    min-width: 3.25rem;
+    text-align: center;
+  }
+
+  .vault-find-nav {
+    @apply flex shrink-0 items-center;
+  }
+
+  .vault-find-btn {
+    @apply inline-flex h-6 w-6 items-center justify-center rounded text-surface-400 transition hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-30;
+  }
+
+  ::highlight(medousa-vault-find) {
+    background-color: rgb(var(--color-warning-400) / 0.42);
+    color: inherit;
+  }
+
+  ::highlight(medousa-vault-find-active) {
+    background-color: rgb(var(--color-warning-300) / 0.92);
+    color: rgb(var(--color-surface-950));
+  }
+
+  .vault-find-editor-shell {
+    @apply relative min-h-0;
+  }
+
+  .vault-find-editor-backdrop {
+    @apply pointer-events-none absolute inset-0 z-0 overflow-auto whitespace-pre-wrap break-words text-surface-100;
+  }
+
+  .vault-find-editor-backdrop mark.vault-find-mark {
+    @apply rounded-[2px];
+    color: rgb(var(--color-surface-100));
+    background-color: rgb(var(--color-warning-400) / 0.42);
+  }
+
+  .vault-find-editor-backdrop mark.vault-find-mark-active {
+    color: rgb(var(--color-surface-950));
+    background-color: rgb(var(--color-warning-300) / 0.92);
+    box-shadow: 0 0 0 1px rgb(var(--color-warning-200) / 0.55);
+  }
+
+  .vault-find-editor-input--active {
+    color: transparent !important;
+    caret-color: rgb(var(--color-surface-100));
+    background-color: transparent !important;
+  }
+
+  .vault-find-editor-input--active::selection {
+    background-color: rgb(var(--color-warning-300) / 0.55);
+    color: transparent;
+  }
+
+  .vault-note-status {
+    @apply h-7 shrink-0 justify-between px-4 text-[11px];
+  }
+
+  .vault-find-mark {
+    @apply rounded-sm bg-warning-500/35 text-inherit;
+  }
+
+  .vault-find-mark-active {
+    @apply bg-warning-400/55 ring-1 ring-warning-300/40;
+  }
+
   .profiles-panel {
     @apply min-h-0;
     background-color: rgb(var(--color-surface-950));

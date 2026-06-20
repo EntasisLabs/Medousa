@@ -5,6 +5,11 @@
   import { hydrateLocalImages } from "$lib/markdown/hydrateLocalImages";
   import { hydrateMermaid } from "$lib/markdown/mermaid";
   import { vault } from "$lib/stores/vault.svelte";
+  import { vaultFind } from "$lib/stores/vaultFind.svelte";
+  import {
+    clearFindHighlights,
+    renderedPlainText,
+  } from "$lib/utils/vaultFindInNote";
   import { scrollToHeadingInContainer } from "$lib/utils/headingSlug";
   import { hasMedousaViewBlocks } from "$lib/utils/markdownView";
   import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
@@ -111,6 +116,27 @@
     });
   });
 
+  $effect(() => {
+    vaultFind.registerPreview(container ?? null);
+    return () => vaultFind.registerPreview(null);
+  });
+
+  $effect(() => {
+    if (!container) return;
+    if (!vaultFind.open || vault.editorMode === "edit") {
+      clearFindHighlights(container);
+    }
+  });
+
+  $effect(() => {
+    previewHtml;
+    if (!container || !vaultFind.open || vault.editorMode === "edit") return;
+    void tick().then(() => {
+      if (!container || !vaultFind.open || vault.editorMode === "edit") return;
+      vaultFind.setSourceText(renderedPlainText(container));
+    });
+  });
+
   function scrollFromLink(raw: string | null | undefined) {
     if (!raw || !container) return;
     scrollToHeadingInContainer(container, raw.startsWith("#") ? raw.slice(1) : raw);
@@ -182,6 +208,15 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (container) {
+        vaultFind.setSourceText(renderedPlainText(container));
+      }
+      vaultFind.openFind();
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
     if (openSource) {
