@@ -13,6 +13,7 @@ const DARK_MODE_KEY = "medousa-home-dark-mode";
 const COLOR_THEME_KEY = "medousa-home-color-theme";
 const NOTIFICATIONS_KEY = "medousa-home-notifications";
 const TECHNICAL_ACTIVITY_KEY = "medousa-home-technical-activity";
+const WORKSHOP_GUIDANCE_KEY = "medousa-home-workshop-guidance";
 const ENGINE_DETAILS_KEY = "medousa-home-engine-details-chat";
 const WORK_HIDE_HOURS_KEY = "medousa-home-work-hide-hours";
 const WORK_WIPE_DAYS_KEY = "medousa-home-work-wipe-days";
@@ -25,6 +26,8 @@ export class SettingsStore {
   colorTheme = $state(loadColorTheme());
   notificationsEnabled = $state(loadNotifications());
   showTechnicalActivity = $state(loadTechnicalActivity());
+  /** Journey steps, recipe cards, and friendly run summaries in Workshop / Automations. */
+  showWorkshopGuidance = $state(loadWorkshopGuidance());
   /** Show orchestrator/fallback/tool telemetry in chat (hidden by default; never deleted from history). */
   showEngineDetailsInChat = $state(loadEngineDetailsInChat());
   workCardHideAfterHours = $state(loadWorkCardHideAfterHours());
@@ -68,6 +71,16 @@ export class SettingsStore {
   setShowTechnicalActivity(enabled: boolean) {
     this.showTechnicalActivity = enabled;
     localStorage.setItem(TECHNICAL_ACTIVITY_KEY, enabled ? "1" : "0");
+  }
+
+  setShowWorkshopGuidance(enabled: boolean) {
+    this.showWorkshopGuidance = enabled;
+    localStorage.setItem(WORKSHOP_GUIDANCE_KEY, enabled ? "1" : "0");
+    if (enabled) {
+      void import("$lib/config/workshopGuidance").then(({ resetWorkshopJourneyDismissed }) =>
+        resetWorkshopJourneyDismissed(),
+      );
+    }
   }
 
   setShowEngineDetailsInChat(enabled: boolean) {
@@ -126,6 +139,11 @@ function loadColorTheme(): ColorThemeId {
 function loadTechnicalActivity(): boolean {
   if (typeof localStorage === "undefined") return false;
   return localStorage.getItem(TECHNICAL_ACTIVITY_KEY) === "1";
+}
+
+function loadWorkshopGuidance(): boolean {
+  if (typeof localStorage === "undefined") return true;
+  return localStorage.getItem(WORKSHOP_GUIDANCE_KEY) !== "0";
 }
 
 function loadEngineDetailsInChat(): boolean {

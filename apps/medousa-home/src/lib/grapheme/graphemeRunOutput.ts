@@ -48,6 +48,84 @@ function extractOutputText(payload: unknown): string | null {
   return readText(JSON.stringify(record));
 }
 
+export interface ParsedGraphemeRunResult {
+  succeeded: boolean;
+  headline: string;
+  summary: string | null;
+  details: string | null;
+}
+
+export function parseGraphemeRunResult(
+  result: GraphemeRunResponse["result"] | null | undefined,
+): ParsedGraphemeRunResult | null {
+  if (!result) return null;
+
+  const succeeded = result.succeeded ?? false;
+  const headline = succeeded ? "It worked" : "Something went wrong";
+
+  const diagnostics = result.diagnostics;
+  if (diagnostics == null) {
+    return {
+      succeeded,
+      headline,
+      summary: succeeded
+        ? "Your script finished without errors."
+        : result.attempt_outcome ?? "The run did not complete.",
+      details: result.attempt_outcome ? `Outcome: ${result.attempt_outcome}` : null,
+    };
+  }
+
+  if (typeof diagnostics === "string") {
+    const text = readText(diagnostics);
+    return {
+      succeeded,
+      headline,
+      summary: text ?? (succeeded ? "Run completed." : "Run failed."),
+      details: null,
+    };
+  }
+
+  const record = diagnostics as Record<string, unknown>;
+  const finalState = record.final_state ?? record.finalState;
+  const outputText = extractOutputText(record);
+
+  if (outputText) {
+    return {
+      succeeded,
+      headline,
+      summary: outputText.length > 280 ? `${outputText.slice(0, 277)}…` : outputText,
+      details:
+        finalState !== undefined
+          ? JSON.stringify(finalState, null, 2)
+          : JSON.stringify(record, null, 2),
+    };
+  }
+
+  if (finalState !== undefined) {
+    const pretty = JSON.stringify(finalState, null, 2);
+    const firstLine = pretty.split("\n").find((line) => line.trim()) ?? pretty;
+    return {
+      succeeded,
+      headline,
+      summary:
+        firstLine.length > 120
+          ? "Your script returned structured data — expand for details."
+          : firstLine.trim(),
+      details: pretty,
+    };
+  }
+
+  const pretty = JSON.stringify(record, null, 2);
+  return {
+    succeeded,
+    headline,
+    summary: succeeded
+      ? "Your script finished. Expand technical details below."
+      : "The run failed. Expand technical details below.",
+    details: pretty,
+  };
+}
+
 export function formatGraphemeRunResult(
   result: GraphemeRunResponse["result"] | null | undefined,
 ): string {

@@ -2,16 +2,23 @@
   import { onMount } from "svelte";
   import { Plus, X } from "@lucide/svelte";
   import GraphemeCodeMirror from "$lib/components/grapheme/GraphemeCodeMirror.svelte";
+  import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
+  import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
+  import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
   import { connectGraphemeLspClient } from "$lib/grapheme/lspClient";
   import { promoteScriptToFlow } from "$lib/grapheme/graphemeFlowBridge";
   import { prepareModuleInsert } from "$lib/grapheme/graphemeModuleSnippet";
-  import { formatGraphemeRunResult } from "$lib/grapheme/graphemeRunOutput";
+  import {
+    applyRecipeToEditor,
+    type GraphemeRecipe,
+  } from "$lib/grapheme/graphemeRecipes";
   import {
     compileGraphemeSource,
     getGraphemeLspWorkspace,
     saveGraphemeScript,
   } from "$lib/daemon";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
 
@@ -26,6 +33,7 @@
   let codeMirror = $state<GraphemeCodeMirror | undefined>();
   let modulePickerId = $state("");
   let flowError = $state<string | null>(null);
+  let showAdvancedActions = $state(false);
 
   onMount(() => {
     void getGraphemeLspWorkspace().then((workspace) => {
@@ -62,10 +70,11 @@
     graphemeScriptEditor.clearPendingInsert();
   });
 
-  const runOutputText = $derived(
-    workshop.runError
-      ? null
-      : formatGraphemeRunResult(workshop.runResult?.result),
+  const showRecipePicker = $derived(
+    Boolean(
+      graphemeScriptEditor.activeTab &&
+        !graphemeScriptEditor.activeTab.body.trim(),
+    ),
   );
 
   const moduleDetail = $derived(workshop.moduleDetail);
@@ -94,6 +103,13 @@
     graphemeScriptEditor.queueInsert(
       prepareModuleInsert(body, op, moduleExamples),
     );
+  }
+
+  function startFromRecipe(recipe: GraphemeRecipe) {
+    graphemeScriptEditor.ensureInitialTab();
+    graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
+    graphemeScriptEditor.sidePane = "diagnostics";
+    flowError = null;
   }
 
   function addActiveScriptToFlow() {
@@ -166,10 +182,8 @@
   <header class="workshop-header shrink-0 border-b border-surface-500/40 px-4 py-3">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="text-sm font-semibold text-surface-50">Script workshop</p>
-        <p class="workshop-header-line mt-0.5">
-          Grapheme scripts with LSP completion, diagnostics, and run/save policy
-        </p>
+        <p class="text-sm font-semibold text-surface-50">Script editor</p>
+        <p class="workshop-header-line mt-0.5">Grapheme · run, save, add to flow</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button
@@ -191,33 +205,46 @@
         <button
           type="button"
           class="btn btn-sm variant-soft-surface"
-          disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
-          onclick={() => void compileActive("check")}
-        >
-          Check
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface"
-          disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
-          onclick={() => void compileActive("aot")}
-        >
-          AOT
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface"
           disabled={workshop.runBusy || !graphemeScriptEditor.activeTab?.body.trim()}
           onclick={() => void runActive()}
         >
           {workshop.runBusy ? "Running…" : "Run"}
         </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-soft-surface"
+          disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+          onclick={() => void compileActive("check")}
+        >
+          Compile
+        </button>
+        <button
+          type="button"
+          class="workshop-text-action btn btn-sm variant-ghost-surface text-[11px]"
+          onclick={() => (showAdvancedActions = !showAdvancedActions)}
+        >
+          {showAdvancedActions ? "Less" : "Advanced"}
+        </button>
+        {#if showAdvancedActions}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            disabled={graphemeScriptEditor.compileBusy || !graphemeScriptEditor.activeTab?.body.trim()}
+            onclick={() => void compileActive("aot")}
+          >
+            Optimize (AOT)
+          </button>
+        {/if}
       </div>
     </div>
 
     {#if flowError}
       <p class="mt-2 text-xs text-error-400">{flowError}</p>
     {/if}
+
+    <div class="mt-3 px-1">
+      <WorkshopJourneyBanner compact />
+    </div>
 
     <div class="mt-3 flex items-center gap-1 overflow-x-auto border-b border-surface-600/50 pb-px">
       {#each graphemeScriptEditor.tabs as tab (tab.tabId)}
@@ -259,6 +286,16 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {#if showRecipePicker && settings.showWorkshopGuidance}
+        <div class="shrink-0 border-b border-surface-500/35 px-4 py-3">
+          <GraphemeRecipeCards
+            compact
+            title="Starter recipes"
+            hint="Optional — or type in the editor below."
+            onselect={startFromRecipe}
+          />
+        </div>
+      {/if}
       {#if graphemeScriptEditor.activeTab && graphemeScriptEditor.activeDocumentUri}
         {#key `${graphemeScriptEditor.activeTab.tabId}:${graphemeScriptEditor.activeDocumentUri}:${lspClient ? "lsp" : "plain"}`}
           <GraphemeCodeMirror
@@ -408,19 +445,23 @@
           {/each}
         </div>
       {:else if lspError}
-        <p class="mt-4 text-sm text-warning-400">LSP: {lspError}</p>
+        <p class="mt-4 text-sm text-warning-400">Smart editing unavailable: {lspError}</p>
       {:else if graphemeScriptEditor.lspReady}
         <p class="workshop-muted mt-4 text-sm">
-          LSP connected — parse errors and completions appear inline.
+          Tips and completions appear as you type.
         </p>
       {:else}
-        <p class="workshop-muted mt-4 text-sm">Connecting to Grapheme LSP…</p>
+        <p class="workshop-muted mt-4 text-sm">Loading editor helpers…</p>
       {/if}
 
-      {#if workshop.runError}
-        <p class="mt-4 text-xs text-error-400">{workshop.runError}</p>
-      {:else if runOutputText}
-        <pre class="grapheme-run-output mt-4 max-h-72 overflow-auto rounded-md border border-surface-500/35 p-3 font-mono text-[11px] leading-relaxed text-surface-200 whitespace-pre-wrap">{runOutputText}</pre>
+      {#if workshop.runResult || workshop.runError || (!graphemeScriptEditor.compileResult && !graphemeScriptEditor.compileError)}
+        <GraphemeRunResultCard
+          result={workshop.runResult?.result}
+          error={workshop.runError}
+          emptyMessage={showRecipePicker
+            ? "Pick a recipe, then hit Try it."
+            : "Hit Try it to see results here."}
+        />
       {/if}
       {#if graphemeScriptEditor.saveError}
         <p class="mt-4 text-xs text-error-400">{graphemeScriptEditor.saveError}</p>
@@ -435,7 +476,7 @@
           {graphemeScriptEditor.activeTab.dirty ? "Modified · " : ""}
           {graphemeScriptEditor.activeTab.body.split("\n").length} lines
           {#if graphemeScriptEditor.lspReady}
-            · LSP on
+            · completions on
           {/if}
         {:else}
           No active script

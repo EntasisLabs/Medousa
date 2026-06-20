@@ -1,8 +1,15 @@
 <script lang="ts">
-  import { flowDraft } from "$lib/stores/flowDraft.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { flowDraft } from "$lib/stores/flowDraft.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import { toolHistory } from "$lib/stores/toolHistory.svelte";
+  import { sliceRefFromRun, type ToolHistoryRunEntry } from "$lib/types/toolHistory";
   import { formatToolName } from "$lib/utils/formatTurn";
+  import {
+    humanToolRunDetail,
+    humanToolRunHeadline,
+    suggestFlowNameFromRun,
+  } from "$lib/utils/toolHistorySummary";
 
   interface Props {
     visible: boolean;
@@ -27,6 +34,7 @@
         entry.session_id,
         entry.slice_id,
         entry.session_preview ?? "",
+        humanToolRunHeadline(entry),
       ]
         .join(" ")
         .toLowerCase();
@@ -57,6 +65,23 @@
     flowDraft.clear();
     onOpenFlows?.();
   }
+
+  async function automateEntry(entry: ToolHistoryRunEntry) {
+    const name = suggestFlowNameFromRun(entry);
+    const response = await toolHistory.promoteRef(sliceRefFromRun(entry), name);
+    flows.composerDraft = {
+      name: response.draft.name ?? name,
+      goal: settings.showWorkshopGuidance
+        ? `Repeat: ${humanToolRunHeadline(entry)}`
+        : "",
+      steps: response.draft.steps,
+      cron_expr: "0 9 * * *",
+      timezone: "UTC",
+    };
+    flows.lastPlan = null;
+    flows.composerOpen = true;
+    onOpenFlows?.();
+  }
 </script>
 
 <section
@@ -65,17 +90,17 @@
   <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
     {#if !embedded}
       <p class="workshop-header-line">
-        Receipt-grade tool runs across sessions — promote to flows
+        Tool runs from chat — promote to a flow
       </p>
     {/if}
 
     <label class="cron-search mt-3 block">
-      <span class="sr-only">Search tool history</span>
+      <span class="sr-only">Search activity</span>
       <div class="composer-bar cron-search-bar {mobile ? 'composer-bar-mobile' : ''}">
         <input
           class="cron-search-input"
           type="search"
-          placeholder="Search tools, sessions, slices…"
+          placeholder="Search tools, args, slice ids…"
           bind:value={search}
           autocapitalize="off"
           autocorrect="off"
@@ -92,7 +117,7 @@
             <input
               class="cron-field-input"
               bind:value={flowName}
-              placeholder="Replay Tuesday research"
+              placeholder="Repeat Tuesday research"
               spellcheck="false"
             />
           </div>
@@ -126,20 +151,20 @@
 
   <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3">
     {#if toolHistory.loading && toolHistory.runs.length === 0}
-      <p class="workshop-muted">Loading tool history…</p>
+      <p class="workshop-muted">Loading recent activity…</p>
     {:else if toolHistory.error}
       <p class="text-sm text-warning-400">{toolHistory.error}</p>
     {:else if filtered.length === 0}
       <p class="workshop-muted">
         {search.trim()
-          ? "No tool runs match your search."
-          : "No indexed tool runs yet. Use tools in chat — runs appear here for replay."}
+          ? "Nothing matches that search."
+          : "No tool runs yet. Successful chat tools appear here for replay and flow promotion."}
       </p>
     {:else}
       <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
         {#each filtered as entry (entry.entry_id)}
-          <li>
-            <label class="flex cursor-pointer items-start gap-3 px-2 py-2.5 hover:bg-surface-800/70">
+          <li class="px-2 py-3">
+            <div class="flex items-start gap-3">
               <input
                 type="checkbox"
                 class="mt-1"
@@ -148,27 +173,54 @@
               />
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <p class="font-medium text-surface-100">
+                  <p class="text-sm font-medium leading-snug text-surface-50">
                     {formatToolName(entry.tool_name)}
                   </p>
-                  <span class="workshop-faint">{toolHistory.statusLabel(entry.status)}</span>
+                  <span
+                    class="text-[10px] uppercase tracking-wide {entry.status === 'succeeded'
+                      ? 'text-success-400/90'
+                      : entry.status === 'failed'
+                        ? 'text-error-400'
+                        : 'text-surface-500'}"
+                  >
+                    {toolHistory.statusLabel(entry.status)}
+                  </span>
                   {#if entry.redacted}
                     <span class="rounded bg-warning-500/15 px-1.5 py-0.5 text-[10px] text-warning-300">
                       redacted
                     </span>
                   {/if}
                 </div>
-                <p class="workshop-faint mt-0.5 truncate text-[11px]">
-                  {entry.input_summary}
-                </p>
+                {#if settings.showWorkshopGuidance}
+                  <p class="workshop-faint mt-1 text-[11px] leading-snug">
+                    {humanToolRunHeadline(entry)}
+                  </p>
+                {/if}
                 <p class="workshop-faint mt-1 font-mono text-[10px]">
-                  {entry.slice_id} · {entry.session_id}
+                  {humanToolRunDetail(entry)} · {toolHistory.formatTimestamp(entry.timestamp)}
                 </p>
+                {#if entry.input_summary.trim()}
+                  <details class="mt-2">
+                    <summary class="workshop-text-action cursor-pointer text-[10px]">
+                      Input
+                    </summary>
+                    <p class="workshop-faint mt-1 font-mono text-[10px] break-all">
+                      {entry.input_summary}
+                    </p>
+                  </details>
+                {/if}
+                {#if entry.status === "succeeded"}
+                  <button
+                    type="button"
+                    class="workshop-text-action mt-2 text-[11px]"
+                    disabled={toolHistory.promoting}
+                    onclick={() => void automateEntry(entry)}
+                  >
+                    → Flow
+                  </button>
+                {/if}
               </div>
-              <p class="workshop-faint shrink-0 text-[11px]">
-                {toolHistory.formatTimestamp(entry.timestamp)}
-              </p>
-            </label>
+            </div>
           </li>
         {/each}
       </ul>

@@ -1,8 +1,11 @@
 <script lang="ts">
   import FlowComposer from "$lib/components/automations/FlowComposer.svelte";
+  import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import type { GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import type { WorkflowListEntry } from "$lib/types/workflow";
 
   interface Props {
@@ -93,6 +96,10 @@
       queue: "default",
     });
   }
+
+  function startFlowFromRecipe(recipe: GraphemeRecipe) {
+    flows.openComposerWithRecipe(recipe);
+  }
 </script>
 
 <section
@@ -106,7 +113,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p class="workshop-header-line">
-              Multi-step Grapheme, MCP, and prompt workflows
+              Workflows — run once or on a schedule
             </p>
           </div>
           <button
@@ -158,11 +165,31 @@
       {:else if flows.error}
         <p class="text-sm text-warning-400">{flows.error}</p>
       {:else if filtered.length === 0}
-        <p class="workshop-muted">
-          {search.trim()
-            ? "No flows match your search."
-            : "No flows yet. Compose one or plan from a goal."}
-        </p>
+        <div class="space-y-4">
+          <p class="text-sm text-surface-200">
+            {search.trim()
+              ? "No flows match your search."
+              : "No flows yet."}
+          </p>
+          {#if !search.trim() && settings.showWorkshopGuidance}
+            <GraphemeRecipeCards compact onselect={startFlowFromRecipe} />
+            <button
+              type="button"
+              class="btn btn-sm variant-soft-primary"
+              onclick={() => flows.openComposer()}
+            >
+              New flow
+            </button>
+          {:else if !search.trim()}
+            <button
+              type="button"
+              class="btn btn-sm variant-soft-primary"
+              onclick={() => flows.openComposer()}
+            >
+              New flow
+            </button>
+          {/if}
+        </div>
       {:else}
         <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
           {#each filtered as entry (entry.workflow_id)}
@@ -229,7 +256,7 @@
       {#if flows.composerOpen}
         <h2 class="workshop-section-title">New flow</h2>
         <p class="workshop-faint mt-1 text-xs">
-          Compose steps, plan from natural language, run or schedule.
+          Name it, add steps, try it, then schedule it.
         </p>
         <div class="mt-4">
           <FlowComposer
@@ -385,7 +412,7 @@
         </div>
       {:else}
         <p class="workshop-muted text-sm">
-          Select a flow to inspect steps and runs — or compose a new one.
+          Pick a flow on the left to see what it does — or use + New flow to start fresh.
         </p>
       {/if}
     </aside>

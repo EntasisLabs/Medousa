@@ -1,7 +1,11 @@
 <script lang="ts">
+  import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
+  import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
+  import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import { applyRecipeToEditor, type GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import { prepareModuleInsert } from "$lib/grapheme/graphemeModuleSnippet";
-  import { formatGraphemeRunResult } from "$lib/grapheme/graphemeRunOutput";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type { GraphemeModuleSummary, GraphemeScriptEntry } from "$lib/types/grapheme";
@@ -139,6 +143,30 @@
     const body = graphemeScriptEditor.activeTab?.body ?? "";
     graphemeScriptEditor.queueInsert(prepareModuleInsert(body, op, examples));
   }
+
+  function startFromRecipe(recipe: GraphemeRecipe) {
+    subTab = "editor";
+    graphemeScriptEditor.openNewTab();
+    graphemeScriptEditor.patchActiveTab(applyRecipeToEditor(recipe));
+    graphemeScriptEditor.sidePane = "diagnostics";
+  }
+
+  function moduleBlurb(entry: GraphemeModuleSummary): string {
+    const blurbs: Record<string, string> = {
+      core: "Messages, picking fields, everyday utilities",
+      web: "Search the web and fetch pages",
+      html: "Parse and convert HTML",
+      json: "Read and write JSON data",
+      csv: "Spreadsheet-style data",
+      yaml: "Config and structured text",
+      docs: "Documents and text files",
+      io: "Files in and out",
+    };
+    return (
+      blurbs[entry.module_id] ??
+      `${entry.op_count} ready-made actions you can insert`
+    );
+  }
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -212,15 +240,16 @@
         {:else if workshop.error}
           <p class="text-sm text-error-400">{workshop.error}</p>
         {:else if subTab === "modules"}
-          <div class="mb-4 rounded-md border border-surface-500/35 px-3 py-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <h3 class="workshop-label">Module allowlist</h3>
-              <span class="text-[10px] uppercase tracking-wide text-surface-500">
-                {workshop.allowlistEnforce ? "Enforced" : "Open — all modules allowed"}
-              </span>
-            </div>
-            <p class="workshop-faint mt-1 text-[11px]">
-              Checked modules are allowed in script save, compile, run, and WASM load.
+          {#if settings.showWorkshopGuidance}
+            <WorkshopJourneyBanner />
+          {/if}
+
+          <details class="workshop-advanced mt-4 rounded-md border border-surface-500/35 px-3 py-2">
+            <summary class="workshop-label cursor-pointer select-none">
+              Advanced · module allowlist
+            </summary>
+            <p class="workshop-faint mt-2 text-[11px]">
+              Restrict which modules scripts may use. Leave all checked for the full catalog.
             </p>
             {#if workshop.allowlistError}
               <p class="mt-2 text-xs text-error-400">{workshop.allowlistError}</p>
@@ -245,7 +274,12 @@
                 </li>
               {/each}
             </ul>
-          </div>
+          </details>
+
+          <p class="workshop-label mt-5">Building blocks</p>
+          <p class="workshop-faint mt-1 text-[11px]">
+            Tap a module to see actions you can insert into a script.
+          </p>
 
           {#if filteredModules.length === 0}
             <p class="workshop-muted">No modules match your search.</p>
@@ -266,27 +300,15 @@
                         <p class="truncate font-medium text-surface-100">
                           {entry.module_id}
                         </p>
-                        <span class="text-[10px] uppercase tracking-wide text-surface-500">
-                          {entry.abi}
-                        </span>
                         {#if workshop.allowlistEnforce && !workshop.isModuleAllowed(entry.module_id)}
                           <span class="text-[10px] uppercase tracking-wide text-warning-400">
-                            blocked
+                            restricted
                           </span>
                         {/if}
                       </div>
-                      <p class="workshop-faint mt-0.5 font-mono text-[11px]">
-                        {entry.op_count} ops · v{entry.version}
+                      <p class="workshop-faint mt-0.5 text-[11px] leading-relaxed">
+                        {moduleBlurb(entry)}
                       </p>
-                      <div class="mt-1 flex flex-wrap gap-1">
-                        {#each entry.effects as effect (effect)}
-                          <span
-                            class="text-[10px] uppercase tracking-wide {effectBadgeClass(effect)}"
-                          >
-                            {effect}
-                          </span>
-                        {/each}
-                      </div>
                     </div>
                   </button>
                 </li>
@@ -294,15 +316,15 @@
             </ul>
           {/if}
         {:else if filteredScripts.length === 0}
-          <div class="space-y-3">
+          <div class="space-y-4">
             <p class="workshop-muted">
               {search.trim()
                 ? "No scripts match your search."
-                : "No saved scripts yet — write one in the Editor tab."}
+                : "No saved scripts yet."}
             </p>
-            <button type="button" class="workshop-text-action text-sm" onclick={startNewScript}>
-              Open script editor
-            </button>
+            {#if settings.showWorkshopGuidance}
+              <GraphemeRecipeCards compact title="Starter recipes" onselect={startFromRecipe} />
+            {/if}
           </div>
         {:else}
           <div class="mb-3">
@@ -365,35 +387,16 @@
         {:else if selectedModule && workshop.moduleDetailError}
           <p class="text-sm text-warning-400">{workshop.moduleDetailError}</p>
         {:else if selectedModule && workshop.moduleDetail}
-          <h2 class="workshop-section-title">Module detail</h2>
+          <h2 class="workshop-section-title">What this module does</h2>
           <p class="mt-2 font-medium text-surface-100">
             {workshop.moduleDetail.info.module_id}
           </p>
-          <p class="workshop-faint mt-1 font-mono text-[11px]">
-            {workshop.moduleDetail.info.entrypoint} · {workshop.moduleDetail.info.abi}
+          <p class="mt-2 text-sm leading-relaxed text-surface-300">
+            {moduleBlurb(selectedModule)}
           </p>
 
-          <dl class="mt-4 space-y-2 text-xs">
-            <div>
-              <dt class="workshop-label">Ops</dt>
-              <dd class="mt-0.5 text-surface-200">
-                {workshop.moduleDetail.info.exported_ops.length}
-              </dd>
-            </div>
-            {#if workshop.moduleDetail.examples.length > 0}
-              <div>
-                <dt class="workshop-label">Examples</dt>
-                <dd class="mt-0.5 space-y-1 font-mono text-[11px] text-surface-300">
-                  {#each workshop.moduleDetail.examples as example (example)}
-                    <p>{example}</p>
-                  {/each}
-                </dd>
-              </div>
-            {/if}
-          </dl>
-
           <div class="mt-4">
-            <h3 class="workshop-label">Exported ops</h3>
+            <h3 class="workshop-label">Actions you can use</h3>
             <ul class="mt-2 max-h-48 space-y-2 overflow-y-auto">
               {#each workshop.moduleDetail.info.exported_ops as op (op.op)}
                 <li class="rounded-md border border-surface-500/35 px-3 py-2 text-xs">
@@ -412,7 +415,7 @@
                       class="workshop-text-action ml-auto text-[11px]"
                       onclick={() => insertOpInEditor(op.op)}
                     >
-                      Insert in editor
+                      Insert
                     </button>
                   </div>
                   <p class="workshop-faint mt-1">{op.output_type}</p>
@@ -421,8 +424,12 @@
             </ul>
           </div>
 
-          <div class="mt-5 rounded-md border border-surface-500/35 px-3 py-3">
-            <h3 class="workshop-label">WASM hot-load</h3>
+          <details class="workshop-advanced mt-5 rounded-md border border-surface-500/35 px-3 py-2">
+            <summary class="workshop-label cursor-pointer select-none">
+              Advanced · WASM & lifecycle
+            </summary>
+            <div class="mt-3 rounded-md border border-surface-500/35 px-3 py-3">
+              <h3 class="workshop-label">WASM hot-load</h3>
             <p class="workshop-faint mt-1 text-[11px]">
               Attach a compiled module generation for in-process activation.
             </p>
@@ -499,6 +506,7 @@
               </ul>
             {/if}
           </div>
+          </details>
         {:else if selectedScript}
           <h2 class="workshop-section-title">Script detail</h2>
           <p class="mt-2 font-medium text-surface-100">{selectedScript.name}</p>
@@ -530,7 +538,7 @@
               class="workshop-text-action"
               onclick={() => openEditorForScript(selectedScript)}
             >
-              Edit in editor
+              Open in editor
             </button>
             <button
               type="button"
@@ -538,18 +546,24 @@
               disabled={workshop.runBusy}
               onclick={() => void runSelectedScript(selectedScript.id)}
             >
-              {workshop.runBusy ? "Running…" : "Run in sandbox"}
+              {workshop.runBusy ? "Trying…" : "Try it"}
             </button>
           </div>
           {#if workshop.runError}
-            <p class="mt-3 text-xs text-error-400">{workshop.runError}</p>
+            <div class="mt-3">
+              <GraphemeRunResultCard error={workshop.runError} />
+            </div>
           {:else if workshop.runResult}
-            <pre class="grapheme-run-output mt-3 max-h-48 overflow-auto rounded-md border border-surface-500/35 p-2 font-mono text-[10px] leading-relaxed text-surface-200 whitespace-pre-wrap">{formatGraphemeRunResult(workshop.runResult.result)}</pre>
+            <div class="mt-3">
+              <GraphemeRunResultCard result={workshop.runResult.result} />
+            </div>
           {/if}
         {:else}
-          <p class="workshop-muted text-sm">
-            Select a module to inspect ops, manage allowlist, or hot-load WASM — or open
-            the Editor tab to write Grapheme scripts.
+          {#if settings.showWorkshopGuidance}
+            <GraphemeRecipeCards compact onselect={startFromRecipe} />
+          {/if}
+          <p class="workshop-muted mt-4 text-sm">
+            Pick a module on the left to insert actions into your script.
           </p>
         {/if}
       </aside>

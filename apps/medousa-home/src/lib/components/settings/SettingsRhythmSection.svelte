@@ -42,6 +42,22 @@
 
     <label class="settings-toggle-row">
       <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">Workshop guidance</span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          Journey steps, starter recipes, and friendly summaries in Workshop and Automations
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={settings.showWorkshopGuidance}
+        onchange={(event) =>
+          settings.setShowWorkshopGuidance((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
+
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Technical activity</span>
         <span class="workshop-faint mt-0.5 block text-xs">
           Show repeated job failures, turn lifecycle noise, and internal workflow events

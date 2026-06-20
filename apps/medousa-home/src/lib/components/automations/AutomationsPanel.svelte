@@ -165,7 +165,7 @@
         {#if !embedded}
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay history</p>
+            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay</p>
           </div>
         {/if}
       </div>
@@ -192,7 +192,7 @@
         {#if !embedded}
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay history</p>
+            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay</p>
           </div>
         {/if}
       </div>

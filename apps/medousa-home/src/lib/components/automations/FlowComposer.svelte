@@ -1,9 +1,18 @@
 <script lang="ts">
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
+  import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
+  import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import type { GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import type { AutomationDeliveryMode } from "$lib/types/recurring";
   import type { FlowComposerDraft, WorkflowStepKind, WorkflowStepSpec } from "$lib/types/workflow";
   import { newStepId } from "$lib/types/workflow";
+  import {
+    flowStepSubtitle,
+    flowStepTitle,
+    GRAPHEME_STEP_PLACEHOLDER,
+  } from "$lib/utils/flowStepLabels";
 
   interface Props {
     mobile?: boolean;
@@ -21,7 +30,8 @@
     onCancel,
   }: Props = $props();
 
-  let addKind = $state<WorkflowStepKind>("prompt");
+  let addKind = $state<WorkflowStepKind>("grapheme");
+  let expandedStepIds = $state<Record<string, boolean>>({});
 
   const barClass = $derived(mobile ? "composer-bar composer-bar-mobile" : "composer-bar");
 
@@ -34,6 +44,21 @@
           ? { kind: "mcp", id, server_id: "", tool_name: "", args: {} }
           : { kind: "prompt", id, user_prompt: "" };
     draft = { ...draft, steps: [...draft.steps, step] };
+    expandedStepIds = { ...expandedStepIds, [id]: kind !== "grapheme" };
+  }
+
+  function addRecipe(recipe: GraphemeRecipe) {
+    const id = newStepId("gph");
+    draft = {
+      ...draft,
+      name: draft.name.trim() || recipe.flowName || recipe.scriptName,
+      goal: draft.goal.trim() || (settings.showWorkshopGuidance ? recipe.intent : ""),
+      steps: [
+        ...draft.steps,
+        { kind: "grapheme", id, source: recipe.body },
+      ],
+    };
+    expandedStepIds = { ...expandedStepIds, [id]: true };
   }
 
   function removeStep(index: number) {
@@ -48,16 +73,31 @@
       ),
     };
   }
+
+  function toggleStepEditor(stepId: string) {
+    expandedStepIds = {
+      ...expandedStepIds,
+      [stepId]: !expandedStepIds[stepId],
+    };
+  }
+
+  function isStepExpanded(stepId: string): boolean {
+    return expandedStepIds[stepId] ?? false;
+  }
 </script>
 
 <div class="space-y-4">
+  {#if settings.showWorkshopGuidance}
+    <WorkshopJourneyBanner compact />
+  {/if}
+
   <label class="cron-field">
     <span class="cron-field-label">Flow name</span>
     <div class="{barClass} cron-field-bar cron-field-bar-compact">
       <input
         class="cron-field-input"
         bind:value={draft.name}
-        placeholder="Morning research flow"
+        placeholder="Morning web digest"
         spellcheck="false"
         aria-label="Flow name"
       />
@@ -66,11 +106,11 @@
 
   <div class="workshop-inset p-3">
     <label class="cron-field">
-      <span class="cron-field-label">Describe in plain language</span>
+      <span class="cron-field-label">Goal (optional — for AI planning)</span>
       <div class="{barClass} cron-field-bar">
         <GrowingTextarea
           bind:value={draft.goal}
-          placeholder="Every weekday, summarize inbox then post to Slack…"
+          placeholder="Every weekday, search for news and summarize it for me…"
           minHeight={mobile ? 34 : 36}
           maxHeight={mobile ? 120 : 96}
           aria-label="Flow goal for planning"
@@ -83,7 +123,7 @@
       disabled={flows.planning || !draft.goal.trim()}
       onclick={() => void flows.planFromGoal(draft.goal)}
     >
-      {flows.planning ? "Planning…" : "Plan from goal"}
+      {flows.planning ? "Planning…" : "Plan steps"}
     </button>
     {#if flows.lastPlan?.notes.length}
       <ul class="workshop-faint mt-2 list-disc space-y-1 pl-4 text-[11px]">
@@ -103,9 +143,9 @@
           bind:value={addKind}
           aria-label="Step type to add"
         >
-          <option value="prompt">Prompt</option>
-          <option value="grapheme">Grapheme</option>
-          <option value="mcp">MCP</option>
+          <option value="grapheme">Script</option>
+          <option value="prompt">Ask Medousa</option>
+          <option value="mcp">External tool</option>
         </select>
         <button
           type="button"
@@ -118,21 +158,33 @@
     </div>
 
     {#if draft.steps.length === 0}
-      <p class="workshop-muted mt-2 text-sm">
-        No steps yet. Plan from a goal or add Grapheme, MCP, or Prompt steps.
-      </p>
+      {#if settings.showWorkshopGuidance}
+        <GraphemeRecipeCards
+          compact
+          title="Starter recipes"
+          hint="Adds a grapheme step — or use + Add step."
+          onselect={addRecipe}
+        />
+      {:else}
+        <p class="workshop-muted mt-3 text-sm">Add a step to begin.</p>
+      {/if}
     {:else}
-      <ul class="mt-3 space-y-3">
+      <ol class="mt-3 space-y-3">
         {#each draft.steps as step, index (step.id)}
-          <li class="workshop-inset p-3">
+          <li class="workshop-flow-step">
             <div class="flex items-start justify-between gap-2">
-              <p class="text-xs font-medium uppercase tracking-wide text-primary-300">
-                {step.kind}
-                <span class="workshop-faint font-mono normal-case">· {step.id}</span>
-              </p>
+              <div class="min-w-0">
+                <p class="text-[10px] font-semibold uppercase tracking-wide text-primary-400">
+                  Step {index + 1}
+                </p>
+                <p class="mt-1 text-sm font-medium text-surface-50">
+                  {flowStepTitle(step)}
+                </p>
+                <p class="workshop-faint mt-0.5 text-[11px]">{flowStepSubtitle(step)}</p>
+              </div>
               <button
                 type="button"
-                class="workshop-text-action text-xs text-error-400"
+                class="workshop-text-action shrink-0 text-xs text-error-400"
                 onclick={() => removeStep(index)}
               >
                 Remove
@@ -140,8 +192,8 @@
             </div>
 
             {#if step.kind === "prompt"}
-              <label class="cron-field mt-2">
-                <span class="cron-field-label">Prompt</span>
+              <label class="cron-field mt-3 block">
+                <span class="cron-field-label">Instructions</span>
                 <div class="{barClass} cron-field-bar">
                   <textarea
                     class="composer-bar-input min-h-[2.25rem]"
@@ -150,97 +202,130 @@
                       updateStep(index, {
                         user_prompt: (event.currentTarget as HTMLTextAreaElement).value,
                       })}
-                    placeholder="What should this step do?"
+                    placeholder="Summarize the top headlines and email me a bullet list"
                     aria-label="Prompt step text"
                   ></textarea>
                 </div>
               </label>
             {:else if step.kind === "grapheme"}
-              <label class="cron-field mt-2">
-                <span class="cron-field-label">Grapheme source</span>
-                <div class="{barClass} cron-field-bar">
-                  <textarea
-                    class="composer-bar-input min-h-[2.25rem] font-mono text-xs"
-                    value={step.source}
-                    oninput={(event) =>
-                      updateStep(index, {
-                        source: (event.currentTarget as HTMLTextAreaElement).value,
-                      })}
-                    placeholder={'grapheme.run("module.op", args)'}
-                    aria-label="Grapheme source"
-                  ></textarea>
-                </div>
-              </label>
+              {#if step.source.trim()}
+                <label class="cron-field mt-3 block">
+                  <span class="cron-field-label">Grapheme source</span>
+                  <div class="{barClass} cron-field-bar">
+                    <textarea
+                      class="composer-bar-input min-h-[5rem] font-mono text-xs"
+                      value={step.source}
+                      oninput={(event) =>
+                        updateStep(index, {
+                          source: (event.currentTarget as HTMLTextAreaElement).value,
+                        })}
+                      placeholder={GRAPHEME_STEP_PLACEHOLDER}
+                      aria-label="Grapheme source"
+                    ></textarea>
+                  </div>
+                </label>
+              {:else}
+                <button
+                  type="button"
+                  class="workshop-text-action mt-3 text-[11px]"
+                  onclick={() => toggleStepEditor(step.id)}
+                >
+                  {isStepExpanded(step.id) ? "Hide script" : "Add script"}
+                </button>
+                {#if isStepExpanded(step.id)}
+                  <label class="cron-field mt-2 block">
+                    <span class="cron-field-label">Grapheme source</span>
+                    <div class="{barClass} cron-field-bar">
+                      <textarea
+                        class="composer-bar-input min-h-[5rem] font-mono text-xs"
+                        value={step.source}
+                        oninput={(event) =>
+                          updateStep(index, {
+                            source: (event.currentTarget as HTMLTextAreaElement).value,
+                          })}
+                        placeholder={GRAPHEME_STEP_PLACEHOLDER}
+                        aria-label="Grapheme source"
+                      ></textarea>
+                    </div>
+                  </label>
+                {/if}
+              {/if}
             {:else}
-              <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                <label class="cron-field">
-                  <span class="cron-field-label">MCP server</span>
-                  <div class="{barClass} cron-field-bar cron-field-bar-compact">
-                    <input
-                      class="cron-field-input font-mono text-xs"
-                      value={step.server_id}
-                      oninput={(event) =>
-                        updateStep(index, {
-                          server_id: (event.currentTarget as HTMLInputElement).value,
-                        })}
-                      placeholder="server-id"
-                    />
-                  </div>
-                </label>
-                <label class="cron-field">
-                  <span class="cron-field-label">Tool</span>
-                  <div class="{barClass} cron-field-bar cron-field-bar-compact">
-                    <input
-                      class="cron-field-input font-mono text-xs"
-                      value={step.tool_name}
-                      oninput={(event) =>
-                        updateStep(index, {
-                          tool_name: (event.currentTarget as HTMLInputElement).value,
-                        })}
-                      placeholder="tool_name"
-                    />
-                  </div>
-                </label>
-              </div>
-              <label class="cron-field mt-2">
-                <span class="cron-field-label">Args (JSON)</span>
-                <div class="{barClass} cron-field-bar">
-                  <textarea
-                    class="composer-bar-input min-h-[2.25rem] font-mono text-xs"
-                    value={JSON.stringify(step.args ?? {}, null, 2)}
-                    oninput={(event) => {
-                      try {
-                        const parsed = JSON.parse(
-                          (event.currentTarget as HTMLTextAreaElement).value || "{}",
-                        );
-                        updateStep(index, { args: parsed });
-                      } catch {
-                        /* keep typing */
-                      }
-                    }}
-                    aria-label="MCP args JSON"
-                  ></textarea>
+              <details class="workshop-advanced mt-3">
+                <summary class="workshop-text-action cursor-pointer text-[11px]">
+                  Configure external tool
+                </summary>
+                <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label class="cron-field">
+                    <span class="cron-field-label">Server</span>
+                    <div class="{barClass} cron-field-bar cron-field-bar-compact">
+                      <input
+                        class="cron-field-input font-mono text-xs"
+                        value={step.server_id}
+                        oninput={(event) =>
+                          updateStep(index, {
+                            server_id: (event.currentTarget as HTMLInputElement).value,
+                          })}
+                        placeholder="my-mcp-server"
+                      />
+                    </div>
+                  </label>
+                  <label class="cron-field">
+                    <span class="cron-field-label">Tool</span>
+                    <div class="{barClass} cron-field-bar cron-field-bar-compact">
+                      <input
+                        class="cron-field-input font-mono text-xs"
+                        value={step.tool_name}
+                        oninput={(event) =>
+                          updateStep(index, {
+                            tool_name: (event.currentTarget as HTMLInputElement).value,
+                          })}
+                        placeholder="search"
+                      />
+                    </div>
+                  </label>
                 </div>
-              </label>
+                <label class="cron-field mt-2 block">
+                  <span class="cron-field-label">Arguments (JSON)</span>
+                  <div class="{barClass} cron-field-bar">
+                    <textarea
+                      class="composer-bar-input min-h-[2.25rem] font-mono text-xs"
+                      value={JSON.stringify(step.args ?? {}, null, 2)}
+                      oninput={(event) => {
+                        try {
+                          const parsed = JSON.parse(
+                            (event.currentTarget as HTMLTextAreaElement).value || "{}",
+                          );
+                          updateStep(index, { args: parsed });
+                        } catch {
+                          /* keep typing */
+                        }
+                      }}
+                      aria-label="MCP args JSON"
+                    ></textarea>
+                  </div>
+                </label>
+              </details>
             {/if}
           </li>
         {/each}
-      </ul>
+      </ol>
     {/if}
   </div>
 
   <div class="cron-field-row">
     <label class="cron-field cron-field-grow">
-      <span class="cron-field-label">Schedule (optional)</span>
+      <span class="cron-field-label">Run on a schedule (optional)</span>
       <div class="{barClass} cron-field-bar cron-field-bar-compact">
         <input
           class="cron-field-input font-mono"
           bind:value={draft.cron_expr}
-          placeholder="0 9 * * *"
+          placeholder="0 9 * * *  weekdays 9am"
           spellcheck="false"
           aria-label="Flow cron expression"
         />
       </div>
+      <p class="workshop-faint mt-1 text-[10px]">Cron format · e.g. 0 9 * * 1-5 for weekdays</p>
     </label>
     <label class="cron-field cron-field-timezone">
       <span class="cron-field-label">Timezone</span>
@@ -271,7 +356,7 @@
       disabled={flows.scheduling || draft.steps.length === 0}
       onclick={() => void flows.scheduleDraft(draft, deliveryMode, telegramChatId)}
     >
-      {flows.scheduling ? "Scheduling…" : "Schedule flow"}
+      {flows.scheduling ? "Scheduling…" : "Schedule"}
     </button>
     <button type="button" class="btn btn-sm variant-ghost-surface" onclick={onCancel}>
       Cancel

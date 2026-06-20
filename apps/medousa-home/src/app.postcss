@@ -1782,6 +1782,99 @@
     background-color: rgb(var(--color-surface-950) / 0.6);
   }
 
+  .workshop-recipe-card {
+    @apply rounded-lg border border-surface-500/40 bg-surface-900/50 p-3 transition;
+  }
+
+  .workshop-recipe-card:hover {
+    @apply border-primary-500/35 bg-primary-500/5;
+  }
+
+  .workshop-journey-details {
+    @apply rounded-lg border border-surface-500/30 bg-surface-900/30;
+  }
+
+  .workshop-journey-details-compact {
+    @apply border-0 bg-transparent;
+  }
+
+  .workshop-journey-summary {
+    @apply cursor-pointer select-none px-3 py-2 text-xs text-surface-300;
+    list-style: none;
+  }
+
+  .workshop-journey-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .workshop-journey-details[open] .workshop-journey-summary {
+    @apply border-b border-surface-500/30 text-surface-200;
+  }
+
+  .workshop-journey-details .workshop-journey {
+    @apply border-0 bg-transparent px-3 pb-3 pt-2;
+  }
+
+  .workshop-journey {
+    @apply rounded-lg border border-surface-500/35 bg-surface-900/40 px-3 py-3;
+  }
+
+  .workshop-journey-compact {
+    @apply border-0 bg-transparent px-0 py-0;
+  }
+
+  .workshop-journey-title {
+    @apply text-xs font-medium text-surface-200;
+  }
+
+  .workshop-journey-steps {
+    @apply mt-2 flex flex-wrap gap-2;
+  }
+
+  .workshop-journey-step {
+    @apply flex min-w-0 items-center gap-2 rounded-md border border-surface-500/35 px-2 py-1.5;
+  }
+
+  .workshop-journey-step-active {
+    @apply border-primary-500/40 bg-primary-500/10;
+  }
+
+  .workshop-journey-step-done {
+    @apply border-surface-500/25 opacity-80;
+  }
+
+  .workshop-journey-badge {
+    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-800 text-[10px] font-semibold text-surface-300;
+  }
+
+  .workshop-journey-step-active .workshop-journey-badge {
+    @apply bg-primary-500/25 text-primary-200;
+  }
+
+  .grapheme-run-card {
+    @apply rounded-lg border px-3 py-3;
+  }
+
+  .grapheme-run-card-success {
+    @apply border-success-500/30 bg-success-500/5;
+  }
+
+  .grapheme-run-card-error {
+    @apply border-error-500/30 bg-error-500/5;
+  }
+
+  .workshop-flow-step {
+    @apply rounded-lg border border-surface-500/35 bg-surface-900/45 p-3;
+  }
+
+  .workshop-advanced summary {
+    @apply list-none;
+  }
+
+  .workshop-advanced summary::-webkit-details-marker {
+    display: none;
+  }
+
   .vault-link-chip {
     @apply rounded-container-token px-2 py-1.5 text-xs text-primary-300 transition-colors hover:bg-primary-500/10 hover:text-primary-200;
   }

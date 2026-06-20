@@ -108,7 +108,7 @@ export class FlowsStore {
     this.composerDraft = {
       ...emptyFlowDraft(),
       name: label,
-      goal: label ? `Flow using ${label}` : "Grapheme script step",
+      goal: label ? `Automate: ${label}` : "My automation",
       steps: [
         {
           kind: "grapheme",
@@ -120,8 +120,31 @@ export class FlowsStore {
     this.lastPlan = null;
     this.composerOpen = true;
     this.actionMessage = label
-      ? `Composer opened with ${label}`
-      : "Composer opened with Grapheme step";
+      ? `Ready to run “${label}” on a schedule`
+      : "Your script is step 1 — name the flow and run it";
+  }
+
+  openComposerWithRecipe(recipe: {
+    flowName?: string;
+    goal?: string;
+    body: string;
+  }) {
+    const name = recipe.flowName?.trim() ?? "My first flow";
+    this.composerDraft = {
+      ...emptyFlowDraft(),
+      name,
+      goal: recipe.goal ?? name,
+      steps: [
+        {
+          kind: "grapheme",
+          id: newStepId("gph"),
+          source: recipe.body,
+        },
+      ],
+    };
+    this.lastPlan = null;
+    this.composerOpen = true;
+    this.actionMessage = "Recipe loaded — try Run now, then Schedule";
   }
 
   closeComposer() {

@@ -193,7 +193,7 @@
               {:else if activeTab === "skills"}
                 Workshop skill palette · {filteredTools.length} skill{filteredTools.length === 1 ? "" : "s"}
               {:else if activeTab === "modules"}
-                Grapheme modules &amp; script library
+                Grapheme modules and script library
               {:else}
                 MCP servers &amp; capability connections
               {/if}
