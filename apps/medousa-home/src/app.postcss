@@ -3864,6 +3864,58 @@
     @apply mb-1;
   }
 
+  .vault-note-chat-fab-root {
+    @apply pointer-events-none absolute bottom-5 right-5 z-20;
+  }
+
+  .vault-note-chat-fab {
+    @apply pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full border border-primary-400/30 bg-primary-600 text-surface-50 shadow-lg transition hover:scale-[1.03] hover:bg-primary-500 active:scale-95 disabled:opacity-50;
+  }
+
+  .vault-note-chat-session-backdrop {
+    @apply fixed inset-0 z-[84];
+  }
+
+  .vault-note-chat-session-menu {
+    @apply z-[86] flex max-h-[min(420px,60vh)] flex-col overflow-hidden rounded-2xl border border-surface-500/45 bg-surface-900 shadow-2xl;
+  }
+
+  .vault-note-chat-session-menu-fab {
+    @apply pointer-events-auto absolute bottom-[4.25rem] right-0 w-[18rem];
+  }
+
+  .vault-note-chat-session-menu-workshop {
+    @apply absolute right-0 top-[calc(100%+0.35rem)] w-[17rem];
+  }
+
+  .vault-note-chat-session-menu-heading {
+    @apply border-b border-surface-500/35 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-surface-400;
+  }
+
+  .vault-note-chat-session-menu-subheading {
+    @apply px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-surface-500;
+  }
+
+  .vault-note-chat-session-list {
+    @apply min-h-0 flex-1 overflow-y-auto px-1.5 pb-2;
+  }
+
+  .vault-note-chat-session-item {
+    @apply flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-surface-200 transition hover:bg-surface-800/80;
+  }
+
+  .vault-note-chat-session-item-new {
+    @apply mx-1.5 my-2 border border-primary-500/25 bg-primary-500/10 text-primary-100 hover:bg-primary-500/15;
+  }
+
+  .vault-note-chat-session-item-active {
+    @apply bg-surface-800/90 ring-1 ring-primary-500/30;
+  }
+
+  .vault-note-chat-session-empty {
+    @apply px-3 pb-3 text-xs text-surface-500;
+  }
+
   .profiles-panel {
     @apply min-h-0;
     background-color: rgb(var(--color-surface-950));

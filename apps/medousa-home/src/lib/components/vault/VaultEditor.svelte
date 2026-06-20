@@ -28,6 +28,7 @@
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
   import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
   import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
+  import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
 
   interface Props {
@@ -122,28 +123,6 @@
       void workspace.prefetchVaultLinkedWork(vault.selectedPath);
     }
   });
-
-  async function handleAskAboutNote() {
-    if (!vault.selectedPath) return;
-    if (vault.dirty) await vault.flushSave();
-    const { scope, draft } = prepareTalkAboutNote(
-      vault.selectedPath,
-      vault.title,
-      vault.content,
-      vault.wikilinksOut,
-      vault.backlinks,
-    );
-    chat.prefillFromVaultNote(scope, draft, { pin: true });
-    void chat.ensureSessionHydrated();
-
-    if (!mobile) {
-      noteWorkshop.openForNote(vault.selectedPath);
-      return;
-    }
-
-    if (!onOpenChat) return;
-    onOpenChat();
-  }
 
   async function handleAskInChatTab() {
     if (!vault.selectedPath || !onOpenChat) return;
@@ -248,7 +227,7 @@
 </script>
 
 <section
-  class="vault-editor flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
+  class="vault-editor relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
 >
   {#if !mobile}
     <header class="vault-editor-header workshop-header flex items-center justify-between gap-3 py-3">
@@ -294,20 +273,12 @@
         {#if vault.selectedPath && !mobile && onOpenChat}
           <button
             type="button"
-            class="btn btn-sm variant-soft-primary"
-            disabled={vault.noteLoading}
-            onclick={() => void handleAskAboutNote()}
-          >
-            Ask about note
-          </button>
-          <button
-            type="button"
             class="btn btn-sm variant-ghost-surface"
             disabled={vault.noteLoading}
             title="Open scoped thread in Chat tab"
             onclick={() => void handleAskInChatTab()}
           >
-            Chat tab
+            Send to chat
           </button>
         {/if}
         {#if vault.selectedPath && !mobile && onOpenWork}
@@ -568,6 +539,10 @@
         />
       {/if}
     </div>
+  {/if}
+
+  {#if vault.selectedPath && !mobile && onOpenChat && !noteWorkshop.open}
+    <VaultNoteChatFab />
   {/if}
 </section>
 

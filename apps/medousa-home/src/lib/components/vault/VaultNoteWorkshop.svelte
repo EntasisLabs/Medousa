@@ -3,16 +3,19 @@
   import {
     ExternalLink,
     GripHorizontal,
+    History,
     MessageCircle,
     Minus,
     X,
   } from "@lucide/svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
+  import VaultNoteChatSessionMenu from "$lib/components/vault/VaultNoteChatSessionMenu.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { vaultContextScopeHint } from "$lib/utils/vaultNoteBridge";
+  import { launchVaultNoteWorkshop } from "$lib/utils/vaultNoteWorkshop";
 
   interface Props {
     onOpenFullChat?: () => void;
@@ -22,6 +25,7 @@
 
   let panelEl = $state<HTMLDivElement | null>(null);
   let dragging = $state(false);
+  let sessionMenuOpen = $state(false);
   let dragOffsetX = 0;
   let dragOffsetY = 0;
 
@@ -77,6 +81,20 @@
   function handleOpenFullChat() {
     noteWorkshop.minimized = true;
     onOpenFullChat?.();
+  }
+
+  async function handleSessionSelect(session: "fresh" | string) {
+    if (!noteWorkshop.notePath) return;
+    sessionMenuOpen = false;
+    await launchVaultNoteWorkshop({
+      path: noteWorkshop.notePath,
+      title: vault.title,
+      content: vault.content,
+      wikilinksOut: vault.wikilinksOut,
+      backlinks: vault.backlinks,
+      session,
+      flushSave: vault.dirty ? async () => { await vault.flushSave(); } : undefined,
+    });
   }
 
   function handleDragStart(event: PointerEvent) {
@@ -142,12 +160,33 @@
           {/if}
         </div>
         <div class="flex shrink-0 items-center gap-1">
+          <div class="relative">
+            <button
+              type="button"
+              class="vault-note-workshop-icon-btn {sessionMenuOpen
+                ? 'bg-surface-800 text-surface-100'
+                : ''}"
+              aria-label="Switch chat"
+              title="Switch chat"
+              aria-haspopup="menu"
+              aria-expanded={sessionMenuOpen}
+              onclick={() => (sessionMenuOpen = !sessionMenuOpen)}
+            >
+              <History size={15} strokeWidth={1.75} />
+            </button>
+            <VaultNoteChatSessionMenu
+              open={sessionMenuOpen}
+              onClose={() => (sessionMenuOpen = false)}
+              onSelect={handleSessionSelect}
+              class="vault-note-chat-session-menu-workshop"
+            />
+          </div>
           {#if onOpenFullChat}
             <button
               type="button"
               class="vault-note-workshop-icon-btn"
-              aria-label="Open in Chat tab"
-              title="Open in Chat tab"
+              aria-label="Send to chat"
+              title="Send to chat"
               onclick={handleOpenFullChat}
             >
               <ExternalLink size={15} strokeWidth={1.75} />
