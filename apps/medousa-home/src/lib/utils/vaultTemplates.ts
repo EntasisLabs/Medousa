@@ -10,6 +10,26 @@ import {
   wrapWithKanbanFrontmatter,
 } from "$lib/utils/markdownKanban";
 
+export const SLASH_VIEW_TEMPLATE = `\`\`\`medousa-view
+from: projects/data.md
+table: first
+where: status != done
+sort: due
+columns: name, status, due
+\`\`\`
+
+`;
+
+export const SLASH_TABLE_TEMPLATE = `| name | status | due |
+| ---- | ------ | --- |
+|  |  |  |
+
+`;
+
+export const SLASH_TOC_TEMPLATE = "```medousa-toc\n```\n\n";
+
+export const SLASH_BOARD_TEMPLATE = `${serializeKanbanColumns(DEFAULT_KANBAN_COLUMNS)}\n\n`;
+
 export function slugifyTitle(title: string): string {
   const slug = title
     .trim()

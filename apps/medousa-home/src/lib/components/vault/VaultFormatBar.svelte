@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ChevronDown } from "@lucide/svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import {
     Bold,
     Italic,
@@ -25,6 +27,9 @@
   }
 
   let { disabled = false, onFormat, onColor }: Props = $props();
+
+  let expanded = $state(false);
+  const compact = $derived(layout.isMobile);
 
   const groups: {
     label: string;
@@ -63,45 +68,70 @@
 </script>
 
 <div
-  class="vault-format-bar flex flex-wrap items-center gap-1 border-b border-surface-500/40 bg-surface-900/80 px-3 py-1.5"
+  class="vault-format-bar border-b border-surface-500/40 bg-surface-900/80 px-3 py-1.5 {compact
+    ? 'flex items-center gap-2'
+    : 'flex flex-wrap items-center gap-1'}"
   role="toolbar"
   aria-label="Formatting"
 >
-  {#each groups as group, groupIndex (group.label)}
-    {#if groupIndex > 0}
+  {#if compact}
+    <button
+      type="button"
+      class="btn btn-sm variant-soft-surface inline-flex items-center gap-1"
+      aria-expanded={expanded}
+      onclick={() => (expanded = !expanded)}
+    >
+      Format
+      <ChevronDown
+        size={14}
+        strokeWidth={2}
+        class="transition-transform {expanded ? 'rotate-180' : ''}"
+      />
+    </button>
+    <p class="workshop-faint text-[11px]">Type <kbd class="vault-kbd">/</kbd> for blocks</p>
+  {/if}
+
+  {#if !compact || expanded}
+    <div class="{compact ? 'flex w-full flex-wrap items-center gap-1 border-t border-surface-500/30 pt-2' : 'contents'}">
+      {#each groups as group, groupIndex (group.label)}
+        {#if groupIndex > 0}
+          <span class="mx-0.5 h-5 w-px bg-surface-600/80" aria-hidden="true"></span>
+        {/if}
+        {#each group.items as item (item.action)}
+          <button
+            type="button"
+            class="vault-format-btn"
+            title={item.title}
+            aria-label={item.title}
+            {disabled}
+            onclick={() => onFormat(item.action)}
+          >
+            <item.Icon size={15} strokeWidth={2} />
+          </button>
+        {/each}
+      {/each}
+
       <span class="mx-0.5 h-5 w-px bg-surface-600/80" aria-hidden="true"></span>
-    {/if}
-    {#each group.items as item (item.action)}
-      <button
-        type="button"
-        class="vault-format-btn"
-        title={item.title}
-        aria-label={item.title}
-        {disabled}
-        onclick={() => onFormat(item.action)}
-      >
-        <item.Icon size={15} strokeWidth={2} />
-      </button>
-    {/each}
-  {/each}
 
-  <span class="mx-0.5 h-5 w-px bg-surface-600/80" aria-hidden="true"></span>
+      <div class="flex items-center gap-1" role="group" aria-label="Text color">
+        {#each MARKDOWN_COLOR_OPTIONS as color (color.id)}
+          <button
+            type="button"
+            class="vault-color-swatch"
+            title={color.label}
+            aria-label={`Color: ${color.label}`}
+            style:background-color={color.swatch}
+            {disabled}
+            onclick={() => onColor(color.id)}
+          ></button>
+        {/each}
+      </div>
 
-  <div class="flex items-center gap-1" role="group" aria-label="Text color">
-    {#each MARKDOWN_COLOR_OPTIONS as color (color.id)}
-      <button
-        type="button"
-        class="vault-color-swatch"
-        title={color.label}
-        aria-label={`Color: ${color.label}`}
-        style:background-color={color.swatch}
-        {disabled}
-        onclick={() => onColor(color.id)}
-      ></button>
-    {/each}
-  </div>
-
-  <p class="ml-auto hidden text-[11px] text-surface-500 sm:block">
-    Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
-  </p>
+      {#if !compact}
+        <p class="ml-auto hidden text-[11px] text-surface-500 sm:block">
+          Select text to format · type <kbd class="vault-kbd">/</kbd> for blocks
+        </p>
+      {/if}
+    </div>
+  {/if}
 </div>

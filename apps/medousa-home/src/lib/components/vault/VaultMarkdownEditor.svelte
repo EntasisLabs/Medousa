@@ -4,15 +4,19 @@
   import { vault } from "$lib/stores/vault.svelte";
   import VaultFormatBar from "./VaultFormatBar.svelte";
   import VaultSlashMenu from "./VaultSlashMenu.svelte";
+  import VaultNotePicker from "./VaultNotePicker.svelte";
   import {
     applyMarkdownFormat,
     applyMarkdownColor,
     insertSlashBlock,
+    insertVaultWikilink,
     shouldOpenSlashMenu,
+    slashMenuFilter,
     type MarkdownFormatAction,
     type MarkdownColorId,
     type SlashBlockId,
   } from "$lib/utils/vaultMarkdownEdit";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
   interface Props {
     content: string;
@@ -52,6 +56,11 @@
   let selectionStart = $state(0);
   let selectionEnd = $state(0);
   let slashOpen = $state(false);
+  let notePickerOpen = $state(false);
+
+  const slashFilter = $derived(
+    textareaEl ? slashMenuFilter(textareaEl.value, textareaEl.selectionStart) : "",
+  );
 
   $effect(() => {
     if (contentSyncKey !== syncedKey) {
@@ -118,9 +127,25 @@
 
   function handleSlashSelect(block: SlashBlockId) {
     if (!textareaEl) return;
+    if (block === "wikilink") {
+      slashOpen = false;
+      notePickerOpen = true;
+      return;
+    }
     captureSelection();
     const result = insertSlashBlock(draft, selectionStart, block);
     slashOpen = false;
+    void applyEdit(result);
+  }
+
+  function handleNotePick(path: string) {
+    if (!textareaEl) return;
+    captureSelection();
+    const label =
+      vault.labelByPath().get(path) ??
+      vaultDisplayTitle(path.split("/").pop()?.replace(/\.md$/i, "") ?? path, path);
+    const result = insertVaultWikilink(draft, selectionStart, path, label);
+    notePickerOpen = false;
     void applyEdit(result);
   }
 
@@ -155,8 +180,14 @@
   <VaultSlashMenu
     bind:this={slashMenuEl}
     open={slashOpen}
+    filter={slashFilter}
     onSelect={handleSlashSelect}
     onClose={closeSlashMenu}
+  />
+  <VaultNotePicker
+    open={notePickerOpen}
+    onSelect={handleNotePick}
+    onClose={() => (notePickerOpen = false)}
   />
 
   <div class="flex min-h-0 flex-1">

@@ -7,6 +7,7 @@
   import { scrollToHeadingInContainer } from "$lib/utils/headingSlug";
   import { hasMedousaViewBlocks } from "$lib/utils/markdownView";
   import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
+  import { hasTransclusionBlocks, resolveTransclusions } from "$lib/utils/resolveTransclusion";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import {
     bindVaultLongPress,
@@ -24,6 +25,8 @@
 
   const body = $derived(stripFrontmatter(content).content);
   const hasViewBlocks = $derived(hasMedousaViewBlocks(body));
+  const hasEmbedBlocks = $derived(hasTransclusionBlocks(body));
+  const needsAsyncResolve = $derived(hasViewBlocks || hasEmbedBlocks);
 
   let resolvedBody = $state("");
   let viewsResolving = $state(false);
@@ -34,7 +37,7 @@
     sourcePath: vault.selectedPath,
     knownPaths: new Set(vault.notes.map((note) => note.path)),
     interactiveTasks:
-      !hasViewBlocks && Boolean(vault.selectedPath) && !vault.proposalActive,
+      !needsAsyncResolve && Boolean(vault.selectedPath) && !vault.proposalActive,
   }));
 
   const previewHtml = $derived(
@@ -48,7 +51,7 @@
     vault.contentRevision;
     labelByPath;
 
-    if (!hasMedousaViewBlocks(source)) {
+    if (!needsAsyncResolve) {
       resolvedBody = source;
       viewsResolving = false;
       return;
@@ -57,17 +60,30 @@
     const epoch = ++resolveEpoch;
     viewsResolving = true;
     resolvedBody = "";
-    void resolveMedousaViews(source, {
-      sourcePath: path,
-      notes: vault.notes,
-      selectedPath: path,
-      selectedContent: fullContent,
-      labelByPath,
-    }).then((next) => {
+    void (async () => {
+      let next = source;
+      if (hasMedousaViewBlocks(next)) {
+        next = await resolveMedousaViews(next, {
+          sourcePath: path,
+          notes: vault.notes,
+          selectedPath: path,
+          selectedContent: fullContent,
+          labelByPath,
+        });
+      }
+      if (hasTransclusionBlocks(next)) {
+        next = await resolveTransclusions(next, {
+          sourcePath: path,
+          notes: vault.notes,
+          selectedPath: path,
+          selectedContent: fullContent,
+          labelByPath,
+        });
+      }
       if (epoch !== resolveEpoch) return;
       resolvedBody = next;
       viewsResolving = false;
-    });
+    })();
   });
 
   let container: HTMLElement | undefined = $state();
@@ -176,8 +192,8 @@
   oncontextmenu={handleContextMenu}
   use:bindVaultLongPress={() => vault.selectedPath}
 >
-  {#if viewsResolving && hasViewBlocks && !previewHtml}
-    <p class="workshop-faint text-sm">Loading query views…</p>
+  {#if viewsResolving && needsAsyncResolve && !previewHtml}
+    <p class="workshop-faint text-sm">Loading preview…</p>
   {:else if previewHtml}
     {@html previewHtml}
   {:else}

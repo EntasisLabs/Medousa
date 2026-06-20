@@ -87,6 +87,7 @@ import {
 import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
 import { togglePreviewTaskInContent } from "$lib/utils/vaultPreviewTasks";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
+import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -689,6 +690,7 @@ export class VaultStore {
       );
       this.applySaveResponse(response.note);
       invalidateMedousaViewCache(this.selectedPath);
+      invalidateTransclusionCache(this.selectedPath);
       this.clearProposal();
       this.markSaveEcho(this.selectedPath);
       this.flashSavedWhisper();

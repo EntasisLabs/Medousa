@@ -3768,6 +3768,40 @@
     @apply block w-full px-3 py-2 text-left text-sm text-surface-100 transition hover:bg-surface-700/80 disabled:cursor-not-allowed disabled:opacity-45;
   }
 
+  .vault-note-picker-backdrop,
+  .vault-quick-switcher-backdrop {
+    @apply backdrop-blur-[2px];
+  }
+
+  .vault-note-picker-panel,
+  .vault-quick-switcher-panel {
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
+  }
+
+  .markdown-transclusion {
+    @apply my-4 overflow-hidden rounded-container-token border border-surface-500/40 bg-surface-900/50;
+  }
+
+  .markdown-transclusion-error {
+    @apply px-3 py-2 text-sm text-warning-200;
+  }
+
+  .markdown-transclusion-header {
+    @apply flex items-center justify-between gap-2 border-b border-surface-500/35 bg-surface-900/80 px-3 py-2;
+  }
+
+  .markdown-transclusion-label {
+    @apply truncate text-xs font-medium text-surface-200;
+  }
+
+  .markdown-transclusion-open {
+    @apply shrink-0 rounded-md px-2 py-1 text-[11px] text-primary-200 transition hover:bg-primary-500/15 hover:text-primary-100;
+  }
+
+  .markdown-transclusion-body {
+    @apply px-4 py-3 text-sm;
+  }
+
   .profiles-panel {
     @apply min-h-0;
     background-color: rgb(var(--color-surface-950));

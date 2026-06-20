@@ -6,6 +6,7 @@
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
+  import VaultQuickSwitcher from "$lib/components/vault/VaultQuickSwitcher.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -13,6 +14,7 @@
   import { applyNativeMobileShellLayout, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
 
   let commandPaletteOpen = $state(false);
+  let quickSwitcherOpen = $state(false);
 
   async function openWorkCard(cardId: string) {
     if (layout.isMobile) {
@@ -37,6 +39,18 @@
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         commandPaletteOpen = !commandPaletteOpen;
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
+        const target = event.target as HTMLElement | null;
+        const typing =
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable);
+        if (typing) return;
+        event.preventDefault();
+        quickSwitcherOpen = !quickSwitcherOpen;
       }
     };
     window.addEventListener("keydown", onKeydown);
@@ -74,3 +88,4 @@
 
 <VaultGarageImportWizard />
 <VaultContextMenu />
+<VaultQuickSwitcher open={quickSwitcherOpen} onClose={() => (quickSwitcherOpen = false)} />

@@ -1,7 +1,11 @@
 import {
-  MARKDOWN_COLOR_CLOSE_TAG,
+  SLASH_BOARD_TEMPLATE,
+  SLASH_TABLE_TEMPLATE,
+  SLASH_TOC_TEMPLATE,
+  SLASH_VIEW_TEMPLATE,
+} from "$lib/utils/vaultTemplates";
+import {
   MARKDOWN_COLOR_IDS,
-  markdownColorOpenTag,
   type MarkdownColorId,
 } from "$lib/utils/vaultMarkdownColors";
 
@@ -28,8 +32,13 @@ export type SlashBlockId =
   | "numbered"
   | "checkbox"
   | "link"
+  | "wikilink"
   | "divider"
-  | "quote";
+  | "quote"
+  | "view"
+  | "board"
+  | "table"
+  | "toc";
 
 export interface EditResult {
   content: string;
@@ -305,8 +314,13 @@ export function insertSlashBlock(
     numbered: "1. ",
     checkbox: "- [ ] ",
     link: "[label](url)",
+    wikilink: "",
     divider: "---\n",
     quote: "> ",
+    view: SLASH_VIEW_TEMPLATE,
+    board: SLASH_BOARD_TEMPLATE,
+    table: SLASH_TABLE_TEMPLATE,
+    toc: SLASH_TOC_TEMPLATE,
   };
 
   const insert = templates[block];
@@ -317,6 +331,37 @@ export function insertSlashBlock(
     selectionStart: cursor,
     selectionEnd: cursor,
   };
+}
+
+export function insertVaultWikilink(
+  content: string,
+  cursorIndex: number,
+  path: string,
+  label: string,
+): EditResult {
+  const lineStart = lineStartIndex(content, cursorIndex);
+  const line = content.slice(lineStart, cursorIndex);
+  const slashMatch = line.match(/^(\s*)(\/[\w-]*)$/);
+  const replaceStart = slashMatch
+    ? lineStart + (slashMatch[1]?.length ?? 0)
+    : cursorIndex;
+
+  const token = path.replace(/\.md$/i, "");
+  const insert = `[[${token}|${label.trim() || token}]]`;
+  const next = `${content.slice(0, replaceStart)}${insert}${content.slice(cursorIndex)}`;
+  const cursor = replaceStart + insert.length;
+  return {
+    content: next,
+    selectionStart: cursor,
+    selectionEnd: cursor,
+  };
+}
+
+export function slashMenuFilter(content: string, cursorIndex: number): string {
+  const lineStart = lineStartIndex(content, cursorIndex);
+  const line = content.slice(lineStart, cursorIndex);
+  const match = line.match(/^\s*\/([\w-]*)$/);
+  return match?.[1]?.toLowerCase() ?? "";
 }
 
 export function shouldOpenSlashMenu(content: string, cursorIndex: number): boolean {

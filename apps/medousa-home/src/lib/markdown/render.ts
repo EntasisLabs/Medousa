@@ -143,8 +143,10 @@ function sanitizeHtml(html: string): string {
       "checked",
       "aria-label",
       "data-vault-task",
+      "data-transclude-path",
+      "data-transclude-heading",
     ],
-    ADD_TAGS: ["input", "mark", "span", "nav"],
+    ADD_TAGS: ["input", "mark", "span", "nav", "aside", "header", "button"],
   });
 }
 

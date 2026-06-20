@@ -5,27 +5,46 @@
     id: SlashBlockId;
     label: string;
     hint: string;
+    keywords: string;
   }
 
   interface Props {
     open: boolean;
+    filter?: string;
     onSelect: (block: SlashBlockId) => void;
     onClose: () => void;
   }
 
-  let { open, onSelect, onClose }: Props = $props();
+  let { open, filter = "", onSelect, onClose }: Props = $props();
 
   const items: SlashItem[] = [
-    { id: "h1", label: "Title", hint: "Large heading" },
-    { id: "h2", label: "Section", hint: "Section heading" },
-    { id: "h3", label: "Subsection", hint: "Smaller heading" },
-    { id: "bullet", label: "Bullet list", hint: "- item" },
-    { id: "numbered", label: "Numbered list", hint: "1. item" },
-    { id: "checkbox", label: "To-do", hint: "- [ ] item" },
-    { id: "link", label: "Link", hint: "[text](url)" },
-    { id: "quote", label: "Quote", hint: "> quote" },
-    { id: "divider", label: "Divider", hint: "---" },
+    { id: "wikilink", label: "Link to note", hint: "[[path|label]]", keywords: "link note wikilink wiki" },
+    { id: "h1", label: "Title", hint: "# heading", keywords: "title h1 heading" },
+    { id: "h2", label: "Section", hint: "## heading", keywords: "section h2 heading" },
+    { id: "h3", label: "Subsection", hint: "### heading", keywords: "subsection h3 heading" },
+    { id: "bullet", label: "Bullet list", hint: "- item", keywords: "bullet list ul" },
+    { id: "numbered", label: "Numbered list", hint: "1. item", keywords: "numbered ordered ol" },
+    { id: "checkbox", label: "To-do", hint: "- [ ] item", keywords: "todo task checkbox check" },
+    { id: "link", label: "Web link", hint: "[text](url)", keywords: "link url href" },
+    { id: "quote", label: "Quote", hint: "> quote", keywords: "quote blockquote" },
+    { id: "divider", label: "Divider", hint: "---", keywords: "divider hr rule" },
+    { id: "toc", label: "Table of contents", hint: "medousa-toc", keywords: "toc contents table" },
+    { id: "view", label: "Query view", hint: "medousa-view", keywords: "view query table dashboard" },
+    { id: "board", label: "Kanban board", hint: "## columns", keywords: "board kanban columns" },
+    { id: "table", label: "Data table", hint: "| col |", keywords: "table database rows" },
   ];
+
+  const filteredItems = $derived.by(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter(
+      (item) =>
+        item.id.includes(query) ||
+        item.label.toLowerCase().includes(query) ||
+        item.hint.toLowerCase().includes(query) ||
+        item.keywords.includes(query),
+    );
+  });
 
   let highlightIndex = $state(0);
 
@@ -33,8 +52,24 @@
     if (open) highlightIndex = 0;
   });
 
+  $effect(() => {
+    filter;
+    if (highlightIndex >= filteredItems.length) {
+      highlightIndex = Math.max(0, filteredItems.length - 1);
+    }
+  });
+
   export function handleMenuKeydown(event: KeyboardEvent): boolean {
     if (!open) return false;
+    const visible = filteredItems;
+    if (visible.length === 0) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return true;
+      }
+      return false;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
@@ -42,17 +77,17 @@
     }
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      highlightIndex = (highlightIndex + 1) % items.length;
+      highlightIndex = (highlightIndex + 1) % visible.length;
       return true;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      highlightIndex = (highlightIndex - 1 + items.length) % items.length;
+      highlightIndex = (highlightIndex - 1 + visible.length) % visible.length;
       return true;
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      onSelect(items[highlightIndex]!.id);
+      onSelect(visible[highlightIndex]!.id);
       return true;
     }
     return false;
@@ -74,7 +109,7 @@
       </p>
     </div>
     <ul class="grid max-h-48 grid-cols-1 gap-0.5 overflow-y-auto px-2 pb-2 sm:grid-cols-2">
-      {#each items as item, index (item.id)}
+      {#each filteredItems as item, index (item.id)}
         <li>
           <button
             type="button"
@@ -90,6 +125,8 @@
             <span class="font-mono text-[10px] text-surface-500">{item.hint}</span>
           </button>
         </li>
+      {:else}
+        <li class="px-2.5 py-3 text-sm text-surface-500">No matching blocks</li>
       {/each}
     </ul>
   </div>
