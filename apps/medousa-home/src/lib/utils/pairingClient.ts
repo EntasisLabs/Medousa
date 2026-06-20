@@ -11,6 +11,7 @@ export interface PairCompleteFromQrResult {
   pairingId: string;
   phoneId: string;
   workshopDeviceId: string;
+  workshopId: string;
   workshopPeerName: string;
   daemonUrl: string;
 }

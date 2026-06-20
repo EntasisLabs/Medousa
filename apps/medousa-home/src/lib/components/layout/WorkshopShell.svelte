@@ -31,6 +31,7 @@
   import { recurring } from "$lib/stores/recurring.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
 
   let daemonHealth = $state<DaemonHealth | null>(null);
@@ -43,6 +44,7 @@
   });
 
   onMount(() => {
+    void workshops.load();
     const detachViewport = layout.attachViewportTracking();
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
@@ -233,6 +235,7 @@
       <StatusBar
         minimal={activeSurface === "chat"}
         health={daemonHealth}
+        workshopLabel={workshops.hasMultipleWorkshops ? workshops.activeLabel : null}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}
         cronActiveCount={recurring.activeCount().enabled}

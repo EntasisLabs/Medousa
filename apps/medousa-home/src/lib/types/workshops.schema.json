@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://medousa.dev/schemas/workshops/v1",
+  "title": "Medousa Home workshop registry",
+  "description": "Client-side registry of Medousa Engine connections. See ADR-003.",
+  "type": "object",
+  "required": ["version", "activeWorkshopId", "workshops"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "activeWorkshopId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workshops": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/workshop" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "workshopKind": {
+      "type": "string",
+      "enum": ["local", "paired"]
+    },
+    "workshopIcon": {
+      "type": "string",
+      "enum": ["home", "building", "team"]
+    },
+    "pairingRef": {
+      "type": "object",
+      "required": [
+        "pairingId",
+        "phoneId",
+        "workshopDeviceId",
+        "pairedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pairingId": { "type": "string", "minLength": 1 },
+        "phoneId": { "type": "string", "minLength": 1 },
+        "workshopDeviceId": { "type": "string", "minLength": 1 },
+        "pairedAt": { "type": "string", "format": "date-time" },
+        "credentialsRelPath": {
+          "type": "string",
+          "description": "Path relative to medousa data dir, e.g. workshops/{id}/pairing.json"
+        },
+        "hasIrohTicket": { "type": "boolean" },
+        "workshopPeerName": { "type": "string" }
+      }
+    },
+    "clientState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lastSessionId": { "type": "string" },
+        "colorThemeId": { "type": "string" }
+      }
+    },
+    "workshop": {
+      "type": "object",
+      "required": ["id", "label", "kind", "url", "createdAt", "updatedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable id; reserved: personal"
+        },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "kind": { "$ref": "#/$defs/workshopKind" },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "icon": { "$ref": "#/$defs/workshopIcon" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastConnectedAt": { "type": "string", "format": "date-time" },
+        "pairing": { "$ref": "#/$defs/pairingRef" },
+        "clientState": { "$ref": "#/$defs/clientState" }
+      }
+    }
+  }
+}

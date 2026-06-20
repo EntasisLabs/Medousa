@@ -432,6 +432,8 @@ export class ChatStore {
       const history = await getSessionHistory(sessionId);
       if (epoch !== this.transcriptEpoch) return;
       this.messages = mapTurns(history.turns, { sessionId });
+      const { workshops } = await import("$lib/stores/workshops.svelte");
+      void workshops.saveActiveSession(sessionId);
     } catch (err) {
       if (epoch === this.transcriptEpoch) {
         this.streamError = err instanceof Error ? err.message : String(err);

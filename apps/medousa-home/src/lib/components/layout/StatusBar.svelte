@@ -11,6 +11,8 @@
     lastTickAt?: string | null;
     /** Whisper connection only — for Chat tab focus. */
     minimal?: boolean;
+    /** Active workshop label when multiple engines are saved. */
+    workshopLabel?: string | null;
     onOpenRuntime?: () => void;
     onOpenCron?: () => void;
   }
@@ -24,6 +26,7 @@
     pendingDeliveries = null,
     lastTickAt = null,
     minimal = false,
+    workshopLabel = null,
     onOpenRuntime,
     onOpenCron,
   }: Props = $props();
@@ -73,6 +76,10 @@
   <span class="workshop-status-whisper {statusTextClass}">
     <span class={statusDotClass} aria-hidden="true"></span>
     <span class="truncate">{statusLabel}</span>
+    {#if workshopLabel && !minimal}
+      <span class="text-surface-500">·</span>
+      <span class="truncate text-surface-400">{workshopLabel}</span>
+    {/if}
   </span>
 
   {#if !minimal}

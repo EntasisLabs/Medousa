@@ -23,6 +23,7 @@
     type PairingQrImage,
   } from "$lib/utils/pairingApi";
   import { waitForEngine } from "$lib/utils/providersApi";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -177,6 +178,7 @@
       if (fresh) {
         connectedDevice = fresh;
         knownPairingIds = status.pairedDevices.map((device) => device.pairingId);
+        void workshops.load();
         onPaired?.(fresh);
       }
     } catch {

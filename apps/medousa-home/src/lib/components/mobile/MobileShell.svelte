@@ -20,6 +20,7 @@
   import { ensureNotificationPermission } from "$lib/notifications";
   import { setMobileBadge } from "$lib/mobileBadge";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import {
     attachMobileKeyboardViewport,
     setMobileComposerFocus,
@@ -61,6 +62,7 @@
   });
 
   onMount(() => {
+    void workshops.load();
     void ensureNotificationPermission();
     void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();

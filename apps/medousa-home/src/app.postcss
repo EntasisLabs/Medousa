@@ -809,6 +809,16 @@
     @apply flex h-9 w-9 items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-800 hover:text-surface-200;
   }
 
+  .workshop-rail-workshop-btn {
+    @apply text-[10px] font-semibold text-surface-50;
+    background-color: rgb(var(--color-primary-500) / 0.2);
+    @apply ring-1 ring-inset ring-primary-500/35 hover:bg-primary-500/30 hover:text-surface-50;
+  }
+
+  .workshop-rail-workshop-monogram {
+    @apply block max-w-[2ch] truncate text-center tracking-tight;
+  }
+
   .workshop-rail-btn-active {
     background-color: rgb(var(--color-primary-500) / 0.1);
     @apply text-primary-300 ring-1 ring-inset ring-primary-500/25;
@@ -2373,6 +2383,15 @@
 
   .mobile-sheet-header {
     @apply flex shrink-0 items-center justify-between border-b border-surface-500/40 px-4 py-3;
+  }
+
+  .workshop-rail-sheet-backdrop {
+    @apply items-start justify-start bg-transparent p-0;
+    background-color: rgb(var(--color-surface-950) / 0.35);
+  }
+
+  .workshop-rail-sheet {
+    @apply ml-[52px] mt-2 max-h-[min(28rem,calc(100vh-1rem))] w-[min(22rem,calc(100vw-4rem))] rounded-xl rounded-tl-md border border-surface-500/45 shadow-2xl;
   }
 
   .mobile-story-overlay {

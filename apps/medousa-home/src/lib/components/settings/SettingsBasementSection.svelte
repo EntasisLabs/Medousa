@@ -21,6 +21,7 @@
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
+  import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
   import {
     workshopBasementConnectionLabel,
@@ -611,4 +612,6 @@
       {/if}
     {/if}
   </div>
+
+  <SettingsWorkshopsSection {onDaemonHealth} />
 </section>

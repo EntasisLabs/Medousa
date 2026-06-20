@@ -11,6 +11,7 @@
     UserRound,
     Zap,
   } from "@lucide/svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import type { Component } from "svelte";
   import type { Surface } from "$lib/types/ui";
 
@@ -74,18 +75,7 @@
 </script>
 
 <nav class="workshop-icon-rail" aria-label="Primary navigation">
-  <button
-    type="button"
-    class="workshop-rail-btn mb-3 font-semibold text-[11px] text-surface-300 {active === 'chat'
-      ? 'workshop-rail-btn-active'
-      : ''}"
-    title="Chat"
-    aria-label="Chat"
-    aria-current={active === "chat" ? "page" : undefined}
-    onclick={() => onSelect("chat")}
-  >
-    M
-  </button>
+  <WorkshopSwitcherCompact variant="rail" />
 
   <div class="flex flex-1 flex-col gap-0.5">
     {#each lifeOrbit as item (item.id)}

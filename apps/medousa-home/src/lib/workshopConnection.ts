@@ -8,6 +8,7 @@ import { workspace } from "$lib/stores/workspace.svelte";
 import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
+import { workshops } from "$lib/stores/workshops.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
 import {
   budgetRequestIdFromStreamEvent,
@@ -289,6 +290,7 @@ export async function reconnectWorkshop(
     await userProfiles.load();
     await settings.hydrateWorkRetentionFromDaemon();
     await startWorkshopStreams();
+    await workshops.restoreLastSession();
   }
 
   return health;
@@ -320,6 +322,7 @@ export function connectWorkshop(options: {
 
       if (health.ok) {
         await startWorkshopStreams();
+        await workshops.restoreLastSession();
       }
     } catch (err) {
       const failed = {

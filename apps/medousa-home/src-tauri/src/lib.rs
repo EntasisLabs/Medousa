@@ -10,6 +10,7 @@ mod messaging;
 mod medousa_paths;
 mod pairing;
 mod pairing_client;
+mod workshop_registry;
 mod workshop_transport;
 mod capabilities;
 mod composer_stt;
@@ -52,15 +53,21 @@ pub fn run() {
         .manage(daemon::local_inference::LocalInferenceStreamState::new());
 
     builder = builder
-        .setup(|_app| {
+        .setup(|app| {
+            if let Err(err) = workshop_registry::sync_daemon_state_from_registry(
+                &app.state::<DaemonState>(),
+            ) {
+                eprintln!("workshop registry sync: {err}");
+            }
+
             #[cfg(any(windows, target_os = "linux"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                let _ = _app.deep_link().register_all();
+                let _ = app.deep_link().register_all();
             }
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            setup_desktop_tray(_app)?;
+            setup_desktop_tray(app)?;
 
             Ok(())
         });
@@ -104,6 +111,11 @@ pub fn run() {
             pairing::pairing_load_credentials,
             pairing::pairing_send_heartbeat,
             pairing::bonjour_status,
+            workshop_registry::workshops_load,
+            workshop_registry::workshops_set_active,
+            workshop_registry::workshops_rename,
+            workshop_registry::workshops_remove,
+            workshop_registry::workshops_update_client_state,
             mcp_gateway::mcp_gateway_load_config,
             mcp_gateway::mcp_gateway_status,
             mcp_gateway::mcp_gateway_restart,

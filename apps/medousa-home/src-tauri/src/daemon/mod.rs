@@ -163,6 +163,16 @@ pub fn set_daemon_url(state: State<'_, DaemonState>, url: String) -> Result<(), 
     if trimmed.is_empty() {
         return Err("daemon URL cannot be empty".to_string());
     }
+    apply_daemon_url(&state, &trimmed)?;
+    let _ = crate::workshop_registry::update_active_workshop_url(&trimmed);
+    Ok(())
+}
+
+pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
+    let trimmed = url.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        return Err("daemon URL cannot be empty".to_string());
+    }
     *state.daemon_url.lock().expect("daemon url lock") = trimmed.clone();
     persist_daemon_url(&trimmed)?;
     workshop_transport::invalidate_workshop_route_cache();

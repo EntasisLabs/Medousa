@@ -7,6 +7,7 @@
   import { wizard } from "$lib/stores/wizard.svelte";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
   import { completePairingFromQr } from "$lib/utils/pairingClient";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import {
     workshopPairingFromHostHint,
     workshopPairingStepsHint,
@@ -153,6 +154,10 @@
             qrUrl: pairLink.trim(),
             daemonUrl: daemonUrl.trim(),
           });
+          await workshops.onPairComplete(paired);
+          if (workshops.pendingSwitchAfterPair) {
+            await workshops.confirmSwitchAfterPair();
+          }
           statusMessage = `Paired with ${paired.workshopPeerName} — you're ready to talk.`;
         } catch (err) {
           wizard.error = err instanceof Error ? err.message : String(err);

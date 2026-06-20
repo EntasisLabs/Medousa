@@ -91,28 +91,34 @@ One active connection at a time:
 
 ### Phases
 
-#### M0 — Design lock (next epic)
+#### M0 — Design lock ✅
 
-- [ ] ADR: server vs profile, credential storage, one-active-SSE
-- [ ] `WorkshopServer` schema + file path (`workshops.json`)
-- [ ] UX wireframes: switcher, add-workshop, mid-turn switch confirm
+- [x] [ADR-003](../../../docs/architecture/decisions/adr-003-multi-workshop-connections.md): server vs profile, credential storage, one-active-SSE
+- [x] `WorkshopRegistry` schema — `src/lib/types/workshopRegistry.ts` + `workshops.schema.json`
+- [x] UX wireframes: switcher, add-workshop, mid-turn switch confirm (in ADR-003)
 
-#### M1 — Registry + switcher
+#### M1 — Registry + switcher ✅
 
-- [ ] Persist N servers; default “Personal” on first run
-- [ ] Reuse `ProfileSwitcherCompact` pattern → workshop switcher
-- [ ] `reconnectWorkshop(serverId)` keyed selection
-- [ ] Tauri: multi-credential store (extend `pairing_client.rs`)
+- [x] Persist N servers; default “Personal” on first run (`workshop_registry.rs` + migration)
+- [x] Reuse `ProfileSwitcherCompact` pattern → `WorkshopSwitcherCompact.svelte`
+- [x] `selectWorkshop()` → `workshops_set_active` + `reconnectWorkshop()`
+- [x] Tauri: multi-credential store (`pairing_client.rs` per-workshop paths + session tokens)
+- [x] Settings → Connection workshops list (`SettingsWorkshopsSection.svelte`)
+- [x] Mid-turn / dirty vault switch confirm
 
-#### M2 — QR join (marketing demo)
+#### M2 — QR join ✅
 
-- [ ] “Add workshop” → scan QR v2 → new registry entry
-- [ ] Optional “Switch now?” after pair
+- [x] “Add workshop” → paste / scan pairing link → registry entry (`WorkshopJoinSheet.svelte`)
+- [x] “Switch now?” after pair (`pendingSwitchAfterPair` prompt)
+- [x] Mobile wizard auto-switches to paired workshop on first setup
 
-#### M3 — Slack polish
+#### M3 — Slack polish (partial ✅)
 
-- [ ] Connection badge per server, rename/remove, last session per server
-- [ ] Turn tags include `workshop_id` in UI
+- [x] Connection dot per workshop in switcher list (active workshop health)
+- [x] Rename/remove, last connected timestamp in Settings
+- [x] Per-workshop last chat session (`clientState.lastSessionId` + restore on switch)
+- [x] Status bar shows active workshop when multiple saved
+- [ ] Turn tags include `workshop_id` in UI (defer — no cross-workshop turns in v1)
 
 #### M4 — Team / enterprise
 
@@ -137,11 +143,12 @@ One active connection at a time:
 ## Recommended sequence
 
 ```
-Themes T1 → T2 → T3     (parallel-safe, low risk)
-Multi-daemon M0 ADR     (1 session, design lock)
-Multi-daemon M1         (registry + switcher)
+Themes T1 → T2 → T3 ✅
+Multi-daemon M0 ADR ✅
+Multi-daemon M1 ✅  (registry + switcher)
+Multi-daemon M2 ✅  (QR join + switch prompt)
+Multi-daemon M3     (polish — mostly done)
 Themes T4 per-server    (after M1)
-Multi-daemon M2 QR join (demo-ready pitch)
 ```
 
 ---
@@ -149,5 +156,7 @@ Multi-daemon M2 QR join (demo-ready pitch)
 ## References
 
 - `apps/medousa-home/src/lib/theme/themeRegistry.ts`
+- `apps/medousa-home/src/lib/types/workshopRegistry.ts`
+- `docs/architecture/decisions/adr-003-multi-workshop-connections.md`
 - `architecture/iroh-p2p-pairing-plan.md`
 - `docs/architecture/decisions/adr-002-user-profiles.md`

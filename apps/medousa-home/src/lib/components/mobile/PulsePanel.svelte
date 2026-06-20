@@ -1,5 +1,6 @@
 <script lang="ts">
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { Bell } from "@lucide/svelte";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -90,6 +91,7 @@
       ></span>
       <span class="truncate text-xs text-surface-300">{pulse.statusLine}</span>
     </button>
+    <WorkshopSwitcherCompact />
     <ProfileSwitcherCompact />
     <button
       type="button"
