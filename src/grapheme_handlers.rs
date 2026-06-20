@@ -14,6 +14,13 @@ use crate::daemon_api::{
     GraphemeScriptEntryDto, GraphemeScriptsListQuery, GraphemeScriptsListResponse,
 };
 use crate::grapheme_script::service::GraphemeScriptService;
+use crate::grapheme_workshop::{
+    compile_source, enforce_grapheme_allowlist, get_allowlist, lifecycle_events, load_wasm_module,
+    save_script, update_allowlist, GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest,
+    GraphemeCompileRequest, GraphemeCompileResponse, GraphemeLifecycleResponse,
+    GraphemeModuleLoadRequest, GraphemeModuleLoadResponse, GraphemeScriptSaveRequest,
+    GraphemeScriptSaveResponse,
+};
 use crate::tools::run_grapheme_via_runtime;
 
 #[derive(Clone)]
@@ -181,6 +188,7 @@ pub async fn run_grapheme_source(
     if source.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "source is required".to_string()));
     }
+    enforce_grapheme_allowlist(source).map_err(|err| (StatusCode::FORBIDDEN, err))?;
 
     let result = run_grapheme_via_runtime(&state.composition, source, "workshop_grapheme_run")
         .await
@@ -189,7 +197,7 @@ pub async fn run_grapheme_source(
     Ok(Json(GraphemeRunResponse { result }))
 }
 
-fn script_entry_dto(entry: crate::grapheme_script::entry::GraphemeScriptEntry) -> GraphemeScriptEntryDto {
+pub fn script_entry_dto(entry: crate::grapheme_script::entry::GraphemeScriptEntry) -> GraphemeScriptEntryDto {
     GraphemeScriptEntryDto {
         id: entry.id,
         name: entry.name,
@@ -215,8 +223,51 @@ fn truncate_body(body: &str, max_len: usize) -> String {
     format!("{}…", &body[..max_len])
 }
 
+pub async fn get_grapheme_allowlist() -> Json<GraphemeAllowlistResponse> {
+    Json(get_allowlist().await)
+}
+
+pub async fn put_grapheme_allowlist(
+    Json(request): Json<GraphemeAllowlistUpdateRequest>,
+) -> Result<Json<GraphemeAllowlistResponse>, (StatusCode, String)> {
+    update_allowlist(request)
+        .await
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn post_grapheme_script_save(
+    Json(request): Json<GraphemeScriptSaveRequest>,
+) -> Result<Json<GraphemeScriptSaveResponse>, (StatusCode, String)> {
+    save_script(request)
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn post_grapheme_compile(
+    Json(request): Json<GraphemeCompileRequest>,
+) -> Result<Json<GraphemeCompileResponse>, (StatusCode, String)> {
+    compile_source(request)
+        .await
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn post_grapheme_module_load(
+    Json(request): Json<GraphemeModuleLoadRequest>,
+) -> Result<Json<GraphemeModuleLoadResponse>, (StatusCode, String)> {
+    load_wasm_module(request)
+        .await
+        .map(Json)
+        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+}
+
+pub async fn get_grapheme_lifecycle() -> Json<GraphemeLifecycleResponse> {
+    Json(lifecycle_events().await)
+}
+
 pub fn grapheme_router(state: GraphemeApiState) -> axum::Router {
-    use axum::routing::{get, post};
+    use axum::routing::{get, post, put};
 
     axum::Router::new()
         .route(
@@ -232,8 +283,24 @@ pub fn grapheme_router(state: GraphemeApiState) -> axum::Router {
             get(get_grapheme_module_ops),
         )
         .route(
+            "/v1/grapheme/allowlist",
+            get(get_grapheme_allowlist).put(put_grapheme_allowlist),
+        )
+        .route(
             "/v1/grapheme/scripts",
-            get(list_grapheme_scripts),
+            get(list_grapheme_scripts).post(post_grapheme_script_save),
+        )
+        .route(
+            "/v1/grapheme/compile",
+            post(post_grapheme_compile),
+        )
+        .route(
+            "/v1/grapheme/modules/load",
+            post(post_grapheme_module_load),
+        )
+        .route(
+            "/v1/grapheme/lifecycle",
+            get(get_grapheme_lifecycle),
         )
         .route(
             "/v1/grapheme/scripts/{script_id}",

@@ -149,6 +149,13 @@ fn default_web_search_try_fallbacks() -> bool {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GraphemeWorkshopOverlay {
+    /// Empty = all discovered modules allowed. Non-empty = only these module ids may run in workshop/daemon grapheme runs.
+    #[serde(default)]
+    pub allowed_modules: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CapabilityManifest {
     #[serde(default)]
     pub capabilities: Vec<CapabilityManifestEntry>,
@@ -156,6 +163,8 @@ pub struct CapabilityManifest {
     pub web_search: WebSearchSettings,
     #[serde(default)]
     pub disabled_bindings: Vec<DisabledBindingRef>,
+    #[serde(default)]
+    pub grapheme: GraphemeWorkshopOverlay,
 }
 
 /// Resolved binding ready for agent consumption.
@@ -702,6 +711,40 @@ fn merge_capability_manifests(base: &mut CapabilityManifest, overlay: Capability
             base.disabled_bindings.push(disabled);
         }
     }
+    base.grapheme = overlay.grapheme;
+}
+
+/// Workshop Grapheme module allowlist (empty = all modules allowed).
+pub fn grapheme_allowed_modules() -> Vec<String> {
+    let (manifest, _) = load_capability_manifest();
+    manifest
+        .grapheme
+        .allowed_modules
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+pub fn set_grapheme_allowed_modules(modules: Vec<String>) -> Result<(), String> {
+    let path = capabilities_manifest_path();
+    let mut overlay = if path.exists() {
+        let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        toml::from_str::<CapabilityManifest>(&raw).unwrap_or_default()
+    } else {
+        CapabilityManifest::default()
+    };
+    overlay.grapheme.allowed_modules = modules
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let encoded = toml::to_string_pretty(&overlay).map_err(|err| err.to_string())?;
+    std::fs::write(&path, encoded).map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 /// Resolved web-search operator prefs (capabilities.toml + env override).

@@ -6401,6 +6401,8 @@ dependencies = [
  "fs2",
  "futures-util",
  "genai 0.6.5",
+ "grapheme-compiler",
+ "grapheme-runtime",
  "grapheme-sdk",
  "hmac 0.12.1",
  "httparse",

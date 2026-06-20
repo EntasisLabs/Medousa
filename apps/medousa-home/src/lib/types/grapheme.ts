@@ -95,3 +95,62 @@ export interface GraphemeRunResponse {
     diagnostics?: unknown;
   };
 }
+
+export interface GraphemeAllowlistResponse {
+  allowed_modules: string[];
+  enforce: boolean;
+}
+
+export interface GraphemeScriptSaveRequest {
+  name: string;
+  body: string;
+  id?: string | null;
+  modules?: string[];
+  tags?: string[];
+  intent?: string | null;
+  source_session_id?: string | null;
+}
+
+export interface GraphemeScriptSaveResponse {
+  script: GraphemeScriptEntry;
+}
+
+export interface GraphemeCompileRequest {
+  source: string;
+  mode?: string | null;
+}
+
+export interface GraphemeCompileResponse {
+  mode: string;
+  validated: boolean;
+  artifact_id?: string | null;
+  lint_warnings: string[];
+  compile_hints: string[];
+  aot_stage?: string | null;
+}
+
+export interface GraphemeModuleLoadRequest {
+  module_id: string;
+  wasm_path: string;
+  version?: string | null;
+  abi?: string | null;
+  compatibility_mode?: string | null;
+}
+
+export interface GraphemeModuleLoadResponse {
+  module_id: string;
+  generation_id: number;
+  version: string;
+  content_hash: string;
+}
+
+export interface GraphemeLifecycleEvent {
+  kind: string;
+  module_id: string;
+  generation_id?: number | null;
+  message?: string | null;
+}
+
+export interface GraphemeLifecycleResponse {
+  events: GraphemeLifecycleEvent[];
+}

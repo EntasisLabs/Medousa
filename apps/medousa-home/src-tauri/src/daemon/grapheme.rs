@@ -1,6 +1,9 @@
 use crate::daemon::types::{
-    GraphemeModuleDetailResponse, GraphemeModuleOpsResponse, GraphemeModulesListResponse,
-    GraphemeRunRequest, GraphemeRunResponse, GraphemeScriptDetailResponse,
+    GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest, GraphemeCompileRequest,
+    GraphemeCompileResponse, GraphemeLifecycleResponse, GraphemeModuleDetailResponse,
+    GraphemeModuleLoadRequest, GraphemeModuleLoadResponse, GraphemeModuleOpsResponse,
+    GraphemeModulesListResponse, GraphemeRunRequest, GraphemeRunResponse,
+    GraphemeScriptDetailResponse, GraphemeScriptSaveRequest, GraphemeScriptSaveResponse,
     GraphemeScriptsListResponse,
 };
 use tauri::State;
@@ -86,4 +89,61 @@ pub async fn grapheme_run_source(
         &GraphemeRunRequest { source },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn grapheme_get_allowlist(
+    state: State<'_, DaemonState>,
+) -> Result<GraphemeAllowlistResponse, String> {
+    workshop_http::get_json(&state, "/v1/grapheme/allowlist").await
+}
+
+#[tauri::command]
+pub async fn grapheme_update_allowlist(
+    state: State<'_, DaemonState>,
+    allowed_modules: Vec<String>,
+) -> Result<GraphemeAllowlistResponse, String> {
+    workshop_http::put_json(
+        &state,
+        "/v1/grapheme/allowlist",
+        &GraphemeAllowlistUpdateRequest { allowed_modules },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn grapheme_save_script(
+    state: State<'_, DaemonState>,
+    request: GraphemeScriptSaveRequest,
+) -> Result<GraphemeScriptSaveResponse, String> {
+    workshop_http::post_json(&state, "/v1/grapheme/scripts", &request).await
+}
+
+#[tauri::command]
+pub async fn grapheme_compile_source(
+    state: State<'_, DaemonState>,
+    source: String,
+    mode: Option<String>,
+) -> Result<GraphemeCompileResponse, String> {
+    workshop_http::post_json(
+        &state,
+        "/v1/grapheme/compile",
+        &GraphemeCompileRequest { source, mode },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn grapheme_load_module(
+    state: State<'_, DaemonState>,
+    request: GraphemeModuleLoadRequest,
+) -> Result<GraphemeModuleLoadResponse, String> {
+    workshop_http::post_json(&state, "/v1/grapheme/modules/load", &request).await
+}
+
+#[tauri::command]
+pub async fn grapheme_get_lifecycle(
+    state: State<'_, DaemonState>,
+) -> Result<GraphemeLifecycleResponse, String> {
+    workshop_http::get_json(&state, "/v1/grapheme/lifecycle").await
 }

@@ -53,10 +53,17 @@ import type {
 } from "$lib/types/vault";
 import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
 import type {
+  GraphemeAllowlistResponse,
+  GraphemeCompileResponse,
+  GraphemeLifecycleResponse,
   GraphemeModuleDetailResponse,
+  GraphemeModuleLoadRequest,
+  GraphemeModuleLoadResponse,
   GraphemeModulesListResponse,
   GraphemeRunResponse,
   GraphemeScriptDetailResponse,
+  GraphemeScriptSaveRequest,
+  GraphemeScriptSaveResponse,
   GraphemeScriptsListResponse,
 } from "$lib/types/grapheme";
 import type {
@@ -843,6 +850,44 @@ export async function runGraphemeSource(
   source: string,
 ): Promise<GraphemeRunResponse> {
   return invoke<GraphemeRunResponse>("grapheme_run_source", { source });
+}
+
+export async function getGraphemeAllowlist(): Promise<GraphemeAllowlistResponse> {
+  return invoke<GraphemeAllowlistResponse>("grapheme_get_allowlist");
+}
+
+export async function updateGraphemeAllowlist(
+  allowedModules: string[],
+): Promise<GraphemeAllowlistResponse> {
+  return invoke<GraphemeAllowlistResponse>("grapheme_update_allowlist", {
+    allowedModules,
+  });
+}
+
+export async function saveGraphemeScript(
+  request: GraphemeScriptSaveRequest,
+): Promise<GraphemeScriptSaveResponse> {
+  return invoke<GraphemeScriptSaveResponse>("grapheme_save_script", { request });
+}
+
+export async function compileGraphemeSource(
+  source: string,
+  mode?: string,
+): Promise<GraphemeCompileResponse> {
+  return invoke<GraphemeCompileResponse>("grapheme_compile_source", {
+    source,
+    mode: mode ?? null,
+  });
+}
+
+export async function loadGraphemeModule(
+  request: GraphemeModuleLoadRequest,
+): Promise<GraphemeModuleLoadResponse> {
+  return invoke<GraphemeModuleLoadResponse>("grapheme_load_module", { request });
+}
+
+export async function getGraphemeLifecycle(): Promise<GraphemeLifecycleResponse> {
+  return invoke<GraphemeLifecycleResponse>("grapheme_get_lifecycle");
 }
 
 export async function listWorkflows(
