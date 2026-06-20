@@ -5,6 +5,7 @@
   import CommandPalette from "$lib/components/layout/CommandPalette.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
+  import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -72,3 +73,4 @@
 />
 
 <VaultGarageImportWizard />
+<VaultContextMenu />

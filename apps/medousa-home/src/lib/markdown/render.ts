@@ -11,7 +11,10 @@ export interface MarkdownRenderOptions {
   titleByPath?: Map<string, string>;
   sourcePath?: string | null;
   knownPaths?: ReadonlySet<string>;
+  interactiveTasks?: boolean;
 }
+
+let previewTaskCheckboxIndex = 0;
 
 let configured = false;
 let activeRenderOptions: MarkdownRenderOptions = {};
@@ -103,6 +106,14 @@ function configureMarked(): void {
           : "language-text";
         return `<div class="markdown-code-block"><div class="markdown-code-header">${langLabel}</div><pre class="markdown-pre"><code class="markdown-code ${className}">${escapeHtml(text)}</code></pre></div>`;
       },
+      checkbox({ checked }: Tokens.Checkbox) {
+        if (!activeRenderOptions.interactiveTasks) {
+          return `<input ${checked ? 'checked="" ' : ""}disabled="" type="checkbox"> `;
+        }
+        const index = previewTaskCheckboxIndex;
+        previewTaskCheckboxIndex += 1;
+        return `<input ${checked ? 'checked="" ' : ""}type="checkbox" class="vault-preview-task" data-vault-task="${index}" aria-label="Toggle task"> `;
+      },
     },
   });
 }
@@ -131,6 +142,7 @@ function sanitizeHtml(html: string): string {
       "disabled",
       "checked",
       "aria-label",
+      "data-vault-task",
     ],
     ADD_TAGS: ["input", "mark", "span", "nav"],
   });
@@ -155,6 +167,7 @@ export function renderMarkdown(
 
   activeRenderOptions = normalizeRenderOptions(options);
   activeHeadingSlugCounts = new Map();
+  previewTaskCheckboxIndex = 0;
 
   configureMarked();
   const preprocessed = preprocessMarkdown(

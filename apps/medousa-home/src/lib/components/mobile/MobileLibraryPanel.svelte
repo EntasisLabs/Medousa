@@ -11,6 +11,11 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
+  import {
+    bindVaultLongPress,
+    handleVaultNoteContextMenuEvent,
+    shouldSuppressVaultContextMenuClick,
+  } from "$lib/utils/vaultContextMenuEvents";
 
   interface Props {
     visible: boolean;
@@ -46,6 +51,7 @@
   }
 
   async function openNote(path: string) {
+    if (shouldSuppressVaultContextMenuClick()) return;
     await vault.openNote(path);
     vault.enterPreviewMode();
     layout.setLibraryView("reader");
@@ -120,7 +126,10 @@
               <button
                 type="button"
                 class="mobile-you-row flex w-full items-center gap-2 text-left"
-                onclick={() => openNote(hit.note.path)}
+                onclick={() => void openNote(hit.note.path)}
+                oncontextmenu={(event) =>
+                  handleVaultNoteContextMenuEvent(hit.note.path, event)}
+                use:bindVaultLongPress={() => hit.note.path}
               >
                 <span class="min-w-0 flex-1">
                   <span class="font-medium text-surface-100">{hit.note.title}</span>

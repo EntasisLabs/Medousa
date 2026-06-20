@@ -3,6 +3,11 @@
   import type { VaultTreeNode } from "$lib/types/vault";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { iconForSpace } from "$lib/utils/vaultSpaceIcons";
+  import {
+    bindVaultLongPress,
+    handleVaultNoteContextMenuEvent,
+    shouldSuppressVaultContextMenuClick,
+  } from "$lib/utils/vaultContextMenuEvents";
   import { isVaultPointerDragging, shouldSuppressVaultTreeClick, startVaultPointerDrag } from "$lib/utils/vaultTreeDrag";
   import VaultTreeNodeView from "./VaultTreeNode.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
@@ -88,12 +93,17 @@
   const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix));
 
   function handleClick() {
-    if (shouldSuppressVaultTreeClick()) return;
+    if (shouldSuppressVaultTreeClick() || shouldSuppressVaultContextMenuClick()) return;
     if (node.path && !node.isFolder) {
       onSelect(node.path);
       return;
     }
     expanded = !expanded;
+  }
+
+  function handleContextMenu(event: MouseEvent) {
+    if (!isNoteLeaf || !node.path) return;
+    handleVaultNoteContextMenuEvent(node.path, event);
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -137,6 +147,8 @@
     onclick={handleClick}
     onkeydown={handleKeydown}
     onpointerenter={handlePointerEnter}
+    oncontextmenu={handleContextMenu}
+    use:bindVaultLongPress={() => (isNoteLeaf && node.path ? node.path : null)}
   >
     {#if isNoteLeaf}
       <button

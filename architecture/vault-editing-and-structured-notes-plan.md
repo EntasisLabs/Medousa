@@ -27,6 +27,9 @@ Living plan for **Library** as the “Obsidian × Notion, AI-native” notebook:
 | 2 | Drag-move filter: **stay on All only if All was active before the drop**; otherwise focus destination space |
 | 3 | Links: Obsidian-style `[[wikilinks]]` + Notion-smooth in-doc navigation; AI reads/writes same files |
 | 4 | **⌘A / Ctrl+A** in **markdown source textarea only** |
+| 5 | **Polish writes grep-able markdown** — no hidden UI-only state (completion stamps inline; embeds are file paths) |
+| 6 | **Graph view not in Library** — Context map covers relationship discovery |
+| 7 | **No Notion-style properties panel** — optional frontmatter keys only when needed; no schema UI |
 
 ---
 
@@ -161,6 +164,115 @@ columns: name, status, due
 
 ---
 
+## Phase G — Friction, environment & daily-driver polish
+
+**Goal:** Reduce friction so the vault is a place to **manage everything** without Medousa-specific lock-in. UI is a lens; files on disk stay portable (Obsidian, vim, git).
+
+**North-star test:** If Home vanished tomorrow, notes remain fully usable elsewhere; every polish feature writes **grep-able markdown** or copies **filesystem paths**.
+
+### Locked decisions (2026-06)
+
+| Topic | Decision |
+|-------|----------|
+| **Note workshop** | Floating **modal** (draggable + minimizable). Keep **Ask about note** entry. Same daemon/session as Chat — not a second tier. Tone: helpful companion, not corporate “Help Bot”. |
+| **Inline images** | `![alt](path)` for **relative or absolute** local paths when readable; `https://` unchanged. Attachment/image **context menu → Insert embed** inserts markdown at cursor. |
+| **Task completion date** | **Inline text** when enabled (setting; off by default). Example: `- [x] Ship feature (done 2026-06-07)`. |
+| **Context menu mobile** | **Long-press** parity with desktop right-click. |
+| **Ship order** | **Highest ROI → lowest** (G1 → G2 → G3 → G4 → G5 below). |
+| **Transclusion** | Yes — `![[note]]` / embed another note in preview; source stays separate files. |
+| **Properties UI** | No dedicated Notion-style panel. |
+| **Graph in Library** | No — Context view already covers this. |
+| **User templates** | Save **custom templates** (markdown snippets user defines); appear in New note alongside built-ins. |
+
+### G1 — Context & filesystem honesty *(highest ROI)*
+
+**Goal:** Finder/Obsidian muscle memory on tree, preview, attachments.
+
+| Item | Work |
+|------|------|
+| G1a | Shared context menu: tree row, preview, attachment chip |
+| G1b | **Copy path**, **Copy wikilink** `[[…]]` |
+| G1c | **Rename**, **Move**, **Duplicate note** (surface existing actions) |
+| G1d | **Reveal in Finder**, **Open with default app** |
+| G1e | **Copy as markdown** (full note body) |
+| G1f | Desktop: right-click · Mobile: **long-press** |
+
+**Acceptance:** Right-click daily note → copy path → paste into `from:` or agent prompt; long-press same on phone.
+
+### G2 — Preview as workspace *(high ROI)*
+
+**Goal:** Interact in preview; source updates on disk.
+
+| Item | Work |
+|------|------|
+| G2a | Toggle `- [ ]` / `- [x]` in preview (writes markdown + autosave) |
+| G2b | Setting: **stamp completion inline** when checking (default off) |
+| G2c | Light preview actions: jump to source line (optional), find-in-note ⌘F |
+
+**Acceptance:** Preview checklist on daily note; checked items show optional inline date when setting on.
+
+### G3 — Command surfaces *(medium-high ROI)*
+
+**Goal:** One universal friction reducer without new schema.
+
+| Item | Work |
+|------|------|
+| G3a | Slash expansion: **link picker** → `[[path\|label]]` |
+| G3b | Slash: `/view`, `/board`, `/table`, `/toc` templates |
+| G3c | **Quick switcher** ⌘O — fuzzy open note |
+| G3d | **User templates** — save, name, delete; stored locally; show in New note dialog |
+| G3e | **Transclusion** — `![[note]]` renders embedded note body in preview (file unchanged) |
+| G3f | Phase B polish: compact format bar / fold behind **Format** on small screens |
+
+**Acceptance:** Type `/` → pick vault note → wikilink inserted; save “Weekly retro” template → reuse from New note.
+
+### G4 — Inline richness *(medium ROI)*
+
+**Goal:** Notes with images feel complete; still standard markdown.
+
+| Item | Work |
+|------|------|
+| G4a | Preview renders `![alt](relative-or-absolute-path)` when file readable |
+| G4b | Resolve paths relative to note directory + vault root heuristics |
+| G4c | Attachment bar / file context: **Insert embed** → `![](path)` at cursor |
+| G4d | Optional: CSV copy from medousa-view table |
+
+**Acceptance:** Drop `![](../screenshots/foo.png)` in note → preview shows image; right-click attachment → embed inserted in source.
+
+### G5 — Note workshop modal *(transformative, larger UX)*
+
+**Goal:** Scoped collaboration on the current note without leaving Library.
+
+| Item | Work |
+|------|------|
+| G5a | Floating panel: drag, minimize, restore; opened from **Ask about note** (keep tab fallback) |
+| G5b | Scoped thread: this note + backlinks + vault search bias |
+| G5c | Web search + suggest edits; same turn/stream infra as Chat |
+| G5d | Outcomes land in **markdown** (agent proposals use existing proposal bar) |
+
+**Not v1:** Separate memory graph, separate model defaults, export-only-in-Medousa format.
+
+**Acceptance:** Read note → Ask → floating panel → ask “what links here?” → answer cites vault paths; minimize → keep reading note.
+
+### Also in polish backlog (lower urgency)
+
+| Item | Notes |
+|------|-------|
+| Backlinks panel on mobile | Desktop has links panel; expose in reader |
+| Word count / status whisper | Trivial status bar |
+| PDF export in context menu | Already exists; surface it |
+| Paste image → vault subfolder | Obsidian-style; defer until G4 stable |
+
+### Implementation order
+
+```text
+G1 (context) → G2 (preview todos) → G3 (slash/switcher/templates/transclusion) → G4 (images) → G5 (workshop modal)
+```
+
+B4 (mobile format bar) ships inside **G3f**.
+
+---
+
 ## Work vs Vault kanban
 
 | Surface | Purpose | Storage |
@@ -174,7 +286,9 @@ columns: name, status, due
 ## Implementation order
 
 ```text
-A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → E (kanban) → F (views)
+A → B → C → D → E → F → G
+
+G: context (G1) → preview todos (G2) → slash/switcher/templates (G3) → images (G4) → workshop modal (G5)
 ```
 
 ---
@@ -183,11 +297,16 @@ A (nav + filter + ⌘A) → B (mobile edit) → C (links) → D (AI polish) → 
 
 - [x] Phase A complete (nav persistence, move filter, ⌘A)
 - [x] Phase B core (mobile preview→edit, header chrome, note actions)
-- [ ] Phase B polish (compact format bar on small screens)
+- [ ] Phase B polish (compact format bar — tracked as G3f)
 - [x] Phase C complete (heading ids, wikilink+heading scroll, unresolved affordance, TOC block)
 - [x] Phase D complete (mobile talk-about-note, proposal diff UX, scoped context chip)
 - [x] Phase E spec frozen + shipped (markdown kanban board editor)
 - [x] Phase F spec frozen + shipped (medousa-view query blocks)
+- [x] Phase G1 — context menu (copy path/wikilink, reveal, duplicate, long-press)
+- [x] Phase G2 — preview checkboxes + optional inline completion stamp
+- [ ] Phase G3 — slash expansion, quick switcher, user templates, transclusion, mobile format bar
+- [ ] Phase G4 — local image embeds + insert embed from attachments
+- [ ] Phase G5 — floating note workshop modal (Ask about note)
 
 ---
 

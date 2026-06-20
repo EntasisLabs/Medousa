@@ -8,6 +8,10 @@
   import { hasMedousaViewBlocks } from "$lib/utils/markdownView";
   import { resolveMedousaViews } from "$lib/utils/resolveMedousaViews";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
+  import {
+    bindVaultLongPress,
+    handleVaultNoteContextMenuEvent,
+  } from "$lib/utils/vaultContextMenuEvents";
 
   interface Props {
     content: string;
@@ -29,6 +33,8 @@
     titleByPath: labelByPath,
     sourcePath: vault.selectedPath,
     knownPaths: new Set(vault.notes.map((note) => note.path)),
+    interactiveTasks:
+      !hasViewBlocks && Boolean(vault.selectedPath) && !vault.proposalActive,
   }));
 
   const previewHtml = $derived(
@@ -89,6 +95,17 @@
     scrollToHeadingInContainer(container, raw.startsWith("#") ? raw.slice(1) : raw);
   }
 
+  function handleChange(event: Event) {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.type !== "checkbox" || !target.classList.contains("vault-preview-task")) return;
+    const raw = target.getAttribute("data-vault-task");
+    if (raw == null) return;
+    const index = Number(raw);
+    if (!Number.isFinite(index)) return;
+    vault.togglePreviewTask(index, target.checked);
+  }
+
   function handleClick(event: MouseEvent) {
     const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
     if (openSource) {
@@ -123,6 +140,12 @@
     }
   }
 
+  function handleContextMenu(event: MouseEvent) {
+    const path = vault.selectedPath;
+    if (!path) return;
+    handleVaultNoteContextMenuEvent(path, event);
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== "Enter" && event.key !== " ") return;
     const openSource = (event.target as HTMLElement).closest("[data-open-vault-note]");
@@ -148,7 +171,10 @@
     ? 'px-4 py-3'
     : 'px-5 py-4'}"
   onclick={handleClick}
+  onchange={handleChange}
   onkeydown={handleKeydown}
+  oncontextmenu={handleContextMenu}
+  use:bindVaultLongPress={() => vault.selectedPath}
 >
   {#if viewsResolving && hasViewBlocks && !previewHtml}
     <p class="workshop-faint text-sm">Loading query views…</p>

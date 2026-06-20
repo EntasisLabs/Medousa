@@ -17,6 +17,10 @@ import {
   saveLastSpace,
   saveShowSystemNotes,
 } from "$lib/config/vaultSpaces";
+import {
+  readVaultStampCompletionEnabled,
+  writeVaultStampCompletionEnabled,
+} from "$lib/config/vaultPreferences";
 import type { WorkspaceEvent } from "$lib/types/workspace";
 import { vaultRefPath } from "$lib/utils/activityEnrichment";
 import type {
@@ -81,6 +85,7 @@ import {
   setNoteTitleInContent,
 } from "$lib/utils/vaultNoteTitle";
 import { noteHasKanbanBoard } from "$lib/utils/markdownKanban";
+import { togglePreviewTaskInContent } from "$lib/utils/vaultPreviewTasks";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
@@ -116,6 +121,7 @@ export class VaultStore {
   /** Board notes: kanban-first editing (Phase E). */
   boardEditMode = $state<"board" | "raw">("board");
   showSystemNotes = $state(loadShowSystemNotes());
+  stampCompletionInline = $state(readVaultStampCompletionEnabled());
   activeSpaceFilter = $state<string | null>(loadLastSpace());
   newNoteDialogOpen = $state(false);
   /** M7f: agent/server edit waiting for accept/discard. */
@@ -435,6 +441,23 @@ export class VaultStore {
     this.showSystemNotes = value;
     saveShowSystemNotes(value);
     this.rebuildTree();
+  }
+
+  setStampCompletionInline(value: boolean) {
+    this.stampCompletionInline = value;
+    writeVaultStampCompletionEnabled(value);
+  }
+
+  togglePreviewTask(taskIndex: number, checked: boolean) {
+    if (!this.selectedPath || this.proposalActive) return;
+    const next = togglePreviewTaskInContent(
+      this.content,
+      taskIndex,
+      checked,
+      this.stampCompletionInline,
+    );
+    if (!next || next === this.content) return;
+    this.markDirty(next);
   }
 
   setActiveSpaceFilter(spaceId: string | null) {
@@ -870,6 +893,55 @@ export class VaultStore {
 
   closeNoteActions() {
     this.noteActionsOpen = false;
+  }
+
+  async openNoteActionsForPath(path: string) {
+    if (this.selectedPath !== path) {
+      await this.openNote(path);
+    }
+    this.openNoteActions();
+  }
+
+  private suggestDuplicatePath(sourcePath: string): string {
+    const parts = sourcePath.split("/").filter(Boolean);
+    const file = parts.pop() ?? "note.md";
+    const dir = parts.length ? `${parts.join("/")}/` : "";
+    const stem = file.replace(/\.md$/i, "") || "note";
+    for (let n = 1; n < 50; n += 1) {
+      const suffix = n === 1 ? "-copy" : `-copy-${n}`;
+      const candidate = normalizeVaultNotePath(`${dir}${stem}${suffix}.md`);
+      if (!this.notes.some((note) => note.path === candidate)) {
+        return candidate;
+      }
+    }
+    return normalizeVaultNotePath(`${dir}${stem}-copy-${Date.now()}.md`);
+  }
+
+  async duplicateNote(sourcePath: string): Promise<string | null> {
+    this.error = null;
+    const newPath = this.suggestDuplicatePath(sourcePath);
+    try {
+      const response = await getVaultNote(sourcePath);
+      await createVaultNote(newPath, response.content);
+      await this.refreshNotes();
+      await this.openNote(newPath);
+      return newPath;
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      return null;
+    }
+  }
+
+  async copyNoteMarkdown(path: string): Promise<string | null> {
+    try {
+      if (this.selectedPath === path && this.content) {
+        return this.content;
+      }
+      const response = await getVaultNote(path);
+      return response.content;
+    } catch {
+      return null;
+    }
   }
 
   addCustomGroup(label: string) {

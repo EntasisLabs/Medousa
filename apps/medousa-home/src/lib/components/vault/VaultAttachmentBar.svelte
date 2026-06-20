@@ -2,6 +2,10 @@
   import { Paperclip, Table2, X } from "@lucide/svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { attachmentFileName } from "$lib/utils/vaultAttachments";
+  import {
+    bindVaultAttachmentLongPress,
+    openVaultAttachmentContextMenu,
+  } from "$lib/utils/vaultContextMenuEvents";
 
   interface Props {
     disabled?: boolean;
@@ -17,6 +21,17 @@
 
   async function handleLinkSpreadsheet() {
     await vault.linkSpreadsheetFiles();
+  }
+
+  function handleAttachmentContextMenu(
+    attachmentPath: string,
+    event: MouseEvent,
+  ) {
+    const notePath = vault.selectedPath;
+    if (!notePath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openVaultAttachmentContextMenu(attachmentPath, notePath, event.clientX, event.clientY);
   }
 </script>
 
@@ -54,7 +69,16 @@
       </span>
     {:else}
       {#each vault.attachments as attachment (attachment.path)}
-        <div class="inline-flex max-w-full items-center gap-1 rounded-full border border-surface-500/45 bg-surface-800/80 pl-2.5 pr-1">
+        <div
+          class="inline-flex max-w-full items-center gap-1 rounded-full border border-surface-500/45 bg-surface-800/80 pl-2.5 pr-1"
+          role="group"
+          aria-label="Attachment"
+          oncontextmenu={(event) => handleAttachmentContextMenu(attachment.path, event)}
+          use:bindVaultAttachmentLongPress={() =>
+            vault.selectedPath
+              ? { attachmentPath: attachment.path, notePath: vault.selectedPath }
+              : null}
+        >
           <button
             type="button"
             class="truncate text-xs text-primary-200 hover:text-primary-100"

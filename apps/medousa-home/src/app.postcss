@@ -1612,6 +1612,10 @@
     @apply mr-2 align-middle;
   }
 
+  .markdown-content input.vault-preview-task {
+    @apply cursor-pointer;
+  }
+
   .markdown-content li:has(> input[type="checkbox"]) {
     @apply list-none -ml-5;
   }
@@ -3754,6 +3758,14 @@
   .vault-tree-row--drop-active {
     background-color: rgb(var(--color-primary-500) / 0.1);
     box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.6);
+  }
+
+  .vault-context-menu {
+    @apply fixed z-[120] min-w-[12rem] overflow-hidden rounded-container-token border border-surface-500/45 bg-surface-900 py-1 shadow-xl;
+  }
+
+  .vault-context-menu-item {
+    @apply block w-full px-3 py-2 text-left text-sm text-surface-100 transition hover:bg-surface-700/80 disabled:cursor-not-allowed disabled:opacity-45;
   }
 
   .profiles-panel {

@@ -474,6 +474,24 @@
     </button>
   </div>
 
+  <div class="settings-toggle-list mt-6">
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">Stamp completion inline</span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          When checking a to-do in preview, append (done YYYY-MM-DD) to the line
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={vault.stampCompletionInline}
+        onchange={(event) =>
+          vault.setStampCompletionInline((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
+  </div>
+
   {#if isDevBuild && !mobile}
     <div class="settings-toggle-list mt-6">
       <label class="settings-toggle-row">
