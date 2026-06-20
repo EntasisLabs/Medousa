@@ -1,4 +1,4 @@
-export type AutomationsSection = "schedules" | "flows" | "history";
+export type AutomationsSection = "scripts" | "schedules" | "flows" | "history";
 
 export class AutomationsNavStore {
   pendingSection = $state<AutomationsSection | null>(null);

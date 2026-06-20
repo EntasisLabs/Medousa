@@ -2,8 +2,10 @@
   import AutomationCreateForm from "$lib/components/automations/AutomationCreateForm.svelte";
   import FlowsPanel from "$lib/components/automations/FlowsPanel.svelte";
   import HistoryPanel from "$lib/components/automations/HistoryPanel.svelte";
+  import ScriptsWorkbenchPanel from "$lib/components/automations/ScriptsWorkbenchPanel.svelte";
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
+  import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { automationsNav, type AutomationsSection } from "$lib/stores/automationsNav.svelte";
   import { automations } from "$lib/stores/automations.svelte";
@@ -23,7 +25,7 @@
 
   let { visible, mobile = false, embedded = false }: Props = $props();
 
-  let section = $state<AutomationsSection>("schedules");
+  let section = $state<AutomationsSection>("scripts");
 
   let search = $state("");
   let selectedId = $state<string | null>(null);
@@ -159,26 +161,45 @@
     ? 'cron-panel-mobile'
     : ''} {visible ? '' : 'hidden'}"
 >
-  {#if section === "flows"}
+  {#if section === "scripts"}
     <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
       <div class="flex flex-wrap items-center justify-between gap-3">
         {#if !embedded}
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay</p>
+            <p class="workshop-header-line mt-1">Scripts workbench · write, run, add to flow</p>
           </div>
         {/if}
       </div>
       <div class="workshop-tabs mt-3">
-        {#each [
-          { id: "schedules", label: "Schedules" },
-          { id: "flows", label: "Flows" },
-          { id: "history", label: "History" },
-        ] as tab (tab.id)}
+        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id as AutomationsSection)}
+            onclick={() => (section = tab.id)}
+          >
+            {tab.label}
+          </button>
+        {/each}
+      </div>
+    </header>
+    <ScriptsWorkbenchPanel visible={true} {mobile} {embedded} />
+  {:else if section === "flows"}
+    <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        {#if !embedded}
+          <div>
+            <h1 class="text-base font-semibold text-surface-50">Automations</h1>
+            <p class="workshop-header-line mt-1">Scripts · flows · schedules · history</p>
+          </div>
+        {/if}
+      </div>
+      <div class="workshop-tabs mt-3">
+        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
+          <button
+            type="button"
+            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
+            onclick={() => (section = tab.id)}
           >
             {tab.label}
           </button>
@@ -192,20 +213,16 @@
         {#if !embedded}
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
-            <p class="workshop-header-line mt-1">Schedules, flows, and tool replay</p>
+            <p class="workshop-header-line mt-1">Scripts · flows · schedules · history</p>
           </div>
         {/if}
       </div>
       <div class="workshop-tabs mt-3">
-        {#each [
-          { id: "schedules", label: "Schedules" },
-          { id: "flows", label: "Flows" },
-          { id: "history", label: "History" },
-        ] as tab (tab.id)}
+        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id as AutomationsSection)}
+            onclick={() => (section = tab.id)}
           >
             {tab.label}
           </button>
@@ -226,7 +243,7 @@
           <div>
             <h1 class="text-base font-semibold text-surface-50">Automations</h1>
             <p class="workshop-header-line mt-1">
-              Schedules that run on their own · {counts.enabled}/{counts.total} active
+              Schedules · {counts.enabled}/{counts.total} active
             </p>
           </div>
           <button
@@ -268,15 +285,11 @@
       </label>
 
       <div class="workshop-tabs mt-3">
-        {#each [
-          { id: "schedules", label: "Schedules" },
-          { id: "flows", label: "Flows" },
-          { id: "history", label: "History" },
-        ] as tab (tab.id)}
+        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
             class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id as AutomationsSection)}
+            onclick={() => (section = tab.id)}
           >
             {tab.label}
           </button>
@@ -299,7 +312,7 @@
         <p class="workshop-muted">
           {search.trim()
             ? "No schedules match your search."
-            : "No automations yet. Create one or schedule a specialist from Workshop."}
+            : "No schedules yet. Create one or schedule a specialist from Capabilities."}
         </p>
       {:else}
         <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">

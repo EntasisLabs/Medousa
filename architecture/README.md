@@ -49,7 +49,8 @@ Living documentation for system shape, component boundaries, and active roadmap.
 
 | Doc | Topic |
 |-----|--------|
-| [workshop-and-automations-plan.md](workshop-and-automations-plan.md) | **Workshop + Automations** — Specialists/skills palette, schedules, flows, run history, Grapheme/MCP exposure |
+| [workshop-and-automations-plan.md](workshop-and-automations-plan.md) | **Workshop + Automations** — W0–W5 (shipped); see [scripts-workbench-plan.md](scripts-workbench-plan.md) for W6 IA |
+| [scripts-workbench-plan.md](scripts-workbench-plan.md) | **Scripts Workbench** — Automations authoring IDE, Capabilities rename, module/WASM split |
 | [polish-and-package-plan.md](polish-and-package-plan.md) | **Normie polish** — exposure, trust, app affordances, copy |
 | [vault-editing-and-structured-notes-plan.md](vault-editing-and-structured-notes-plan.md) | **Library** — editing UX, kanban + database views in markdown |
 | [ROADMAP.md](ROADMAP.md) | Current priorities (attachments, Iroh, distribution, …) |

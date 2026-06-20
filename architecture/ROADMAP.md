@@ -7,15 +7,13 @@ First-run UX, Home shell milestones, turn-loop FSM, user profiles (Phases 0–6)
 
 Remaining focus: **Workshop + Automations** (Home exposure of Grapheme/Stasis/MCP), **polish & package**, **attachments**, **Iroh pairing**, and **distribution**.
 
-Full plans: **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
+Full plans: **[workshop-and-automations-plan.md](workshop-and-automations-plan.md)** · **[scripts-workbench-plan.md](scripts-workbench-plan.md)** · **[polish-and-package-plan.md](polish-and-package-plan.md)**
 
 ---
 
 ## 0. Workshop & Automations (Home — active)
 
-**Goal:** Replace thin Cron + Skills surfaces with paired **Workshop** (configure specialists, skills palette, modules, connections) and **Automations** (schedules, flows, run history, delivery). Default `agent_turn`; Grapheme default, OpenShell advanced; Stasis dashboard admin-only.
-
-Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md)
+**Goal:** W0–W5.7 shipped Grapheme editor, flows, and bridges. **W6** reframes IA: **Capabilities** (runtime access) + **Automations** (Scripts Workbench, Flows, Schedules, History). Default `agent_turn`; Grapheme default, OpenShell advanced; Stasis dashboard admin-only.
 
 | Phase | Theme | Status |
 |-------|--------|--------|
@@ -27,8 +25,11 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md)
 | W5 Grapheme depth | Save/compile/allowlist/WASM APIs | ✅ |
 | W5.5–W5.6 Script workshop | Tabs + CodeMirror + `grapheme-lsp` + vault chrome | ✅ |
 | W5.7 Workshop bridges | Add to flow; module insert from editor | ✅ |
+| **W6 Scripts Workbench** | IA refactor, IDE shell, script chat, library ↔ flow links | 🔄 W6.0–W6.5 shipped |
 
----
+**Next:** [scripts-workbench-plan.md](scripts-workbench-plan.md) — Workbench layout, Capabilities rename, Automations **Scripts** tab.
+
+Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) (W0–W5) · [scripts-workbench-plan.md](scripts-workbench-plan.md) (W6+)
 
 ## 1. Polish & package (normie continuity)
 

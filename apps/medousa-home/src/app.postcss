@@ -1875,6 +1875,39 @@
     display: none;
   }
 
+  .scripts-workbench-rail {
+    @apply flex w-11 shrink-0 flex-col items-center gap-1 border-r border-surface-500/40 py-2;
+    background-color: rgb(var(--color-surface-950) / 0.5);
+  }
+
+  .scripts-workbench-rail-btn {
+    @apply rounded-md p-2 text-surface-400 transition hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .scripts-workbench-rail-btn-active {
+    @apply bg-primary-500/15 text-primary-300;
+  }
+
+  .scripts-workbench-sidebar {
+    background-color: rgb(var(--color-surface-950) / 0.3);
+  }
+
+  .scripts-workbench-center {
+    background-color: rgb(var(--color-surface-900) / 0.2);
+  }
+
+  .scripts-workbench-console {
+    background-color: rgb(var(--color-surface-950) / 0.6);
+  }
+
+  .scripts-workbench-chat {
+    background-color: rgb(var(--color-surface-950) / 0.4);
+  }
+
+  .script-workbench-chat-panel {
+    @apply w-[min(320px,30%)] shrink-0 overflow-hidden border-l border-surface-500/40;
+  }
+
   .vault-link-chip {
     @apply rounded-container-token px-2 py-1.5 text-xs text-primary-300 transition-colors hover:bg-primary-500/10 hover:text-primary-200;
   }

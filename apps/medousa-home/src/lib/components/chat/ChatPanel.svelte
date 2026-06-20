@@ -6,6 +6,7 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
+  import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -44,6 +45,7 @@
     mobile?: boolean;
     embedded?: boolean;
     workshop?: boolean;
+    scriptWorkbench?: boolean;
     onOpenContext?: () => void;
     onOpenConnection?: () => void;
   }
@@ -54,6 +56,7 @@
     mobile = false,
     embedded = false,
     workshop = false,
+    scriptWorkbench = false,
     onOpenContext,
     onOpenConnection,
   }: Props = $props();
@@ -578,7 +581,21 @@
       <div
         class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
       >
-        {#if workshop && chat.vaultNoteContext}
+        {#if scriptWorkbench && chat.scriptWorkbenchContext}
+          <p class="text-sm text-surface-400">Ask about this script — fixes, modules, or next steps.</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            {#each ["Explain this script", "Fix compile errors", "Suggest a module to use"] as prompt (prompt)}
+              <button
+                type="button"
+                class="rounded-full border border-surface-500/40 bg-surface-950/50 px-3 py-1.5 text-xs text-surface-200 transition hover:border-primary-400/50 hover:text-surface-50"
+                disabled={connection.offline || chat.composerBlocked}
+                onclick={() => void sendStarterPrompt(prompt)}
+              >
+                {prompt}
+              </button>
+            {/each}
+          </div>
+        {:else if workshop && chat.vaultNoteContext}
           <p class="text-sm text-surface-400">Ask about this note — links, edits, or next steps.</p>
           <div class="mt-3 flex flex-wrap gap-2">
             {#each ["What links here?", "Summarize this note", "Suggest edits"] as prompt (prompt)}
@@ -647,7 +664,9 @@
     />
     {/if}
     <form class="{embedded ? 'vault-workshop-chat-composer' : 'chat-composer'}" onsubmit={submit}>
-      {#if chat.vaultNoteContext}
+      {#if chat.scriptWorkbenchContext}
+        <ScriptChatContextChip compact={workshop || scriptWorkbench} class={embedded ? "mb-2" : "mx-4 mb-2"} />
+      {:else if chat.vaultNoteContext}
         <VaultChatContextChip compact={workshop} class={workshop ? "mb-2" : "mx-4 mb-2"} />
       {/if}
       {#if slashHint?.length}

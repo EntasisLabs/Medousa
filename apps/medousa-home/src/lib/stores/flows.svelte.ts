@@ -99,7 +99,11 @@ export class FlowsStore {
     this.actionMessage = null;
   }
 
-  openComposerWithGrapheme(source: string, scriptName?: string | null) {
+  openComposerWithGrapheme(
+    source: string,
+    scriptName?: string | null,
+    scriptId?: string | null,
+  ) {
     const trimmed = source.trim();
     if (!trimmed) {
       throw new Error("Script source is empty.");
@@ -114,6 +118,8 @@ export class FlowsStore {
           kind: "grapheme",
           id: newStepId("gph"),
           source: trimmed,
+          script_id: scriptId?.trim() || null,
+          script_name: label || null,
         },
       ],
     };

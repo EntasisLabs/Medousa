@@ -3,6 +3,7 @@
 > **Status:** Active (2026-06)  
 > **Audience:** Product + Home UI + daemon API owners  
 > **Thesis:** Medousa’s **Grapheme + Stasis + MCP stack is shipped**. Home exposes a thin **Cron list** and **Skills browser** while the engine already runs agent turns, workflows, module manifests, delivery bindings, and receipt-grade tool history. This plan replaces those surfaces with a paired **Workshop** (configure what exists) and **Automations** (run it on a rhythm or as a flow).  
+> **Evolution (2026-06):** Product review aligned on **Scripts Workbench** under Automations (IDE layout), **Capabilities** rename (Specialists + Connections only), and module catalog inside the Workbench left rail — see **[scripts-workbench-plan.md](scripts-workbench-plan.md)**. W0–W5.7 shipped; W6 implements the IA refactor.
 > **Related:** [polish-and-package-plan.md](polish-and-package-plan.md) (P4 supersedes), [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md), [recurring-delivery-roadmap.md](recurring-delivery-roadmap.md), [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md), [component-daemon.md](component-daemon.md), [component-mcp-gateway.md](component-mcp-gateway.md)
 
 ---

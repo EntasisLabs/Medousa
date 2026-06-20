@@ -6,6 +6,9 @@ export interface WorkflowStepGrapheme {
   kind: "grapheme";
   id: string;
   source: string;
+  /** UI metadata for library linkage — stripped before daemon API calls. */
+  script_id?: string | null;
+  script_name?: string | null;
 }
 
 export interface WorkflowStepPrompt {
@@ -179,7 +182,17 @@ export function workflowRunRequestFromDraft(
     strategy: "sequential",
     mode: "default",
     on_failure: "stop",
-    steps: draft.steps,
+    steps: sanitizeWorkflowStepsForApi(draft.steps),
     queue: "default",
   };
+}
+
+export function sanitizeWorkflowStepsForApi(
+  steps: WorkflowStepSpec[],
+): WorkflowStepSpec[] {
+  return steps.map((step) => {
+    if (step.kind !== "grapheme") return step;
+    const { script_id: _id, script_name: _name, ...rest } = step;
+    return rest;
+  });
 }

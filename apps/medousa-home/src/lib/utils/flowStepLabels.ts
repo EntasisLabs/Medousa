@@ -38,6 +38,9 @@ export function flowStepSubtitle(step: WorkflowStepSpec): string {
     case "prompt":
       return meta;
     case "grapheme":
+      if (step.script_name?.trim()) {
+        return `${meta} · ${step.script_name.trim()}`;
+      }
       return `${meta} · Grapheme source`;
     case "mcp":
       return step.server_id.trim()

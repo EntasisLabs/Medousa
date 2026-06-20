@@ -49,6 +49,7 @@ import {
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
 import type { VaultNoteContextScope } from "$lib/utils/vaultNoteBridge";
+import type { ScriptWorkbenchContextScope } from "$lib/utils/scriptWorkbenchBridge";
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
@@ -75,6 +76,9 @@ export class ChatStore {
   /** Vault note scope when chat opened from Library (Phase D3). */
   vaultNoteContext = $state<VaultNoteContextScope | null>(null);
   pinVaultNoteContext = $state(false);
+  /** Grapheme script scope when chat opened from Automations workbench (W6.4). */
+  scriptWorkbenchContext = $state<ScriptWorkbenchContextScope | null>(null);
+  pinScriptWorkbenchContext = $state(false);
   /** Files uploaded to local daemon, waiting to send with the next turn. */
   pendingMediaRefs = $state<MediaRef[]>([]);
   pendingMediaUploading = $state(false);
@@ -1896,6 +1900,25 @@ export class ChatStore {
   clearVaultNoteContext() {
     this.vaultNoteContext = null;
     this.pinVaultNoteContext = false;
+  }
+
+  syncScriptWorkbenchContext(scope: ScriptWorkbenchContextScope | null) {
+    this.scriptWorkbenchContext = scope;
+  }
+
+  prefillFromScriptWorkbench(
+    scope: ScriptWorkbenchContextScope,
+    draft: string,
+    options?: { pin?: boolean },
+  ) {
+    this.scriptWorkbenchContext = scope;
+    this.draft = draft;
+    this.pinScriptWorkbenchContext = options?.pin ?? false;
+  }
+
+  clearScriptWorkbenchContext() {
+    this.scriptWorkbenchContext = null;
+    this.pinScriptWorkbenchContext = false;
   }
 
   clearPendingMedia() {

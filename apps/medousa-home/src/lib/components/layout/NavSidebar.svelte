@@ -50,7 +50,7 @@
   }
 
   const workshopNav: NavItem[] = [
-    { id: "workshop", label: "Workshop", icon: Zap },
+    { id: "workshop", label: "Capabilities", icon: Zap },
     { id: "automations", label: "Automations", icon: Calendar },
   ];
 

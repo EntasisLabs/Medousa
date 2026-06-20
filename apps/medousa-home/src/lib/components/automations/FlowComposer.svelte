@@ -4,6 +4,8 @@
   import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
   import { flows } from "$lib/stores/flows.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { workshop } from "$lib/stores/workshop.svelte";
+  import { getGraphemeScript } from "$lib/daemon";
   import type { GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import type { AutomationDeliveryMode } from "$lib/types/recurring";
   import type { FlowComposerDraft, WorkflowStepKind, WorkflowStepSpec } from "$lib/types/workflow";
@@ -32,6 +34,13 @@
 
   let addKind = $state<WorkflowStepKind>("grapheme");
   let expandedStepIds = $state<Record<string, boolean>>({});
+  let libraryLoadBusy = $state<string | null>(null);
+
+  $effect(() => {
+    if (workshop.scripts.length === 0) {
+      void workshop.refreshModulesAndScripts();
+    }
+  });
 
   const barClass = $derived(mobile ? "composer-bar composer-bar-mobile" : "composer-bar");
 
@@ -83,6 +92,25 @@
 
   function isStepExpanded(stepId: string): boolean {
     return expandedStepIds[stepId] ?? false;
+  }
+
+  async function loadLibraryScript(stepIndex: number, scriptId: string) {
+    if (!scriptId.trim()) return;
+    const step = draft.steps[stepIndex];
+    if (!step || step.kind !== "grapheme") return;
+    libraryLoadBusy = step.id;
+    try {
+      const detail = await getGraphemeScript(scriptId);
+      const entry = workshop.scripts.find((row) => row.id === scriptId);
+      updateStep(stepIndex, {
+        source: detail.body_preview,
+        script_id: scriptId,
+        script_name: entry?.name ?? detail.name,
+      });
+      expandedStepIds = { ...expandedStepIds, [step.id]: true };
+    } finally {
+      libraryLoadBusy = null;
+    }
   }
 </script>
 
@@ -208,6 +236,27 @@
                 </div>
               </label>
             {:else if step.kind === "grapheme"}
+              {#if workshop.scripts.length > 0}
+                <label class="cron-field mt-3 block">
+                  <span class="cron-field-label">From script library</span>
+                  <select
+                    class="cron-field-input w-full rounded-md border border-surface-500/40 bg-surface-900 px-2 py-1 text-xs"
+                    value={step.script_id ?? ""}
+                    disabled={libraryLoadBusy === step.id}
+                    onchange={(event) =>
+                      void loadLibraryScript(
+                        index,
+                        (event.currentTarget as HTMLSelectElement).value,
+                      )}
+                    aria-label="Load saved script"
+                  >
+                    <option value="">Pick saved script…</option>
+                    {#each workshop.scripts as entry (entry.id)}
+                      <option value={entry.id}>{entry.name}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
               {#if step.source.trim()}
                 <label class="cron-field mt-3 block">
                   <span class="cron-field-label">Grapheme source</span>

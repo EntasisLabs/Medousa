@@ -24,9 +24,10 @@
 
   interface Props {
     visible: boolean;
+    workbenchMode?: boolean;
   }
 
-  let { visible }: Props = $props();
+  let { visible, workbenchMode = false }: Props = $props();
 
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
@@ -120,7 +121,7 @@
       return;
     }
     try {
-      promoteScriptToFlow(tab.body, tab.name);
+      promoteScriptToFlow(tab.body, tab.name, tab.scriptId);
     } catch (err) {
       flowError = err instanceof Error ? err.message : String(err);
     }
@@ -182,8 +183,10 @@
   <header class="workshop-header shrink-0 border-b border-surface-500/40 px-4 py-3">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="text-sm font-semibold text-surface-50">Script editor</p>
-        <p class="workshop-header-line mt-0.5">Grapheme · run, save, add to flow</p>
+        {#if !workbenchMode}
+          <p class="text-sm font-semibold text-surface-50">Script editor</p>
+          <p class="workshop-header-line mt-0.5">Grapheme · run, save, add to flow</p>
+        {/if}
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button
@@ -242,9 +245,11 @@
       <p class="mt-2 text-xs text-error-400">{flowError}</p>
     {/if}
 
-    <div class="mt-3 px-1">
-      <WorkshopJourneyBanner compact />
-    </div>
+    {#if !workbenchMode}
+      <div class="mt-3 px-1">
+        <WorkshopJourneyBanner compact />
+      </div>
+    {/if}
 
     <div class="mt-3 flex items-center gap-1 overflow-x-auto border-b border-surface-600/50 pb-px">
       {#each graphemeScriptEditor.tabs as tab (tab.tabId)}
@@ -311,6 +316,7 @@
       {/if}
     </div>
 
+    {#if !workbenchMode}
     <aside class="grapheme-script-side-pane w-[min(360px,34%)] shrink-0 overflow-y-auto border-l border-surface-500/40 px-4 py-4">
       <div class="flex flex-wrap gap-2">
         <button
@@ -467,8 +473,10 @@
         <p class="mt-4 text-xs text-error-400">{graphemeScriptEditor.saveError}</p>
       {/if}
     </aside>
+    {/if}
   </div>
 
+  {#if !workbenchMode}
   <footer class="workshop-status shrink-0 border-t border-surface-500/40 px-4 py-2">
     <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
       <span class="text-surface-400">
@@ -488,4 +496,5 @@
       </span>
     </div>
   </footer>
+  {/if}
 </div>
