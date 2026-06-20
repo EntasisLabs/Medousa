@@ -57,6 +57,7 @@ image = { version = "0.25.6", default-features = false, features = ["png"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
 futures-util = "0.3"
 stasis-rs = { version = "0.6.0", features = ["otel"] }
+grapheme-sdk = "0.4.0"
 stasis-rs-macros = { version = "0.1.0"}
 genai = "0.6.5"
 keyring = "2.3"

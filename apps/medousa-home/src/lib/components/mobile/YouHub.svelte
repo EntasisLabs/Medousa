@@ -20,6 +20,8 @@
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
+  import { catalog } from "$lib/stores/catalog.svelte";
+  import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import { layout } from "$lib/stores/layout.svelte";
   import {
     YOU_DESTINATIONS,
@@ -149,12 +151,15 @@
           mobile={true}
           {onOpenChat}
           onScheduleSkill={(entry) => {
-            automationDraft.openCreate({
-              display_name: entry.name,
-              prompt: `Run ${entry.name} on schedule`,
-              cron_expr: "0 9 * * *",
-              manuscript_id: entry.id,
-            });
+            automationDraft.openCreate(
+              automationDraftForSpecialist(entry, catalog.manuscriptDetail),
+            );
+            layout.openYou("automations");
+          }}
+          onUseInAutomation={(entry) => {
+            automationDraft.openCreate(
+              automationDraftForSpecialist(entry, catalog.manuscriptDetail),
+            );
             layout.openYou("automations");
           }}
         />

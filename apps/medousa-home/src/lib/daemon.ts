@@ -52,6 +52,19 @@ import type {
   VaultWriteResponse,
 } from "$lib/types/vault";
 import type { MediaRef, MediaUploadResponse } from "$lib/types/media";
+import type {
+  GraphemeModuleDetailResponse,
+  GraphemeModulesListResponse,
+  GraphemeRunResponse,
+  GraphemeScriptDetailResponse,
+  GraphemeScriptsListResponse,
+} from "$lib/types/grapheme";
+import type {
+  ManuscriptDetailResponse,
+  ManuscriptImportRequest,
+  ManuscriptImportResponse,
+  UpdateManuscriptRequest,
+} from "$lib/types/manuscript";
 
 export interface DaemonHealth {
   ok: boolean;
@@ -195,6 +208,32 @@ export async function getCapability(
 ): Promise<CapabilityResolveResponse> {
   return invoke<CapabilityResolveResponse>("catalog_get_capability", {
     capabilityId,
+  });
+}
+
+export async function getManuscript(
+  manuscriptId: string,
+): Promise<ManuscriptDetailResponse> {
+  return invoke<ManuscriptDetailResponse>("catalog_get_manuscript", {
+    manuscriptId,
+  });
+}
+
+export async function updateManuscript(
+  manuscriptId: string,
+  request: UpdateManuscriptRequest,
+): Promise<ManuscriptDetailResponse> {
+  return invoke<ManuscriptDetailResponse>("catalog_update_manuscript", {
+    manuscriptId,
+    request,
+  });
+}
+
+export async function importManuscripts(
+  request: ManuscriptImportRequest,
+): Promise<ManuscriptImportResponse> {
+  return invoke<ManuscriptImportResponse>("catalog_import_manuscripts", {
+    request,
   });
 }
 
@@ -748,4 +787,44 @@ export async function registerRecurringPrompt(request: {
       display_name: request.display_name ?? null,
     },
   });
+}
+
+export async function listGraphemeModules(): Promise<GraphemeModulesListResponse> {
+  return invoke<GraphemeModulesListResponse>("grapheme_list_modules");
+}
+
+export async function getGraphemeModule(
+  moduleId: string,
+): Promise<GraphemeModuleDetailResponse> {
+  return invoke<GraphemeModuleDetailResponse>("grapheme_get_module", {
+    moduleId,
+  });
+}
+
+export async function listGraphemeScripts(options?: {
+  query?: string;
+  module?: string;
+  tag?: string;
+  limit?: number;
+}): Promise<GraphemeScriptsListResponse> {
+  return invoke<GraphemeScriptsListResponse>("grapheme_list_scripts", {
+    query: options?.query ?? null,
+    module: options?.module ?? null,
+    tag: options?.tag ?? null,
+    limit: options?.limit ?? null,
+  });
+}
+
+export async function getGraphemeScript(
+  scriptId: string,
+): Promise<GraphemeScriptDetailResponse> {
+  return invoke<GraphemeScriptDetailResponse>("grapheme_get_script", {
+    scriptId,
+  });
+}
+
+export async function runGraphemeSource(
+  source: string,
+): Promise<GraphemeRunResponse> {
+  return invoke<GraphemeRunResponse>("grapheme_run_source", { source });
 }

@@ -21,6 +21,7 @@ pub mod tool_bootstrap_tools;
 pub mod tool_history_tools;
 pub mod grapheme_script;
 pub mod grapheme_script_tools;
+pub mod grapheme_handlers;
 pub mod learning_artifacts;
 pub mod manuscript_overlay_tools;
 pub mod turn_budget_request;

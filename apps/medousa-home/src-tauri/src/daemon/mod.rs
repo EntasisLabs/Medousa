@@ -1,5 +1,6 @@
 pub mod artifact;
 pub mod catalog;
+pub mod grapheme;
 pub mod identity;
 pub mod jobs;
 pub mod local_inference;

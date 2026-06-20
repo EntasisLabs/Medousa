@@ -22,6 +22,9 @@
     type ToolFilterChip,
   } from "$lib/utils/toolCatalog";
   import McpServersPanel from "$lib/components/skills/McpServersPanel.svelte";
+  import SpecialistDetailEditor from "$lib/components/skills/SpecialistDetailEditor.svelte";
+  import SpecialistImportWizard from "$lib/components/skills/SpecialistImportWizard.svelte";
+  import WorkshopModulesTab from "$lib/components/skills/WorkshopModulesTab.svelte";
   import {
     isBindingDisabled,
     loadCapabilitiesOverlay,
@@ -29,7 +32,7 @@
     type DisabledBindingRef,
   } from "$lib/utils/capabilitiesApi";
 
-  type CatalogTab = "skills" | "tools" | "services";
+  type CatalogTab = "specialists" | "skills" | "modules" | "connections";
 
   let disabledBindings = $state<DisabledBindingRef[]>([]);
   let bindingBusy = $state<string | null>(null);
@@ -39,14 +42,22 @@
     visible: boolean;
     onOpenChat: () => void;
     onScheduleSkill: (entry: ManuscriptCatalogEntry) => void;
+    onUseInAutomation: (entry: ManuscriptCatalogEntry) => void;
     mobile?: boolean;
     embedded?: boolean;
   }
 
-  let { visible, onOpenChat, onScheduleSkill, mobile = false, embedded = false }: Props =
-    $props();
+  let {
+    visible,
+    onOpenChat,
+    onScheduleSkill,
+    onUseInAutomation,
+    mobile = false,
+    embedded = false,
+  }: Props = $props();
 
-  let activeTab = $state<CatalogTab>("skills");
+  let activeTab = $state<CatalogTab>("specialists");
+  let importWizardOpen = $state(false);
   let search = $state("");
   let skillFilter = $state<SkillFilterChip>("all");
   let toolFilter = $state<ToolFilterChip>("all");
@@ -105,6 +116,8 @@
   function selectSkill(entry: ManuscriptCatalogEntry) {
     selectedSkillId = entry.id;
     selectedToolId = null;
+    catalog.clearCapabilityDetail();
+    void catalog.loadManuscriptDetail(entry.id);
   }
 
   function selectTool(entry: CapabilityListEntry) {
@@ -149,6 +162,7 @@
     selectedSkillId = null;
     selectedToolId = null;
     catalog.clearCapabilityDetail();
+    catalog.clearManuscriptDetail();
   }
 
   async function openCapabilitiesFile() {
@@ -174,45 +188,78 @@
           <div>
             <h1 class="text-base font-semibold text-surface-50">Workshop</h1>
             <p class="workshop-header-line mt-1">
-              {#if activeTab === "skills"}
-                Specialists &amp; skills · {filteredSkills.length} specialist{filteredSkills.length === 1 ? "" : "s"}
-              {:else if activeTab === "tools"}
-                Tools she can reach · {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+              {#if activeTab === "specialists"}
+                Specialists you can run or schedule · {filteredSkills.length} specialist{filteredSkills.length === 1 ? "" : "s"}
+              {:else if activeTab === "skills"}
+                Workshop skill palette · {filteredTools.length} skill{filteredTools.length === 1 ? "" : "s"}
+              {:else if activeTab === "modules"}
+                Grapheme modules &amp; script library
               {:else}
-                MCP servers Medousa can call
+                MCP servers &amp; capability connections
               {/if}
             </p>
           </div>
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            onclick={() => catalog.refresh()}
-          >
-            Refresh
-          </button>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-sm variant-ghost-surface"
+              onclick={() => catalog.refresh()}
+            >
+              Refresh
+            </button>
+            {#if activeTab === "specialists"}
+              <button
+                type="button"
+                class="btn btn-sm variant-filled-primary"
+                onclick={() => (importWizardOpen = true)}
+              >
+                Import…
+              </button>
+            {/if}
+          </div>
         </div>
       {:else}
         <div class="flex items-center justify-between gap-2">
           <p class="workshop-faint text-xs">
-            {#if activeTab === "skills"}
-              {filteredSkills.length} skill{filteredSkills.length === 1 ? "" : "s"}
-            {:else if activeTab === "tools"}
-              {filteredTools.length} tool{filteredTools.length === 1 ? "" : "s"}
+            {#if activeTab === "specialists"}
+              {filteredSkills.length} specialist{filteredSkills.length === 1 ? "" : "s"}
+            {:else if activeTab === "skills"}
+              {filteredTools.length} skill{filteredTools.length === 1 ? "" : "s"}
+            {:else if activeTab === "modules"}
+              Modules
             {:else}
-              MCP services
+              Connections
             {/if}
           </p>
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            onclick={() => catalog.refresh()}
-          >
-            Refresh
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-sm variant-ghost-surface"
+              onclick={() => catalog.refresh()}
+            >
+              Refresh
+            </button>
+            {#if activeTab === "specialists"}
+              <button
+                type="button"
+                class="btn btn-sm variant-ghost-surface"
+                onclick={() => (importWizardOpen = true)}
+              >
+                Import
+              </button>
+            {/if}
+          </div>
         </div>
       {/if}
 
     <div class="workshop-tabs mt-3">
+      <button
+        type="button"
+        class="workshop-tab {activeTab === 'specialists' ? 'workshop-tab-active' : ''}"
+        onclick={() => setTab("specialists")}
+      >
+        Specialists
+      </button>
       <button
         type="button"
         class="workshop-tab {activeTab === 'skills' ? 'workshop-tab-active' : ''}"
@@ -222,37 +269,37 @@
       </button>
       <button
         type="button"
-        class="workshop-tab {activeTab === 'tools' ? 'workshop-tab-active' : ''}"
-        onclick={() => setTab("tools")}
+        class="workshop-tab {activeTab === 'modules' ? 'workshop-tab-active' : ''}"
+        onclick={() => setTab("modules")}
       >
-        Tools
+        Modules
       </button>
       <button
         type="button"
-        class="workshop-tab {activeTab === 'services' ? 'workshop-tab-active' : ''}"
-        onclick={() => setTab("services")}
+        class="workshop-tab {activeTab === 'connections' ? 'workshop-tab-active' : ''}"
+        onclick={() => setTab("connections")}
       >
-        Services
+        Connections
       </button>
     </div>
 
-    {#if activeTab !== "services"}
+    {#if activeTab === "specialists" || activeTab === "skills"}
     <label class="mt-3 block">
       <span class="sr-only">
-        Search {activeTab === "skills" ? "skills" : "tools"}
+        Search {activeTab === "specialists" ? "specialists" : "skills"}
       </span>
       <input
         class="input w-full max-w-md text-sm"
         type="search"
-        placeholder={activeTab === "skills"
-          ? "Search skills…"
-          : "Search tools…"}
+        placeholder={activeTab === "specialists"
+          ? "Search specialists…"
+          : "Search skills…"}
         bind:value={search}
       />
     </label>
     {/if}
 
-    {#if activeTab === "skills"}
+    {#if activeTab === "specialists"}
       <div class="mt-2 flex flex-wrap gap-1.5">
         {#each SKILL_FILTER_CHIPS as chip (chip.id)}
           <button
@@ -285,8 +332,14 @@
   {/if}
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
-    {#if activeTab === "services"}
+    {#if activeTab === "modules"}
+      <WorkshopModulesTab {visible} {mobile} {embedded} />
+    {:else if activeTab === "connections"}
       <div class="mobile-you-scroll min-w-0 flex-1 overflow-y-auto px-4 py-3">
+        <p class="workshop-faint mb-3 text-xs">
+          {catalog.capabilities.length} capability intent{catalog.capabilities.length === 1 ? "" : "s"} ·
+          enable bindings on the Skills tab
+        </p>
         <McpServersPanel />
       </div>
     {:else}
@@ -299,12 +352,12 @@
         <p class="workshop-muted">Loading catalog…</p>
       {:else if catalog.error}
         <p class="text-sm text-error-400">{catalog.error}</p>
-      {:else if activeTab === "skills"}
+      {:else if activeTab === "specialists"}
         {#if filteredSkills.length === 0}
           <p class="workshop-muted">
             {search.trim() || skillFilter !== "all"
-              ? "No skills match your filters."
-              : "No skills yet. Import with medousa skill-import."}
+              ? "No specialists match your filters."
+              : "No specialists yet. Use Import to bring SKILL.md folders from Cursor, Hermes, or OpenClaw."}
           </p>
         {:else}
           {#each skillGroups as group (group.label)}
@@ -384,8 +437,8 @@
       {:else if filteredTools.length === 0}
         <p class="workshop-muted">
           {search.trim() || toolFilter !== "all"
-            ? "No tools match your filters."
-            : "No tools registered yet."}
+            ? "No skills match your filters."
+            : "No skills registered yet."}
         </p>
       {:else}
         {#each toolGroups as group (group.label)}
@@ -458,81 +511,22 @@
             selectedSkillId = null;
             selectedToolId = null;
             catalog.clearCapabilityDetail();
+            catalog.clearManuscriptDetail();
           }}
         >
           ← Back to list
         </button>
       {/if}
-      {#if activeTab === "skills" && selectedSkill}
+      {#if activeTab === "specialists" && selectedSkill}
+        <SpecialistDetailEditor
+          entry={selectedSkill}
+          onRunSkill={runSkill}
+          onUseInAutomation={onUseInAutomation}
+          onScheduleSkill={onScheduleSkill}
+          onOpenFile={(path) => void openConfigPath(path)}
+        />
+      {:else if activeTab === "skills" && selectedTool}
         <h2 class="workshop-section-title">Skill detail</h2>
-        <p class="mt-2 font-medium text-surface-100">{selectedSkill.name}</p>
-        <p class="workshop-faint mt-1 font-mono text-[11px]">{selectedSkill.id}</p>
-
-        {#if selectedSkill.description}
-          <p class="mt-3 text-sm leading-relaxed text-surface-300">
-            {selectedSkill.description}
-          </p>
-        {/if}
-
-        <dl class="mt-4 space-y-2 text-xs">
-          <div>
-            <dt class="workshop-label">Scope</dt>
-            <dd class="mt-0.5 text-surface-200">{selectedSkill.scope}</dd>
-          </div>
-          <div>
-            <dt class="workshop-label">Path</dt>
-            <dd class="mt-0.5 break-all font-mono text-surface-300">
-              {selectedSkill.path}
-            </dd>
-          </div>
-          {#if selectedSkill.openshell_enabled}
-            <div>
-              <dt class="workshop-label">Sandbox</dt>
-              <dd class="mt-0.5 text-surface-200">OpenShell enabled</dd>
-            </div>
-          {/if}
-          {#if selectedSkill.scripts.length > 0}
-            <div>
-              <dt class="workshop-label">Scripts</dt>
-              <dd class="mt-0.5 space-y-1 text-surface-300">
-                {#each selectedSkill.scripts as script (script.relative_path)}
-                  <p class="font-mono text-[11px]">
-                    {script.relative_path}
-                    <span class="text-surface-500">({script.risk_class})</span>
-                  </p>
-                {/each}
-              </dd>
-            </div>
-          {/if}
-        </dl>
-
-        <div class="mt-5 flex flex-wrap gap-3">
-          {#if selectedSkill.has_scripts}
-            <button
-              type="button"
-              class="workshop-text-action"
-              onclick={() => runSkill(selectedSkill.id)}
-            >
-              Run in chat
-            </button>
-          {/if}
-          <button
-            type="button"
-            class="workshop-text-action"
-            onclick={() => onScheduleSkill(selectedSkill)}
-          >
-            Schedule…
-          </button>
-          <button
-            type="button"
-            class="workshop-text-action"
-            onclick={() => void openConfigPath(selectedSkill.path)}
-          >
-            Open file
-          </button>
-        </div>
-      {:else if activeTab === "tools" && selectedTool}
-        <h2 class="workshop-section-title">Tool detail</h2>
         <p class="mt-2 font-medium text-surface-100">{selectedTool.title}</p>
         <p class="workshop-faint mt-1 font-mono text-[11px]">{selectedTool.id}</p>
 
@@ -647,15 +641,26 @@
         </button>
       {:else}
         <p class="workshop-muted text-sm">
-          {#if activeTab === "skills"}
-            Select a skill to inspect scripts and schedule, or use row actions to
+          {#if activeTab === "specialists"}
+            Select a specialist to inspect scripts and schedule, or use row actions to
             run immediately.
           {:else}
-            Select a tool to see binding summary.
+            Select a skill to see bindings and toggle availability.
           {/if}
         </p>
       {/if}
     </aside>
     {/if}
   </div>
+
+  <SpecialistImportWizard
+    open={importWizardOpen}
+    onClose={() => (importWizardOpen = false)}
+    onImported={(ids) => {
+      if (ids[0]) {
+        selectedSkillId = ids[0];
+        void catalog.loadManuscriptDetail(ids[0]);
+      }
+    }}
+  />
 </section>

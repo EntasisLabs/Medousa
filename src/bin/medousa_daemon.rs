@@ -548,10 +548,7 @@ async fn main() -> Result<()> {
         )
         .with_state(state.clone());
 
-    let catalog_router = Router::new().route(
-        "/v1/manuscripts",
-        get(medousa::manuscript_handlers::list_manuscripts_catalog),
-    );
+    let catalog_router = medousa::manuscript_handlers::manuscript_router();
 
     let capability_router = Router::new()
         .route(
@@ -569,6 +566,12 @@ async fn main() -> Result<()> {
         .with_state(medousa::mcp_daemon_handlers::CapabilityApiState {
             agent_runtime: state.platform.agent_handle(),
         });
+
+    let grapheme_router = medousa::grapheme_handlers::grapheme_router(
+        medousa::grapheme_handlers::GraphemeApiState {
+            composition: Arc::new(state.composition().clone()),
+        },
+    );
 
     let policy_router = Router::new()
         .route(
@@ -769,6 +772,7 @@ async fn main() -> Result<()> {
     let mut app = app
         .merge(catalog_router)
         .merge(capability_router)
+        .merge(grapheme_router)
         .merge(policy_router)
         .merge(vault_router)
         .merge(medousa::locus_handlers::locus_router(

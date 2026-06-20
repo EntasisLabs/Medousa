@@ -859,6 +859,114 @@ pub fn list_manuscripts() -> Result<Vec<ManuscriptListing>> {
     Ok(by_id.into_values().collect())
 }
 
+pub fn scheduled_tool_preview(
+    manuscript: &ManuscriptContext,
+) -> Vec<crate::daemon_api::ManuscriptScheduledToolEntry> {
+    use crate::daemon_api::ManuscriptScheduledToolEntry;
+
+    let scheduled = scheduled_tool_allowlist_for_manuscript(manuscript);
+    manuscript
+        .tools_allow
+        .iter()
+        .map(|tool| {
+            if scheduled.contains(tool) {
+                ManuscriptScheduledToolEntry {
+                    tool: tool.clone(),
+                    allowed_on_schedule: true,
+                    reason: None,
+                }
+            } else if tool.contains("identity_remember") {
+                ManuscriptScheduledToolEntry {
+                    tool: tool.clone(),
+                    allowed_on_schedule: false,
+                    reason: Some("Not permitted on scheduled lane".to_string()),
+                }
+            } else if (is_openshell_cognition_tool(tool) || is_skill_cognition_tool(tool))
+                && !manuscript.openshell_allow_scheduled
+            {
+                ManuscriptScheduledToolEntry {
+                    tool: tool.clone(),
+                    allowed_on_schedule: false,
+                    reason: Some(
+                        "OpenShell/skill tools require spec.openshell.allow_scheduled=true"
+                            .to_string(),
+                    ),
+                }
+            } else {
+                ManuscriptScheduledToolEntry {
+                    tool: tool.clone(),
+                    allowed_on_schedule: false,
+                    reason: Some("Not in scheduled lane tool universe".to_string()),
+                }
+            }
+        })
+        .collect()
+}
+
+pub fn palette_tools_for_editor() -> Vec<String> {
+    let mut tools = scheduled_lane_tool_universe().into_iter().collect::<Vec<_>>();
+    tools.sort();
+    tools
+}
+
+pub fn save_manuscript_file(path: &Path, file: &IdentityManuscriptFile) -> Result<()> {
+    validate_manuscript(file, path)?;
+    let yaml = serde_yaml::to_string(file).context("encode manuscript yaml")?;
+    std::fs::write(path, yaml).with_context(|| format!("write manuscript {}", path.display()))?;
+    Ok(())
+}
+
+pub fn apply_editor_lite_update(
+    id: &str,
+    request: &crate::daemon_api::UpdateManuscriptRequest,
+) -> Result<ManuscriptContext> {
+    let (mut file, path) = load_manuscript(id)?;
+
+    if request.clear_task_template == Some(true) {
+        file.spec.prompts.task_template = None;
+    } else if let Some(task_template) = request.task_template.as_deref() {
+        file.spec.prompts.task_template = Some(task_template.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if let Some(tools_allow) = &request.tools_allow {
+        file.spec.tools.allow = tools_allow
+            .iter()
+            .map(|tool| tool.trim().to_string())
+            .filter(|tool| !tool.is_empty())
+            .collect();
+    }
+
+    if request.clear_schedule_cron == Some(true) {
+        file.spec.schedule.cron = None;
+    } else if let Some(cron) = request.schedule_cron.as_deref() {
+        file.spec.schedule.cron = Some(cron.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if let Some(mode) = request.schedule_execution_mode.as_deref() {
+        file.spec.schedule.execution_mode = Some(mode.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if let Some(mode) = request.delivery_mode.as_deref() {
+        file.spec.delivery.mode = Some(mode.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if let Some(on_complete) = request.delivery_on_complete.as_deref() {
+        file.spec.delivery.on_complete = Some(on_complete.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+
+    if let Some(allow_scheduled) = request.openshell_allow_scheduled {
+        file.spec.openshell.allow_scheduled = allow_scheduled;
+    }
+
+    save_manuscript_file(&path, &file)?;
+    build_manuscript_context(id)
+}
+
 pub async fn compile_manuscript_identity_summary(
     store: &std::sync::Arc<dyn stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore>,
     manuscript: &ManuscriptContext,

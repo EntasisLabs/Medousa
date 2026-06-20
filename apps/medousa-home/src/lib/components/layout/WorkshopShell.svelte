@@ -23,6 +23,8 @@
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
+  import { catalog } from "$lib/stores/catalog.svelte";
+  import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -145,12 +147,15 @@
               visible={true}
               onOpenChat={() => goToSurface("chat")}
               onScheduleSkill={(entry) => {
-                automationDraft.openCreate({
-                  display_name: entry.name,
-                  prompt: `Run ${entry.name} on schedule`,
-                  cron_expr: "0 9 * * *",
-                  manuscript_id: entry.id,
-                });
+                automationDraft.openCreate(
+                  automationDraftForSpecialist(entry, catalog.manuscriptDetail),
+                );
+                navigateToSurface("automations");
+              }}
+              onUseInAutomation={(entry) => {
+                automationDraft.openCreate(
+                  automationDraftForSpecialist(entry, catalog.manuscriptDetail),
+                );
                 navigateToSurface("automations");
               }}
             />

@@ -558,6 +558,98 @@ pub struct DeleteRecurringResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeModuleSummary {
+    pub module_id: String,
+    pub version: String,
+    pub abi: String,
+    pub entrypoint: String,
+    pub op_count: usize,
+    pub effects: Vec<String>,
+    pub required_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeModulesListResponse {
+    pub count: usize,
+    pub modules: Vec<GraphemeModuleSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeModuleDetailResponse {
+    pub info: grapheme_sdk::ModuleInfoPayload,
+    pub examples: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeModuleOpsResponse {
+    pub module_id: String,
+    pub query: String,
+    pub matches: Vec<grapheme_sdk::ModuleOpRow>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GraphemeScriptsListQuery {
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default)]
+    pub module: Option<String>,
+    #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeScriptEntryDto {
+    pub id: String,
+    pub name: String,
+    pub modules: Vec<String>,
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at_utc: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at_utc: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeScriptsListResponse {
+    pub count: usize,
+    pub scripts: Vec<GraphemeScriptEntryDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeScriptDetailResponse {
+    pub script: GraphemeScriptEntryDto,
+    pub body_preview: String,
+    pub body_truncated: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GraphemeRunRequest {
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphemeRunResponse {
+    pub result: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonStatsResponse {
     pub enqueued_jobs: usize,
     pub running_jobs: usize,
@@ -1529,6 +1621,105 @@ pub struct ManuscriptCatalogEntry {
 pub struct ManuscriptCatalogResponse {
     pub count: usize,
     pub manuscripts: Vec<ManuscriptCatalogEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptScheduledToolEntry {
+    pub tool: String,
+    pub allowed_on_schedule: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptOpenshellSummary {
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_template: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_from: Option<String>,
+    pub allow_scheduled: bool,
+    pub default_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptDetailResponse {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub scope: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_template: Option<String>,
+    pub tools_allow: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_cron: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_execution_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_on_complete: Option<String>,
+    pub openshell: ManuscriptOpenshellSummary,
+    pub has_scripts: bool,
+    #[serde(default)]
+    pub scripts: Vec<ManuscriptScriptEntry>,
+    pub scheduled_tools: Vec<ManuscriptScheduledToolEntry>,
+    pub schedule_ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_validation_error: Option<String>,
+    pub palette_tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct UpdateManuscriptRequest {
+    #[serde(default)]
+    pub task_template: Option<String>,
+    #[serde(default)]
+    pub clear_task_template: Option<bool>,
+    #[serde(default)]
+    pub tools_allow: Option<Vec<String>>,
+    #[serde(default)]
+    pub schedule_cron: Option<String>,
+    #[serde(default)]
+    pub clear_schedule_cron: Option<bool>,
+    #[serde(default)]
+    pub schedule_execution_mode: Option<String>,
+    #[serde(default)]
+    pub delivery_mode: Option<String>,
+    #[serde(default)]
+    pub delivery_on_complete: Option<String>,
+    #[serde(default)]
+    pub openshell_allow_scheduled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ManuscriptImportRequest {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub preset: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptImportResultEntry {
+    pub id: String,
+    pub name: String,
+    pub yaml_path: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManuscriptImportResponse {
+    pub count: usize,
+    pub imported: Vec<ManuscriptImportResultEntry>,
 }
 
 // ── Locus / STTP (read-only context view) ─────────────────────────────────────
