@@ -79,6 +79,8 @@
 
   async function handleOpenNote(path: string) {
     await vault.openNote(path);
+    vault.enterPreviewMode();
+    layout.setLibraryView("reader");
     layout.openYou("library");
   }
 

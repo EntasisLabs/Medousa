@@ -2619,6 +2619,26 @@
     @apply rounded-2xl py-3 text-base font-semibold;
   }
 
+  .mobile-pulse-shortcuts {
+    @apply mt-4 grid grid-cols-3 gap-2;
+  }
+
+  .mobile-pulse-shortcut {
+    @apply flex min-w-0 flex-col gap-1 rounded-2xl border border-surface-500/35 bg-surface-900/45 px-2.5 py-3 text-left transition active:bg-surface-800/80 disabled:opacity-45;
+  }
+
+  .mobile-pulse-shortcut-icon {
+    @apply text-surface-400;
+  }
+
+  .mobile-pulse-shortcut-label {
+    @apply truncate text-sm font-medium text-surface-100;
+  }
+
+  .mobile-pulse-shortcut-hint {
+    @apply truncate text-[10px] leading-tight text-surface-500;
+  }
+
   .mobile-pulse-whisper {
     @apply text-[11px] text-surface-500;
   }

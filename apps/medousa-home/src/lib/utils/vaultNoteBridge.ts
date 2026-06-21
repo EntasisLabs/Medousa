@@ -91,6 +91,15 @@ export function resolveJournalDailyHeroPath(notes: VaultNote[]): string | null {
   return dated[0]?.path ?? null;
 }
 
+/** Most recently modified vault note, for quick resume shortcuts. */
+export function resolveLastEditedNote(notes: VaultNote[]): VaultNote | null {
+  if (notes.length === 0) return null;
+  return [...notes].sort(
+    (left, right) =>
+      new Date(right.modified_at_utc).getTime() - new Date(left.modified_at_utc).getTime(),
+  )[0];
+}
+
 export function journalDailyHeroTitle(
   path: string,
   notes: VaultNote[],

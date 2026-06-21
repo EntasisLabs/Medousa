@@ -1,16 +1,21 @@
 <script lang="ts">
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
-  import { Bell } from "@lucide/svelte";
+  import { Bell, BookOpen, Calendar, FileText } from "@lucide/svelte";
+  import { automations } from "$lib/stores/automations.svelte";
+  import { haptic } from "$lib/haptics";
   import { recurring } from "$lib/stores/recurring.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { buildPulsePresentation, motionColumnCounts } from "$lib/utils/mobilePulse";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import { dailyNotePath } from "$lib/utils/vaultTemplates";
   import {
     journalDailyHeroTitle,
     resolveJournalDailyHeroPath,
+    resolveLastEditedNote,
   } from "$lib/utils/vaultNoteBridge";
 
   interface Props {
@@ -36,6 +41,43 @@
   const primaryCard = $derived(workspace.primaryInMotionCard());
   const nextSchedule = $derived(recurring.soonestEnabled());
   const journalDailyPath = $derived(resolveJournalDailyHeroPath(vault.notes));
+  const todayDailyPath = $derived(dailyNotePath());
+  const lastEditedNote = $derived(resolveLastEditedNote(vault.notes));
+  const automationCounts = $derived(automations.activeCount());
+
+  const dailyShortcutHint = $derived.by(() => {
+    if (vault.notes.some((note) => note.path === todayDailyPath)) return "Today";
+    if (journalDailyPath) return "Recent journal";
+    return "Start today";
+  });
+
+  const lastEditedTitle = $derived(
+    lastEditedNote
+      ? vaultDisplayTitle(lastEditedNote.title, lastEditedNote.path)
+      : "Last edited",
+  );
+
+  const lastEditedHint = $derived.by(() => {
+    if (!lastEditedNote) return "No notes yet";
+    try {
+      const date = new Date(lastEditedNote.modified_at_utc);
+      const diffMs = Date.now() - date.getTime();
+      const mins = Math.floor(diffMs / 60_000);
+      if (mins < 1) return "Just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 48) return `${hours}h ago`;
+      return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    } catch {
+      return "Recent";
+    }
+  });
+
+  const automationsHint = $derived(
+    automationCounts.total === 0
+      ? "Scripts & schedules"
+      : `${automationCounts.enabled}/${automationCounts.total} active`,
+  );
 
   const pulse = $derived(
     buildPulsePresentation({
@@ -73,6 +115,27 @@
         onOpenSettings();
         break;
     }
+  }
+
+  async function openDailyNote() {
+    haptic("light");
+    const path = todayDailyPath;
+    const exists = vault.notes.some((note) => note.path === path);
+    if (!exists) {
+      await vault.createDailyNote();
+    }
+    await onOpenNote(path);
+  }
+
+  async function openLastEditedNote() {
+    if (!lastEditedNote) return;
+    haptic("light");
+    await onOpenNote(lastEditedNote.path);
+  }
+
+  function openAutomations() {
+    haptic("light");
+    layout.openYou("automations");
   }
 </script>
 
@@ -117,6 +180,29 @@
     >
       {pulse.actionLabel}
     </button>
+
+    <div class="mobile-pulse-shortcuts">
+      <button type="button" class="mobile-pulse-shortcut" onclick={() => void openDailyNote()}>
+        <BookOpen size={17} strokeWidth={1.75} class="mobile-pulse-shortcut-icon" />
+        <span class="mobile-pulse-shortcut-label">Daily note</span>
+        <span class="mobile-pulse-shortcut-hint">{dailyShortcutHint}</span>
+      </button>
+      <button
+        type="button"
+        class="mobile-pulse-shortcut"
+        disabled={!lastEditedNote}
+        onclick={() => void openLastEditedNote()}
+      >
+        <FileText size={17} strokeWidth={1.75} class="mobile-pulse-shortcut-icon" />
+        <span class="mobile-pulse-shortcut-label">{lastEditedTitle}</span>
+        <span class="mobile-pulse-shortcut-hint">{lastEditedHint}</span>
+      </button>
+      <button type="button" class="mobile-pulse-shortcut" onclick={openAutomations}>
+        <Calendar size={17} strokeWidth={1.75} class="mobile-pulse-shortcut-icon" />
+        <span class="mobile-pulse-shortcut-label">Automations</span>
+        <span class="mobile-pulse-shortcut-hint">{automationsHint}</span>
+      </button>
+    </div>
 
     {#if blocked > 0 && pulse.mood !== "waiting"}
       <button
