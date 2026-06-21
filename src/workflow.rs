@@ -468,7 +468,7 @@ impl WorkflowExecutor {
 
     fn with_defaults(registry: Arc<WorkflowRegistry>, prompt_pipeline: PromptExecutionPipeline) -> Self {
         Self::new(
-            RuntimeFactory::default_workflow_engine(),
+            crate::grapheme_medousa_bridge::medousa_workflow_engine(),
             prompt_pipeline,
             Arc::new(McpGatewayClient::from_env()),
             registry,

@@ -29,6 +29,7 @@ use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory, Stasis
 use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 
 use crate::channel_delivery;
+use crate::grapheme_medousa_bridge::{self, MedousaBridgeDeps};
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
 use crate::runtime::stasis_otel::attach_otel_to_builder;
 use crate::runtime::surreal_startup::timed_step;
@@ -143,6 +144,12 @@ async fn build_in_memory_daemon_composition(
         ),
     );
 
+    grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
+        chat_client: chat_client.clone(),
+        identity_store: Some(memory.identity_store_dyn()),
+        memory_writer: Some(memory.memory_writer.clone()),
+    });
+
     let in_memory_endpoint_store = Arc::new(InMemoryDeliveryEndpointStore::default())
         as Arc<dyn DeliveryEndpointStore>;
 
@@ -223,6 +230,12 @@ async fn build_in_memory_local_composition(
         ),
     );
 
+    grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
+        chat_client: chat_client.clone(),
+        identity_store: Some(memory.identity_store_dyn()),
+        memory_writer: Some(memory.memory_writer.clone()),
+    });
+
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
 
@@ -265,7 +278,12 @@ async fn wire_local_stasis_composition(
     let memory_context_writer = Some(memory.memory_writer.clone());
     let memory_operations = Some(memory.memory_operations.clone());
     let identity_memory_store = Some(memory.identity_store_dyn());
-    let workflow_engine = RuntimeFactory::default_workflow_engine();
+    grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
+        chat_client: chat_client.clone(),
+        identity_store: identity_memory_store.clone(),
+        memory_writer: memory_context_writer.clone(),
+    });
+    let workflow_engine = grapheme_medousa_bridge::medousa_workflow_engine();
     let tool_registry = Arc::new(
         stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default(),
     );
@@ -361,7 +379,12 @@ async fn wire_existing_daemon_composition(
     let memory_context_writer = Some(memory.memory_writer.clone());
     let memory_operations = Some(memory.memory_operations.clone());
     let identity_memory_store = Some(memory.identity_store_dyn());
-    let workflow_engine = RuntimeFactory::default_workflow_engine();
+    grapheme_medousa_bridge::init_medousa_bridge(MedousaBridgeDeps {
+        chat_client: chat_client.clone(),
+        identity_store: identity_memory_store.clone(),
+        memory_writer: memory_context_writer.clone(),
+    });
+    let workflow_engine = grapheme_medousa_bridge::medousa_workflow_engine();
     let tool_registry = Arc::new(stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default());
     tool_registry.register_tool(MockWebSearchTool)?;
 

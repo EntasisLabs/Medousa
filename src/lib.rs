@@ -25,6 +25,7 @@ pub mod grapheme_script;
 pub mod grapheme_script_tools;
 pub mod grapheme_handlers;
 pub mod grapheme_lsp_bridge;
+pub mod grapheme_medousa_bridge;
 pub mod grapheme_workshop;
 pub mod learning_artifacts;
 pub mod manuscript_overlay_tools;
@@ -362,6 +363,12 @@ pub async fn build_runtime_with_identity_store(
         base_url.as_deref(),
     ));
 
+    grapheme_medousa_bridge::init_medousa_bridge(grapheme_medousa_bridge::MedousaBridgeDeps {
+        chat_client: chat_client.clone(),
+        identity_store: identity_memory_store.clone(),
+        memory_writer: None,
+    });
+
     let workflow_registry = workflow::shared_workflow_registry();
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client.clone());
 
@@ -402,6 +409,12 @@ pub async fn build_daemon_runtime(
         &model,
         base_url.as_deref(),
     ));
+
+    grapheme_medousa_bridge::init_medousa_bridge(grapheme_medousa_bridge::MedousaBridgeDeps {
+        chat_client: chat_client.clone(),
+        identity_store: identity_memory_store.clone(),
+        memory_writer: None,
+    });
 
     let in_memory_endpoint_store = if matches!(backend, RuntimeBackend::InMemory) {
         Some(Arc::new(InMemoryDeliveryEndpointStore::default())

@@ -3881,9 +3881,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-compiler"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc86f66ae16487d56f44ca6a863f7a08b38675de7149f705b98b0abedc01b2cf"
+checksum = "56e938976477e7a34f3d93bb86fbc125e202d76a1f1f222d35ec6012d88500a7"
 dependencies = [
  "grapheme-artifact",
  "grapheme-signatures",
@@ -3896,9 +3896,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-lsp"
-version = "0.5.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "774031fd076decde2f147b3cbaecd03836766c06643b2a52719c428331b71418"
+checksum = "2287487df5c574ee5f4b2a0ab3e228869f37f59addf72fbaacf6f898371ed636"
 dependencies = [
  "grapheme-compiler",
  "grapheme-signatures",
@@ -3908,9 +3908,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-runtime"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e47bbd984bc8383faffbb0e1e17894d6f1b3ef8b2eb6de21d948e7cb78366cdc"
+checksum = "69a4e29cfd640de1c9f527a4460e5498f7634dcbd14ab2434ac3f82b1bdda998"
 dependencies = [
  "grapheme-artifact",
  "grapheme-signatures",
@@ -3923,9 +3923,9 @@ dependencies = [
 
 [[package]]
 name = "grapheme-sdk"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d127e7ad4b16db0b1806bd4cc14720d4a80a0619941b7d03fc85269765d4990"
+checksum = "de86bc79c6eec2da287edc45a2f850230ba08e5b99ac43f4af4ff431b3fd018d"
 dependencies = [
  "grapheme-artifact",
  "grapheme-compiler",
@@ -3940,15 +3940,15 @@ dependencies = [
 
 [[package]]
 name = "grapheme-signatures"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5e37ebd5a0bd415fda8faa16ec557f0acfce9dab97162e6f6733222f4f4a68"
+checksum = "18b9970ae57f271a8ae94f8cdcc2204acb606a026b555911e6bb0d075394f431"
 
 [[package]]
 name = "grapheme-stdlib"
-version = "0.4.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d7b2f189cf54b05e2115db12a9195ef3cdc9ea2cdbb7c6f297b63f665a30fae"
+checksum = "746ef62e7e13804a2907010188c13d9ba9a8d2df906261d5fe83d9fcdde663e4"
 dependencies = [
  "csv",
  "ehttp",
@@ -4561,7 +4561,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -10619,9 +10619,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "029285eacb57f4e30faaa27aee3707d48189878d12b2d4fb001b24d033554be9"
+checksum = "7ef12ea2efa8cc8a3a39cb11683888148bd72695960e0cea375ffef2de84fc77"
 dependencies = [
  "anyhow",
  "askama",
@@ -14328,7 +14328,7 @@ dependencies = [
  "log",
  "serde",
  "thiserror 2.0.18",
- "windows 0.61.3",
+ "windows 0.62.2",
  "windows-core 0.62.2",
 ]
 

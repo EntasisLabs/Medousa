@@ -21,7 +21,10 @@ struct WorkshopGraphemeSession {
 
 fn workshop_session() -> &'static Mutex<WorkshopGraphemeSession> {
     WORKSHOP_SESSION.get_or_init(|| {
-        let engine = GraphemeEngine::builder().build();
+        let engine = crate::grapheme_medousa_bridge::configure_grapheme_engine_builder(
+            GraphemeEngine::builder(),
+        )
+        .build();
         let session = engine.runtime_session();
         Mutex::new(WorkshopGraphemeSession { engine, session })
     })
