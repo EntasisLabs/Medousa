@@ -46,7 +46,9 @@ export function humanToolRunHeadline(entry: ToolHistoryRunEntry): string {
 }
 
 export function humanToolRunDetail(entry: ToolHistoryRunEntry): string {
-  return `${entry.slice_id} · ${entry.session_id}`;
+  const slice = entry.slice_id.trim();
+  if (slice.length <= 28) return slice;
+  return `${slice.slice(0, 12)}…${slice.slice(-10)}`;
 }
 
 export function suggestFlowNameFromRun(entry: ToolHistoryRunEntry): string {

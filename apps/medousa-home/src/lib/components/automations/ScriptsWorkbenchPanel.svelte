@@ -51,7 +51,7 @@
   let toolsSheetOpen = $state(false);
   let outputSheetOpen = $state(false);
   let toolsInitialView = $state<
-    "root" | "templates" | "library" | "modules-list" | "modules-detail" | "chat" | "advanced"
+    "root" | "templates" | "library" | "modules-list" | "modules-detail" | "chat"
   >("root");
 
   const showMobileEmptyHint = $derived(

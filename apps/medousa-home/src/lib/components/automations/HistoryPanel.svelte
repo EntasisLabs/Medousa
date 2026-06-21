@@ -85,7 +85,9 @@
 </script>
 
 <section
-  class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}"
+  class="automations-history flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden {visible
+    ? ''
+    : 'hidden'}"
 >
   <header class="{embedded ? 'border-b border-surface-500/40 px-4 py-3' : 'workshop-header'}">
     {#if !embedded}
@@ -149,7 +151,7 @@
     {/if}
   </header>
 
-  <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3">
+  <div class="mobile-you-scroll min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-3">
     {#if toolHistory.loading && toolHistory.runs.length === 0}
       <p class="workshop-muted">Loading recent activity…</p>
     {:else if toolHistory.error}
@@ -163,17 +165,17 @@
     {:else}
       <ul class="divide-y divide-surface-500/35 border-y border-surface-500/35">
         {#each filtered as entry (entry.entry_id)}
-          <li class="px-2 py-3">
-            <div class="flex items-start gap-3">
+          <li class="min-w-0 px-2 py-3">
+            <div class="flex min-w-0 items-start gap-3">
               <input
                 type="checkbox"
-                class="mt-1"
+                class="mt-1 shrink-0"
                 checked={toolHistory.selectedIds.has(entry.entry_id)}
                 onchange={() => toolHistory.toggleSelected(entry.entry_id)}
               />
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="text-sm font-medium leading-snug text-surface-50">
+              <div class="min-w-0 flex-1 overflow-hidden">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <p class="min-w-0 truncate text-sm font-medium leading-snug text-surface-50">
                     {formatToolName(entry.tool_name)}
                   </p>
                   <span
@@ -192,19 +194,22 @@
                   {/if}
                 </div>
                 {#if settings.showWorkshopGuidance}
-                  <p class="workshop-faint mt-1 text-[11px] leading-snug">
+                  <p class="workshop-faint mt-1 line-clamp-2 text-[11px] leading-snug">
                     {humanToolRunHeadline(entry)}
                   </p>
                 {/if}
-                <p class="workshop-faint mt-1 font-mono text-[10px]">
-                  {humanToolRunDetail(entry)} · {toolHistory.formatTimestamp(entry.timestamp)}
+                <p class="workshop-faint mt-1 truncate font-mono text-[10px]">
+                  {humanToolRunDetail(entry)}
+                </p>
+                <p class="workshop-faint mt-0.5 text-[10px] text-surface-500">
+                  {toolHistory.formatTimestamp(entry.timestamp)}
                 </p>
                 {#if entry.input_summary.trim()}
                   <details class="mt-2">
                     <summary class="workshop-text-action cursor-pointer text-[10px]">
                       Input
                     </summary>
-                    <p class="workshop-faint mt-1 font-mono text-[10px] break-all">
+                    <p class="workshop-faint mt-1 break-all font-mono text-[10px]">
                       {entry.input_summary}
                     </p>
                   </details>

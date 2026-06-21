@@ -6,6 +6,7 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
+  import { browserTimezone } from "$lib/utils/friendlySchedule";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { automationsNav, type AutomationsSection } from "$lib/stores/automationsNav.svelte";
   import { automations } from "$lib/stores/automations.svelte";
@@ -39,7 +40,7 @@
   let createTitle = $state("");
   let createPrompt = $state("");
   let createCron = $state("0 9 * * *");
-  let createTimezone = $state("UTC");
+  let createTimezone = $state(browserTimezone());
   let createManuscript = $state<string | undefined>(undefined);
   let createDeliveryMode = $state<AutomationDeliveryMode>("in_app");
   let createTelegramChatId = $state("");
@@ -171,7 +172,7 @@
           </div>
         {/if}
       </div>
-      <div class="workshop-tabs mt-3">
+      <div class="workshop-tabs workshop-tabs-mobile mt-3">
         {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
@@ -194,7 +195,7 @@
           </div>
         {/if}
       </div>
-      <div class="workshop-tabs mt-3">
+      <div class="workshop-tabs workshop-tabs-mobile mt-3">
         {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
@@ -217,7 +218,7 @@
           </div>
         {/if}
       </div>
-      <div class="workshop-tabs mt-3">
+      <div class="workshop-tabs workshop-tabs-mobile mt-3">
         {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
@@ -246,28 +247,39 @@
               Schedules · {counts.enabled}/{counts.total} active
             </p>
           </div>
+        </div>
+      {/if}
+
+      <div class="workshop-tabs workshop-tabs-mobile mt-3">
+        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
           <button
             type="button"
-            class="btn btn-sm variant-filled-primary"
-            onclick={openNew}
+            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
+            onclick={() => (section = tab.id)}
           >
-            + New schedule
+            {tab.label}
           </button>
-        </div>
-      {:else}
-        <div class="flex items-center justify-between gap-2">
+        {/each}
+      </div>
+
+      <div class="mt-3 flex items-center justify-between gap-2">
+        {#if embedded}
           <p class="workshop-faint text-xs">
             {counts.enabled}/{counts.total} active
           </p>
-          <button
-            type="button"
-            class="btn btn-sm variant-filled-primary"
-            onclick={openNew}
-          >
-            + New
-          </button>
-        </div>
-      {/if}
+        {:else}
+          <p class="workshop-header-line">
+            Recurring agent turns · delivery in run history
+          </p>
+        {/if}
+        <button
+          type="button"
+          class="btn btn-sm shrink-0 variant-filled-primary"
+          onclick={openNew}
+        >
+          {embedded ? "+ New" : "+ New schedule"}
+        </button>
+      </div>
 
       <label class="cron-search mt-3 block">
         <span class="sr-only">Search automations</span>
@@ -283,18 +295,6 @@
           />
         </div>
       </label>
-
-      <div class="workshop-tabs mt-3">
-        {#each AUTOMATIONS_SECTIONS as tab (tab.id)}
-          <button
-            type="button"
-            class="workshop-tab {section === tab.id ? 'workshop-tab-active' : ''}"
-            onclick={() => (section = tab.id)}
-          >
-            {tab.label}
-          </button>
-        {/each}
-      </div>
     </header>
   {/if}
 

@@ -269,7 +269,7 @@
         <h2 class="workshop-section-title">{flows.labelFor(selected)}</h2>
         <p class="workshop-faint mt-1 font-mono text-[11px]">{selected.workflow_id}</p>
 
-        <div class="workshop-tabs mt-4">
+        <div class="workshop-tabs workshop-tabs-mobile mt-4">
           {#each [
             { id: "steps", label: "Steps" },
             { id: "runs", label: "Runs" },

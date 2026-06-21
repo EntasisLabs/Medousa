@@ -14,10 +14,11 @@
 
   interface Props {
     visible: boolean;
+    mobile?: boolean;
     onOpenFullChat?: () => void;
   }
 
-  let { visible, onOpenFullChat }: Props = $props();
+  let { visible, mobile = false, onOpenFullChat }: Props = $props();
 
   let sessionMenuOpen = $state(false);
 
@@ -71,7 +72,11 @@
   }
 </script>
 
-<div class="script-workbench-chat-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+<div
+  class="script-workbench-chat-panel flex min-h-0 flex-1 flex-col overflow-hidden {mobile
+    ? 'script-workbench-chat-panel-mobile'
+    : ''}"
+>
   <header class="flex shrink-0 items-center gap-2 border-b border-surface-500/35 px-2 py-2">
     <div class="min-w-0 flex-1">
       <p class="truncate text-xs font-medium text-surface-100">
@@ -118,6 +123,7 @@
     embedded={true}
     workshop={true}
     scriptWorkbench={true}
+    {mobile}
     showPopout={false}
   />
 </div>

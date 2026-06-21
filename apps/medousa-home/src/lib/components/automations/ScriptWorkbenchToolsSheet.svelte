@@ -6,7 +6,6 @@
     FileCode2,
     LayoutTemplate,
     MessageSquare,
-    Package,
     Plus,
   } from "@lucide/svelte";
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
@@ -42,8 +41,7 @@
     | "library"
     | "modules-list"
     | "modules-detail"
-    | "chat"
-    | "advanced";
+    | "chat";
 
   let {
     open,
@@ -82,7 +80,7 @@
               ? (selectedModuleId ?? "Module")
               : view === "chat"
                 ? "Script chat"
-                : "Advanced",
+                : "Script tools",
   );
 
   const filteredModules = $derived(
@@ -243,7 +241,7 @@
         </div>
       </header>
 
-      {#if view !== "root" && view !== "chat" && view !== "advanced"}
+      {#if view !== "root" && view !== "chat"}
         <div class="shrink-0 px-3 py-2">
           <input
             class="input w-full text-xs"
@@ -258,6 +256,18 @@
         </div>
       {/if}
 
+      {#if view === "chat"}
+        <div class="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
+          <ScriptWorkbenchChatPanel
+            {visible}
+            mobile={true}
+            onOpenFullChat={() => {
+              closeAll();
+              layout.navigateDesktop("chat", { bump: true });
+            }}
+          />
+        </div>
+      {:else}
       <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto">
         {#if view === "root"}
           <div class="mobile-turn-sheet-group">
@@ -302,17 +312,6 @@
               <span class="flex items-center gap-2">
                 <MessageSquare size={16} strokeWidth={1.75} class="text-primary-300" />
                 <span class="mobile-turn-sheet-link-label">Script chat</span>
-              </span>
-              <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
-            </button>
-            <button
-              type="button"
-              class="mobile-turn-sheet-link-row mobile-turn-sheet-row-divider"
-              onclick={() => goTo("advanced")}
-            >
-              <span class="flex items-center gap-2">
-                <Package size={16} strokeWidth={1.75} class="text-surface-500" />
-                <span class="mobile-turn-sheet-link-label">Advanced</span>
               </span>
               <ChevronRight size={16} strokeWidth={2} class="mobile-turn-sheet-link-chevron" />
             </button>
@@ -427,27 +426,9 @@
               {/each}
             </ul>
           {/if}
-        {:else if view === "chat"}
-          <div class="flex min-h-[min(70vh,32rem)] flex-col">
-            <ScriptWorkbenchChatPanel
-              {visible}
-              onOpenFullChat={() => {
-                closeAll();
-                layout.navigateDesktop("chat", { bump: true });
-              }}
-            />
-          </div>
-        {:else if view === "advanced"}
-          <div class="space-y-3 px-4 py-4">
-            <p class="text-sm text-surface-200">Desktop-only tools</p>
-            <p class="workshop-faint text-[11px] leading-relaxed">
-              WASM module loading and module allowlist editing are available on desktop in
-              Capabilities and the Scripts workbench sidebar. On mobile, focus on writing,
-              running, and inserting from native modules.
-            </p>
-          </div>
         {/if}
       </div>
+      {/if}
     </div>
   </div>
 {/if}

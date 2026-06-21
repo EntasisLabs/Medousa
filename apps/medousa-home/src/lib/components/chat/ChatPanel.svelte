@@ -69,6 +69,8 @@
   const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(chat.messages));
   const workerThreads = $derived(groupWorkerThreads(chat.messages));
+  const showInlineComposer = $derived(!mobile || (embedded && scriptWorkbench));
+  const useMobileChatLayout = $derived(mobile);
   const showChatEmptyState = $derived(
     chatMessages.length === 0 && askThreads.length === 0 && workerThreads.length === 0,
   );
@@ -293,11 +295,13 @@
 <section
   class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col {visible
     ? ''
-    : 'hidden'} {embedded
-    ? 'vault-workshop-chat-panel'
-    : mobile
-      ? 'mobile-chat-panel'
-      : 'chat-pane'}"
+    : 'hidden'} {embedded && useMobileChatLayout
+    ? 'script-workbench-chat-mobile-root'
+    : embedded
+      ? 'vault-workshop-chat-panel'
+      : useMobileChatLayout
+        ? 'mobile-chat-panel'
+        : 'chat-pane'}"
 >
   {#if !embedded}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
@@ -444,13 +448,19 @@
     </div>
   {/if}
 
-  <div class="{embedded ? 'vault-workshop-chat-body' : mobile ? 'mobile-chat-body' : 'chat-body'}">
+  <div
+    class="{embedded && !useMobileChatLayout
+      ? 'vault-workshop-chat-body'
+      : useMobileChatLayout
+        ? 'mobile-chat-body'
+        : 'chat-body'}"
+  >
     <div
       bind:this={scrollEl}
       onscroll={onScroll}
-      class="{embedded
+      class="{embedded && !useMobileChatLayout
         ? 'vault-workshop-chat-scroll space-y-3'
-        : mobile
+        : useMobileChatLayout
           ? 'mobile-chat-scroll space-y-3'
           : 'chat-scroll space-y-4'}"
     >
@@ -648,12 +658,12 @@
       </div>
       {/if}
     </div>
-    {#if !mobile}
+    {#if !useMobileChatLayout}
       <div class="chat-scroll-fade" aria-hidden="true"></div>
     {/if}
   </div>
 
-  {#if !mobile}
+  {#if showInlineComposer}
     {#if !embedded}
     <BudgetApprovalBar
       onOpenWork={() => {
@@ -663,7 +673,14 @@
       }}
     />
     {/if}
-    <form class="{embedded ? 'vault-workshop-chat-composer' : 'chat-composer'}" onsubmit={submit}>
+    <form
+      class="{embedded
+        ? useMobileChatLayout
+          ? 'mobile-chat-composer script-workbench-chat-composer'
+          : 'vault-workshop-chat-composer'
+        : 'chat-composer'}"
+      onsubmit={submit}
+    >
       {#if chat.scriptWorkbenchContext}
         <ScriptChatContextChip compact={workshop || scriptWorkbench} class={embedded ? "mb-2" : "mx-4 mb-2"} />
       {:else if chat.vaultNoteContext}
@@ -679,7 +696,7 @@
         </ul>
       {/if}
       <ChatComposerBar
-        mobile={workshop}
+        mobile={workshop || useMobileChatLayout}
         disabled={connection.offline}
         composerBlocked={chat.composerBlocked}
         onkeydown={handleKeydown}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
+  import FriendlySchedulePicker from "$lib/components/automations/FriendlySchedulePicker.svelte";
   import GraphemeRecipeCards from "$lib/components/grapheme/GraphemeRecipeCards.svelte";
   import WorkshopJourneyBanner from "$lib/components/workshop/WorkshopJourneyBanner.svelte";
   import { flows } from "$lib/stores/flows.svelte";
@@ -53,7 +54,7 @@
           ? { kind: "mcp", id, server_id: "", tool_name: "", args: {} }
           : { kind: "prompt", id, user_prompt: "" };
     draft = { ...draft, steps: [...draft.steps, step] };
-    expandedStepIds = { ...expandedStepIds, [id]: kind !== "grapheme" };
+    expandedStepIds = { ...expandedStepIds, [id]: mobile ? false : kind !== "grapheme" };
   }
 
   function addRecipe(recipe: GraphemeRecipe) {
@@ -67,7 +68,7 @@
         { kind: "grapheme", id, source: recipe.body },
       ],
     };
-    expandedStepIds = { ...expandedStepIds, [id]: true };
+    expandedStepIds = { ...expandedStepIds, [id]: mobile ? false : true };
   }
 
   function removeStep(index: number) {
@@ -114,7 +115,7 @@
   }
 </script>
 
-<div class="space-y-4">
+<div class="flow-composer {mobile ? 'flow-composer-mobile' : ''} space-y-4">
   {#if settings.showWorkshopGuidance}
     <WorkshopJourneyBanner compact />
   {/if}
@@ -257,7 +258,15 @@
                   </select>
                 </label>
               {/if}
-              {#if step.source.trim()}
+              {#if step.source.trim() && mobile && !isStepExpanded(step.id)}
+                <button
+                  type="button"
+                  class="workshop-text-action mt-3 text-[11px]"
+                  onclick={() => toggleStepEditor(step.id)}
+                >
+                  Edit script
+                </button>
+              {:else if step.source.trim()}
                 <label class="cron-field mt-3 block">
                   <span class="cron-field-label">Grapheme source</span>
                   <div class="{barClass} cron-field-bar">
@@ -273,6 +282,15 @@
                     ></textarea>
                   </div>
                 </label>
+                {#if mobile}
+                  <button
+                    type="button"
+                    class="workshop-text-action mt-2 text-[11px]"
+                    onclick={() => toggleStepEditor(step.id)}
+                  >
+                    Hide script
+                  </button>
+                {/if}
               {:else}
                 <button
                   type="button"
@@ -362,35 +380,15 @@
     {/if}
   </div>
 
-  <div class="cron-field-row">
-    <label class="cron-field cron-field-grow">
-      <span class="cron-field-label">Run on a schedule (optional)</span>
-      <div class="{barClass} cron-field-bar cron-field-bar-compact">
-        <input
-          class="cron-field-input font-mono"
-          bind:value={draft.cron_expr}
-          placeholder="0 9 * * *  weekdays 9am"
-          spellcheck="false"
-          aria-label="Flow cron expression"
-        />
-      </div>
-      <p class="workshop-faint mt-1 text-[10px]">Cron format · e.g. 0 9 * * 1-5 for weekdays</p>
-    </label>
-    <label class="cron-field cron-field-timezone">
-      <span class="cron-field-label">Timezone</span>
-      <div class="{barClass} cron-field-bar cron-field-bar-compact">
-        <input
-          class="cron-field-input font-mono"
-          bind:value={draft.timezone}
-          placeholder="UTC"
-          spellcheck="false"
-          aria-label="Flow timezone"
-        />
-      </div>
-    </label>
-  </div>
+  <FriendlySchedulePicker
+    {mobile}
+    optional
+    bind:cronExpr={draft.cron_expr}
+    bind:timezone={draft.timezone}
+    label="Repeat on a schedule (optional)"
+  />
 
-  <div class="flex flex-wrap gap-2 pt-1">
+  <div class="flow-composer-actions flex flex-wrap gap-2 pt-1 {mobile ? 'flow-composer-actions-mobile' : ''}">
     <button
       type="button"
       class="btn btn-sm variant-filled-primary"

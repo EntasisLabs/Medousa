@@ -1978,6 +1978,7 @@
 
   .scripts-workbench-center-mobile {
     @apply relative;
+    --scripts-workbench-status-height: 2rem;
   }
 
   .scripts-workbench-mobile-empty {
@@ -1985,13 +1986,138 @@
   }
 
   .scripts-workbench-fab {
-    bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 2rem);
     z-index: 25;
+  }
+
+  .script-workbench-chat-panel-mobile,
+  .script-workbench-chat-panel.script-workbench-chat-panel-mobile {
+    @apply w-full max-w-full min-w-0 shrink flex-1 border-0;
+  }
+
+  .script-workbench-chat-mobile-root {
+    @apply flex min-h-0 w-full max-w-full min-w-0 flex-1 flex-col;
+  }
+
+  .script-workbench-chat-composer {
+    @apply shrink-0;
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .cron-panel-mobile {
+    @apply overflow-x-hidden;
+  }
+
+  .workshop-tabs-mobile {
+    @apply -mx-1 overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .workshop-tabs-mobile .workshop-tab {
+    @apply shrink-0 px-3.5;
+  }
+
+  .cron-panel-mobile .workshop-header {
+    @apply py-2;
+  }
+
+  .cron-panel-mobile .workshop-header-line {
+    @apply hidden;
+  }
+
+  .cron-panel-mobile .cron-create-form {
+    @apply space-y-3 pb-6;
+  }
+
+  .cron-panel-mobile .cron-field-label {
+    @apply mb-1 text-[11px] normal-case tracking-normal text-surface-400;
+  }
+
+  .cron-panel-mobile .cron-field-bar {
+    @apply rounded-xl;
+  }
+
+  .cron-panel-mobile .cron-field-bar-compact {
+    @apply py-1;
+  }
+
+  .cron-panel-mobile aside,
+  .cron-panel-mobile .workshop-detail-pane {
+    @apply px-3 py-3;
+  }
+
+  .friendly-schedule {
+    @apply space-y-3;
+  }
+
+  .friendly-schedule-summary {
+    @apply text-sm leading-snug text-surface-200;
+  }
+
+  .friendly-schedule-frequency {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .friendly-schedule-chip {
+    @apply rounded-full border border-surface-500/40 bg-surface-900/40 px-3 py-1.5 text-xs text-surface-300 transition active:scale-[0.98];
+  }
+
+  .friendly-schedule-chip-active {
+    @apply border-primary-500/45 text-surface-50;
+    background-color: rgb(var(--color-primary-500) / 0.12);
+  }
+
+  .friendly-schedule-row {
+    @apply grid gap-3 sm:grid-cols-2;
+  }
+
+  .friendly-schedule-field {
+    @apply block min-w-0;
+  }
+
+  .friendly-schedule-field-label {
+    @apply mb-1 block text-[11px] text-surface-400;
+  }
+
+  .friendly-schedule-hint {
+    @apply mt-1 text-[10px] leading-snug text-surface-500;
+  }
+
+  .friendly-schedule-mobile .friendly-schedule-chip {
+    @apply py-2 text-[13px];
+  }
+
+  .flow-composer-mobile {
+    @apply space-y-3;
+  }
+
+  .flow-composer-mobile .workshop-flow-step {
+    @apply rounded-xl p-3;
+  }
+
+  .flow-composer-actions-mobile {
+    @apply flex-col gap-2.5 pt-2;
+  }
+
+  .flow-composer-actions-mobile :is(.btn, button) {
+    @apply w-full justify-center;
+  }
+
+  .automations-history {
+    @apply overflow-x-hidden;
   }
 
   .scripts-workbench-tools-backdrop,
   .scripts-workbench-output-backdrop {
     z-index: 35;
+  }
+
+  .scripts-workbench-tools-sheet .script-workbench-chat-panel-mobile {
+    @apply h-full w-full max-w-full min-w-0;
+  }
+
+  .scripts-workbench-tools-sheet .script-workbench-chat-mobile-root {
+    @apply h-full w-full max-w-full min-w-0;
   }
 
   .scripts-workbench-tools-sheet,
@@ -2019,7 +2145,7 @@
     background-color: rgb(var(--color-surface-950) / 0.4);
   }
 
-  .script-workbench-chat-panel {
+  .script-workbench-chat-panel:not(.script-workbench-chat-panel-mobile) {
     @apply w-[min(320px,30%)] shrink-0 overflow-hidden border-l border-surface-500/40;
   }
 
@@ -2786,6 +2912,13 @@
     @apply fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-surface-50 shadow-lg transition active:scale-95;
     right: 1rem;
     bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
+  }
+
+  .mobile-fab.scripts-workbench-fab {
+    bottom: calc(
+      var(--mobile-bottom-chrome-height, 5.5rem) + var(--scripts-workbench-status-height, 2rem) + 0.625rem
+    );
+    z-index: 25;
   }
 
   .mobile-swipe-row {

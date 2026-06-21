@@ -1,5 +1,6 @@
 <script lang="ts">
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
+  import FriendlySchedulePicker from "$lib/components/automations/FriendlySchedulePicker.svelte";
   import { haptic } from "$lib/haptics";
   import type { AutomationDeliveryMode } from "$lib/types/recurring";
 
@@ -71,37 +72,7 @@
     </div>
   </label>
 
-  <div class="cron-field-row">
-    <label class="cron-field cron-field-grow">
-      <span class="cron-field-label">Schedule</span>
-      <div class="{barClass} cron-field-bar cron-field-bar-compact">
-        <input
-          class="cron-field-input font-mono"
-          bind:value={cronExpr}
-          placeholder="0 9 * * *"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          aria-label="Cron expression"
-        />
-      </div>
-    </label>
-
-    <label class="cron-field cron-field-timezone">
-      <span class="cron-field-label">Timezone</span>
-      <div class="{barClass} cron-field-bar cron-field-bar-compact">
-        <input
-          class="cron-field-input font-mono"
-          bind:value={timezone}
-          placeholder="UTC"
-          autocapitalize="characters"
-          autocorrect="off"
-          spellcheck="false"
-          aria-label="Timezone"
-        />
-      </div>
-    </label>
-  </div>
+  <FriendlySchedulePicker {mobile} bind:cronExpr bind:timezone label="When should it run?" />
 
   <label class="cron-field">
     <span class="cron-field-label">Where results go</span>
