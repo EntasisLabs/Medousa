@@ -23,8 +23,6 @@ mod window;
 mod wizard;
 
 use daemon::DaemonState;
-
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::Manager;
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]

@@ -431,11 +431,7 @@ pub async fn wizard_apply_screen1(
             public_bind: None,
         }))
         .await?;
-        core_message = if start.already_running {
-            start.message
-        } else {
-            start.message
-        };
+        core_message = start.message;
         let wait = daemon_wait_healthy(Some(DaemonWaitHealthRequest {
             timeout_seconds: 120,
             poll_ms: 2000,

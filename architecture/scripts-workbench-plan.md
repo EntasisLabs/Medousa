@@ -212,15 +212,172 @@ Existing **Workshop guidance** setting (journey, recipes, friendly summaries) ca
 
 ---
 
-## Mobile
+## Mobile (planned — W7)
 
-**Deferred** until desktop Workbench is nailed.
+Desktop Workbench is **shipped and validated** (2026-06). Mobile is a separate IA pass — same artifacts, different posture.
 
-Expect: script list → full-screen editor → bottom sheet for modules/console/chat — not a three-column layout.
+### Posture: what we optimize for
+
+| Dimension | Desktop (sit-down) | Mobile (on-the-go) |
+|-----------|-------------------|---------------------|
+| **Primary job** | Author, explore catalog deeply, co-edit with script chat | Fix, run, quick insert, save, ship to flow |
+| **Attention** | Sustained focus — rails + console always available | Interrupted — one hero surface, overlays on demand |
+| **Discovery** | Browse modules with rich metadata (master–detail) | Search-first; templates over catalog wandering |
+| **Collaboration** | Script chat docked while editing | Chat as overlay when stuck — not default chrome |
+| **Power tools** | WASM load, allowlist, lifecycle | Hidden behind “Advanced” or deferred to desktop |
+
+**Rule:** Mobile Scripts = **editor + actions always visible**. Everything else is **pull, not push** — no permanent sidebars, no three-column shell.
+
+### Same mental model, different chrome
+
+| Concept | Desktop | Mobile |
+|---------|---------|--------|
+| **Author** | Center editor + title bar | Full-width editor + compact toolbar (same icons) |
+| **Run feedback** | Bottom console dock | Swipe-up **Output sheet** (half → full height) |
+| **Saved scripts** | Left rail “Scripts” | FAB sheet → **Library** |
+| **Starters** | Left rail “Templates” | FAB sheet → **Templates** (promote harder on empty state) |
+| **Learn / insert** | Left rail “Modules” master–detail | FAB sheet → **Modules** stepper |
+| **WASM** | Left rail section | FAB sheet → **Advanced → WASM** (rare on phone) |
+| **Script chat** | Right collapsible panel | FAB sheet → **Chat** (or second FAB — see below) |
+
+Artifacts unchanged: script, flow step, schedule, module op insert — only **presentation** changes.
+
+### Layout (target)
+
+```
+┌─────────────────────────────────────┐
+│ Automations › Scripts    (tab strip)│
+├─────────────────────────────────────┤
+│ [tabs]          [flow save run …]   │  ← same title bar as desktop, tighter
+├─────────────────────────────────────┤
+│                                     │
+│         EDITOR (hero, ~70vh)        │
+│                                     │
+├─────────────────────────────────────┤
+│ Modified · 12 lines · Ready         │  ← tap center → open Output sheet
+└─────────────────────────────────────┘
+                              ┌───┐
+                              │ ⊕ │  ← primary FAB (tools)
+                              └───┘
+```
+
+**No left rail on mobile.** Current `ScriptsWorkbenchPanel` mobile branch (horizontal section pills + sidebar) should be **retired** in favor of this shell.
+
+### FAB strategy (recommended)
+
+**Option A — Single tools FAB (recommended v1)**
+
+One floating action button opens a **Tools sheet** — root menu, not six separate FABs:
+
+| Row | Icon | Opens |
+|-----|------|--------|
+| Templates | LayoutTemplate | Sheet → pick starter → dismiss → editor filled |
+| Library | FileCode2 | Sheet → saved scripts list → open |
+| Modules | Blocks | **Stepper** (below) |
+| Chat | MessageSquare | Full-height sheet → `ScriptWorkbenchChatPanel` |
+| Advanced | Package | WASM + allowlist (collapsed) |
+
+Keeps screen clean; matches existing `mobile-sheet` + drill-down pattern (`MobileComposerTurnSettings`).
+
+**Option B — Dual FAB**
+
+| FAB | Role |
+|-----|------|
+| **Tools** (bottom-right) | Templates · Library · Modules |
+| **Chat** (bottom-right, stacked or long-press) | Script-scoped Medousa |
+
+Use only if user research shows chat is opened as often as Run. Otherwise chat inside Tools menu is enough for v1.
+
+**Do not** mirror desktop’s separate left + right rails as two FABs without a root menu — feels arbitrary (“which FAB?”).
+
+### Stepper interactions (Modules)
+
+Desktop: compact list + detail pane. Mobile: **stacked sheets** (iOS Settings / your turn-settings sheet):
+
+```
+Tools sheet
+  └─ Modules
+       Step 1 — Pick module (search, op count badge)
+       Step 2 — Module detail (blurb, effects, op cards)
+       Action — Insert → pop stack → dismiss Tools → focus editor
+```
+
+| Step | Optimize for | UX |
+|------|--------------|-----|
+| 1 | Fast scan | Single-line rows, search sticky top |
+| 2 | Rich metadata | Same cards as desktop detail (return type, effect, stability) |
+| Back | Orientation | Chevron + module name in header |
+| Insert | Closure | Haptic + toast “Inserted `gmail()`” optional |
+
+Templates & Library are **single-step sheets** (no stepper) — tap row → done.
+
+Chat sheet: **no stepper** — conversation surface; swipe down to return to editor with context preserved.
+
+### Output / console on mobile
+
+| Trigger | Behavior |
+|---------|----------|
+| Tap **Run** / **Compile** | Auto-open Output sheet to half height |
+| Tap status bar center (“Compile valid”) | Toggle Output sheet |
+| Swipe down on sheet | Collapse to peek or dismiss |
+| Toolbar terminal icon | Same as desktop — toggle dock vs sheet |
+
+Editor stays mounted underneath — don’t navigate away for output.
+
+### Automations tabs on mobile
+
+Keep **Scripts · Flows · Schedules · History** at Automations level (already in `AutomationsPanel`).
+
+| Tab | Mobile posture |
+|-----|----------------|
+| **Scripts** | Workbench shell above |
+| **Flows** | List → detail (existing `mobileDetailOpen` pattern) |
+| **Schedules** | List → detail |
+| **History** | Scroll list, promote → Flows |
+
+Scripts is the only tab that gets the FAB + full-screen editor treatment.
+
+### Empty & first-run states
+
+On-the-go users need **fast wins**, not catalog tours:
+
+1. Empty editor → inline hint: “Tap **+** for templates or start typing”
+2. Tools sheet → **Templates** pinned first row (not Modules)
+3. Optional one-time bottom sheet: “Scripts run on your workshop — save then Add to flow” (dismiss forever; respect `showWorkshopGuidance`)
+
+### What we defer on mobile
+
+| Feature | Why |
+|---------|-----|
+| WASM load UI | Desktop/dev posture; file paths painful on phone |
+| Module allowlist editing | Capabilities / desktop |
+| Multi-tab heavy workflow | Cap at 3 tabs or warn; prefer single script focus |
+| Side-by-side script chat + editor | Sheet only |
+
+### Implementation phases (W7 proposal)
+
+| Phase | Deliverable |
+|-------|-------------|
+| **W7.0** | Mobile Scripts shell — hide sidebar; editor + title bar + status bar full width |
+| **W7.1** | Tools FAB + root sheet (Templates, Library, Modules, Chat, Advanced) |
+| **W7.2** | Modules stepper (2-step) reusing desktop data paths |
+| **W7.3** | Output bottom sheet + status bar tap |
+| **W7.4** | Polish — haptics, empty states, safe-area FAB, keyboard overlap |
+
+**Shipped (2026-06):** W7.0–W7.4 — mobile editor-first shell, Tools FAB + stepper sheets, Output sheet, long-press tab rename.
+
+### Open questions
+
+| # | Question | Lean |
+|---|----------|------|
+| 1 | One FAB or Tools + Chat? | One FAB v1; split if analytics show chat demand |
+| 2 | FAB position — over status bar or above it? | Above status bar, right inset (match `WorkTimeline` FAB) |
+| 3 | Rename tab on mobile — double-tap or long-press? | Long-press → inline rename (double-tap conflicts with text selection elsewhere) |
+| 4 | Templates in FAB vs empty-state CTA only? | Both — empty CTA opens Tools sheet on Templates |
 
 ---
 
-## Implementation phases (proposed)
+## Implementation phases (desktop — shipped)
 
 | Phase | Theme | Deliverables |
 |-------|--------|--------------|
@@ -260,3 +417,5 @@ Expect: script list → full-screen editor → bottom sheet for modules/console/
 | Date | Note |
 |------|------|
 | 2026-06 | W6.0–W6.5 shipped — Capabilities rename, Scripts workbench IDE, script chat, flow library picker |
+| 2026-06 | W7 mobile plan — FAB + stepper sheets; editor-first posture documented |
+| 2026-06 | W7.0–W7.4 shipped — mobile Tools FAB, module stepper, output sheet, tab long-press rename |

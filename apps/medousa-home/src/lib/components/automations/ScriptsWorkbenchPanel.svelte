@@ -8,17 +8,23 @@
     PanelLeftOpen,
   } from "@lucide/svelte";
   import ScriptWorkbenchChatPanel from "$lib/components/automations/ScriptWorkbenchChatPanel.svelte";
+  import ScriptWorkbenchOutputSheet from "$lib/components/automations/ScriptWorkbenchOutputSheet.svelte";
   import ScriptWorkbenchStatusBar from "$lib/components/automations/ScriptWorkbenchStatusBar.svelte";
   import ScriptWorkbenchTitlebar from "$lib/components/automations/ScriptWorkbenchTitlebar.svelte";
+  import ScriptWorkbenchToolsSheet from "$lib/components/automations/ScriptWorkbenchToolsSheet.svelte";
   import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
   import GraphemeScriptEditorPanel from "$lib/components/grapheme/GraphemeScriptEditorPanel.svelte";
   import { applyRecipeToEditor, GRAPHEME_STARTER_RECIPES, type GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import { prepareModuleInsert } from "$lib/grapheme/graphemeModuleSnippet";
+  import {
+    effectBadgeClass,
+    moduleBlurb,
+    stabilityLabel,
+  } from "$lib/grapheme/scriptWorkbenchHelpers";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
   import type {
-    GraphemeCompactModuleOp,
     GraphemeModuleSummary,
     GraphemeScriptEntry,
   } from "$lib/types/grapheme";
@@ -42,6 +48,27 @@
   let wasmPath = $state("");
   let wasmVersion = $state("");
   let wasmModuleId = $state("");
+  let toolsSheetOpen = $state(false);
+  let outputSheetOpen = $state(false);
+  let toolsInitialView = $state<
+    "root" | "templates" | "library" | "modules-list" | "modules-detail" | "chat" | "advanced"
+  >("root");
+
+  const showMobileEmptyHint = $derived(
+    mobile &&
+      Boolean(
+        graphemeScriptEditor.activeTab && !graphemeScriptEditor.activeTab.body.trim(),
+      ),
+  );
+
+  function openTools(view: typeof toolsInitialView = "root") {
+    toolsInitialView = view;
+    toolsSheetOpen = true;
+  }
+
+  function openOutput() {
+    outputSheetOpen = true;
+  }
 
   $effect(() => {
     if (!visible) return;
@@ -155,38 +182,6 @@
     startFromRecipe(recipe);
   }
 
-  function effectBadgeClass(effect: string): string {
-    const normalized = String(effect).toLowerCase();
-    if (normalized === "network" || normalized === "secrets") {
-      return "scripts-workbench-effect-chip-warning";
-    }
-    if (normalized === "pure") {
-      return "scripts-workbench-effect-chip-muted";
-    }
-    return "scripts-workbench-effect-chip-default";
-  }
-
-  function stabilityLabel(op: GraphemeCompactModuleOp): string {
-    return op.stability || "stable";
-  }
-
-  function moduleBlurb(entry: GraphemeModuleSummary): string {
-    const blurbs: Record<string, string> = {
-      core: "Messages, picking fields, everyday utilities",
-      web: "Search the web and fetch pages",
-      html: "Parse and convert HTML",
-      json: "Read and write JSON data",
-      csv: "Spreadsheet-style data",
-      yaml: "Config and structured text",
-      docs: "Documents and text files",
-      io: "Files in and out",
-    };
-    return (
-      blurbs[entry.module_id] ??
-      `${entry.op_count} ready-made actions you can insert`
-    );
-  }
-
   const railItems: { id: RailSection; label: string; icon: typeof FileCode2 }[] = [
     { id: "scripts", label: "Scripts", icon: FileCode2 },
     { id: "templates", label: "Templates", icon: LayoutTemplate },
@@ -234,40 +229,23 @@
       </nav>
     {/if}
 
-    {#if leftOpen || mobile}
+    {#if !mobile && leftOpen}
       <aside
-        class="scripts-workbench-sidebar flex min-h-0 shrink-0 flex-col border-r border-surface-500/40 {mobile
-          ? 'min-w-0 flex-1'
-          : railSection === 'modules'
-            ? 'w-[min(320px,32%)]'
-            : 'w-[min(280px,28%)]'}"
+        class="scripts-workbench-sidebar flex min-h-0 shrink-0 flex-col border-r border-surface-500/40 {railSection ===
+        'modules'
+          ? 'w-[min(320px,32%)]'
+          : 'w-[min(280px,28%)]'}"
       >
         <div class="flex items-center justify-between gap-2 border-b border-surface-500/35 px-3 py-2">
-          {#if mobile}
-            <div class="flex gap-1">
-              {#each railItems as item (item.id)}
-                <button
-                  type="button"
-                  class="rounded px-2 py-1 text-[10px] {railSection === item.id
-                    ? 'bg-surface-800 text-primary-300'
-                    : 'text-surface-400'}"
-                  onclick={() => (railSection = item.id)}
-                >
-                  {item.label}
-                </button>
-              {/each}
-            </div>
-          {:else}
-            <p class="workshop-label">{railItems.find((item) => item.id === railSection)?.label}</p>
-            <button
-              type="button"
-              class="workshop-text-action rounded p-1"
-              aria-label="Hide sidebar"
-              onclick={() => (leftOpen = false)}
-            >
-              <PanelLeftClose size={14} strokeWidth={1.75} />
-            </button>
-          {/if}
+          <p class="workshop-label">{railItems.find((item) => item.id === railSection)?.label}</p>
+          <button
+            type="button"
+            class="workshop-text-action rounded p-1"
+            aria-label="Hide sidebar"
+            onclick={() => (leftOpen = false)}
+          >
+            <PanelLeftClose size={14} strokeWidth={1.75} />
+          </button>
         </div>
 
         <div class="px-3 py-2">
@@ -582,21 +560,37 @@
       </aside>
     {/if}
 
-    <div class="scripts-workbench-center flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div
+      class="scripts-workbench-center relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {mobile
+        ? 'scripts-workbench-center-mobile'
+        : ''}"
+    >
       <ScriptWorkbenchTitlebar
         {mobile}
         {leftOpen}
-        {consoleOpen}
-        {chatOpen}
+        consoleOpen={mobile ? outputSheetOpen : consoleOpen}
+        chatOpen={false}
         onShowSidebar={() => (leftOpen = true)}
-        onToggleConsole={() => (consoleOpen = !consoleOpen)}
-        onToggleChat={() => (chatOpen = !chatOpen)}
+        onToggleConsole={() => (mobile ? (outputSheetOpen = !outputSheetOpen) : (consoleOpen = !consoleOpen))}
+        onToggleChat={() => openTools("chat")}
+        onOpenOutput={mobile ? openOutput : undefined}
       />
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <GraphemeScriptEditorPanel {visible} workbenchMode />
-          {#if consoleOpen}
+          {#if showMobileEmptyHint}
+            <div
+              class="scripts-workbench-mobile-empty pointer-events-none absolute inset-x-0 top-8 flex justify-center px-6"
+            >
+              <p class="rounded-lg border border-surface-500/30 bg-surface-900/90 px-3 py-2 text-center text-[11px] text-surface-400">
+                Tap
+                <span class="text-surface-200"> + </span>
+                for templates, or start typing
+              </p>
+            </div>
+          {/if}
+          {#if !mobile && consoleOpen}
             <div class="scripts-workbench-console shrink-0 border-t border-surface-500/40">
               <div class="flex items-center justify-between gap-2 px-3 py-1.5">
                 <p class="workshop-label text-[10px]">Output</p>
@@ -639,7 +633,23 @@
         {/if}
       </div>
 
-      <ScriptWorkbenchStatusBar onToggleConsole={() => (consoleOpen = true)} />
+      <ScriptWorkbenchStatusBar
+        onToggleConsole={() => (mobile ? openOutput() : (consoleOpen = true))}
+      />
+
+      {#if mobile}
+        <ScriptWorkbenchToolsSheet
+          open={toolsSheetOpen}
+          {visible}
+          initialView={toolsInitialView}
+          onOpen={() => (toolsSheetOpen = true)}
+          onClose={() => (toolsSheetOpen = false)}
+        />
+        <ScriptWorkbenchOutputSheet
+          open={outputSheetOpen}
+          onClose={() => (outputSheetOpen = false)}
+        />
+      {/if}
     </div>
   </div>
 </div>

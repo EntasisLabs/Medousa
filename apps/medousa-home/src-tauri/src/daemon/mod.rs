@@ -28,7 +28,7 @@ use crate::workshop_transport;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;

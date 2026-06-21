@@ -76,9 +76,14 @@
       {centerLabel}
     </button>
   {:else}
-    <span class="scripts-workbench-status-item scripts-workbench-status-center text-surface-600">
+    <button
+      type="button"
+      class="scripts-workbench-status-item scripts-workbench-status-center text-surface-600"
+      title="Show output"
+      onclick={() => onToggleConsole?.()}
+    >
       Ready
-    </span>
+    </button>
   {/if}
 
   <span class="scripts-workbench-status-item min-w-0 truncate text-right {rightClass}">

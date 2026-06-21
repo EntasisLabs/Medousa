@@ -4,17 +4,19 @@
 
   interface Props {
     compact?: boolean;
+    mobile?: boolean;
   }
 
-  let { compact = false }: Props = $props();
+  let { compact = false, mobile = false }: Props = $props();
 
   let renamingTabId = $state<string | null>(null);
   let renameDraft = $state("");
   let renameInput = $state<HTMLInputElement | null>(null);
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function startRename(tabId: string, name: string, event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
+  function startRename(tabId: string, name: string, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
     renamingTabId = tabId;
     renameDraft = name;
     graphemeScriptEditor.selectTab(tabId);
@@ -22,6 +24,18 @@
       renameInput?.focus();
       renameInput?.select();
     });
+  }
+
+  function scheduleLongPressRename(tabId: string, name: string) {
+    clearLongPress();
+    longPressTimer = setTimeout(() => startRename(tabId, name), 480);
+  }
+
+  function clearLongPress() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
   }
 
   function commitRename(tabId: string) {
@@ -76,9 +90,15 @@
           role="tab"
           aria-selected={graphemeScriptEditor.activeTabId === tab.tabId}
           class="min-w-0 truncate"
-          title="{tab.name} — double-click to rename"
+          title={mobile ? `${tab.name} — long-press to rename` : `${tab.name} — double-click to rename`}
           onclick={() => graphemeScriptEditor.selectTab(tab.tabId)}
-          ondblclick={(event) => startRename(tab.tabId, tab.name, event)}
+          ondblclick={mobile ? undefined : (event) => startRename(tab.tabId, tab.name, event)}
+          onpointerdown={mobile
+            ? () => scheduleLongPressRename(tab.tabId, tab.name)
+            : undefined}
+          onpointerup={mobile ? clearLongPress : undefined}
+          onpointerleave={mobile ? clearLongPress : undefined}
+          onpointercancel={mobile ? clearLongPress : undefined}
         >
           {tab.dirty ? "*" : ""}{tab.name}
         </button>

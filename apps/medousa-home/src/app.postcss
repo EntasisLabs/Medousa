@@ -1976,8 +1976,31 @@
     @apply text-warning-400;
   }
 
-  .scripts-workbench-op-card:focus-visible {
-    @apply outline-none ring-2 ring-primary-500/40;
+  .scripts-workbench-center-mobile {
+    @apply relative;
+  }
+
+  .scripts-workbench-mobile-empty {
+    z-index: 5;
+  }
+
+  .scripts-workbench-fab {
+    bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 2rem);
+    z-index: 25;
+  }
+
+  .scripts-workbench-tools-backdrop,
+  .scripts-workbench-output-backdrop {
+    z-index: 35;
+  }
+
+  .scripts-workbench-tools-sheet,
+  .scripts-workbench-output-sheet {
+    max-height: min(88vh, 42rem);
+  }
+
+  .scripts-workbench-sheet-header {
+    @apply flex-col items-stretch gap-2;
   }
 
   .scripts-workbench-template-row:focus-visible {

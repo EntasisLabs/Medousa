@@ -24,6 +24,7 @@
     onShowSidebar: () => void;
     onToggleConsole: () => void;
     onToggleChat: () => void;
+    onOpenOutput?: () => void;
   }
 
   let {
@@ -34,6 +35,7 @@
     onShowSidebar,
     onToggleConsole,
     onToggleChat,
+    onOpenOutput,
   }: Props = $props();
 
   let flowError = $state<string | null>(null);
@@ -86,9 +88,11 @@
         tab.body,
         mode,
       );
+      onOpenOutput?.();
     } catch (err) {
       graphemeScriptEditor.compileError =
         err instanceof Error ? err.message : String(err);
+      onOpenOutput?.();
     } finally {
       graphemeScriptEditor.compileBusy = false;
     }
@@ -99,6 +103,7 @@
     if (!tab?.body.trim()) return;
     await workshop.runScriptSource(tab.body);
     graphemeScriptEditor.runError = workshop.runError;
+    onOpenOutput?.();
   }
 </script>
 
@@ -114,7 +119,7 @@
     </button>
   {/if}
 
-  <ScriptEditorTabStrip compact />
+  <ScriptEditorTabStrip compact {mobile} />
 
   <div class="scripts-workbench-titlebar-actions flex shrink-0 items-center gap-0.5 pl-1">
     <button
@@ -168,7 +173,17 @@
       <Zap size={15} strokeWidth={1.75} />
     </button>
 
-    {#if !mobile}
+    {#if mobile}
+      <button
+        type="button"
+        class="scripts-workbench-toolbar-btn {consoleOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
+        title="Output"
+        aria-label="Show output"
+        onclick={onToggleConsole}
+      >
+        <Terminal size={15} strokeWidth={1.75} />
+      </button>
+    {:else}
       <span class="mx-0.5 h-4 w-px shrink-0 bg-surface-500/40" aria-hidden="true"></span>
       <button
         type="button"
