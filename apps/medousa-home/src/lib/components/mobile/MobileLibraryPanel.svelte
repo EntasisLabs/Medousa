@@ -16,6 +16,7 @@
     handleVaultNoteContextMenuEvent,
     shouldSuppressVaultContextMenuClick,
   } from "$lib/utils/vaultContextMenuEvents";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
 
   interface Props {
     visible: boolean;
@@ -60,6 +61,15 @@
   function backToList() {
     layout.setLibraryView("list");
   }
+
+  $effect(() => {
+    if (!visible) return;
+    return registerMobileBackHandler(() => {
+      if (layout.libraryView === "list") return false;
+      backToList();
+      return true;
+    });
+  });
 
   const readerTitle = $derived(
     vault.selectedPath

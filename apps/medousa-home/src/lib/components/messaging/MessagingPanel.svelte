@@ -11,6 +11,7 @@
   } from "$lib/messaging";
   import type { ChannelId } from "$lib/types/messaging";
   import { ChevronLeft } from "@lucide/svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
 
   interface Props {
     visible: boolean;
@@ -141,6 +142,15 @@
       heartbeatChatJids: parseStringCsv(whatsappHeartbeatJids),
     });
   }
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    return registerMobileBackHandler(() => {
+      if (!mobileDetailOpen) return false;
+      mobileDetailOpen = false;
+      return true;
+    });
+  });
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">

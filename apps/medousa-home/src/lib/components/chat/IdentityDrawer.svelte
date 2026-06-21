@@ -2,9 +2,12 @@
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { X } from "@lucide/svelte";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
   import { identity } from "$lib/stores/identity.svelte";
   import { layout } from "$lib/stores/layout.svelte";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     open: boolean;
@@ -14,6 +17,9 @@
   }
 
   let { open, onClose, onOpenFullContext, variant = "drawer" }: Props = $props();
+
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     if (open) {
@@ -33,23 +39,67 @@
     layout.setIdentityDrawerOpen(false);
     onClose?.();
   }
+
+  function dismissSheet() {
+    haptic("light");
+    close();
+  }
+
+  $effect(() => {
+    if (!open || variant !== "sheet") return;
+    return registerMobileBackHandler(() => {
+      close();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!open || variant !== "sheet" || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, { onDismiss: dismissSheet });
+  });
 </script>
 
 {#if open}
   {#if variant === "sheet"}
     <div
-      class="mobile-sheet-backdrop"
+      class="mobile-sheet-backdrop mobile-sheet-peek-backdrop"
       role="presentation"
       onclick={(event) => {
-        if (event.target === event.currentTarget) close();
+        if (event.target === event.currentTarget) dismissSheet();
       }}
     >
       <div
-        class="mobile-sheet mobile-sheet-tall flex flex-col"
+        bind:this={sheetEl}
+        class="mobile-sheet mobile-sheet-peek mobile-sheet-peek-tall flex flex-col"
         role="dialog"
         aria-label="Identity recall"
       >
-        {@render identityPanel()}
+        <header
+          bind:this={headerEl}
+          class="mobile-sheet-header scripts-workbench-sheet-header mobile-chat-history-header"
+        >
+          <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+          <div class="flex w-full items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="text-sm font-semibold text-surface-50">Identity recall</h2>
+              <p class="workshop-faint mt-0.5 truncate text-xs">
+                {userProfiles.activeDisplayName}
+                {#if settings.showEngineDetailsInChat}
+                  · {chat.sessionId}
+                {/if}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm shrink-0 variant-ghost-surface"
+              aria-label="Close identity recall"
+              onclick={dismissSheet}
+            >
+              Done
+            </button>
+          </div>
+        </header>
+        {@render identityPanelBody()}
       </div>
     </div>
   {:else}
@@ -64,38 +114,34 @@
       class="workshop-rail absolute right-0 top-0 z-30 flex h-full w-72 flex-col"
       aria-label="Identity recall"
     >
-      {@render identityPanel()}
+      <div class="workshop-header px-3 py-3">
+        <div>
+          <p class="text-sm font-semibold text-surface-100">Identity recall</p>
+          <p class="workshop-faint truncate">
+            {userProfiles.activeDisplayName}
+            {#if settings.showEngineDetailsInChat}
+              · {chat.sessionId}
+            {/if}
+          </p>
+        </div>
+        {#if onClose}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            aria-label="Close identity recall"
+            onclick={close}
+          >
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        {/if}
+      </div>
+      {@render identityPanelBody()}
     </aside>
   {/if}
 {/if}
 
-{#snippet identityPanel()}
-  <div class="workshop-header px-3 py-3">
-    <div>
-      <p class="text-sm font-semibold text-surface-100">Identity recall</p>
-      <p class="workshop-faint truncate">
-        {userProfiles.activeDisplayName}
-        {#if settings.showEngineDetailsInChat}
-          · {chat.sessionId}
-        {/if}
-      </p>
-    </div>
-    {#if onClose || variant === "sheet"}
-      <button
-        type="button"
-        class="btn btn-sm variant-ghost-surface"
-        aria-label="Close identity recall"
-        onclick={close}
-      >
-        {variant === "sheet" ? "Done" : ""}
-        {#if variant === "drawer"}
-          <X size={16} strokeWidth={1.75} />
-        {/if}
-      </button>
-    {/if}
-  </div>
-
-  <div class="flex-1 overflow-y-auto p-3 text-sm">
+{#snippet identityPanelBody()}
+  <div class="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
     {#if identity.loading}
       <p class="workshop-muted">Loading recall context…</p>
     {:else if identity.error}

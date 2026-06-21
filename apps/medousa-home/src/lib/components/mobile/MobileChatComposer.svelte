@@ -1,8 +1,10 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
-  import DaemonPortalChip from "$lib/components/chat/DaemonPortalChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
+  import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
+  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
+  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
@@ -122,9 +124,13 @@
 </script>
 
 <form class="mobile-chat-composer" onsubmit={submit}>
-  <DaemonPortalChip compact class="mx-3 mb-2" />
+  <div class="mobile-composer-pills">
+    <WorkshopSwitcherCompact />
+    <ProfileSwitcherCompact />
+    <MobileComposerTurnSettings disabled={controlsDisabled} />
+  </div>
   {#if chat.vaultNoteContext}
-    <VaultChatContextChip compact class="mx-3 mb-2" />
+    <VaultChatContextChip compact class="mb-2" />
   {/if}
   <BudgetApprovalBar
     mobile
@@ -138,7 +144,6 @@
     mobile
     disabled={connection.offline}
     composerBlocked={chat.composerBlocked}
-    {controlsDisabled}
     onkeydown={handleKeydown}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}

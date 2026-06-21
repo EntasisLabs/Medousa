@@ -16,6 +16,8 @@
   import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
   import { listProviders, probeProviders } from "$lib/utils/providersApi";
   import { mobileComposerRoutingHint } from "$lib/platformCopy";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
+  import { haptic } from "$lib/haptics";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
   import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
   import {
@@ -33,6 +35,8 @@
 
   let open = $state(false);
   let sheetView = $state<SheetView>("main");
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
   let loading = $state(true);
   let options = $state<ChatModelPickOption[]>([]);
   let catalogSnapshot = $state<Awaited<ReturnType<typeof listProviders>> | null>(null);
@@ -153,6 +157,25 @@
     void transitionToView("main");
   }
 
+  function handleSheetSwipeBack(): boolean {
+    if (sheetView === "main") return false;
+    void transitionToView("main");
+    return true;
+  }
+
+  function dismissSheet() {
+    haptic("light");
+    closeSheet();
+  }
+
+  $effect(() => {
+    if (!open || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: dismissSheet,
+      onSwipeBack: handleSheetSwipeBack,
+    });
+  });
+
   async function selectModel(option: ChatModelPickOption) {
     if (option.key === activeKey || runtime.savingControls) return;
     await runtime.applyModel(option.provider, option.model);
@@ -204,6 +227,7 @@
     }}
   >
       <div
+        bind:this={sheetEl}
         class="mobile-sheet mobile-turn-sheet"
         role="dialog"
         aria-label={sheetTitle}
@@ -213,7 +237,7 @@
       >
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
 
-        <header class="mobile-turn-sheet-header">
+        <header bind:this={headerEl} class="mobile-turn-sheet-header">
           {#if sheetView === "main"}
             <button
               type="button"

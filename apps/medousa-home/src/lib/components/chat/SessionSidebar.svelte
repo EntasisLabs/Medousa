@@ -1,10 +1,13 @@
 <script lang="ts">
   import { Pencil, X } from "@lucide/svelte";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
   import { formatSessionLabel } from "$lib/utils/formatSession";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     open: boolean;
@@ -20,6 +23,8 @@
   let renameDraft = $state("");
   let renameError = $state<string | null>(null);
   let renameSaving = $state(false);
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     if (open) {
@@ -39,6 +44,29 @@
     return () => {
       if (searchTimer) clearTimeout(searchTimer);
     };
+  });
+
+  function closeSheet() {
+    layout.setSessionDrawerOpen(false);
+    onClose?.();
+  }
+
+  function dismissSheet() {
+    haptic("light");
+    closeSheet();
+  }
+
+  $effect(() => {
+    if (!open || variant !== "sheet") return;
+    return registerMobileBackHandler(() => {
+      closeSheet();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!open || variant !== "sheet" || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, { onDismiss: dismissSheet });
   });
 
   function matchesQuery(session: SessionSummary): boolean {
@@ -126,18 +154,35 @@
 {#if open}
   {#if variant === "sheet"}
     <div
-      class="mobile-sheet-backdrop"
+      class="mobile-sheet-backdrop mobile-sheet-peek-backdrop"
       role="presentation"
       onclick={(event) => {
-        if (event.target === event.currentTarget) onClose?.();
+        if (event.target === event.currentTarget) dismissSheet();
       }}
     >
       <div
-        class="mobile-sheet mobile-sheet-tall relative flex flex-col"
+        bind:this={sheetEl}
+        class="mobile-sheet mobile-sheet-peek relative flex flex-col"
         role="dialog"
         aria-label="Chat sessions"
       >
-        {@render sessionPanel()}
+        <header
+          bind:this={headerEl}
+          class="mobile-sheet-header scripts-workbench-sheet-header mobile-chat-history-header"
+        >
+          <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+          <div class="flex w-full items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-surface-50">Sessions</h2>
+            <button
+              type="button"
+              class="btn btn-sm variant-ghost-surface"
+              onclick={dismissSheet}
+            >
+              Done
+            </button>
+          </div>
+        </header>
+        {@render sessionPanelBody()}
       </div>
     </div>
   {:else}
@@ -156,34 +201,32 @@
         : 'workshop-drawer relative w-56 shrink-0 border-r-2'} relative flex h-full flex-col"
       aria-label="Chat sessions"
     >
-      {@render sessionPanel()}
+      <div class="workshop-header px-3 py-3">
+        <p class="text-sm font-semibold text-surface-100">Sessions</p>
+        {#if onClose}
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            aria-label="Close sessions"
+            onclick={onClose}
+          >
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        {/if}
+      </div>
+      {@render sessionPanelBody()}
     </aside>
   {/if}
 {/if}
 
-{#snippet sessionPanel()}
+{#snippet sessionPanelBody()}
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="workshop-header px-3 py-3">
-      <p class="text-sm font-semibold text-surface-100">Sessions</p>
-      {#if (variant === "drawer" || variant === "sheet") && onClose}
-        <button
-          type="button"
-          class="btn btn-sm variant-ghost-surface"
-          aria-label="Close sessions"
-          onclick={onClose}
-        >
-          {variant === "sheet" ? "Done" : ""}
-          {#if variant === "drawer"}
-            <X size={16} strokeWidth={1.75} />
-          {/if}
-        </button>
-      {/if}
-    </div>
-
-    <div class="border-b border-surface-500/45 p-3">
+    <div class="{variant === 'sheet'
+      ? 'mobile-chat-history-search'
+      : 'border-b border-surface-500/45 p-3'}">
       <button
         type="button"
-        class="btn variant-filled-primary w-full text-sm"
+        class="{variant === 'sheet' ? 'mobile-chat-history-new-btn' : 'btn variant-filled-primary w-full text-sm'}"
         onclick={createSession}
       >
         New chat
@@ -202,7 +245,7 @@
       <p class="workshop-faint px-3 py-1 text-[11px]">Updating sessions…</p>
     {/if}
 
-    <ol class="flex-1 space-y-3 overflow-y-auto p-2">
+    <ol class="{variant === 'sheet' ? 'mobile-chat-history-list' : 'flex-1 space-y-3 overflow-y-auto p-2'}">
       {#if pinned.length > 0}
         <li>
           <p class="workshop-section-title px-2">Pinned</p>

@@ -21,6 +21,8 @@
     stabilityLabel,
   } from "$lib/grapheme/scriptWorkbenchHelpers";
   import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
@@ -55,6 +57,8 @@
   let view = $state<ToolsView>("root");
   let search = $state("");
   let selectedModuleId = $state<string | null>(null);
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     if (!open) {
@@ -203,6 +207,37 @@
     haptic("light");
     closeAll();
   }
+
+  function handleSheetSwipeBack(): boolean {
+    if (view === "root") return false;
+    if (view === "modules-detail") {
+      view = "modules-list";
+      search = "";
+      return true;
+    }
+    view = "root";
+    search = "";
+    return true;
+  }
+
+  $effect(() => {
+    if (!open) return;
+    return registerMobileBackHandler(() => {
+      if (view === "root") {
+        onClose();
+        return true;
+      }
+      return handleSheetSwipeBack();
+    });
+  });
+
+  $effect(() => {
+    if (!open || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, {
+      onDismiss: closeAll,
+      onSwipeBack: handleSheetSwipeBack,
+    });
+  });
 </script>
 
 {#if open}
@@ -215,11 +250,12 @@
     }}
   >
     <div
+      bind:this={sheetEl}
       class="mobile-sheet mobile-sheet-tall scripts-workbench-tools-sheet flex flex-col"
       role="dialog"
       aria-label={sheetTitle}
     >
-      <header class="mobile-sheet-header scripts-workbench-sheet-header shrink-0">
+      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header shrink-0">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
         <div class="flex items-center gap-2">
           {#if view !== "root"}

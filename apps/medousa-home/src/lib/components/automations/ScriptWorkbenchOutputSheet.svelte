@@ -1,7 +1,10 @@
 <script lang="ts">
   import GraphemeRunResultCard from "$lib/components/grapheme/GraphemeRunResultCard.svelte";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
 
   interface Props {
     open: boolean;
@@ -9,6 +12,27 @@
   }
 
   let { open, onClose }: Props = $props();
+
+  let sheetEl = $state<HTMLDivElement | null>(null);
+  let headerEl = $state<HTMLElement | null>(null);
+
+  function dismiss() {
+    haptic("light");
+    onClose();
+  }
+
+  $effect(() => {
+    if (!open) return;
+    return registerMobileBackHandler(() => {
+      dismiss();
+      return true;
+    });
+  });
+
+  $effect(() => {
+    if (!open || !sheetEl) return;
+    return attachMobileSheetGestures(sheetEl, headerEl, { onDismiss: dismiss });
+  });
 </script>
 
 {#if open}
@@ -21,14 +45,15 @@
     }}
   >
     <div
+      bind:this={sheetEl}
       class="mobile-sheet mobile-sheet-tall scripts-workbench-output-sheet"
       role="dialog"
       aria-label="Script output"
     >
-      <header class="mobile-sheet-header scripts-workbench-sheet-header">
+      <header bind:this={headerEl} class="mobile-sheet-header scripts-workbench-sheet-header">
         <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
         <h2 class="text-sm font-medium text-surface-100">Output</h2>
-        <button type="button" class="workshop-text-action text-xs" onclick={onClose}>
+        <button type="button" class="workshop-text-action text-xs" onclick={dismiss}>
           Done
         </button>
       </header>

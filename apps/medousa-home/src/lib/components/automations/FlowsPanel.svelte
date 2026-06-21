@@ -4,6 +4,7 @@
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { flows } from "$lib/stores/flows.svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { settings } from "$lib/stores/settings.svelte";
   import type { GraphemeRecipe } from "$lib/grapheme/graphemeRecipes";
   import type { WorkflowListEntry } from "$lib/types/workflow";
@@ -100,6 +101,20 @@
   function startFlowFromRecipe(recipe: GraphemeRecipe) {
     flows.openComposerWithRecipe(recipe);
   }
+
+  function closeMobileDetail() {
+    selectedId = null;
+    flows.closeComposer();
+  }
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    return registerMobileBackHandler(() => {
+      if (!mobileDetailOpen) return false;
+      closeMobileDetail();
+      return true;
+    });
+  });
 </script>
 
 <section
@@ -244,10 +259,7 @@
         <button
           type="button"
           class="workshop-text-action mb-3 shrink-0 text-sm"
-          onclick={() => {
-            selectedId = null;
-            flows.closeComposer();
-          }}
+          onclick={closeMobileDetail}
         >
           ← Back to list
         </button>

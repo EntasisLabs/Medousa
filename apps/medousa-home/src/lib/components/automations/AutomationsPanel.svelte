@@ -7,6 +7,7 @@
   import WorkshopLivelinessChip from "$lib/components/ui/WorkshopLivelinessChip.svelte";
   import { AUTOMATIONS_SECTIONS } from "$lib/automationsSections";
   import { browserTimezone } from "$lib/utils/friendlySchedule";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { automationsNav, type AutomationsSection } from "$lib/stores/automationsNav.svelte";
   import { automations } from "$lib/stores/automations.svelte";
@@ -155,6 +156,21 @@
     if (entry.last_run_status === "failed") return "running";
     return "scheduled";
   }
+
+  function closeMobileDetail() {
+    selectedId = null;
+    automationDraft.clearCreate();
+    confirmDeleteId = null;
+  }
+
+  $effect(() => {
+    if (!mobile || !visible || section !== "schedules") return;
+    return registerMobileBackHandler(() => {
+      if (!mobileDetailOpen) return false;
+      closeMobileDetail();
+      return true;
+    });
+  });
 </script>
 
 <section
@@ -375,9 +391,7 @@
           type="button"
           class="workshop-text-action mb-3 shrink-0 text-sm"
           onclick={() => {
-            selectedId = null;
-            automationDraft.clearCreate();
-            confirmDeleteId = null;
+            closeMobileDetail();
           }}
         >
           ← Back to list

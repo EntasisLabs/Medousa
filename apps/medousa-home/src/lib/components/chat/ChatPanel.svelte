@@ -1,6 +1,4 @@
 <script lang="ts">
-  import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
-  import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import { ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
@@ -358,10 +356,6 @@
         {/if}
       </div>
       <div class="flex shrink-0 items-center gap-0.5">
-        {#if mobile}
-          <WorkshopSwitcherCompact />
-          <ProfileSwitcherCompact />
-        {/if}
         <button
           type="button"
           class="{mobile ? 'mobile-icon-btn' : 'workshop-rail-btn'}"

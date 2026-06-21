@@ -2532,6 +2532,14 @@
     border-bottom: 1px solid rgb(var(--color-surface-600) / 0.28);
   }
 
+  .mobile-composer-pills {
+    @apply mb-2 flex min-w-0 flex-wrap items-center gap-1.5;
+  }
+
+  .mobile-composer-pills .mobile-composer-turn {
+    @apply min-w-0 flex-1;
+  }
+
   html[data-mobile-composer-active="true"] .mobile-tab-bar-inner {
     display: none;
   }
@@ -2621,6 +2629,11 @@
 
   .mobile-you-section-title {
     @apply text-xs font-semibold uppercase tracking-[0.16em] text-surface-400;
+  }
+
+  .mobile-you-scroll {
+    -webkit-overflow-scrolling: touch;
+    padding-top: 1rem;
   }
 
   .mobile-activity-sheet-header {
@@ -2780,6 +2793,38 @@
 
   .mobile-sheet-tall {
     @apply max-h-[92vh];
+  }
+
+  .mobile-sheet-peek-backdrop {
+    background-color: rgb(var(--color-surface-950) / 0.42);
+    backdrop-filter: blur(3px);
+  }
+
+  .mobile-sheet-peek {
+    @apply max-h-[min(58vh,26rem)] will-change-transform;
+    border-radius: 1.25rem 1.25rem 0 0;
+    background: rgb(var(--color-surface-900) / 0.98);
+    backdrop-filter: blur(20px);
+  }
+
+  .mobile-sheet-peek-tall {
+    max-height: min(68vh, 30rem);
+  }
+
+  .mobile-chat-history-header {
+    @apply border-b border-surface-500/35 py-2;
+  }
+
+  .mobile-chat-history-search {
+    @apply border-b border-surface-500/30 px-3 py-2;
+  }
+
+  .mobile-chat-history-list {
+    @apply min-h-0 flex-1 space-y-2 overflow-y-auto p-2;
+  }
+
+  .mobile-chat-history-new-btn {
+    @apply btn btn-sm variant-filled-primary w-full text-sm;
   }
 
   .mobile-sheet-header {
@@ -3409,10 +3454,6 @@
 
   .mobile-you-subheader {
     @apply shrink-0 border-b border-surface-500/40 px-3 py-2;
-  }
-
-  .mobile-you-scroll {
-    -webkit-overflow-scrolling: touch;
   }
 
   .mobile-you-destination {

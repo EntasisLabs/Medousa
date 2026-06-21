@@ -2,7 +2,6 @@
   import { onDestroy, onMount } from "svelte";
   import { LoaderCircle, Mic, Plus } from "@lucide/svelte";
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
-  import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
@@ -31,7 +30,6 @@
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
-    controlsDisabled?: boolean;
   }
 
   let {
@@ -41,7 +39,6 @@
     onkeydown,
     onfocus,
     onblur,
-    controlsDisabled = false,
   }: Props = $props();
 
   let voiceActive = $state(false);
@@ -71,7 +68,6 @@
   const canSend = $derived(
     !blocked && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
   );
-  const pickerDisabled = $derived(blocked || controlsDisabled);
 
   onMount(() => {
     void refreshSttStatus();
@@ -257,8 +253,6 @@
             <Plus size={18} strokeWidth={2} />
           {/if}
         </button>
-
-        <MobileComposerTurnSettings disabled={pickerDisabled} />
 
         <span class="mobile-composer-dock-spacer" aria-hidden="true"></span>
 

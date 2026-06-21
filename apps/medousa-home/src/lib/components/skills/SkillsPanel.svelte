@@ -12,6 +12,7 @@
   import McpServersPanel from "$lib/components/skills/McpServersPanel.svelte";
   import SpecialistDetailEditor from "$lib/components/skills/SpecialistDetailEditor.svelte";
   import SpecialistImportWizard from "$lib/components/skills/SpecialistImportWizard.svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
 
   type CatalogTab = "specialists" | "connections";
 
@@ -77,6 +78,20 @@
     catalog.clearCapabilityDetail();
     catalog.clearManuscriptDetail();
   }
+
+  function closeMobileDetail() {
+    selectedSkillId = null;
+    catalog.clearManuscriptDetail();
+  }
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    return registerMobileBackHandler(() => {
+      if (!mobileDetailOpen) return false;
+      closeMobileDetail();
+      return true;
+    });
+  });
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
@@ -301,10 +316,7 @@
         <button
           type="button"
           class="workshop-text-action mb-3 shrink-0 text-sm"
-          onclick={() => {
-            selectedSkillId = null;
-            catalog.clearManuscriptDetail();
-          }}
+          onclick={closeMobileDetail}
         >
           ← Back to list
         </button>
