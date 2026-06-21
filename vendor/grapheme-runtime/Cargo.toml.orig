@@ -1,0 +1,36 @@
+[package]
+name = "grapheme-runtime"
+version = "0.6.1"
+edition = "2021"
+description = "Policy-governed Grapheme runtime engine"
+license = "Apache-2.0"
+repository = "https://github.com/entasislabs/grapheme"
+homepage = "https://github.com/entasislabs/grapheme"
+
+[features]
+default = []
+full = ["data", "pdf", "image", "plot", "media", "grapheme-signatures/full"]
+data = ["grapheme-signatures/data"]
+pdf = ["grapheme-signatures/pdf"]
+image = ["grapheme-signatures/image"]
+plot = ["grapheme-signatures/plot"]
+media = ["grapheme-signatures/media"]
+wasix-runtime = ["dep:wasmer-wasix", "dep:wasmer", "dep:wasmer-types", "dep:tokio", "wasmer/sys", "wasmer/cranelift"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "1.0"
+grapheme-artifact = { path = "../grapheme-artifact", version = "0.2.0" }
+grapheme-signatures = { path = "../grapheme-signatures", version = "0.6.1", default-features = false }
+wasmer = { version = "7.2.0-alpha.2", optional = true, default-features = false }
+wasmer-types = { version = "7.2.0-alpha.2", optional = true }
+wasmer-wasix = { version = "0.702.0-alpha.2", optional = true, default-features = false, features = ["sys-default"] }
+tokio = { version = "1", optional = true, features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+grapheme-signatures = { path = "../grapheme-signatures", version = "0.6.1", features = ["full"] }
+grapheme-stdlib = { path = "../grapheme-stdlib", version = "0.6.1", features = ["full"] }
+wat = "1"

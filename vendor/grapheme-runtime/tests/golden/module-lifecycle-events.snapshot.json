@@ -1,0 +1,16 @@
+{
+  "required_fields": [
+    "kind",
+    "module_id",
+    "generation_id",
+    "version",
+    "content_hash",
+    "reason"
+  ],
+  "kinds": [
+    "module.activated",
+    "module.activation_failed",
+    "module.loaded",
+    "module.validated"
+  ]
+}

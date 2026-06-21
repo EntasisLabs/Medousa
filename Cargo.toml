@@ -105,3 +105,7 @@ iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse"]
 surrealdb-types = { version = "3" }
 surrealdb = { version = "3", default-features = false, features = ["kv-mem"] }
 tower = { version = "0.5", features = ["util"] }
+
+[patch.crates-io]
+grapheme-runtime = { path = "vendor/grapheme-runtime" }
+grapheme-sdk = { path = "vendor/grapheme-sdk" }

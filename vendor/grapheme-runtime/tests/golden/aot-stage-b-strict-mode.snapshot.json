@@ -1,0 +1,4 @@
+{
+  "error_kind": "artifact_compatibility_error",
+  "message": "artifact compatibility error: strict stage_b container execution required: wasix-runtime feature is not enabled"
+}
