@@ -444,15 +444,9 @@ pub async fn providers_list_models(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .or_else(|| {
-            crate::messaging::secrets::load_secret_value("api_key")
-                .ok()
-                .flatten()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        })
+        .or_else(|| load_provider_api_key_for_listing(&provider_id))
         .unwrap_or_default();
-    let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(true);
+    let needs_key = spec.map(|entry| entry.needs_api_key).unwrap_or(false);
     if needs_key && api_key.trim().is_empty() {
         return Err("API key is required to list models — add one in Settings → Models".to_string());
     }
@@ -461,7 +455,8 @@ pub async fn providers_list_models(
         read_tui_defaults_base_url(&provider_id)
     });
 
-    match spec.map(|entry| entry.validation) {
+    let validation = spec.map(|entry| entry.validation);
+    match validation {
         Some(ProviderValidation::Google) => {
             let url = format!(
                 "https://generativelanguage.googleapis.com/v1beta/models?key={}",
@@ -510,11 +505,38 @@ pub async fn providers_list_models(
                 models,
             })
         }
+        None if base_url.is_some() => {
+            let base = base_url.expect("checked above");
+            let models = fetch_openai_compatible_model_ids(&client, api_key.trim(), &base).await?;
+            Ok(ProvidersListModelsResult {
+                source: "openai_compatible.models".to_string(),
+                models,
+            })
+        }
         _ => Ok(ProvidersListModelsResult {
             source: "unsupported".to_string(),
             models: vec![default_model_for_provider(&provider_id)],
         }),
     }
+}
+
+fn load_provider_api_key_for_listing(provider_id: &str) -> Option<String> {
+    let provider_id = provider_id.trim().to_ascii_lowercase();
+    if provider_id.is_empty() {
+        return None;
+    }
+    let per_provider = format!("api_key_{provider_id}");
+    if let Ok(Some(value)) = crate::messaging::secrets::load_secret_value(&per_provider) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    crate::messaging::secrets::load_secret_value("api_key")
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn read_tui_defaults_base_url(provider_id: &str) -> Option<String> {

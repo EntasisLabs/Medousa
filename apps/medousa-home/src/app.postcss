@@ -4207,6 +4207,34 @@
     @apply shrink-0 rounded-container-token border border-primary-500/35 bg-primary-500/10 px-4 py-2 text-sm font-medium text-surface-50 transition hover:bg-primary-500/20 disabled:cursor-not-allowed disabled:opacity-40;
   }
 
+  .model-catalog-custom-form {
+    @apply flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4;
+  }
+
+  .model-catalog-custom-field {
+    @apply block;
+  }
+
+  .model-catalog-custom-label {
+    @apply block text-sm font-medium text-surface-100;
+  }
+
+  .model-catalog-custom-hint {
+    @apply mt-0.5 block text-xs leading-snug text-surface-500;
+  }
+
+  .model-catalog-custom-field .model-catalog-manual-input {
+    @apply mt-2;
+  }
+
+  .model-catalog-custom-error {
+    @apply text-sm text-warning-400;
+  }
+
+  .model-catalog-custom-continue {
+    @apply mt-2 w-full sm:w-auto;
+  }
+
   .model-catalog-provider-tabs {
     @apply flex gap-2 overflow-x-auto border-b border-surface-500/25 px-4 py-3;
   }

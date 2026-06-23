@@ -112,6 +112,18 @@ const PROVIDERS: &[ProviderSpec] = &[
         validation: ProviderValidation::Ollama,
     },
     ProviderSpec {
+        id: "custom",
+        label: "Custom provider",
+        category: "local",
+        default_model: "default",
+        needs_api_key: false,
+        supports_custom_base_url: true,
+        default_base_url: None,
+        key_hint: Some("Optional — sk-…"),
+        blurb: "Any OpenAI-compatible endpoint (vLLM, LiteLLM, etc.)",
+        validation: ProviderValidation::OpenAiCompatible,
+    },
+    ProviderSpec {
         id: "medousa-local",
         label: "Medousa private brain",
         category: "local",
@@ -403,6 +415,7 @@ mod tests {
     fn catalog_includes_deepseek_and_ollama() {
         assert!(find_provider("deepseek").is_some());
         assert!(find_provider("ollama").is_some());
+        assert!(find_provider("custom").is_some());
     }
 
     #[test]

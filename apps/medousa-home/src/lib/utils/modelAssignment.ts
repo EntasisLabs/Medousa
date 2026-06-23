@@ -4,6 +4,7 @@ import type { TuiDefaults } from "$lib/types/workshopDefaults";
 import { defaultSttModel } from "$lib/types/workshopDefaults";
 import { resolveModelDisplayLabel } from "$lib/utils/modelCatalog";
 import { resolveProviderLabel } from "$lib/utils/chatModelPicker";
+import { customProviderHint } from "$lib/utils/customProvider";
 import type { ProvidersListResult } from "$lib/types/providers";
 
 export type ProfileKind = "main" | "vision" | "stt";
@@ -116,10 +117,13 @@ export function rowLabelForTarget(
   if (!selection) {
     return { title, value: "Not set", hint: null };
   }
+  const providerHint =
+    customProviderHint(selection.baseUrl) ??
+    resolveProviderLabel(catalog, selection.provider);
   return {
     title,
     value: resolveModelDisplayLabel(selection.provider, selection.model),
-    hint: resolveProviderLabel(catalog, selection.provider),
+    hint: providerHint,
   };
 }
 

@@ -130,6 +130,17 @@ const LOCAL_CATALOG: ProvidersListResult = {
       keyHint: null,
       blurb: "Local Ollama",
     },
+    {
+      id: "custom",
+      label: "Custom provider",
+      category: "local",
+      defaultModel: "default",
+      needsApiKey: false,
+      supportsCustomBaseUrl: true,
+      defaultBaseUrl: null,
+      keyHint: "Optional — sk-…",
+      blurb: "OpenAI-compatible endpoint (vLLM, LiteLLM, etc.)",
+    },
   ],
 };
 
