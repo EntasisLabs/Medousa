@@ -445,9 +445,9 @@ Explicit operator choice: no “Auto vision model” default in v1.
 
 ### Phase 5 — Polish
 
-- [ ] Model picker catalog badges (vision, context, pricing from registry)
-- [ ] TUI exposure of profiles (read-only or edit via existing runtime commands)
-- [ ] Channel attachment + vision path (when channel media ships)
+- [x] Model picker catalog badges (vision, context, pricing from registry)
+- [x] TUI exposure of profiles (read-only or edit via existing runtime commands)
+- [ ] Channel attachment + vision path (deferred — channel media not shipped; `plan_turn_media` already uses vision profile)
 
 ---
 

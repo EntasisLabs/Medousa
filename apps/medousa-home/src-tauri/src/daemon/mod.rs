@@ -6,6 +6,7 @@ pub mod jobs;
 pub mod local_inference;
 pub mod locus;
 pub mod media;
+pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
 pub mod session;

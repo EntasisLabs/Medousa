@@ -41,6 +41,7 @@ export class WorkshopDefaultsStore {
   loading = $state(false);
   saving = $state(false);
   message = $state<string | null>(null);
+  modelsNotice = $state<string | null>(null);
   loaded = $state(false);
 
   selectedRouteRole = $state("orchestrator");
@@ -148,6 +149,60 @@ export class WorkshopDefaultsStore {
     const next = toggleFavoriteModel(this.favoriteModels(), provider, model);
     this.draft = { ...this.draft, favoriteModels: next };
     await persistTuiFavoriteModels(next);
+  }
+
+  private flashModelsNotice(text: string) {
+    this.modelsNotice = text;
+    setTimeout(() => {
+      if (this.modelsNotice === text) {
+        this.modelsNotice = null;
+      }
+    }, 2200);
+  }
+
+  async saveInferenceProfiles() {
+    if (!isTauri()) return;
+    if (isTauriMobilePlatform()) {
+      this.flashModelsNotice(workshopCharterOnHostHint());
+      return;
+    }
+    this.saving = true;
+    try {
+      const payload: TuiDefaults = syncFlatFieldsFromProfiles({
+        ...this.draft,
+        baseUrl: this.draft.baseUrl?.trim() || null,
+        sttBaseUrl: this.draft.sttBaseUrl?.trim() || null,
+      });
+      await persistTuiDefaults(payload);
+      this.draft = payload;
+
+      runtime.provider = payload.provider ?? runtime.provider;
+      runtime.model = payload.model ?? runtime.model;
+      if (
+        payload.responseDepthMode === "concise" ||
+        payload.responseDepthMode === "standard" ||
+        payload.responseDepthMode === "deep"
+      ) {
+        runtime.depthMode = payload.responseDepthMode;
+      }
+      if (payload.stageRouting) {
+        runtime.stageRouting = payload.stageRouting;
+      }
+      voicePresets.applyFromDraft(payload);
+      await persistTuiRuntimePrefs(
+        runtime.provider,
+        runtime.model,
+        runtime.depthMode,
+        runtime.reasoningEffort,
+        payload.stageRouting ?? undefined,
+      );
+      runtime.defaultsLoaded = true;
+      this.flashModelsNotice("Saved");
+    } catch (err) {
+      this.flashModelsNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      this.saving = false;
+    }
   }
 
   async save() {

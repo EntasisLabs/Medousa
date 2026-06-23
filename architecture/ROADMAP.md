@@ -66,7 +66,8 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) 
 | Phase 4 — STT on daemon | ✅ |
 | P5a envelope + media API + composer UI | ⬜ |
 | P5a text extract (PDF/xlsx/csv) | ⬜ |
-| P5b vision (uses **vision** profile + registry) | 🟡 wired — polish in Phase 5 |
+| P5b vision (uses **vision** profile + registry) | ✅ |
+| Epic polish — catalog badges + TUI profiles | ✅ |
 
 ---
 

@@ -1285,6 +1285,34 @@
     @apply min-w-0 flex-1 truncate text-[13px] text-surface-100;
   }
 
+  .model-cap-badges {
+    @apply mt-1 flex flex-wrap gap-1;
+  }
+
+  .model-cap-badges-compact {
+    @apply mt-0.5;
+  }
+
+  .model-cap-badge {
+    @apply inline-flex rounded-full border border-surface-600/50 bg-surface-800/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-surface-400;
+  }
+
+  .provider-model-list-item {
+    @apply flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-mono text-xs text-surface-200 transition-colors;
+  }
+
+  .provider-model-list-item:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
+  .provider-model-list-item-active {
+    @apply border border-surface-500/40 bg-surface-800/60;
+  }
+
+  .provider-model-list-name {
+    @apply min-w-0 flex-1 truncate;
+  }
+
   .composer-model-list-tier {
     @apply ml-1.5 text-[12px] text-surface-500;
   }
@@ -3917,6 +3945,326 @@
 
   .settings-inline-status {
     @apply mt-3 max-w-2xl text-xs text-surface-300;
+  }
+
+  .settings-segmented {
+    @apply inline-flex max-w-md rounded-container-token border border-surface-500/40 bg-surface-900/50 p-1;
+  }
+
+  .settings-segmented-btn {
+    @apply min-h-9 flex-1 rounded-container-token px-4 text-sm font-medium text-surface-400 transition;
+  }
+
+  .settings-segmented-btn-active {
+    @apply bg-primary-500/15 text-surface-50 shadow-sm ring-1 ring-primary-500/25;
+  }
+
+  .settings-section-models {
+    @apply relative pb-12;
+  }
+
+  .models-workshop-status {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .models-workshop-status-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs;
+  }
+
+  .models-workshop-status-ok {
+    @apply border-success-500/25 bg-success-500/10 text-surface-200;
+  }
+
+  .models-workshop-status-warn {
+    @apply border-warning-500/30 bg-warning-500/10 text-surface-200;
+  }
+
+  .models-workshop-status-neutral {
+    @apply border-surface-500/30 bg-surface-900/40 text-surface-400;
+  }
+
+  .models-workshop-status-dot {
+    @apply h-1.5 w-1.5 shrink-0 rounded-full;
+  }
+
+  .models-workshop-status-ok .models-workshop-status-dot {
+    @apply bg-success-400;
+  }
+
+  .models-workshop-status-warn .models-workshop-status-dot {
+    @apply bg-warning-400;
+  }
+
+  .models-workshop-status-neutral .models-workshop-status-dot {
+    @apply bg-surface-500;
+  }
+
+  .models-workshop-status-label {
+    @apply font-medium text-surface-200;
+  }
+
+  .models-workshop-status-detail {
+    @apply text-surface-400;
+  }
+
+  .models-save-toast {
+    @apply pointer-events-none fixed bottom-16 left-1/2 z-40 -translate-x-1/2 rounded-full border border-surface-500/40 bg-surface-900/95 px-4 py-2 text-xs text-surface-300 shadow-lg backdrop-blur-sm;
+  }
+
+  .models-save-toast-ok {
+    @apply border-success-500/30 text-success-300;
+  }
+
+  .settings-native-nested {
+    @apply border-t border-surface-500/20 bg-surface-900/25 pl-2;
+  }
+
+  .settings-native-row-monogram {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-800 text-[10px] font-semibold text-surface-200;
+  }
+
+  .settings-native-row-value-accent {
+    @apply font-medium text-surface-100;
+  }
+
+  .settings-native-row-chevron-open {
+    transform: rotate(90deg);
+  }
+
+  .settings-native-row-expanded {
+    @apply bg-surface-800/35;
+  }
+
+  .settings-native-stack {
+    @apply max-w-xl space-y-6;
+  }
+
+  .settings-native-heading {
+    @apply text-xs font-semibold uppercase tracking-wide text-surface-400;
+  }
+
+  .settings-native-subheading {
+    @apply px-4 pt-2 text-[11px] font-medium uppercase tracking-wide text-surface-500;
+  }
+
+  .settings-native-footnote {
+    @apply mt-1 text-xs leading-relaxed text-surface-500;
+  }
+
+  .settings-native-group {
+    @apply mt-2 overflow-hidden rounded-container-token border border-surface-500/35 bg-surface-900/30;
+  }
+
+  .settings-native-group-spaced {
+    @apply mt-3;
+  }
+
+  .settings-native-row {
+    @apply flex w-full items-center gap-2 border-b border-surface-500/25 px-4 py-3 text-left transition hover:bg-surface-800/50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .settings-native-row:last-child {
+    @apply border-b-0;
+  }
+
+  .settings-native-row-destructive .settings-native-row-label {
+    @apply text-error-400;
+  }
+
+  .settings-native-row-copy {
+    @apply min-w-0 flex-1;
+  }
+
+  .settings-native-row-label {
+    @apply block text-sm text-surface-100;
+  }
+
+  .settings-native-row-hint {
+    @apply mt-0.5 block text-xs text-surface-500;
+  }
+
+  .settings-native-row-value {
+    @apply max-w-[42%] truncate text-sm text-surface-400;
+  }
+
+  .settings-native-row-chevron {
+    @apply shrink-0 text-surface-500;
+  }
+
+  .settings-native-row-add {
+    @apply items-center gap-2 text-surface-300;
+  }
+
+  .settings-native-row-add-icon {
+    @apply text-surface-500;
+  }
+
+  .settings-native-favorite-row {
+    @apply flex items-center gap-3 border-b border-surface-500/25 px-4 py-3;
+  }
+
+  .settings-native-favorite-badge {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-800 text-[11px] font-semibold text-surface-200;
+  }
+
+  .settings-native-favorite-copy {
+    @apply min-w-0 flex-1;
+  }
+
+  .settings-native-favorite-name {
+    @apply block text-sm text-surface-100;
+  }
+
+  .settings-native-favorite-meta {
+    @apply block text-xs text-surface-500;
+  }
+
+  .settings-native-icon-btn {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 transition hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .model-catalog-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center;
+  }
+
+  .model-catalog-sheet {
+    @apply flex max-h-[min(720px,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-container-token border border-surface-500/40 bg-surface-900 shadow-2xl ring-1 ring-white/5;
+  }
+
+  .model-catalog-sheet-narrow {
+    @apply max-w-md;
+  }
+
+  .model-catalog-sheet-header {
+    @apply flex items-start gap-3 border-b border-surface-500/30 px-4 py-4;
+  }
+
+  .model-catalog-sheet-title {
+    @apply text-base font-semibold text-surface-50;
+  }
+
+  .model-catalog-sheet-subtitle {
+    @apply mt-0.5 text-xs text-surface-500;
+  }
+
+  .model-catalog-sheet-close {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .model-catalog-sheet-back {
+    @apply -ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-surface-400 hover:bg-surface-800 hover:text-surface-100;
+  }
+
+  .model-catalog-provider-list {
+    @apply flex-1 space-y-1 overflow-y-auto px-2 pb-4;
+  }
+
+  .model-catalog-provider-group-label {
+    @apply px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-surface-500;
+  }
+
+  .model-catalog-provider-row {
+    @apply flex w-full items-center gap-3 rounded-container-token px-2 py-2.5 text-left transition hover:bg-surface-800/60 active:bg-surface-800;
+  }
+
+  .model-catalog-provider-row-clear {
+    @apply mb-1 border border-dashed border-surface-500/35;
+  }
+
+  .model-catalog-provider-row-copy {
+    @apply min-w-0 flex-1;
+  }
+
+  .model-catalog-provider-row-label {
+    @apply block text-sm font-medium text-surface-100;
+  }
+
+  .model-catalog-provider-row-hint {
+    @apply mt-0.5 block line-clamp-2 text-xs leading-snug text-surface-500;
+  }
+
+  .model-catalog-provider-row-chevron {
+    @apply shrink-0 text-surface-500;
+  }
+
+  .model-catalog-manual {
+    @apply flex shrink-0 flex-col gap-2 border-t border-surface-500/30 bg-surface-900/80 px-4 py-3 sm:flex-row sm:items-end;
+  }
+
+  .model-catalog-manual-label {
+    @apply min-w-0 flex-1;
+  }
+
+  .model-catalog-manual-title {
+    @apply mb-1.5 block text-xs font-medium text-surface-400;
+  }
+
+  .model-catalog-manual-input {
+    @apply w-full rounded-container-token border border-surface-500/35 bg-surface-900/50 px-3 py-2 font-mono text-sm text-surface-100 placeholder:text-surface-500 focus:border-primary-500/40 focus:outline-none;
+  }
+
+  .model-catalog-manual-btn {
+    @apply shrink-0 rounded-container-token border border-primary-500/35 bg-primary-500/10 px-4 py-2 text-sm font-medium text-surface-50 transition hover:bg-primary-500/20 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .model-catalog-provider-tabs {
+    @apply flex gap-2 overflow-x-auto border-b border-surface-500/25 px-4 py-3;
+  }
+
+  .model-catalog-provider-tab {
+    @apply shrink-0 rounded-full border border-transparent px-3 py-1.5 text-xs font-medium text-surface-400 transition;
+  }
+
+  .model-catalog-provider-tab-active {
+    @apply border-primary-500/35 bg-primary-500/10 text-surface-50;
+  }
+
+  .model-catalog-search {
+    @apply mx-4 mt-3 flex items-center gap-2 rounded-container-token border border-surface-500/35 bg-surface-900/50 px-3 py-2;
+  }
+
+  .model-catalog-search-icon {
+    @apply shrink-0 text-surface-500;
+  }
+
+  .model-catalog-search-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-sm text-surface-100 placeholder:text-surface-500 focus:outline-none;
+  }
+
+  .model-catalog-grid {
+    @apply grid flex-1 grid-cols-1 gap-2 overflow-y-auto p-4 sm:grid-cols-2;
+  }
+
+  .model-catalog-tile {
+    @apply flex flex-col items-start gap-1.5 rounded-container-token border border-surface-500/30 bg-surface-900/40 p-3.5 text-left transition duration-150 hover:border-surface-400/40 hover:bg-surface-800/50 active:scale-[0.99];
+  }
+
+  .model-catalog-tile-selected {
+    @apply border-primary-500/45 bg-primary-500/10 ring-1 ring-primary-500/20;
+  }
+
+  .model-catalog-tile-head {
+    @apply flex w-full items-center gap-2.5;
+  }
+
+  .model-catalog-tile-monogram {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-800 text-[10px] font-semibold text-surface-200;
+  }
+
+  .model-catalog-tile-clear {
+    @apply border-dashed;
+  }
+
+  .model-catalog-tile-name {
+    @apply text-sm font-medium text-surface-100;
+  }
+
+  .model-catalog-tile-meta {
+    @apply line-clamp-1 font-mono text-[11px] text-surface-500;
+  }
+
+  .model-catalog-empty {
+    @apply col-span-full py-8 text-center text-sm text-surface-500;
   }
 
   .settings-connection-card {

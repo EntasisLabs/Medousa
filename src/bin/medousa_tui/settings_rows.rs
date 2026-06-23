@@ -11,6 +11,9 @@ pub(crate) enum SettingsRowId {
     BaseUrl,
     ApiKey,
     AllowedModules,
+    InferenceMainProfile,
+    InferenceVisionProfile,
+    InferenceSttProfile,
     WebSearchPreferredProvider,
     WebSearchTryFallbacks,
     ToolCallMode,
@@ -55,23 +58,26 @@ pub(crate) enum SettingsRowId {
 }
 
 pub(crate) const SETTINGS_TABS: [(&str, usize, usize); 8] = [
-    ("Setup", 0, 5),
-    ("Tools", 6, 16),
-    ("Memory", 17, 21),
-    ("Diagnostics", 22, 24),
-    ("Quality", 25, 30),
-    ("Secrets", 31, 34),
-    ("Specialists", 35, 42),
-    ("Save", 43, 46),
+    ("Setup", 0, 8),
+    ("Tools", 9, 19),
+    ("Memory", 20, 24),
+    ("Diagnostics", 25, 27),
+    ("Quality", 28, 33),
+    ("Secrets", 34, 37),
+    ("Specialists", 38, 45),
+    ("Save", 46, 49),
 ];
 
-pub(crate) const ALL_SETTINGS_ROWS: [SettingsRowId; 47] = [
+pub(crate) const ALL_SETTINGS_ROWS: [SettingsRowId; 50] = [
     SettingsRowId::Backend,
     SettingsRowId::Provider,
     SettingsRowId::Model,
     SettingsRowId::BaseUrl,
     SettingsRowId::ApiKey,
     SettingsRowId::AllowedModules,
+    SettingsRowId::InferenceMainProfile,
+    SettingsRowId::InferenceVisionProfile,
+    SettingsRowId::InferenceSttProfile,
     SettingsRowId::WebSearchPreferredProvider,
     SettingsRowId::WebSearchTryFallbacks,
     SettingsRowId::ToolCallMode,

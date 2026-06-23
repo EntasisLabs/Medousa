@@ -15,6 +15,7 @@ export interface ChatModelPickOption {
   label: string;
   hint?: string;
   favorite?: boolean;
+  badges?: string[];
 }
 
 export interface ChatModelPickGroup {
@@ -204,7 +205,8 @@ export function filterChatModelOptions(
       option.label.toLowerCase().includes(needle) ||
       option.model.toLowerCase().includes(needle) ||
       option.provider.toLowerCase().includes(needle) ||
-      (option.hint?.toLowerCase().includes(needle) ?? false),
+      (option.hint?.toLowerCase().includes(needle) ?? false) ||
+      (option.badges?.some((badge) => badge.toLowerCase().includes(needle)) ?? false),
   );
 }
 

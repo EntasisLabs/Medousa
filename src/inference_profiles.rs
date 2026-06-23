@@ -255,6 +255,62 @@ pub fn vision_profile_ready(defaults: &TuiDefaults) -> bool {
     vision_target(defaults).is_some()
 }
 
+pub fn format_profile_line(label: &str, profile: Option<&InferenceProfile>) -> String {
+    let Some(profile) = profile.and_then(|profile| profile.trimmed()) else {
+        return format!("{label}: (not configured — edit in Medousa Home Settings → Models)");
+    };
+    let target = profile.as_target();
+    let mut line = format!("{label}: {}:{}", target.provider, target.model);
+    if !profile.fallbacks.is_empty() {
+        let count = profile.fallbacks.len();
+        line.push_str(&format!(
+            " (+{count} fallback{})",
+            if count == 1 { "" } else { "s" }
+        ));
+    }
+    line
+}
+
+pub fn profile_lines_from_defaults(defaults: &TuiDefaults) -> (String, String, String) {
+    let profiles = defaults.inference_profiles.as_ref();
+    let main_line = profiles
+        .and_then(|profiles| profiles.main.as_ref())
+        .map(|profile| format_profile_line("Main chat profile", Some(profile)))
+        .unwrap_or_else(|| {
+            format!(
+                "Main chat profile: {}:{}",
+                crate::resolve_llm_provider(defaults.provider.as_deref()),
+                crate::resolve_llm_model(defaults.model.as_deref())
+            )
+        });
+    let vision_line = format_profile_line(
+        "Vision profile",
+        profiles.and_then(|profiles| profiles.vision.as_ref()),
+    );
+    let stt_line = profiles
+        .and_then(|profiles| profiles.stt.as_ref())
+        .map(|profile| format_profile_line("Speech input profile", Some(profile)))
+        .unwrap_or_else(|| {
+            let provider = defaults
+                .stt_provider
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let Some(provider) = provider else {
+                return format_profile_line("Speech input profile", None);
+            };
+            let model = defaults
+                .stt_model
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| default_stt_model(provider));
+            format!("Speech input profile: {provider}:{model}")
+        });
+    (main_line, vision_line, stt_line)
+}
+
 pub fn validate_profiles(profiles: &InferenceProfilesConfig) -> Result<(), String> {
     let main = profiles
         .main

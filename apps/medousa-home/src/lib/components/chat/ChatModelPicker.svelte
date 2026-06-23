@@ -21,6 +21,13 @@
   } from "$lib/utils/chatModelPicker";
   import { listProviderModels, listProviders, probeProviders } from "$lib/utils/providersApi";
   import {
+    badgesForModel,
+    capabilityMapFromCatalog,
+    listModelCatalog,
+  } from "$lib/utils/modelCapabilityCatalog";
+  import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
+  import ModelCapabilityBadges from "$lib/components/settings/ModelCapabilityBadges.svelte";
+  import {
     normalizeFavoriteModels,
     resolveModelDisplayLabel,
     type FavoriteModel,
@@ -51,6 +58,7 @@
   let triggerEl: HTMLButtonElement | undefined = $state();
 
   let loadingLiveModels = $state(false);
+  let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
 
   const displayName = $derived(resolveModelDisplayLabel(runtime.provider, runtime.model));
   const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
@@ -109,6 +117,24 @@
     };
   });
 
+  function applyCapabilityBadges(nextOptions: ChatModelPickOption[]): ChatModelPickOption[] {
+    if (capabilityMap.size === 0) return nextOptions;
+    return nextOptions.map((option) => ({
+      ...option,
+      badges: badgesForModel(capabilityMap, option.provider, option.model),
+    }));
+  }
+
+  async function loadCapabilityCatalog() {
+    try {
+      const response = await listModelCatalog();
+      capabilityMap = capabilityMapFromCatalog(response.models);
+      options = applyCapabilityBadges(options);
+    } catch {
+      // Curated picks still work without registry data.
+    }
+  }
+
   async function bootstrap() {
     loading = true;
     try {
@@ -124,6 +150,7 @@
         favorites = workshopDefaults.favoriteModels();
       }
       rebuildOptions(catalog, probe, favorites);
+      await loadCapabilityCatalog();
     } catch {
       catalogSnapshot = null;
       probeSnapshot = null;
@@ -156,6 +183,7 @@
     options = liveModels.length
       ? mergeLiveProviderModels(base, runtime.provider, liveModels, catalog)
       : base;
+    options = applyCapabilityBadges(options);
   }
 
   async function refreshLiveModelsForActiveProvider() {
@@ -291,6 +319,7 @@
                     {:else if option.hint && option.hint !== "Active"}
                       <span class="composer-model-list-tier">{option.hint}</span>
                     {/if}
+                    <ModelCapabilityBadges badges={option.badges ?? []} compact />
                   </span>
                   {#if option.key === activeKey}
                     <Check size={15} strokeWidth={2.5} class="composer-model-list-check" />

@@ -312,6 +312,9 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
         .get(selected_role)
         .expect("selected routing role should exist");
 
+    let inference_profile_lines =
+        medousa::inference_profiles::profile_lines_from_defaults(&medousa::session::load_tui_defaults());
+
     let rows = vec![
         format!(
             "Where your data lives: {}  [toggle]",
@@ -339,6 +342,15 @@ pub(crate) fn render_settings_overlay(frame: &mut ratatui::Frame, state: &mut Tu
                 state.settings_draft.allowed_modules.clone()
             }
         ),
+        {
+            format!("{}  [read-only]", inference_profile_lines.0)
+        },
+        {
+            format!("{}  [read-only]", inference_profile_lines.1)
+        },
+        {
+            format!("{}  [read-only]", inference_profile_lines.2)
+        },
         format!(
             "Web search provider: {}  [edit]",
             if state.settings_draft.web_search_preferred_provider.trim().is_empty() {
@@ -1046,8 +1058,11 @@ fn row_style_for_settings_index(idx: usize, selected: bool) -> Style {
             | SettingsRowId::SetAllRouteTargets
             | SettingsRowId::RouteTargetPreset
             | SettingsRowId::RoutePolicyProfile
-            | SettingsRowId::RouteFallbackChain
+            |             SettingsRowId::RouteFallbackChain
             | SettingsRowId::ResetSelectedRoute => Style::default().fg(Color::LightCyan),
+            SettingsRowId::InferenceMainProfile
+            | SettingsRowId::InferenceVisionProfile
+            | SettingsRowId::InferenceSttProfile => Style::default().fg(Color::DarkGray),
             _ => Style::default().fg(Color::White),
         }
     };

@@ -11,6 +11,13 @@
     validateProviderKey,
     type ProvidersProbeResult,
   } from "$lib/utils/providersApi";
+  import {
+    badgesForModel,
+    capabilityMapFromCatalog,
+    listModelCatalog,
+  } from "$lib/utils/modelCapabilityCatalog";
+  import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
+  import ModelCapabilityBadges from "$lib/components/settings/ModelCapabilityBadges.svelte";
 
   interface Props {
     providerId: string;
@@ -53,6 +60,7 @@
   let liveModels = $state<string[]>([]);
   let loadingModels = $state(false);
   let modelsMessage = $state<string | null>(null);
+  let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
 
   const selected = $derived(
     catalog ? findCatalogProvider(catalog, providerId) : undefined,
@@ -68,6 +76,21 @@
     catalog ? groupProvidersByCategory(filtered, catalog.categories) : [],
   );
 
+  const selectedModelBadges = $derived(
+    selected ? badgesForModel(capabilityMap, selected.id, model) : [],
+  );
+
+  async function loadCapabilityCatalog(provider?: string) {
+    try {
+      const response = await listModelCatalog(
+        provider ? { provider } : {},
+      );
+      capabilityMap = capabilityMapFromCatalog(response.models);
+    } catch {
+      capabilityMap = new Map();
+    }
+  }
+
   onMount(() => {
     void bootstrap();
   });
@@ -78,6 +101,7 @@
       const [listed, probed] = await Promise.all([listProviders(), probeProviders()]);
       catalog = listed;
       probe = probed;
+      await loadCapabilityCatalog(providerId);
       if (!selected && listed.providers.length > 0) {
         const fallback =
           findCatalogProvider(listed, providerId) ??
@@ -111,6 +135,7 @@
       onBaseUrlChange?.("");
     }
     onStatus?.(null);
+    void loadCapabilityCatalog(entry.id);
   }
 
   async function runBrowseModels() {
@@ -131,6 +156,7 @@
         if (!model.trim() || !result.models.includes(model.trim())) {
           onModelChange(result.models[0] ?? model);
         }
+        await loadCapabilityCatalog(selected.id);
       }
     } catch (err) {
       liveModels = [];
@@ -279,17 +305,20 @@
             {/each}
           </select>
         {:else if liveModels.length > 0}
-          <select
-            class="select mt-2 w-full font-mono text-sm"
-            value={model}
-            disabled={disabled || validating || loadingModels}
-            onchange={(event) =>
-              onModelChange((event.currentTarget as HTMLSelectElement).value)}
-          >
+          <div class="provider-model-list mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
             {#each liveModels as name (name)}
-              <option value={name}>{name}</option>
+              {@const badges = badgesForModel(capabilityMap, selected.id, name)}
+              <button
+                type="button"
+                class="provider-model-list-item {model === name ? 'provider-model-list-item-active' : ''}"
+                disabled={disabled || validating || loadingModels}
+                onclick={() => onModelChange(name)}
+              >
+                <span class="provider-model-list-name">{name}</span>
+                <ModelCapabilityBadges badges={badges} compact />
+              </button>
             {/each}
-          </select>
+          </div>
           {#if modelsMessage}
             <p class="workshop-faint mt-1.5 text-xs">{modelsMessage}</p>
           {/if}
@@ -301,6 +330,11 @@
             oninput={(event) =>
               onModelChange((event.currentTarget as HTMLInputElement).value)}
           />
+          {#if selectedModelBadges.length > 0}
+            <div class="mt-2">
+              <ModelCapabilityBadges badges={selectedModelBadges} />
+            </div>
+          {/if}
           {#if modelsMessage}
             <p class="workshop-faint mt-1.5 text-xs text-warning-400">{modelsMessage}</p>
           {/if}

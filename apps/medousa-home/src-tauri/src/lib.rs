@@ -247,6 +247,9 @@ pub fn run() {
             daemon::local_inference::local_inference_remove_model,
             daemon::local_inference::local_inference_stream_download,
             daemon::local_inference::local_inference_stream_download_stop,
+            daemon::model_catalog::model_catalog_list,
+            daemon::model_catalog::model_catalog_lookup,
+            daemon::model_catalog::model_catalog_refresh,
             daemon::stt::composer_stt_status,
             daemon::stt::composer_stt_transcribe,
         ])
