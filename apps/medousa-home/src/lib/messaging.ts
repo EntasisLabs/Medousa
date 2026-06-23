@@ -66,6 +66,10 @@ export async function messagingClearSecret(secretId: string): Promise<void> {
   await invoke("messaging_clear_secret", { secretId });
 }
 
+export async function messagingReadSecret(secretId: string): Promise<string | null> {
+  return invoke<string | null>("messaging_read_secret", { secretId });
+}
+
 export function parseNumberCsv(raw: string): number[] {
   return raw
     .split(",")

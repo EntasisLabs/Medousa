@@ -34,3 +34,8 @@ pub fn messaging_clear_secret(secret_id: String) -> Result<(), String> {
     crate::channel_adapters::sync_channel_adapters(None)?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn messaging_read_secret(secret_id: String) -> Result<Option<String>, String> {
+    secrets::load_secret_value(secret_id.trim())
+}

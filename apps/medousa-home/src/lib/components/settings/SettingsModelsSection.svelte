@@ -28,11 +28,15 @@
 
   async function bootstrap() {
     try {
-      const [listed, stt] = await Promise.all([listProviders(), composerSttStatus()]);
-      catalog = listed;
-      sttReady = stt.available;
+      catalog = await listProviders();
     } catch {
       catalog = null;
+    }
+    try {
+      const stt = await composerSttStatus();
+      sttReady = stt.available;
+    } catch {
+      sttReady = false;
     }
   }
 

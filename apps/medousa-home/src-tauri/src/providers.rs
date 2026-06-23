@@ -451,9 +451,9 @@ pub async fn providers_list_models(
         return Err("API key is required to list models — add one in Settings → Models".to_string());
     }
 
-    let base_url = resolve_base_url(spec, request.base_url.as_deref()).or_else(|| {
-        read_tui_defaults_base_url(&provider_id)
-    });
+    let base_url = resolve_base_url(spec, request.base_url.as_deref())
+        .or_else(|| read_tui_defaults_base_url(&provider_id))
+        .or_else(|| load_provider_base_url_for_listing(&provider_id));
 
     let validation = spec.map(|entry| entry.validation);
     match validation {
@@ -518,6 +518,15 @@ pub async fn providers_list_models(
             models: vec![default_model_for_provider(&provider_id)],
         }),
     }
+}
+
+fn load_provider_base_url_for_listing(provider_id: &str) -> Option<String> {
+    let secret_id = format!("base_url_{}", provider_id.trim().to_ascii_lowercase());
+    crate::messaging::secrets::load_secret_value(&secret_id)
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn load_provider_api_key_for_listing(provider_id: &str) -> Option<String> {

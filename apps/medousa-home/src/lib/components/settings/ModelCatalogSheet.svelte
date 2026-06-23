@@ -31,17 +31,14 @@
     selectionForTarget,
   } from "$lib/utils/modelAssignment";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
+  import { CUSTOM_PROVIDER_CATALOG_ID } from "$lib/utils/customProvider";
   import {
-    CUSTOM_PROVIDER_CATALOG_ID,
-    isConfiguredCustomProvider,
-    isCustomCatalogEntry,
-    isValidBaseUrl,
-    normalizeBaseUrl,
-    normalizeCustomProviderId,
-  } from "$lib/utils/customProvider";
-  import { messagingSaveSecret } from "$lib/messaging";
+    isCustomProviderReady,
+    resolveProviderBaseUrl,
+    resolveRuntimeProviderId,
+  } from "$lib/utils/providerSettings";
 
-  type PickerStep = "provider" | "custom" | "model";
+  type PickerStep = "provider" | "model";
 
   interface Props {
     open: boolean;
@@ -63,32 +60,14 @@
   const catalog = $derived(catalogProp ?? localCatalog);
   let step = $state<PickerStep>("provider");
   let selectedProvider = $state<ProviderCatalogEntry | null>(null);
-  let customProviderId = $state("");
-  let customBaseUrl = $state("");
-  let customApiKey = $state("");
-  let customConfigError = $state<string | null>(null);
   let models = $state<ModelCapabilityRecord[]>([]);
   let loading = $state(false);
+  let needsProviderSetup = $state(false);
   let providerSearch = $state("");
   let modelSearch = $state("");
   let manualModelId = $state("");
   let sheetInitKey = $state<string | null>(null);
   let loadSeq = 0;
-
-  const isCustomFlow = $derived(selectedProvider?.id === CUSTOM_PROVIDER_CATALOG_ID);
-
-  const activeProviderId = $derived(
-    isCustomFlow ? customProviderId.trim() : (selectedProvider?.id ?? ""),
-  );
-
-  const activeBaseUrl = $derived(
-    isCustomFlow ? customBaseUrl.trim() : (selectedProvider?.defaultBaseUrl?.trim() ?? ""),
-  );
-
-  const canContinueCustom = $derived(
-    normalizeCustomProviderId(customProviderId).length > 0 &&
-      isValidBaseUrl(customBaseUrl),
-  );
 
   const selectedKey = $derived.by(() => {
     if (!target || target.type === "favorite-add") return null;
@@ -130,39 +109,8 @@
 
   const canUseManualModel = $derived(manualModelId.trim().length > 0);
 
-  const sheetTitle = $derived.by(() => {
-    if (!target) return "Model";
-    if (step === "provider") return pickerTitle(target);
-    if (step === "custom") return "Custom provider";
-    if (isCustomFlow && customProviderId.trim()) return customProviderId.trim();
-    return selectedProvider?.label ?? "Model";
-  });
-
-  const sheetSubtitle = $derived.by(() => {
-    if (step === "provider") return "Choose a provider.";
-    if (step === "custom") return "Set the provider id, API URL, and optional key.";
-    if (isCustomFlow && customBaseUrl.trim()) return customBaseUrl.trim();
-    return "Pick from the catalog or enter a model ID.";
-  });
-
   function targetKey(value: ModelPickerTarget): string {
     return JSON.stringify(value);
-  }
-
-  function resetCustomFields() {
-    customProviderId = "";
-    customBaseUrl = "";
-    customApiKey = "";
-    customConfigError = null;
-  }
-
-  function prefillCustomFromSelection(current: InferenceTarget) {
-    customProviderId = current.provider.trim();
-    customBaseUrl = current.baseUrl?.trim() ?? "";
-    customApiKey = "";
-    selectedProvider = catalog
-      ? (findCatalogProvider(catalog, CUSTOM_PROVIDER_CATALOG_ID) ?? null)
-      : null;
   }
 
   $effect(() => {
@@ -178,17 +126,11 @@
     sheetInitKey = initKey;
     step = "provider";
     selectedProvider = null;
-    resetCustomFields();
     providerSearch = "";
     modelSearch = "";
     manualModelId = "";
     models = [];
-
-    const current = selectionForTarget(workshopDefaults.draft, target);
-    if (current && isConfiguredCustomProvider(current, catalog)) {
-      prefillCustomFromSelection(current);
-      step = "custom";
-    }
+    needsProviderSetup = false;
   });
 
   onMount(() => {
@@ -198,61 +140,55 @@
     });
   });
 
-  function providerEntry(providerId: string): ProviderCatalogEntry | undefined {
-    return catalog ? findCatalogProvider(catalog, providerId) : undefined;
-  }
-
-  async function resolveModelsForProvider(
-    providerId: string,
-    baseUrl?: string | null,
-    apiKey?: string | null,
-  ): Promise<ModelCapabilityRecord[]> {
+  async function resolveModelsForProvider(entry: ProviderCatalogEntry): Promise<ModelCapabilityRecord[]> {
     if (!target) return [];
-    const normalizedProvider = providerId.trim().toLowerCase();
+    const runtimeId = await resolveRuntimeProviderId(entry.id);
+    const baseUrl = await resolveProviderBaseUrl(entry);
 
-    if (!isCustomCatalogEntry(providerId)) {
+    if (entry.id !== CUSTOM_PROVIDER_CATALOG_ID) {
       try {
         const response = await listModelCatalog({
-          provider: providerId,
+          provider: entry.id,
           capability: pickerRequiresVision(target) ? "vision" : undefined,
         });
         const fromCatalog = response.models.filter(
-          (record) => record.provider.trim().toLowerCase() === normalizedProvider,
+          (record) =>
+            record.provider.trim().toLowerCase() === entry.id.toLowerCase() ||
+            record.provider.trim().toLowerCase() === runtimeId.toLowerCase(),
         );
         if (fromCatalog.length > 0) return fromCatalog;
       } catch {
-        // Fall through to live provider listing / defaults.
+        // Fall through.
       }
     }
 
     try {
-      const entry = providerEntry(providerId);
       const live = await listProviderModels({
-        provider: providerId,
-        baseUrl: baseUrl?.trim() || entry?.defaultBaseUrl || undefined,
-        apiKey: apiKey?.trim() || undefined,
+        provider: runtimeId,
+        baseUrl: baseUrl ?? undefined,
       });
       if (live.models.length > 0) {
-        return recordsFromModelIds(providerId, live.models, live.source);
+        return recordsFromModelIds(runtimeId, live.models, live.source);
       }
     } catch {
-      // Fall through to provider default.
+      // Fall through.
     }
 
-    const entry = providerEntry(providerId);
-    return entry ? defaultProviderRecords(entry) : [];
+    return defaultProviderRecords({ ...entry, id: runtimeId, defaultModel: entry.defaultModel });
   }
 
-  async function loadActiveProviderModels() {
-    if (!target || !activeProviderId) return;
+  async function loadProviderModels(entry: ProviderCatalogEntry) {
+    if (!target) return;
     const seq = ++loadSeq;
     loading = true;
+    needsProviderSetup = false;
     try {
-      const next = await resolveModelsForProvider(
-        activeProviderId,
-        activeBaseUrl || null,
-        customApiKey || null,
-      );
+      if (entry.id === CUSTOM_PROVIDER_CATALOG_ID && !(await isCustomProviderReady())) {
+        needsProviderSetup = true;
+        models = [];
+        return;
+      }
+      const next = await resolveModelsForProvider(entry);
       if (seq !== loadSeq) return;
       models = next;
     } finally {
@@ -260,104 +196,44 @@
     }
   }
 
-  function openProvider(entry: ProviderCatalogEntry) {
-    if (entry.id === CUSTOM_PROVIDER_CATALOG_ID) {
-      selectedProvider = entry;
-      step = "custom";
-      customConfigError = null;
-      const current = selectionForTarget(workshopDefaults.draft, target!);
-      if (current && isConfiguredCustomProvider(current, catalog!)) {
-        prefillCustomFromSelection(current);
-      } else {
-        customProviderId = "";
-        customBaseUrl = "";
-        customApiKey = "";
-      }
-      return;
-    }
-
+  async function openProvider(entry: ProviderCatalogEntry) {
     selectedProvider = entry;
     step = "model";
     modelSearch = "";
     const current = selectionForTarget(workshopDefaults.draft, target!);
+    const runtimeId = await resolveRuntimeProviderId(entry.id);
     manualModelId =
-      current?.provider?.trim().toLowerCase() === entry.id.toLowerCase()
+      current?.provider?.trim().toLowerCase() === runtimeId.toLowerCase()
         ? current.model.trim()
         : entry.defaultModel.trim();
-    void loadActiveProviderModels();
+    void loadProviderModels(entry);
   }
 
-  async function continueFromCustom() {
-    customConfigError = null;
-    const providerId = normalizeCustomProviderId(customProviderId);
-    const baseUrl = normalizeBaseUrl(customBaseUrl);
-    if (!providerId) {
-      customConfigError = "Enter a provider id (e.g. openai, vllm).";
-      return;
-    }
-    if (!isValidBaseUrl(baseUrl)) {
-      customConfigError = "Enter a valid http(s) API base URL.";
-      return;
-    }
-
-    customProviderId = providerId;
-    customBaseUrl = baseUrl;
-
-    const key = customApiKey.trim();
-    if (key) {
-      try {
-        await messagingSaveSecret(`api_key_${providerId}`, key);
-      } catch (err) {
-        customConfigError =
-          err instanceof Error ? err.message : "Could not store API key on this device.";
-        return;
-      }
-    }
-
-    step = "model";
+  function goBackToProviders() {
+    step = "provider";
+    selectedProvider = null;
     modelSearch = "";
-    const current = selectionForTarget(workshopDefaults.draft, target!);
-    manualModelId =
-      current?.provider?.trim().toLowerCase() === providerId &&
-      (current.baseUrl?.trim() ?? "") === baseUrl
-        ? current.model.trim()
-        : "";
-    void loadActiveProviderModels();
-  }
-
-  function goBackOneStep() {
-    if (step === "model") {
-      if (isCustomFlow) {
-        step = "custom";
-      } else {
-        step = "provider";
-        selectedProvider = null;
-      }
-      modelSearch = "";
-      manualModelId = "";
-      models = [];
-      loadSeq += 1;
-      return;
-    }
-    if (step === "custom") {
-      step = "provider";
-      selectedProvider = null;
-      resetCustomFields();
-    }
+    manualModelId = "";
+    models = [];
+    needsProviderSetup = false;
+    loadSeq += 1;
   }
 
   function handleDismiss() {
-    if (step === "model" || step === "custom") {
-      goBackOneStep();
+    if (step === "model") {
+      goBackToProviders();
       return;
     }
     onClose();
   }
 
-  function selectionPayload(modelId: string): InferenceTarget {
-    const provider = activeProviderId;
-    const baseUrl = activeBaseUrl || null;
-    return { provider, model: modelId.trim(), baseUrl };
+  async function buildSelection(modelId: string): Promise<InferenceTarget> {
+    const entry = selectedProvider!;
+    return {
+      provider: await resolveRuntimeProviderId(entry.id),
+      model: modelId.trim(),
+      baseUrl: await resolveProviderBaseUrl(entry),
+    };
   }
 
   function displayName(record: ModelCapabilityRecord): string {
@@ -378,14 +254,14 @@
   }
 
   async function pickModel(record: ModelCapabilityRecord) {
-    await onSelect(selectionPayload(record.modelId));
+    await onSelect(await buildSelection(record.modelId));
     onClose();
   }
 
   async function confirmManualModel() {
     const modelId = manualModelId.trim();
     if (!modelId || !selectedProvider) return;
-    await onSelect(selectionPayload(modelId));
+    await onSelect(await buildSelection(modelId));
     onClose();
   }
 
@@ -405,33 +281,34 @@
     }}
   >
     <div
-      class="model-catalog-sheet {step !== 'model' ? 'model-catalog-sheet-narrow' : ''}"
+      class="model-catalog-sheet {step === 'provider' ? 'model-catalog-sheet-narrow' : ''}"
       role="dialog"
       aria-modal="true"
-      aria-label={sheetTitle}
+      aria-label={step === "provider" ? pickerTitle(target) : selectedProvider?.label ?? "Model"}
       transition:fly={{ y: 28, duration: 280, easing: cubicOut }}
     >
       <header class="model-catalog-sheet-header">
-        {#if step === "model" || step === "custom"}
+        {#if step === "model"}
           <button
             type="button"
             class="model-catalog-sheet-back"
-            aria-label="Back"
-            onclick={goBackOneStep}
+            aria-label="Back to providers"
+            onclick={goBackToProviders}
           >
             <ChevronLeft size={18} />
           </button>
         {/if}
         <div class="min-w-0 flex-1">
-          <h3 class="model-catalog-sheet-title">{sheetTitle}</h3>
-          <p class="model-catalog-sheet-subtitle">{sheetSubtitle}</p>
+          <h3 class="model-catalog-sheet-title">
+            {step === "provider" ? pickerTitle(target) : selectedProvider?.label ?? "Model"}
+          </h3>
+          <p class="model-catalog-sheet-subtitle">
+            {step === "provider"
+              ? "Choose a provider — configure keys and URLs under Providers."
+              : "Pick from the catalog or enter a model ID."}
+          </p>
         </div>
-        <button
-          type="button"
-          class="model-catalog-sheet-close"
-          aria-label="Close"
-          onclick={onClose}
-        >
+        <button type="button" class="model-catalog-sheet-close" aria-label="Close" onclick={onClose}>
           <X size={18} />
         </button>
       </header>
@@ -470,7 +347,7 @@
               <button
                 type="button"
                 class="model-catalog-provider-row"
-                onclick={() => openProvider(entry)}
+                onclick={() => void openProvider(entry)}
               >
                 <span class="model-catalog-tile-monogram" aria-hidden="true">
                   {providerMonogram(entry.id)}
@@ -488,127 +365,81 @@
             <p class="model-catalog-empty">No providers match — try another search.</p>
           {/if}
         </div>
-      {:else if step === "custom"}
-        <div class="model-catalog-custom-form">
-          <label class="model-catalog-custom-field">
-            <span class="model-catalog-custom-label">Provider id</span>
-            <span class="model-catalog-custom-hint">Rust-genai adapter name (e.g. openai, vllm).</span>
-            <input
-              type="text"
-              class="model-catalog-manual-input"
-              placeholder="openai"
-              bind:value={customProviderId}
-              autocapitalize="off"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </label>
-
-          <label class="model-catalog-custom-field">
-            <span class="model-catalog-custom-label">API base URL</span>
-            <span class="model-catalog-custom-hint">OpenAI-compatible root, usually ending in /v1.</span>
-            <input
-              type="url"
-              class="model-catalog-manual-input"
-              placeholder="https://your-host.example.com/v1"
-              bind:value={customBaseUrl}
-              autocapitalize="off"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </label>
-
-          <label class="model-catalog-custom-field">
-            <span class="model-catalog-custom-label">API key</span>
-            <span class="model-catalog-custom-hint">Optional — stored on this device only.</span>
-            <input
-              type="password"
-              class="model-catalog-manual-input"
-              placeholder="sk-…"
-              bind:value={customApiKey}
-              autocomplete="off"
-            />
-          </label>
-
-          {#if customConfigError}
-            <p class="model-catalog-custom-error">{customConfigError}</p>
-          {/if}
-
-          <button
-            type="button"
-            class="model-catalog-manual-btn model-catalog-custom-continue"
-            disabled={!canContinueCustom}
-            onclick={() => void continueFromCustom()}
-          >
-            Continue to models
-          </button>
-        </div>
       {:else if selectedProvider}
-        <label class="model-catalog-search">
-          <Search size={15} class="model-catalog-search-icon" />
-          <input
-            type="search"
-            class="model-catalog-search-input"
-            placeholder="Search models"
-            bind:value={modelSearch}
-          />
-        </label>
-
-        <div class="model-catalog-grid">
-          {#if loading}
-            <p class="model-catalog-empty">Loading models…</p>
-          {:else if filteredModels.length === 0}
+        {#if needsProviderSetup}
+          <div class="model-catalog-custom-form">
             <p class="model-catalog-empty">
-              No catalog models match — enter one manually below.
+              Configure {selectedProvider.label} under the <strong>Providers</strong> tab first
+              (provider id, API URL, and key if needed).
             </p>
-          {:else}
-            {#each filteredModels as record (`${record.provider}:${record.modelId}`)}
-              {@const selected = isSelected(record)}
-              <button
-                type="button"
-                class="model-catalog-tile {selected ? 'model-catalog-tile-selected' : ''}"
-                onclick={() => void pickModel(record)}
-              >
-                <span class="model-catalog-tile-head">
-                  <span class="model-catalog-tile-monogram" aria-hidden="true">
-                    {providerMonogram(record.provider)}
-                  </span>
-                  <span class="model-catalog-tile-name">{displayName(record)}</span>
-                </span>
-                {#if showSlug(record)}
-                  <span class="model-catalog-tile-meta">{record.modelId}</span>
-                {/if}
-                <ModelCapabilityBadges badges={badgesForCapability(record)} compact />
-              </button>
-            {/each}
-          {/if}
-        </div>
-
-        <div class="model-catalog-manual">
-          <label class="model-catalog-manual-label">
-            <span class="model-catalog-manual-title">Enter model ID</span>
+          </div>
+        {:else}
+          <label class="model-catalog-search">
+            <Search size={15} class="model-catalog-search-icon" />
             <input
-              type="text"
-              class="model-catalog-manual-input"
-              placeholder={selectedProvider.defaultModel || "e.g. gpt-4o-mini"}
-              bind:value={manualModelId}
-              onkeydown={(event) => {
-                if (event.key === "Enter" && canUseManualModel) {
-                  event.preventDefault();
-                  void confirmManualModel();
-                }
-              }}
+              type="search"
+              class="model-catalog-search-input"
+              placeholder="Search models"
+              bind:value={modelSearch}
             />
           </label>
-          <button
-            type="button"
-            class="model-catalog-manual-btn"
-            disabled={!canUseManualModel}
-            onclick={() => void confirmManualModel()}
-          >
-            Use this model
-          </button>
-        </div>
+
+          <div class="model-catalog-grid">
+            {#if loading}
+              <p class="model-catalog-empty">Loading models…</p>
+            {:else if filteredModels.length === 0}
+              <p class="model-catalog-empty">
+                No catalog models match — enter one manually below.
+              </p>
+            {:else}
+              {#each filteredModels as record (`${record.provider}:${record.modelId}`)}
+                {@const selected = isSelected(record)}
+                <button
+                  type="button"
+                  class="model-catalog-tile {selected ? 'model-catalog-tile-selected' : ''}"
+                  onclick={() => void pickModel(record)}
+                >
+                  <span class="model-catalog-tile-head">
+                    <span class="model-catalog-tile-monogram" aria-hidden="true">
+                      {providerMonogram(record.provider)}
+                    </span>
+                    <span class="model-catalog-tile-name">{displayName(record)}</span>
+                  </span>
+                  {#if showSlug(record)}
+                    <span class="model-catalog-tile-meta">{record.modelId}</span>
+                  {/if}
+                  <ModelCapabilityBadges badges={badgesForCapability(record)} compact />
+                </button>
+              {/each}
+            {/if}
+          </div>
+
+          <div class="model-catalog-manual">
+            <label class="model-catalog-manual-label">
+              <span class="model-catalog-manual-title">Enter model ID</span>
+              <input
+                type="text"
+                class="model-catalog-manual-input"
+                placeholder={selectedProvider.defaultModel || "e.g. gpt-4o-mini"}
+                bind:value={manualModelId}
+                onkeydown={(event) => {
+                  if (event.key === "Enter" && canUseManualModel) {
+                    event.preventDefault();
+                    void confirmManualModel();
+                  }
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              class="model-catalog-manual-btn"
+              disabled={!canUseManualModel}
+              onclick={() => void confirmManualModel()}
+            >
+              Use this model
+            </button>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>

@@ -108,7 +108,7 @@ const PROVIDERS: &[ProviderSpec] = &[
         supports_custom_base_url: true,
         default_base_url: Some("http://127.0.0.1:11434/v1"),
         key_hint: None,
-        blurb: "Models on this computer via Ollama",
+        blurb: "Local Ollama or Ollama Cloud — set the API URL below",
         validation: ProviderValidation::Ollama,
     },
     ProviderSpec {
@@ -116,11 +116,11 @@ const PROVIDERS: &[ProviderSpec] = &[
         label: "Custom provider",
         category: "local",
         default_model: "default",
-        needs_api_key: false,
+        needs_api_key: true,
         supports_custom_base_url: true,
         default_base_url: None,
-        key_hint: Some("Optional — sk-…"),
-        blurb: "Any OpenAI-compatible endpoint (vLLM, LiteLLM, etc.)",
+        key_hint: Some("sk-…"),
+        blurb: "Any OpenAI-compatible endpoint — vLLM, LiteLLM, etc.",
         validation: ProviderValidation::OpenAiCompatible,
     },
     ProviderSpec {

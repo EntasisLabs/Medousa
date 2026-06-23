@@ -29,7 +29,17 @@ pub struct ComposerSttResult {
 pub async fn composer_stt_status(
     state: State<'_, DaemonState>,
 ) -> Result<ComposerSttStatus, String> {
-    workshop_http::get_json(&state, "/v1/stt/status").await
+    match workshop_http::get_json(&state, "/v1/stt/status").await {
+        Ok(status) => Ok(status),
+        Err(err) if err.contains("404") => Ok(ComposerSttStatus {
+            available: false,
+            reason: Some(
+                "Dictation requires a newer workshop daemon — rebuild and restart medousa_daemon."
+                    .to_string(),
+            ),
+        }),
+        Err(err) => Err(err),
+    }
 }
 
 #[tauri::command]

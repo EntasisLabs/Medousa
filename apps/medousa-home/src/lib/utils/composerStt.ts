@@ -23,7 +23,21 @@ export async function composerSttStatus(): Promise<ComposerSttStatus> {
     };
   }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<ComposerSttStatus>("composer_stt_status");
+  try {
+    return await invoke<ComposerSttStatus>("composer_stt_status");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("404")) {
+      return {
+        available: false,
+        reason: "Dictation requires a newer workshop daemon.",
+      };
+    }
+    return {
+      available: false,
+      reason: message,
+    };
+  }
 }
 
 export async function transcribeComposerAudio(blob: Blob): Promise<string> {

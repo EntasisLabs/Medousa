@@ -203,7 +203,7 @@ export function providerIdsForTarget(target: ModelPickerTarget): string[] | null
 
 export function excludedProvidersForTarget(target: ModelPickerTarget): string[] {
   if (target.type === "primary" && target.profile === "stt") {
-    return ["medousa-local", "ollama"];
+    return ["medousa-local", "ollama", "custom"];
   }
-  return ["medousa-local"];
+  return [];
 }

@@ -227,6 +227,7 @@ pub fn run() {
             messaging::messaging_secret_status,
             messaging::messaging_save_secret,
             messaging::messaging_clear_secret,
+            messaging::messaging_read_secret,
             channel_adapters::messaging_sync_adapters,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             external_desk::external_desk_scan_root,
