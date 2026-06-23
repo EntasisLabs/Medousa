@@ -175,19 +175,30 @@ pub fn runtime_settings_for_interactive_turn(
     request: &InteractiveTurnRequest,
 ) -> RuntimeSettings {
     let saved = crate::session::load_tui_defaults();
+    let main = crate::inference_profiles::main_target(&saved);
     let provider = if request.provider.trim().is_empty() {
-        crate::resolve_llm_provider(saved.provider.as_deref())
+        main.provider
     } else {
         crate::resolve_llm_provider(Some(request.provider.trim()))
     };
     let model = if request.model.trim().is_empty() {
-        crate::resolve_llm_model(saved.model.as_deref())
+        main.model
     } else {
         crate::resolve_llm_model(Some(request.model.trim()))
     };
+    let base_url = if request.provider.trim().is_empty() && request.model.trim().is_empty() {
+        main.base_url
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+    } else {
+        None
+    };
     let base_url = crate::resolve_llm_base_url(
         Some(&provider),
-        saved.base_url.as_deref().filter(|value| !value.trim().is_empty()),
+        base_url
+            .as_deref()
+            .or(saved.base_url.as_deref().filter(|value| !value.trim().is_empty())),
     )
     .unwrap_or_default();
     let mut settings = default_daemon_runtime_settings(backend, &provider, &model, &base_url);
@@ -212,9 +223,8 @@ pub fn stage_routing_for_interactive_turn(request: &InteractiveTurnRequest) -> S
         if let Some(matrix) = saved.stage_routing.clone() {
             return matrix;
         }
-        let provider = crate::resolve_llm_provider(saved.provider.as_deref());
-        let model = crate::resolve_llm_model(saved.model.as_deref());
-        return StageRoutingMatrix::default_for(&provider, &model);
+        let main = crate::inference_profiles::main_target(&saved);
+        return StageRoutingMatrix::default_for(&main.provider, &main.model);
     }
 
     request.stage_routing.clone()

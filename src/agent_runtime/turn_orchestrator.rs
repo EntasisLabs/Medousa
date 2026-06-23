@@ -262,6 +262,7 @@ pub struct LocalTurnExecutionParams {
     pub host_continuity_bundle: Option<super::worker_continuity::HostContinuityBundle>,
     pub session_scratch_seed: TurnScratchpad,
     pub current_turn_user_message: ChatMessage,
+    pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -280,6 +281,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub scheduled_tool_allowlist: Option<std::collections::HashSet<String>>,
     pub media_refs: Vec<crate::daemon_api::MediaRef>,
     pub vision_plan: crate::media_vision::TurnMediaVisionPlan,
+    pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
 }
 
 pub struct AssembledLocalTurn {
@@ -438,6 +440,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
                 params.prompt,
             ),
             current_turn_user_message,
+            inference_profile_kind: params.inference_profile_kind,
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -564,107 +567,22 @@ pub fn apply_intent_classifier_override(
     }
 }
 
-fn build_tool_loop_failure_explanation_prompt(
-    original_prompt: &str,
-    runtime_error: &str,
-    scratch: Option<&TurnScratchpad>,
-) -> String {
-    let scratch_block = scratch
-        .map(|s| {
-            format!(
-                "\n\nTURN_SCRATCHPAD (tool-loop working memory, no raw tool transcript):\n{}",
-                s.format_control_body(0)
-            )
-        })
-        .unwrap_or_default();
-    format!(
-        "[MEDOUSA_TURN_RUNTIME]\n\
-         The interactive tool loop ended without a complete user-facing answer.\n\n\
-         RUNTIME_ERROR:\n{runtime_error}\n\n\
-         ORIGINAL_USER_MESSAGE:\n{original_prompt}{scratch_block}\n\n\
-         Write one clear user-facing message: explain what happened in plain language, what was \
-         attempted if you can infer it from the error, and what the user can try next (retry, \
-         clarify, adjust settings, simpler request, or ask them for specific missing details). \
-         Do not invent tool results or claim success you did not achieve. \
-         This is a final explanation pass only — do not call tools."
-    )
-}
-
-fn fallback_failure_explanation_text(runtime_error: &str) -> String {
-    format!(
-        "I couldn't finish that turn cleanly. Technical detail: {}. \
-         You can retry, simplify the request, or share any missing context (session id, paths, etc.).",
-        truncate_text_for_budget(runtime_error, 800)
-    )
-}
-
-async fn deliver_tool_loop_failure_explanation(
+async fn deliver_turn_failure(
     sink: &SharedAgentStreamSink,
     turn_id: u64,
-    no_tools_pipeline: &PromptExecutionPipeline,
-    chunk_tx: &tokio::sync::mpsc::UnboundedSender<StreamDelta>,
-    original_prompt: &str,
     runtime_error: &str,
-    prior_messages: Vec<ChatMessage>,
-    scratch: Option<&TurnScratchpad>,
-    host_bus: bool,
-    suggested_intent: Option<&str>,
     orchestration_state: &mut TurnOrchestrationState,
-    turn_budget: &TurnBudget,
-    prompt_ctx: PromptExecutionContext,
 ) {
-    let _ = try_consume_prompt_only_budget(sink, orchestration_state, turn_budget).await;
-    orchestration_state.final_mode = "tool_loop_failure_explanation".to_string();
-
-    sink.notice(
-        "◈ fallback_mode=runtime_failure_explanation retry_count=0 (no tools)".to_string(),
-    )
+    let failure = crate::turn_failure::TurnFailure::from_debug(runtime_error);
+    orchestration_state.final_mode = "turn_failed".to_string();
+    sink.notice(format!(
+        "◈ turn_failed category={} retryable={}",
+        failure.category_label(),
+        failure.retryable
+    ))
     .await;
-
-    let explanation_prompt = truncate_text_for_budget(
-        &build_tool_loop_failure_explanation_prompt(original_prompt, runtime_error, scratch),
-        MAX_REQUEST_PROMPT_CHARS,
-    );
-
-    let mut messages = Vec::with_capacity(prior_messages.len() + 2);
-    messages.push(ChatMessage::system(system_prompt_for_host_profile(
-        DEFAULT_SYSTEM_PROMPT,
-        host_bus,
-        suggested_intent,
-    )));
-    messages.extend(prior_messages);
-    messages.push(ChatMessage::user(explanation_prompt));
-
-    sink.tool_invoked(
-        "llm.chat".to_string(),
-        "runtime failure explanation (no tools)".to_string(),
-    )
-    .await;
-
-    let final_text = match no_tools_pipeline
-        .complete_chat_stream(
-            ChatRequest::new(messages),
-            prompt_ctx.clone(),
-            Some(chunk_tx),
-        )
-        .await
-    {
-        Ok(completion) => completion
-            .response
-            .into_first_text()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| fallback_failure_explanation_text(runtime_error)),
-        Err(err) => {
-            sink.notice(format!(
-                "⚠ runtime failure explanation LLM failed: {err}; using fallback text"
-            ))
-            .await;
-            fallback_failure_explanation_text(runtime_error)
-        }
-    };
-
-    sink.agent_response(turn_id, final_text, Vec::new()).await;
+    sink.agent_error(turn_id, failure.debug_message.clone())
+        .await;
 }
 
 pub fn retryable_runtime_reason(err_text: &str) -> Option<&'static str> {
@@ -768,7 +686,16 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         mut host_continuity_bundle,
         session_scratch_seed,
         current_turn_user_message,
+        inference_profile_kind,
     } = params;
+
+    let capability_required = if inference_profile_kind
+        == crate::inference_profiles::InferenceProfileKind::Vision
+    {
+        crate::inference_router::CapabilityRequirement::Vision
+    } else {
+        crate::inference_router::CapabilityRequirement::None
+    };
 
     let prompt_ctx =
         crate::reasoning_effort::prompt_execution_context(&model, Some(&reasoning_effort));
@@ -1024,47 +951,139 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         .and_then(|scope| scope.delivery_target.as_ref())
         .map(StoredDeliveryTarget::from);
     let mut last_tool_scratch: Option<TurnScratchpad> = None;
-    let first_attempt = {
-        let loop_max_rounds = activation.max_tool_rounds.max(1);
-        let mut completion_gate = ToolLoopCompletionGate {
-            stream_turn_id: turn_id,
-            session_id: ledger_session_id.clone(),
-            sink: Some(sink.clone()),
-            orchestration: Some(&mut orchestration_state),
-            budget: Some(&turn_budget),
-            max_tool_rounds: loop_max_rounds,
-            max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
-            scratch_out: Some(&mut last_tool_scratch),
-            host_handoff_slot: Some(host_handoff_slot.clone()),
-            parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-            initial_worker_scratch: Some(session_scratch_seed.clone()),
-            handoff_parent_user_prompt: Some(original_prompt.clone()),
-            handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
-            handoff_model_avec: Some(handoff_model_avec),
-            handoff_continuity_bundle: handoff_continuity_bundle.clone(),
-            skip_avec_ritual_check: false,
-            channel: origin_channel.clone(),
-            delivery_target: origin_delivery_target.clone(),
-            tool_round_budget_ceiling: host_tool_round_budget_ceiling(
-                &turn_loop_settings,
-                loop_max_rounds,
-            ),
-            require_operator_budget_gate: require_operator_budget_gate(),
-        };
-        pipeline
-            .execute_with_stream_prior_messages_max_rounds(
-                request.clone(),
-                prior_messages.clone(),
-                Some(&chunk_tx),
-                loop_max_rounds,
-                Some(&mut completion_gate),
-                Some(current_turn_user_message.clone()),
-            )
-            .await
-    };
+    let loop_max_rounds = activation.max_tool_rounds.max(1);
+    let inference_targets = crate::inference_router::profile_targets(inference_profile_kind);
+    let inference_target_total = inference_targets.len().max(1);
+    let mut first_attempt: Option<
+        Result<
+            stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionResponse,
+            stasis::domain::errors::StasisError,
+        >,
+    > = None;
+    let mut inference_last_err = String::new();
+
+    'inference_targets: for (attempt_index, target) in inference_targets.iter().enumerate() {
+        if !crate::inference_router::target_is_eligible(target, capability_required) {
+            sink.notice(crate::inference_router::telemetry_line(
+                inference_profile_kind,
+                attempt_index,
+                inference_target_total,
+                target,
+                if crate::inference_router::provider_needs_api_key(&target.provider)
+                    && !crate::session::provider_api_key_configured(&target.provider)
+                {
+                    "missing_api_key"
+                } else {
+                    "missing_capability"
+                },
+            ))
+            .await;
+            continue;
+        }
+
+        crate::workshop_env::apply_provider_llm_env(&target.provider);
+        sink.notice(crate::inference_router::telemetry_line(
+            inference_profile_kind,
+            attempt_index,
+            inference_target_total,
+            target,
+            "attempt",
+        ))
+        .await;
+
+        let attempt_pipeline = pipeline_for_turn_profile(
+            tool_registry.clone(),
+            &target.provider,
+            &target.model,
+            target
+                .base_url
+                .as_deref()
+                .or(base_url.as_deref()),
+            host_bus,
+            Some(session_id.as_str()),
+        );
+
+        let mut same_target_retries = 0u8;
+        loop {
+            let mut completion_gate = ToolLoopCompletionGate {
+                stream_turn_id: turn_id,
+                session_id: ledger_session_id.clone(),
+                sink: Some(sink.clone()),
+                orchestration: Some(&mut orchestration_state),
+                budget: Some(&turn_budget),
+                max_tool_rounds: loop_max_rounds,
+                max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
+                scratch_out: Some(&mut last_tool_scratch),
+                host_handoff_slot: Some(host_handoff_slot.clone()),
+                parent_turn_correlation_id: parent_turn_correlation_id.clone(),
+                initial_worker_scratch: Some(session_scratch_seed.clone()),
+                handoff_parent_user_prompt: Some(original_prompt.clone()),
+                handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
+                handoff_model_avec: Some(handoff_model_avec),
+                handoff_continuity_bundle: handoff_continuity_bundle.clone(),
+                skip_avec_ritual_check: false,
+                channel: origin_channel.clone(),
+                delivery_target: origin_delivery_target.clone(),
+                tool_round_budget_ceiling: host_tool_round_budget_ceiling(
+                    &turn_loop_settings,
+                    loop_max_rounds,
+                ),
+                require_operator_budget_gate: require_operator_budget_gate(),
+            };
+
+            match attempt_pipeline
+                .execute_with_stream_prior_messages_max_rounds(
+                    request.clone(),
+                    prior_messages.clone(),
+                    Some(&chunk_tx),
+                    loop_max_rounds,
+                    Some(&mut completion_gate),
+                    Some(current_turn_user_message.clone()),
+                )
+                .await
+            {
+                Ok(response) => {
+                    first_attempt = Some(Ok(response));
+                    break 'inference_targets;
+                }
+                Err(err) => {
+                    let failure = crate::turn_failure::TurnFailure::from_debug(&err.to_string());
+                    inference_last_err = failure.debug_message.clone();
+                    if crate::inference_router::should_retry_same_target(failure.category)
+                        && same_target_retries < 1
+                    {
+                        same_target_retries += 1;
+                        sink.notice(crate::inference_router::telemetry_line(
+                            inference_profile_kind,
+                            attempt_index,
+                            inference_target_total,
+                            target,
+                            &format!("retry_{}", failure.category_label()),
+                        ))
+                        .await;
+                        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                        continue;
+                    }
+                    if crate::inference_router::should_advance_fallback(failure.category) {
+                        sink.notice(crate::inference_router::telemetry_line(
+                            inference_profile_kind,
+                            attempt_index,
+                            inference_target_total,
+                            target,
+                            failure.category_label(),
+                        ))
+                        .await;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    let first_attempt = first_attempt;
 
     match first_attempt {
-        Ok(response) => {
+        Some(Ok(response)) => {
             sink.notice(
                 "◈ fallback_mode=tool_loop retry_count=0 retry_reason=none".to_string(),
             )
@@ -1250,7 +1269,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             .await;
             emit_orchestration_summary(&sink, &orchestration_state).await;
         }
-        Err(err) => {
+        Some(Err(err)) => {
             let err_text = err.to_string();
             if let Some(reason) = retryable_runtime_reason(&err_text) {
                 // Retry uses the same tool-round budget as the primary loop unless the
@@ -1347,20 +1366,11 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     }
                 }
                 orchestration_state.final_mode = "tool_loop_retry_exhausted".to_string();
-                deliver_tool_loop_failure_explanation(
+                deliver_turn_failure(
                     &sink,
                     turn_id,
-                    &no_tools_pipeline,
-                    &chunk_tx,
-                    &original_prompt,
                     &format!("{reason} (retry exhausted: {last_err})"),
-                    prior_messages.clone(),
-                    last_tool_scratch.as_ref(),
-                    host_bus,
-                    suggested_intent,
                     &mut orchestration_state,
-                    &turn_budget,
-                    prompt_ctx.clone(),
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
@@ -1370,24 +1380,25 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 )
                 .await;
                 orchestration_state.final_mode = "tool_loop_error_non_retryable".to_string();
-                deliver_tool_loop_failure_explanation(
+                deliver_turn_failure(
                     &sink,
                     turn_id,
-                    &no_tools_pipeline,
-                    &chunk_tx,
-                    &original_prompt,
                     &err_text,
-                    prior_messages.clone(),
-                    last_tool_scratch.as_ref(),
-                    host_bus,
-                    suggested_intent,
                     &mut orchestration_state,
-                    &turn_budget,
-                    prompt_ctx.clone(),
                 )
                 .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
             }
+        }
+        None => {
+            orchestration_state.final_mode = "inference_targets_exhausted".to_string();
+            let err_text = if inference_last_err.trim().is_empty() {
+                "all inference targets failed".to_string()
+            } else {
+                inference_last_err.clone()
+            };
+            deliver_turn_failure(&sink, turn_id, &err_text, &mut orchestration_state).await;
+            emit_orchestration_summary(&sink, &orchestration_state).await;
         }
     }
 

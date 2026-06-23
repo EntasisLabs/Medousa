@@ -305,7 +305,22 @@ pub fn needs_input_stream_event_with_tools(
 }
 
 pub fn error_stream_event(turn_id: &str, message: &str) -> Result<InteractiveTurnStreamEvent> {
-    let mut event = build_event(turn_id, "error", "failed", message)?;
+    error_stream_event_from_failure(turn_id, &crate::turn_failure::TurnFailure::from_debug(message))
+}
+
+pub fn error_stream_event_from_failure(
+    turn_id: &str,
+    failure: &crate::turn_failure::TurnFailure,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event_messages(
+        turn_id,
+        "error",
+        "failed",
+        StreamMessages {
+            operator_message: Some(failure.operator_message.clone()),
+            debug_message: Some(failure.debug_message.clone()),
+        },
+    )?;
     event.terminal = true;
     Ok(event)
 }
@@ -506,5 +521,21 @@ mod tests {
             event.debug_message.as_deref(),
             Some("◈ activation heuristic class=tool")
         );
+    }
+
+    #[test]
+    fn error_event_splits_operator_and_debug() {
+        let failure = crate::turn_failure::TurnFailure::from_debug("HTTP 429 rate limit");
+        let event = error_stream_event_from_failure("turn-1", &failure).expect("event");
+        assert_eq!(event.event_type, "error");
+        assert_eq!(
+            event.operator_message.as_deref(),
+            Some(failure.operator_message.as_str())
+        );
+        assert_eq!(
+            event.debug_message.as_deref(),
+            Some(failure.debug_message.as_str())
+        );
+        assert!(event.terminal);
     }
 }

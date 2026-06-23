@@ -30,6 +30,7 @@ import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import {
   isEngineTelemetryText,
+  operatorStreamErrorLine,
   operatorStreamStatusLine,
   shouldMirrorStatusIntoContent,
 } from "$lib/utils/chatStreamDisplay";
@@ -1359,6 +1360,11 @@ export class ChatStore {
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
     if (!this.isRelevantStreamEvent(event)) return;
 
+    if (event.event_type === "error") {
+      this.handleTurnError(event);
+      return;
+    }
+
     this.syncTurnFromEvent(event);
 
     const workerLink = this.workerLinkForTurn(event.turn_id);
@@ -1397,6 +1403,27 @@ export class ChatStore {
     if (event.terminal) {
       this.noteTurnTerminal(event);
       this.finishAskLaneTurn(event.turn_id);
+    }
+  }
+
+  private handleTurnError(event: InteractiveTurnStreamEvent) {
+    this.streamError = operatorStreamErrorLine(
+      event,
+      settings.showEngineDetailsInChat,
+    );
+
+    const messageId = this.messageIdForTurn(event.turn_id);
+    if (messageId) {
+      this.messages = this.messages.filter((message) => message.id !== messageId);
+      if (this.assistantId === messageId) {
+        this.assistantId = null;
+      }
+    }
+
+    this.finishAskLaneTurn(event.turn_id);
+    this.noteTurnTerminal(event);
+    if (this.shouldSettleTurnFromStream(event.turn_id)) {
+      this.settleTurn(event.turn_id);
     }
   }
 

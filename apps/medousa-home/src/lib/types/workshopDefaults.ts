@@ -1,7 +1,9 @@
 import type { DepthMode, StageRoutingMatrix } from "$lib/types/runtime";
+import type { InferenceProfiles } from "$lib/types/inferenceProfiles";
 import type { FavoriteModel } from "$lib/utils/modelCatalog";
 import type { VoicePreset } from "$lib/types/voicePresets";
 import { normalizeFavoriteModels } from "$lib/utils/modelCatalog";
+import { normalizeInferenceProfiles, syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
 import { DEFAULT_VOICE_ID, normalizeCustomVoicePresets } from "$lib/types/voicePresets";
 
 export type WorkshopDefaultsTab =
@@ -58,6 +60,8 @@ export interface TuiDefaults {
   activeVoiceId?: string | null;
   /** User-authored voice stance presets (cap 8). */
   customVoicePresets?: VoicePreset[] | null;
+  /** Explicit main / vision / STT inference profiles. */
+  inferenceProfiles?: InferenceProfiles | null;
   workCardHideAfterHours?: number | null;
   workCardWipeAfterDays?: number | null;
 }
@@ -156,7 +160,7 @@ export function defaultWorkshopDefaults(): Required<
 
 export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
   const defaults = defaultWorkshopDefaults();
-  return {
+  const normalized: TuiDefaults = {
     backend: raw.backend?.trim() || defaults.backend,
     themeId: raw.themeId?.trim() || "medousa-default",
     provider: raw.provider?.trim() || defaults.provider,
@@ -217,6 +221,15 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     workCardHideAfterHours: raw.workCardHideAfterHours ?? 24,
     workCardWipeAfterDays: raw.workCardWipeAfterDays ?? 7,
   };
+  normalized.inferenceProfiles = normalizeInferenceProfiles(raw.inferenceProfiles, {
+    provider: normalized.provider ?? defaults.provider,
+    model: normalized.model ?? defaults.model,
+    baseUrl: normalized.baseUrl,
+    sttProvider: normalized.sttProvider ?? "openai",
+    sttModel: normalized.sttModel ?? defaultSttModel(normalized.sttProvider ?? "openai"),
+    sttBaseUrl: normalized.sttBaseUrl,
+  });
+  return syncFlatFieldsFromProfiles(normalized);
 }
 
 export function allowedModulesToText(modules: string[] | null | undefined): string {

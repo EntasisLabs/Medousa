@@ -16,9 +16,11 @@ import type {
   DeliveryHealthResponse,
   DepthMode,
   ReasoningEffortMode,
+  RuntimeDefaultsResponse,
   RuntimeTab,
   StageRoutingMatrix,
 } from "$lib/types/runtime";
+import type { InferenceProfiles } from "$lib/types/inferenceProfiles";
 import { normalizeReasoningEffort } from "$lib/types/reasoningEffort";
 import { pollAllSettled } from "$lib/utils/poll";
 import { isTauriMobilePlatform } from "$lib/platform";
@@ -38,6 +40,7 @@ export class RuntimeStore {
   stageRouting = $state<StageRoutingMatrix>(
     defaultStageRouting(DEFAULT_PROVIDER, DEFAULT_MODEL),
   );
+  inferenceProfiles = $state<InferenceProfiles | null>(null);
   defaultsLoaded = $state(false);
 
   stats = $state<DaemonStatsResponse | null>(null);
@@ -123,12 +126,14 @@ export class RuntimeStore {
     this.defaultsLoaded = false;
   }
 
-  private applyRuntimeDefaults(defaults: {
-    provider: string;
-    model: string;
-    response_depth_mode: string;
-    stage_routing: StageRoutingMatrix;
-  }) {
+  private applyRuntimeDefaults(
+    defaults: Pick<
+      RuntimeDefaultsResponse,
+      "provider" | "model" | "response_depth_mode" | "reasoning_effort" | "stage_routing"
+    > & {
+      inference_profiles?: InferenceProfiles | null;
+    },
+  ) {
     const provider = defaults.provider.trim() || DEFAULT_PROVIDER;
     const model = defaults.model.trim() || DEFAULT_MODEL;
     this.provider = provider;
@@ -142,6 +147,7 @@ export class RuntimeStore {
     } else {
       this.stageRouting = defaultStageRouting(provider, model);
     }
+    this.inferenceProfiles = defaults.inference_profiles ?? null;
   }
 
   async refresh() {

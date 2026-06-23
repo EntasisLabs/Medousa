@@ -32,6 +32,8 @@
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
+  import { visionProfileReady } from "$lib/types/inferenceProfiles";
+  import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { automationsNav } from "$lib/stores/automationsNav.svelte";
   import { flowDraft } from "$lib/stores/flowDraft.svelte";
@@ -220,6 +222,15 @@
     const prompt = chat.draft.trim();
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
+    if (hasAttachments) {
+      if (!workshopDefaults.loaded) {
+        await workshopDefaults.load();
+      }
+      if (!visionProfileReady(workshopDefaults.draft.inferenceProfiles)) {
+        chat.setError("Configure a vision model in Settings → Models before sending images.");
+        return;
+      }
+    }
     if (mobile) haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);

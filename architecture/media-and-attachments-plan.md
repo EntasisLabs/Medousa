@@ -178,7 +178,9 @@ Inject bounded summary into turn context for **any text model**.
 
 ### P5b — Vision (current turn only)
 
-- Model capability gate (`supports_vision`)
+> **Routing:** Vision model selection, live capability checks, and fallbacks live in [inference-profiles-and-model-catalog-plan.md](inference-profiles-and-model-catalog-plan.md) — explicit **vision** profile + registry, not hardcoded `supports_vision()`.
+
+- Model capability gate (registry + **vision** inference profile)
 - Multimodal `ChatMessage` for **active turn attachments only**
 - Fallback copy when model cannot see images
 - Prior turns: text summary only (not full image replay)

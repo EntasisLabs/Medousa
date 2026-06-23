@@ -17,6 +17,7 @@ import {
   type TuiDefaults,
   type WorkshopDefaultsTab,
 } from "$lib/types/workshopDefaults";
+import { syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { workshopCharterOnHostHint } from "$lib/platformCopy";
 import { isTauri } from "$lib/window";
@@ -158,13 +159,13 @@ export class WorkshopDefaultsStore {
     this.saving = true;
     this.message = null;
     try {
-      const payload: TuiDefaults = {
+      const payload: TuiDefaults = syncFlatFieldsFromProfiles({
         ...this.draft,
         baseUrl: this.draft.baseUrl?.trim() || null,
         sttBaseUrl: this.draft.sttBaseUrl?.trim() || null,
         envOverrides: this.draft.envOverrides?.trim() || null,
         allowedModules: parseAllowedModulesText(this.allowedModulesText),
-      };
+      });
       if (
         payload.sliceColdWindowTurns != null &&
         payload.sliceHotWindowTurns != null &&
@@ -179,7 +180,12 @@ export class WorkshopDefaultsStore {
         await messagingClearSecret("api_key");
         this.apiKeySet = false;
       } else if (this.apiKeyDraft.trim()) {
-        await messagingSaveSecret("api_key", this.apiKeyDraft.trim());
+        const key = this.apiKeyDraft.trim();
+        await messagingSaveSecret("api_key", key);
+        const provider = payload.provider?.trim().toLowerCase();
+        if (provider) {
+          await messagingSaveSecret(`api_key_${provider}`, key);
+        }
         this.apiKeySet = true;
         this.apiKeyDraft = "";
       }
@@ -188,7 +194,12 @@ export class WorkshopDefaultsStore {
         await messagingClearSecret("stt_api_key");
         this.sttApiKeySet = false;
       } else if (this.sttApiKeyDraft.trim()) {
-        await messagingSaveSecret("stt_api_key", this.sttApiKeyDraft.trim());
+        const key = this.sttApiKeyDraft.trim();
+        await messagingSaveSecret("stt_api_key", key);
+        const sttProvider = payload.sttProvider?.trim().toLowerCase();
+        if (sttProvider) {
+          await messagingSaveSecret(`api_key_${sttProvider}`, key);
+        }
         this.sttApiKeySet = true;
         this.sttApiKeyDraft = "";
       }

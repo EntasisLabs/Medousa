@@ -56,6 +56,7 @@ Living documentation for system shape, component boundaries, and active roadmap.
 | [ROADMAP.md](ROADMAP.md) | Current priorities (attachments, Iroh, distribution, …) |
 | [iroh-p2p-pairing-plan.md](iroh-p2p-pairing-plan.md) | Encrypted phone ↔ desktop transport |
 | [media-and-attachments-plan.md](media-and-attachments-plan.md) | Local chat attachments (P5) |
+| [inference-profiles-and-model-catalog-plan.md](inference-profiles-and-model-catalog-plan.md) | **Inference profiles**, live model catalog, fallbacks, turn failure UX |
 | [embedded-local-inference-plan.md](embedded-local-inference-plan.md) | Embedded Gemma engine |
 | [desktop-distribution-plan.md](desktop-distribution-plan.md) | Signed app bundles |
 
@@ -80,6 +81,8 @@ Future / deferred (not blockers):
 | `src/identity_manuscript.rs` | Specialist / manuscript loader |
 | `src/cognitive_identity.rs` | Ranked digest + identity recall |
 | `src/lib.rs` | Crate root, LLM resolution |
+| `src/media_vision.rs` | Vision routing (→ registry in inference plan) |
+| `src/workshop_env.rs` | Workshop LLM env / API key injection |
 | `src/tools.rs` | Tool registry |
 | `src/bin/medousa_daemon.rs` | Engine |
 | `src/bin/medousa_tui.rs` | TUI |

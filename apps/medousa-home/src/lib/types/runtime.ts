@@ -75,6 +75,8 @@ export interface RuntimeDefaultsResponse {
   work_card_wipe_after_days: number;
   active_profile_id?: string;
   active_profile_display_name?: string;
+  catalog_freshness?: unknown;
+  inference_profiles?: import("$lib/types/inferenceProfiles").InferenceProfiles | null;
 }
 
 export interface StageRouteCommandResponse {

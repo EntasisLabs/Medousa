@@ -57,6 +57,21 @@ export function operatorStreamStatusLine(
   return null;
 }
 
+export function operatorStreamErrorLine(
+  event: InteractiveTurnStreamEvent,
+  showEngineDetails: boolean,
+): string {
+  const operator = event.operator_message?.trim();
+  if (operator) return operator;
+  if (showEngineDetails) {
+    const debug = event.debug_message?.trim();
+    if (debug) return debug;
+  }
+  const legacy = event.message?.trim();
+  if (legacy && !isEngineTelemetryText(legacy)) return legacy;
+  return "Something went wrong on this turn. Try again in a moment.";
+}
+
 export function shouldMirrorStatusIntoContent(
   event: InteractiveTurnStreamEvent,
   showEngineDetails: boolean,

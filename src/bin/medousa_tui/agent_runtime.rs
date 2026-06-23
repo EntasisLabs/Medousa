@@ -126,9 +126,13 @@ impl AgentStreamSink for TuiStreamSink {
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {
+        let failure = medousa::turn_failure::TurnFailure::from_debug(&message);
         let _ = self
             .tx
-            .send(TuiEvent::AgentError { turn_id, message })
+            .send(TuiEvent::AgentError {
+                turn_id,
+                message: failure.operator_message,
+            })
             .await;
     }
 
@@ -635,6 +639,7 @@ pub(crate) async fn start_prompt_run(
                 host_continuity_bundle,
                 session_scratch_seed,
                 current_turn_user_message,
+                inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
             },
         )
         .await;

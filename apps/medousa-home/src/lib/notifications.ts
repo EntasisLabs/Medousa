@@ -198,6 +198,7 @@ export async function notifyTurnTicketTerminal(
 
   const cardId = workspaceCardId?.trim() || turnId;
   const preview =
+    event.operator_message?.trim() ||
     event.final_text?.trim().split("\n")[0]?.trim() ||
     event.message?.trim() ||
     "Turn finished";

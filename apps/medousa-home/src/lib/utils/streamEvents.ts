@@ -38,8 +38,7 @@ export function isTerminalContentCommit(
     event.terminal ||
     event.event_type === "final" ||
     event.event_type === "turn_checkpoint" ||
-    event.event_type === "needs_input" ||
-    event.event_type === "error"
+    event.event_type === "needs_input"
   );
 }
 

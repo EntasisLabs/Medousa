@@ -108,6 +108,16 @@ pub struct TuiDefaults {
     pub surreal_password: Option<String>,
     pub surreal_namespace: Option<String>,
     pub surreal_database: Option<String>,
+    /// Explicit main / vision / STT model profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_profiles: Option<crate::inference_profiles::InferenceProfilesConfig>,
+    /// Legacy flat STT fields — kept in sync with `inference_profiles.stt`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +196,23 @@ fn slack_app_token_secret_path() -> PathBuf {
 
 fn api_key_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
     keyring::Entry::new(API_KEY_SERVICE, API_KEY_ACCOUNT)
+}
+
+fn provider_api_key_keyring_entry(provider: &str) -> Result<keyring::Entry, keyring::Error> {
+    keyring::Entry::new("medousa.providers", provider)
+}
+
+fn provider_api_key_secret_path(provider: &str) -> PathBuf {
+    medousa_data_dir()
+        .join("secrets")
+        .join(format!("api_key_{}", provider.trim().to_ascii_lowercase()))
+}
+
+fn file_provider_api_key(provider: &str) -> Option<String> {
+    std::fs::read_to_string(provider_api_key_secret_path(provider))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 fn discord_bot_token_keyring_entry() -> Result<keyring::Entry, keyring::Error> {
@@ -309,10 +336,12 @@ pub fn save_last_session_id(session_id: &str) {
 
 pub fn load_tui_defaults() -> TuiDefaults {
     let path = tui_defaults_path();
-    std::fs::read_to_string(path)
+    let mut defaults = std::fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<TuiDefaults>(&raw).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    crate::inference_profiles::normalize_tui_defaults(&mut defaults);
+    defaults
 }
 
 fn surreal_password_secret_path() -> PathBuf {
@@ -368,7 +397,10 @@ pub fn save_surreal_password(password: Option<&str>) {
 
 pub fn save_tui_defaults(defaults: &TuiDefaults) {
     let path = tui_defaults_path();
-    if let Ok(json) = serde_json::to_string_pretty(defaults) {
+    let mut normalized = defaults.clone();
+    crate::inference_profiles::normalize_tui_defaults(&mut normalized);
+    crate::inference_profiles::sync_top_level_from_main(&mut normalized);
+    if let Ok(json) = serde_json::to_string_pretty(&normalized) {
         let _ = atomic_write(&path, json.as_bytes());
     }
 }
@@ -384,6 +416,104 @@ pub fn load_tui_api_key() -> Option<String> {
     }
 
     file_api_key()
+}
+
+/// Per-provider API key (Phase 3). Falls back to legacy workshop key when provider matches main.
+pub fn load_provider_api_key(provider: &str) -> Option<String> {
+    let provider = provider.trim().to_ascii_lowercase();
+    if provider.is_empty() {
+        return None;
+    }
+    if provider == "ollama" || provider == "local" || provider == "lmstudio" || provider == "lm-studio" {
+        return None;
+    }
+
+    if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
+        if let Ok(value) = entry.get_password() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    if let Some(value) = file_provider_api_key(&provider) {
+        return Some(value);
+    }
+
+    let defaults = load_tui_defaults();
+    let main_provider = crate::resolve_llm_provider(defaults.provider.as_deref())
+        .trim()
+        .to_ascii_lowercase();
+    if provider == main_provider {
+        return load_tui_api_key();
+    }
+
+    provider_api_key_from_env(&provider)
+}
+
+pub fn provider_api_key_configured(provider: &str) -> bool {
+    load_provider_api_key(provider).is_some()
+}
+
+pub fn save_provider_api_key(provider: &str, api_key: Option<&str>) {
+    let provider = provider.trim().to_ascii_lowercase();
+    if provider.is_empty() {
+        return;
+    }
+    let path = provider_api_key_secret_path(&provider);
+    match api_key.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => {
+            let mut persisted = false;
+            if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
+                persisted = entry.set_password(value).is_ok();
+            }
+            if persisted {
+                let _ = std::fs::remove_file(&path);
+            } else {
+                let _ = atomic_write(&path, value.as_bytes());
+            }
+        }
+        None => {
+            if let Ok(entry) = provider_api_key_keyring_entry(&provider) {
+                let _ = entry.delete_password();
+            }
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn provider_api_key_from_env(provider: &str) -> Option<String> {
+    let normalized = provider.trim().to_ascii_uppercase().replace('-', "_");
+    for key in [
+        format!("MEDOUSA_{normalized}_API_KEY"),
+        format!("STASIS_{normalized}_API_KEY"),
+    ] {
+        if let Ok(value) = std::env::var(&key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    let canonical = match provider {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "google" | "gemini" | "google-gemini" => "GEMINI_API_KEY",
+        "groq" => "GROQ_API_KEY",
+        "xai" => "XAI_API_KEY",
+        "mistral" => "MISTRAL_API_KEY",
+        "cohere" => "COHERE_API_KEY",
+        "perplexity" => "PERPLEXITY_API_KEY",
+        "together" => "TOGETHER_API_KEY",
+        "fireworks" => "FIREWORKS_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
+        "deepseek" => "DEEPSEEK_API_KEY",
+        _ => return None,
+    };
+    std::env::var(canonical)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 pub fn save_tui_api_key(api_key: Option<&str>) {

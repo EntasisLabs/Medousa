@@ -404,6 +404,7 @@ pub async fn wizard_apply_screen1(
                 favorite_models: existing.favorite_models,
                 active_voice_id: existing.active_voice_id,
                 custom_voice_presets: existing.custom_voice_presets,
+                inference_profiles: existing.inference_profiles,
             };
         }
     }

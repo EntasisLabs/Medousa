@@ -63,41 +63,7 @@ impl TurnMediaVisionPlan {
 }
 
 pub fn supports_vision(provider: &str, model: &str) -> bool {
-    let provider = provider.trim().to_ascii_lowercase();
-    let model = model.trim().to_ascii_lowercase();
-    if model.is_empty() {
-        return false;
-    }
-
-    if model.contains("vision") || model.contains("llava") || model.contains("bakllava") {
-        return true;
-    }
-
-    match provider.as_str() {
-        "openai" | "azure-openai" | "azure_openai" => {
-            model.starts_with("gpt-4o")
-                || model.starts_with("gpt-4.1")
-                || model.starts_with("gpt-4-turbo")
-                || model.starts_with("gpt-5")
-                || model.contains("vision")
-        }
-        "anthropic" => {
-            model.contains("claude-3")
-                || model.contains("claude-4")
-                || model.contains("claude-opus")
-                || model.contains("claude-sonnet")
-                || model.contains("claude-haiku")
-        }
-        "google" | "gemini" | "google-gemini" => model.contains("gemini"),
-        "groq" => model.contains("vision"),
-        "ollama" | "local" | "lmstudio" | "lm-studio" => {
-            model.contains("llava")
-                || model.contains("vision")
-                || model.contains("moondream")
-                || model.contains("minicpm-v")
-        }
-        _ => false,
-    }
+    crate::model_capability_registry::registry().supports_vision(provider, model)
 }
 
 pub fn plan_turn_media(
@@ -184,6 +150,11 @@ mod tests {
     fn anthropic_vision_models_detected() {
         assert!(supports_vision("anthropic", "claude-3-5-sonnet-20241022"));
         assert!(!supports_vision("anthropic", "claude-2.1"));
+    }
+
+    #[test]
+    fn openrouter_gpt4o_mini_detected() {
+        assert!(supports_vision("openrouter", "openai/gpt-4o-mini"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ pub mod recurring;
 pub mod runtime;
 pub mod session;
 pub mod sse;
+pub mod stt;
 pub mod types;
 pub mod vault;
 pub mod workspace_card;

@@ -793,6 +793,9 @@ async fn main() -> Result<()> {
         app = app.merge(pairing_router);
     }
     app = app.merge(medousa::local_inference_handlers::routes());
+    app = app.merge(medousa::model_capability_registry::handlers::routes());
+    app = app.merge(medousa::inference_profiles_handlers::routes());
+    app = app.merge(medousa::stt_handlers::routes());
     let _mdns_advertiser = mdns_advertiser;
 
     let dashboard_service = Arc::new(RuntimeDashboardQueryService::from_runtime_composition(
@@ -814,6 +817,26 @@ async fn main() -> Result<()> {
             shutdown_rx,
         )
         .await;
+    });
+
+    tokio::spawn(async {
+        let registry = medousa::model_capability_registry::registry();
+        let providers = medousa::model_capability_registry::default_refresh_providers();
+        if registry.any_stale(&providers) {
+            let result = registry.refresh(None).await;
+            if !result.refreshed.is_empty() {
+                eprintln!(
+                    "medousa-daemon: model catalog refreshed providers={:?}",
+                    result.refreshed
+                );
+            }
+            for failure in result.failures {
+                eprintln!(
+                    "medousa-daemon: model catalog refresh failed provider={} err={}",
+                    failure.provider, failure.message
+                );
+            }
+        }
     });
 
     println!("medousa-daemon listening on http://{addr}");
@@ -1072,20 +1095,21 @@ async fn stats(
 async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsResponse> {
     let saved = medousa::session::load_tui_defaults();
     let product = medousa::load_product_config();
+    let main = medousa::inference_profiles::main_target(&saved);
     let provider = saved
         .provider
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| medousa::resolve_llm_provider(None));
+        .unwrap_or(main.provider);
     let model = saved
         .model
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| medousa::resolve_llm_model(None));
+        .unwrap_or(main.model);
     let response_depth_mode = saved
         .response_depth_mode
         .as_deref()
@@ -1127,6 +1151,8 @@ async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsRespons
         work_card_wipe_after_days: retention.wipe_after_days,
         active_profile_id,
         active_profile_display_name,
+        catalog_freshness: Some(medousa::model_capability_registry::registry().catalog_freshness()),
+        inference_profiles: saved.inference_profiles.clone(),
     })
 }
 
@@ -4630,8 +4656,9 @@ impl AgentStreamSink for IngestAgentStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
+        let failure = medousa::turn_failure::TurnFailure::from_debug(&message);
         let latency_ms = self.delivery_started.elapsed().as_millis() as u64;
-        let user_message = format!("Sorry — {message}");
+        let user_message = format!("Sorry — {}", failure.operator_message);
         let _ = channel_delivery::dispatch_channel_message(
             &self.dispatch_client,
             &self.delivery_target,
@@ -4641,7 +4668,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         mark_job_delivery_success(
             &self.job_id,
             latency_ms,
-            Some(message.clone()),
+            Some(failure.debug_message.clone()),
             &self.delivery_records,
             &self.last_delivery_at,
             &self.last_delivery_latency_ms,
@@ -4651,7 +4678,10 @@ impl AgentStreamSink for IngestAgentStreamSink {
 
         publish_interactive_turn_event(
             &self.stream_tx,
-            medousa::interactive_turn_runtime::error_stream_event(&self.stream_id, &message),
+            medousa::interactive_turn_runtime::error_stream_event_from_failure(
+                &self.stream_id,
+                &failure,
+            ),
         );
     }
 

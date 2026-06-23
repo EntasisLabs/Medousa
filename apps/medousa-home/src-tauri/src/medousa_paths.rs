@@ -31,6 +31,37 @@ pub struct VoicePresetDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+pub struct InferenceTargetDto {
+    pub provider: String,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InferenceProfileDto {
+    pub provider: String,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub fallbacks: Vec<InferenceTargetDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InferenceProfilesDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main: Option<InferenceProfileDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<InferenceProfileDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt: Option<InferenceProfileDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TuiDefaultsSummary {
     pub provider: Option<String>,
     pub model: Option<String>,
@@ -88,6 +119,7 @@ pub struct TuiDefaultsDto {
     pub favorite_models: Option<Vec<FavoriteModelDto>>,
     pub active_voice_id: Option<String>,
     pub custom_voice_presets: Option<Vec<VoicePresetDto>>,
+    pub inference_profiles: Option<InferenceProfilesDto>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -178,6 +210,8 @@ struct TuiDefaultsFile {
     active_voice_id: Option<String>,
     #[serde(default)]
     custom_voice_presets: Option<Vec<VoicePresetDto>>,
+    #[serde(default)]
+    inference_profiles: Option<InferenceProfilesDto>,
     #[serde(default)]
     command_usage_counts: Option<serde_json::Value>,
     #[serde(default)]
@@ -271,6 +305,7 @@ fn file_to_dto(file: &TuiDefaultsFile) -> TuiDefaultsDto {
         favorite_models: file.favorite_models.clone(),
         active_voice_id: file.active_voice_id.clone(),
         custom_voice_presets: file.custom_voice_presets.clone(),
+        inference_profiles: file.inference_profiles.clone(),
     }
 }
 
@@ -356,6 +391,7 @@ fn apply_dto_to_file(file: &mut TuiDefaultsFile, dto: &TuiDefaultsDto) {
         .filter(|value| !value.is_empty())
         .map(str::to_string);
     file.custom_voice_presets = normalize_voice_presets(dto.custom_voice_presets.clone());
+    file.inference_profiles = dto.inference_profiles.clone();
     if dto.stage_routing.is_some() {
         file.stage_routing = dto.stage_routing.clone();
     }

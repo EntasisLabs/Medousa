@@ -138,9 +138,9 @@ impl InteractiveTurnStreamSink {
 
         publish(
             &self.stream_tx,
-            interactive_turn_runtime::error_stream_event(
+            interactive_turn_runtime::error_stream_event_from_failure(
                 &self.turn_id,
-                "interactive turn cancelled",
+                &crate::turn_failure::TurnFailure::cancelled(),
             ),
         );
 
@@ -437,42 +437,20 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
-        let assistant_turn = self
-            .parts
-            .lock()
-            .map(|mut parts| {
-                parts.finalize_assistant_turn(
-                    message.clone(),
-                    vec![],
-                    Some("error".to_string()),
-                )
-            })
-            .unwrap_or_else(|_| {
-                crate::turn_parts::conversation_turn_from_parts(
-                    "assistant",
-                    message.clone(),
-                    vec![],
-                    Some("error".to_string()),
-                    vec![crate::turn_parts::TurnPart::Text {
-                        markdown: message.clone(),
-                    }],
-                )
-            });
-        append_turn_with_scratch(
-            &self.session_id,
-            &assistant_turn,
-            self.take_pending_scratch().as_ref(),
-        );
+        let failure = crate::turn_failure::TurnFailure::from_debug(&message);
 
-        self.publish_tracked(interactive_turn_runtime::error_stream_event(
+        // Do not persist raw provider/runtime errors as assistant transcript turns.
+        self.publish_tracked(interactive_turn_runtime::error_stream_event_from_failure(
             &self.turn_id,
-            &message,
+            &failure,
         ))
         .await;
-        self.sync_ask_job_failed(message.clone()).await;
+        self.sync_ask_job_failed(failure.debug_message.clone()).await;
 
         if let Some(delivery) = &self.delivery {
-            delivery.mark_complete(Some(message)).await;
+            delivery
+                .mark_complete(Some(failure.operator_message.clone()))
+                .await;
         }
     }
 
@@ -719,12 +697,29 @@ async fn run_agent_turn_inner(
         }
     }
 
+    let saved_defaults = crate::session::load_tui_defaults();
     let settings = runtime_settings_for_interactive_turn(backend, &request);
+    let vision_target = if has_media {
+        match crate::inference_profiles::vision_target(&saved_defaults) {
+            Some(target) => target,
+            None => {
+                sink.agent_error(
+                    1,
+                    "Configure a vision model in Settings → Models before sending images."
+                        .to_string(),
+                )
+                .await;
+                return;
+            }
+        }
+    } else {
+        crate::inference_profiles::main_target(&saved_defaults)
+    };
     let vision_plan = match media_vision::plan_turn_media(
         &session_id,
         &request.media_refs,
-        &settings.provider,
-        &settings.model,
+        &vision_target.provider,
+        &vision_target.model,
     ) {
         Ok(plan) => plan,
         Err(err) => {
@@ -740,7 +735,7 @@ async fn run_agent_turn_inner(
         &vision_plan.merge_options,
     );
 
-    if let Some(notice) = vision_plan.stream_notice(&settings.provider, &settings.model) {
+    if let Some(notice) = vision_plan.stream_notice(&vision_target.provider, &vision_target.model) {
         sink.notice(notice).await;
     }
 
@@ -891,6 +886,11 @@ async fn run_agent_turn_inner(
         scheduled_tool_allowlist,
         media_refs: request.media_refs.clone(),
         vision_plan,
+        inference_profile_kind: if has_media {
+            crate::inference_profiles::InferenceProfileKind::Vision
+        } else {
+            crate::inference_profiles::InferenceProfileKind::Main
+        },
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {

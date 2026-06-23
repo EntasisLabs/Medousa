@@ -3,6 +3,11 @@
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import SettingsInferenceProfile from "$lib/components/settings/SettingsInferenceProfile.svelte";
   import type { ProviderCatalogEntry } from "$lib/types/providers";
+  import {
+    syncFlatFieldsFromProfiles,
+    visionProfileReady,
+    type InferenceProfiles,
+  } from "$lib/types/inferenceProfiles";
   import { defaultSttModel } from "$lib/types/workshopDefaults";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
@@ -24,6 +29,10 @@
   let sttReason = $state<string | null>(null);
   let providerStatus = $state<string | null>(null);
   let sttProviderStatus = $state<string | null>(null);
+  let visionProviderStatus = $state<string | null>(null);
+
+  const visionProfile = $derived(workshopDefaults.draft.inferenceProfiles?.vision ?? null);
+  const visionStatusOk = $derived(visionProfileReady(workshopDefaults.draft.inferenceProfiles));
 
   const readOnly = $derived(mobile && isTauriMobilePlatform());
 
@@ -69,23 +78,63 @@
     }
   }
 
+  function mergeProfiles(patch: Partial<InferenceProfiles>) {
+    return {
+      main: workshopDefaults.draft.inferenceProfiles?.main ?? null,
+      vision: workshopDefaults.draft.inferenceProfiles?.vision ?? null,
+      stt: workshopDefaults.draft.inferenceProfiles?.stt ?? null,
+      ...patch,
+    };
+  }
+
   function onChatProviderChange(id: string, entry: ProviderCatalogEntry) {
-    workshopDefaults.draft = {
+    workshopDefaults.draft = syncFlatFieldsFromProfiles({
       ...workshopDefaults.draft,
       provider: id,
       model: entry.defaultModel,
       baseUrl: entry.defaultBaseUrl,
-    };
+      inferenceProfiles: mergeProfiles({
+        main: {
+          provider: id,
+          model: entry.defaultModel,
+          baseUrl: entry.defaultBaseUrl,
+          fallbacks: workshopDefaults.draft.inferenceProfiles?.main?.fallbacks ?? [],
+        },
+      }),
+    });
     providerStatus = null;
   }
 
-  function onSttProviderChange(id: string, entry: ProviderCatalogEntry) {
+  function onVisionProviderChange(id: string, entry: ProviderCatalogEntry) {
     workshopDefaults.draft = {
+      ...workshopDefaults.draft,
+      inferenceProfiles: mergeProfiles({
+        vision: {
+          provider: id,
+          model: entry.defaultModel,
+          baseUrl: entry.defaultBaseUrl,
+          fallbacks: workshopDefaults.draft.inferenceProfiles?.vision?.fallbacks ?? [],
+        },
+      }),
+    };
+    visionProviderStatus = null;
+  }
+
+  function onSttProviderChange(id: string, entry: ProviderCatalogEntry) {
+    workshopDefaults.draft = syncFlatFieldsFromProfiles({
       ...workshopDefaults.draft,
       sttProvider: id,
       sttModel: defaultSttModel(id),
       sttBaseUrl: entry.defaultBaseUrl,
-    };
+      inferenceProfiles: mergeProfiles({
+        stt: {
+          provider: id,
+          model: defaultSttModel(id),
+          baseUrl: entry.defaultBaseUrl,
+          fallbacks: workshopDefaults.draft.inferenceProfiles?.stt?.fallbacks ?? [],
+        },
+      }),
+    });
     sttProviderStatus = null;
     void refreshSttStatus();
   }
@@ -93,11 +142,19 @@
   const favorites = $derived(workshopDefaults.favoriteModels());
 
   function applyFavorite(provider: string, model: string) {
-    workshopDefaults.draft = {
+    workshopDefaults.draft = syncFlatFieldsFromProfiles({
       ...workshopDefaults.draft,
       provider,
       model,
-    };
+      inferenceProfiles: mergeProfiles({
+        main: {
+          provider,
+          model,
+          baseUrl: workshopDefaults.draft.baseUrl ?? null,
+          fallbacks: workshopDefaults.draft.inferenceProfiles?.main?.fallbacks ?? [],
+        },
+      }),
+    });
     providerStatus = null;
   }
 
@@ -138,10 +195,32 @@
       disabled={readOnly || workshopDefaults.saving}
       onProviderChange={onChatProviderChange}
       onModelChange={(value) =>
-        (workshopDefaults.draft = { ...workshopDefaults.draft, model: value })}
+        (workshopDefaults.draft = syncFlatFieldsFromProfiles({
+          ...workshopDefaults.draft,
+          model: value,
+          inferenceProfiles: mergeProfiles({
+            main: {
+              provider: workshopDefaults.draft.provider ?? "deepseek",
+              model: value,
+              baseUrl: workshopDefaults.draft.baseUrl ?? null,
+              fallbacks: workshopDefaults.draft.inferenceProfiles?.main?.fallbacks ?? [],
+            },
+          }),
+        }))}
       onApiKeyChange={(value) => (workshopDefaults.apiKeyDraft = value)}
       onBaseUrlChange={(value) =>
-        (workshopDefaults.draft = { ...workshopDefaults.draft, baseUrl: value })}
+        (workshopDefaults.draft = syncFlatFieldsFromProfiles({
+          ...workshopDefaults.draft,
+          baseUrl: value,
+          inferenceProfiles: mergeProfiles({
+            main: {
+              provider: workshopDefaults.draft.provider ?? "deepseek",
+              model: workshopDefaults.draft.model ?? "",
+              baseUrl: value,
+              fallbacks: workshopDefaults.draft.inferenceProfiles?.main?.fallbacks ?? [],
+            },
+          }),
+        }))}
       onStatus={(message, ok) => {
         providerStatus = message;
         if (ok === true) providerStatus = message;
@@ -195,6 +274,53 @@
     {/if}
 
     <SettingsInferenceProfile
+      title="Vision model"
+      subtitle="Required for image attachments — separate from chat model."
+      {catalog}
+      providerId={visionProfile?.provider ?? "openai"}
+      model={visionProfile?.model ?? "gpt-4o-mini"}
+      baseUrl={visionProfile?.baseUrl ?? ""}
+      quickProviderIds={chatQuickIds}
+      excludeProviderIds={["medousa-local"]}
+      statusOk={visionStatusOk}
+      statusLabel={visionStatusOk ? "Ready" : "Needs setup"}
+      statusDetail={visionStatusOk
+        ? "Image attachments will use this model."
+        : "Pick a vision-capable model before sending images in chat."}
+      showSuggestedModels
+      disabled={readOnly || workshopDefaults.saving}
+      onProviderChange={onVisionProviderChange}
+      onModelChange={(value) =>
+        (workshopDefaults.draft = {
+          ...workshopDefaults.draft,
+          inferenceProfiles: mergeProfiles({
+            vision: {
+              provider: visionProfile?.provider ?? "openai",
+              model: value,
+              baseUrl: visionProfile?.baseUrl ?? null,
+              fallbacks: visionProfile?.fallbacks ?? [],
+            },
+          }),
+        })}
+      onBaseUrlChange={(value) =>
+        (workshopDefaults.draft = {
+          ...workshopDefaults.draft,
+          inferenceProfiles: mergeProfiles({
+            vision: {
+              provider: visionProfile?.provider ?? "openai",
+              model: visionProfile?.model ?? "gpt-4o-mini",
+              baseUrl: value,
+              fallbacks: visionProfile?.fallbacks ?? [],
+            },
+          }),
+        })}
+      onStatus={(message, ok) => {
+        visionProviderStatus = message;
+        if (ok === true) visionProviderStatus = message;
+      }}
+    />
+
+    <SettingsInferenceProfile
       title="Dictation"
       subtitle="Transcribes the mic button — does not change who answers in chat."
       {catalog}
@@ -213,10 +339,32 @@
       disabled={readOnly || workshopDefaults.saving}
       onProviderChange={onSttProviderChange}
       onModelChange={(value) =>
-        (workshopDefaults.draft = { ...workshopDefaults.draft, sttModel: value })}
+        (workshopDefaults.draft = syncFlatFieldsFromProfiles({
+          ...workshopDefaults.draft,
+          sttModel: value,
+          inferenceProfiles: mergeProfiles({
+            stt: {
+              provider: workshopDefaults.draft.sttProvider ?? "openai",
+              model: value,
+              baseUrl: workshopDefaults.draft.sttBaseUrl ?? null,
+              fallbacks: workshopDefaults.draft.inferenceProfiles?.stt?.fallbacks ?? [],
+            },
+          }),
+        }))}
       onApiKeyChange={(value) => (workshopDefaults.sttApiKeyDraft = value)}
       onBaseUrlChange={(value) =>
-        (workshopDefaults.draft = { ...workshopDefaults.draft, sttBaseUrl: value })}
+        (workshopDefaults.draft = syncFlatFieldsFromProfiles({
+          ...workshopDefaults.draft,
+          sttBaseUrl: value,
+          inferenceProfiles: mergeProfiles({
+            stt: {
+              provider: workshopDefaults.draft.sttProvider ?? "openai",
+              model: workshopDefaults.draft.sttModel ?? defaultSttModel(workshopDefaults.draft.sttProvider ?? "openai"),
+              baseUrl: value,
+              fallbacks: workshopDefaults.draft.inferenceProfiles?.stt?.fallbacks ?? [],
+            },
+          }),
+        }))}
       onStatus={(message, ok) => {
         sttProviderStatus = message;
         if (ok === true) {
@@ -229,6 +377,9 @@
 
   {#if providerStatus}
     <p class="settings-inline-status">{providerStatus}</p>
+  {/if}
+  {#if visionProviderStatus}
+    <p class="settings-inline-status">{visionProviderStatus}</p>
   {/if}
   {#if sttProviderStatus}
     <p class="settings-inline-status">{sttProviderStatus}</p>

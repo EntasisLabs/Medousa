@@ -15,6 +15,7 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket } from "$lib/daemon";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
+  import { visionProfileReady } from "$lib/types/inferenceProfiles";
   import {
     parseChatSlashInput,
     runSlashCommand,
@@ -71,6 +72,12 @@
     const prompt = chat.draft.trim();
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
+    if (hasAttachments && !visionProfileReady(runtime.inferenceProfiles)) {
+      chat.setError(
+        "Configure a vision model on the host workshop (Settings → Models) before sending images.",
+      );
+      return;
+    }
     haptic("medium");
 
     const askPrompt = parseDaemonAskPrompt(prompt);

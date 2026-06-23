@@ -12,3 +12,4 @@ adapters/medousa-whatsapp/.cargo-target/
 target-local/
 .tmp/
 adapters/**/target/
+*.DS_Store

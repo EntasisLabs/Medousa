@@ -436,6 +436,23 @@ pub enum TurnPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         work_id: Option<String>,
     },
+    /// User-attached file stored under medousa/media/ (reference only — no inline bytes).
+    UserMedia {
+        media_id: String,
+        mime: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        byte_size: Option<u64>,
+    },
+    /// Legacy/tool artifact pointer (same index as artifact_store).
+    AttachmentRef {
+        artifact_id: String,
+        mime: String,
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        byte_size: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -703,6 +720,10 @@ pub struct RuntimeDefaultsResponse {
     pub active_profile_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub active_profile_display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_freshness: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_profiles: Option<crate::medousa_paths::InferenceProfilesDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

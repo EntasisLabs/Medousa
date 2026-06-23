@@ -130,7 +130,8 @@ impl AgentStreamSink for CapturingAgentSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
-        *self.output.lock().await = Some(format!("recurring agent turn failed: {message}"));
+        let failure = crate::turn_failure::TurnFailure::from_debug(&message);
+        *self.output.lock().await = Some(failure.operator_message);
     }
 
     async fn notice(&self, _message: String) {}

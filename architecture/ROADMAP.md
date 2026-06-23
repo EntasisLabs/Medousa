@@ -48,17 +48,25 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) 
 
 ---
 
-## 2. Local attachments (P5 — active)
+## 2. Inference stack + attachments (active)
 
-**Goal:** Attach files in Home chat; bytes on disk under `medousa/media/`; references in `parts[]`; localhost upload only.
+**Goal:** Daemon-owned model catalog, explicit main/vision/STT profiles with cross-provider fallbacks, clean turn failures, and local attachments.
 
-Full plan: [media-and-attachments-plan.md](media-and-attachments-plan.md)
+| Plan | Topic |
+|------|--------|
+| [inference-profiles-and-model-catalog-plan.md](inference-profiles-and-model-catalog-plan.md) | Catalog registry, inference profiles, API keys, fallbacks, error UX |
+| [media-and-attachments-plan.md](media-and-attachments-plan.md) | Local upload, text extract, vision routing (P5) |
 
 | Slice | Status |
 |-------|--------|
+| Phase 0 — turn failure hygiene | ✅ |
+| Phase 1 — model capability registry | ✅ |
+| Phase 2 — inference profiles (main / vision / STT) | ✅ |
+| Phase 3 — per-provider keys + fallback router | ✅ |
+| Phase 4 — STT on daemon | ✅ |
 | P5a envelope + media API + composer UI | ⬜ |
 | P5a text extract (PDF/xlsx/csv) | ⬜ |
-| P5b vision for images | ⬜ deferred |
+| P5b vision (uses **vision** profile + registry) | 🟡 wired — polish in Phase 5 |
 
 ---
 

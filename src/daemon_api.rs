@@ -800,6 +800,12 @@ pub struct RuntimeDefaultsResponse {
     /// Human label for `active_profile_id`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub active_profile_display_name: String,
+    /// Model capability catalog freshness (registry TTL + per-provider snapshots).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_freshness: Option<crate::model_capability_registry::types::CatalogFreshnessResponse>,
+    /// Explicit main / vision / STT inference profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_profiles: Option<crate::inference_profiles::InferenceProfilesConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

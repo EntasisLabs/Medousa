@@ -1,4 +1,4 @@
-/** Composer voice transcription via provider Whisper API (Tauri backend). */
+/** Composer voice transcription via daemon STT profile (Tauri → workshop daemon). */
 
 import { isTauri } from "$lib/window";
 

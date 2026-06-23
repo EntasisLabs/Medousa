@@ -143,7 +143,10 @@ pub fn build_prior_messages(
     cold_window_turns: usize,
     limits: PriorMessageLimits,
 ) -> PriorMessageBuild {
-    let mut selected: Vec<&ConversationTurn> = turns.iter().collect();
+    let mut selected: Vec<&ConversationTurn> = turns
+        .iter()
+        .filter(|turn| !crate::turn_failure::is_error_turn_excluded_from_model_context(turn))
+        .collect();
 
     if current_user_persisted {
         if let Some(last) = selected.last() {
@@ -408,13 +411,16 @@ pub fn build_prompt_pipeline_for_turn(
             )
         }
     };
+    build_prompt_pipeline_for_target(&provider, &model, base_url.as_deref())
+}
 
+pub fn build_prompt_pipeline_for_target(
+    provider: &str,
+    model: &str,
+    base_url: Option<&str>,
+) -> PromptExecutionPipeline {
     let chat_client: Arc<dyn AiChatClient> = Arc::new(
-        GenaiChatClient::from_provider_model_with_base_url(
-            Some(&provider),
-            &model,
-            base_url.as_deref(),
-        ),
+        GenaiChatClient::from_provider_model_with_base_url(Some(provider), model, base_url),
     );
     PromptExecutionPipeline::new(chat_client)
 }
@@ -427,7 +433,10 @@ pub fn build_intent_classifier_recent_context(
     max_chars: usize,
     limits: IntentContextLimits,
 ) -> String {
-    let mut selected: Vec<&ConversationTurn> = turns.iter().collect();
+    let mut selected: Vec<&ConversationTurn> = turns
+        .iter()
+        .filter(|turn| !crate::turn_failure::is_error_turn_excluded_from_model_context(turn))
+        .collect();
 
     if current_user_persisted {
         if let Some(last) = selected.last() {

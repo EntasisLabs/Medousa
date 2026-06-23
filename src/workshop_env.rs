@@ -1,4 +1,4 @@
-use crate::session::{load_tui_api_key, load_tui_defaults};
+use crate::session::{load_tui_defaults, load_provider_api_key};
 use crate::tui::settings::parse_env_overrides;
 use crate::resolve_llm_provider;
 
@@ -8,7 +8,21 @@ use crate::resolve_llm_provider;
 /// to provider env vars (`DEEPSEEK_API_KEY`, `STASIS_DEEPSEEK_API_KEY`, etc.).
 pub fn apply_workshop_llm_env() {
     let defaults = load_tui_defaults();
-    if let Some(raw) = defaults.env_overrides.as_deref() {
+    apply_env_overrides(defaults.env_overrides.as_deref());
+
+    let provider = resolve_llm_provider(defaults.provider.as_deref());
+    apply_provider_llm_env(&provider);
+}
+
+/// Inject only the API key for the active inference attempt's provider.
+pub fn apply_provider_llm_env(provider: &str) {
+    if let Some(key) = load_provider_api_key(provider) {
+        inject_provider_api_key_env(provider, &key);
+    }
+}
+
+fn apply_env_overrides(raw: Option<&str>) {
+    if let Some(raw) = raw {
         for (key, value) in parse_env_overrides(raw) {
             if value.is_empty() {
                 unsafe { std::env::remove_var(&key) };
@@ -17,14 +31,9 @@ pub fn apply_workshop_llm_env() {
             }
         }
     }
-
-    let provider = resolve_llm_provider(defaults.provider.as_deref());
-    if let Some(key) = load_tui_api_key() {
-        inject_provider_api_key_env(&provider, &key);
-    }
 }
 
-fn inject_provider_api_key_env(provider: &str, key: &str) {
+pub(crate) fn inject_provider_api_key_env(provider: &str, key: &str) {
     let normalized = provider.trim().to_ascii_uppercase().replace('-', "_");
     unsafe {
         std::env::set_var(format!("STASIS_{normalized}_API_KEY"), key);

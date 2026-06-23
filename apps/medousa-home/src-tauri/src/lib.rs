@@ -13,7 +13,6 @@ mod pairing_client;
 mod workshop_registry;
 mod workshop_transport;
 mod capabilities;
-mod composer_stt;
 mod mcp_gateway;
 mod provider_catalog;
 mod providers;
@@ -248,8 +247,8 @@ pub fn run() {
             daemon::local_inference::local_inference_remove_model,
             daemon::local_inference::local_inference_stream_download,
             daemon::local_inference::local_inference_stream_download_stop,
-            composer_stt::composer_stt_status,
-            composer_stt::composer_stt_transcribe,
+            daemon::stt::composer_stt_status,
+            daemon::stt::composer_stt_transcribe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

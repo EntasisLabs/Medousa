@@ -77,6 +77,10 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
         ),
         "api_key" => read_secret_value(API_KEY_SERVICE, API_KEY_ACCOUNT, "api_key"),
         "stt_api_key" => read_secret_value(STT_API_KEY_SERVICE, STT_API_KEY_ACCOUNT, "stt_api_key"),
+        other if other.starts_with("api_key_") => {
+            let provider = other.trim_start_matches("api_key_");
+            read_secret_value("medousa.providers", provider, other)
+        }
         other => return Err(format!("unknown secret_id '{other}'")),
     })
 }
@@ -135,6 +139,10 @@ pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
         ),
         "api_key" => load_secret(API_KEY_SERVICE, API_KEY_ACCOUNT, "api_key"),
         "stt_api_key" => load_secret(STT_API_KEY_SERVICE, STT_API_KEY_ACCOUNT, "stt_api_key"),
+        other if other.starts_with("api_key_") => {
+            let provider = other.trim_start_matches("api_key_");
+            load_secret("medousa.providers", provider, other)
+        }
         other => return Err(format!("unknown secret_id '{other}'")),
     })
 }
@@ -177,6 +185,10 @@ pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String>
             "stt_api_key",
             value.as_deref(),
         ),
+        other if other.starts_with("api_key_") => {
+            let provider = other.trim_start_matches("api_key_");
+            save_secret_value("medousa.providers", provider, other, value.as_deref())
+        }
         other => Err(format!("unknown secret_id '{other}'")),
     }
 }
