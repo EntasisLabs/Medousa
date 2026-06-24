@@ -1750,6 +1750,38 @@ pub struct VaultTagsListResponse {
     pub count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultRootView {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+    pub is_default: bool,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultRootsResponse {
+    pub active_root_id: String,
+    pub roots: Vec<VaultRootView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSetActiveRootRequest {
+    pub root_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultAddRootRequest {
+    pub label: String,
+    pub path: String,
+    #[serde(default)]
+    pub id: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VaultBacklinksQuery {
     pub path: Option<String>,

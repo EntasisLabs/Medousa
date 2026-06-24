@@ -6,11 +6,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 
 use crate::daemon_api::{
-    VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultNotesQuery, VaultPutQuery, VaultSearchQuery, VaultSearchResponse,
+    VaultBacklinksQuery, VaultBacklinksResponse, VaultAddRootRequest, VaultDeleteResponse,
+    VaultNoteContentResponse, VaultNotesListResponse, VaultNotesQuery, VaultPutQuery,
+    VaultRootsResponse, VaultSearchQuery, VaultSearchResponse, VaultSetActiveRootRequest,
     VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse,
 };
 use crate::vault::VaultService;
+use crate::vault::roots::{add_vault_root, list_vault_root_views, set_active_vault_root};
 
 fn map_vault_error(err: anyhow::Error) -> (StatusCode, String) {
     let message = err.to_string();
@@ -120,4 +122,28 @@ pub async fn get_vault_backlinks(
     VaultService::backlinks(note_path)
         .map(Json)
         .map_err(map_vault_error)
+}
+
+pub async fn list_vault_roots() -> Json<VaultRootsResponse> {
+    Json(list_vault_root_views())
+}
+
+pub async fn set_vault_active_root(
+    Json(request): Json<VaultSetActiveRootRequest>,
+) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
+    set_active_vault_root(&request.root_id)
+        .map(Json)
+        .map_err(map_vault_error)
+}
+
+pub async fn add_vault_root_handler(
+    Json(request): Json<VaultAddRootRequest>,
+) -> Result<Json<VaultRootsResponse>, (StatusCode, String)> {
+    add_vault_root(
+        &request.label,
+        &request.path,
+        request.id.as_deref(),
+    )
+    .map(Json)
+    .map_err(map_vault_error)
 }

@@ -4,9 +4,11 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-/// Default user vault root: `{data_dir}/vault/`.
+use crate::vault::roots::active_vault_root;
+
+/// Active user vault root (multi-vault aware).
 pub fn user_vault_root() -> PathBuf {
-    crate::paths::user_vault_root()
+    active_vault_root()
 }
 
 /// Optional project overlay: `{root}/.medousa/vault/`.

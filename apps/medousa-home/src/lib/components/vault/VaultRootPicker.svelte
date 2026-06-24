@@ -1,0 +1,178 @@
+<script lang="ts">
+  import { ChevronDown, FolderOpen, Plus } from "@lucide/svelte";
+  import { vault } from "$lib/stores/vault.svelte";
+  import { pickExternalFolder } from "$lib/utils/externalDeskApi";
+  import { isTauri } from "$lib/window";
+
+  let menuOpen = $state(false);
+  let addBusy = $state(false);
+  let addError = $state<string | null>(null);
+  let labelDraft = $state("");
+  let pathDraft = $state("");
+
+  const activeRoot = $derived(vault.activeVaultRoot);
+  const canAddRoot = $derived(isTauri());
+
+  async function pickFolder() {
+    const path = await pickExternalFolder();
+    if (path) pathDraft = path;
+  }
+
+  async function submitAddRoot() {
+    const label = labelDraft.trim();
+    const path = pathDraft.trim();
+    if (!label || !path) {
+      addError = "Name and folder are required.";
+      return;
+    }
+    addBusy = true;
+    addError = null;
+    try {
+      await vault.registerVaultRoot(label, path);
+      labelDraft = "";
+      pathDraft = "";
+      vault.closeAddVaultRootDialog();
+    } catch (err) {
+      addError = err instanceof Error ? err.message : String(err);
+    } finally {
+      addBusy = false;
+    }
+  }
+
+  async function selectRoot(rootId: string) {
+    menuOpen = false;
+    if (rootId === vault.activeVaultRootId) return;
+    try {
+      await vault.switchVaultRoot(rootId);
+    } catch {
+      // vault.error is set in store
+    }
+  }
+</script>
+
+<div class="px-3 pb-2 pt-2">
+  <div class="flex items-center gap-2">
+    <div class="relative min-w-0 flex-1">
+      <button
+        type="button"
+        class="input flex w-full items-center justify-between gap-2 py-1.5 text-left text-sm"
+        aria-haspopup="listbox"
+        aria-expanded={menuOpen}
+        disabled={vault.vaultRootsLoading}
+        onclick={() => {
+          menuOpen = !menuOpen;
+        }}
+      >
+        <span class="truncate">
+          {#if vault.vaultRootsLoading}
+            Loading vaults…
+          {:else}
+            {activeRoot?.label ?? "Personal"}
+          {/if}
+        </span>
+        <ChevronDown size={14} strokeWidth={2} class="shrink-0 opacity-70" />
+      </button>
+
+      {#if menuOpen}
+        <div
+          class="absolute left-0 right-0 z-20 mt-1 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+          role="listbox"
+          aria-label="Vault folders"
+        >
+          {#each vault.vaultRoots as root (root.id)}
+            <button
+              type="button"
+              role="option"
+              aria-selected={root.active}
+              class="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-surface-800/80 {root.active
+                ? 'bg-primary-500/10 text-primary-100'
+                : 'text-surface-100'}"
+              onclick={() => void selectRoot(root.id)}
+            >
+              <span class="font-medium">{root.label}</span>
+              <span class="workshop-faint mt-0.5 break-all font-mono text-[10px]">{root.path}</span>
+            </button>
+          {/each}
+          {#if canAddRoot}
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 border-t border-surface-500/40 px-3 py-2 text-left text-sm text-surface-200 hover:bg-surface-800/80"
+              onclick={() => {
+                menuOpen = false;
+                addError = null;
+                vault.openAddVaultRootDialog();
+              }}
+            >
+              <Plus size={14} strokeWidth={2} />
+              Add vault folder…
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
+  {#if vault.vaultRootsError}
+    <p class="mt-1 text-xs text-error-400">{vault.vaultRootsError}</p>
+  {/if}
+</div>
+
+{#if vault.addVaultRootOpen}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) vault.closeAddVaultRootDialog();
+    }}
+  >
+    <div class="card w-full max-w-md space-y-4 p-5 shadow-xl" role="dialog" aria-label="Add vault folder">
+      <header>
+        <h3 class="text-base font-semibold text-surface-50">Add vault folder</h3>
+        <p class="workshop-faint mt-1 text-sm">
+          Point this engine at another markdown folder. Switch vaults anytime from the library sidebar.
+        </p>
+      </header>
+      <label class="block space-y-1 text-sm">
+        <span class="text-surface-400">Name</span>
+        <input class="input w-full" placeholder="Work notes" bind:value={labelDraft} />
+      </label>
+      <div class="space-y-1">
+        <span class="text-sm text-surface-400">Folder</span>
+        <div class="flex gap-2">
+          <input
+            class="input min-w-0 flex-1 font-mono text-xs"
+            placeholder="/Users/you/WorkVault"
+            bind:value={pathDraft}
+          />
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface shrink-0"
+            onclick={() => void pickFolder()}
+          >
+            <FolderOpen size={14} strokeWidth={2} />
+            Choose
+          </button>
+        </div>
+      </div>
+      {#if addError}
+        <p class="text-sm text-error-400">{addError}</p>
+      {/if}
+      <div class="flex justify-end gap-2">
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={() => vault.closeAddVaultRootDialog()}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-filled-primary"
+          disabled={addBusy}
+          onclick={() => void submitAddRoot()}
+        >
+          {addBusy ? "Adding…" : "Add vault"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}

@@ -1,7 +1,10 @@
 /** Resolve vault note paths on disk (desktop Tauri). */
 
-import { getMedousaConfigPaths } from "$lib/config";
+import { listVaultRoots } from "$lib/daemon";
 import { isTauri } from "$lib/window";
+
+let cachedVaultRoot: { path: string; fetchedAt: number } | null = null;
+const CACHE_MS = 5_000;
 
 export async function resolveVaultNoteAbsolutePath(
   vaultRelativePath: string,
@@ -18,12 +21,29 @@ export async function resolveVaultNoteAbsolutePath(
 }
 
 export async function getVaultRootAbsolutePath(): Promise<string | null> {
+  if (!isTauri()) return null;
+  const now = Date.now();
+  if (cachedVaultRoot && now - cachedVaultRoot.fetchedAt < CACHE_MS) {
+    return cachedVaultRoot.path;
+  }
   try {
-    const paths = await getMedousaConfigPaths();
-    return `${paths.dataDir.replace(/\/+$/, "")}/vault`;
+    const response = await listVaultRoots();
+    const active =
+      response.roots.find((root) => root.id === response.activeRootId) ??
+      response.roots.find((root) => root.active) ??
+      response.roots[0];
+    const path = active?.path?.replace(/\/+$/, "") ?? null;
+    if (path) {
+      cachedVaultRoot = { path, fetchedAt: now };
+    }
+    return path;
   } catch {
     return null;
   }
+}
+
+export function invalidateVaultRootCache() {
+  cachedVaultRoot = null;
 }
 
 export async function localFilePreviewUrl(absolutePath: string): Promise<string | null> {

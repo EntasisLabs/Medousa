@@ -13,6 +13,7 @@
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
   import VaultNewGroupDialog from "./VaultNewGroupDialog.svelte";
   import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
+  import VaultRootPicker from "./VaultRootPicker.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
 
@@ -30,6 +31,7 @@
 
   onMount(() => {
     (async () => {
+      await vault.refreshVaultRoots();
       await vault.refreshNotes();
       if (vault.selectedPath) {
         await vault.openNote(vault.selectedPath);
@@ -129,6 +131,8 @@
         </div>
 
         {#if showVaultChrome}
+          <VaultRootPicker />
+
           <div class="flex flex-wrap gap-2 px-3 pt-2.5">
             <button
               type="button"

@@ -307,9 +307,27 @@ pub struct VaultBacklinksResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultTagsListResponse {
     pub tags: Vec<String>,
     pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultRootView {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+    pub is_default: bool,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultRootsResponse {
+    pub active_root_id: String,
+    pub roots: Vec<VaultRootView>,
 }
 
 // ── Workspace card detail ─────────────────────────────────────────────────────

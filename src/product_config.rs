@@ -231,12 +231,31 @@ fn default_digest_pinned_preferences() -> Vec<String> {
 pub struct VaultProductConfig {
     #[serde(default)]
     pub job_success_footer_enabled: bool,
+    #[serde(default = "default_vault_active_root_id")]
+    pub active_root_id: String,
+    #[serde(default)]
+    pub roots: Vec<VaultRootEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VaultRootEntry {
+    pub id: String,
+    pub label: String,
+    /// Absolute path, or null for `{data_dir}/vault`.
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+fn default_vault_active_root_id() -> String {
+    "personal".to_string()
 }
 
 impl Default for VaultProductConfig {
     fn default() -> Self {
         Self {
             job_success_footer_enabled: false,
+            active_root_id: default_vault_active_root_id(),
+            roots: Vec::new(),
         }
     }
 }

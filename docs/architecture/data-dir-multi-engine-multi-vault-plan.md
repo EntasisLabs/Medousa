@@ -1,6 +1,6 @@
 # Data directory, multi-engine, and multi-vault plan
 
-> **Status:** Active — Phase 2 shipped (2026-06-07); Phase 3 planned  
+> **Status:** Active — Phase 3 shipped (2026-06-07)  
 > **Audience:** Contributors, power users  
 > **Related:** [configuration-reference.md](../configuration-reference.md), [ADR-003 multi-workshop](./decisions/adr-003-multi-workshop-connections.md)
 
@@ -125,7 +125,7 @@ Extend `product_config.vault` (or `vaults.json` in data dir):
 |-------|----------|--------|
 | **1** | `MEDOUSA_DATA_DIR` + central paths + daemon spawn + doctor | **Shipped** (2026-06-07) |
 | **2** | Per-workshop `dataDir` + bind + multi-daemon spawn | **Shipped** (2026-06-07) |
-| **3a** | Vault roots registry + API | Planned |
-| **3b** | Home vault picker + remote vault path fix | Planned |
+| **3a** | Vault roots registry + API | **Shipped** (2026-06-07) |
+| **3b** | Home vault picker + remote vault path fix | **Shipped** (2026-06-07) |
 
 Phase 1 unblocks 2 and 3. Phase 2 and 3 can run in parallel after 1.

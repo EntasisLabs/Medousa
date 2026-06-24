@@ -4,6 +4,7 @@ pub mod job_footer;
 pub mod links;
 pub mod note;
 pub mod path;
+pub mod roots;
 pub mod search;
 pub mod semantic_tags;
 pub mod service;

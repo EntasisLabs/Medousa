@@ -50,6 +50,7 @@ import type {
   VaultBacklinksResponse,
   VaultNoteContentResponse,
   VaultNotesListResponse,
+  VaultRootsResponse,
   VaultTagsListResponse,
   VaultSearchResponse,
   VaultWriteResponse,
@@ -542,6 +543,22 @@ export async function getVaultBacklinks(
   path: string,
 ): Promise<VaultBacklinksResponse> {
   return invoke<VaultBacklinksResponse>("vault_backlinks", { path });
+}
+
+export async function listVaultRoots(): Promise<VaultRootsResponse> {
+  return invoke<VaultRootsResponse>("vault_list_roots");
+}
+
+export async function setActiveVaultRoot(rootId: string): Promise<VaultRootsResponse> {
+  return invoke<VaultRootsResponse>("vault_set_active_root", { rootId });
+}
+
+export async function addVaultRoot(
+  label: string,
+  path: string,
+  id?: string,
+): Promise<VaultRootsResponse> {
+  return invoke<VaultRootsResponse>("vault_add_root", { label, path, id });
 }
 
 export async function getWorkspaceCard(

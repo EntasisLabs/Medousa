@@ -54,6 +54,19 @@ export interface VaultTagsListResponse {
   count: number;
 }
 
+export interface VaultRootView {
+  id: string;
+  label: string;
+  path: string;
+  isDefault: boolean;
+  active: boolean;
+}
+
+export interface VaultRootsResponse {
+  activeRootId: string;
+  roots: VaultRootView[];
+}
+
 export interface VaultTreeNode {
   name: string;
   path: string | null;

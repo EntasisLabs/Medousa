@@ -1,6 +1,6 @@
 use crate::daemon::types::{
-    VaultBacklinksResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultSearchResponse,
-    VaultTagsListResponse, VaultWriteResponse,
+    VaultBacklinksResponse, VaultNoteContentResponse, VaultNotesListResponse, VaultRootsResponse,
+    VaultSearchResponse, VaultTagsListResponse, VaultWriteResponse,
 };
 use tauri::State;
 
@@ -157,4 +157,33 @@ pub async fn vault_backlinks(
         &[("path", path.trim().to_string())],
     )
     .await
+}
+
+#[tauri::command]
+pub async fn vault_list_roots(state: State<'_, DaemonState>) -> Result<VaultRootsResponse, String> {
+    workshop_http::get_json(&state, "/v1/vault/roots").await
+}
+
+#[tauri::command]
+pub async fn vault_set_active_root(
+    state: State<'_, DaemonState>,
+    root_id: String,
+) -> Result<VaultRootsResponse, String> {
+    let body = serde_json::json!({ "rootId": root_id.trim() });
+    workshop_http::put_json(&state, "/v1/vault/active", &body).await
+}
+
+#[tauri::command]
+pub async fn vault_add_root(
+    state: State<'_, DaemonState>,
+    label: String,
+    path: String,
+    id: Option<String>,
+) -> Result<VaultRootsResponse, String> {
+    let body = serde_json::json!({
+        "label": label.trim(),
+        "path": path.trim(),
+        "id": id.filter(|value| !value.trim().is_empty()),
+    });
+    workshop_http::post_json(&state, "/v1/vault/roots", &body).await
 }

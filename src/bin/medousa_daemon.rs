@@ -601,6 +601,15 @@ async fn main() -> Result<()> {
 
     let vault_router = Router::new()
         .route(
+            "/v1/vault/roots",
+            get(medousa::vault_handlers::list_vault_roots)
+                .post(medousa::vault_handlers::add_vault_root_handler),
+        )
+        .route(
+            "/v1/vault/active",
+            put(medousa::vault_handlers::set_vault_active_root),
+        )
+        .route(
             "/v1/vault/notes",
             get(medousa::vault_handlers::list_vault_notes)
                 .post(medousa::vault_handlers::post_vault_note),

@@ -1,11 +1,14 @@
 import {
+  addVaultRoot,
   createVaultNote,
   deleteVaultNote,
   getVaultBacklinks,
   getVaultNote,
   listVaultNotes,
+  listVaultRoots,
   saveVaultNote,
   searchVaultNotes,
+  setActiveVaultRoot,
 } from "$lib/daemon";
 import {
   countNotesBySpace,
@@ -26,6 +29,7 @@ import { vaultRefPath } from "$lib/utils/activityEnrichment";
 import type {
   VaultNote,
   VaultNoteContentResponse,
+  VaultRootView,
   VaultSearchHit,
   VaultTreeNode,
 } from "$lib/types/vault";
@@ -90,6 +94,7 @@ import {
 } from "$lib/utils/vaultLocalImages";
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
+import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -136,6 +141,11 @@ export class VaultStore {
   garageWizardOpen = $state(false);
   newGroupDialogOpen = $state(false);
   noteActionsOpen = $state(false);
+  vaultRoots = $state<VaultRootView[]>([]);
+  activeVaultRootId = $state<string | null>(null);
+  vaultRootsLoading = $state(false);
+  vaultRootsError = $state<string | null>(null);
+  addVaultRootOpen = $state(false);
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
   contentRevision = $state(0);
   /** Heading fragment from `[[note#Section]]` waiting for preview scroll. */
@@ -511,6 +521,15 @@ export class VaultStore {
     this.focusSpaceForPath(path, title);
   }
 
+  get activeVaultRoot(): VaultRootView | null {
+    if (!this.activeVaultRootId) return this.vaultRoots.find((root) => root.active) ?? null;
+    return (
+      this.vaultRoots.find((root) => root.id === this.activeVaultRootId) ??
+      this.vaultRoots.find((root) => root.active) ??
+      null
+    );
+  }
+
   resetForWorkshopSwitch() {
     this.clearAutosaveTimer();
     this.clearProposal();
@@ -528,7 +547,70 @@ export class VaultStore {
     this.notes = [];
     this.tree = [];
     this.error = null;
+    this.vaultRoots = [];
+    this.activeVaultRootId = null;
+    invalidateVaultRootCache();
+    void this.refreshVaultRoots();
     void this.refreshNotes();
+  }
+
+  async refreshVaultRoots() {
+    this.vaultRootsLoading = true;
+    this.vaultRootsError = null;
+    try {
+      const response = await listVaultRoots();
+      this.vaultRoots = response.roots;
+      this.activeVaultRootId = response.activeRootId;
+    } catch (err) {
+      this.vaultRootsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.vaultRootsLoading = false;
+    }
+  }
+
+  async switchVaultRoot(rootId: string) {
+    if (!rootId.trim() || rootId === this.activeVaultRootId) return;
+    this.clearAutosaveTimer();
+    this.clearProposal();
+    this.selectedPath = null;
+    this.content = "";
+    this.baselineContent = "";
+    this.contentHash = null;
+    this.noteTags = [];
+    this.wikilinksOut = [];
+    this.backlinks = [];
+    this.title = "";
+    this.dirty = false;
+    this.searchHits = [];
+    this.searchQuery = "";
+    this.notes = [];
+    this.tree = [];
+    this.error = null;
+    invalidateVaultRootCache();
+    try {
+      const response = await setActiveVaultRoot(rootId);
+      this.vaultRoots = response.roots;
+      this.activeVaultRootId = response.activeRootId;
+      await this.refreshNotes();
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : String(err);
+      throw err;
+    }
+  }
+
+  async registerVaultRoot(label: string, path: string) {
+    const response = await addVaultRoot(label, path);
+    this.vaultRoots = response.roots;
+    this.activeVaultRootId = response.activeRootId;
+    invalidateVaultRootCache();
+  }
+
+  openAddVaultRootDialog() {
+    this.addVaultRootOpen = true;
+  }
+
+  closeAddVaultRootDialog() {
+    this.addVaultRootOpen = false;
   }
 
   async refreshNotes() {
