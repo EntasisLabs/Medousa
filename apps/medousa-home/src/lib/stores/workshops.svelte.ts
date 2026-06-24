@@ -26,6 +26,7 @@ import {
 } from "$lib/types/workshopRegistry";
 import { isColorThemeId, type ColorThemeId } from "$lib/types/colorThemes";
 import { isTauri } from "$lib/platform";
+import { toast } from "$lib/stores/toast.svelte";
 import { completePairingFromQr, type PairCompleteFromQrResult } from "$lib/utils/pairingClient";
 import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 
@@ -183,6 +184,7 @@ export class WorkshopsStore {
       });
       this.applyThemeForActiveWorkshop();
       await this.restoreLastSession();
+      toast.show(`Connected to ${this.activeLabel}`);
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
       throw err;

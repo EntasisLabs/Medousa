@@ -240,8 +240,11 @@
 
       <StatusBar
         minimal={activeSurface === "chat"}
+        continuity={activeSurface === "library"}
         health={daemonHealth}
-        workshopLabel={workshops.hasMultipleWorkshops ? workshops.activeLabel : null}
+        workshopLabel={activeSurface === "library" || workshops.hasMultipleWorkshops
+          ? workshops.activeLabel
+          : null}
         inMotionCount={workspace.inMotionCount()}
         needsAttentionCount={workspace.needsAttentionCount()}
         cronActiveCount={automations.activeCount().enabled}

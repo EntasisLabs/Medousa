@@ -51,8 +51,7 @@
     </div>
     <h2 class="text-xl font-semibold tracking-tight text-surface-50">Bring your mess</h2>
     <p class="text-sm leading-relaxed text-surface-400">
-      Notes, journals, budgets, and the files already on your desk — organized by space, edited
-      by you. No markdown degree required.
+      Pick up where you left off — notes, files, and chat stay connected without switching apps.
     </p>
   </div>
 

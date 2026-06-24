@@ -69,10 +69,10 @@
     Personal vault
   </span>
 {:else if compact}
-  <div class="relative ml-auto min-w-0">
+  <div class="relative min-w-0 w-full">
     <button
       type="button"
-      class="vault-root-trigger"
+      class="vault-root-trigger vault-root-trigger-fill"
       aria-haspopup="listbox"
       aria-expanded={menuOpen}
       disabled={vault.vaultRootsLoading}
@@ -93,7 +93,7 @@
 
     {#if menuOpen}
       <div
-        class="absolute right-0 top-full z-30 mt-1 w-64 rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
+        class="absolute left-0 top-full z-30 mt-1 w-full min-w-[12rem] rounded-lg border border-surface-500/50 bg-surface-900 py-1 shadow-xl"
         role="listbox"
         aria-label="Vault folders"
       >

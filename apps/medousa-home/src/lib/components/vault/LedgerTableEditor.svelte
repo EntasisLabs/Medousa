@@ -10,18 +10,10 @@
   interface Props {
     content: string;
     disabled?: boolean;
-    ledgerEditMode?: "table" | "raw";
-    onToggleMode?: () => void;
     onchange: (nextContent: string) => void;
   }
 
-  let {
-    content,
-    disabled = false,
-    ledgerEditMode = "table",
-    onToggleMode,
-    onchange,
-  }: Props = $props();
+  let { content, disabled = false, onchange }: Props = $props();
 
   const table = $derived(findLedgerTable(content));
   const headers = $derived(
@@ -105,34 +97,7 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-  <div class="ledger-toolbar flex shrink-0 items-center justify-between gap-2 border-b border-surface-500/40 px-4 py-2">
-    <div class="flex items-center gap-2">
-      <p class="text-xs font-medium text-surface-300">Ledger</p>
-      {#if onToggleMode}
-        <div class="ledger-mode-toggle" role="group" aria-label="Ledger edit mode">
-          <button
-            type="button"
-            class="ledger-mode-btn {ledgerEditMode === 'table' ? 'ledger-mode-btn-active' : ''}"
-            {disabled}
-            onclick={() => {
-              if (ledgerEditMode !== "table") onToggleMode();
-            }}
-          >
-            Table
-          </button>
-          <button
-            type="button"
-            class="ledger-mode-btn {ledgerEditMode === 'raw' ? 'ledger-mode-btn-active' : ''}"
-            {disabled}
-            onclick={() => {
-              if (ledgerEditMode !== "raw") onToggleMode();
-            }}
-          >
-            Raw
-          </button>
-        </div>
-      {/if}
-    </div>
+  <div class="ledger-toolbar flex shrink-0 items-center justify-end gap-2 border-b border-surface-500/40 px-4 py-2">
     <button
       type="button"
       class="btn btn-sm variant-ghost-surface gap-1.5"

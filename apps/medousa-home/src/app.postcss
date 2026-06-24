@@ -704,6 +704,47 @@
     @apply shrink-0;
   }
 
+  .vault-library-tabbar {
+    @apply flex items-stretch gap-1 border-b border-surface-500/35 px-2;
+  }
+
+  .vault-library-tabbar-tabs {
+    @apply flex min-w-0 flex-1;
+  }
+
+  .vault-library-toolbar {
+    @apply flex items-center gap-1.5 px-3 py-2;
+  }
+
+  .vault-library-filter-menu {
+    @apply min-w-[13rem] max-w-[min(16rem,calc(100vw-2rem))];
+  }
+
+  .vault-toolbar-btn {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-surface-500/35 bg-surface-900/50 text-surface-400 transition hover:border-surface-500/55 hover:bg-surface-800/80 hover:text-surface-100 disabled:opacity-40;
+  }
+
+  .vault-toolbar-btn-active {
+    @apply border-primary-500/40 bg-primary-500/10 text-primary-200;
+  }
+
+  .vault-toolbar-new {
+    @apply inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2.5 text-xs font-medium;
+  }
+
+  .vault-space-chips-scroll {
+    @apply flex flex-nowrap gap-1 overflow-x-auto pb-0.5;
+    scrollbar-width: thin;
+  }
+
+  .vault-space-chips-scroll::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .vault-space-chips-scroll::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-surface-600/60;
+  }
+
   .vault-sidebar-tab {
     @apply -mb-px border-b-2 border-transparent px-3 py-2 text-xs font-medium text-surface-400 transition hover:text-surface-200;
   }
@@ -722,6 +763,10 @@
 
   .vault-root-trigger {
     @apply inline-flex max-w-[10rem] items-center gap-1.5 rounded-md border border-surface-500/35 bg-surface-900/50 px-2 py-1 text-xs text-surface-200 transition hover:border-surface-500/55 hover:bg-surface-800/80;
+  }
+
+  .vault-root-trigger-fill {
+    @apply h-8 w-full max-w-none py-0;
   }
 
   .vault-menu-item {

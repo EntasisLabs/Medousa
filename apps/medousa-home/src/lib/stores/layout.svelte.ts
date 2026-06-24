@@ -39,7 +39,7 @@ export class LayoutStore {
   vaultTreeWidth = $state(loadWidth(VAULT_TREE_WIDTH_KEY, 224));
   vaultEditorPaneWidth = $state(loadWidth(VAULT_EDITOR_PANE_WIDTH_KEY, 420));
   vaultSplitEnabled = $state(loadFlag(VAULT_SPLIT_ENABLED_KEY, true));
-  vaultLinksPanelOpen = $state(loadFlag(VAULT_LINKS_PANEL_KEY, true));
+  vaultLinksPanelOpen = $state(loadFlag(VAULT_LINKS_PANEL_KEY, false));
   workInspectorWidth = $state(loadWidth(WORK_INSPECTOR_WIDTH_KEY, 360));
   sessionDrawerOpen = $state(loadFlag(SESSION_DRAWER_KEY, false));
   identityDrawerOpen = $state(loadFlag(IDENTITY_DRAWER_KEY, false));

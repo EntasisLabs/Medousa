@@ -108,20 +108,12 @@ export function kindLabel(kind: VaultNoteKind): string {
 
 export function kindBadgeClass(kind: VaultNoteKind): string {
   switch (kind) {
-    case "daily":
-      return "variant-soft-primary";
-    case "project":
-      return "variant-soft-secondary";
     case "ledger":
-      return "variant-soft-success";
-    case "board":
-      return "variant-soft-secondary";
-    case "inbox":
-      return "variant-soft-warning";
-    case "bug":
-      return "variant-soft-error";
-    case "note":
-      return "variant-soft-surface";
+      return "variant-soft-surface border border-success-500/30 text-success-200";
+    case "daily":
+      return "variant-soft-surface border border-primary-500/25 text-primary-200";
+    default:
+      return "variant-soft-surface text-surface-300";
   }
 }
 

@@ -117,6 +117,7 @@
               {vault.error}
             </p>
           {/if}
+
           <VaultTree
             tree={vault.tree}
             selectedPath={vault.selectedPath}

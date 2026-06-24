@@ -9,7 +9,10 @@
     shouldSuppressVaultContextMenuClick,
   } from "$lib/utils/vaultContextMenuEvents";
   import { isVaultPointerDragging, shouldSuppressVaultTreeClick, startVaultPointerDrag } from "$lib/utils/vaultTreeDrag";
+  import { recentPathsForFolder, recentPathsForSpace } from "$lib/utils/vaultRecent";
+  import { vault } from "$lib/stores/vault.svelte";
   import VaultTreeNodeView from "./VaultTreeNode.svelte";
+  import VaultTreeRecentRows from "./VaultTreeRecentRows.svelte";
   import VaultKindBadge from "./VaultKindBadge.svelte";
 
   interface Props {
@@ -32,12 +35,17 @@
     onMoveNote,
   }: Props = $props();
 
+  function treeNodeContainsPath(node: VaultTreeNode, path: string | null): boolean {
+    if (!path) return false;
+    if (node.path === path) return true;
+    return node.children.some((child) => treeNodeContainsPath(child, path));
+  }
+
   const startsExpanded = $derived(
     node.defaultCollapsed
       ? false
-      : node.spaceId
-        ? activeSpaceFilter === node.spaceId || activeSpaceFilter === null
-        : depth < 2,
+      : treeNodeContainsPath(node, selectedPath) ||
+          (activeSpaceFilter != null && node.spaceId === activeSpaceFilter),
   );
   let expanded = $state(false);
   let initialized = $state(false);
@@ -50,7 +58,7 @@
   });
 
   $effect(() => {
-    if (activeSpaceFilter && node.spaceId === activeSpaceFilter) {
+    if (selectedPath && treeNodeContainsPath(node, selectedPath)) {
       expanded = true;
     }
   });
@@ -91,6 +99,32 @@
   });
 
   const isDropTarget = $derived(Boolean(onMoveNote && dropPrefix));
+
+  const knownPaths = $derived(new Set(vault.notes.map((note) => note.path)));
+
+  const recentRows = $derived.by(() => {
+    if (!node.isFolder) return [];
+    if (node.spaceId && activeSpaceFilter) return [];
+    if (node.spaceId) {
+      return recentPathsForSpace(
+        vault.recentPaths,
+        node.spaceId,
+        vault.notes,
+        3,
+        selectedPath,
+      );
+    }
+    if (node.dropPrefix) {
+      return recentPathsForFolder(
+        vault.recentPaths,
+        node.dropPrefix,
+        knownPaths,
+        3,
+        selectedPath,
+      );
+    }
+    return [];
+  });
 
   function handleClick() {
     if (shouldSuppressVaultTreeClick() || shouldSuppressVaultContextMenuClick()) return;
@@ -178,6 +212,13 @@
   </div>
 
   {#if expanded}
+    <VaultTreeRecentRows
+      paths={recentRows}
+      depth={depth}
+      {selectedPath}
+      {labelByPath}
+      {onSelect}
+    />
     {#each node.children as child (child.name + (child.path ?? "folder"))}
       <VaultTreeNodeView
         node={child}

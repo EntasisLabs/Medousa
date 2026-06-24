@@ -95,6 +95,7 @@ import {
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
+import { loadVaultRecent, rememberVaultRecent } from "$lib/utils/vaultRecent";
 import {
   formatDiffChip,
   lineDiffStats,
@@ -153,6 +154,7 @@ export class VaultStore {
   /** Engine lacks GET /v1/vault/roots (older build). */
   vaultRootsUnavailable = $state(false);
   addVaultRootOpen = $state(false);
+  recentPaths = $state<string[]>(loadVaultRecent());
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
   contentRevision = $state(0);
   /** Heading fragment from `[[note#Section]]` waiting for preview scroll. */
@@ -676,6 +678,8 @@ export class VaultStore {
       this.applyNote(response);
       this.selectedPath = path;
       localStorage.setItem(LAST_NOTE_KEY, path);
+      rememberVaultRecent(path);
+      this.recentPaths = loadVaultRecent();
       this.rememberSpaceForPath(path, response.note.title);
       await this.refreshBacklinks(path);
     } catch (err) {
@@ -1225,6 +1229,10 @@ export class VaultStore {
 
   toggleLedgerEditMode() {
     this.ledgerEditMode = this.ledgerEditMode === "table" ? "raw" : "table";
+  }
+
+  setLedgerEditMode(mode: "table" | "raw") {
+    this.ledgerEditMode = mode;
   }
 
   toggleBoardEditMode() {

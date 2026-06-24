@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { PanelLeftOpen } from "@lucide/svelte";
+  import { PanelLeftOpen, Search } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -26,11 +26,18 @@
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
   import VaultEditorOverflowMenu from "./VaultEditorOverflowMenu.svelte";
   import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
+  import VaultLedgerSource from "./VaultLedgerSource.svelte";
+  import {
+    isDataFirstKind,
+    supportsLinksPanel,
+    supportsPreviewSplit,
+  } from "$lib/utils/vaultNoteKind";
   import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
   import VaultFindBar from "./VaultFindBar.svelte";
   import VaultNoteStatusBar from "./VaultNoteStatusBar.svelte";
   import { vaultFind } from "$lib/stores/vaultFind.svelte";
+  import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { stripFrontmatter } from "$lib/utils/vaultFrontmatter";
   import { exportVaultNotePdf } from "$lib/utils/vaultPdfExport";
 
@@ -63,6 +70,14 @@
   const SpaceIcon = $derived(
     activeSpace ? iconForSpace(activeSpace.id) : null,
   );
+
+  const showBreadcrumb = $derived.by(() => {
+    if (!breadcrumb) return false;
+    if (activeSpace && breadcrumb.toLowerCase() === activeSpace.label.toLowerCase()) {
+      return false;
+    }
+    return true;
+  });
 
   const labelByPath = $derived(vault.labelByPathMap);
   const hasLedgerTable = $derived(Boolean(findLedgerTable(vault.content)));
@@ -99,10 +114,26 @@
       (!showMarkdownEditor && !showLedgerTable),
   );
 
+  const noteKind = $derived(vault.selectedKind);
+  const isDataFirst = $derived(isDataFirstKind(noteKind));
+  const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
+  const showLinksToggle = $derived(
+    Boolean(vault.selectedPath) && supportsLinksPanel(noteKind) && linkCount > 0,
+  );
   const showLinksPanel = $derived(
-    !mobile &&
-      layout.vaultLinksPanelOpen &&
-      vault.selectedPath,
+    !mobile && layout.vaultLinksPanelOpen && showLinksToggle,
+  );
+  const showPreviewButton = $derived(
+    Boolean(vault.selectedPath) && supportsPreviewSplit(noteKind),
+  );
+  const showSplitButton = $derived(
+    showMarkdownEditor && supportsPreviewSplit(noteKind),
+  );
+  const showLedgerViewToggle = $derived(
+    Boolean(vault.selectedPath) &&
+      vault.selectedKind === "ledger" &&
+      vault.editorMode === "edit" &&
+      hasLedgerTable,
   );
 
   const previewFirstKind = $derived(
@@ -300,7 +331,7 @@
             {activeSpace.label}
           </p>
         {/if}
-        {#if breadcrumb}
+        {#if showBreadcrumb}
           <p class="workshop-faint truncate">{breadcrumb}</p>
         {/if}
         <div class="flex min-w-0 items-center gap-2">
@@ -347,7 +378,7 @@
           </span>
         {/if}
 
-        {#if vault.selectedPath}
+        {#if showPreviewButton}
           <button
             type="button"
             class="btn btn-sm {vault.editorMode === 'preview'
@@ -365,7 +396,7 @@
           </button>
         {/if}
 
-        {#if showMarkdownEditor}
+        {#if showSplitButton}
           <button
             type="button"
             class="btn btn-sm {layout.vaultSplitEnabled
@@ -378,7 +409,7 @@
           </button>
         {/if}
 
-        {#if vault.selectedPath}
+        {#if showLinksToggle}
           <button
             type="button"
             class="btn btn-sm {layout.vaultLinksPanelOpen
@@ -388,8 +419,42 @@
             title="Show note links"
           >
             Links
+            <span class="tabular-nums text-surface-400">({linkCount})</span>
           </button>
         {/if}
+
+        {#if showLedgerViewToggle}
+          <div class="ledger-mode-toggle" role="group" aria-label="Ledger view">
+            <button
+              type="button"
+              class="ledger-mode-btn {vault.ledgerEditMode === 'table'
+                ? 'ledger-mode-btn-active'
+                : ''}"
+              onclick={() => vault.setLedgerEditMode("table")}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              class="ledger-mode-btn {vault.ledgerEditMode === 'raw'
+                ? 'ledger-mode-btn-active'
+                : ''}"
+              onclick={() => vault.setLedgerEditMode("raw")}
+            >
+              Raw
+            </button>
+          </div>
+        {/if}
+
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          title="Find note (⌘O)"
+          aria-label="Find note"
+          onclick={() => vaultQuickSwitcher.openSwitcher()}
+        >
+          <Search size={14} strokeWidth={2} />
+        </button>
 
         <VaultEditorOverflowMenu
           selectedPath={vault.selectedPath}
@@ -402,7 +467,6 @@
           exportingPdf={exportingPdf}
           askSubmitting={workspace.askSubmitting}
           hasKanbanBoard={hasKanbanBoard}
-          ledgerEditMode={vault.ledgerEditMode}
           boardEditMode={vault.boardEditMode}
           linkedWork={linkedWork}
           onOpenChat={onOpenChat}
@@ -416,7 +480,6 @@
           onInsertWeeklyReview={() => vault.insertWeeklyReviewLink()}
           onPromoteJournal={() => vault.promoteNote("journal")}
           onPromoteProject={() => vault.promoteNote("projects")}
-          onToggleLedger={() => vault.toggleLedgerEditMode()}
           onToggleBoard={() => vault.toggleBoardEditMode()}
         />
       </div>
@@ -438,31 +501,23 @@
 
   <VaultProposalBar {mobile} />
   <VaultConflictBar />
-  <VaultAttachmentBar disabled={vault.noteLoading || vault.saving} />
 
-  {#if vault.selectedPath && vault.selectedKind === "ledger" && vault.editorMode === "edit" && !showLedgerTable}
-    <div class="ledger-toolbar flex shrink-0 items-center gap-2 border-b border-surface-500/40 px-4 py-2">
-      <p class="text-xs font-medium text-surface-300">Ledger</p>
-      <div class="ledger-mode-toggle" role="group" aria-label="Ledger edit mode">
-        <button
-          type="button"
-          class="ledger-mode-btn"
-          disabled={vault.saving}
-          onclick={() => {
-            if (vault.ledgerEditMode !== "table") vault.toggleLedgerEditMode();
-          }}
-        >
-          Table
-        </button>
-        <button
-          type="button"
-          class="ledger-mode-btn ledger-mode-btn-active"
-          disabled={vault.saving}
-          aria-current="true"
-        >
-          Raw
-        </button>
-      </div>
+  {#if showLedgerTable}
+    <VaultLedgerSource disabled={vault.noteLoading || vault.saving} />
+  {:else if !isDataFirst}
+    <VaultAttachmentBar disabled={vault.noteLoading || vault.saving} />
+  {/if}
+
+  {#if showLinksToggle && !layout.vaultLinksPanelOpen && !mobile}
+    <div class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-4 py-1.5 text-xs">
+      <span class="text-surface-500">{linkCount} linked note{linkCount === 1 ? "" : "s"}</span>
+      <button
+        type="button"
+        class="text-primary-300 hover:text-primary-200"
+        onclick={() => layout.setVaultLinksPanelOpen(true)}
+      >
+        Show links
+      </button>
     </div>
   {/if}
 
@@ -482,8 +537,6 @@
           <LedgerTableEditor
             content={vault.content}
             disabled={vault.saving}
-            ledgerEditMode={vault.ledgerEditMode}
-            onToggleMode={() => vault.toggleLedgerEditMode()}
             onchange={(next) => vault.markDirty(next)}
           />
         {:else if showKanbanBoard}
@@ -546,7 +599,7 @@
     />
   {/if}
 
-  {#if vault.selectedPath && !mobile && onOpenChat && !noteWorkshop.open}
+  {#if vault.selectedPath && !mobile && !noteWorkshop.open}
     <VaultNoteChatFab />
   {/if}
 </section>

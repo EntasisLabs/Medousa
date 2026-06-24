@@ -32,8 +32,16 @@ export function vaultBreadcrumb(path: string): string {
     .split("/")
     .filter(Boolean)
     .map((part) => humanizeStem(part.replace(/\.md$/i, "")));
-  if (parts.length <= 1) return parts[0] ?? path;
-  return parts.slice(0, -1).join(" › ");
+  const folderParts =
+    parts.length <= 1
+      ? parts
+      : parts.slice(0, -1).filter((part, index, all) => {
+          if (index === 0) return true;
+          return part.toLowerCase() !== all[index - 1]!.toLowerCase();
+        });
+  if (folderParts.length === 0) return "";
+  if (folderParts.length === 1) return folderParts[0] ?? "";
+  return folderParts.join(" › ");
 }
 
 /** Disambiguate duplicate display titles in the vault tree. */

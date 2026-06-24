@@ -7,9 +7,11 @@
     compact?: boolean;
     /** When true, parent supplies padding (Library chrome). */
     embedded?: boolean;
+    /** Single-row horizontal scroll (library sidebar). */
+    scrollable?: boolean;
   }
 
-  let { compact = false, embedded = false }: Props = $props();
+  let { compact = false, embedded = false, scrollable = false }: Props = $props();
 
   const visibleSpaces = $derived(allFilterSpaces(vault.showSystemNotes));
 
@@ -32,7 +34,9 @@
 </script>
 
 <div
-  class="flex flex-wrap {compact ? 'gap-x-1 gap-y-1.5' : 'gap-x-1.5 gap-y-2'} {compact || embedded ? '' : 'px-2 pb-2'}"
+  class="{scrollable
+    ? 'vault-space-chips-scroll'
+    : `flex flex-wrap ${compact ? 'gap-x-1 gap-y-1.5' : 'gap-x-1.5 gap-y-2'}`} {compact || embedded ? '' : 'px-2 pb-2'}"
   role="tablist"
   aria-label="Vault spaces"
 >
@@ -40,7 +44,7 @@
     type="button"
     role="tab"
     aria-selected={vault.activeSpaceFilter === null}
-    class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {chipClass(
+    class="inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {chipClass(
       vault.activeSpaceFilter === null,
     )}"
     onclick={() => selectSpace(null)}
@@ -55,7 +59,7 @@
       type="button"
       role="tab"
       aria-selected={vault.activeSpaceFilter === space.id}
-      class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {chipClass(
+      class="inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {chipClass(
         vault.activeSpaceFilter === space.id,
       )}"
       onclick={() => selectSpace(space.id)}

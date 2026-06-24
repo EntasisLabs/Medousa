@@ -8,6 +8,7 @@
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultQuickSwitcher from "$lib/components/vault/VaultQuickSwitcher.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
+  import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
@@ -102,3 +103,5 @@
     }}
   />
 {/if}
+
+<ToastHost />

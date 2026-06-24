@@ -11,6 +11,8 @@
     lastTickAt?: string | null;
     /** Whisper connection only — for Chat tab focus. */
     minimal?: boolean;
+    /** Library continuity — connection + brain name only. */
+    continuity?: boolean;
     /** Active workshop label when multiple engines are saved. */
     workshopLabel?: string | null;
     onOpenRuntime?: () => void;
@@ -26,6 +28,7 @@
     pendingDeliveries = null,
     lastTickAt = null,
     minimal = false,
+    continuity = false,
     workshopLabel = null,
     onOpenRuntime,
     onOpenCron,
@@ -68,7 +71,7 @@
 </script>
 
 <footer
-  class="workshop-status flex shrink-0 items-center justify-between gap-4 px-3 text-[11px] {minimal
+  class="workshop-status flex shrink-0 items-center justify-between gap-4 px-3 text-[11px] {minimal || continuity
     ? 'h-5 border-t border-surface-700/20 text-surface-600'
     : 'h-8'}"
   aria-label="Medousa status"
@@ -76,13 +79,13 @@
   <span class="workshop-status-whisper {statusTextClass}">
     <span class={statusDotClass} aria-hidden="true"></span>
     <span class="truncate">{statusLabel}</span>
-    {#if workshopLabel && !minimal}
+    {#if workshopLabel && (!minimal || continuity)}
       <span class="text-surface-500">·</span>
       <span class="truncate text-surface-400">{workshopLabel}</span>
     {/if}
   </span>
 
-  {#if !minimal}
+  {#if !minimal && !continuity}
     <div class="flex shrink-0 items-center gap-3">
     {#if onOpenCron}
       <button

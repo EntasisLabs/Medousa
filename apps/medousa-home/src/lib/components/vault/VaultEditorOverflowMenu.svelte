@@ -25,7 +25,6 @@
     exportingPdf?: boolean;
     askSubmitting?: boolean;
     hasKanbanBoard?: boolean;
-    ledgerEditMode?: "table" | "raw";
     boardEditMode?: "board" | "raw";
     linkedWork?: WorkCard[];
     onOpenChat?: () => void;
@@ -39,7 +38,6 @@
     onInsertWeeklyReview?: () => void;
     onPromoteJournal?: () => void | Promise<void>;
     onPromoteProject?: () => void | Promise<void>;
-    onToggleLedger?: () => void;
     onToggleBoard?: () => void;
   }
 
@@ -54,7 +52,6 @@
     exportingPdf = false,
     askSubmitting = false,
     hasKanbanBoard = false,
-    ledgerEditMode = "table",
     boardEditMode = "board",
     linkedWork = [],
     onOpenChat,
@@ -68,7 +65,6 @@
     onInsertWeeklyReview,
     onPromoteJournal,
     onPromoteProject,
-    onToggleLedger,
     onToggleBoard,
   }: Props = $props();
 
@@ -151,18 +147,6 @@
           },
         });
       }
-    }
-
-    if (selectedKind === "ledger" && editorMode === "edit" && onToggleLedger) {
-      rows.push({
-        id: "ledger-mode",
-        label: ledgerEditMode === "table" ? "Raw markdown" : "Table view",
-        dividerBefore: rows.length > 0,
-        onClick: () => {
-          open = false;
-          onToggleLedger();
-        },
-      });
     }
 
     if (hasKanbanBoard && editorMode === "edit" && onToggleBoard) {
