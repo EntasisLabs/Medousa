@@ -21,6 +21,7 @@
   import { resetGarageOnboarding } from "$lib/utils/garageOnboarding";
   import { wizard } from "$lib/stores/wizard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
+  import { openPackageInstaller, fetchPackageStatus, type PackageStatusSummary } from "$lib/utils/packagesApi";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
   import { isTauri } from "$lib/window";
   import {
@@ -46,7 +47,7 @@
   let prefsMessage = $state<string | null>(null);
   let restartingEngine = $state(false);
   let restartMessage = $state<string | null>(null);
-  let runbookError = $state<string | null>(null);
+  let packageStatus = $state<PackageStatusSummary | null>(null);
 
   const connected = $derived(Boolean(health?.ok));
   const connectionLabel = $derived(connectionHumanLabel(settings.daemonUrl));
@@ -178,6 +179,9 @@
   onMount(() => {
     if (isTauri() && !mobile) {
       void loadConnectionPrefsState();
+      void fetchPackageStatus().then((status) => {
+        packageStatus = status;
+      });
     }
   });
 
@@ -458,6 +462,22 @@
   {/if}
 
   {#if isTauri() && !mobile}
+    <div class="mt-6">
+      <h3 class="text-sm font-semibold text-surface-100">Medousa packages</h3>
+      <p class="workshop-faint mt-1 text-xs">
+        Add Offline brain, adapters, or model packs — same installer used for updates and repair.
+      </p>
+      {#if packageStatus && !packageStatus.localBrainInstalled}
+        <p class="mt-2 text-xs text-amber-200/90">Offline brain is not installed.</p>
+      {/if}
+      <button
+        type="button"
+        class="workshop-text-action mt-3 text-sm"
+        onclick={() => void openPackageInstaller()}
+      >
+        Manage Medousa packages…
+      </button>
+    </div>
     <SettingsLocalBrainPanel />
   {/if}
 

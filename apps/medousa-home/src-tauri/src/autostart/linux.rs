@@ -60,7 +60,13 @@ fn run_systemctl(args: &[&str]) -> Result<(), String> {
 }
 
 fn render_systemd_unit(spec: &AutostartSpec, log_path: &PathBuf) -> String {
-    let exec_start = systemd_exec_start(&spec.program, &spec.args);
+    let exec_start = systemd_exec_start(
+        "/bin/sh",
+        &[
+            "-c".to_string(),
+            super::spec::shell_start_command(spec),
+        ],
+    );
     let log = log_path.display();
 
     format!(

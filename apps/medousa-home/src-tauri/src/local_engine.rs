@@ -93,6 +93,44 @@ pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
     )
 }
 
+pub(crate) fn resolve_local_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_LOCAL_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.exists() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name("medousa_local");
+        if sibling.exists() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if find_command_in_path("medousa_local").is_some() {
+        return Ok(ComponentCommand {
+            program: "medousa_local".to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err(
+        "Offline brain is not installed. Run Medousa Installer and add the Offline brain package."
+            .to_string(),
+    )
+}
+
+pub(crate) fn local_brain_installed() -> bool {
+    resolve_local_binary().is_ok()
+}
+
 pub(crate) fn is_bind_reachable(bind: &str) -> bool {
     use std::net::{TcpStream, ToSocketAddrs};
     if let Ok(mut addrs) = bind.to_socket_addrs() {
@@ -158,6 +196,16 @@ pub fn daemon_pid_path(workshop_id: &str) -> PathBuf {
 pub fn daemon_log_path(workshop_id: &str) -> PathBuf {
     engine_runtime_dir(workshop_id).join("daemon.log")
 }
+
+pub fn local_brain_pid_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("local.pid")
+}
+
+pub fn local_brain_log_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("local.log")
+}
+
+pub const DEFAULT_LOCAL_BRAIN_BIND: &str = "127.0.0.1:7421";
 
 fn legacy_daemon_pid_path() -> PathBuf {
     crate::paths::medousa_data_dir().join("daemon.pid")
@@ -300,6 +348,7 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 pub fn stop_local_engine(workshop_id: &str) {
+    stop_local_brain(workshop_id);
     if let Some(pid) = read_daemon_pid(workshop_id) {
         if is_process_alive(pid) {
             #[cfg(unix)]
@@ -352,7 +401,10 @@ pub fn spawn_local_engine(
         command.arg("--model").arg(model);
     }
     if private_brain {
-        command.arg("--local-engine");
+        command.env(
+            "MEDOUSA_LOCAL_ENGINE_BIND",
+            DEFAULT_LOCAL_BRAIN_BIND,
+        );
     }
     command.env(
         "MEDOUSA_DATA_DIR",
@@ -373,6 +425,112 @@ pub fn spawn_local_engine(
     let pid = child.id();
     write_daemon_pid(workshop_id, pid)?;
     Ok((pid, log_path))
+}
+
+fn write_local_brain_pid(workshop_id: &str, pid: u32) -> Result<(), String> {
+    let path = local_brain_pid_path(workshop_id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(path, pid.to_string()).map_err(|err| err.to_string())
+}
+
+fn clear_local_brain_pid(workshop_id: &str) {
+    let _ = fs::remove_file(local_brain_pid_path(workshop_id));
+}
+
+fn read_local_brain_pid(workshop_id: &str) -> Option<u32> {
+    fs::read_to_string(local_brain_pid_path(workshop_id))
+        .ok()
+        .and_then(|raw| raw.trim().parse().ok())
+}
+
+pub fn stop_local_brain(workshop_id: &str) {
+    if let Some(pid) = read_local_brain_pid(workshop_id) {
+        if is_process_alive(pid) {
+            #[cfg(unix)]
+            {
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+            }
+        }
+    }
+    clear_local_brain_pid(workshop_id);
+}
+
+pub fn spawn_local_brain(
+    workshop_id: &str,
+    data_dir: &Path,
+    load_recommended: bool,
+) -> Result<(u32, PathBuf), String> {
+    if is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND) {
+        return Ok((read_local_brain_pid(workshop_id).unwrap_or(0), local_brain_log_path(workshop_id)));
+    }
+
+    let local = resolve_local_binary()?;
+    let log_path = local_brain_log_path(workshop_id);
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let mut command = Command::new(&local.program);
+    command.args(&local.pre_args);
+    command
+        .arg("--bind")
+        .arg(DEFAULT_LOCAL_BRAIN_BIND)
+        .env("MEDOUSA_DATA_DIR", data_dir.to_string_lossy().to_string());
+    if load_recommended {
+        command.arg("--load-recommended");
+    }
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let child = command.spawn().map_err(|err| {
+        format!(
+            "Failed to spawn medousa_local ({}): {err}",
+            local.program
+        )
+    })?;
+    let pid = child.id();
+    write_local_brain_pid(workshop_id, pid)?;
+    Ok((pid, log_path))
+}
+
+async fn local_brain_http_ready() -> bool {
+    is_bind_reachable(DEFAULT_LOCAL_BRAIN_BIND)
+}
+
+pub async fn ensure_local_brain(
+    workshop_id: &str,
+    data_dir: &Path,
+    load_recommended: bool,
+) -> Result<bool, String> {
+    if !local_brain_installed() {
+        return Ok(false);
+    }
+    if local_brain_http_ready().await {
+        return Ok(true);
+    }
+    spawn_local_brain(workshop_id, data_dir, load_recommended)?;
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(600) {
+        if local_brain_http_ready().await {
+            return Ok(true);
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    Err(format!(
+        "Offline brain did not become ready — check {}",
+        local_brain_log_path(workshop_id).display()
+    ))
 }
 
 async fn daemon_http_healthy(base_url: &str) -> bool {
@@ -437,6 +595,9 @@ pub async fn ensure_local_engine(
     let log_path = daemon_log_path(&workshop.id);
 
     if daemon_http_healthy(&url).await {
+        if private_brain && local_brain_installed() {
+            let _ = ensure_local_brain(&workshop.id, &data_dir, true).await;
+        }
         let message = format!("Engine already running at {bind}");
         return Ok(LocalEngineEnsureResult {
             ok: true,
@@ -473,6 +634,9 @@ pub async fn ensure_local_engine(
 
     let (pid, log_path) = spawn_local_engine(&workshop.id, &bind, &data_dir, private_brain)?;
     let (ok, _) = wait_engine_healthy(&url, 45, 500).await?;
+    if ok && private_brain && local_brain_installed() {
+        let _ = ensure_local_brain(&workshop.id, &data_dir, true).await;
+    }
     Ok(LocalEngineEnsureResult {
         ok,
         already_running: false,

@@ -69,15 +69,33 @@ fn render_start_script(spec: &AutostartSpec, log_path: &PathBuf) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
-    format!(
+    let mut script = format!(
         "@echo off\r\n\
          cd /d {}\r\n\
-         {} {} >> {} 2>&1\r\n",
+         start \"\" /B {} {} >> {} 2>&1\r\n",
         batch_quote(&work_dir),
         batch_quote(&spec.program),
         args,
         batch_quote(&log_path.to_string_lossy()),
-    )
+    );
+
+    if let Some(local) = &spec.local_brain {
+        let local_args = local
+            .args
+            .iter()
+            .map(|arg| batch_quote(arg))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let local_log = super::spec::local_brain_log_path();
+        script.push_str(&format!(
+            "start \"\" /B {} {} >> {} 2>&1\r\n",
+            batch_quote(&local.program),
+            local_args,
+            batch_quote(&local_log.display().to_string()),
+        ));
+    }
+
+    script
 }
 
 fn batch_quote(value: &str) -> String {

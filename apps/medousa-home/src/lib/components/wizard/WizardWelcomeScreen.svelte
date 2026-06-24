@@ -19,6 +19,11 @@
     type ProvidersProbeResult,
   } from "$lib/utils/providersApi";
   import {
+    fetchPackageStatus,
+    openPackageInstaller,
+    type PackageStatusSummary,
+  } from "$lib/utils/packagesApi";
+  import {
     ensureLocalModelReady,
     fetchLocalCatalog,
     fetchLocalHardware,
@@ -49,6 +54,7 @@
   let offlineModelId = $state<string | null>(null);
   let localLoading = $state(false);
   let downloadProgress = $state<ModelDownloadProgress | null>(null);
+  let packageStatus = $state<PackageStatusSummary | null>(null);
 
   const ollamaReady = $derived(probe?.ollamaDetected ?? false);
   const recommendedOfflineModel = $derived.by(() => {
@@ -65,6 +71,9 @@
   onMount(() => {
     void refreshProbe();
     void refreshLocalInference();
+    void fetchPackageStatus().then((status) => {
+      packageStatus = status;
+    });
   });
 
   async function refreshProbe() {
@@ -167,7 +176,7 @@
 
     if (localHardware && !localHardware.engineAvailable) {
       statusMessage =
-        "Local Gemma isn't available in this build — use Advanced (API key / Ollama) or Skip for now.";
+        "Install the Offline brain package to use local Gemma on this computer.";
       return;
     }
 
@@ -321,13 +330,29 @@
             (~{formatBytes(recommendedOfflineModel.sizeBytes)} download). Nothing leaves this
             device unless you choose cloud later.
           {:else if localHardware && !localHardware.engineAvailable}
-            Local Gemma isn't in this build yet — pick Advanced below or Skip for now.
+            Offline brain is not installed — use Medousa Installer to add it, or pick Advanced below.
           {:else}
             Download a local model once — chat without sending data to the cloud.
           {/if}
         </p>
 
-        {#if selectedPath === "offline" && localCatalog}
+        {#if selectedPath === "offline" && localHardware && !localHardware.engineAvailable}
+          <div class="mt-4 border-t border-surface-500/30 pt-4">
+            <button
+              type="button"
+              class="btn preset-filled-primary-500 w-full"
+              disabled={wizard.busy || validating}
+              onclick={(event) => {
+                event.stopPropagation();
+                void openPackageInstaller();
+              }}
+            >
+              {packageStatus?.installerAvailable
+                ? "Open Medousa Installer"
+                : "Download Medousa Installer"}
+            </button>
+          </div>
+        {:else if selectedPath === "offline" && localCatalog}
           <div class="mt-4 space-y-2 border-t border-surface-500/30 pt-4">
             {#each localCatalog.models as entry (entry.id)}
               <button

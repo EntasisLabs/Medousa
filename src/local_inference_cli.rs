@@ -446,8 +446,10 @@ pub fn print_doctor_local_inference(daemon_url: &str, daemon_healthy: bool, verb
                 "embedded_inference={} ram_gb={:.1}",
                 if hardware.engine_available {
                     "available"
+                } else if crate::local_inference::medousa_local_binary_available() {
+                    "package_not_running"
                 } else {
-                    "not_in_this_build"
+                    "not_installed"
                 },
                 profile.probe.total_ram_mb as f64 / 1024.0
             );

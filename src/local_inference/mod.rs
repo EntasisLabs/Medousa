@@ -2,6 +2,7 @@ mod backends;
 mod catalog;
 mod engine;
 mod hardware;
+mod process;
 mod store;
 
 pub use catalog::{
@@ -24,4 +25,9 @@ pub use backends::{
 pub use hardware::{
     build_hardware_profile, hardware_profile_path, probe_hardware, read_hardware_profile,
     score_tier, write_hardware_profile, GpuBackend, HardwareProfile, HardwareProbe, HardwareTier,
+};
+pub use process::{
+    external_engine_status, is_bind_reachable, load_external_engine, medousa_local_binary_available,
+    resolve_medousa_local_binary, spawn_external_local_engine, spawn_external_recommended,
+    stop_external_local_engine,
 };

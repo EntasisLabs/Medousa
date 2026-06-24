@@ -51,10 +51,11 @@ jobs:
         run: |
           ./scripts/release/build.sh --target "${{ matrix.target }}"
 
-      - name: Package release archive
+      - name: Package release archives
         shell: bash
         run: |
           ./scripts/release/package.sh --target "${{ matrix.target }}"
+          ./scripts/release/package-local-brain.sh --target "${{ matrix.target }}" || true
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
@@ -62,6 +63,7 @@ jobs:
           name: medousa-cli-${{ matrix.target }}
           path: |
             dist/medousa-*.tar.gz
+            dist/medousa_local-*.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -236,17 +238,24 @@ jobs:
             \) -exec cp {} dist/final/ \;
           : > dist/final/SHA256SUMS
           shopt -s nullglob
-          for archive in dist/final/medousa-*.tar.gz dist/final/*.dmg dist/final/*.AppImage dist/final/*.deb dist/final/*.msi dist/final/*.exe; do
+          for archive in dist/final/medousa-*.tar.gz dist/final/medousa_local-*.tar.gz dist/final/*.dmg dist/final/*.AppImage dist/final/*.deb dist/final/*.msi dist/final/*.exe; do
             [[ -f "$archive" ]] || continue
             (cd dist/final && sha256sum "$(basename "$archive")") >> dist/final/SHA256SUMS
           done
           cd dist/final && ls -la
+
+      - name: Generate release manifest
+        shell: bash
+        run: |
+          ./scripts/release/generate-release-manifest.sh --dist dist/final
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/final/medousa-*.tar.gz
+            dist/final/medousa_local-*.tar.gz
+            dist/final/release-manifest.json
             dist/final/*.dmg
             dist/final/*.msi
             dist/final/*.exe

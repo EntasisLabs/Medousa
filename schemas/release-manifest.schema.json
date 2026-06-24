@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medousa.dev/schemas/release-manifest.json",
+  "title": "MedousaReleaseManifest",
+  "type": "object",
+  "required": ["schemaVersion", "product", "version", "publishedAt", "packages"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "product": { "type": "string", "const": "medousa" },
+    "version": { "type": "string" },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "packages": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["id", "displayName", "version", "target", "url", "sha256", "sizeBytes"],
+        "properties": {
+          "id": { "type": "string" },
+          "displayName": { "type": "string" },
+          "version": { "type": "string" },
+          "target": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "sha256": { "type": "string" },
+          "sizeBytes": { "type": "integer", "minimum": 0 },
+          "depends": { "type": "array", "items": { "type": "string" } },
+          "backend": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

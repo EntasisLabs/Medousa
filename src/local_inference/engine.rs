@@ -47,14 +47,19 @@ pub struct LocalEngineStatus {
 impl LocalEngineStatus {
     pub fn idle() -> Self {
         Self {
-            feature_enabled: cfg!(feature = "embedded-inference"),
+            feature_enabled: cfg!(feature = "embedded-inference")
+                || super::process::medousa_local_binary_available(),
             loaded: false,
             base_url: DEFAULT_LOCAL_ENGINE_BASE_URL.to_string(),
             bind: None,
             model_repo: None,
             model_alias: None,
             inference_backend: None,
-            message: "Local engine not loaded".to_string(),
+            message: if super::process::medousa_local_binary_available() {
+                "Local engine not loaded".to_string()
+            } else {
+                "Offline brain package not installed".to_string()
+            },
         }
     }
 }
@@ -75,7 +80,20 @@ impl LocalEngineManager {
     }
 
     pub async fn status(&self) -> LocalEngineStatus {
-        self.status.read().await.clone()
+        let cached = self.status.read().await.clone();
+        if cached.loaded {
+            return cached;
+        }
+
+        #[cfg(not(feature = "embedded-inference"))]
+        {
+            let external = super::process::external_engine_status().await;
+            if external.loaded {
+                return external;
+            }
+        }
+
+        cached
     }
 
     pub async fn load(&self, config: LocalEngineConfig) -> Result<LocalEngineStatus, String> {
@@ -104,11 +122,9 @@ impl LocalEngineManager {
 
         #[cfg(not(feature = "embedded-inference"))]
         {
-            let _ = config;
-            Err(
-                "embedded-inference feature is not enabled — rebuild with --features embedded-inference"
-                    .to_string(),
-            )
+            let status = super::process::spawn_external_local_engine(config).await?;
+            *self.status.write().await = status.clone();
+            Ok(status)
         }
     }
 
@@ -118,6 +134,10 @@ impl LocalEngineManager {
         }
         if let Some(task) = self.server_task.write().await.take() {
             task.abort();
+        }
+        #[cfg(not(feature = "embedded-inference"))]
+        {
+            super::process::stop_external_local_engine().await;
         }
         *self.status.write().await = LocalEngineStatus::idle();
         Ok(())
@@ -225,12 +245,21 @@ pub static LOCAL_ENGINE: Lazy<Arc<LocalEngineManager>> =
     Lazy::new(|| Arc::new(LocalEngineManager::new()));
 
 pub async fn load_recommended_engine(bind: Option<String>) -> Result<LocalEngineStatus, String> {
-    let profile = super::hardware::read_hardware_profile()
-        .unwrap_or_else(|| super::hardware::build_hardware_profile(super::hardware::probe_hardware()));
-    let entry = super::catalog::recommended_model_for_tier(profile.tier)
-        .ok_or_else(|| "no recommended model for hardware tier".to_string())?;
-    let config = config_from_catalog_entry(&entry, bind);
-    LOCAL_ENGINE.as_ref().load(config).await
+    #[cfg(not(feature = "embedded-inference"))]
+    {
+        return super::process::spawn_external_recommended(bind).await;
+    }
+
+    #[cfg(feature = "embedded-inference")]
+    {
+        let profile = super::hardware::read_hardware_profile().unwrap_or_else(|| {
+            super::hardware::build_hardware_profile(super::hardware::probe_hardware())
+        });
+        let entry = super::catalog::recommended_model_for_tier(profile.tier)
+            .ok_or_else(|| "no recommended model for hardware tier".to_string())?;
+        let config = config_from_catalog_entry(&entry, bind);
+        LOCAL_ENGINE.as_ref().load(config).await
+    }
 }
 
 pub fn config_from_catalog_entry(

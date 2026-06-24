@@ -5,7 +5,7 @@ edition = "2024"
 
 [workspace]
 members = ["."]
-exclude = ["apps/medousa-home/src-tauri"]
+exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 
 [[bin]]
 name = "medousa_cli"
@@ -18,6 +18,10 @@ path = "src/bin/medousa.rs"
 [[bin]]
 name = "medousa_daemon"
 path = "src/bin/medousa_daemon.rs"
+
+[[bin]]
+name = "medousa_local"
+path = "src/bin/medousa_local.rs"
 
 [[bin]]
 name = "medousa_tui"

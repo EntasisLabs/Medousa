@@ -1,0 +1,146 @@
+:root {
+  color-scheme: dark;
+  font-family: "SF Pro Text", system-ui, sans-serif;
+  background: #0a0a0b;
+  color: #f4f4f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+}
+
+.installer {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+h1 {
+  font-size: 1.75rem;
+  margin: 0 0 0.25rem;
+}
+
+.lead {
+  color: #a1a1aa;
+  margin: 0 0 1.5rem;
+}
+
+.card {
+  background: #141416;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.profile-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.profile {
+  text-align: left;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  color: inherit;
+}
+
+.profile.selected {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 1px #818cf8 inset;
+}
+
+.profile-title {
+  font-weight: 600;
+}
+
+.profile-desc {
+  color: #a1a1aa;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.packages {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.package-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.primary {
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.65rem 1.1rem;
+  font-weight: 600;
+}
+
+.secondary {
+  background: transparent;
+  color: #e4e4e7;
+  border: 1px solid #52525b;
+  border-radius: 8px;
+  padding: 0.65rem 1.1rem;
+}
+
+.progress-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.progress-item {
+  font-size: 0.9rem;
+}
+
+.progress-bar {
+  height: 6px;
+  background: #27272a;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.35rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #6366f1;
+  transition: width 0.2s ease;
+}
+
+.status {
+  margin-top: 1rem;
+  color: #a1a1aa;
+  font-size: 0.875rem;
+}
+
+.error {
+  color: #fca5a5;
+}
+
+.muted {
+  color: #71717a;
+  font-size: 0.85rem;
+}

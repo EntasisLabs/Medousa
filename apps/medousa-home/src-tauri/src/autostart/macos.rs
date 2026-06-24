@@ -67,13 +67,11 @@ pub fn remove() -> Result<(), String> {
 }
 
 fn render_launch_agent_plist(spec: &AutostartSpec, log_path: &PathBuf) -> String {
-    let mut program_args = vec![spec.program.clone()];
-    program_args.extend(spec.args.clone());
-    let args_xml: String = program_args
-        .iter()
-        .map(|arg| format!("        <string>{}</string>", xml_escape(arg)))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let start_cmd = super::spec::shell_start_command(spec);
+    let args_xml = format!(
+        "        <string>/bin/sh</string>\n        <string>-c</string>\n        <string>{}</string>",
+        xml_escape(&start_cmd)
+    );
 
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>

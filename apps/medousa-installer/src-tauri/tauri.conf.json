@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Medousa Installer",
+  "version": "0.1.0",
+  "identifier": "com.entasislabs.medousa-installer",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1421",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Medousa Installer",
+        "width": 820,
+        "height": 640,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "../../medousa-home/src-tauri/icons/32x32.png",
+      "../../medousa-home/src-tauri/icons/128x128.png",
+      "../../medousa-home/src-tauri/icons/128x128@2x.png",
+      "../../medousa-home/src-tauri/icons/icon.icns",
+      "../../medousa-home/src-tauri/icons/icon.ico"
+    ]
+  }
+}

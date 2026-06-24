@@ -13,6 +13,7 @@ PRINT_TARGET_ONLY=0
 WITH_INFERENCE=0
 # Full-private defaults: Iroh on unless explicitly disabled.
 WITH_IROH=1
+WITH_LOCAL_BRAIN=1
 
 usage() {
   cat <<'EOF'
@@ -22,7 +23,8 @@ Options:
   --target <triple>     Rust target triple (default: host)
   --output <dir>        Staging directory (default: dist/build/<target>)
   --print-target        Print resolved target triple and exit
-  --with-inference      Build with embedded inference (Metal on Apple, CPU elsewhere; set MEDOUSA_EMBEDDED_INFERENCE=cuda for NVIDIA builds)
+  --with-inference      (deprecated) Build daemon with embedded inference — prefer medousa_local package
+  --with-local-brain    Also build medousa_local into staging local-brain/ subdirectory
   --without-iroh        Omit iroh-transport (LAN-only pairing)
   --with-iroh           Include iroh-transport (default)
   -h, --help            Show this help
@@ -48,6 +50,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --with-inference)
       WITH_INFERENCE=1
+      shift
+      ;;
+    --with-local-brain)
+      WITH_LOCAL_BRAIN=1
       shift
       ;;
     --without-iroh)
@@ -124,13 +130,13 @@ resolve_inference_feature() {
   esac
 }
 
-CARGO_BUILD_ARGS=(--release --bins)
+CARGO_BUILD_ARGS=(--release)
 CARGO_FEATURES=()
 if [[ "${WITH_INFERENCE}" -eq 1 ]]; then
   INFERENCE_MODE="${MEDOUSA_EMBEDDED_INFERENCE:-auto}"
   INFERENCE_FEATURE="$(resolve_inference_feature "${INFERENCE_MODE}")"
   CARGO_FEATURES+=("${INFERENCE_FEATURE}")
-  medousa_log "embedded inference enabled (${INFERENCE_FEATURE})"
+  medousa_log "embedded inference enabled on daemon (${INFERENCE_FEATURE}) — deprecated; use medousa_local"
 fi
 if [[ "${WITH_IROH}" -eq 1 ]]; then
   CARGO_FEATURES+=("iroh-transport")
@@ -144,8 +150,16 @@ if [[ -n "${TARGET}" ]]; then
   CARGO_BUILD_ARGS+=(--target "${TARGET}")
 fi
 
-medousa_log "cargo build (root workspace, release, all bins)…"
-cargo build "${CARGO_BUILD_ARGS[@]}"
+medousa_log "cargo build (root workspace, release, slim engine bins)…"
+cargo build "${CARGO_BUILD_ARGS[@]}" \
+  --bin medousa \
+  --bin medousa_cli \
+  --bin medousa_daemon \
+  --bin medousa_tui \
+  --bin medousa_telegram \
+  --bin medousa_discord \
+  --bin medousa_slack \
+  --bin medousa_mcp_gateway
 
 medousa_log "cargo build (medousa_whatsapp)…"
 WA_BUILD_ARGS=(--release --manifest-path "${MEDOUSA_WHATSAPP_MANIFEST}")
@@ -184,3 +198,8 @@ MEDOUSA_WITH_IROH=${WITH_IROH}
 EOF
 
 medousa_log "done — $(find "${BIN_DIR}" -type f | wc -l | tr -d ' ') binaries in ${BIN_DIR}"
+
+if [[ "${WITH_LOCAL_BRAIN}" -eq 1 ]]; then
+  "${SCRIPT_DIR}/build-local-brain.sh" --target "${TARGET}" --output "${ROOT}/dist/build-local-brain/${TARGET}"
+  "${SCRIPT_DIR}/package-local-brain.sh" --target "${TARGET}" --input "${ROOT}/dist/build-local-brain/${TARGET}"
+fi

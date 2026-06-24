@@ -10,6 +10,7 @@ mod files;
 mod daemon;
 mod messaging;
 mod medousa_paths;
+mod packages;
 mod pairing;
 mod pairing_client;
 mod workshop_registry;
@@ -248,6 +249,8 @@ pub fn run() {
             wizard::wizard_advance,
             wizard::wizard_apply_screen1,
             wizard::wizard_complete,
+            packages::packages_status,
+            packages::packages_open_installer,
             daemon::local_inference::local_inference_hardware,
             daemon::local_inference::local_inference_catalog,
             daemon::local_inference::local_inference_models,

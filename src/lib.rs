@@ -82,6 +82,7 @@ pub mod user_profiles;
 pub mod profile_portability;
 pub mod locus_handlers;
 pub mod locus_memory;
+pub mod install;
 pub mod local_inference;
 pub mod local_inference_cli;
 pub mod local_inference_handlers;
