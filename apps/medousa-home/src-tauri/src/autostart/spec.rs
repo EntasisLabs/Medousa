@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::connection_prefs::load_connection_prefs;
-use crate::daemon_service::{resolve_backend, resolve_daemon_binary, should_load_private_brain};
+use crate::local_engine::{resolve_backend, resolve_daemon_binary, should_load_private_brain};
 
 pub const SERVICE_NAME: &str = "medousa-engine";
 

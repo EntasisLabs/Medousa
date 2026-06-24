@@ -25,6 +25,17 @@ export async function setActiveWorkshop(workshopId: string): Promise<WorkshopReg
   return parsed;
 }
 
+export async function addLocalWorkshop(
+  label: string,
+  dataDir: string,
+): Promise<WorkshopRegistry> {
+  if (!isTauri()) return defaultWorkshopRegistry();
+  const raw = await invoke<unknown>("workshops_add_local", { label, dataDir });
+  const parsed = parseWorkshopRegistry(raw);
+  if (!parsed) throw new Error("Invalid workshop registry response");
+  return parsed;
+}
+
 export async function renameWorkshop(
   workshopId: string,
   label: string,

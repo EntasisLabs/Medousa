@@ -63,10 +63,7 @@ pub fn resolve_daemon_url() -> String {
 }
 
 fn daemon_url_store_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
-        .join("home_daemon_url.txt")
+    crate::paths::medousa_data_dir().join("home_daemon_url.txt")
 }
 
 fn read_persisted_daemon_url() -> Option<String> {

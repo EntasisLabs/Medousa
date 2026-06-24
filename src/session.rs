@@ -155,9 +155,7 @@ pub enum ApiKeyStorageBackend {
 }
 
 pub(crate) fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 pub fn history_path(session_id: &str) -> PathBuf {

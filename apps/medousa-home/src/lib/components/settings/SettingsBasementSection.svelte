@@ -523,6 +523,23 @@
     </button>
   {/if}
 
+  {#if configPaths && !mobile}
+    <div class="mt-6">
+      <h3 class="workshop-label">Storage</h3>
+      <dl class="mt-2 space-y-2 text-xs">
+        <div>
+          <dt class="text-surface-500">Engine data</dt>
+          <dd class="font-mono text-surface-300 break-all">{configPaths.dataDir}</dd>
+          <dd class="text-surface-500">via {configPaths.dataDirSource}</dd>
+        </div>
+        <div>
+          <dt class="text-surface-500">Vault</dt>
+          <dd class="font-mono text-surface-300 break-all">{configPaths.vaultDir}</dd>
+        </div>
+      </dl>
+    </div>
+  {/if}
+
   {#if workshopFiles.length > 0 && !mobile}
     <div class="mt-6">
       <h3 class="workshop-label">Workshop files</h3>

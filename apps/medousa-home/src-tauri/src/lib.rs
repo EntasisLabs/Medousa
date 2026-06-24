@@ -1,3 +1,5 @@
+mod local_engine;
+mod paths;
 mod autostart;
 mod badge;
 mod channel_adapters;
@@ -92,6 +94,7 @@ pub fn run() {
             daemon_service::daemon_start,
             daemon_service::daemon_restart,
             daemon_service::daemon_wait_healthy,
+            daemon_service::workshop_ensure_engine,
             connection_prefs::connection_load_prefs,
             connection_prefs::connection_set_public_bind,
             connection_prefs::connection_set_autostart,
@@ -111,6 +114,7 @@ pub fn run() {
             pairing::bonjour_status,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
+            workshop_registry::workshops_add_local,
             workshop_registry::workshops_rename,
             workshop_registry::workshops_remove,
             workshop_registry::workshops_update_client_state,

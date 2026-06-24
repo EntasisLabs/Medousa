@@ -12,10 +12,7 @@ pub struct ConnectionPrefs {
 }
 
 fn prefs_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
-        .join("connection_prefs.json")
+    crate::paths::medousa_data_dir().join("connection_prefs.json")
 }
 
 pub fn load_connection_prefs() -> ConnectionPrefs {

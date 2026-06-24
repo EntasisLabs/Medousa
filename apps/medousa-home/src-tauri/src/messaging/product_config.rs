@@ -6,9 +6,7 @@ use serde_json::{json, Value};
 use super::secrets;
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 fn product_config_path() -> PathBuf {

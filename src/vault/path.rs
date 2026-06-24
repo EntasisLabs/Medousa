@@ -4,11 +4,9 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-use crate::session;
-
-/// Default user vault root: `~/.local/share/medousa/vault/`.
+/// Default user vault root: `{data_dir}/vault/`.
 pub fn user_vault_root() -> PathBuf {
-    session::medousa_data_dir().join("vault")
+    crate::paths::user_vault_root()
 }
 
 /// Optional project overlay: `{root}/.medousa/vault/`.

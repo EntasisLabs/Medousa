@@ -617,9 +617,7 @@ fn read_legacy_session_token() -> Option<String> {
 }
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 fn phone_identity_path() -> PathBuf {

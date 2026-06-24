@@ -1,0 +1,521 @@
+//! Per-workshop local Medousa Engine process management (Phase 2 multi-engine).
+
+use crate::medousa_paths::{load_tui_defaults_summary, tui_defaults_path};
+use crate::workshop_registry::{WorkshopRegistry, WorkshopServer, PERSONAL_WORKSHOP_ID};
+use reqwest::Client;
+use std::collections::HashSet;
+use std::fs::{self, OpenOptions};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+pub const DEFAULT_LOCAL_BIND: &str = "127.0.0.1:7419";
+const PUBLIC_LOCAL_BIND: &str = "0.0.0.0:7419";
+const DEFAULT_BACKEND: &str = "surreal-mem";
+const LOCAL_PORT_START: u16 = 7419;
+const LOCAL_PORT_END: u16 = 7499;
+
+pub(crate) struct ComponentCommand {
+    pub program: String,
+    pub pre_args: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalEngineEnsureResult {
+    pub ok: bool,
+    pub already_running: bool,
+    pub started: bool,
+    pub pid: Option<u32>,
+    pub url: String,
+    pub bind: String,
+    pub data_dir: String,
+    pub log_path: String,
+    pub message: String,
+}
+
+pub fn public_local_bind() -> &'static str {
+    PUBLIC_LOCAL_BIND
+}
+
+pub(crate) fn resolve_backend() -> String {
+    if let Ok(raw) = fs::read_to_string(tui_defaults_path()) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(backend) = json.get("backend").and_then(|value| value.as_str()) {
+                let trimmed = backend.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    DEFAULT_BACKEND.to_string()
+}
+
+pub(crate) fn find_command_in_path(command: &str) -> Option<PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    std::env::split_paths(&path_var)
+        .map(|path| path.join(command))
+        .find(|candidate| candidate.exists())
+}
+
+pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_MEDOUSA_DAEMON_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.exists() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name("medousa_daemon");
+        if sibling.exists() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if find_command_in_path("medousa_daemon").is_some() {
+        return Ok(ComponentCommand {
+            program: "medousa_daemon".to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err(
+        "Medousa could not start — the app bundle may be incomplete. Reinstall Medousa, or set MEDOUSA_MEDOUSA_DAEMON_BIN for development.".to_string(),
+    )
+}
+
+pub(crate) fn is_bind_reachable(bind: &str) -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    if let Ok(mut addrs) = bind.to_socket_addrs() {
+        if let Some(addr) = addrs.next() {
+            return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
+        }
+    }
+    false
+}
+
+pub(crate) fn should_load_private_brain(explicit: bool) -> bool {
+    if explicit {
+        return true;
+    }
+    load_tui_defaults_summary()
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|provider| provider.eq_ignore_ascii_case("medousa-local"))
+}
+
+fn apply_daemon_messaging_env(command: &mut Command) {
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("telegram_bot_token") {
+        command.env("MEDOUSA_TELEGRAM_BOT_TOKEN", token);
+    }
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("discord_bot_token") {
+        command.env("MEDOUSA_DISCORD_BOT_TOKEN", token);
+    }
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("slack_bot_token") {
+        command.env("MEDOUSA_SLACK_BOT_TOKEN", token);
+    }
+    if let Ok(Some(token)) = crate::messaging::secrets::load_secret_value("slack_app_token") {
+        command.env("MEDOUSA_SLACK_APP_TOKEN", token);
+    }
+}
+
+#[cfg(unix)]
+fn detach_new_session(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn detach_new_session(_command: &mut Command) {}
+
+pub fn engine_runtime_dir(workshop_id: &str) -> PathBuf {
+    crate::paths::medousa_data_dir()
+        .join("engines")
+        .join(workshop_id)
+}
+
+pub fn daemon_pid_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("daemon.pid")
+}
+
+pub fn daemon_log_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("daemon.log")
+}
+
+fn legacy_daemon_pid_path() -> PathBuf {
+    crate::paths::medousa_data_dir().join("daemon.pid")
+}
+
+fn legacy_daemon_log_path() -> PathBuf {
+    crate::paths::medousa_data_dir().join("logs").join("daemon.log")
+}
+
+pub fn url_from_bind(bind: &str) -> String {
+    format!("http://{}", bind.trim())
+}
+
+pub fn parse_bind_port(bind: &str) -> Option<u16> {
+    bind.rsplit(':').next()?.parse().ok()
+}
+
+pub fn resolve_workshop_bind(workshop: &WorkshopServer) -> String {
+    workshop
+        .bind
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_LOCAL_BIND.to_string())
+}
+
+pub fn resolve_workshop_data_dir(workshop: &WorkshopServer) -> PathBuf {
+    if let Some(raw) = workshop.data_dir.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        return PathBuf::from(raw);
+    }
+    crate::paths::medousa_data_dir()
+}
+
+pub fn resolve_workshop_url(workshop: &WorkshopServer) -> String {
+    if workshop.kind == "local" {
+        url_from_bind(&resolve_workshop_bind(workshop))
+    } else {
+        workshop.url.trim().trim_end_matches('/').to_string()
+    }
+}
+
+pub fn allocate_local_bind(registry: &WorkshopRegistry) -> Result<String, String> {
+    let mut used_ports = HashSet::new();
+    for workshop in registry
+        .workshops
+        .iter()
+        .filter(|entry| entry.kind == "local")
+    {
+        if let Some(port) = parse_bind_port(&resolve_workshop_bind(workshop)) {
+            used_ports.insert(port);
+        }
+    }
+
+    for port in LOCAL_PORT_START..=LOCAL_PORT_END {
+        if used_ports.contains(&port) {
+            continue;
+        }
+        let bind = format!("127.0.0.1:{port}");
+        if is_bind_reachable(&bind) {
+            continue;
+        }
+        return Ok(bind);
+    }
+
+    Err(format!(
+        "No free local engine ports in {LOCAL_PORT_START}–{LOCAL_PORT_END} — remove a local workshop or stop another engine."
+    ))
+}
+
+pub fn validate_engine_data_dir(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Engine data folder is required".to_string());
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
+        return Err("Engine data folder must be an absolute path".to_string());
+    }
+    Ok(path)
+}
+
+pub fn backfill_local_workshop_fields(registry: &mut WorkshopRegistry) {
+    for workshop in &mut registry.workshops {
+        if workshop.kind != "local" {
+            continue;
+        }
+        if workshop.bind.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+            workshop.bind = Some(DEFAULT_LOCAL_BIND.to_string());
+        }
+        if workshop.id == PERSONAL_WORKSHOP_ID {
+            workshop.data_dir = None;
+        }
+        workshop.url = url_from_bind(&resolve_workshop_bind(workshop));
+    }
+}
+
+fn write_daemon_pid(workshop_id: &str, pid: u32) -> Result<(), String> {
+    let path = daemon_pid_path(workshop_id);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    fs::write(path, pid.to_string()).map_err(|err| err.to_string())
+}
+
+fn clear_daemon_pid(workshop_id: &str) {
+    let _ = fs::remove_file(daemon_pid_path(workshop_id));
+}
+
+fn read_daemon_pid(workshop_id: &str) -> Option<u32> {
+    let paths = if workshop_id == PERSONAL_WORKSHOP_ID {
+        vec![daemon_pid_path(workshop_id), legacy_daemon_pid_path()]
+    } else {
+        vec![daemon_pid_path(workshop_id)]
+    };
+    for path in paths {
+        if let Ok(raw) = fs::read_to_string(path) {
+            if let Ok(pid) = raw.trim().parse::<u32>() {
+                return Some(pid);
+            }
+        }
+    }
+    None
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+pub fn stop_local_engine(workshop_id: &str) {
+    if let Some(pid) = read_daemon_pid(workshop_id) {
+        if is_process_alive(pid) {
+            #[cfg(unix)]
+            {
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+            }
+        }
+    }
+    clear_daemon_pid(workshop_id);
+    if workshop_id == PERSONAL_WORKSHOP_ID {
+        let _ = fs::remove_file(legacy_daemon_pid_path());
+    }
+}
+
+pub fn spawn_local_engine(
+    workshop_id: &str,
+    bind: &str,
+    data_dir: &Path,
+    private_brain: bool,
+) -> Result<(u32, PathBuf), String> {
+    fs::create_dir_all(data_dir).map_err(|err| err.to_string())?;
+
+    let daemon = resolve_daemon_binary()?;
+    let log_path = if workshop_id == PERSONAL_WORKSHOP_ID && !engine_runtime_dir(workshop_id).exists()
+    {
+        legacy_daemon_log_path()
+    } else {
+        daemon_log_path(workshop_id)
+    };
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let summary = load_tui_defaults_summary();
+    let mut command = Command::new(&daemon.program);
+    command.args(&daemon.pre_args);
+    command.arg("--backend").arg(resolve_backend());
+    command.arg("--bind").arg(bind);
+    if let Some(provider) = summary.provider.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        command.arg("--provider").arg(provider);
+    }
+    if let Some(model) = summary.model.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        command.arg("--model").arg(model);
+    }
+    if private_brain {
+        command.arg("--local-engine");
+    }
+    command.env(
+        "MEDOUSA_DATA_DIR",
+        data_dir.to_string_lossy().to_string(),
+    );
+    apply_daemon_messaging_env(&mut command);
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let child = command.spawn().map_err(|err| {
+        format!(
+            "Failed to spawn medousa_daemon ({}): {err}",
+            daemon.program
+        )
+    })?;
+    let pid = child.id();
+    write_daemon_pid(workshop_id, pid)?;
+    Ok((pid, log_path))
+}
+
+async fn daemon_http_healthy(base_url: &str) -> bool {
+    let client = match Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+    client
+        .get(url)
+        .send()
+        .await
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
+pub async fn wait_engine_healthy(
+    base_url: &str,
+    timeout_seconds: u64,
+    poll_ms: u64,
+) -> Result<(bool, u32), String> {
+    let timeout = Duration::from_secs(timeout_seconds.max(1));
+    let poll = Duration::from_millis(poll_ms.clamp(250, 10_000));
+    let started = Instant::now();
+    let mut attempts = 0u32;
+
+    while started.elapsed() < timeout {
+        attempts += 1;
+        if daemon_http_healthy(base_url).await {
+            return Ok((true, attempts));
+        }
+        tokio::time::sleep(poll).await;
+    }
+    Ok((false, attempts))
+}
+
+pub async fn ensure_local_engine(
+    workshop: &WorkshopServer,
+    private_brain: bool,
+) -> Result<LocalEngineEnsureResult, String> {
+    if workshop.kind != "local" {
+        return Ok(LocalEngineEnsureResult {
+            ok: true,
+            already_running: true,
+            started: false,
+            pid: None,
+            url: resolve_workshop_url(workshop),
+            bind: resolve_workshop_bind(workshop),
+            data_dir: resolve_workshop_data_dir(workshop).display().to_string(),
+            log_path: String::new(),
+            message: "Remote workshop — no local engine spawn".to_string(),
+        });
+    }
+
+    let bind = resolve_workshop_bind(workshop);
+    let url = url_from_bind(&bind);
+    let data_dir = resolve_workshop_data_dir(workshop);
+    let log_path = daemon_log_path(&workshop.id);
+
+    if daemon_http_healthy(&url).await {
+        let message = format!("Engine already running at {bind}");
+        return Ok(LocalEngineEnsureResult {
+            ok: true,
+            already_running: true,
+            started: false,
+            pid: read_daemon_pid(&workshop.id),
+            url,
+            bind,
+            data_dir: data_dir.display().to_string(),
+            log_path: log_path.display().to_string(),
+            message,
+        });
+    }
+
+    if is_bind_reachable(&bind) {
+        let (ok, _) = wait_engine_healthy(&url, 45, 500).await?;
+        if ok {
+            let message = format!("Engine is ready at {bind}");
+            return Ok(LocalEngineEnsureResult {
+                ok: true,
+                already_running: true,
+                started: false,
+                pid: read_daemon_pid(&workshop.id),
+                url,
+                bind,
+                data_dir: data_dir.display().to_string(),
+                log_path: log_path.display().to_string(),
+                message,
+            });
+        }
+        stop_local_engine(&workshop.id);
+        tokio::time::sleep(Duration::from_millis(750)).await;
+    }
+
+    let (pid, log_path) = spawn_local_engine(&workshop.id, &bind, &data_dir, private_brain)?;
+    let (ok, _) = wait_engine_healthy(&url, 45, 500).await?;
+    Ok(LocalEngineEnsureResult {
+        ok,
+        already_running: false,
+        started: true,
+        pid: Some(pid),
+        url,
+        bind,
+        data_dir: data_dir.display().to_string(),
+        log_path: log_path.display().to_string(),
+        message: if ok {
+            format!("Started local engine (pid {pid})")
+        } else {
+            format!(
+                "Engine did not become ready — check {}",
+                log_path.display()
+            )
+        },
+    })
+}
+
+pub async fn ensure_active_local_engine(
+    registry: &WorkshopRegistry,
+    private_brain: bool,
+) -> Result<LocalEngineEnsureResult, String> {
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|entry| entry.id == registry.active_workshop_id)
+        .ok_or_else(|| "Active workshop not found".to_string())?;
+    ensure_local_engine(workshop, private_brain).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_from_bind_formats_http() {
+        assert_eq!(url_from_bind("127.0.0.1:7420"), "http://127.0.0.1:7420");
+    }
+
+    #[test]
+    fn parse_bind_port_reads_trailing_port() {
+        assert_eq!(parse_bind_port("127.0.0.1:7419"), Some(7419));
+    }
+}

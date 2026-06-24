@@ -45,6 +45,10 @@ export interface WorkshopServer {
   brandColor?: string;
   /** Short subtitle under the workshop name. */
   tagline?: string;
+  /** Absolute engine storage root (local workshops only). */
+  dataDir?: string;
+  /** Loopback bind, e.g. `127.0.0.1:7420` (local workshops only). */
+  bind?: string;
   createdAt: string;
   updatedAt: string;
   lastConnectedAt?: string;
@@ -170,6 +174,8 @@ function parseWorkshop(raw: unknown): WorkshopServer | null {
     brandColor:
       typeof record.brandColor === "string" ? record.brandColor : undefined,
     tagline: typeof record.tagline === "string" ? record.tagline : undefined,
+    dataDir: typeof record.dataDir === "string" ? record.dataDir : undefined,
+    bind: typeof record.bind === "string" ? record.bind : undefined,
     pairing,
     clientState:
       record.clientState && typeof record.clientState === "object"

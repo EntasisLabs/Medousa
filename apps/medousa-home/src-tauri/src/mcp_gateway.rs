@@ -196,9 +196,7 @@ fn gateway_config_path() -> PathBuf {
 }
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 fn gateway_log_path() -> PathBuf {
@@ -581,11 +579,11 @@ fn kill_process_on_port(port: u16) {
 #[cfg(not(unix))]
 fn kill_process_on_port(_port: u16) {}
 
-fn resolve_gateway_binary() -> Result<crate::daemon_service::ComponentCommand, String> {
+fn resolve_gateway_binary() -> Result<crate::local_engine::ComponentCommand, String> {
     if let Ok(explicit) = std::env::var("MEDOUSA_MCP_GATEWAY_BIN") {
         let path = PathBuf::from(explicit.trim());
         if path.exists() {
-            return Ok(crate::daemon_service::ComponentCommand {
+            return Ok(crate::local_engine::ComponentCommand {
                 program: path.to_string_lossy().to_string(),
                 pre_args: Vec::new(),
             });
@@ -594,14 +592,14 @@ fn resolve_gateway_binary() -> Result<crate::daemon_service::ComponentCommand, S
     if let Ok(current_exe) = std::env::current_exe() {
         let sibling = current_exe.with_file_name("medousa_mcp_gateway");
         if sibling.exists() {
-            return Ok(crate::daemon_service::ComponentCommand {
+            return Ok(crate::local_engine::ComponentCommand {
                 program: sibling.to_string_lossy().to_string(),
                 pre_args: Vec::new(),
             });
         }
     }
-    if crate::daemon_service::find_command_in_path("medousa_mcp_gateway").is_some() {
-        return Ok(crate::daemon_service::ComponentCommand {
+    if crate::local_engine::find_command_in_path("medousa_mcp_gateway").is_some() {
+        return Ok(crate::local_engine::ComponentCommand {
             program: "medousa_mcp_gateway".to_string(),
             pre_args: Vec::new(),
         });

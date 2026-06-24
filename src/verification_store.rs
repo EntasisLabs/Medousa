@@ -324,13 +324,7 @@ fn file_read_index_records() -> Vec<VerificationRunRecord> {
 }
 
 fn verifications_root() -> PathBuf {
-    data_local_medousa_dir().join("verifications")
-}
-
-fn data_local_medousa_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| Path::new(".").to_path_buf())
-        .join("medousa")
+    crate::paths::medousa_data_dir().join("verifications")
 }
 
 fn short_session(session_id: &str) -> String {

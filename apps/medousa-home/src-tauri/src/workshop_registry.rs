@@ -1,6 +1,7 @@
 //! Client-side registry of Medousa Engine connections (ADR-003).
 
 use crate::daemon::{apply_daemon_url, resolve_daemon_url, DaemonState};
+use crate::local_engine::resolve_workshop_url;
 use crate::daemon::types::DEFAULT_DAEMON_URL;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -52,6 +53,12 @@ pub struct WorkshopServer {
     pub brand_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tagline: Option<String>,
+    /// Absolute engine storage root for local workshops (`MEDOUSA_DATA_DIR`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_dir: Option<String>,
+    /// Loopback bind address for local engine spawn, e.g. `127.0.0.1:7420`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pairing: Option<WorkshopPairingRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,9 +86,7 @@ pub struct RegisterPairedInput {
 }
 
 pub fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 pub fn workshops_registry_path() -> PathBuf {
@@ -129,6 +134,8 @@ pub fn default_personal_workshop() -> WorkshopServer {
         last_connected_at: None,
         brand_color: None,
         tagline: None,
+        data_dir: None,
+        bind: Some(crate::local_engine::DEFAULT_LOCAL_BIND.to_string()),
         pairing: None,
         client_state: None,
     }
@@ -145,8 +152,9 @@ pub fn default_registry() -> WorkshopRegistry {
 pub fn load_registry() -> Result<WorkshopRegistry, String> {
     let path = workshops_registry_path();
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let registry: WorkshopRegistry = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
+    let mut registry: WorkshopRegistry = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
     validate_registry(&registry)?;
+    crate::local_engine::backfill_local_workshop_fields(&mut registry);
     Ok(registry)
 }
 
@@ -279,6 +287,8 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
             last_connected_at: None,
             brand_color: None,
             tagline: None,
+            data_dir: None,
+            bind: None,
             pairing: Some(WorkshopPairingRef {
                 pairing_id: legacy.pairing_id,
                 phone_id: legacy.phone_id,
@@ -312,7 +322,7 @@ pub fn sync_daemon_state_from_registry(state: &DaemonState) -> Result<(), String
     let Some(workshop) = active_workshop(&registry) else {
         return Err("No active workshop in registry".to_string());
     };
-    apply_daemon_url(state, &workshop.url)
+    apply_daemon_url(state, &resolve_workshop_url(workshop))
 }
 
 pub fn update_active_workshop_url(url: &str) -> Result<(), String> {
@@ -377,6 +387,8 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
             last_connected_at: None,
             brand_color: None,
             tagline: None,
+            data_dir: None,
+            bind: None,
             pairing: Some(pairing),
             client_state: None,
         });
@@ -392,7 +404,7 @@ pub fn workshops_load() -> Result<WorkshopRegistry, String> {
 }
 
 #[tauri::command]
-pub fn workshops_set_active(
+pub async fn workshops_set_active(
     state: State<'_, DaemonState>,
     workshop_id: String,
 ) -> Result<WorkshopRegistry, String> {
@@ -411,6 +423,17 @@ pub fn workshops_set_active(
         return Err("Workshop not found".to_string());
     };
 
+    if workshop.kind == "local" {
+        let ensure = crate::local_engine::ensure_local_engine(
+            &workshop,
+            crate::local_engine::should_load_private_brain(false),
+        )
+        .await?;
+        if !ensure.ok {
+            return Err(ensure.message);
+        }
+    }
+
     registry.active_workshop_id = trimmed.to_string();
     let now = now_iso();
     if let Some(workshop) = registry.workshops.iter_mut().find(|entry| entry.id == trimmed) {
@@ -418,7 +441,7 @@ pub fn workshops_set_active(
         workshop.updated_at = now;
     }
     save_registry(&registry)?;
-    apply_daemon_url(&state, &workshop.url)?;
+    apply_daemon_url(&state, &resolve_workshop_url(&workshop))?;
     crate::workshop_transport::invalidate_workshop_route_cache();
     load_registry()
 }
@@ -470,6 +493,9 @@ pub fn workshops_remove(
     }
 
     if let Some(workshop) = removed {
+        if workshop.kind == "local" {
+            crate::local_engine::stop_local_engine(&workshop.id);
+        }
         if workshop.kind == "paired" {
             let device_id = workshop
                 .pairing
@@ -608,6 +634,46 @@ pub fn workshops_update_branding(
         };
     }
     workshop.updated_at = now_iso();
+    save_registry(&registry)?;
+    load_registry()
+}
+
+#[tauri::command]
+pub fn workshops_add_local(label: String, data_dir: String) -> Result<WorkshopRegistry, String> {
+    let trimmed_label = label.trim();
+    if trimmed_label.is_empty() {
+        return Err("Label is required".to_string());
+    }
+    let data_path = crate::local_engine::validate_engine_data_dir(&data_dir)?;
+    fs::create_dir_all(&data_path).map_err(|err| err.to_string())?;
+
+    let mut registry = ensure_migrated()?;
+    if registry.workshops.len() >= MAX_WORKSHOPS {
+        return Err(format!(
+            "Maximum of {MAX_WORKSHOPS} workshops reached — remove one before adding another."
+        ));
+    }
+
+    let bind = crate::local_engine::allocate_local_bind(&registry)?;
+    let url = crate::local_engine::url_from_bind(&bind);
+    let workshop_id = format!("local-{}", uuid::Uuid::new_v4().simple());
+    let iso = now_iso();
+    registry.workshops.push(WorkshopServer {
+        id: workshop_id,
+        label: trimmed_label.to_string(),
+        kind: "local".to_string(),
+        url,
+        icon: Some("building".to_string()),
+        created_at: iso.clone(),
+        updated_at: iso,
+        last_connected_at: None,
+        brand_color: None,
+        tagline: None,
+        data_dir: Some(data_path.display().to_string()),
+        bind: Some(bind),
+        pairing: None,
+        client_state: None,
+    });
     save_registry(&registry)?;
     load_registry()
 }

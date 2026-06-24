@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Building2, Home, Plus, Trash2 } from "@lucide/svelte";
+  import { Building2, FolderOpen, Home, Plus, Trash2 } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
@@ -9,6 +9,7 @@
     type WorkshopServer,
   } from "$lib/types/workshopRegistry";
   import { COLOR_THEME_OPTIONS, isColorThemeId } from "$lib/types/colorThemes";
+  import { pickExternalFolder } from "$lib/utils/externalDeskApi";
   import { isTauri } from "$lib/window";
 
   const ICON_OPTIONS: { id: WorkshopIcon; label: string }[] = [
@@ -32,6 +33,11 @@
   let iconDraft = $state<WorkshopIcon>("home");
   let brandingBusy = $state(false);
   let brandingError = $state<string | null>(null);
+  let addLocalOpen = $state(false);
+  let localLabelDraft = $state("");
+  let localDataDirDraft = $state("");
+  let addLocalBusy = $state(false);
+  let addLocalError = $state<string | null>(null);
 
   onMount(() => {
     void workshops.load();
@@ -43,7 +49,36 @@
   }
 
   function kindLabel(workshop: WorkshopServer): string {
+    if (workshop.kind === "local" && workshop.id !== PERSONAL_WORKSHOP_ID) {
+      return "Local engine on this Mac";
+    }
     return workshop.kind === "local" ? "This device" : "Paired phone portal";
+  }
+
+  async function pickLocalDataDir() {
+    const path = await pickExternalFolder();
+    if (path) localDataDirDraft = path;
+  }
+
+  async function submitAddLocal() {
+    const label = localLabelDraft.trim();
+    const dataDir = localDataDirDraft.trim();
+    if (!label || !dataDir) {
+      addLocalError = "Name and engine folder are required.";
+      return;
+    }
+    addLocalBusy = true;
+    addLocalError = null;
+    try {
+      await workshops.addLocalEngine(label, dataDir);
+      addLocalOpen = false;
+      localLabelDraft = "";
+      localDataDirDraft = "";
+    } catch (err) {
+      addLocalError = err instanceof Error ? err.message : String(err);
+    } finally {
+      addLocalBusy = false;
+    }
   }
 
   function formatLastConnected(iso: string | undefined): string | null {
@@ -129,17 +164,30 @@
       </p>
     </header>
 
-    <button
-      type="button"
-      class="btn btn-sm variant-soft-primary mt-4"
-      disabled={workshops.atWorkshopLimit}
-      onclick={() => {
-        joinOpen = true;
-      }}
-    >
-      <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-      Add workshop
-    </button>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <button
+        type="button"
+        class="btn btn-sm variant-soft-primary"
+        disabled={workshops.atWorkshopLimit}
+        onclick={() => {
+          addLocalOpen = true;
+          addLocalError = null;
+        }}
+      >
+        <Plus class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+        Add local engine
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm variant-soft-surface"
+        disabled={workshops.atWorkshopLimit}
+        onclick={() => {
+          joinOpen = true;
+        }}
+      >
+        Join paired workshop
+      </button>
+    </div>
 
     {#if workshops.error}
       <p class="mt-4 text-sm text-error-400">{workshops.error}</p>
@@ -194,6 +242,11 @@
                 <p class="workshop-faint mt-0.5 text-xs">
                   {kindLabel(workshop)} · {workshop.url.replace(/^https?:\/\//, "")}
                 </p>
+                {#if workshop.dataDir}
+                  <p class="workshop-faint mt-1 break-all font-mono text-[10px]">
+                    {workshop.dataDir}
+                  </p>
+                {/if}
                 {#if formatLastConnected(workshop.lastConnectedAt)}
                   <p class="workshop-faint mt-1 text-[11px]">
                     {formatLastConnected(workshop.lastConnectedAt)}
@@ -319,6 +372,71 @@
         </li>
       {/each}
     </ul>
+  </div>
+{/if}
+
+{/if}
+
+{#if addLocalOpen}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/80 p-4"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) addLocalOpen = false;
+    }}
+  >
+    <div class="card w-full max-w-md space-y-4 p-5 shadow-xl" role="dialog" aria-label="Add local engine">
+      <header>
+        <h3 class="text-base font-semibold text-surface-50">Add local engine</h3>
+        <p class="workshop-faint mt-1 text-sm">
+          A second Medousa brain on this Mac with its own storage folder and port.
+        </p>
+      </header>
+      <label class="block space-y-1 text-sm">
+        <span class="text-surface-400">Name</span>
+        <input class="input w-full" placeholder="Work" bind:value={localLabelDraft} />
+      </label>
+      <div class="space-y-1">
+        <span class="text-sm text-surface-400">Engine data folder</span>
+        <div class="flex gap-2">
+          <input
+            class="input min-w-0 flex-1 font-mono text-xs"
+            placeholder="/Users/you/MedousaWork"
+            bind:value={localDataDirDraft}
+          />
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface shrink-0"
+            onclick={() => void pickLocalDataDir()}
+          >
+            <FolderOpen size={14} strokeWidth={2} />
+            Choose
+          </button>
+        </div>
+      </div>
+      {#if addLocalError}
+        <p class="text-sm text-error-400">{addLocalError}</p>
+      {/if}
+      <div class="flex justify-end gap-2">
+        <button
+          type="button"
+          class="btn btn-sm variant-ghost-surface"
+          onclick={() => {
+            addLocalOpen = false;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm variant-filled-primary"
+          disabled={addLocalBusy}
+          onclick={() => void submitAddLocal()}
+        >
+          {addLocalBusy ? "Creating…" : "Create engine"}
+        </button>
+      </div>
+    </div>
   </div>
 {/if}
 

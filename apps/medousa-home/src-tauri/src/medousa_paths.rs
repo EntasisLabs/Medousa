@@ -5,7 +5,9 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase")]
 pub struct MedousaConfigPaths {
     pub data_dir: String,
+    pub data_dir_source: String,
     pub config_dir: String,
+    pub vault_dir: String,
     pub product_config: String,
     pub tui_defaults: String,
     pub capabilities: String,
@@ -227,15 +229,11 @@ struct TuiDefaultsFile {
 }
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 fn medousa_config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_config_dir()
 }
 
 pub(crate) fn tui_defaults_path() -> PathBuf {
@@ -421,7 +419,9 @@ pub fn medousa_config_paths() -> MedousaConfigPaths {
     let config = medousa_config_dir();
     MedousaConfigPaths {
         data_dir: data.display().to_string(),
+        data_dir_source: crate::paths::medousa_data_dir_source().to_string(),
         config_dir: config.display().to_string(),
+        vault_dir: data.join("vault").display().to_string(),
         product_config: data.join("product_config.json").display().to_string(),
         tui_defaults: data.join("tui_defaults.json").display().to_string(),
         capabilities: config.join("capabilities.toml").display().to_string(),

@@ -163,9 +163,7 @@ pub fn turn_ledger_path(session_id: &str) -> PathBuf {
         })
         .collect::<String>();
     let safe = if safe.is_empty() { "default".to_string() } else { safe };
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
         .join("turn_ledger")
         .join(format!("{safe}.jsonl"))
 }

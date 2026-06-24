@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
 pub fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 pub fn identity_dir() -> PathBuf {

@@ -21,7 +21,7 @@ non-devs configure Medousa through the **app wizard and Settings**. This documen
 | `~/.config/medousa/manuscripts/` | Specialty YAML |
 | `~/.local/share/medousa/secrets/` | API keys (preferred over raw env in production) |
 
-Data dir override: set `MEDOUSA_DATA_DIR` or use Stasis legacy paths below.
+Data dir override (wired): set `MEDOUSA_DATA_DIR` to an absolute path, or write that path as a single line to `{default_data_dir}/medousa/data_dir` (bootstrap redirect). Optional: `MEDOUSA_CONFIG_DIR` for `{config_dir}/medousa` overrides.
 
 ---
 

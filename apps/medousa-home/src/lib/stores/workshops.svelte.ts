@@ -1,5 +1,6 @@
 import { getDaemonUrl } from "$lib/daemon";
 import {
+  addLocalWorkshop,
   loadWorkshopRegistry,
   removeWorkshop,
   renameWorkshop,
@@ -241,6 +242,10 @@ export class WorkshopsStore {
     const exists = chat.sessions.some((session) => session.session_id === lastId);
     if (!exists) return;
     await chat.switchSession(lastId);
+  }
+
+  async addLocalEngine(label: string, dataDir: string) {
+    this.registry = await addLocalWorkshop(label, dataDir);
   }
 
   async renameWorkshop(workshopId: string, label: string) {

@@ -285,6 +285,7 @@ export async function reconnectWorkshop(
     runtime.resetWorkshopRuntime();
     workshopDefaults.resetForReconnect();
     userProfiles.resetForReconnect();
+    vault.resetForWorkshopSwitch();
     await runtime.loadWorkshopRuntime({ connected: true });
     await workshopDefaults.load(true);
     await userProfiles.load();

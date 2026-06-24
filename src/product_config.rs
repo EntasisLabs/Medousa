@@ -326,13 +326,7 @@ fn default_response_depth() -> String {
 }
 
 pub fn product_config_path() -> PathBuf {
-    medousa_data_dir().join("product_config.json")
-}
-
-fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir().join("product_config.json")
 }
 
 pub fn load_product_config() -> ProductConfig {

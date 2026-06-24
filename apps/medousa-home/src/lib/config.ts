@@ -7,7 +7,9 @@ import type { FavoriteModel } from "$lib/utils/modelCatalog";
 
 export interface MedousaConfigPaths {
   dataDir: string;
+  dataDirSource: string;
   configDir: string;
+  vaultDir: string;
   productConfig: string;
   tuiDefaults: string;
   capabilities: string;

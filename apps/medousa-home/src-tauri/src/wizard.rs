@@ -97,9 +97,7 @@ pub struct WizardAdvanceRequest {
 }
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 fn wizard_path() -> PathBuf {

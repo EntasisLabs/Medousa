@@ -511,6 +511,26 @@ export class VaultStore {
     this.focusSpaceForPath(path, title);
   }
 
+  resetForWorkshopSwitch() {
+    this.clearAutosaveTimer();
+    this.clearProposal();
+    this.selectedPath = null;
+    this.content = "";
+    this.baselineContent = "";
+    this.contentHash = null;
+    this.noteTags = [];
+    this.wikilinksOut = [];
+    this.backlinks = [];
+    this.title = "";
+    this.dirty = false;
+    this.searchHits = [];
+    this.searchQuery = "";
+    this.notes = [];
+    this.tree = [];
+    this.error = null;
+    void this.refreshNotes();
+  }
+
   async refreshNotes() {
     this.error = null;
     try {

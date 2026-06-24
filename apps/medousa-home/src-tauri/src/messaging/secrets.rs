@@ -14,9 +14,7 @@ const STT_API_KEY_SERVICE: &str = "medousa.stt";
 const STT_API_KEY_ACCOUNT: &str = "api_key";
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    crate::paths::medousa_data_dir()
 }
 
 fn secret_file_path(name: &str) -> PathBuf {

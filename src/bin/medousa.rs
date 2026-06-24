@@ -1050,6 +1050,19 @@ fn run_doctor(args: &[String]) -> Result<()> {
     let daemon_http = probe_daemon_http(&daemon_url);
 
     println!("medousa doctor");
+    println!(
+        "data_dir={} source={} config_dir={} vault_root={}",
+        medousa::paths::medousa_data_dir().display(),
+        medousa::paths::medousa_data_dir_source(),
+        medousa::paths::medousa_config_dir().display(),
+        medousa::vault::path::user_vault_root().display(),
+    );
+    if let Ok(raw) = env::var("MEDOUSA_DATA_DIR") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            println!("MEDOUSA_DATA_DIR={trimmed}");
+        }
+    }
     let backend_name = profile
         .daemon_backend
         .clone()
@@ -2786,9 +2799,7 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 }
 
 fn medousa_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("medousa")
+    medousa::paths::medousa_data_dir()
 }
 
 fn onboard_profile_path() -> PathBuf {

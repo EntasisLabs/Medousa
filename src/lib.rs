@@ -89,6 +89,7 @@ pub mod memory_tools;
 pub mod tool_aliases;
 pub mod tool_names;
 pub mod adapter_heartbeat;
+pub mod paths;
 pub mod product_config;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;
@@ -520,8 +521,7 @@ fn parse_surreal_kv_path(raw: &str) -> String {
 }
 
 fn default_surrealkv_path() -> String {
-    let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("medousa")
+    paths::medousa_data_dir()
         .join(DEFAULT_SURREALKV_FILENAME)
         .to_string_lossy()
         .to_string()
