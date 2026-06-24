@@ -119,6 +119,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
 pub trait SessionStore: Send + Sync + 'static {
     fn load_history(&self, session_id: &str) -> Vec<ConversationTurn>;
     fn append_turn(&self, session_id: &str, turn: &ConversationTurn);
+    fn delete_session(&self, session_id: &str);
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn build_backfill_summaries(&self, limit: usize) -> Vec<SessionHistorySummary>;
     fn has_persisted_sessions(&self) -> bool;
@@ -150,6 +151,13 @@ impl SessionStore for FileSessionStore {
     fn append_turn(&self, session_id: &str, turn: &ConversationTurn) {
         crate::session::file_append_turn(session_id, turn);
         crate::session_catalog::record_turn_appended(session_id, turn);
+    }
+
+    fn delete_session(&self, session_id: &str) {
+        let path = crate::session::medousa_data_dir()
+            .join("history")
+            .join(format!("{session_id}.jsonl"));
+        let _ = std::fs::remove_file(path);
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -264,6 +272,16 @@ impl SessionStore for SurrealSessionStore {
         }
 
         crate::session_catalog::record_turn_appended(session_id, turn);
+    }
+
+    fn delete_session(&self, session_id: &str) {
+        let sql = "DELETE type::table($table) WHERE session_id = $session_id";
+        let _ = block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_TURN_TABLE))
+                .bind(("session_id", session_id.trim().to_string())),
+        );
     }
 
     fn list_history_sessions(&self, limit: usize) -> Vec<SessionHistorySummary> {
@@ -417,4 +435,8 @@ pub fn build_backfill_summaries(limit: usize) -> Vec<SessionHistorySummary> {
 
 pub fn has_persisted_sessions() -> bool {
     get_session_store().has_persisted_sessions()
+}
+
+pub fn delete_session_transcript(session_id: &str) {
+    get_session_store().delete_session(session_id.trim());
 }

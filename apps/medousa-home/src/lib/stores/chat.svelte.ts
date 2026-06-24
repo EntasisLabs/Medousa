@@ -4,6 +4,7 @@ import {
   getSessionHistory,
   listSessionTurns,
   listSessions,
+  deleteSession as daemonDeleteSession,
   setSessionDisplayName,
   startInteractiveStream,
   stopInteractiveStreamTurn,
@@ -244,6 +245,22 @@ export class ChatStore {
         ? { ...session, display_name: response.display_name }
         : session,
     );
+  }
+
+  async deleteSession(sessionId: string, options?: { purgeMemory?: boolean }) {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      throw new Error("session_id is required");
+    }
+    await daemonDeleteSession(trimmed, options);
+    this.sessions = this.sessions.filter((session) => session.session_id !== trimmed);
+    this.pinnedIds = this.pinnedIds.filter((id) => id !== trimmed);
+    localStorage.setItem(PINS_KEY, JSON.stringify(this.pinnedIds));
+    if (this.sessionId === trimmed) {
+      await this.newSession();
+    } else {
+      await this.refreshSessions({ force: true });
+    }
   }
 
   async refreshSessions(options?: { force?: boolean; q?: string }) {

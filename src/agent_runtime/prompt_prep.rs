@@ -143,6 +143,10 @@ pub async fn cheap_memory_recall_probe(
         ..Default::default()
     };
     request.scope.session_ids = Some(vec![locus_session_id.clone()]);
+    let tenant = crate::locus_memory::derive_locus_tenant_id(&locus_session_id);
+    if tenant != crate::locus_memory::LOCUS_DEFAULT_TENANT {
+        request.scope.tenant_id = Some(tenant);
+    }
 
     match tui_rt.memory_reader.recall(&request).await {
         Ok(response) => {

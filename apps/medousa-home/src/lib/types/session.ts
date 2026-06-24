@@ -3,6 +3,14 @@ export interface SessionSetDisplayNameResponse {
   display_name: string;
 }
 
+export interface SessionDeleteResponse {
+  session_id: string;
+  deleted: boolean;
+  locus_purged: boolean;
+  locus_nodes_deleted: number;
+  cancelled_active_turn: boolean;
+}
+
 export interface SessionSummary {
   session_id: string;
   display_name?: string | null;

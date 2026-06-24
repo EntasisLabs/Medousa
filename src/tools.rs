@@ -684,9 +684,9 @@ impl StasisTool for CognitionGraphemeRunTool {
 }
 
 pub use crate::memory_tools::{
-    CognitionMemoryCalibrateTool, CognitionMemoryContextTool, CognitionMemoryListTool,
-    CognitionMemoryMoodsTool, CognitionMemoryRecallTool, CognitionMemorySchemaTool,
-    CognitionMemoryStoreTool,
+    CognitionMemoryCalibrateTool, CognitionMemoryContextTool, CognitionMemoryEvictTool,
+    CognitionMemoryListTool, CognitionMemoryMoodsTool, CognitionMemoryRecallTool,
+    CognitionMemorySchemaTool, CognitionMemoryStoreTool, CognitionMemoryTagsTool,
 };
 
 // ── Grapheme CLI Discovery/Run Tools (Phase A) ─────────────────────────────
@@ -2629,10 +2629,12 @@ pub struct TuiRuntime {
     pub mcp_gateway_client: Arc<McpGatewayClient>,
     pub workflow_registry: Arc<crate::workflow::WorkflowRegistry>,
     pub locus_store: Arc<dyn NodeStore>,
+    pub semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
     pub medousa_identity_store: Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>,
     pub identity_memory_store: Arc<dyn IdentityMemoryStore>,
     pub memory_reader: Arc<dyn MemoryContextReader>,
     pub memory_writer: Arc<dyn MemoryContextWriter>,
+    pub memory_operations: Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
     pub turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }

@@ -149,6 +149,7 @@ pub fn run() {
             daemon::turn_budget::turn_budget_list,
             daemon::session::session_list,
             daemon::session::session_set_display_name,
+            daemon::session::session_delete,
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,
             daemon::session::session_cancel_active_turn,
@@ -207,6 +208,7 @@ pub fn run() {
             daemon::identity::identity_digest_preview,
             daemon::identity::identity_export_markdown,
             daemon::locus::locus_list_nodes,
+            daemon::locus::locus_list_tags,
             daemon::locus::locus_get_node,
             daemon::artifact::artifact_command,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

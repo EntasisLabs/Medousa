@@ -9,7 +9,7 @@ use anyhow::{Context, Result, anyhow};
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::{get, patch, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use chrono::{DateTime, Timelike, Utc};
 use futures_util::stream::{self, Stream};
@@ -53,6 +53,7 @@ use medousa::daemon_api::{
     UpdateRecurringResponse, RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse, RuntimeConfigCommandSpec,
     StageRouteCommandRequest, StageRouteCommandResponse,
+    SessionDeleteQuery, SessionDeleteResponse,
 };
 use medousa::session_mapping;
 use medousa::user_profiles::{ProfileRecord, UserProfileRegistry};
@@ -123,6 +124,8 @@ struct AppState {
     heartbeat_metrics: Arc<RwLock<HeartbeatDeliveryMetrics>>,
     heartbeat_notify: HeartbeatNotifyConfig,
     webhook_client: Option<reqwest::Client>,
+    retention_config: medousa::session_retention::SessionRetentionConfig,
+    last_retention_at: Arc<RwLock<Option<DateTime<Utc>>>>,
 }
 
 impl AppState {
@@ -393,6 +396,7 @@ async fn main() -> Result<()> {
         .map(|tools| tools.len())
         .unwrap_or(0);
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
+    let retention_config = medousa::session_retention::SessionRetentionConfig::from_env();
 
     let state = AppState {
         platform: platform.clone(),
@@ -430,6 +434,8 @@ async fn main() -> Result<()> {
         heartbeat_metrics: Arc::new(RwLock::new(HeartbeatDeliveryMetrics::default())),
         heartbeat_notify,
         webhook_client,
+        retention_config,
+        last_retention_at: Arc::new(RwLock::new(None)),
     };
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(
@@ -464,6 +470,10 @@ async fn main() -> Result<()> {
         .route(
             "/v1/sessions/{session_id}/name",
             axum::routing::put(medousa::daemon_handlers::set_session_display_name),
+        )
+        .route(
+            "/v1/sessions/{session_id}",
+            delete(delete_session_handler),
         )
         .route(
             "/v1/sessions/{session_id}/active-turn",
@@ -786,6 +796,8 @@ async fn main() -> Result<()> {
         .merge(vault_router)
         .merge(medousa::locus_handlers::locus_router(
             state.platform.agent_handle().locus_store.clone(),
+            state.platform.agent_handle().semantic_index.clone(),
+            state.platform.agent_handle().memory_reader.clone(),
         ))
         .merge(workspace_router)
         .merge(budget_router);
@@ -977,6 +989,36 @@ async fn run_scheduler_loop(
                         report.heartbeat_significance,
                         report.heartbeat_reason,
                     );
+                }
+
+                if state.retention_config.enabled() {
+                    let interval = medousa::session_retention::retention_tick_interval();
+                    let should_run = {
+                        let last = *state.last_retention_at.read().await;
+                        last.is_none_or(|at| now_utc.signed_duration_since(at).to_std().unwrap_or(interval) >= interval)
+                    };
+                    if should_run {
+                        let report = medousa::session_retention::run_retention_pass(
+                            &state.retention_config,
+                            Some(state.platform.memory_operations()),
+                            state.composition(),
+                        )
+                        .await;
+                        *state.last_retention_at.write().await = Some(now_utc);
+                        if report.locus_raw_deleted > 0
+                            || report.runtime_jobs_pruned > 0
+                            || report.runtime_attempts_pruned > 0
+                            || report.runtime_outbox_pruned > 0
+                        {
+                            eprintln!(
+                                "medousa-daemon retention: locus_raw={} jobs={} attempts={} outbox={}",
+                                report.locus_raw_deleted,
+                                report.runtime_jobs_pruned,
+                                report.runtime_attempts_pruned,
+                                report.runtime_outbox_pruned,
+                            );
+                        }
+                    }
                 }
             }
             Err(err) => {
@@ -2447,6 +2489,22 @@ async fn start_interactive_turn(
         fallback_reason: None,
         daemon_notice: ticket.daemon_notice,
     }))
+}
+
+async fn delete_session_handler(
+    State(state): State<AppState>,
+    AxumPath(session_id): AxumPath<String>,
+    Query(query): Query<SessionDeleteQuery>,
+) -> Result<Json<SessionDeleteResponse>, (StatusCode, String)> {
+    medousa::daemon_handlers::delete_session(
+        State(medousa::daemon_handlers::SessionDeleteState {
+            memory_operations: Some(state.platform.memory_operations()),
+            turn_tickets: state.turn_tickets.clone(),
+        }),
+        AxumPath(session_id),
+        Query(query),
+    )
+    .await
 }
 
 async fn get_active_session_turn(

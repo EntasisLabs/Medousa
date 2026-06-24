@@ -60,6 +60,33 @@ pub async fn session_set_display_name(
     .await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionDeleteResponse {
+    pub session_id: String,
+    pub deleted: bool,
+    pub locus_purged: bool,
+    pub locus_nodes_deleted: usize,
+    pub cancelled_active_turn: bool,
+}
+
+#[tauri::command]
+pub async fn session_delete(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    purge_memory: Option<bool>,
+) -> Result<SessionDeleteResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let purge = purge_memory.unwrap_or(true);
+    let path = workshop_http::path_with_query(
+        &format!("/v1/sessions/{trimmed}"),
+        &[("purge_memory", purge.to_string())],
+    );
+    workshop_http::delete_json(&state, &path).await
+}
+
 #[tauri::command]
 pub async fn session_get_history(
     state: State<'_, DaemonState>,

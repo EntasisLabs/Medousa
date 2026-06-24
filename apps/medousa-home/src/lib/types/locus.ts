@@ -12,11 +12,19 @@ export interface LocusNodeSummary {
   tier: string;
   timestamp: string;
   context_summary: string;
+  semantic_tags?: string[] | null;
   psi: number;
   rho: number;
   kappa: number;
   user_avec?: LocusAvecSnapshot | null;
   model_avec?: LocusAvecSnapshot | null;
+}
+
+export interface LocusTagsListResponse {
+  tenant_id: string;
+  prefix?: string | null;
+  tags: string[];
+  count: number;
 }
 
 export interface LocusNodesListResponse {

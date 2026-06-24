@@ -61,6 +61,7 @@ fn set_verification_index_store(store: Arc<dyn VerificationIndexStore>) {
 trait VerificationIndexStore: Send + Sync {
     fn read_all(&self) -> Vec<VerificationRunRecord>;
     fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String>;
+    fn delete_for_session(&self, session_id: &str);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SurrealValue)]
@@ -151,6 +152,11 @@ pub fn list_verifications(session_id: &str, limit: usize) -> Vec<VerificationRun
     records.into_iter().take(limit.max(1)).collect()
 }
 
+pub fn delete_verifications_for_session(session_id: &str) {
+    verification_index_store().delete_for_session(session_id.trim());
+    let _ = std::fs::remove_dir_all(verifications_root().join(session_id.trim()));
+}
+
 pub fn find_verification(session_id: &str, query: Option<&str>) -> Option<VerificationRun> {
     let mut records: Vec<VerificationRunRecord> = read_index_records()
         .into_iter()
@@ -198,6 +204,21 @@ impl VerificationIndexStore for FileVerificationIndexStore {
 
     fn append(&self, record: &VerificationRunRecord) -> std::result::Result<(), String> {
         file_append_index_record(record)
+    }
+
+    fn delete_for_session(&self, session_id: &str) {
+        let remaining: Vec<_> = file_read_index_records()
+            .into_iter()
+            .filter(|record| record.session_id != session_id)
+            .collect();
+        let path = verifications_root().join("index.jsonl");
+        if let Ok(mut file) = std::fs::File::create(path) {
+            for record in remaining {
+                if let Ok(line) = serde_json::to_string(&record) {
+                    let _ = writeln!(file, "{line}");
+                }
+            }
+        }
     }
 }
 
@@ -255,6 +276,16 @@ impl VerificationIndexStore for SurrealVerificationIndexStore {
         )
         .map_err(|err| err.to_string())?;
         Ok(())
+    }
+
+    fn delete_for_session(&self, session_id: &str) {
+        let sql = "DELETE type::table($table) WHERE session_id = $session_id";
+        let _ = block_on(
+            self.db
+                .query(sql)
+                .bind(("table", VERIFICATION_INDEX_TABLE))
+                .bind(("session_id", session_id.trim().to_string())),
+        );
     }
 }
 

@@ -13,6 +13,7 @@ import type {
   CancelActiveSessionTurnResponse,
   SessionHistoryResponse,
   SessionSetDisplayNameResponse,
+  SessionDeleteResponse,
   SessionSummary,
 } from "$lib/types/session";
 import type { ArtifactCommandResponse } from "$lib/types/artifact";
@@ -26,6 +27,7 @@ import type {
 import type {
   LocusNodeDetailResponse,
   LocusNodesListResponse,
+  LocusTagsListResponse,
 } from "$lib/types/locus";
 import type { EnqueueResponse, JobResultResponse } from "$lib/types/job";
 import type {
@@ -159,6 +161,16 @@ export async function setSessionDisplayName(
   return invoke<SessionSetDisplayNameResponse>("session_set_display_name", {
     sessionId,
     displayName,
+  });
+}
+
+export async function deleteSession(
+  sessionId: string,
+  options?: { purgeMemory?: boolean },
+): Promise<SessionDeleteResponse> {
+  return invoke<SessionDeleteResponse>("session_delete", {
+    sessionId,
+    purgeMemory: options?.purgeMemory ?? true,
   });
 }
 
@@ -735,11 +747,33 @@ export async function listLocusNodes(options?: {
   sessionId?: string;
   limit?: number;
   q?: string;
+  tags?: string | string[];
+  tagPrefix?: string;
 }): Promise<LocusNodesListResponse> {
+  const tags =
+    options?.tags == null
+      ? undefined
+      : Array.isArray(options.tags)
+        ? options.tags.join(",")
+        : options.tags;
   return invoke<LocusNodesListResponse>("locus_list_nodes", {
     sessionId: options?.sessionId,
     limit: options?.limit,
     q: options?.q,
+    tags,
+    tagPrefix: options?.tagPrefix,
+  });
+}
+
+export async function listLocusTags(options?: {
+  sessionId?: string;
+  prefix?: string;
+  limit?: number;
+}): Promise<LocusTagsListResponse> {
+  return invoke<LocusTagsListResponse>("locus_list_tags", {
+    sessionId: options?.sessionId,
+    prefix: options?.prefix,
+    limit: options?.limit,
   });
 }
 

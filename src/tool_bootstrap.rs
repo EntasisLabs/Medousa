@@ -311,6 +311,14 @@ pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
     }
 }
 
+/// Remove persisted per-session tool surface (MCP servers, allowlists, etc.).
+pub fn delete_session_tool_surface(session_id: &str) {
+    let path = session_surface_path(session_id);
+    if path.exists() {
+        let _ = fs::remove_file(path);
+    }
+}
+
 pub fn save_session_tool_surface(surface: &SessionToolSurface) -> Result<(), String> {
     let path = session_surface_path(&surface.session_id);
     if let Some(parent) = path.parent() {

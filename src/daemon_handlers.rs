@@ -1,12 +1,22 @@
-use axum::extract::{Path as AxumPath, Query};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use std::sync::Arc;
+
+use stasis::ports::outbound::memory::memory_operations::MemoryOperations;
 
 use crate::daemon_api::{
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListRequest,
-    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameRequest,
-    SessionSetDisplayNameResponse,
+    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListRequest, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
 };
+use crate::turn_ticket::TurnTicketRegistry;
+
+#[derive(Clone)]
+pub struct SessionDeleteState {
+    pub memory_operations: Option<Arc<dyn MemoryOperations>>,
+    pub turn_tickets: TurnTicketRegistry,
+}
 
 /// Session history HTTP handlers extracted to library so they can be tested.
 pub async fn list_session_history(
@@ -83,5 +93,28 @@ pub async fn set_session_display_name(
     Ok(Json(SessionSetDisplayNameResponse {
         session_id,
         display_name,
+    }))
+}
+
+pub async fn delete_session(
+    State(state): State<SessionDeleteState>,
+    AxumPath(session_id): AxumPath<String>,
+    Query(query): Query<SessionDeleteQuery>,
+) -> Result<Json<SessionDeleteResponse>, (StatusCode, String)> {
+    let summary = crate::session_lifecycle::delete_session(
+        &session_id,
+        state.memory_operations,
+        &state.turn_tickets,
+        query.purge_memory,
+    )
+    .await
+    .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+
+    Ok(Json(SessionDeleteResponse {
+        session_id: summary.session_id,
+        deleted: summary.deleted,
+        locus_purged: summary.locus_purged,
+        locus_nodes_deleted: summary.locus_nodes_deleted,
+        cancelled_active_turn: summary.cancelled_active_turn,
     }))
 }

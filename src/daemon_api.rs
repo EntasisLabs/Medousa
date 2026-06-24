@@ -343,6 +343,26 @@ pub struct SessionSetDisplayNameResponse {
     pub display_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionDeleteQuery {
+    /// When false, keep Locus nodes for this session (transcript/catalog only).
+    #[serde(default = "default_purge_memory")]
+    pub purge_memory: bool,
+}
+
+fn default_purge_memory() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionDeleteResponse {
+    pub session_id: String,
+    pub deleted: bool,
+    pub locus_purged: bool,
+    pub locus_nodes_deleted: usize,
+    pub cancelled_active_turn: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobResultResponse {
     pub job_id: String,
@@ -1858,6 +1878,8 @@ pub struct LocusNodeSummary {
     pub tier: String,
     pub timestamp: DateTime<Utc>,
     pub context_summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_tags: Option<Vec<String>>,
     pub psi: f64,
     pub rho: f64,
     pub kappa: f64,
@@ -1878,6 +1900,26 @@ pub struct LocusNodesQuery {
     pub session_id: Option<String>,
     pub limit: Option<usize>,
     pub q: Option<String>,
+    /// Comma-separated or single indexed tag(s) — match-all when multiple.
+    pub tags: Option<String>,
+    /// Prefix filter on indexed tag vocabulary (e.g. `profile:`).
+    pub tag_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LocusTagsQuery {
+    pub session_id: Option<String>,
+    pub prefix: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocusTagsListResponse {
+    pub tenant_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    pub tags: Vec<String>,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

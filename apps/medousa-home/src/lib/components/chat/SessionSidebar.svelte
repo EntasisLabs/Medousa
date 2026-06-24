@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Pencil, X } from "@lucide/svelte";
+  import { Pencil, Trash2, X } from "@lucide/svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
@@ -23,6 +23,9 @@
   let renameDraft = $state("");
   let renameError = $state<string | null>(null);
   let renameSaving = $state(false);
+  let deletingSession = $state<SessionSummary | null>(null);
+  let deleteError = $state<string | null>(null);
+  let deleteSaving = $state(false);
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
 
@@ -147,6 +150,34 @@
     } catch (err) {
       renameError = err instanceof Error ? err.message : String(err);
       renameSaving = false;
+    }
+  }
+
+  function openDelete(session: SessionSummary) {
+    deletingSession = session;
+    deleteError = null;
+  }
+
+  function closeDelete() {
+    deletingSession = null;
+    deleteError = null;
+    deleteSaving = false;
+  }
+
+  async function confirmDelete() {
+    if (!deletingSession || deleteSaving) return;
+    deleteSaving = true;
+    deleteError = null;
+    try {
+      await chat.deleteSession(deletingSession.session_id);
+      closeDelete();
+      if (variant === "drawer" || variant === "sheet") {
+        layout.setSessionDrawerOpen(false);
+        onClose?.();
+      }
+    } catch (err) {
+      deleteError = err instanceof Error ? err.message : String(err);
+      deleteSaving = false;
     }
   }
 </script>
@@ -339,6 +370,57 @@
       </form>
     </div>
   {/if}
+
+  {#if deletingSession}
+    <div
+      class="absolute inset-0 z-40 flex items-end bg-surface-950/70 p-3 sm:items-center sm:justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-delete-title"
+    >
+      <div class="card w-full space-y-3 p-4 shadow-xl sm:max-w-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p id="session-delete-title" class="text-sm font-semibold text-surface-100">
+              Delete session?
+            </p>
+            <p class="workshop-faint mt-0.5 text-xs">
+              Removes transcript, catalog entry, and Locus memory for
+              {formatSessionLabel(deletingSession)}. This cannot be undone.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            aria-label="Cancel delete"
+            onclick={closeDelete}
+          >
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+        {#if deleteError}
+          <p class="text-xs text-error-400">{deleteError}</p>
+        {/if}
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            onclick={closeDelete}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm variant-filled-error"
+            disabled={deleteSaving}
+            onclick={confirmDelete}
+          >
+            {deleteSaving ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet sessionButton(session: SessionSummary)}
@@ -373,6 +455,15 @@
       onclick={() => openRename(session)}
     >
       <Pencil size={14} strokeWidth={1.75} />
+    </button>
+    <button
+      type="button"
+      class="px-2 text-xs text-surface-500 opacity-60 transition hover:text-error-300 group-hover:opacity-100"
+      title="Delete session"
+      aria-label="Delete session"
+      onclick={() => openDelete(session)}
+    >
+      <Trash2 size={14} strokeWidth={1.75} />
     </button>
     <button
       type="button"

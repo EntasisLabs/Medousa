@@ -207,6 +207,7 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
 
 trait SessionCatalogStore: Send + Sync {
     fn upsert_row(&self, row: &SessionCatalogRow);
+    fn delete_row(&self, session_id: &str);
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow>;
     fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow>;
     fn list_rows_page(
@@ -318,6 +319,11 @@ impl SessionCatalogStore for FileSessionCatalogStore {
             return;
         };
         let _ = atomic_write(&path, &bytes);
+    }
+
+    fn delete_row(&self, session_id: &str) {
+        let path = catalog_path(session_id);
+        let _ = std::fs::remove_file(path);
     }
 
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
@@ -534,6 +540,16 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
         ) {
             eprintln!("SurrealSessionCatalogStore::upsert_row create error: {err}");
         }
+    }
+
+    fn delete_row(&self, session_id: &str) {
+        let sql = "DELETE type::table($table) WHERE session_id = $session_id";
+        let _ = block_on(
+            self.db
+                .query(sql)
+                .bind(("table", SESSION_CATALOG_TABLE))
+                .bind(("session_id", session_id.trim().to_string())),
+        );
     }
 
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
@@ -861,6 +877,10 @@ pub fn session_has_activity(session_id: &str) -> bool {
     catalog_store()
         .get_row(session_id.trim())
         .is_some_and(|row| row.turn_count > 0)
+}
+
+pub fn delete_catalog_row(session_id: &str) {
+    catalog_store().delete_row(session_id.trim());
 }
 
 static CATALOG_SYNC_ATTEMPTED: AtomicBool = AtomicBool::new(false);

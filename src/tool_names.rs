@@ -26,6 +26,8 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_memory_list",
     "cognition_memory_recall",
     "cognition_memory_store",
+    "cognition_memory_evict",
+    "cognition_memory_tags",
     "cognition_utility_time_now",
     "cognition_utility_day_of_week",
     "cognition_utility_uuid",

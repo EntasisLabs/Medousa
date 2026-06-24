@@ -84,6 +84,7 @@ pub trait ChannelSessionStore: Send + Sync {
     async fn list_distinct_session_ids(&self, limit: usize) -> Vec<String>;
     /// Most recently updated mapping for `channel` whose session id matches (e.g. TUI session linked via prior Telegram ingest).
     async fn find_mapping_key_for_session(&self, channel: &str, session_id: &str) -> Option<String>;
+    async fn purge_session_references(&self, session_id: &str);
 }
 
 #[derive(Default)]
@@ -148,6 +149,16 @@ impl ChannelSessionStore for InMemoryChannelSessionStore {
             .iter()
             .find(|(key, sid)| key.starts_with(&prefix) && sid.as_str() == session_id)
             .map(|(key, _)| key.clone())
+    }
+
+    async fn purge_session_references(&self, session_id: &str) {
+        let mut mappings = self.mappings.write().await;
+        mappings.retain(|_, sid| sid != session_id);
+        drop(mappings);
+        let mut history = self.history.write().await;
+        for entries in history.values_mut() {
+            entries.retain(|sid| sid != session_id);
+        }
     }
 }
 
@@ -356,6 +367,23 @@ impl ChannelSessionStore for SurrealChannelSessionStore {
             .next()
             .map(|row| row.mapping_key)
     }
+
+    async fn purge_session_references(&self, session_id: &str) {
+        let _ = self
+            .db
+            .query("DELETE type::table($mapping) WHERE session_id = $session_id")
+            .bind(("mapping", MAPPING_TABLE))
+            .bind(("session_id", session_id.to_string()))
+            .await;
+        let _ = self
+            .db
+            .query(
+                "UPDATE type::table($history) SET session_ids = array::filter(session_ids, |sid| sid != $session_id)",
+            )
+            .bind(("history", HISTORY_TABLE))
+            .bind(("session_id", session_id.to_string()))
+            .await;
+    }
 }
 
 fn block_on<F: IntoFuture>(f: F) -> F::Output {
@@ -366,4 +394,10 @@ fn block_on<F: IntoFuture>(f: F) -> F::Output {
 pub fn list_distinct_channel_session_ids(limit: usize) -> Vec<String> {
     let store = channel_session_store();
     block_on(store.list_distinct_session_ids(limit))
+}
+
+/// Remove channel mapping/history rows that reference a deleted session.
+pub fn purge_session_references(session_id: &str) {
+    let store = channel_session_store();
+    block_on(store.purge_session_references(session_id));
 }

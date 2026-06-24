@@ -50,6 +50,10 @@ impl MedousaPlatformRuntime {
     pub fn identity_service(&self) -> Arc<IdentityMemoryService> {
         Arc::new(IdentityMemoryService::new(self.identity_store()))
     }
+
+    pub fn memory_operations(&self) -> Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations> {
+        self.agent.memory_operations.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -142,7 +146,9 @@ async fn build_platform_inner(
         memory.identity_store.clone(),
         memory.memory_reader.clone(),
         memory.memory_writer.clone(),
-        memory.locus_store.clone(),
+        memory.locus_memory.node_store.clone(),
+        memory.locus_memory.semantic_index.clone(),
+        memory.memory_operations.clone(),
         config.provider.as_deref(),
         config.model.as_deref(),
         config.base_url.as_deref(),
