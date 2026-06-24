@@ -1653,6 +1653,10 @@ pub struct VaultNotesListResponse {
 pub struct VaultNotesQuery {
     pub prefix: Option<String>,
     pub limit: Option<usize>,
+    /// Comma-separated semantic tags (match-all).
+    pub tags: Option<String>,
+    /// Tag prefix filter (e.g. `profile:`).
+    pub tag_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1666,6 +1670,37 @@ pub struct VaultWriteRequest {
     #[serde(default)]
     pub path: Option<String>,
     pub content: String,
+    /// Chat session id for workshop linking tags (`chat:…`, `session`, `profile:…`).
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub semantic_tags: Option<Vec<String>>,
+    /// Merge default workshop + vault tags on write (default true).
+    #[serde(default = "default_auto_workshop_tags")]
+    pub auto_workshop_tags: bool,
+}
+
+fn default_auto_workshop_tags() -> bool {
+    true
+}
+
+impl Default for VaultWriteRequest {
+    fn default() -> Self {
+        Self {
+            path: None,
+            content: String::new(),
+            session_id: None,
+            semantic_tags: None,
+            auto_workshop_tags: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VaultPutQuery {
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub auto_workshop_tags: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1699,6 +1734,20 @@ pub struct VaultSearchResponse {
 pub struct VaultSearchQuery {
     pub q: Option<String>,
     pub limit: Option<usize>,
+    /// Comma-separated semantic tags (match-all).
+    pub tags: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VaultTagsQuery {
+    pub prefix: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultTagsListResponse {
+    pub tags: Vec<String>,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

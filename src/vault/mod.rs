@@ -5,6 +5,7 @@ pub mod links;
 pub mod note;
 pub mod path;
 pub mod search;
+pub mod semantic_tags;
 pub mod service;
 pub mod store;
 

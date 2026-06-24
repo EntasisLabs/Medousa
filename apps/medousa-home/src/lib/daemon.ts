@@ -50,6 +50,7 @@ import type {
   VaultBacklinksResponse,
   VaultNoteContentResponse,
   VaultNotesListResponse,
+  VaultTagsListResponse,
   VaultSearchResponse,
   VaultWriteResponse,
 } from "$lib/types/vault";
@@ -451,11 +452,30 @@ export function onInteractiveError(
   });
 }
 
-export async function listVaultNotes(
-  prefix?: string,
-  limit?: number,
-): Promise<VaultNotesListResponse> {
-  return invoke<VaultNotesListResponse>("vault_list_notes", { prefix, limit });
+export async function listVaultNotes(options?: {
+  prefix?: string;
+  limit?: number;
+  tags?: string[];
+  tagPrefix?: string;
+}): Promise<VaultNotesListResponse> {
+  const tags =
+    options?.tags?.map((tag) => tag.trim()).filter(Boolean).join(",") || undefined;
+  return invoke<VaultNotesListResponse>("vault_list_notes", {
+    prefix: options?.prefix,
+    limit: options?.limit,
+    tags,
+    tagPrefix: options?.tagPrefix,
+  });
+}
+
+export async function listVaultTags(options?: {
+  prefix?: string;
+  limit?: number;
+}): Promise<VaultTagsListResponse> {
+  return invoke<VaultTagsListResponse>("vault_list_tags", {
+    prefix: options?.prefix,
+    limit: options?.limit,
+  });
 }
 
 export async function getVaultNote(
@@ -467,20 +487,37 @@ export async function getVaultNote(
 export async function saveVaultNote(
   path: string,
   content: string,
-  contentHash?: string,
+  options?: {
+    contentHash?: string;
+    sessionId?: string;
+    autoWorkshopTags?: boolean;
+  },
 ): Promise<VaultWriteResponse> {
   return invoke<VaultWriteResponse>("vault_save_note", {
     path,
     content,
-    contentHash,
+    contentHash: options?.contentHash,
+    sessionId: options?.sessionId,
+    autoWorkshopTags: options?.autoWorkshopTags,
   });
 }
 
 export async function createVaultNote(
   path: string,
   content: string,
+  options?: {
+    sessionId?: string;
+    semanticTags?: string[];
+    autoWorkshopTags?: boolean;
+  },
 ): Promise<VaultWriteResponse> {
-  return invoke<VaultWriteResponse>("vault_create_note", { path, content });
+  return invoke<VaultWriteResponse>("vault_create_note", {
+    path,
+    content,
+    sessionId: options?.sessionId,
+    semanticTags: options?.semanticTags,
+    autoWorkshopTags: options?.autoWorkshopTags,
+  });
 }
 
 export async function deleteVaultNote(path: string): Promise<{ path: string; deleted: boolean }> {
@@ -490,8 +527,15 @@ export async function deleteVaultNote(path: string): Promise<{ path: string; del
 export async function searchVaultNotes(
   query: string,
   limit?: number,
+  tags?: string[],
 ): Promise<VaultSearchResponse> {
-  return invoke<VaultSearchResponse>("vault_search", { query, limit });
+  const tagFilter =
+    tags?.map((tag) => tag.trim()).filter(Boolean).join(",") || undefined;
+  return invoke<VaultSearchResponse>("vault_search", {
+    query,
+    limit,
+    tags: tagFilter,
+  });
 }
 
 export async function getVaultBacklinks(

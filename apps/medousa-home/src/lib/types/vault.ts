@@ -49,6 +49,11 @@ export interface VaultBacklinksResponse {
   backlinks: string[];
 }
 
+export interface VaultTagsListResponse {
+  tags: string[];
+  count: number;
+}
+
 export interface VaultTreeNode {
   name: string;
   path: string | null;

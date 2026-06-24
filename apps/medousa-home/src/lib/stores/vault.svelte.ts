@@ -52,7 +52,7 @@ import {
   setFrontmatterKind,
   type VaultNoteKind,
 } from "$lib/utils/vaultFrontmatter";
-import { formatDiffChip, lineDiffStats, type LineDiffStats } from "$lib/utils/vaultDiff";
+import { workshopSessionIdForVaultSave } from "$lib/utils/vaultNoteWorkshop";
 import { parseWikilinkTarget, resolveWikilinkTarget, suggestPathForWikilinkToken } from "$lib/utils/resolveWikilink";
 import {
   addAttachments,
@@ -64,8 +64,6 @@ import {
 import { pickAttachmentFiles, pickSpreadsheetFiles } from "$lib/utils/vaultAttachmentPicker";
 import {
   isWriteFirstKind,
-  defaultAuthoringMode,
-  type VaultAuthoringMode,
 } from "$lib/utils/vaultAuthoring";
 import {
   isVaultConflictError,
@@ -106,6 +104,7 @@ export class VaultStore {
   contentHash = $state<string | null>(null);
   wikilinksOut = $state<string[]>([]);
   backlinks = $state<string[]>([]);
+  noteTags = $state<string[]>([]);
   title = $state("");
   selectedKind = $state<VaultNoteKind>("note");
   dirty = $state(false);
@@ -119,8 +118,6 @@ export class VaultStore {
   searchQuery = $state("");
   searchHits = $state<VaultSearchHit[]>([]);
   editorMode = $state<"edit" | "preview">("edit");
-  /** M8b: human write surface vs markdown source (write-first kinds). */
-  authoringMode = $state<VaultAuthoringMode>("write");
   /** Ledger notes: table-first editing (M7c.2). */
   ledgerEditMode = $state<"table" | "raw">("table");
   /** Board notes: kanban-first editing (Phase E). */
@@ -158,10 +155,6 @@ export class VaultStore {
 
   get isWriteFirstKind(): boolean {
     return isWriteFirstKind(this.selectedKind);
-  }
-
-  get isAuthoringSource(): boolean {
-    return this.authoringMode === "source";
   }
 
   get attachments(): VaultAttachment[] {
@@ -521,7 +514,7 @@ export class VaultStore {
   async refreshNotes() {
     this.error = null;
     try {
-      const response = await listVaultNotes(undefined, 500);
+      const response = await listVaultNotes({ limit: 500 });
       this.notes = response.notes;
       this.rebuildTree();
     } catch (err) {
@@ -565,6 +558,7 @@ export class VaultStore {
     this.selectedKind = resolveKind(response.note.path, response.note.kind);
     this.wikilinksOut = response.note.wikilinks_out;
     this.backlinks = response.note.backlinks;
+    this.noteTags = response.note.tags ?? [];
   }
 
   applyNote(
@@ -582,8 +576,8 @@ export class VaultStore {
     this.selectedKind = resolveKind(response.note.path, response.note.kind);
     this.wikilinksOut = response.note.wikilinks_out;
     this.backlinks = response.note.backlinks;
+    this.noteTags = response.note.tags ?? [];
     this.dirty = false;
-    this.authoringMode = defaultAuthoringMode(this.selectedKind);
     this.editorMode = "edit";
     if (this.selectedKind === "ledger") {
       this.ledgerEditMode = "table";
@@ -598,17 +592,6 @@ export class VaultStore {
     const resolved = resolveKind(path, kind);
     if (isWriteFirstKind(resolved)) return "edit";
     return "edit";
-  }
-
-  setAuthoringMode(mode: VaultAuthoringMode) {
-    this.authoringMode = mode;
-    if (mode === "write") {
-      this.editorMode = "edit";
-    }
-  }
-
-  toggleAuthoringMode() {
-    this.setAuthoringMode(this.authoringMode === "write" ? "source" : "write");
   }
 
   setEditorMode(mode: "edit" | "preview") {
@@ -693,6 +676,7 @@ export class VaultStore {
     this.title = response.title;
     this.selectedKind = resolveKind(response.path, response.kind);
     this.wikilinksOut = response.wikilinks_out;
+    this.noteTags = response.tags ?? [];
     this.baselineContent = this.content;
     this.dirty = false;
   }
@@ -708,11 +692,10 @@ export class VaultStore {
     this.error = null;
 
     try {
-      const response = await saveVaultNote(
-        this.selectedPath,
-        this.content,
-        options?.force ? undefined : (this.contentHash ?? undefined),
-      );
+      const response = await saveVaultNote(this.selectedPath, this.content, {
+        contentHash: options?.force ? undefined : (this.contentHash ?? undefined),
+        sessionId: workshopSessionIdForVaultSave(this.selectedPath),
+      });
       this.applySaveResponse(response.note);
       invalidateMedousaViewCache(this.selectedPath);
       invalidateTransclusionCache(this.selectedPath);

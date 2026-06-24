@@ -13,18 +13,22 @@
   const hasLinks = $derived(wikilinksOut.length > 0 || backlinks.length > 0);
 </script>
 
-{#if hasLinks}
-  <aside
-    class="vault-links-panel flex w-[220px] shrink-0 flex-col border-l border-surface-500/40 bg-surface-900/40"
-    aria-label="Note links"
-  >
-    <div class="border-b border-surface-500/35 px-3 py-2">
-      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">
-        Links
-      </h3>
-    </div>
+<aside
+  class="vault-links-panel flex w-[220px] shrink-0 flex-col border-l border-surface-500/40 bg-surface-900/40"
+  aria-label="Note links"
+>
+  <div class="border-b border-surface-500/35 px-3 py-2">
+    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">
+      Links
+    </h3>
+  </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-sm">
+  <div class="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-sm">
+    {#if !hasLinks}
+      <p class="text-xs leading-relaxed text-surface-500">
+        No wikilinks or backlinks yet. Use <code class="vault-kbd">[[note]]</code> to link notes.
+      </p>
+    {:else}
       {#if wikilinksOut.length > 0}
         <section class="mb-4">
           <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-surface-500">
@@ -66,6 +70,6 @@
           </ul>
         </section>
       {/if}
-    </div>
-  </aside>
-{/if}
+    {/if}
+  </div>
+</aside>

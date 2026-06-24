@@ -4,23 +4,51 @@ use anyhow::Result;
 
 use crate::daemon_api::{
     VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultWriteRequest, VaultWriteResponse, WorkspaceEventActor,
+    VaultNotesListResponse, VaultTagsListResponse, VaultWriteRequest, VaultWriteResponse,
+    WorkspaceEventActor,
 };
 use crate::vault::search::search_vault;
+use crate::vault::semantic_tags::{apply_semantic_tags_on_write, collect_distinct_tags, entry_has_all_tags, parse_tags_query};
 use crate::vault::store::vault_store;
 use crate::workspace::store::workspace_store;
 
 pub struct VaultService;
 
 impl VaultService {
-    pub fn list_notes(prefix: Option<&str>, limit: usize) -> VaultNotesListResponse {
+    pub fn list_notes(
+        prefix: Option<&str>,
+        limit: usize,
+        tags: Option<&str>,
+        tag_prefix: Option<&str>,
+    ) -> VaultNotesListResponse {
         let limit = limit.clamp(1, 500);
-        let entries = vault_store().list_entries(prefix, limit);
+        let required = parse_tags_query(tags);
+        let prefix_filter = tag_prefix
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase());
+        let entries = vault_store().list_entries(prefix, limit.saturating_mul(4));
         let notes = entries
             .into_iter()
+            .filter(|entry| entry_has_all_tags(&entry.tags, &required))
+            .filter(|entry| {
+                prefix_filter.as_ref().is_none_or(|prefix| {
+                    entry.tags.iter().any(|tag| tag.to_ascii_lowercase().starts_with(prefix))
+                })
+            })
+            .take(limit)
             .map(|entry| entry.to_vault_note(vault_store().backlinks_for(&entry.path)))
             .collect();
         VaultNotesListResponse { notes }
+    }
+
+    pub fn list_tags(prefix: Option<&str>, limit: usize) -> VaultTagsListResponse {
+        let limit = limit.clamp(1, 500);
+        let tags = collect_distinct_tags(&vault_store().all_entries(), prefix, limit);
+        VaultTagsListResponse {
+            count: tags.len(),
+            tags,
+        }
     }
 
     pub fn get_note(path: &str) -> Result<VaultNoteContentResponse> {
@@ -58,7 +86,13 @@ impl VaultService {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| anyhow::anyhow!("path is required"))?;
         let existed = vault_store().get_entry(target_path).is_some();
-        let entry = vault_store().write_content(target_path, &request.content, if_match)?;
+        let content = apply_semantic_tags_on_write(
+            &request.content,
+            request.session_id.as_deref(),
+            request.semantic_tags.as_deref(),
+            request.auto_workshop_tags,
+        );
+        let entry = vault_store().write_content(target_path, &content, if_match)?;
         append_vault_feed_event(&entry.path, &entry.title, !existed, actor, tool_name);
         Ok(VaultWriteResponse {
             note: entry.to_vault_note(vault_store().backlinks_for(&entry.path)),
@@ -74,8 +108,49 @@ impl VaultService {
         })
     }
 
-    pub fn search(query: &str, limit: usize) -> Result<crate::daemon_api::VaultSearchResponse> {
-        search_vault(query, limit.clamp(1, 100))
+    pub fn search(
+        query: Option<&str>,
+        limit: usize,
+        tags: Option<&str>,
+    ) -> Result<crate::daemon_api::VaultSearchResponse> {
+        let required = parse_tags_query(tags);
+        if query.map(str::trim).filter(|value| !value.is_empty()).is_none() {
+            if required.is_empty() {
+                return Ok(crate::daemon_api::VaultSearchResponse {
+                    query: String::new(),
+                    hits: Vec::new(),
+                });
+            }
+            let listed = Self::list_notes(None, limit, tags, None);
+            let hits = listed
+                .notes
+                .into_iter()
+                .map(|note| crate::daemon_api::VaultSearchHit {
+                    note: crate::daemon_api::VaultNoteSummary {
+                        path: note.path.clone(),
+                        title: note.title.clone(),
+                        modified_at_utc: note.modified_at_utc,
+                        kind: note.kind,
+                    },
+                    score: 1.0,
+                    matched_terms: required.clone(),
+                    snippet: None,
+                })
+                .collect();
+            return Ok(crate::daemon_api::VaultSearchResponse {
+                query: required.join(", "),
+                hits,
+            });
+        }
+        let mut response = search_vault(query.unwrap_or_default().trim(), limit.clamp(1, 100))?;
+        if !required.is_empty() {
+            response.hits.retain(|hit| {
+                vault_store()
+                    .get_entry(&hit.note.path)
+                    .is_some_and(|entry| entry_has_all_tags(&entry.tags, &required))
+            });
+        }
+        Ok(response)
     }
 
     pub fn backlinks(path: &str) -> Result<VaultBacklinksResponse> {
@@ -117,6 +192,7 @@ mod tests {
             &VaultWriteRequest {
                 path: Some(weekly.clone()),
                 content: "# Weekly Review\n".to_string(),
+                ..Default::default()
             },
             None,
         )
@@ -126,6 +202,7 @@ mod tests {
             &VaultWriteRequest {
                 path: Some(daily.clone()),
                 content: format!("# Daily\n\nSee [[weekly-review-{suffix}]]\n"),
+                ..Default::default()
             },
             None,
         )
@@ -150,13 +227,20 @@ mod tests {
         let request = VaultWriteRequest {
             path: Some(path.clone()),
             content: content.clone(),
+            session_id: Some(format!("medousa-home-{token}")),
+            semantic_tags: Some(vec!["smoke-test".to_string()]),
+            auto_workshop_tags: true,
         };
         let written = VaultService::write_note(Some(&path), &request, None).expect("write");
         assert!(written.created);
+        assert!(written.note.tags.iter().any(|tag| tag == "vault"));
+        assert!(written.note.tags.iter().any(|tag| tag == "smoke-test"));
         let read = VaultService::get_note(&path).expect("read");
-        assert_eq!(read.content, content);
-        let search = VaultService::search(&format!("token {token}"), 5).expect("search");
+        assert!(read.content.contains("tags:"));
+        let search = VaultService::search(Some(&format!("token {token}")), 5, None).expect("search");
         assert!(search.hits.iter().any(|hit| hit.note.path == path));
+        let by_tag = VaultService::list_notes(None, 10, Some("smoke-test"), None);
+        assert!(by_tag.notes.iter().any(|note| note.path == path));
         let deleted = VaultService::delete_note(&path).expect("delete");
         assert!(deleted.deleted);
     }

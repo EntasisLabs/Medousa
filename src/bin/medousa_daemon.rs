@@ -606,6 +606,10 @@ async fn main() -> Result<()> {
                 .post(medousa::vault_handlers::post_vault_note),
         )
         .route(
+            "/v1/vault/tags",
+            get(medousa::vault_handlers::list_vault_tags),
+        )
+        .route(
             "/v1/vault/search",
             get(medousa::vault_handlers::search_vault_notes),
         )

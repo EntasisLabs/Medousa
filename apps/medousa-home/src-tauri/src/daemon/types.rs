@@ -306,6 +306,12 @@ pub struct VaultBacklinksResponse {
     pub backlinks: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultTagsListResponse {
+    pub tags: Vec<String>,
+    pub count: usize,
+}
+
 // ── Workspace card detail ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

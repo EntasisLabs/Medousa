@@ -5704,9 +5704,9 @@ dependencies = [
 
 [[package]]
 name = "locus-core-rs"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e68f57b4449ab2d37958f17e8ef28ec959ad1588d43bf88f189f72afaeb0d624"
+checksum = "99a2156339821c4acf6eb4d8f560429327086e247473f55b79fd344a86011020"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5722,9 +5722,9 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.1.2"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67a18aa3e72d9753c5e0093544904af2b5c11593f7f9265e2d55b83ee66edd83"
+checksum = "5adc07e4a040039f11af61da460d2d374f440f8e109049a0c398343a06d1ff96"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10619,9 +10619,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ef12ea2efa8cc8a3a39cb11683888148bd72695960e0cea375ffef2de84fc77"
+checksum = "df0b6ef75e23969c842851731c6c1813093ce3bfc48b09feff593888b6b80e51"
 dependencies = [
  "anyhow",
  "askama",

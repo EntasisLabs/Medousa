@@ -140,6 +140,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_list",
                     "cognition_vault_read",
                     "cognition_vault_write",
+                    "cognition_vault_tags",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -229,6 +230,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_read",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_vault_tags",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -269,6 +271,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_identity_recall" => "Look up preferences, people, and identity facts",
         "cognition_identity_remember" => "Remember durable personal facts in identity memory",
         "cognition_vault_search" => "Search vault notes",
+        "cognition_vault_tags" => "List semantic tags across vault notes (shared with Locus)",
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_turn_begin_work" => "Progress line before heavy tools",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",

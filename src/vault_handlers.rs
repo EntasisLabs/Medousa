@@ -7,8 +7,8 @@ use axum::Json;
 
 use crate::daemon_api::{
     VaultBacklinksQuery, VaultBacklinksResponse, VaultDeleteResponse, VaultNoteContentResponse,
-    VaultNotesListResponse, VaultNotesQuery, VaultSearchQuery, VaultSearchResponse,
-    VaultWriteRequest, VaultWriteResponse,
+    VaultNotesListResponse, VaultNotesQuery, VaultPutQuery, VaultSearchQuery, VaultSearchResponse,
+    VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest, VaultWriteResponse,
 };
 use crate::vault::VaultService;
 
@@ -29,7 +29,19 @@ pub async fn list_vault_notes(
     Query(query): Query<VaultNotesQuery>,
 ) -> Result<Json<VaultNotesListResponse>, (StatusCode, String)> {
     let limit = query.limit.unwrap_or(100);
-    Ok(Json(VaultService::list_notes(query.prefix.as_deref(), limit)))
+    Ok(Json(VaultService::list_notes(
+        query.prefix.as_deref(),
+        limit,
+        query.tags.as_deref(),
+        query.tag_prefix.as_deref(),
+    )))
+}
+
+pub async fn list_vault_tags(
+    Query(query): Query<VaultTagsQuery>,
+) -> Result<Json<VaultTagsListResponse>, (StatusCode, String)> {
+    let limit = query.limit.unwrap_or(100);
+    Ok(Json(VaultService::list_tags(query.prefix.as_deref(), limit)))
 }
 
 pub async fn get_vault_note(
@@ -42,6 +54,7 @@ pub async fn get_vault_note(
 
 pub async fn put_vault_note(
     Path(note_path): Path<String>,
+    Query(query): Query<VaultPutQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<VaultWriteResponse>, (StatusCode, String)> {
@@ -53,6 +66,9 @@ pub async fn put_vault_note(
     let request = VaultWriteRequest {
         path: None,
         content,
+        session_id: query.session_id,
+        semantic_tags: None,
+        auto_workshop_tags: query.auto_workshop_tags.unwrap_or(true),
     };
     VaultService::write_note(Some(&note_path), &request, if_match)
         .map(Json)
@@ -82,10 +98,12 @@ pub async fn search_vault_notes(
         .q
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "q is required".to_string()))?;
+        .filter(|value| !value.is_empty());
+    if q.is_none() && query.tags.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+        return Err((StatusCode::BAD_REQUEST, "q or tags is required".to_string()));
+    }
     let limit = query.limit.unwrap_or(20);
-    VaultService::search(q, limit)
+    VaultService::search(q, limit, query.tags.as_deref())
         .map(Json)
         .map_err(map_vault_error)
 }

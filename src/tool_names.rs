@@ -73,6 +73,7 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_vault_read",
     "cognition_vault_search",
     "cognition_vault_write",
+    "cognition_vault_tags",
     "cognition_tool_history_summary",
     "cognition_tool_history_detail",
     "cognition_grapheme_script_save",

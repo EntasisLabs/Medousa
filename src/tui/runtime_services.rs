@@ -221,7 +221,12 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
         turn_scope.clone(),
     )?;
-    crate::vault_tools::register_vault_tools(&mut tool_registry, event_tx.clone())?;
+    crate::vault_tools::register_vault_tools(
+        &mut tool_registry,
+        event_tx.clone(),
+        turn_scope.clone(),
+        session_id.to_string(),
+    )?;
     crate::tool_history_tools::register_tool_history_tools(&mut tool_registry, turn_scope.clone())?;
     crate::grapheme_script_tools::register_grapheme_script_tools(
         &mut tool_registry,

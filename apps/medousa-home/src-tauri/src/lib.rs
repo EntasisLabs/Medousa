@@ -133,6 +133,7 @@ pub fn run() {
             daemon::interactive_stream_stop,
             daemon::interactive_stream_stop_turn,
             daemon::vault::vault_list_notes,
+            daemon::vault::vault_list_tags,
             daemon::vault::vault_get_note,
             daemon::vault::vault_save_note,
             daemon::vault::vault_create_note,

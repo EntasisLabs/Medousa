@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { FileDown, MoreHorizontal, PanelLeftOpen } from "@lucide/svelte";
+  import { PanelLeftOpen } from "@lucide/svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { vaultBreadcrumb, vaultDisplayTitle } from "$lib/utils/formatVault";
-  import { formatCardTitle } from "$lib/utils/formatWork";
   import {
     buildWorkAskFromNote,
     prepareTalkAboutNote,
@@ -25,6 +24,7 @@
   import VaultProposalBar from "./VaultProposalBar.svelte";
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
+  import VaultEditorOverflowMenu from "./VaultEditorOverflowMenu.svelte";
   import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
   import VaultAttachmentPreview from "./VaultAttachmentPreview.svelte";
   import VaultNoteChatFab from "./VaultNoteChatFab.svelte";
@@ -89,15 +89,10 @@
   );
 
   const showSplitEditor = $derived(
-    !mobile &&
-      showMarkdownEditor &&
-      layout.vaultSplitEnabled &&
-      (!vault.isWriteFirstKind || vault.isAuthoringSource),
+    !mobile && showMarkdownEditor && layout.vaultSplitEnabled,
   );
 
-  const editorSurface = $derived(
-    vault.isWriteFirstKind && !vault.isAuthoringSource ? "write" : "source",
-  );
+  const editorSurface = $derived<"source">("source");
 
   const showPreviewOnly = $derived(
     vault.editorMode === "preview" ||
@@ -107,8 +102,7 @@
   const showLinksPanel = $derived(
     !mobile &&
       layout.vaultLinksPanelOpen &&
-      vault.selectedPath &&
-      (vault.wikilinksOut.length > 0 || vault.backlinks.length > 0),
+      vault.selectedPath,
   );
 
   const previewFirstKind = $derived(
@@ -281,11 +275,6 @@
     }
 
     if (event.key === "Escape" && vault.editorMode === "edit" && !typing && !vaultFind.open) {
-      if (vault.isWriteFirstKind && !vault.isAuthoringSource) {
-        event.preventDefault();
-        vault.enterPreviewMode();
-        return;
-      }
       if (previewFirstKind) {
         event.preventDefault();
         vault.enterPreviewMode();
@@ -343,108 +332,6 @@
             <PanelLeftOpen size={14} strokeWidth={2} />
           </button>
         {/if}
-        {#if vault.selectedPath && !mobile && onOpenChat}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            disabled={vault.noteLoading}
-            title="Open scoped thread in Chat tab"
-            onclick={() => void handleAskInChatTab()}
-          >
-            Send to chat
-          </button>
-        {/if}
-        {#if vault.selectedPath && !mobile && onOpenWork}
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-surface"
-            disabled={vault.noteLoading || workspace.askSubmitting}
-            onclick={() => void handleSendToWork()}
-          >
-            {workspace.askSubmitting ? "Sending…" : "Send to Work"}
-          </button>
-        {/if}
-        {#if linkedWork.length > 0 && onSelectCard}
-          {#each linkedWork.slice(0, 2) as card (card.id)}
-            <button
-              type="button"
-              class="badge variant-soft-secondary cursor-pointer text-[10px] font-medium"
-              onclick={() => void onSelectCard(card.id)}
-            >
-              Linked · {formatCardTitle(card)}
-            </button>
-          {/each}
-        {/if}
-        {#if vault.selectedKind === "inbox" && vault.selectedPath}
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-surface"
-            disabled={vault.saving}
-            onclick={() => void vault.promoteNote("journal")}
-          >
-            → Journal
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-surface"
-            disabled={vault.saving}
-            onclick={() => void vault.promoteNote("projects")}
-          >
-            → Project
-          </button>
-        {/if}
-        {#if vault.selectedKind === "daily" && vault.editorMode === "edit"}
-          <button
-            type="button"
-            class="btn btn-sm variant-soft-primary"
-            onclick={() => vault.insertWeeklyReviewLink()}
-          >
-            Link weekly review
-          </button>
-        {/if}
-        {#if vault.selectedKind === "ledger" && vault.editorMode === "edit"}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            onclick={() => vault.toggleLedgerEditMode()}
-          >
-            {vault.ledgerEditMode === "table" ? "Raw markdown" : "Table view"}
-          </button>
-        {/if}
-        {#if hasKanbanBoard && vault.editorMode === "edit"}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            onclick={() => vault.toggleBoardEditMode()}
-          >
-            {vault.boardEditMode === "board" ? "Raw markdown" : "Board view"}
-          </button>
-        {/if}
-
-        {#if showMarkdownEditor && (!vault.isWriteFirstKind || vault.isAuthoringSource)}
-          <button
-            type="button"
-            class="btn btn-sm {layout.vaultSplitEnabled
-              ? 'variant-soft-primary'
-              : 'variant-ghost-surface'}"
-            onclick={() => layout.toggleVaultSplitEnabled()}
-            title="Split edit and preview"
-          >
-            Split
-          </button>
-        {/if}
-
-        {#if vault.selectedPath && (vault.wikilinksOut.length > 0 || vault.backlinks.length > 0)}
-          <button
-            type="button"
-            class="btn btn-sm {layout.vaultLinksPanelOpen
-              ? 'variant-soft-surface'
-              : 'variant-ghost-surface'}"
-            onclick={() => layout.toggleVaultLinksPanel()}
-          >
-            Links
-          </button>
-        {/if}
 
         {#if saveWhisper}
           <span
@@ -458,58 +345,6 @@
           <span class="badge variant-soft-warning text-xs font-mono">
             {showDiffChip}
           </span>
-        {/if}
-
-        {#if vault.dirty && vault.saveStatus !== "conflict"}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            disabled={vault.saving}
-            onclick={handleSave}
-            title="Save now (⌘S)"
-          >
-            Save now
-          </button>
-        {/if}
-
-        {#if vault.selectedPath}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            title="Rename, move, or delete note"
-            aria-label="Note actions"
-            disabled={vault.noteLoading}
-            onclick={() => vault.openNoteActions()}
-          >
-            <MoreHorizontal size={14} strokeWidth={2} />
-          </button>
-        {/if}
-        {#if vault.selectedPath}
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            disabled={exportingPdf || vault.noteLoading}
-            title="Export rendered note as PDF"
-            onclick={() => void handleExportPdf()}
-          >
-            <FileDown size={14} strokeWidth={2} />
-            {exportingPdf ? "Exporting…" : "PDF"}
-          </button>
-        {/if}
-
-        {#if vault.isWriteFirstKind && showMarkdownEditor}
-          <button
-            type="button"
-            class="btn btn-sm {vault.isAuthoringSource
-              ? 'variant-soft-primary'
-              : 'variant-ghost-surface'}"
-            onclick={() => vault.toggleAuthoringMode()}
-            title={vault.isAuthoringSource
-              ? "Return to write mode"
-              : "Show markdown source and split preview"}
-          >
-            {vault.isAuthoringSource ? "Write" : "Markdown"}
-          </button>
         {/if}
 
         {#if vault.selectedPath}
@@ -529,6 +364,61 @@
             {vault.editorMode === "edit" ? "Preview" : "Edit"}
           </button>
         {/if}
+
+        {#if showMarkdownEditor}
+          <button
+            type="button"
+            class="btn btn-sm {layout.vaultSplitEnabled
+              ? 'variant-soft-primary'
+              : 'variant-ghost-surface'}"
+            onclick={() => layout.toggleVaultSplitEnabled()}
+            title="Split edit and preview"
+          >
+            Split
+          </button>
+        {/if}
+
+        {#if vault.selectedPath}
+          <button
+            type="button"
+            class="btn btn-sm {layout.vaultLinksPanelOpen
+              ? 'variant-soft-surface'
+              : 'variant-ghost-surface'}"
+            onclick={() => layout.toggleVaultLinksPanel()}
+            title="Show note links"
+          >
+            Links
+          </button>
+        {/if}
+
+        <VaultEditorOverflowMenu
+          selectedPath={vault.selectedPath}
+          selectedKind={vault.selectedKind}
+          editorMode={vault.editorMode}
+          noteLoading={vault.noteLoading}
+          saving={vault.saving}
+          dirty={vault.dirty}
+          saveStatus={vault.saveStatus}
+          exportingPdf={exportingPdf}
+          askSubmitting={workspace.askSubmitting}
+          hasKanbanBoard={hasKanbanBoard}
+          ledgerEditMode={vault.ledgerEditMode}
+          boardEditMode={vault.boardEditMode}
+          linkedWork={linkedWork}
+          onOpenChat={onOpenChat}
+          onOpenWork={onOpenWork}
+          onSelectCard={onSelectCard}
+          onExportPdf={handleExportPdf}
+          onAskInChat={handleAskInChatTab}
+          onSendToWork={handleSendToWork}
+          onSave={handleSave}
+          onOpenNoteActions={() => vault.openNoteActions()}
+          onInsertWeeklyReview={() => vault.insertWeeklyReviewLink()}
+          onPromoteJournal={() => vault.promoteNote("journal")}
+          onPromoteProject={() => vault.promoteNote("projects")}
+          onToggleLedger={() => vault.toggleLedgerEditMode()}
+          onToggleBoard={() => vault.toggleBoardEditMode()}
+        />
       </div>
     </header>
   {:else}
@@ -620,7 +510,11 @@
   {/if}
 
   {#if showNoteStatus}
-    <VaultNoteStatusBar content={vault.content} editorMode={vault.editorMode} />
+    <VaultNoteStatusBar
+      content={vault.content}
+      tags={vault.noteTags}
+      editorMode={vault.editorMode}
+    />
   {/if}
 
   {#if vault.selectedPath && !mobile && onOpenChat && !noteWorkshop.open}

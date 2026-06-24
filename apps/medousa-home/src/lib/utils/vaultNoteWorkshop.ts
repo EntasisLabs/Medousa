@@ -39,3 +39,12 @@ export async function launchVaultNoteWorkshop(input: {
   void chat.ensureSessionHydrated();
   noteWorkshop.openForNote(input.path);
 }
+
+/** When a note is pinned to the workshop chat, pass session id on save for linking tags. */
+export function workshopSessionIdForVaultSave(path: string | null): string | undefined {
+  if (!path) return undefined;
+  if (!chat.pinVaultNoteContext || !chat.vaultNoteContext) return undefined;
+  if (chat.vaultNoteContext.path !== path) return undefined;
+  const sessionId = chat.sessionId?.trim();
+  return sessionId || undefined;
+}

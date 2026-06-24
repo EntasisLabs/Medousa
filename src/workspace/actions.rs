@@ -445,6 +445,7 @@ mod tests {
         let request = crate::daemon_api::VaultWriteRequest {
             path: Some(note_path.clone()),
             content: "# Link test\n".to_string(),
+            ..Default::default()
         };
         crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
 

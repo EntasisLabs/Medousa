@@ -190,3 +190,56 @@ export function insertTextAtSection(
   if (before.includes(text.trim())) return body;
   return `${before}\n\n${text}\n\n${after}`;
 }
+
+/** Parse `tags:` from YAML frontmatter (inline list or block list). */
+export function parseFrontmatterTags(frontmatter: string | null): string[] {
+  if (!frontmatter?.trim()) return [];
+  const tags: string[] = [];
+  let inTagsBlock = false;
+  for (const rawLine of frontmatter.split("\n")) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!inTagsBlock && trimmed.startsWith("tags:")) {
+      const inline = trimmed.slice("tags:".length).trim();
+      if (inline.startsWith("[") && inline.endsWith("]")) {
+        for (const token of inline.slice(1, -1).split(",")) {
+          const value = token.trim().replace(/^['"]|['"]$/g, "");
+          if (value) tags.push(value);
+        }
+        continue;
+      }
+      if (inline) {
+        tags.push(inline.replace(/^['"]|['"]$/g, ""));
+        continue;
+      }
+      inTagsBlock = true;
+      continue;
+    }
+    if (inTagsBlock) {
+      if (!trimmed.startsWith("-")) break;
+      const value = trimmed.slice(1).trim().replace(/^['"]|['"]$/g, "");
+      if (value) tags.push(value);
+    }
+  }
+  return tags;
+}
+
+export function readBodyTags(body: string): string[] {
+  const { frontmatter } = stripFrontmatter(body);
+  return parseFrontmatterTags(frontmatter);
+}
+
+/** Workshop/system tags first, then user tags; deduped. */
+export function sortVaultTagsForDisplay(tags: string[]): string[] {
+  const workshop = new Set(["medousa", "vault", "session"]);
+  const ordered: string[] = [];
+  for (const tag of tags) {
+    if (workshop.has(tag) || tag.startsWith("profile:") || tag.startsWith("chat:")) {
+      if (!ordered.includes(tag)) ordered.push(tag);
+    }
+  }
+  for (const tag of tags) {
+    if (!ordered.includes(tag)) ordered.push(tag);
+  }
+  return ordered;
+}

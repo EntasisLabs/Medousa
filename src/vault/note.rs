@@ -195,7 +195,10 @@ pub fn build_index_entry(
     let frontmatter_tags = frontmatter
         .map(parse_frontmatter_tags)
         .unwrap_or_default();
-    let tags = merge_tags(frontmatter_tags, parse_inline_tags(body));
+    let tags = crate::vault::semantic_tags::normalize_note_tags(merge_tags(
+        frontmatter_tags,
+        parse_inline_tags(body),
+    ));
     let kind = resolve_kind(path, frontmatter);
     VaultIndexEntry {
         path: path.to_string(),

@@ -194,6 +194,7 @@ mod tests {
             &VaultWriteRequest {
                 path: Some(path.clone()),
                 content,
+                ..Default::default()
             },
             None,
         )
