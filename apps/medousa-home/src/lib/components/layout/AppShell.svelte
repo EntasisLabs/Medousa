@@ -8,6 +8,7 @@
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultQuickSwitcher from "$lib/components/vault/VaultQuickSwitcher.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
+  import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -16,7 +17,6 @@
   import { applyNativeMobileShellLayout, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
 
   let commandPaletteOpen = $state(false);
-  let quickSwitcherOpen = $state(false);
 
   async function openWorkCard(cardId: string) {
     if (layout.isMobile) {
@@ -52,7 +52,7 @@
             target.isContentEditable);
         if (typing) return;
         event.preventDefault();
-        quickSwitcherOpen = !quickSwitcherOpen;
+        vaultQuickSwitcher.toggle();
       }
     };
     window.addEventListener("keydown", onKeydown);
@@ -90,7 +90,10 @@
 
 <VaultGarageImportWizard />
 <VaultContextMenu />
-<VaultQuickSwitcher open={quickSwitcherOpen} onClose={() => (quickSwitcherOpen = false)} />
+<VaultQuickSwitcher
+  open={vaultQuickSwitcher.open}
+  onClose={() => vaultQuickSwitcher.closeSwitcher()}
+/>
 {#if !layout.isMobile}
   <VaultNoteWorkshop
     onOpenFullChat={() => {

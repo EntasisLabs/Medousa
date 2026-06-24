@@ -50,7 +50,7 @@
 
   const displayTitle = $derived(
     vault.selectedPath
-      ? (vault.labelByPath().get(vault.selectedPath) ??
+      ? (vault.labelByPathMap.get(vault.selectedPath) ??
         vaultDisplayTitle(vault.title, vault.selectedPath))
       : "Library",
   );
@@ -64,7 +64,7 @@
     activeSpace ? iconForSpace(activeSpace.id) : null,
   );
 
-  const labelByPath = $derived(vault.labelByPath());
+  const labelByPath = $derived(vault.labelByPathMap);
   const hasLedgerTable = $derived(Boolean(findLedgerTable(vault.content)));
   const hasKanbanBoard = $derived(noteHasKanbanBoard(vault.content));
   const kanbanBoard = $derived(hasKanbanBoard ? findKanbanBoard(vault.content) : null);
@@ -205,7 +205,7 @@
   }
 
   const saveWhisper = $derived(vault.saveWhisper());
-  const showDiffChip = $derived(vault.diffChip());
+  const showDiffChip = $derived(vault.diffChipText);
 
   function handleWikilink(target: string) {
     vault.openWikilink(target);
@@ -220,7 +220,7 @@
       await exportVaultNotePdf({
         title: displayTitle,
         content: vault.content,
-        labelByPath: vault.labelByPath(),
+        labelByPath: vault.labelByPathMap,
       });
     } catch (err) {
       vault.error = err instanceof Error ? err.message : String(err);
@@ -439,6 +439,33 @@
   <VaultProposalBar {mobile} />
   <VaultConflictBar />
   <VaultAttachmentBar disabled={vault.noteLoading || vault.saving} />
+
+  {#if vault.selectedPath && vault.selectedKind === "ledger" && vault.editorMode === "edit" && !showLedgerTable}
+    <div class="ledger-toolbar flex shrink-0 items-center gap-2 border-b border-surface-500/40 px-4 py-2">
+      <p class="text-xs font-medium text-surface-300">Ledger</p>
+      <div class="ledger-mode-toggle" role="group" aria-label="Ledger edit mode">
+        <button
+          type="button"
+          class="ledger-mode-btn"
+          disabled={vault.saving}
+          onclick={() => {
+            if (vault.ledgerEditMode !== "table") vault.toggleLedgerEditMode();
+          }}
+        >
+          Table
+        </button>
+        <button
+          type="button"
+          class="ledger-mode-btn ledger-mode-btn-active"
+          disabled={vault.saving}
+          aria-current="true"
+        >
+          Raw
+        </button>
+      </div>
+    </div>
+  {/if}
+
   <VaultAttachmentPreview />
 
   {#if !vault.selectedPath}
@@ -455,6 +482,8 @@
           <LedgerTableEditor
             content={vault.content}
             disabled={vault.saving}
+            ledgerEditMode={vault.ledgerEditMode}
+            onToggleMode={() => vault.toggleLedgerEditMode()}
             onchange={(next) => vault.markDirty(next)}
           />
         {:else if showKanbanBoard}

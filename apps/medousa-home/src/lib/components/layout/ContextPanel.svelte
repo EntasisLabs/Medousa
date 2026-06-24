@@ -41,7 +41,7 @@
         noteDiffChip !== null ||
         linkedWork.length > 0),
   );
-  const titleByPath = $derived(vault.labelByPath());
+  const titleByPath = $derived(vault.labelByPathMap);
 
   const hasCardContext = $derived(
     cardDetail !== null &&

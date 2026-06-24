@@ -131,7 +131,7 @@
                         {/if}
                       </span>
                     </button>
-                    <div class="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100">
+                    <div class="flex shrink-0 gap-1">
                       {#if canPreviewAttachment(externalDesk.attachmentForPath(entry.path))}
                         <button
                           type="button"
@@ -149,6 +149,7 @@
                           title="Link to open note"
                         >
                           <Link2 size={12} strokeWidth={2} />
+                          Link
                         </button>
                       {/if}
                     </div>

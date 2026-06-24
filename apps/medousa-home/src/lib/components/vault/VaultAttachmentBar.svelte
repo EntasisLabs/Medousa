@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Paperclip, Table2, X, ImagePlus } from "@lucide/svelte";
+  import { Link2, Paperclip, Table2, X, ImagePlus } from "@lucide/svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { attachmentFileName, isImageAttachment } from "$lib/utils/vaultAttachments";
   import {
@@ -14,6 +14,7 @@
   let { disabled = false }: Props = $props();
 
   const showSpreadsheetLink = $derived(vault.selectedKind === "ledger");
+  const hasAttachments = $derived(vault.attachments.length > 0);
 
   async function handleLinkFiles() {
     await vault.linkAttachmentFiles();
@@ -41,38 +42,12 @@
 </script>
 
 {#if vault.selectedPath}
-  <div class="vault-attachment-bar flex flex-wrap items-center gap-2 border-b border-surface-500/35 bg-surface-900/40 px-3 py-2">
-    <button
-      type="button"
-      class="btn btn-sm variant-soft-surface"
-      {disabled}
-      onclick={() => void handleLinkFiles()}
-    >
-      <Paperclip size={14} strokeWidth={2} />
-      Link file
-    </button>
-
-    {#if showSpreadsheetLink}
-      <button
-        type="button"
-        class="btn btn-sm variant-soft-primary"
-        {disabled}
-        onclick={() => void handleLinkSpreadsheet()}
-      >
-        <Table2 size={14} strokeWidth={2} />
-        Link spreadsheet
-      </button>
-    {/if}
-
-    {#if vault.attachments.length === 0}
-      <span class="text-xs text-surface-500">
-        {#if showSpreadsheetLink}
-          Attach your budget sheet or other files from your desk
-        {:else}
-          Attach PDFs, docs, or spreadsheets from your desk
-        {/if}
-      </span>
-    {:else}
+  <div
+    class="vault-attachment-bar flex flex-wrap items-center gap-2 border-b border-surface-500/35 px-3 py-1.5 {hasAttachments
+      ? 'bg-surface-900/40'
+      : 'bg-transparent'}"
+  >
+    {#if hasAttachments}
       {#each vault.attachments as attachment (attachment.path)}
         <div
           class="inline-flex max-w-full items-center gap-1 rounded-full border border-surface-500/45 bg-surface-800/80 pl-2.5 pr-1"
@@ -115,6 +90,43 @@
           </button>
         </div>
       {/each}
+      <span class="text-surface-600">·</span>
     {/if}
+
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      {#if !hasAttachments}
+        <span class="text-surface-500">Desk</span>
+      {/if}
+      {#if showSpreadsheetLink}
+        <button
+          type="button"
+          class="vault-attachment-link"
+          {disabled}
+          onclick={() => void handleLinkSpreadsheet()}
+        >
+          <Table2 size={12} strokeWidth={2} />
+          Link spreadsheet
+        </button>
+        <button
+          type="button"
+          class="vault-attachment-link"
+          {disabled}
+          onclick={() => void handleLinkFiles()}
+        >
+          <Paperclip size={12} strokeWidth={2} />
+          Link file
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="vault-attachment-link"
+          {disabled}
+          onclick={() => void handleLinkFiles()}
+        >
+          <Link2 size={12} strokeWidth={2} />
+          Link from desk
+        </button>
+      {/if}
+    </div>
   </div>
 {/if}

@@ -213,7 +213,7 @@
                 ? null
                 : workspace.selectedCardDetail}
               cardError={workspace.cardDetailError}
-              noteDiffChip={vault.diffChip()}
+              noteDiffChip={vault.diffChipText}
               onOpenNote={handleOpenNote}
               onSelectCard={handleCardSelect}
               onCollapse={() => layout.setActivityCollapsed(true)}

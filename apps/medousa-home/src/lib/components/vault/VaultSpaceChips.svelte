@@ -13,7 +13,7 @@
 
   const visibleSpaces = $derived(allFilterSpaces(vault.showSystemNotes));
 
-  const counts = $derived(vault.spaceCounts());
+  const counts = $derived(vault.spaceCountsMap);
 
   function chipClass(active: boolean): string {
     return active
@@ -32,7 +32,7 @@
 </script>
 
 <div
-  class="flex flex-wrap gap-x-1.5 gap-y-2 {compact || embedded ? '' : 'px-2 pb-2'}"
+  class="flex flex-wrap {compact ? 'gap-x-1 gap-y-1.5' : 'gap-x-1.5 gap-y-2'} {compact || embedded ? '' : 'px-2 pb-2'}"
   role="tablist"
   aria-label="Vault spaces"
 >

@@ -16,7 +16,7 @@
   let highlightIndex = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
 
-  const labelByPath = $derived(vault.labelByPath());
+  const labelByPath = $derived(vault.labelByPathMap);
   const matches = $derived(
     fuzzyMatchVaultNotes(vault.notes, query, labelByPath, 30),
   );
@@ -98,7 +98,7 @@
       <input
         bind:this={inputEl}
         class="w-full border-0 border-b border-surface-800 bg-transparent px-4 py-3 text-sm text-surface-50 outline-none"
-        placeholder="Open note…"
+        placeholder="Find note…"
         bind:value={query}
       />
       <ul class="max-h-96 overflow-y-auto py-1">
@@ -125,7 +125,7 @@
         {/each}
       </ul>
       <p class="border-t border-surface-800 px-4 py-2 text-[11px] text-surface-500">
-        ↑↓ navigate · Enter open · Esc close
+        ↑↓ navigate · Enter open · Esc close · <kbd class="vault-kbd">⌘O</kbd> toggle
       </p>
     </div>
   </div>

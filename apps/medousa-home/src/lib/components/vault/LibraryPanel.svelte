@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { PanelLeftClose } from "@lucide/svelte";
   import SplitPane from "$lib/components/layout/SplitPane.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -8,12 +7,10 @@
   import VaultTree from "./VaultTree.svelte";
   import VaultEditor from "./VaultEditor.svelte";
   import VaultNewNoteDialog from "./VaultNewNoteDialog.svelte";
-  import VaultSpaceChips from "./VaultSpaceChips.svelte";
-  import VaultKindBadge from "./VaultKindBadge.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
   import VaultNewGroupDialog from "./VaultNewGroupDialog.svelte";
   import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
-  import VaultRootPicker from "./VaultRootPicker.svelte";
+  import VaultLibraryChrome from "./VaultLibraryChrome.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
 
@@ -26,8 +23,11 @@
 
   let { visible, onOpenChat, onOpenWork, onSelectCard }: Props = $props();
 
-  const externalHits = $derived(externalDesk.searchHits());
+  const externalHits = $derived(externalDesk.searchHitsList);
   const showVaultChrome = $derived(externalDesk.sidebarMode === "vault");
+  const showExternalSearchResults = $derived(
+    !showVaultChrome && vault.searchQuery.trim().length > 0 && externalHits.length > 0,
+  );
 
   onMount(() => {
     (async () => {
@@ -45,11 +45,9 @@
     })();
   });
 
-  function handleSearchInput(event: Event) {
-    const value = (event.currentTarget as HTMLInputElement).value;
-    vault.searchQuery = value;
-    externalDesk.setSearchQuery(value);
-    void vault.runSearch(value);
+  function handleExternalSearch(query: string) {
+    vault.searchQuery = query;
+    externalDesk.setSearchQuery(query);
   }
 
   async function handleExternalSearchHit(path: string) {
@@ -78,152 +76,11 @@
         class="workshop-drawer flex h-full w-full flex-col border-r-2"
         aria-label="Library browser"
       >
-        <div class="vault-browser-chrome shrink-0 border-b border-surface-500/45 bg-surface-800/50">
-          <div class="flex items-start gap-1 border-b border-surface-500/35 px-2 pt-2">
-            <div class="flex min-w-0 flex-1 gap-0 pl-1 pt-1">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={externalDesk.sidebarMode === "vault"}
-                class="vault-sidebar-tab {externalDesk.sidebarMode === 'vault'
-                  ? 'vault-sidebar-tab-active'
-                  : ''}"
-                onclick={() => externalDesk.setSidebarMode("vault")}
-              >
-                Vault
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={externalDesk.sidebarMode === "files"}
-                class="vault-sidebar-tab {externalDesk.sidebarMode === 'files'
-                  ? 'vault-sidebar-tab-active'
-                  : ''}"
-                onclick={() => externalDesk.setSidebarMode("files")}
-              >
-                Your files
-              </button>
-            </div>
-            <button
-              type="button"
-              class="btn btn-xs variant-ghost-surface mt-1 shrink-0"
-              title="Hide library browser"
-              aria-label="Hide library browser"
-              onclick={() => layout.setVaultSidebarCollapsed(true)}
-            >
-              <PanelLeftClose size={14} strokeWidth={2} />
-            </button>
-          </div>
+        <VaultLibraryChrome {showVaultChrome} onSearchExternal={handleExternalSearch} />
 
-        <div class="px-3 pb-2 pt-3">
-          <h2 class="text-sm font-semibold text-surface-50">Library</h2>
-          <p class="workshop-header-line mt-0.5">Memory on the page — vault and your files</p>
-        </div>
-
-        <div class="px-3 pt-1">
-          <input
-            class="input w-full text-sm"
-            type="search"
-            placeholder={showVaultChrome ? "Search vault and your files…" : "Search pinned folders…"}
-            value={vault.searchQuery}
-            oninput={handleSearchInput}
-          />
-        </div>
-
-        {#if showVaultChrome}
-          <VaultRootPicker />
-
-          <div class="flex flex-wrap gap-2 px-3 pt-2.5">
-            <button
-              type="button"
-              class="btn btn-sm variant-filled-primary"
-              onclick={() => void vault.createDailyNote()}
-              disabled={vault.saving}
-            >
-              Daily
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm variant-soft-surface"
-              onclick={() => void vault.createWeeklyReview()}
-              disabled={vault.saving}
-            >
-              Weekly
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm variant-soft-surface"
-              onclick={() => vault.openNewNoteDialog()}
-            >
-              New
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm variant-ghost-surface"
-              onclick={() => vault.openNewGroupDialog()}
-            >
-              Group
-            </button>
-          </div>
-
-          <div
-            class="flex flex-wrap items-center gap-2 px-3 pb-2.5 pt-2"
-            role="group"
-            aria-label="Vault view options"
-          >
-            <button
-              type="button"
-              aria-pressed={vault.showAgentReviewFilter}
-              class="vault-filter-chip {vault.showAgentReviewFilter
-                ? 'vault-filter-chip-active'
-                : ''}"
-              onclick={() => vault.setShowAgentReviewFilter(!vault.showAgentReviewFilter)}
-            >
-              Agent review
-            </button>
-            <button
-              type="button"
-              aria-pressed={vault.showSystemNotes}
-              class="vault-filter-chip {vault.showSystemNotes ? 'vault-filter-chip-active' : ''}"
-              onclick={() => vault.setShowSystemNotes(!vault.showSystemNotes)}
-            >
-              Developer notes
-            </button>
-          </div>
-
-          <div class="border-t border-surface-500/35 px-3 py-2.5">
-            <VaultSpaceChips embedded />
-          </div>
-        {/if}
-      </div>
-
-      {#if vault.searchHits.length > 0 || externalHits.length > 0}
-        <div class="max-h-44 overflow-y-auto border-b border-surface-500/45 p-2 text-sm">
-          {#if vault.searchHits.length > 0}
+        {#if showExternalSearchResults}
+          <div class="max-h-44 shrink-0 overflow-y-auto border-b border-surface-500/45 p-2 text-sm">
             <p class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-              Vault
-            </p>
-            <ul>
-              {#each vault.searchHits as hit (hit.note.path)}
-                <li>
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-2 rounded-container-token px-2 py-1 text-left hover:bg-surface-700/80"
-                    onclick={() => vault.openNote(hit.note.path)}
-                  >
-                    <span class="min-w-0 flex-1">
-                      <span class="font-medium">{hit.note.title}</span>
-                      <span class="workshop-faint block truncate">{hit.note.path}</span>
-                    </span>
-                    <VaultKindBadge kind={hit.note.kind} path={hit.note.path} compact />
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-
-          {#if externalHits.length > 0}
-            <p class="mb-1 mt-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
               Your files
             </p>
             <ul>
@@ -251,30 +108,29 @@
                 </li>
               {/each}
             </ul>
-          {/if}
-        </div>
-      {/if}
-
-      {#if showVaultChrome}
-        {#if vault.error}
-          <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-error-300">
-            {vault.error}
-          </p>
+          </div>
         {/if}
-        <VaultTree
-          tree={vault.tree}
-          selectedPath={vault.selectedPath}
-          labelByPath={vault.labelByPath()}
-          activeSpaceFilter={vault.activeSpaceFilter}
-          onSelect={(path) => vault.openNote(path)}
-          onMoveNote={(sourcePath, targetPrefix) => {
-            void vault.moveNoteToFolder(sourcePath, targetPrefix);
-          }}
-        />
-      {:else}
-        <ExternalFilesBrowser />
-      {/if}
-    </aside>
+
+        {#if showVaultChrome}
+          {#if vault.error}
+            <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-error-300">
+              {vault.error}
+            </p>
+          {/if}
+          <VaultTree
+            tree={vault.tree}
+            selectedPath={vault.selectedPath}
+            labelByPath={vault.labelByPathMap}
+            activeSpaceFilter={vault.activeSpaceFilter}
+            onSelect={(path) => vault.openNote(path)}
+            onMoveNote={(sourcePath, targetPrefix) => {
+              void vault.moveNoteToFolder(sourcePath, targetPrefix);
+            }}
+          />
+        {:else}
+          <ExternalFilesBrowser />
+        {/if}
+      </aside>
     </SplitPane>
   {/if}
 

@@ -16,7 +16,7 @@
   let highlightIndex = $state(0);
   let inputEl = $state<HTMLInputElement | null>(null);
 
-  const labelByPath = $derived(vault.labelByPath());
+  const labelByPath = $derived(vault.labelByPathMap);
   const matches = $derived(
     fuzzyMatchVaultNotes(vault.notes, query, labelByPath, 30),
   );

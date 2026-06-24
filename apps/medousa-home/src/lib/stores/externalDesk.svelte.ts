@@ -40,20 +40,25 @@ export class ExternalDeskStore {
   error = $state<string | null>(null);
   searchQuery = $state("");
 
-  get allEntries(): ExternalFileEntry[] {
-    return Object.values(this.entriesByRoot).flat();
-  }
-
-  searchHits(): ExternalFileEntry[] {
+  searchHitsList = $derived.by((): ExternalFileEntry[] => {
     const query = this.searchQuery.trim().toLowerCase();
     if (!query) return [];
-    return this.allEntries
+    return Object.values(this.entriesByRoot)
+      .flat()
       .filter((entry) => !entry.is_dir)
       .filter((entry) => {
         const haystack = `${entry.name} ${entry.path} ${entry.ext ?? ""}`.toLowerCase();
         return haystack.includes(query);
       })
       .slice(0, 20);
+  });
+
+  get allEntries(): ExternalFileEntry[] {
+    return Object.values(this.entriesByRoot).flat();
+  }
+
+  searchHits(): ExternalFileEntry[] {
+    return this.searchHitsList;
   }
 
   setSidebarMode(mode: LibrarySidebarMode) {

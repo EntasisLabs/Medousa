@@ -712,6 +712,54 @@
     @apply border-primary-400 text-primary-200;
   }
 
+  .vault-search-trigger {
+    @apply flex items-center gap-2 rounded-lg border border-surface-500/40 bg-surface-900/60 px-3 py-2 text-sm transition hover:border-surface-500/60 hover:bg-surface-800/80;
+  }
+
+  .vault-search-kbd {
+    @apply rounded border border-surface-600/60 bg-surface-800/80 px-1.5 py-0.5 font-mono text-[10px] text-surface-500;
+  }
+
+  .vault-root-trigger {
+    @apply inline-flex max-w-[10rem] items-center gap-1.5 rounded-md border border-surface-500/35 bg-surface-900/50 px-2 py-1 text-xs text-surface-200 transition hover:border-surface-500/55 hover:bg-surface-800/80;
+  }
+
+  .vault-menu-item {
+    @apply flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-surface-100 transition hover:bg-surface-800/80;
+  }
+
+  .vault-attachment-link {
+    @apply inline-flex items-center gap-1.5 text-surface-400 transition hover:text-primary-200 disabled:opacity-40;
+  }
+
+  .ledger-mode-toggle {
+    @apply inline-flex rounded-md border border-surface-500/40 bg-surface-900/50 p-0.5;
+  }
+
+  .ledger-mode-btn {
+    @apply rounded px-2 py-0.5 text-[11px] font-medium text-surface-400 transition hover:text-surface-200 disabled:opacity-40;
+  }
+
+  .ledger-mode-btn-active {
+    @apply bg-primary-500/15 text-primary-200;
+  }
+
+  .ledger-table .ledger-row:hover {
+    @apply bg-surface-800/30;
+  }
+
+  .ledger-cell {
+    @apply w-full border-0 bg-transparent px-2 py-1.5 text-sm text-surface-100 outline-none ring-0 placeholder:text-surface-600 focus:bg-surface-800/50 focus:ring-1 focus:ring-primary-500/30;
+  }
+
+  .ledger-row-remove {
+    @apply inline-flex h-6 w-6 items-center justify-center rounded text-surface-600 opacity-0 transition hover:bg-surface-700 hover:text-surface-300;
+  }
+
+  .ledger-row:hover .ledger-row-remove {
+    @apply opacity-100;
+  }
+
   /* Inset cards and settings blocks */
   .workshop-inset {
     @apply rounded-md border border-surface-500/40 bg-surface-800/80;

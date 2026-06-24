@@ -95,6 +95,11 @@ import {
 import { invalidateMedousaViewCache } from "$lib/utils/resolveMedousaViews";
 import { invalidateTransclusionCache } from "$lib/utils/resolveTransclusion";
 import { invalidateVaultRootCache } from "$lib/utils/vaultFilesystem";
+import {
+  formatDiffChip,
+  lineDiffStats,
+  type LineDiffStats,
+} from "$lib/utils/vaultDiff";
 
 const LAST_NOTE_KEY = "medousa-home-last-note";
 
@@ -145,6 +150,8 @@ export class VaultStore {
   activeVaultRootId = $state<string | null>(null);
   vaultRootsLoading = $state(false);
   vaultRootsError = $state<string | null>(null);
+  /** Engine lacks GET /v1/vault/roots (older build). */
+  vaultRootsUnavailable = $state(false);
   addVaultRootOpen = $state(false);
   /** Bumps when note content is replaced externally (open note, reload) — not on typing. */
   contentRevision = $state(0);
@@ -163,15 +170,9 @@ export class VaultStore {
   private saveEchoPath: string | null = null;
   private saveEchoUntil = 0;
 
-  get isWriteFirstKind(): boolean {
-    return isWriteFirstKind(this.selectedKind);
-  }
+  attachments = $derived(listAttachments(this.content));
 
-  get attachments(): VaultAttachment[] {
-    return listAttachments(this.content);
-  }
-
-  get previewingAttachment(): VaultAttachment | null {
+  previewingAttachment = $derived.by((): VaultAttachment | null => {
     if (!this.previewingAttachmentPath) return null;
     const attached = this.attachments.find(
       (row) => row.path === this.previewingAttachmentPath,
@@ -184,34 +185,22 @@ export class VaultStore {
       label: name,
       mime: guessMimeFromPath(path),
     };
-  }
+  });
 
-  labelByPath(): Map<string, string> {
-    return buildVaultLabelMap(this.notes);
-  }
+  labelByPathMap = $derived(buildVaultLabelMap(this.notes));
 
-  kindByPath(): Map<string, VaultNoteKind> {
-    return new Map(
+  kindByPathMap = $derived(
+    new Map(
       this.notes.map((note) => [
         note.path,
         resolveKind(note.path, note.kind),
       ]),
-    );
-  }
+    ),
+  );
 
-  get isDirty(): boolean {
-    return this.dirty;
-  }
+  contentSyncKey = $derived(`${this.selectedPath ?? ""}:${this.contentRevision}`);
 
-  get contentSyncKey(): string {
-    return `${this.selectedPath ?? ""}:${this.contentRevision}`;
-  }
-
-  get lastNotePath(): string | null {
-    return loadLastNote();
-  }
-
-  get activeSpace(): ReturnType<typeof getSpaceById> {
+  activeSpace = $derived.by((): ReturnType<typeof getSpaceById> => {
     if (this.selectedPath) {
       const note = this.notes.find((row) => row.path === this.selectedPath);
       if (note) {
@@ -222,6 +211,41 @@ export class VaultStore {
       return getSpaceById(this.activeSpaceFilter);
     }
     return undefined;
+  });
+
+  spaceCountsMap = $derived(countNotesBySpace(this.notes, this.showSystemNotes));
+
+  activeVaultRootView = $derived(
+    this.vaultRoots.find((root) => root.id === this.activeVaultRootId) ??
+      this.vaultRoots.find((root) => root.active) ??
+      null,
+  );
+
+  diffChipText = $derived.by((): string | null => {
+    if (this.saveStatus === "saved") return null;
+    if (!this.dirty) return null;
+    const stats = lineDiffStats(this.baselineContent, this.content);
+    return formatDiffChip(stats);
+  });
+
+  get isWriteFirstKind(): boolean {
+    return isWriteFirstKind(this.selectedKind);
+  }
+
+  labelByPath(): Map<string, string> {
+    return this.labelByPathMap;
+  }
+
+  kindByPath(): Map<string, VaultNoteKind> {
+    return this.kindByPathMap;
+  }
+
+  get isDirty(): boolean {
+    return this.dirty;
+  }
+
+  get lastNotePath(): string | null {
+    return loadLastNote();
   }
 
   /** Default space for new-note dialog. */
@@ -237,7 +261,7 @@ export class VaultStore {
   }
 
   spaceCounts(): Map<string, number> {
-    return countNotesBySpace(this.notes, this.showSystemNotes);
+    return this.spaceCountsMap;
   }
 
   diffStats(): LineDiffStats | null {
@@ -246,9 +270,7 @@ export class VaultStore {
   }
 
   diffChip(): string | null {
-    if (this.saveStatus === "saved") return null;
-    const stats = this.diffStats();
-    return stats ? formatDiffChip(stats) : null;
+    return this.diffChipText;
   }
 
   saveWhisper(): string | null {
@@ -522,12 +544,7 @@ export class VaultStore {
   }
 
   get activeVaultRoot(): VaultRootView | null {
-    if (!this.activeVaultRootId) return this.vaultRoots.find((root) => root.active) ?? null;
-    return (
-      this.vaultRoots.find((root) => root.id === this.activeVaultRootId) ??
-      this.vaultRoots.find((root) => root.active) ??
-      null
-    );
+    return this.activeVaultRootView;
   }
 
   resetForWorkshopSwitch() {
@@ -549,6 +566,7 @@ export class VaultStore {
     this.error = null;
     this.vaultRoots = [];
     this.activeVaultRootId = null;
+    this.vaultRootsUnavailable = false;
     invalidateVaultRootCache();
     void this.refreshVaultRoots();
     void this.refreshNotes();
@@ -559,10 +577,27 @@ export class VaultStore {
     this.vaultRootsError = null;
     try {
       const response = await listVaultRoots();
+      this.vaultRootsUnavailable = false;
       this.vaultRoots = response.roots;
       this.activeVaultRootId = response.activeRootId;
     } catch (err) {
-      this.vaultRootsError = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (/404|not found/i.test(message)) {
+        this.vaultRootsUnavailable = true;
+        this.vaultRootsError = null;
+        this.vaultRoots = [
+          {
+            id: "personal",
+            label: "Personal",
+            path: "",
+            isDefault: true,
+            active: true,
+          },
+        ];
+        this.activeVaultRootId = "personal";
+      } else {
+        this.vaultRootsError = message;
+      }
     } finally {
       this.vaultRootsLoading = false;
     }
@@ -756,6 +791,7 @@ export class VaultStore {
   markDirty(nextContent: string) {
     this.content = nextContent;
     this.dirty = true;
+    this.bumpContentSync();
     if (
       this.previewingAttachmentPath &&
       !listAttachments(nextContent).some(
