@@ -25,10 +25,8 @@
   import VaultMarkdownEditor from "./VaultMarkdownEditor.svelte";
   import VaultNoteActionsMenu from "./VaultNoteActionsMenu.svelte";
   import VaultEditorOverflowMenu from "./VaultEditorOverflowMenu.svelte";
-  import VaultAttachmentBar from "./VaultAttachmentBar.svelte";
-  import VaultLedgerSource from "./VaultLedgerSource.svelte";
+  import VaultLinkedFilesMenu from "./VaultLinkedFilesMenu.svelte";
   import {
-    isDataFirstKind,
     supportsLinksPanel,
     supportsPreviewSplit,
   } from "$lib/utils/vaultNoteKind";
@@ -115,7 +113,6 @@
   );
 
   const noteKind = $derived(vault.selectedKind);
-  const isDataFirst = $derived(isDataFirstKind(noteKind));
   const linkCount = $derived(vault.wikilinksOut.length + vault.backlinks.length);
   const showLinksToggle = $derived(
     Boolean(vault.selectedPath) && supportsLinksPanel(noteKind) && linkCount > 0,
@@ -446,6 +443,10 @@
           </div>
         {/if}
 
+        {#if vault.selectedPath}
+          <VaultLinkedFilesMenu disabled={vault.noteLoading || vault.saving} />
+        {/if}
+
         <button
           type="button"
           class="btn btn-sm variant-ghost-surface"
@@ -501,12 +502,6 @@
 
   <VaultProposalBar {mobile} />
   <VaultConflictBar />
-
-  {#if showLedgerTable}
-    <VaultLedgerSource disabled={vault.noteLoading || vault.saving} />
-  {:else if !isDataFirst}
-    <VaultAttachmentBar disabled={vault.noteLoading || vault.saving} />
-  {/if}
 
   {#if showLinksToggle && !layout.vaultLinksPanelOpen && !mobile}
     <div class="flex shrink-0 items-center gap-2 border-b border-surface-500/30 px-4 py-1.5 text-xs">

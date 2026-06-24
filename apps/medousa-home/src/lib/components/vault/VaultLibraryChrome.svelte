@@ -6,7 +6,9 @@
     FilePlus,
     FolderPlus,
     PanelLeftClose,
+    Pin,
     Plus,
+    RefreshCw,
     Search,
     SlidersHorizontal,
   } from "@lucide/svelte";
@@ -282,6 +284,28 @@
           oninput={(event) => onSearchExternal?.((event.currentTarget as HTMLInputElement).value)}
         />
       </label>
+    </div>
+    <div class="vault-library-toolbar border-t border-surface-500/35">
+      <button
+        type="button"
+        class="vault-toolbar-new variant-soft-primary"
+        onclick={() => void externalDesk.pinFolder()}
+      >
+        <Pin size={14} strokeWidth={2} />
+        Pin folder
+      </button>
+      {#if externalDesk.pinnedRoots.length > 0}
+        <button
+          type="button"
+          class="vault-toolbar-btn ml-auto"
+          title="Refresh all pinned folders"
+          aria-label="Refresh all pinned folders"
+          disabled={Boolean(externalDesk.loadingRoot)}
+          onclick={() => void externalDesk.refreshAllRoots()}
+        >
+          <RefreshCw size={14} strokeWidth={2} />
+        </button>
+      {/if}
     </div>
   {/if}
 </div>

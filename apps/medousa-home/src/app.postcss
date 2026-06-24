@@ -777,6 +777,34 @@
     @apply inline-flex items-center gap-1.5 text-surface-400 transition hover:text-primary-200 disabled:opacity-40;
   }
 
+  .vault-linked-files-menu {
+    @apply min-w-[14rem] max-w-[min(18rem,calc(100vw-2rem))];
+  }
+
+  .vault-linked-file-row {
+    @apply flex items-center gap-0.5 px-1;
+  }
+
+  .vault-linked-file-main {
+    @apply flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-surface-100 transition hover:bg-surface-800/80;
+  }
+
+  .vault-external-pin-row {
+    @apply flex items-center gap-1.5 rounded-container-token px-2 py-1.5 text-left transition hover:bg-surface-700/70;
+  }
+
+  .vault-external-file-row {
+    @apply block px-2 py-1.5;
+  }
+
+  .vault-external-file-link {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-primary-300 hover:bg-surface-800/80 hover:text-primary-200;
+  }
+
+  .vault-linked-file-action {
+    @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-surface-500 transition hover:bg-surface-800/80 hover:text-surface-200 disabled:opacity-40;
+  }
+
   .ledger-mode-toggle {
     @apply inline-flex rounded-md border border-surface-500/40 bg-surface-900/50 p-0.5;
   }

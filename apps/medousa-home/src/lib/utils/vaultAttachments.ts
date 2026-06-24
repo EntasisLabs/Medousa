@@ -62,6 +62,15 @@ export function canPreviewAttachment(attachment: VaultAttachment): boolean {
   );
 }
 
+export function partitionAttachments(attachments: readonly VaultAttachment[]): {
+  spreadsheet: VaultAttachment | null;
+  others: VaultAttachment[];
+} {
+  const spreadsheet = attachments.find((row) => isSpreadsheetAttachment(row)) ?? null;
+  const others = attachments.filter((row) => row !== spreadsheet);
+  return { spreadsheet, others };
+}
+
 function yamlQuote(value: string): string {
   if (/^[a-zA-Z0-9_./\-]+$/.test(value)) return value;
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;

@@ -8,10 +8,13 @@
   import VaultEditor from "./VaultEditor.svelte";
   import VaultNewNoteDialog from "./VaultNewNoteDialog.svelte";
   import ExternalFilesBrowser from "./ExternalFilesBrowser.svelte";
+  import ExternalFileRow from "./ExternalFileRow.svelte";
   import VaultNewGroupDialog from "./VaultNewGroupDialog.svelte";
   import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
   import VaultLibraryChrome from "./VaultLibraryChrome.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
+  import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
+  import type { ExternalFileEntry } from "$lib/types/externalDesk";
   import { shouldShowGarageWizard } from "$lib/utils/garageOnboarding";
 
   interface Props {
@@ -25,9 +28,10 @@
 
   const externalHits = $derived(externalDesk.searchHitsList);
   const showVaultChrome = $derived(externalDesk.sidebarMode === "vault");
-  const showExternalSearchResults = $derived(
-    !showVaultChrome && vault.searchQuery.trim().length > 0 && externalHits.length > 0,
+  const showFilesSearch = $derived(
+    !showVaultChrome && vault.searchQuery.trim().length > 0,
   );
+  const canLinkFiles = $derived(Boolean(vault.selectedPath));
 
   onMount(() => {
     (async () => {
@@ -50,14 +54,19 @@
     externalDesk.setSearchQuery(query);
   }
 
-  async function handleExternalSearchHit(path: string) {
-    externalDesk.selectExternalPath(path);
-    await openAttachmentPath(path);
+  async function handleExternalOpen(entry: ExternalFileEntry) {
+    externalDesk.selectExternalPath(entry.path);
+    const attachment = externalDesk.attachmentForPath(entry.path);
+    if (canPreviewAttachment(attachment)) {
+      vault.previewAttachment(entry.path);
+      return;
+    }
+    await openAttachmentPath(entry.path);
   }
 
-  function handleLinkExternalHit(path: string) {
+  function handleLinkExternalHit(entry: ExternalFileEntry) {
     if (!vault.selectedPath) return;
-    vault.linkExternalFile(path);
+    vault.linkExternalFile(entry.path);
   }
 </script>
 
@@ -78,39 +87,6 @@
       >
         <VaultLibraryChrome {showVaultChrome} onSearchExternal={handleExternalSearch} />
 
-        {#if showExternalSearchResults}
-          <div class="max-h-44 shrink-0 overflow-y-auto border-b border-surface-500/45 p-2 text-sm">
-            <p class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
-              Your files
-            </p>
-            <ul>
-              {#each externalHits as entry (entry.path)}
-                <li>
-                  <div class="flex items-center gap-1 rounded-container-token px-2 py-1 hover:bg-surface-700/80">
-                    <button
-                      type="button"
-                      class="min-w-0 flex-1 text-left"
-                      onclick={() => void handleExternalSearchHit(entry.path)}
-                    >
-                      <span class="font-medium">{entry.name}</span>
-                      <span class="workshop-faint block truncate">{entry.path}</span>
-                    </button>
-                    {#if vault.selectedPath}
-                      <button
-                        type="button"
-                        class="btn btn-xs variant-soft-primary"
-                        onclick={() => handleLinkExternalHit(entry.path)}
-                      >
-                        Link
-                      </button>
-                    {/if}
-                  </div>
-                </li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-
         {#if showVaultChrome}
           {#if vault.error}
             <p class="mx-2 mb-2 rounded-container-token border border-error-500/30 bg-error-500/10 px-2 py-1.5 text-xs text-error-300">
@@ -128,6 +104,29 @@
               void vault.moveNoteToFolder(sourcePath, targetPrefix);
             }}
           />
+        {:else if showFilesSearch}
+          <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
+            <p class="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-surface-500">
+              Search results
+            </p>
+            {#if externalHits.length === 0}
+              <p class="px-2 py-4 text-sm text-surface-500">No matches in pinned folders.</p>
+            {:else}
+              <ul class="space-y-0.5">
+                {#each externalHits as entry (entry.path)}
+                  <li>
+                    <ExternalFileRow
+                      {entry}
+                      selected={externalDesk.selectedExternalPath === entry.path}
+                      showLink={canLinkFiles}
+                      onOpen={handleExternalOpen}
+                      onLink={handleLinkExternalHit}
+                    />
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         {:else}
           <ExternalFilesBrowser />
         {/if}
