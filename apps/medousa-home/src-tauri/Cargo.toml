@@ -47,3 +47,7 @@ medousa = { path = "../../../", default-features = false, features = ["iroh-tran
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
 tauri-plugin-ios-webview-insets = "0.1"
+
+[patch.crates-io]
+grapheme-runtime = { path = "../../../vendor/grapheme-runtime" }
+grapheme-sdk = { path = "../../../vendor/grapheme-sdk" }
