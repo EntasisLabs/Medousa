@@ -5364,6 +5364,9 @@ dependencies = [
  "libc",
  "locus-core-rs",
  "mdns-sd",
+ "medousa-host",
+ "medousa-sdk",
+ "medousa-types",
  "once_cell",
  "pdf-extract",
  "qrcode",
@@ -5391,6 +5394,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-host"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "libc",
+ "medousa-types",
+ "tokio",
+]
+
+[[package]]
 name = "medousa-installer"
 version = "0.1.0"
 dependencies = [
@@ -5411,6 +5424,27 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "medousa-sdk"
+version = "0.1.0"
+dependencies = [
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,8 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { open } from "@tauri-apps/plugin-opener";
-  import { onMount } from "svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
 
   type Screen = "welcome" | "workloads" | "custom" | "progress" | "complete";
 
@@ -204,7 +203,7 @@
     <p class="lead">Medousa is ready. The first-run wizard will help you configure your brain and pairing.</p>
     <div class="actions">
       <button class="primary" onclick={launchMedousa}>Launch Medousa</button>
-      <button class="secondary" onclick={() => open("https://github.com/EntasisLabs/Medousa")}>Release notes</button>
+      <button class="secondary" onclick={() => openUrl("https://github.com/EntasisLabs/Medousa")}>Release notes</button>
     </div>
   {/if}
 </div>

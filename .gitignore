@@ -3,6 +3,9 @@
 /node_modules
 package-lock.json
 !apps/medousa-home/package-lock.json
+!apps/medousa-installer/package-lock.json
+apps/**/src-tauri/target/
+apps/**/dist/
 .grapheme-examples/
 /data%
 /docs/internal/
