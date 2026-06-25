@@ -1,0 +1,6 @@
+{
+  "releaseBaseUrl": "",
+  "releaseChannel": "stable",
+  "bootstrapPath": "installer-bootstrap.json",
+  "manifestPath": "release-manifest.json"
+}

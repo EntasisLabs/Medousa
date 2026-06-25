@@ -4,6 +4,10 @@ import { isTauri } from "$lib/window";
 export interface PackageStatusSummary {
   localBrainInstalled: boolean;
   installerAvailable: boolean;
+  installedPackages: string[];
+  installedVersion: string | null;
+  releaseBaseUrl: string | null;
+  updateAvailable: boolean;
 }
 
 export async function fetchPackageStatus(): Promise<PackageStatusSummary | null> {
@@ -17,7 +21,10 @@ export async function fetchPackageStatus(): Promise<PackageStatusSummary | null>
 
 export async function openPackageInstaller(): Promise<void> {
   if (!isTauri()) {
-    window.open("https://github.com/EntasisLabs/Medousa/releases/latest", "_blank");
+    const base = import.meta.env.VITE_MEDOUSA_RELEASE_BASE_URL as string | undefined;
+    if (base) {
+      window.open(`${base.replace(/\/$/, "")}/stable/installer-bootstrap.json`, "_blank");
+    }
     return;
   }
   await invoke("packages_open_installer");

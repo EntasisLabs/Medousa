@@ -8,16 +8,29 @@ This guide is for running **Medousa Engine** and CLI tools on a machine you cont
 
 ## Install binaries
 
+### Medousa Installer (recommended)
+
+Download **Medousa Installer** from your release endpoint:
+
+```
+{MEDOUSA_RELEASE_BASE_URL}/stable/installer-bootstrap.json
+```
+
+The installer manages Desktop, Engine, adapters, offline brain, and model packs.
+
+### CLI / headless install
+
 One command installs the full versioned set (launcher, engine, TUI, channel adapters) to `~/.local/bin`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash
+export MEDOUSA_RELEASE_BASE_URL=https://releases.example.com/medousa
+./scripts/install.sh
 ```
 
-Pin a release:
+Self-hosted registry with pinned version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash -s -- --version v0.1.0
+./scripts/install.sh --registry-url https://releases.example.com/medousa --version v0.1.0
 ```
 
 Air-gap / local artifact:

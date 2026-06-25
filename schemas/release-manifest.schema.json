@@ -5,10 +5,12 @@
   "type": "object",
   "required": ["schemaVersion", "product", "version", "publishedAt", "packages"],
   "properties": {
-    "schemaVersion": { "type": "integer", "const": 1 },
+    "schemaVersion": { "type": "integer", "minimum": 1 },
     "product": { "type": "string", "const": "medousa" },
     "version": { "type": "string" },
+    "channel": { "type": "string" },
     "publishedAt": { "type": "string", "format": "date-time" },
+    "baseUrl": { "type": "string", "format": "uri" },
     "packages": {
       "type": "object",
       "additionalProperties": {
@@ -24,7 +26,14 @@
           "sizeBytes": { "type": "integer", "minimum": 0 },
           "depends": { "type": "array", "items": { "type": "string" } },
           "backend": { "type": "string" },
-          "description": { "type": "string" }
+          "description": { "type": "string" },
+          "category": {
+            "type": "string",
+            "enum": ["core", "adapter", "model", "expansion"]
+          },
+          "icon": { "type": "string" },
+          "binaries": { "type": "array", "items": { "type": "string" } },
+          "workloadIds": { "type": "array", "items": { "type": "string" } }
         }
       }
     }

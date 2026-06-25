@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medousa.dev/schemas/install-manifest.json",
+  "title": "MedousaInstallManifest",
+  "type": "object",
+  "required": ["schemaVersion", "product", "version", "target", "builtAt"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "minimum": 2 },
+    "product": { "type": "string", "const": "medousa" },
+    "version": { "type": "string" },
+    "target": { "type": "string" },
+    "builtAt": { "type": "string", "format": "date-time" },
+    "binaries": { "type": "array", "items": { "type": "string" } },
+    "componentSetId": { "type": "string" },
+    "installRoot": { "type": "string" },
+    "dataDir": { "type": "string" },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "version"],
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "string" },
+          "installPath": { "type": "string" },
+          "sha256": { "type": "string" },
+          "binaries": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

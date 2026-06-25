@@ -12,10 +12,14 @@ pub struct InstallManifest {
     pub version: String,
     pub target: String,
     pub built_at: String,
+    #[serde(default)]
     pub binaries: Vec<String>,
+    #[serde(default)]
     pub component_set_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_dir: Option<String>,
     #[serde(default)]
     pub packages: Vec<PackageInstallRecord>,
 }
@@ -29,6 +33,8 @@ pub struct PackageInstallRecord {
     pub install_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    #[serde(default)]
+    pub binaries: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,7 +43,11 @@ pub struct ReleaseManifest {
     pub schema_version: u32,
     pub product: String,
     pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
     pub published_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
     pub packages: HashMap<String, ReleasePackage>,
 }
 
@@ -57,6 +67,14 @@ pub struct ReleasePackage {
     pub backend: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub binaries: Vec<String>,
+    #[serde(default)]
+    pub workload_ids: Vec<String>,
 }
 
 pub fn read_install_manifest(path: &Path) -> Result<InstallManifest, String> {
@@ -85,6 +103,10 @@ pub fn user_packages_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("packages")
 }
 
+pub fn shared_bin_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("bin")
+}
+
 pub fn package_installed(data_dir: &Path, package_id: &str) -> bool {
     user_packages_dir(data_dir)
         .join(package_id)
@@ -98,4 +120,12 @@ pub fn mark_package_installed(data_dir: &Path, package_id: &str) -> Result<(), S
         fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
     fs::write(marker, chrono::Utc::now().to_rfc3339()).map_err(|err| err.to_string())
+}
+
+pub fn unmark_package_installed(data_dir: &Path, package_id: &str) -> Result<(), String> {
+    let marker = user_packages_dir(data_dir).join(package_id).join(".installed");
+    if marker.exists() {
+        fs::remove_file(marker).map_err(|err| err.to_string())?;
+    }
+    Ok(())
 }

@@ -54,7 +54,7 @@ jobs:
       - name: Package release archives
         shell: bash
         run: |
-          ./scripts/release/package.sh --target "${{ matrix.target }}"
+          ./scripts/release/package-all-components.sh --target "${{ matrix.target }}"
           ./scripts/release/package-local-brain.sh --target "${{ matrix.target }}" || true
 
       - name: Upload CLI artifact
@@ -62,6 +62,10 @@ jobs:
         with:
           name: medousa-cli-${{ matrix.target }}
           path: |
+            dist/engine-*.tar.gz
+            dist/cli-*.tar.gz
+            dist/adapter-*.tar.gz
+            dist/mcp-gateway-*.tar.gz
             dist/medousa-*.tar.gz
             dist/medousa_local-*.tar.gz
             dist/SHA256SUMS
@@ -210,10 +214,90 @@ jobs:
           path: dist/desktop/${{ matrix.name }}/*
           if-no-files-found: error
 
+  build-installer:
+    name: installer (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            name: macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: linux-x64
+
+    defaults:
+      run:
+        working-directory: apps/medousa-installer
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/medousa-installer/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            apps/medousa-installer/src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build installer
+        env:
+          CI: true
+        run: npm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Stage installer bundles
+        shell: bash
+        working-directory: .
+        run: |
+          BUNDLE="apps/medousa-installer/src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p "dist/installer/${{ matrix.name }}"
+          find "$BUNDLE" -type f \( \
+            -name 'MedousaInstaller*.dmg' -o \
+            -name 'MedousaInstaller*.msi' -o \
+            -name 'MedousaInstaller*.exe' -o \
+            -name 'MedousaInstaller*.AppImage' -o \
+            -name 'MedousaInstaller*.deb' \
+            \) -exec cp {} "dist/installer/${{ matrix.name }}/" \;
+          ls -la "dist/installer/${{ matrix.name }}/" || true
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-installer-${{ matrix.name }}
+          path: dist/installer/${{ matrix.name }}/*
+          if-no-files-found: warn
+
   release:
     name: publish GitHub Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build-cli, build-desktop]
+    needs: [build-cli, build-desktop, build-installer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -228,8 +312,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/final
+          find dist/artifacts -name 'engine-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'cli-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'adapter-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'mcp-gateway-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -type f \( \
+            -name 'MedousaInstaller*' -o \
+            -name 'Medousa_*' -o \
             -name '*.dmg' -o \
             -name '*.msi' -o \
             -name '*.exe' -o \
@@ -238,24 +328,32 @@ jobs:
             \) -exec cp {} dist/final/ \;
           : > dist/final/SHA256SUMS
           shopt -s nullglob
-          for archive in dist/final/medousa-*.tar.gz dist/final/medousa_local-*.tar.gz dist/final/*.dmg dist/final/*.AppImage dist/final/*.deb dist/final/*.msi dist/final/*.exe; do
+          for archive in dist/final/*.tar.gz dist/final/*.dmg dist/final/*.AppImage dist/final/*.deb dist/final/*.msi dist/final/*.exe; do
             [[ -f "$archive" ]] || continue
             (cd dist/final && sha256sum "$(basename "$archive")") >> dist/final/SHA256SUMS
           done
           cd dist/final && ls -la
 
-      - name: Generate release manifest
+      - name: Generate release manifests
         shell: bash
+        env:
+          MEDOUSA_RELEASE_BASE_URL: ${{ vars.MEDOUSA_RELEASE_BASE_URL }}
         run: |
-          ./scripts/release/generate-release-manifest.sh --dist dist/final
+          ./scripts/release/publish-self-hosted.sh --staging dist/final --base-url "${MEDOUSA_RELEASE_BASE_URL:-https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            dist/final/engine-*.tar.gz
+            dist/final/cli-*.tar.gz
+            dist/final/adapter-*.tar.gz
+            dist/final/mcp-gateway-*.tar.gz
             dist/final/medousa-*.tar.gz
             dist/final/medousa_local-*.tar.gz
             dist/final/release-manifest.json
+            dist/final/installer-bootstrap.json
+            dist/final/MedousaInstaller*
             dist/final/*.dmg
             dist/final/*.msi
             dist/final/*.exe

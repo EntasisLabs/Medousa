@@ -9,7 +9,8 @@ source "${SCRIPT_DIR}/common.sh"
 
 DIST_DIR=""
 VERSION=""
-GITHUB_REPO="${MEDOUSA_GITHUB_REPO:-EntasisLabs/Medousa}"
+CHANNEL="${MEDOUSA_RELEASE_CHANNEL:-stable}"
+BASE_URL_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
@@ -18,6 +19,8 @@ Usage: scripts/release/generate-release-manifest.sh [options]
 Options:
   --dist <dir>          Directory containing release archives (default: dist/)
   --version <version>   Release version without v prefix (default: Cargo.toml)
+  --channel <name>      Release channel (default: stable)
+  --base-url <url>      Artifact base URL (or set MEDOUSA_RELEASE_BASE_URL)
   -h, --help            Show this help
 
 Writes dist/release-manifest.json indexing package id → url, sha256, size, depends.
@@ -28,6 +31,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dist) DIST_DIR="$2"; shift 2 ;;
     --version) VERSION="$2"; shift 2 ;;
+    --channel) CHANNEL="$2"; shift 2 ;;
+    --base-url) BASE_URL_OVERRIDE="$2"; shift 2 ;;
     -h | --help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -37,8 +42,13 @@ ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
 DIST_DIR="${DIST_DIR:-${ROOT}/dist}"
 VERSION="${VERSION:-$(medousa_version)}"
-TAG="v${VERSION}"
-BASE_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}"
+
+if [[ -n "${BASE_URL_OVERRIDE}" ]]; then
+  BASE_URL="${BASE_URL_OVERRIDE%/}/${CHANNEL}"
+else
+  MEDOUSA_RELEASE_CHANNEL="${CHANNEL}"
+  BASE_URL="$(medousa_release_base_url "${VERSION}")"
+fi
 
 sha_for() {
   local file="$1"
@@ -56,6 +66,25 @@ size_for() {
   fi
 }
 
+binaries_json_for() {
+  local package_id="$1"
+  local -a bins
+  read -r -a bins <<<"$(medousa_component_binaries "${package_id}" 2>/dev/null || true)"
+  if ((${#bins[@]} == 0)); then
+    echo "[]"
+    return 0
+  fi
+  local out="["
+  local i=0
+  for bin in "${bins[@]}"; do
+    [[ "${i}" -gt 0 ]] && out+=","
+    out+="\"${bin}\""
+    i=$((i + 1))
+  done
+  out+="]"
+  echo "${out}"
+}
+
 append_package_json() {
   local id="$1"
   local display_name="$2"
@@ -63,6 +92,7 @@ append_package_json() {
   local archive="$4"
   local depends_csv="$5"
   local backend="${6:-}"
+  local category="${7:-}"
   local url="${BASE_URL}/${archive}"
   local sha256
   sha256="$(sha_for "${archive}")"
@@ -86,6 +116,16 @@ append_package_json() {
   if [[ -n "${backend}" ]]; then
     backend_field=$(printf ',\n      "backend": "%s"' "${backend}")
   fi
+  local category_field=""
+  if [[ -n "${category}" ]]; then
+    category_field=$(printf ',\n      "category": "%s"' "${category}")
+  fi
+  local binaries_field=""
+  local binaries_json
+  binaries_json="$(binaries_json_for "${id}")"
+  if [[ "${binaries_json}" != "[]" ]]; then
+    binaries_field=$(printf ',\n      "binaries": %s' "${binaries_json}")
+  fi
   cat <<EOF
     "${id}-${target}": {
       "id": "${id}",
@@ -95,7 +135,7 @@ append_package_json() {
       "url": "${url}",
       "sha256": "${sha256}",
       "sizeBytes": ${size_bytes},
-      "depends": ${depends_json}${backend_field}
+      "depends": ${depends_json}${backend_field}${category_field}${binaries_field}
     }
 EOF
 }
@@ -108,24 +148,49 @@ TARGETS=(
   x86_64-pc-windows-msvc
 )
 
+COMPONENT_DISPLAY_NAMES=(
+  "engine:Medousa Engine"
+  "cli:Command-line tools"
+  "adapter-telegram:Telegram adapter"
+  "adapter-discord:Discord adapter"
+  "adapter-slack:Slack adapter"
+  "adapter-whatsapp:WhatsApp adapter"
+  "mcp-gateway:MCP gateway"
+)
+
 OUT="${DIST_DIR}/release-manifest.json"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 {
   echo "{"
-  echo '  "schemaVersion": 1,'
+  echo '  "schemaVersion": 2,'
   echo '  "product": "medousa",'
   echo "  \"version\": \"${VERSION}\","
+  echo "  \"channel\": \"${CHANNEL}\","
   echo "  \"publishedAt\": \"${PUBLISHED_AT}\","
+  echo "  \"baseUrl\": \"${BASE_URL}\","
   echo '  "packages": {'
 
   first=1
   for target in "${TARGETS[@]}"; do
-    cli_archive="medousa-v${VERSION}-${target}.tar.gz"
-    if [[ -f "${DIST_DIR}/${cli_archive}" ]]; then
+    for entry in "${COMPONENT_DISPLAY_NAMES[@]}"; do
+      package_id="${entry%%:*}"
+      display_name="${entry#*:}"
+      archive="$(medousa_component_archive_name "${package_id}" "${VERSION}" "${target}")"
+      if [[ -f "${DIST_DIR}/${archive}" ]]; then
+        [[ "${first}" -eq 1 ]] || echo ","
+        first=0
+        depends="$(medousa_component_depends "${package_id}")"
+        category="$(medousa_component_category "${package_id}")"
+        append_package_json "${package_id}" "${display_name}" "${target}" "${archive}" "${depends}" "" "${category}"
+      fi
+    done
+
+    suite_archive="medousa-v${VERSION}-${target}.tar.gz"
+    if [[ -f "${DIST_DIR}/${suite_archive}" ]]; then
       [[ "${first}" -eq 1 ]] || echo ","
       first=0
-      append_package_json "engine" "Medousa Engine" "${target}" "${cli_archive}" ""
+      append_package_json "engine-suite" "Medousa Engine (full suite)" "${target}" "${suite_archive}" "" "" "core"
     fi
 
     for backend in metal cpu cuda; do
@@ -133,7 +198,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
       if [[ -f "${DIST_DIR}/${local_archive}" ]]; then
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
-        append_package_json "local-brain" "Offline brain (${backend})" "${target}" "${local_archive}" "engine" "${backend}"
+        append_package_json "local-brain" "Offline brain (${backend})" "${target}" "${local_archive}" "engine" "${backend}" "core"
       fi
     done
 
@@ -142,19 +207,32 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
       if [[ -f "${DIST_DIR}/${model_archive}" ]]; then
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
-        append_package_json "${model}" "${model}" "any" "${model_archive}" "local-brain"
+        append_package_json "${model}" "${model}" "any" "${model_archive}" "local-brain" "" "model"
       fi
     done
   done
 
-  for name in macos-aarch64 windows-x64 linux-x64; do
+  for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     for ext in dmg msi exe AppImage deb; do
-      found="$(find "${DIST_DIR}" -maxdepth 3 -type f -name "*.${ext}" 2>/dev/null | head -1 || true)"
+      found="$(find "${DIST_DIR}" -maxdepth 3 -type f -name "Medousa_*.${ext}" ! -name 'MedousaInstaller*' 2>/dev/null | head -1 || true)"
       if [[ -n "${found}" ]]; then
         archive="$(basename "${found}")"
         [[ "${first}" -eq 1 ]] || echo ","
         first=0
-        append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" ""
+        append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core"
+        break
+      fi
+    done
+  done
+
+  for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
+    for ext in dmg msi exe AppImage deb; do
+      found="$(find "${DIST_DIR}" -maxdepth 3 -type f -name "MedousaInstaller*.${ext}" 2>/dev/null | head -1 || true)"
+      if [[ -n "${found}" ]]; then
+        archive="$(basename "${found}")"
+        [[ "${first}" -eq 1 ]] || echo ","
+        first=0
+        append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core"
         break
       fi
     done

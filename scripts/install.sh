@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/release/common.sh"
 
 MEDOUSA_VERSION="${MEDOUSA_VERSION:-latest}"
+REGISTRY_URL="${MEDOUSA_RELEASE_BASE_URL:-}"
+RELEASE_CHANNEL="${MEDOUSA_RELEASE_CHANNEL:-stable}"
 INSTALL_DIR="${MEDOUSA_INSTALL_DIR:-${HOME}/.local/bin}"
 STATE_DIR="${MEDOUSA_STATE_DIR:-${HOME}/.local/share/medousa}"
 FROM_DIST=""
@@ -41,11 +43,15 @@ Options:
                         Allow remote install without SHA256SUMS verification
   --verify-only         Validate the current install and exit
   --uninstall           Remove installed Medousa binaries from the install directory
-  --dry-run             Print actions without changing the system
+  --registry-url <url>  Self-hosted release base URL (or MEDOUSA_RELEASE_BASE_URL)
+  --channel <name>      Release channel (default: stable)
   -h, --help            Show this help
 
 Environment:
-  MEDOUSA_GITHUB_REPO   GitHub repo (owner/name, default: ${MEDOUSA_GITHUB_REPO})
+  MEDOUSA_RELEASE_BASE_URL  Self-hosted artifact registry base URL
+  MEDOUSA_RELEASE_CHANNEL     Release channel (default: stable)
+  MEDOUSA_RELEASE_MANIFEST_URL  Override manifest URL
+  MEDOUSA_GITHUB_REPO   GitHub repo fallback (owner/name, default: ${MEDOUSA_GITHUB_REPO})
   MEDOUSA_VERSION       Same as --version
   MEDOUSA_INSTALL_DIR   Same as --install-dir
   MEDOUSA_STATE_DIR     Install metadata directory (default: ~/.local/share/medousa)
@@ -134,6 +140,14 @@ while [[ $# -gt 0 ]]; do
     --dry-run)
       DRY_RUN=1
       shift
+      ;;
+    --registry-url)
+      REGISTRY_URL="$2"
+      shift 2
+      ;;
+    --channel)
+      RELEASE_CHANNEL="$2"
+      shift 2
       ;;
     -h | --help)
       usage
@@ -438,25 +452,48 @@ install_from_archive() {
 }
 
 resolve_release_tag() {
-  if [[ "${MEDOUSA_VERSION}" == "latest" ]]; then
-    medousa_require_cmd curl
-    local tag
-    tag="$(curl -fsSL "https://api.github.com/repos/${MEDOUSA_GITHUB_REPO}/releases/latest" \
-      | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -1)"
-    [[ -n "${tag}" ]] || die "could not resolve latest release tag from ${MEDOUSA_GITHUB_REPO}"
-    echo "${tag}"
-  else
+  if [[ "${MEDOUSA_VERSION}" != "latest" ]]; then
     local tag="${MEDOUSA_VERSION}"
     [[ "${tag}" == v* ]] || tag="v${tag}"
     echo "${tag}"
+    return 0
   fi
+
+  if [[ -n "${REGISTRY_URL}" ]]; then
+    medousa_require_cmd curl
+    local manifest_url
+    manifest_url="$(MEDOUSA_RELEASE_BASE_URL="${REGISTRY_URL}" MEDOUSA_RELEASE_CHANNEL="${RELEASE_CHANNEL}" medousa_release_manifest_url)"
+    local version
+    version="$(curl -fsSL "${manifest_url}" | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -1)"
+    [[ -n "${version}" ]] || die "could not resolve version from ${manifest_url}"
+    echo "v${version}"
+    return 0
+  fi
+
+  medousa_require_cmd curl
+  local tag
+  tag="$(curl -fsSL "https://api.github.com/repos/${MEDOUSA_GITHUB_REPO}/releases/latest" \
+    | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -1)"
+  [[ -n "${tag}" ]] || die "could not resolve latest release tag from ${MEDOUSA_GITHUB_REPO}"
+  echo "${tag}"
+}
+
+release_download_base() {
+  local tag="$1"
+  if [[ -n "${REGISTRY_URL}" ]]; then
+    echo "${REGISTRY_URL%/}/${RELEASE_CHANNEL}"
+    return 0
+  fi
+  echo "https://github.com/${MEDOUSA_GITHUB_REPO}/releases/download/${tag}"
 }
 
 download_release_file() {
   local tag="$1"
   local filename="$2"
   local out_path="$3"
-  local url="https://github.com/${MEDOUSA_GITHUB_REPO}/releases/download/${tag}/${filename}"
+  local base
+  base="$(release_download_base "${tag}")"
+  local url="${base}/${filename}"
   log "downloading ${filename}"
   run curl -fsSL -o "${out_path}" "${url}"
 }
