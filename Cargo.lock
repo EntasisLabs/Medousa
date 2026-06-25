@@ -6413,8 +6413,10 @@ dependencies = [
  "libc",
  "locus-core-rs",
  "mdns-sd",
- "mistralrs-core",
- "mistralrs-server-core",
+ "medousa-host",
+ "medousa-local-engine",
+ "medousa-sdk",
+ "medousa-types",
  "once_cell",
  "pdf-extract",
  "qrcode",
@@ -6440,6 +6442,62 @@ dependencies = [
  "tower 0.5.3",
  "urlencoding",
  "uuid 1.23.1",
+]
+
+[[package]]
+name = "medousa-host"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "libc",
+ "medousa-types",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-local-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "medousa-types",
+ "mistralrs-core",
+ "mistralrs-server-core",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-sdk"
+version = "0.1.0"
+dependencies = [
+ "eventsource-stream",
+ "futures-util",
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-sdk-iroh"
+version = "0.1.0"
+dependencies = [
+ "medousa-sdk",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

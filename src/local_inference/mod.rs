@@ -10,9 +10,9 @@ pub use catalog::{
     CatalogModelEntry,
 };
 pub use engine::{
-    config_from_catalog_entry, config_from_catalog_entry_with_probe, load_recommended_engine,
-    LocalEngineConfig, LocalEngineManager, LocalEngineStatus, LOCAL_ENGINE,
-    DEFAULT_LOCAL_ENGINE_BASE_URL, DEFAULT_LOCAL_ENGINE_BIND,
+    config_from_catalog_entry, config_from_catalog_entry_with_probe, probe_local_engine_status,
+    recommended_engine_config, LocalEngineConfig, LocalEngineManager, LocalEngineStatus,
+    LOCAL_ENGINE, DEFAULT_LOCAL_ENGINE_BASE_URL, DEFAULT_LOCAL_ENGINE_BIND,
 };
 pub use store::{
     local_repo_if_installed, DownloadPhase, InstalledModelRecord, ModelDownloadProgress,

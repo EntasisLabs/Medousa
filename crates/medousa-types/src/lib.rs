@@ -1,0 +1,23 @@
+//! Shared serde types for the Medousa daemon HTTP API.
+//!
+//! Used by the server, SDK clients, and channel adapters to prevent contract drift.
+
+pub mod daemon_api;
+pub mod inference;
+pub mod local;
+pub mod model_catalog;
+pub mod profile;
+pub mod session;
+pub mod stage_routing;
+pub mod tool_history;
+pub mod turn;
+pub mod turn_ticket;
+pub mod workflow;
+pub mod workflow_plan;
+
+pub use daemon_api::*;
+pub use local::*;
+pub use session::*;
+pub use stage_routing::*;
+pub use turn::*;
+pub use turn_ticket::*;

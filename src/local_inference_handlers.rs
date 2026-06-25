@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::local_inference::{
     build_hardware_profile, builtin_catalog, compiled_backends, config_from_catalog_entry,
-    filter_catalog_for_tier, load_recommended_engine, probe_hardware, read_hardware_profile,
+    filter_catalog_for_tier, probe_hardware, read_hardware_profile,
     resolve_inference_device, write_hardware_profile, CatalogModelEntry, HardwareProfile,
     HardwareTier, InstalledModelRecord, LocalEngineStatus, ModelDownloadProgress, MODEL_STORE,
     LOCAL_ENGINE,
@@ -44,15 +44,6 @@ pub struct LocalModelsResponse {
     pub active_downloads: Vec<ModelDownloadProgress>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalEngineLoadRequest {
-    #[serde(default)]
-    pub model_id: Option<String>,
-    #[serde(default)]
-    pub bind: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelDownloadRequest {
@@ -78,7 +69,6 @@ pub fn routes() -> Router {
         )
         .route("/v1/local/models/{model_id}", delete(local_model_delete))
         .route("/v1/local/engine/status", get(local_engine_status))
-        .route("/v1/local/engine/load", post(local_engine_load))
 }
 
 async fn local_hardware() -> Result<Json<LocalHardwareResponse>, (axum::http::StatusCode, String)> {
@@ -209,36 +199,6 @@ async fn local_model_delete(
 
 async fn local_engine_status() -> Json<LocalEngineStatus> {
     Json(LOCAL_ENGINE.as_ref().status().await)
-}
-
-async fn local_engine_load(
-    Json(request): Json<LocalEngineLoadRequest>,
-) -> Result<Json<LocalEngineStatus>, (axum::http::StatusCode, String)> {
-    let status = if let Some(model_id) = request
-        .model_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        let catalog = builtin_catalog();
-        let entry = catalog
-            .models
-            .iter()
-            .find(|entry| entry.id == model_id)
-            .cloned()
-            .ok_or_else(|| internal_error(format!("unknown catalog model id: {model_id}")))?;
-        if !MODEL_STORE.is_installed(model_id).await {
-            return Err(internal_error(format!(
-                "model {model_id} is not installed — download it first"
-            )));
-        }
-        let config = config_from_catalog_entry(&entry, request.bind.clone());
-        LOCAL_ENGINE.as_ref().load(config).await
-    } else {
-        load_recommended_engine(request.bind).await
-    }
-    .map_err(internal_error)?;
-    Ok(Json(status))
 }
 
 fn internal_error(message: String) -> (axum::http::StatusCode, String) {

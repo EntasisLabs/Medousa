@@ -769,7 +769,7 @@ fn run_daemon(args: &[String]) -> Result<()> {
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(&plan.bind);
     if plan.private_brain {
-        command.arg("--local-engine");
+        spawn_private_brain_background();
     }
     if let Some(mobile_url) = &plan.mobile_url {
         command.env("MEDOUSA_DAEMON_PUBLIC_URL", mobile_url);
@@ -2170,7 +2170,7 @@ struct DaemonLaunchPlan {
     bind: String,
     health_url: String,
     mobile_url: Option<String>,
-    /// Load Gemma on this Mac at Core startup (`medousa_daemon --local-engine`).
+    /// Spawn `medousa_local` alongside the daemon when `--inference` is set.
     private_brain: bool,
 }
 
@@ -2533,6 +2533,15 @@ fn ensure_daemon_running(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     ))
 }
 
+fn spawn_private_brain_background() {
+    let bind = std::env::var("MEDOUSA_LOCAL_ENGINE_BIND")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    if let Err(err) = medousa_host::spawn_medousa_local_recommended(bind) {
+        eprintln!("medousa_local failed to spawn: {err}");
+    }
+}
+
 fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()> {
     let daemon = resolve_component_command("medousa_daemon")?;
     let log = medousa::service_launch::BackgroundLog::new(daemon_log_path());
@@ -2541,7 +2550,7 @@ fn start_daemon_background(backend: &str, plan: &DaemonLaunchPlan) -> Result<()>
     command.arg("--backend").arg(backend);
     command.arg("--bind").arg(&plan.bind);
     if plan.private_brain {
-        command.arg("--local-engine");
+        spawn_private_brain_background();
     }
     if let Some(mobile_url) = &plan.mobile_url {
         command.env("MEDOUSA_DAEMON_PUBLIC_URL", mobile_url);
@@ -3011,7 +3020,7 @@ fn print_start_help() {
     println!("  medousa start <service> [--backend <name>] [--bind <host:port>] [--public] [--inference] [--daemon-url <url>]");
     println!();
     println!("FLAGS:");
-    println!("  --inference   Load your private Gemma brain on this Mac (alias: --local-engine)");
+    println!("  --inference   Spawn medousa_local for private Gemma brain (alias: --local-engine)");
     println!("  --public      Bind Core to 0.0.0.0 for phone pairing on the same Wi‑Fi");
     println!();
     println!("SERVICES:");

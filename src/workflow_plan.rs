@@ -7,38 +7,9 @@ use serde_json::{Value, json};
 
 use crate::workflow::{WorkflowRunRequest, WorkflowStepSpec};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowPlanRequest {
-    pub goal: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context: Option<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowScheduleSuggestion {
-    pub cron_expr: String,
-    #[serde(default = "default_timezone")]
-    pub timezone: String,
-}
-
-fn default_timezone() -> String {
-    "UTC".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowPlanResponse {
-    pub goal: String,
-    pub confidence: String,
-    pub execute_with: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suggested_workflow: Option<WorkflowRunRequest>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suggested_schedule: Option<WorkflowScheduleSuggestion>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suggested_tool_input: Option<Value>,
-    pub notes: Vec<String>,
-    pub assumptions: Vec<String>,
-}
+pub use medousa_types::workflow_plan::{
+    WorkflowPlanRequest, WorkflowPlanResponse, WorkflowScheduleSuggestion,
+};
 
 fn normalized_goal(goal: &str) -> String {
     goal.trim().to_ascii_lowercase()

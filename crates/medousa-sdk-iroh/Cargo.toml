@@ -1,0 +1,12 @@
+[package]
+name = "medousa-sdk-iroh"
+version = "0.1.0"
+edition = "2024"
+description = "Workshop LAN transport adapter for medousa-sdk (Iroh routing via Tauri workshop_transport)"
+
+[dependencies]
+medousa-sdk = { path = "../medousa-sdk", default-features = false, features = ["async"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["sync"] }

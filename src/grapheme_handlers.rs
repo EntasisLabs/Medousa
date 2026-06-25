@@ -89,7 +89,10 @@ pub async fn get_grapheme_module(
         .map(|path| (*path).to_string())
         .collect();
 
-    Ok(Json(GraphemeModuleDetailResponse { info, examples }))
+    Ok(Json(GraphemeModuleDetailResponse {
+        info: serde_json::to_value(info).unwrap_or(serde_json::Value::Null),
+        examples,
+    }))
 }
 
 pub async fn get_grapheme_module_ops(
@@ -107,7 +110,11 @@ pub async fn get_grapheme_module_ops(
     Json(GraphemeModuleOpsResponse {
         module_id: module_id.to_string(),
         query: payload.query,
-        matches: payload.matches,
+        matches: payload
+            .matches
+            .into_iter()
+            .filter_map(|row| serde_json::to_value(row).ok())
+            .collect(),
     })
 }
 

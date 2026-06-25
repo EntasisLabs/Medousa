@@ -166,26 +166,16 @@ pub fn delete_local_model(daemon_url: &str, model_id: &str) -> Result<()> {
 }
 
 pub fn post_local_engine_load(
-    daemon_url: &str,
+    _daemon_url: &str,
     model_id: Option<&str>,
 ) -> Result<LocalEngineStatus> {
-    let client = local_http_client()?;
-    let body = json!({
-        "modelId": model_id,
-    });
-    let response = client
-        .post(format!("{daemon_url}/v1/local/engine/load"))
-        .json(&body)
-        .send()
-        .context("POST /v1/local/engine/load")?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().unwrap_or_default();
-        bail!("POST /v1/local/engine/load returned {status}: {text}");
-    }
-    response
-        .json()
-        .context("parse /v1/local/engine/load json")
+    let runtime = tokio::runtime::Runtime::new().context("build tokio runtime")?;
+    runtime
+        .block_on(medousa_host::spawn_and_wait(
+            None,
+            model_id.map(str::to_string),
+        ))
+        .map_err(anyhow::Error::msg)
 }
 
 pub fn print_models_help() {

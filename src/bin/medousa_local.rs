@@ -1,15 +1,24 @@
 //! Standalone local inference server (`medousa_local`).
 //!
-//! OpenAI-compatible loopback server on `:7421` with model download/load handled
-//! via the main daemon's `/v1/local/*` APIs. Built with `embedded-inference*`
-//! features (Metal / CUDA / CPU).
+//! OpenAI-compatible loopback server on `:7421`. Model download/catalog is
+//! handled via the daemon's `/v1/local/*` APIs; this binary only runs mistralrs.
 
 use std::env;
+use std::sync::Arc;
 
-use crate::local_inference::{
-    builtin_catalog, compiled_backends, config_from_catalog_entry, load_recommended_engine,
-    LocalEngineConfig, LOCAL_ENGINE, DEFAULT_LOCAL_ENGINE_BIND,
+use once_cell::sync::Lazy;
+
+#[cfg(feature = "embedded-inference")]
+use medousa::local_inference::{
+    builtin_catalog, compiled_backends, config_from_catalog_entry, recommended_engine_config,
+    DEFAULT_LOCAL_ENGINE_BIND,
 };
+#[cfg(feature = "embedded-inference")]
+use medousa_local_engine::{LocalEngineConfig as EngineConfig, LocalEngineRuntime};
+
+#[cfg(feature = "embedded-inference")]
+static RUNTIME: Lazy<Arc<LocalEngineRuntime>> =
+    Lazy::new(|| Arc::new(LocalEngineRuntime::new()));
 
 #[cfg(not(feature = "embedded-inference"))]
 fn main() {
@@ -44,11 +53,11 @@ async fn main() -> anyhow::Result<()> {
     let from_uqff = flag_value(&args, "--from-uqff");
     let in_situ_quant = flag_value(&args, "--in-situ-quant");
 
-    let status = if load_recommended || (model_id.is_none() && model_repo.is_none()) {
+    let medousa_config = if load_recommended || (model_id.is_none() && model_repo.is_none()) {
         eprintln!("medousa_local loading tier-recommended model (this may take several minutes)…");
-        load_recommended_engine(Some(bind)).await?
+        recommended_engine_config(Some(bind.clone())).map_err(anyhow::Error::msg)?
     } else if let (Some(repo), Some(alias)) = (model_repo, model_alias) {
-        let config = LocalEngineConfig {
+        medousa::local_inference::LocalEngineConfig {
             bind: bind.clone(),
             model_repo: repo,
             model_alias: alias,
@@ -57,8 +66,7 @@ async fn main() -> anyhow::Result<()> {
             cpu_only: env::var("MEDOUSA_LOCAL_ENGINE_CPU")
                 .ok()
                 .is_some_and(|value| matches!(value.trim(), "1" | "true" | "yes")),
-        };
-        LOCAL_ENGINE.as_ref().load(config).await?
+        }
     } else if let Some(model_id) = model_id {
         let catalog = builtin_catalog();
         let entry = catalog
@@ -67,11 +75,15 @@ async fn main() -> anyhow::Result<()> {
             .find(|entry| entry.id == model_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("unknown catalog model id: {model_id}"))?;
-        let config = config_from_catalog_entry(&entry, Some(bind));
-        LOCAL_ENGINE.as_ref().load(config).await?
+        config_from_catalog_entry(&entry, Some(bind.clone()))
     } else {
         anyhow::bail!("provide --load-recommended, --model-id, or --model-repo + --model-alias");
     };
+
+    let status = RUNTIME
+        .load(to_engine_config(medousa_config))
+        .await
+        .map_err(anyhow::Error::msg)?;
 
     println!(
         "medousa_local ready at {} ({})",
@@ -83,9 +95,21 @@ async fn main() -> anyhow::Result<()> {
     );
 
     tokio::signal::ctrl_c().await?;
-    LOCAL_ENGINE.as_ref().unload().await?;
+    RUNTIME.unload().await.map_err(anyhow::Error::msg)?;
     println!("medousa_local stopped");
     Ok(())
+}
+
+#[cfg(feature = "embedded-inference")]
+fn to_engine_config(config: medousa::local_inference::LocalEngineConfig) -> EngineConfig {
+    EngineConfig {
+        bind: config.bind,
+        model_repo: config.model_repo,
+        model_alias: config.model_alias,
+        from_uqff: config.from_uqff,
+        in_situ_quant: config.in_situ_quant,
+        cpu_only: config.cpu_only,
+    }
 }
 
 #[cfg(feature = "embedded-inference")]
@@ -112,7 +136,7 @@ options:
   --model-repo <repo>        HuggingFace repo (with --model-alias)
   --model-alias <alias>      Model alias (with --model-repo)
   --from-uqff <file>         Load from UQFF file in model dir
-  --in-situ-quant <level>     In-situ quant level (default: 4)
+  --in-situ-quant <level>    In-situ quant level (default: 4)
   --print-backends           Print compiled inference backends and exit
   -h, --help                 Show this help
 

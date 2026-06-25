@@ -1,0 +1,18 @@
+[package]
+name = "medousa-local-engine"
+version = "0.1.0"
+edition = "2024"
+description = "Embedded mistralrs local inference runtime for medousa_local"
+
+[dependencies]
+medousa-types = { path = "../medousa-types" }
+anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "signal"] }
+axum = "0.8"
+mistralrs-core = "0.8.1"
+mistralrs-server-core = { version = "0.8.1", default-features = false }
+
+[features]
+default = []
+metal = ["mistralrs-server-core/metal"]
+cuda = ["mistralrs-server-core/cuda"]

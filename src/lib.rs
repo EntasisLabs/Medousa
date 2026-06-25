@@ -47,6 +47,7 @@ pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
 pub mod mcp_turn_token;
 pub mod mcp_policy;
+pub mod daemon;
 pub mod daemon_api;
 pub mod daemon_handlers;
 pub mod vault;

@@ -7,28 +7,12 @@ use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
 use crate::agent_runtime::turn_context::{TurnScratchpad, TurnScratchPhase};
 use crate::session::ConversationTurn;
 use crate::turn_parts::{TurnPart, compose_turn_markdown};
+pub use medousa_types::turn::TurnSliceSummary;
 use serde::{Deserialize, Serialize};
 
 pub const TOOL_SLICES_PREFIX: &str = "[MEDOUSA_TOOL_SLICES]";
 pub const DEFAULT_SLICE_HOT_LINE_CHARS: usize = 320;
 pub const DEFAULT_SLICE_BLOCK_CHARS: usize = 3_000;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct TurnSliceSummary {
-    pub goal: String,
-    pub tool_rounds: usize,
-    pub tools: Vec<String>,
-    pub outcomes: Vec<String>,
-    pub failures: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scratch_phase: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delegate_work_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delegate_intent: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub open_gaps: Vec<String>,
-}
 
 /// Ensure a turn has a persisted slice summary (idempotent).
 pub fn ensure_turn_slice_summary(

@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["."]
+members = [
+    ".",
+    "crates/medousa-types",
+    "crates/medousa-sdk",
+    "crates/medousa-sdk-iroh",
+    "crates/medousa-local-engine",
+    "crates/medousa-host",
+]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 
 [[bin]]
@@ -44,6 +51,10 @@ name = "medousa_mcp_gateway"
 path = "src/bin/medousa_mcp_gateway.rs"
 
 [dependencies]
+medousa-types = { path = "crates/medousa-types" }
+medousa-host = { path = "crates/medousa-host" }
+medousa-sdk = { path = "crates/medousa-sdk" }
+medousa-local-engine = { path = "crates/medousa-local-engine", optional = true }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
@@ -92,17 +103,15 @@ sysinfo = "0.33"
 fs2 = "0.4"
 calamine = "0.26"
 pdf-extract = "0.7"
-mistralrs-core = { version = "0.8.1", optional = true }
-mistralrs-server-core = { version = "0.8.1", optional = true, default-features = false }
 iroh = { version = "1.0", optional = true }
 iroh-tickets = { version = "1.0", optional = true }
 httparse = { version = "1", optional = true }
 
 [features]
 default = []
-embedded-inference = ["dep:mistralrs-core", "dep:mistralrs-server-core"]
-embedded-inference-metal = ["embedded-inference", "mistralrs-server-core/metal"]
-embedded-inference-cuda = ["embedded-inference", "mistralrs-server-core/cuda"]
+embedded-inference = ["dep:medousa-local-engine"]
+embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal"]
+embedded-inference-cuda = ["embedded-inference", "medousa-local-engine/cuda"]
 iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse"]
 
 [dev-dependencies]
