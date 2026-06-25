@@ -1,6 +1,5 @@
 <script lang="ts">
   import { resolveIcon } from "../iconMap";
-  import InstallerCheckbox from "./InstallerCheckbox.svelte";
 
   interface Props {
     title: string;
@@ -27,7 +26,8 @@
   type="button"
   class="workload-card"
   class:selected
-  aria-pressed={selected}
+  role="radio"
+  aria-checked={selected}
   {onclick}
 >
   <div class="rail" aria-hidden="true"></div>
@@ -35,7 +35,7 @@
     <span class="icon-wrap" aria-hidden="true">
       <Icon size={22} strokeWidth={1.75} />
     </span>
-    <InstallerCheckbox checked={selected} />
+    <span class="select-ring" aria-hidden="true"></span>
   </div>
   <div class="card-title">{title}</div>
   <div class="card-desc">{description}</div>
@@ -52,19 +52,24 @@
     padding: 1rem 1rem 0.9rem 1.1rem;
     color: inherit;
     overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     transition:
       border-color var(--installer-motion),
       box-shadow var(--installer-motion),
-      transform var(--installer-motion);
+      background var(--installer-motion);
   }
 
   .workload-card:hover {
     border-color: var(--installer-border-strong);
+    background: var(--installer-surface-raised);
   }
 
   .workload-card.selected {
     border-color: var(--installer-accent);
     box-shadow: inset 0 0 0 1px var(--installer-accent-muted);
+    background: var(--installer-surface);
   }
 
   .workload-card:focus-visible {
@@ -98,6 +103,24 @@
     display: inline-flex;
   }
 
+  .select-ring {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1.5px solid var(--installer-border-strong);
+    flex-shrink: 0;
+    transition:
+      border-color var(--installer-motion),
+      background var(--installer-motion),
+      box-shadow var(--installer-motion);
+  }
+
+  .workload-card.selected .select-ring {
+    border-color: var(--installer-accent);
+    background: var(--installer-accent);
+    box-shadow: inset 0 0 0 3px var(--installer-surface);
+  }
+
   .card-title {
     font-size: 1rem;
     font-weight: 600;
@@ -109,11 +132,13 @@
     font-size: var(--installer-body-size);
     line-height: 1.45;
     margin-bottom: 0.5rem;
+    flex: 1;
   }
 
   .card-meta {
     color: var(--installer-faint);
     font-size: var(--installer-caption-size);
     font-weight: 500;
+    margin-top: auto;
   }
 </style>

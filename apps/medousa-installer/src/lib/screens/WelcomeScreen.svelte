@@ -15,7 +15,7 @@
     $props();
 </script>
 
-<section class="welcome">
+<section class="welcome screen-center">
   <div class="hero">
     <img class="hero-mark" src={markUrl} alt="" width="56" height="56" />
     <h1 class="hero-title">Install Medousa</h1>
@@ -54,8 +54,9 @@
 <style>
   .welcome {
     max-width: 520px;
+    width: 100%;
     margin: 0 auto;
-    padding-top: 0.5rem;
+    padding: 0 0.5rem;
   }
 
   .hero {

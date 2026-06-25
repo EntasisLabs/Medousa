@@ -110,19 +110,85 @@ button:disabled {
 }
 
 .hub {
-  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: 0;
 }
 
+.hub-top {
+  flex-shrink: 0;
+}
+
 .hub-body {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 260px;
-  gap: 1rem;
-  align-items: start;
+  grid-template-columns: 1fr 236px;
+  gap: 0.85rem;
+  align-items: stretch;
 }
 
 .hub-main {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.15rem;
+  padding-bottom: 0.5rem;
+}
+
+.scroll-pane {
+  scrollbar-width: thin;
+  scrollbar-color: var(--installer-border-strong) transparent;
+}
+
+.scroll-pane::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-pane::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-pane::-webkit-scrollbar-thumb {
+  background: var(--installer-border-strong);
+  border-radius: 999px;
+}
+
+.scroll-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--installer-muted);
+}
+
+.screen-fill {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.screen-center {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.screen-scroll-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .modify-banner {
@@ -144,7 +210,7 @@ button:disabled {
 .lead {
   color: var(--installer-muted);
   font-size: var(--installer-body-size);
-  margin: 0 0 1rem;
+  margin: 0 0 0.65rem;
   line-height: 1.5;
 }
 
@@ -152,7 +218,8 @@ button:disabled {
   display: flex;
   gap: 0.15rem;
   border-bottom: 1px solid var(--installer-border);
-  margin-bottom: 1rem;
+  margin-bottom: 0.65rem;
+  flex-shrink: 0;
 }
 
 .tab {
@@ -194,13 +261,15 @@ button:disabled {
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+  align-items: stretch;
 }
 
 .search-row {
   position: relative;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.65rem;
+  flex-shrink: 0;
 }
 
 .search-icon {
@@ -242,8 +311,12 @@ button:disabled {
   background: var(--installer-surface);
   border: 1px solid var(--installer-border);
   border-radius: var(--installer-radius-card);
-  padding: 0.65rem 1rem;
-  margin-bottom: 0.75rem;
+  padding: 0.35rem 0.85rem;
+  margin-bottom: 0.65rem;
+}
+
+.packages {
+  padding: 0.25rem 0.85rem;
 }
 
 .locations {
@@ -299,6 +372,29 @@ button:disabled {
 .complete-screen {
   max-width: 560px;
   margin: 0 auto;
+  width: 100%;
+}
+
+.progress-screen {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-screen .screen-header {
+  flex-shrink: 0;
+}
+
+.progress-screen .master-bar {
+  flex-shrink: 0;
+}
+
+.progress-screen .progress-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .master-bar {

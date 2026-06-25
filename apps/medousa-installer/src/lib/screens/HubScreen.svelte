@@ -92,14 +92,16 @@
 </script>
 
 <section class="hub">
-  {#if modifyMode}
-    <div class="modify-banner" role="status">Modify your Medousa installation</div>
-  {/if}
+  <div class="hub-top">
+    {#if modifyMode}
+      <div class="modify-banner" role="status">Modify your Medousa installation</div>
+    {/if}
 
-  <header class="screen-header">
-    <h1>{modifyMode ? "Modify installation" : "Customize installation"}</h1>
-    <p class="lead">Choose workloads and components for your installation.</p>
-  </header>
+    <header class="screen-header">
+      <h1>{modifyMode ? "Modify installation" : "Customize installation"}</h1>
+      <p class="lead">Choose workloads and components for your installation.</p>
+    </header>
+  </div>
 
   <div class="hub-body">
     <div class="hub-main">
@@ -136,23 +138,7 @@
         </button>
       </div>
 
-      {#if tab === "workloads"}
-        {#each profileSections as [section, items] (section)}
-          <div class="section-label">{section}</div>
-          <div class="profile-grid" role="group" aria-label={section}>
-            {#each items as profile (profile.id)}
-              <WorkloadCard
-                title={profile.displayName}
-                description={profile.description}
-                sizeLabel={profile.sizeLabel}
-                icon={profile.icon}
-                selected={selectedProfileId === profile.id}
-                onclick={() => onSelectProfile(profile.id)}
-              />
-            {/each}
-          </div>
-        {/each}
-      {:else if tab === "components"}
+      {#if tab === "components"}
         <div class="search-row">
           <span class="search-icon" aria-hidden="true">
             <Search size={16} strokeWidth={1.75} />
@@ -167,43 +153,64 @@
           />
           <span class="search-hint">Ctrl+F</span>
         </div>
-        {#each groupedPackages as [label, items] (label)}
-          <div class="section-label">{label}</div>
-          <div class="card packages">
-            {#each items as pkg (pkg.id)}
-              <ComponentRow
-                name={pkg.displayName}
-                sizeLabel={pkg.sizeLabel}
-                selected={pkg.selected}
-                optional={pkg.optional}
-                installed={pkg.installed}
-                updateAvailable={pkg.updateAvailable}
-                ontoggle={() => onTogglePackage(pkg.id)}
-              />
-            {/each}
-          </div>
-        {/each}
-      {:else}
-        <div class="card locations">
-          <div class="location-item">
-            <div class="location-label">Application</div>
-            <div class="location-value" title={bootstrap.installRoot}>
-              {truncatePath(bootstrap.installRoot, 48)}
-            </div>
-            <button class="link-btn" type="button" onclick={onPickLocation}>Change…</button>
-          </div>
-          <div class="location-item">
-            <div class="location-label">Data</div>
-            <div class="location-value">{bootstrap.dataDir}</div>
-          </div>
-          <div class="location-item">
-            <div class="location-label">Models</div>
-            <div class="location-value">{bootstrap.modelCacheDir}</div>
-          </div>
-        </div>
       {/if}
 
-      {#if error}<p class="error">{error}</p>{/if}
+      <div class="hub-scroll scroll-pane">
+        {#if tab === "workloads"}
+          {#each profileSections as [section, items] (section)}
+            <div class="section-label">{section}</div>
+            <div class="profile-grid" role="radiogroup" aria-label={section}>
+              {#each items as profile (profile.id)}
+                <WorkloadCard
+                  title={profile.displayName}
+                  description={profile.description}
+                  sizeLabel={profile.sizeLabel}
+                  icon={profile.icon}
+                  selected={selectedProfileId === profile.id}
+                  onclick={() => onSelectProfile(profile.id)}
+                />
+              {/each}
+            </div>
+          {/each}
+        {:else if tab === "components"}
+          {#each groupedPackages as [label, items] (label)}
+            <div class="section-label">{label}</div>
+            <div class="card packages">
+              {#each items as pkg (pkg.id)}
+                <ComponentRow
+                  name={pkg.displayName}
+                  sizeLabel={pkg.sizeLabel}
+                  selected={pkg.selected}
+                  optional={pkg.optional}
+                  installed={pkg.installed}
+                  updateAvailable={pkg.updateAvailable}
+                  ontoggle={() => onTogglePackage(pkg.id)}
+                />
+              {/each}
+            </div>
+          {/each}
+        {:else}
+          <div class="card locations">
+            <div class="location-item">
+              <div class="location-label">Application</div>
+              <div class="location-value" title={bootstrap.installRoot}>
+                {truncatePath(bootstrap.installRoot, 48)}
+              </div>
+              <button class="link-btn" type="button" onclick={onPickLocation}>Change…</button>
+            </div>
+            <div class="location-item">
+              <div class="location-label">Data</div>
+              <div class="location-value">{bootstrap.dataDir}</div>
+            </div>
+            <div class="location-item">
+              <div class="location-label">Models</div>
+              <div class="location-value">{bootstrap.modelCacheDir}</div>
+            </div>
+          </div>
+        {/if}
+
+        {#if error}<p class="error">{error}</p>{/if}
+      </div>
     </div>
 
     <InstallationSidebar tree={selection.tree} warnings={selection.warnings} />

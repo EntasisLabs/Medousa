@@ -10,7 +10,7 @@
   let { onLaunch, onModify, onReleaseNotes }: Props = $props();
 </script>
 
-<section class="complete-screen">
+<section class="complete-screen screen-center">
   <div class="success-icon" aria-hidden="true">
     <Check size={32} strokeWidth={2.5} />
   </div>

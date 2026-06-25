@@ -9,7 +9,7 @@ use medousa::install::manifest::{
 };
 use medousa::install::packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, package_catalog,
-    phase_label, sort_for_install, visible_catalog,
+    phase_label, sort_for_install, visible_catalog, PackageCategory,
 };
 use medousa::install::release_config::{host_target, release_base_url, release_channel};
 use serde::{Deserialize, Serialize};
@@ -389,78 +389,58 @@ async fn installer_resolve_selection(
     })
 }
 
-fn build_sidebar_tree(expanded: &[String]) -> Vec<SidebarNode> {
-    let expanded_set: HashSet<_> = expanded.iter().cloned().collect();
-    let mut roots = Vec::new();
-
-    for profile in default_install_profiles() {
-        let profile_packages: Vec<_> = profile
-            .packages
-            .iter()
-            .filter(|id| expanded_set.contains(**id))
-            .collect();
-        if profile_packages.is_empty() {
-            continue;
-        }
-        let children: Vec<SidebarNode> = profile_packages
-            .into_iter()
-            .map(|id| {
-                let entry = catalog_entry(id);
-                let label = entry
-                    .as_ref()
-                    .map(|e| e.display_name.to_string())
-                    .unwrap_or_else(|| id.to_string());
-                SidebarNode {
-                    id: id.to_string(),
-                    label,
-                    included: entry.as_ref().is_some_and(|e| !e.optional),
-                    optional: entry.as_ref().is_some_and(|e| e.optional),
-                    children: vec![],
-                }
-            })
-            .collect();
-        roots.push(SidebarNode {
-            id: profile.id.to_string(),
-            label: profile.display_name.to_string(),
-            included: false,
-            optional: false,
-            children,
-        });
+fn category_sort_key(category: PackageCategory) -> u8 {
+    match category {
+        PackageCategory::Core => 0,
+        PackageCategory::Adapter => 1,
+        PackageCategory::Model => 2,
+        PackageCategory::Expansion => 3,
     }
+}
 
-    let profile_ids: HashSet<_> = default_install_profiles()
-        .iter()
-        .flat_map(|p| p.packages.iter().copied())
-        .collect();
-    let orphans: Vec<SidebarNode> = expanded
-        .iter()
-        .filter(|id| !profile_ids.contains(id.as_str()))
-        .map(|id| {
-            let entry = catalog_entry(id);
-            let label = entry
-                .as_ref()
-                .map(|e| e.display_name.to_string())
-                .unwrap_or_else(|| id.clone());
-            SidebarNode {
+fn build_sidebar_tree(expanded: &[String]) -> Vec<SidebarNode> {
+    let mut groups: HashMap<u8, (String, Vec<SidebarNode>)> = HashMap::new();
+
+    for id in expanded {
+        let entry = catalog_entry(id);
+        let (group_label, sort_key, optional) = match entry.as_ref() {
+            Some(e) => (e.category_label.to_string(), category_sort_key(e.category), e.optional),
+            None => (id.clone(), 99, false),
+        };
+        let label = entry
+            .as_ref()
+            .map(|e| e.display_name.to_string())
+            .unwrap_or_else(|| id.clone());
+
+        groups
+            .entry(sort_key)
+            .or_insert_with(|| (group_label, Vec::new()))
+            .1
+            .push(SidebarNode {
                 id: id.clone(),
                 label,
-                included: entry.as_ref().is_some_and(|e| !e.optional),
-                optional: entry.as_ref().is_some_and(|e| e.optional),
+                included: !optional,
+                optional,
                 children: vec![],
-            }
-        })
-        .collect();
-    if !orphans.is_empty() {
-        roots.push(SidebarNode {
-            id: "individual".to_string(),
-            label: "Individual components".to_string(),
-            included: false,
-            optional: false,
-            children: orphans,
-        });
+            });
     }
 
-    roots
+    let mut ordered: Vec<_> = groups.into_iter().collect();
+    ordered.sort_by_key(|(key, _)| *key);
+
+    ordered
+        .into_iter()
+        .map(|(_, (label, mut children))| {
+            children.sort_by(|a, b| a.label.cmp(&b.label));
+            SidebarNode {
+                id: label.to_lowercase().replace(' ', "-"),
+                label,
+                included: false,
+                optional: false,
+                children,
+            }
+        })
+        .collect()
 }
 
 #[tauri::command]

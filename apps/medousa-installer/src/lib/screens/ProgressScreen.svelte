@@ -22,7 +22,7 @@
   }
 </script>
 
-<section class="progress-screen">
+<section class="progress-screen screen-fill">
   <header class="screen-header">
     <h1>Installing Medousa{version ? ` ${version}` : ""}</h1>
     <p class="lead">Downloading and verifying packages. Model packs may take a while.</p>
@@ -32,7 +32,7 @@
     <div class="master-fill" style="width: {masterPercent}%"></div>
   </div>
 
-  <div class="progress-list">
+  <div class="progress-list scroll-pane">
     {#each progress as item (item.packageId)}
       {@const PhaseIcon = phaseIcon(item.phase)}
       <div class="progress-row">

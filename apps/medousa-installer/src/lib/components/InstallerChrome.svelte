@@ -133,8 +133,17 @@
   .content {
     flex: 1;
     min-height: 0;
-    overflow: auto;
-    padding: 1.25rem 1rem 0.75rem;
+    overflow: hidden;
+    padding: 0.85rem 1rem 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content > :global(*) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .chrome-footer {
