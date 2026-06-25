@@ -263,6 +263,7 @@ pub struct LocalTurnExecutionParams {
     pub session_scratch_seed: TurnScratchpad,
     pub current_turn_user_message: ChatMessage,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
+    pub supports_ui_artifacts: bool,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -282,6 +283,7 @@ pub struct AssembleLocalTurnParams<'a> {
     pub media_refs: Vec<crate::daemon_api::MediaRef>,
     pub vision_plan: crate::media_vision::TurnMediaVisionPlan,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
+    pub surface: Option<crate::daemon_api::TurnSurfaceContext>,
 }
 
 pub struct AssembledLocalTurn {
@@ -441,6 +443,9 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             ),
             current_turn_user_message,
             inference_profile_kind: params.inference_profile_kind,
+            supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
+                params.surface.as_ref(),
+            ),
         },
         pipeline_selection,
         activation: activation.clone(),
@@ -687,6 +692,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         session_scratch_seed,
         current_turn_user_message,
         inference_profile_kind,
+        supports_ui_artifacts,
     } = params;
 
     let capability_required = if inference_profile_kind
@@ -779,6 +785,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             base_url.as_deref(),
             true,
             Some(session_id.as_str()),
+            params.supports_ui_artifacts,
         )
     } else {
         default_pipeline
@@ -1001,6 +1008,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .or(base_url.as_deref()),
             host_bus,
             Some(session_id.as_str()),
+            params.supports_ui_artifacts,
         );
 
         let mut same_target_retries = 0u8;

@@ -782,6 +782,7 @@ mod tests {
                 channel_surface: Some("home-ios".to_string()),
                 channel_id: None,
                 user_id: None,
+                supports_ui_artifacts: true,
             }),
             max_tool_rounds: None,
             retry_runtime_max_rounds: None,

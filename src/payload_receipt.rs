@@ -70,7 +70,7 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     out
 }
 
-fn hash_text(text: &str) -> String {
+pub fn hash_text(text: &str) -> String {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     format!("{:x}", hasher.finish())

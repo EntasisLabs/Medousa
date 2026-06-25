@@ -410,3 +410,32 @@ fn verification_policy_from_input(input: ArtifactVerificationPolicyInput) -> cra
         min_claim_support_strength: input.min_claim_support_strength.clamp(0.0, 1.0),
     }
 }
+
+pub fn execute_artifact_fetch(
+    request: crate::daemon_api::ArtifactFetchRequest,
+) -> Result<crate::daemon_api::ArtifactFetchResponse> {
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("session_id is required"));
+    }
+    let artifact_id = request.artifact_id.trim().to_string();
+    if artifact_id.is_empty() {
+        return Err(anyhow!("artifact_id is required"));
+    }
+
+    let fetched = crate::artifact_store::fetch_artifact(&session_id, &artifact_id)
+        .ok_or_else(|| anyhow!("artifact not found for this session"))?;
+
+    Ok(crate::daemon_api::ArtifactFetchResponse {
+        artifact_id: fetched.record.artifact_id,
+        mime: fetched.mime,
+        label: fetched
+            .record
+            .label
+            .unwrap_or_else(|| "Artifact".to_string()),
+        body: fetched.body,
+        byte_size: fetched.record.byte_size,
+        presentation: fetched.record.presentation,
+        height_px: fetched.record.height_px,
+    })
+}

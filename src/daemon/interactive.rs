@@ -173,6 +173,9 @@ pub async fn spawn_turn_ticket(
         provider: interactive_request.provider.clone(),
         model: interactive_request.model.clone(),
         response_depth_mode: interactive_request.response_depth_mode.clone(),
+        supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
+            interactive_request.surface.as_ref(),
+        ),
     };
     let ask_job_id = workspace_card_id.clone();
     let ask_job_id_for_notify = ask_job_id.clone();

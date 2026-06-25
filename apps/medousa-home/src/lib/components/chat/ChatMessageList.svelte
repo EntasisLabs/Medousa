@@ -1,6 +1,7 @@
 <script lang="ts">
   import MarkdownContent from "$lib/components/ui/MarkdownContent.svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
+  import ChatArtifactStrip from "$lib/components/chat/ChatArtifactStrip.svelte";
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
   import ChatMediaParts from "$lib/components/chat/ChatMediaParts.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -118,6 +119,14 @@
         <p class="mt-3 font-mono text-[10px] text-surface-500">
           {message.tools.map((tool) => formatToolName(tool)).join(" · ")}
         </p>
+      {/if}
+
+      {#if message.uiArtifacts && message.uiArtifacts.length > 0}
+        <ChatArtifactStrip
+          {sessionId}
+          artifacts={message.uiArtifacts}
+          compact={mobile || compact}
+        />
       {/if}
     {:else if message.role === "user"}
       {#if message.content?.trim()}

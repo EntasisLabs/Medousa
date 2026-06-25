@@ -169,6 +169,21 @@ pub async fn artifact_command(
     Ok(Json(response))
 }
 
+pub async fn artifact_fetch(
+    Json(request): Json<crate::daemon_api::ArtifactFetchRequest>,
+) -> Result<Json<crate::daemon_api::ArtifactFetchResponse>, (StatusCode, String)> {
+    if request.session_id.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
+    }
+    if request.artifact_id.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "artifact_id is required".to_string()));
+    }
+
+    let response = crate::artifact_command_runtime::execute_artifact_fetch(request)
+        .map_err(internal_error)?;
+    Ok(Json(response))
+}
+
 pub async fn runtime_config_command(
     Json(request): Json<RuntimeConfigCommandRequest>,
 ) -> Result<Json<RuntimeConfigCommandResponse>, (StatusCode, String)> {

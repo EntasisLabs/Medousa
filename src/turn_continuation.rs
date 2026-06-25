@@ -138,6 +138,8 @@ pub struct TurnContinuationScope {
     pub provider: String,
     pub model: String,
     pub response_depth_mode: String,
+    /// Copied from `TurnSurfaceContext.supports_ui_artifacts` for the active turn.
+    pub supports_ui_artifacts: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, SurrealValue)]

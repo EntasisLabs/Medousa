@@ -3,6 +3,19 @@ export interface ToolArtifactRef {
   content_type: string;
   byte_size: number;
   hash64: string;
+  artifact_id?: string | null;
+  label?: string | null;
+}
+
+export type UiArtifactPresentation = "inline" | "panel" | "fullscreen";
+
+export interface UiArtifact {
+  artifactId: string;
+  mime: string;
+  label: string;
+  presentation: UiArtifactPresentation;
+  byteSize?: number | null;
+  heightPx?: number | null;
 }
 
 export interface ToolRunState {
@@ -28,6 +41,8 @@ export interface ChatMessage {
   tools?: string[];
   /** Structured tool runs grouped by round (P1). */
   toolRuns?: ToolRunState[];
+  /** Rich HTML artifacts presented via cognition_ui_present. */
+  uiArtifacts?: UiArtifact[];
   /** Collapsed reasoning scratch from reasoning_delta. */
   reasoning?: string | null;
   /** Verifier / turn lifecycle state from session history. */
@@ -92,6 +107,14 @@ export interface InteractiveTurnStreamEvent {
   tool_output_summary?: string | null;
   tool_round?: number | null;
   tool_artifact_refs?: ToolArtifactRef[] | null;
+  ui_artifact?: {
+    artifact_id: string;
+    mime: string;
+    label: string;
+    presentation: string;
+    byte_size?: number | null;
+    height_px?: number | null;
+  } | null;
   /** Human-facing status whisper (Home default). */
   operator_message?: string | null;
   /** Engine telemetry — shown only with engine details enabled. */

@@ -7,6 +7,10 @@ pub struct TurnArtifactRef {
     pub content_type: String,
     pub byte_size: usize,
     pub hash64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,6 +61,10 @@ pub enum TurnPart {
         label: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         byte_size: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        presentation: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height_px: Option<u32>,
     },
     /// Forward-compatible catch-all for newer clients reading older persisted timelines.
     #[serde(other)]

@@ -580,9 +580,18 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 crate::payload_receipt::DEFAULT_MAX_INLINE_BYTES,
             )
         });
-        let artifact_refs = super::tool_stream::artifact_refs_from_receipts(
+        let mut artifact_refs = super::tool_stream::artifact_refs_from_receipts(
             input_receipt.as_ref(),
             output_receipt.as_ref(),
+        );
+        artifact_refs = super::tool_stream::persist_and_enrich_artifact_refs(
+            &self.session_id,
+            &tool_name,
+            &tool_input,
+            &tool_output,
+            input_receipt.as_ref(),
+            output_receipt.as_ref(),
+            artifact_refs,
         );
         if let Ok(mut parts) = self.parts.lock() {
             parts.tool_finished(
@@ -591,6 +600,27 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 output_summary.clone(),
                 artifact_refs_from_stream(&artifact_refs),
             );
+            if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT {
+                if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+                    parts.push_attachment_ref(
+                        &ui_artifact.artifact_id,
+                        &ui_artifact.mime,
+                        &ui_artifact.label,
+                        ui_artifact.byte_size,
+                        Some(ui_artifact.presentation.clone()),
+                        ui_artifact.height_px,
+                    );
+                }
+            }
+        }
+        if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT {
+            if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+                self.publish_tracked(interactive_turn_runtime::artifact_presented_stream_event(
+                    &self.turn_id,
+                    ui_artifact,
+                ))
+                .await;
+            }
         }
         self.publish_tracked(interactive_turn_runtime::tool_finished_stream_event(
             &self.turn_id,
@@ -645,7 +675,9 @@ pub async fn run_agent_turn(
     let turn_correlation_id = continuation_scope
         .as_ref()
         .map(|scope| scope.turn_correlation_id.clone());
-    let effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
+    let supports_ui_artifacts =
+        crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref());
+    let mut effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
         turn_correlation_id: _turn_id.to_string(),
         session_id: request.session_id.clone(),
         original_prompt: request.prompt.clone(),
@@ -653,7 +685,9 @@ pub async fn run_agent_turn(
         provider: request.provider.clone(),
         model: request.model.clone(),
         response_depth_mode: request.response_depth_mode.clone(),
+        supports_ui_artifacts,
     });
+    effective_scope.supports_ui_artifacts = supports_ui_artifacts;
     *agent_rt.turn_scope.write().await = Some(effective_scope);
     let outcome: Arc<RwLock<Option<TurnOutcome>>> = Arc::new(RwLock::new(None));
     let tracking_sink: SharedAgentStreamSink = Arc::new(TurnOutcomeTrackingSink {
@@ -911,6 +945,7 @@ async fn run_agent_turn_inner(
         } else {
             crate::inference_profiles::InferenceProfileKind::Main
         },
+        surface: request.surface.clone(),
     });
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {

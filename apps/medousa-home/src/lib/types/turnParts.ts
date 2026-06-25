@@ -1,4 +1,4 @@
-import type { ToolArtifactRef, ToolRunState } from "$lib/types/chat";
+import type { ToolArtifactRef, ToolRunState, UiArtifact } from "$lib/types/chat";
 import type { ChatMediaAttachment } from "$lib/types/media";
 
 export interface TurnArtifactRef {
@@ -43,6 +43,8 @@ export type TurnPart =
       mime: string;
       label: string;
       byte_size?: number | null;
+      presentation?: string | null;
+      height_px?: number | null;
     };
 
 export function toolRunsFromParts(parts?: TurnPart[] | null): ToolRunState[] | undefined {
@@ -63,6 +65,8 @@ export function toolRunsFromParts(parts?: TurnPart[] | null): ToolRunState[] | u
           content_type: ref.content_type,
           byte_size: ref.byte_size,
           hash64: ref.hash64,
+          artifact_id: ref.artifact_id ?? null,
+          label: ref.label ?? null,
         }),
       ),
     } satisfies ToolRunState));
@@ -103,6 +107,31 @@ export function userMediaFromParts(parts?: TurnPart[] | null): ChatMediaAttachme
       }),
     );
   return attachments.length > 0 ? attachments : undefined;
+}
+
+function normalizePresentation(value?: string | null): UiArtifact["presentation"] {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "panel" || normalized === "fullscreen") {
+    return normalized;
+  }
+  return "inline";
+}
+
+export function uiArtifactsFromParts(parts?: TurnPart[] | null): UiArtifact[] | undefined {
+  if (!parts?.length) return undefined;
+  const artifacts = parts
+    .filter((part): part is Extract<TurnPart, { kind: "attachment_ref" }> => part.kind === "attachment_ref")
+    .map(
+      (part): UiArtifact => ({
+        artifactId: part.artifact_id,
+        mime: part.mime,
+        label: part.label,
+        presentation: normalizePresentation(part.presentation),
+        byteSize: part.byte_size ?? null,
+        heightPx: part.height_px ?? null,
+      }),
+    );
+  return artifacts.length > 0 ? artifacts : undefined;
 }
 
 /** Journal export: Obsidian-flavored markdown from structured parts. */

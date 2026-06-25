@@ -70,7 +70,24 @@ pub struct ArtifactRecord {
     pub byte_size: usize,
     pub stored_at_utc: DateTime<Utc>,
     pub payload_path: String,
+    #[serde(default)]
+    pub content_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_px: Option<u32>,
 }
+
+#[derive(Debug, Clone)]
+pub struct FetchedArtifact {
+    pub record: ArtifactRecord,
+    pub body: String,
+    pub mime: String,
+}
+
+pub const UI_ARTIFACT_MAX_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct StoredArtifact {
@@ -135,10 +152,143 @@ pub fn persist_tool_artifact(
         byte_size,
         stored_at_utc: now,
         payload_path: payload_path.to_string_lossy().to_string(),
+        content_type: "application/json".to_string(),
+        label: None,
+        presentation: None,
+        height_px: None,
     };
 
     append_index_record(&record)?;
     Ok(record)
+}
+
+pub fn persist_ui_artifact(
+    session_id: &str,
+    html: &str,
+    label: &str,
+    presentation: &str,
+    height_px: Option<u32>,
+) -> std::result::Result<ArtifactRecord, String> {
+    let wrapped = wrap_html_document(html);
+    let byte_size = wrapped.len();
+    if byte_size > UI_ARTIFACT_MAX_BYTES {
+        return Err(format!(
+            "HTML artifact exceeds {} KB cap (got {} bytes)",
+            UI_ARTIFACT_MAX_BYTES / 1024,
+            byte_size
+        ));
+    }
+    if label.trim().is_empty() {
+        return Err("title/label is required".to_string());
+    }
+    let presentation = normalize_presentation(presentation)?;
+    let hash64 = crate::payload_receipt::hash_text(&wrapped);
+    let now = Utc::now();
+    let tool_name = "cognition_ui_present";
+    let tool_slug = slugify_tool_name(tool_name);
+    let hash_short = hash64.chars().take(12).collect::<String>();
+    let artifact_id = format!(
+        "art:{}:{}:ui:{}",
+        short_session(session_id),
+        tool_slug,
+        hash_short
+    );
+
+    let payload_dir = artifacts_root()
+        .join(session_id)
+        .join(&tool_slug)
+        .join("ui");
+    std::fs::create_dir_all(&payload_dir).map_err(|err| err.to_string())?;
+
+    let payload_path = payload_dir.join(format!("{}.html", hash64));
+    if !payload_path.exists() {
+        std::fs::write(&payload_path, wrapped.as_bytes()).map_err(|err| err.to_string())?;
+    }
+
+    let record = ArtifactRecord {
+        artifact_id,
+        session_id: session_id.to_string(),
+        tool_name: tool_name.to_string(),
+        direction: "ui".to_string(),
+        hash64,
+        byte_size,
+        stored_at_utc: now,
+        payload_path: payload_path.to_string_lossy().to_string(),
+        content_type: "text/html".to_string(),
+        label: Some(label.trim().to_string()),
+        presentation: Some(presentation),
+        height_px,
+    };
+
+    append_index_record(&record)?;
+    Ok(record)
+}
+
+pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArtifact> {
+    let query = artifact_id.trim();
+    if query.is_empty() {
+        return None;
+    }
+
+    let record = read_index_records()
+        .into_iter()
+        .filter(|record| record.session_id == session_id)
+        .find(|record| record.artifact_id == query || record.artifact_id.starts_with(query))?;
+
+    let path = Path::new(&record.payload_path);
+    if !path.exists() {
+        return None;
+    }
+
+    let mime = if record.content_type.is_empty() {
+        if path.extension().and_then(|ext| ext.to_str()) == Some("html") {
+            "text/html".to_string()
+        } else {
+            "application/json".to_string()
+        }
+    } else {
+        record.content_type.clone()
+    };
+
+    let body = if mime == "text/html" {
+        std::fs::read_to_string(path).ok()?
+    } else {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+            .map(|value| serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string()))
+            .or_else(|| std::fs::read_to_string(path).ok())?
+    };
+
+    Some(FetchedArtifact {
+        record,
+        body,
+        mime,
+    })
+}
+
+fn wrap_html_document(html: &str) -> String {
+    let trimmed = html.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.contains("<html") || lower.contains("<!doctype") {
+        return trimmed.to_string();
+    }
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\"></head><body>{trimmed}</body></html>"
+    )
+}
+
+fn normalize_presentation(presentation: &str) -> std::result::Result<String, String> {
+    match presentation.trim().to_ascii_lowercase().as_str() {
+        "inline" | "panel" | "fullscreen" => Ok(presentation.trim().to_ascii_lowercase()),
+        other if other.is_empty() => Ok("inline".to_string()),
+        other => Err(format!(
+            "presentation must be inline, panel, or fullscreen (got {other})"
+        )),
+    }
 }
 
 pub fn find_artifact(session_id: &str, query: Option<&str>) -> Option<StoredArtifact> {
@@ -456,4 +606,41 @@ fn slugify_tool_name(tool_name: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persist_ui_artifact_stores_html_with_metadata() {
+        let session_id = "test-ui-artifact-session";
+        let record = persist_ui_artifact(
+            session_id,
+            "<p>Hello</p>",
+            "Greeting",
+            "inline",
+            Some(360),
+        )
+        .expect("persist");
+
+        assert_eq!(record.content_type, "text/html");
+        assert_eq!(record.label.as_deref(), Some("Greeting"));
+        assert_eq!(record.presentation.as_deref(), Some("inline"));
+        assert_eq!(record.height_px, Some(360));
+        assert!(record.payload_path.ends_with(".html"));
+
+        let fetched = fetch_artifact(session_id, &record.artifact_id).expect("fetch");
+        assert_eq!(fetched.mime, "text/html");
+        assert!(fetched.body.contains("Hello"));
+    }
+
+    #[test]
+    fn persist_ui_artifact_rejects_oversize_payload() {
+        let session_id = "test-ui-artifact-oversize";
+        let huge = "x".repeat(UI_ARTIFACT_MAX_BYTES + 1);
+        let err = persist_ui_artifact(session_id, &huge, "Big", "inline", None)
+            .expect_err("should fail");
+        assert!(err.contains("exceeds"));
+    }
 }

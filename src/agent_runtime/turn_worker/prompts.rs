@@ -36,6 +36,7 @@ Rules:
   - Before host tools: cognition_turn_begin_work for a progress line — not interim chat prose.
   - Mid-task handoff: cognition_turn_checkpoint.
   - Fully done after tools: cognition_turn_finish (required — naked prose is not committed as final).
+  - Rich HTML when the client advertises supports_ui_artifacts: cognition_ui_present with title, html, presentation (inline|panel|fullscreen) — not markdown fences.
   - Delegate: cognition_spawn_turn_worker in the same round as discovery — not plan prose alone.
   - Tight budget: cognition_turn_request_more_rounds."#;
 

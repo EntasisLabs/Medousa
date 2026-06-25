@@ -896,6 +896,7 @@ async fn spawn_continuation_agent_turn(
         provider: record.provider.clone(),
         model: record.model.clone(),
         response_depth_mode: record.response_depth_mode.clone(),
+        supports_ui_artifacts: false,
     };
 
     if let Some(target) = record
@@ -984,6 +985,7 @@ pub async fn spawn_daemon_api_agent_turn(
         provider: provider.clone(),
         model: model.clone(),
         response_depth_mode: response_depth_mode.clone(),
+        supports_ui_artifacts: false,
     };
     spawn_daemon_api_agent_turn_with_scope(
         state,
@@ -1715,6 +1717,9 @@ async fn start_ingest_ask_stream(
         provider: interactive_request.provider.clone(),
         model: interactive_request.model.clone(),
         response_depth_mode: interactive_request.response_depth_mode.clone(),
+        supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
+            interactive_request.surface.as_ref(),
+        ),
     };
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(120)).await;

@@ -397,6 +397,24 @@ pub fn tool_finished_stream_event(
     Ok(event)
 }
 
+pub fn artifact_presented_stream_event(
+    turn_id: &str,
+    artifact: crate::daemon_api::StreamUiArtifact,
+) -> Result<InteractiveTurnStreamEvent> {
+    let label = artifact.label.clone();
+    let mut event = build_event_messages(
+        turn_id,
+        "artifact_presented",
+        "tool_loop",
+        StreamMessages {
+            operator_message: Some(format!("Presented {label}")),
+            debug_message: None,
+        },
+    )?;
+    event.ui_artifact = Some(artifact);
+    Ok(event)
+}
+
 pub fn budget_approval_stream_event(
     turn_id: &str,
     request_id: &str,
@@ -475,12 +493,33 @@ fn build_event_messages(
         tool_output_summary: None,
         tool_round: None,
         tool_artifact_refs: None,
+        ui_artifact: None,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn artifact_presented_stream_event_roundtrips() {
+        let event = artifact_presented_stream_event(
+            "turn-1",
+            crate::daemon_api::StreamUiArtifact {
+                artifact_id: "art:demo:ui:abc".to_string(),
+                mime: "text/html".to_string(),
+                label: "Chart".to_string(),
+                presentation: "inline".to_string(),
+                byte_size: Some(42),
+                height_px: Some(360),
+            },
+        )
+        .expect("event");
+        assert_eq!(event.event_type, "artifact_presented");
+        let json = serde_json::to_string(&event).expect("json");
+        let parsed: InteractiveTurnStreamEvent = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed.ui_artifact.as_ref().map(|a| a.label.as_str()), Some("Chart"));
+    }
 
     #[test]
     fn classifies_orchestration_as_debug_only() {

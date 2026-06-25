@@ -1008,6 +1008,10 @@ pub struct TurnSurfaceContext {
     pub channel_id: Option<String>,
     #[serde(default)]
     pub user_id: Option<String>,
+    /// When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`).
+    /// Channel adapters and clients set this — the daemon does not infer it from channel name.
+    #[serde(default)]
+    pub supports_ui_artifacts: bool,
 }
 
 impl TurnSurfaceContext {
@@ -1016,6 +1020,7 @@ impl TurnSurfaceContext {
             channel_surface: Some(channel.trim().to_string()),
             channel_id: Some(channel_id.trim().to_string()),
             user_id: Some(user_id.trim().to_string()),
+            supports_ui_artifacts: false,
         }
     }
 
@@ -1024,7 +1029,13 @@ impl TurnSurfaceContext {
             channel_surface: Some("tui".to_string()),
             channel_id: None,
             user_id: None,
+            supports_ui_artifacts: false,
         }
+    }
+
+    pub fn with_ui_artifacts(mut self, enabled: bool) -> Self {
+        self.supports_ui_artifacts = enabled;
+        self
     }
 }
 
@@ -1226,6 +1237,9 @@ pub struct InteractiveTurnStreamEvent {
     pub tool_round: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_artifact_refs: Option<Vec<StreamToolArtifactRef>>,
+    /// Rich UI artifact presented inline in chat (cognition_ui_present).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_artifact: Option<StreamUiArtifact>,
     /// Human-facing status whisper for rich surfaces (Home default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operator_message: Option<String>,
@@ -1240,6 +1254,41 @@ pub struct StreamToolArtifactRef {
     pub content_type: String,
     pub byte_size: usize,
     pub hash64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamUiArtifact {
+    pub artifact_id: String,
+    pub mime: String,
+    pub label: String,
+    pub presentation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_px: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactFetchRequest {
+    pub session_id: String,
+    pub artifact_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactFetchResponse {
+    pub artifact_id: String,
+    pub mime: String,
+    pub label: String,
+    pub body: String,
+    pub byte_size: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_px: Option<u32>,
 }
 
 // ── Ingester types ────────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_turn_checkpoint",
     "cognition_turn_finish",
     "cognition_turn_worker_status",
+    "cognition_ui_present",
 ];
 
 /// Always-visible worker workshop tools.
@@ -145,6 +146,11 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_write",
                     "cognition_vault_tags",
                 ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "presentation",
+                summary: "Rich HTML artifacts for clients that advertise supports_ui_artifacts",
+                tools: &["cognition_ui_present"],
             },
             ToolDomainCatalogEntry {
                 domain: "history",
@@ -279,6 +285,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_turn_begin_work" => "Progress line before heavy tools (not chat prose — prose without tools ends the turn)",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
+        "cognition_ui_present" => "Show HTML artifact in chat (inline, panel, or fullscreen)",
         "cognition_turn_worker_status" => "Pending worker status",
         "cognition_capability_invoke" => "One-shot capability execution",
         "cognition_grapheme_script_load" => "Load saved Grapheme script body",

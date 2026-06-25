@@ -303,6 +303,7 @@ pub async fn turn_create(
         channel_surface: Some(channel_surface),
         channel_id: Some(trimmed_session.to_string()),
         user_id: None,
+        supports_ui_artifacts: true,
     });
 
     let body = CreateTurnTicketBody {

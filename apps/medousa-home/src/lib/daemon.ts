@@ -868,6 +868,18 @@ export async function lookupArtifact(
   });
 }
 
+export async function fetchArtifact(
+  sessionId: string,
+  artifactId: string,
+): Promise<import("$lib/types/artifact").ArtifactFetchResponse> {
+  return invoke<import("$lib/types/artifact").ArtifactFetchResponse>("artifact_fetch", {
+    request: {
+      session_id: sessionId,
+      artifact_id: artifactId,
+    },
+  });
+}
+
 export async function updateRecurring(
   recurringId: string,
   request: UpdateRecurringRequest,

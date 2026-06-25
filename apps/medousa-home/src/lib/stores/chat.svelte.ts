@@ -25,7 +25,8 @@ import type {
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
-import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts } from "$lib/types/turnParts";
+import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
+import type { UiArtifact } from "$lib/types/chat";
 import type { MediaRef } from "$lib/types/media";
 import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -1399,6 +1400,14 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "artifact_presented") {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (messageId && event.ui_artifact) {
+        this.applyArtifactPresented(messageId, event.ui_artifact);
+      }
+      return;
+    }
+
     if (event.event_type === "scratch_reset") {
       const messageId = this.messageIdForTurn(event.turn_id);
       if (messageId) {
@@ -1539,6 +1548,41 @@ export class ChatStore {
         ...current,
         toolRuns: runs,
         tools: tools.length > 0 ? tools : current.tools,
+      },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
+  private applyArtifactPresented(
+    messageId: string,
+    artifact: NonNullable<InteractiveTurnStreamEvent["ui_artifact"]>,
+  ) {
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0) return;
+
+    const current = this.messages[idx];
+    const nextArtifact: UiArtifact = {
+      artifactId: artifact.artifact_id,
+      mime: artifact.mime,
+      label: artifact.label,
+      presentation:
+        artifact.presentation === "panel" || artifact.presentation === "fullscreen"
+          ? artifact.presentation
+          : "inline",
+      byteSize: artifact.byte_size ?? null,
+      heightPx: artifact.height_px ?? null,
+    };
+
+    const existing = current.uiArtifacts ?? [];
+    if (existing.some((item) => item.artifactId === nextArtifact.artifactId)) {
+      return;
+    }
+
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        uiArtifacts: [...existing, nextArtifact],
       },
       ...this.messages.slice(idx + 1),
     ];
@@ -2119,6 +2163,7 @@ function mapTurns(
     answerState: turn.answer_state ?? null,
     tools: turn.tool_names?.length ? turn.tool_names : undefined,
     toolRuns: toolRunsFromParts(turn.parts ?? null),
+    uiArtifacts: uiArtifactsFromParts(turn.parts ?? null),
     reasoning: reasoningFromParts(turn.parts ?? null),
     statusLine:
       turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,

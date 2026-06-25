@@ -92,6 +92,7 @@ pub struct SessionBootstrapToolRegistry {
     session_id: String,
     lane: ToolSurfaceLane,
     full_allowlist: HashSet<String>,
+    supports_ui_artifacts: bool,
 }
 
 impl SessionBootstrapToolRegistry {
@@ -99,6 +100,7 @@ impl SessionBootstrapToolRegistry {
         inner: Arc<dyn ToolRegistry>,
         session_id: impl Into<String>,
         full_allowlist: HashSet<String>,
+        supports_ui_artifacts: bool,
     ) -> Self {
         let session_id = session_id.into();
         ensure_host_session_tool_defaults(&session_id);
@@ -107,6 +109,7 @@ impl SessionBootstrapToolRegistry {
             session_id,
             lane: ToolSurfaceLane::Host,
             full_allowlist,
+            supports_ui_artifacts,
         }
     }
 
@@ -120,11 +123,17 @@ impl SessionBootstrapToolRegistry {
             session_id: session_id.into(),
             lane: ToolSurfaceLane::Worker,
             full_allowlist,
+            supports_ui_artifacts: false,
         }
     }
 
     fn effective_allowlist(&self) -> HashSet<String> {
-        effective_tool_names(&self.session_id, self.lane, &self.full_allowlist)
+        let mut allowed =
+            effective_tool_names(&self.session_id, self.lane, &self.full_allowlist);
+        if !self.supports_ui_artifacts {
+            allowed.remove(crate::ui_present_tools::COGNITION_UI_PRESENT);
+        }
+        allowed
     }
 }
 

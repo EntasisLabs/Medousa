@@ -824,6 +824,7 @@ pub fn pipeline_for_turn_profile(
     base_url: Option<&str>,
     host_bus: bool,
     session_id: Option<&str>,
+    supports_ui_artifacts: bool,
 ) -> crate::medousa_tool_loop::MedousaToolLoopPipeline {
     if host_bus {
         let allowlist = super::policy::host_bus_tool_names();
@@ -832,6 +833,7 @@ pub fn pipeline_for_turn_profile(
                 tool_registry,
                 session_id,
                 allowlist,
+                supports_ui_artifacts,
             ))
         } else {
             Arc::new(AllowlistToolRegistry::new(tool_registry, allowlist))

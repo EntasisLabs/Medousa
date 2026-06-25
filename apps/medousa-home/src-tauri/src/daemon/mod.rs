@@ -350,6 +350,7 @@ pub async fn interactive_turn_send(
             channel_surface: Some(channel_surface),
             channel_id: Some(session_id.clone()),
             user_id: None,
+            supports_ui_artifacts: true,
         }),
         max_tool_rounds: None,
         retry_runtime_max_rounds: None,

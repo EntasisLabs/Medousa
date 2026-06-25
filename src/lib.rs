@@ -43,6 +43,7 @@ pub mod mcp_gateway;
 pub mod openshell_handoff;
 pub mod openshell_sandbox_run;
 pub mod openshell_tools;
+pub mod ui_present_tools;
 pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
 pub mod mcp_turn_token;

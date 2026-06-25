@@ -83,6 +83,8 @@ pub fn artifact_refs_from_receipts(
             content_type: receipt.content_type.clone(),
             byte_size: receipt.byte_size,
             hash64: receipt.hash64.clone(),
+            artifact_id: None,
+            label: None,
         });
     }
     if let Some(receipt) = output_receipt {
@@ -91,9 +93,99 @@ pub fn artifact_refs_from_receipts(
             content_type: receipt.content_type.clone(),
             byte_size: receipt.byte_size,
             hash64: receipt.hash64.clone(),
+            artifact_id: None,
+            label: None,
         });
     }
     refs
+}
+
+pub fn persist_and_enrich_artifact_refs(
+    session_id: &str,
+    tool_name: &str,
+    tool_input: &serde_json::Value,
+    tool_output: &serde_json::Value,
+    input_receipt: Option<&ArtifactReceiptMeta>,
+    output_receipt: Option<&ArtifactReceiptMeta>,
+    mut refs: Vec<StreamToolArtifactRef>,
+) -> Vec<StreamToolArtifactRef> {
+    if let Some(receipt) = input_receipt {
+        if let Ok(record) = crate::artifact_store::persist_tool_artifact(
+            session_id,
+            tool_name,
+            "input",
+            &receipt.hash64,
+            receipt.byte_size,
+            tool_input,
+        ) {
+            for item in refs.iter_mut().filter(|item| item.role == "input") {
+                item.artifact_id = Some(record.artifact_id.clone());
+                item.label = Some(format!("{tool_name} input"));
+            }
+        }
+    }
+    if let Some(receipt) = output_receipt {
+        if let Ok(record) = crate::artifact_store::persist_tool_artifact(
+            session_id,
+            tool_name,
+            "output",
+            &receipt.hash64,
+            receipt.byte_size,
+            tool_output,
+        ) {
+            for item in refs.iter_mut().filter(|item| item.role == "output") {
+                item.artifact_id = Some(record.artifact_id.clone());
+                item.label = Some(format!("{tool_name} output"));
+            }
+        }
+    }
+    refs
+}
+
+pub fn ui_artifact_from_tool_output(
+    tool_output: &serde_json::Value,
+) -> Option<crate::daemon_api::StreamUiArtifact> {
+    if tool_output.get("ok").and_then(|value| value.as_bool()) != Some(true) {
+        return None;
+    }
+    let artifact_id = tool_output
+        .get("artifact_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let label = tool_output
+        .get("label")
+        .and_then(|value| value.as_str())
+        .or_else(|| tool_output.get("title").and_then(|value| value.as_str()))
+        .unwrap_or("Artifact")
+        .to_string();
+    let mime = tool_output
+        .get("mime")
+        .and_then(|value| value.as_str())
+        .unwrap_or("text/html")
+        .to_string();
+    let presentation = tool_output
+        .get("presentation")
+        .and_then(|value| value.as_str())
+        .unwrap_or("inline")
+        .to_string();
+    let byte_size = tool_output
+        .get("byte_size")
+        .and_then(|value| value.as_u64());
+    let height_px = tool_output
+        .get("height_px")
+        .or_else(|| tool_output.get("height"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u32);
+    Some(crate::daemon_api::StreamUiArtifact {
+        artifact_id,
+        mime,
+        label,
+        presentation,
+        byte_size,
+        height_px,
+    })
 }
 
 pub async fn emit_tool_run_started(

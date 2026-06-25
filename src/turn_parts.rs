@@ -26,6 +26,7 @@ pub struct TurnPartsAccumulator {
     reasoning: String,
     tool_runs: Vec<PendingToolRun>,
     progress_notes: Vec<String>,
+    attachment_parts: Vec<TurnPart>,
 }
 
 impl TurnPartsAccumulator {
@@ -56,6 +57,25 @@ impl TurnPartsAccumulator {
             return;
         }
         self.progress_notes.push(trimmed.to_string());
+    }
+
+    pub fn push_attachment_ref(
+        &mut self,
+        artifact_id: &str,
+        mime: &str,
+        label: &str,
+        byte_size: Option<u64>,
+        presentation: Option<String>,
+        height_px: Option<u32>,
+    ) {
+        self.attachment_parts.push(TurnPart::AttachmentRef {
+            artifact_id: artifact_id.to_string(),
+            mime: mime.to_string(),
+            label: label.to_string(),
+            byte_size,
+            presentation,
+            height_px,
+        });
     }
 
     pub fn tool_started(
@@ -129,6 +149,7 @@ impl TurnPartsAccumulator {
         handoff: Option<(String, Option<String>)>,
     ) -> Vec<TurnPart> {
         let mut parts = self.tool_run_parts();
+        parts.extend(std::mem::take(&mut self.attachment_parts));
         for note in std::mem::take(&mut self.progress_notes) {
             parts.push(TurnPart::Progress { markdown: note });
         }
@@ -232,6 +253,8 @@ pub fn artifact_refs_from_stream(refs: &[StreamToolArtifactRef]) -> Vec<TurnArti
             content_type: item.content_type.clone(),
             byte_size: item.byte_size,
             hash64: item.hash64.clone(),
+            artifact_id: item.artifact_id.clone(),
+            label: item.label.clone(),
         })
         .collect()
 }
@@ -319,6 +342,23 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn push_attachment_ref_finalize_includes_attachment_before_text() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.push_attachment_ref(
+            "art:demo:ui:abc",
+            "text/html",
+            "Chart",
+            Some(1200),
+            Some("inline".to_string()),
+            Some(360),
+        );
+        let turn = acc.finalize_assistant_turn("See above.".into(), vec![], None);
+        let parts = turn.parts.expect("parts");
+        assert!(matches!(&parts[0], TurnPart::AttachmentRef { label, .. } if label == "Chart"));
+        assert!(matches!(&parts[1], TurnPart::Text { .. }));
+    }
 
     #[test]
     fn archive_progress_note_dedupes_and_finalize_includes_progress() {
