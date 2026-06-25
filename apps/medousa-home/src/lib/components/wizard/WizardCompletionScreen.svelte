@@ -4,13 +4,24 @@
   import { wizard } from "$lib/stores/wizard.svelte";
   import { checkDaemonHealth, type DaemonHealth } from "$lib/daemon";
   import { requireEngineReady } from "$lib/utils/providersApi";
+  import {
+    hasWizardModelConfig,
+    runtimeHasModelConfig,
+  } from "$lib/utils/wizardModelReady";
   import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
 
   let health = $state<DaemonHealth | null>(null);
+  let modelReady = $state(false);
   let checking = $state(true);
   let starting = $state(false);
   let statusLine = $state("Checking connection…");
+
+  const canEnterApp = $derived.by(() => {
+    if (!isTauri()) return true;
+    if (isTauriMobilePlatform()) return health?.ok === true;
+    return health?.ok === true && modelReady;
+  });
 
   onMount(() => {
     void ensureCoreReady();
@@ -21,20 +32,29 @@
     try {
       if (!isTauri()) {
         statusLine = "Browser preview — start Medousa on your computer separately.";
+        modelReady = true;
         checking = false;
         return;
       }
       if (isTauriMobilePlatform()) {
         health = await checkDaemonHealth();
+        modelReady = true;
         statusLine = health.ok
           ? "Connected to your computer."
           : "Not connected yet — check the address in Settings → Connection.";
         checking = false;
         return;
       }
+
+      modelReady =
+        hasWizardModelConfig(wizard.existingProvider, wizard.existingModel) ||
+        (await runtimeHasModelConfig());
+
       health = await checkDaemonHealth();
       if (health.ok) {
-        statusLine = health.message;
+        statusLine = modelReady
+          ? health.message
+          : "Engine is running, but no chat model is configured — go back and pick a brain.";
         checking = false;
         return;
       }
@@ -44,7 +64,13 @@
       try {
         const wait = await requireEngineReady({ timeoutSeconds: 30 });
         health = await checkDaemonHealth();
-        statusLine = wait.message;
+        modelReady =
+          modelReady ||
+          hasWizardModelConfig(wizard.existingProvider, wizard.existingModel) ||
+          (await runtimeHasModelConfig());
+        statusLine = modelReady
+          ? wait.message
+          : "Medousa started, but no chat model is configured — go back and pick a brain.";
       } catch (err) {
         health = await checkDaemonHealth();
         statusLine =
@@ -65,7 +91,7 @@
   <p class="text-3xl" aria-hidden="true">🎉</p>
   <h2 class="mt-4 text-2xl font-semibold text-surface-50">Your workshop is ready</h2>
   <p class="mt-3 max-w-md text-sm leading-relaxed text-surface-300">
-    {#if health?.ok}
+    {#if health?.ok && modelReady}
       {#if isTauriMobilePlatform()}
         You're linked to Medousa on your computer. She remembers what you share and leaves notes
         you can find again.
@@ -75,6 +101,8 @@
       {/if}
     {:else if isTauriMobilePlatform()}
       Setup is saved. Link to your computer in Settings → Connection if chat stays offline.
+    {:else if !modelReady}
+      Almost there — go back one step and choose how Medousa should think (offline Gemma, API key, or Ollama).
     {:else}
       The engine is not running yet. Go back to finish setup, or check Settings → Connection.
     {/if}
@@ -89,7 +117,7 @@
     <span>{statusLine}</span>
   </div>
 
-  {#if health?.ok}
+  {#if health?.ok && modelReady}
     <div class="mt-8 w-full max-w-md text-left">
       <p class="text-xs font-medium uppercase tracking-wide text-surface-500">Try this first</p>
       <ul class="mt-3 space-y-2">
@@ -144,9 +172,18 @@
   <button
     type="button"
     class="btn variant-filled-primary mt-10 min-h-11 px-8"
-    disabled={wizard.busy || checking || starting || (!isTauriMobilePlatform() && !health?.ok && isTauri())}
+    disabled={wizard.busy || checking || starting || !canEnterApp}
     onclick={() => void wizard.finish()}
   >
-    {health?.ok ? "Start with chat →" : "Continue anyway →"}
+    {canEnterApp ? "Start with chat →" : "Finish setup to continue"}
   </button>
+  {#if !canEnterApp && !checking && !starting}
+    <button
+      type="button"
+      class="btn variant-ghost mt-3 min-h-11 text-surface-400"
+      onclick={() => void wizard.back()}
+    >
+      ← Back to setup
+    </button>
+  {/if}
 </div>

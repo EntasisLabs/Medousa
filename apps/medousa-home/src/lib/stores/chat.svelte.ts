@@ -42,6 +42,7 @@ import {
   type StreamOwner,
 } from "$lib/utils/streamOwnership";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
+import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 import { settings } from "$lib/stores/settings.svelte";
 import {
   isBudgetApprovalStreamEvent,
@@ -1882,7 +1883,7 @@ export class ChatStore {
   }
 
   setError(message: string) {
-    this.streamError = message;
+    this.streamError = friendlyUserError(message);
     if (this.assistantId) {
       this.finishMessage(this.assistantId);
     }
@@ -1890,7 +1891,7 @@ export class ChatStore {
 
   /** SSE / stream transport failure — evict stale owners so reattach can succeed. */
   noteStreamFailure(message: string, options?: { recoverable?: boolean }) {
-    this.streamError = message;
+    this.streamError = friendlyUserError(message);
     this.evictStreamOwners();
     if (options?.recoverable !== false) {
       return;
@@ -1971,13 +1972,23 @@ export class ChatStore {
 
   async attachFilesFromPicker() {
     if (this.pendingMediaUploading) return;
+    const slots = MAX_MEDIA_REFS_PER_TURN - this.pendingMediaRefs.length;
+    if (slots <= 0) {
+      this.setError(
+        friendlyUserError(`too many attachments (max ${MAX_MEDIA_REFS_PER_TURN})`),
+      );
+      return;
+    }
     this.pendingMediaUploading = true;
     try {
       const { attachChatFiles } = await import("$lib/utils/chatMediaUpload");
-      const refs = await attachChatFiles(this.sessionId);
+      const refs = await attachChatFiles(this.sessionId, { maxNew: slots });
       if (refs.length > 0) {
         this.pendingMediaRefs = [...this.pendingMediaRefs, ...refs];
+        this.streamError = null;
       }
+    } catch (err) {
+      this.setError(err instanceof Error ? err.message : String(err));
     } finally {
       this.pendingMediaUploading = false;
     }

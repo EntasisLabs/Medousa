@@ -18,6 +18,7 @@
     waitForEngine,
     type ProvidersProbeResult,
   } from "$lib/utils/providersApi";
+  import { ensureSkipReadyModel } from "$lib/utils/wizardModelReady";
   import {
     fetchPackageStatus,
     openPackageInstaller,
@@ -155,6 +156,16 @@
     validating = true;
     try {
       await requireEngineReady({ privateBrain: false, timeoutSeconds: 45 });
+      const modelReady = await ensureSkipReadyModel(
+        wizard.existingProvider,
+        wizard.existingModel,
+        probe,
+      );
+      if (!modelReady.ok) {
+        statusMessage = modelReady.message;
+        wizard.error = modelReady.message;
+        return;
+      }
       await wizard.skipCurrent();
     } catch (err) {
       const message =

@@ -167,3 +167,21 @@ pub async fn workshop_ensure_engine(
         crate::workshop_runtime::should_load_private_brain(private_brain.unwrap_or(false));
     ensure_local_engine(&workshop, private_brain).await
 }
+
+#[tauri::command]
+pub async fn engine_diagnose() -> Result<crate::workshop_runtime::EngineDiagnosis, String> {
+    let registry = crate::workshop_registry::ensure_migrated()?;
+    let workshop = crate::workshop_registry::active_workshop(&registry)
+        .cloned()
+        .ok_or_else(|| "No active workshop".to_string())?;
+    Ok(crate::workshop_runtime::diagnose_local_engine(&workshop).await)
+}
+
+#[tauri::command]
+pub fn engine_clear_stale_lock() -> Result<(), String> {
+    let registry = crate::workshop_registry::ensure_migrated()?;
+    let workshop = crate::workshop_registry::active_workshop(&registry)
+        .cloned()
+        .ok_or_else(|| "No active workshop".to_string())?;
+    crate::workshop_runtime::clear_stale_engine_lock(&workshop)
+}

@@ -143,6 +143,9 @@
   {#if chat.vaultNoteContext}
     <VaultChatContextChip compact class="mb-2" />
   {/if}
+  {#if chat.streamError}
+    <p class="mb-2 px-1 text-xs text-error-400" role="alert">{chat.streamError}</p>
+  {/if}
   <BudgetApprovalBar
     mobile
     onOpenWork={() => {

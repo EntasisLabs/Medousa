@@ -693,6 +693,173 @@ pub async fn ensure_active_local_engine(
     ensure_local_engine(workshop, private_brain).await
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineDiagnosis {
+    pub issue: String,
+    pub title: String,
+    pub message: String,
+    pub log_path: Option<String>,
+    pub lock_path: Option<String>,
+    pub bind: Option<String>,
+    pub can_clear_lock: bool,
+    pub can_restart: bool,
+}
+
+fn surreal_kv_lock_path(backend: &str, data_dir: &Path) -> Option<PathBuf> {
+    let trimmed = backend.trim();
+    let kv_root = if trimmed.eq_ignore_ascii_case("surreal-kv") {
+        Some(data_dir.join("runtime.surrealkv"))
+    } else if let Some(rest) = trimmed.strip_prefix("surreal-kv:") {
+        let path = rest.trim();
+        if path.is_empty() {
+            Some(data_dir.join("runtime.surrealkv"))
+        } else {
+            Some(PathBuf::from(path))
+        }
+    } else {
+        None
+    }?;
+    Some(kv_root.join("LOCK"))
+}
+
+pub async fn diagnose_local_engine(workshop: &WorkshopServer) -> EngineDiagnosis {
+    let bind = resolve_workshop_bind(workshop);
+    let url = url_from_bind(&bind);
+    let log_path = daemon_log_path(&workshop.id);
+    let log_path_display = log_path.display().to_string();
+    let bind_display = bind.clone();
+
+    if workshop.kind != "local" {
+        return EngineDiagnosis {
+            issue: "remote".to_string(),
+            title: "Remote workshop".to_string(),
+            message: "This workshop runs on another device. Open Connection settings and check the address.".to_string(),
+            log_path: None,
+            lock_path: None,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: false,
+        };
+    }
+
+    if resolve_daemon_binary().is_err() {
+        return EngineDiagnosis {
+            issue: "binary_missing".to_string(),
+            title: "Medousa engine missing".to_string(),
+            message: "The app couldn't find its engine files. Try reinstalling Medousa.".to_string(),
+            log_path: Some(log_path_display),
+            lock_path: None,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: false,
+        };
+    }
+
+    let healthy = daemon_http_healthy(&url).await;
+    if healthy {
+        return EngineDiagnosis {
+            issue: "ok".to_string(),
+            title: "Medousa is running".to_string(),
+            message: format!("Engine is ready at {bind}"),
+            log_path: Some(log_path_display),
+            lock_path: None,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: false,
+        };
+    }
+
+    let data_dir = resolve_workshop_data_dir(workshop);
+    let backend = resolve_backend();
+    let lock_path = surreal_kv_lock_path(&backend, &data_dir);
+    let lock_exists = lock_path
+        .as_ref()
+        .is_some_and(|path| path.exists());
+    let lock_display = lock_path.as_ref().map(|path| path.display().to_string());
+
+    let pid = read_daemon_pid(&workshop.id);
+    let pid_alive = pid.is_some_and(is_process_alive);
+    let bind_up = is_bind_reachable(&bind);
+
+    if lock_exists && !pid_alive {
+        return EngineDiagnosis {
+            issue: "stale_lock".to_string(),
+            title: "Medousa didn't shut down cleanly".to_string(),
+            message: "A leftover lock file is blocking startup. Tap Fix and we'll clear it, then start Medousa again.".to_string(),
+            log_path: Some(log_path_display),
+            lock_path: lock_display,
+            bind: Some(bind_display),
+            can_clear_lock: true,
+            can_restart: true,
+        };
+    }
+
+    if bind_up && !healthy {
+        return EngineDiagnosis {
+            issue: "port_blocked".to_string(),
+            title: "Something else is using the engine port".to_string(),
+            message: format!(
+                "Port {} is busy but Medousa isn't responding. Restarting usually fixes this — or another app may be using that port.",
+                parse_bind_port(&bind).unwrap_or(7419)
+            ),
+            log_path: Some(log_path_display),
+            lock_path: lock_display,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: true,
+        };
+    }
+
+    if pid_alive && !healthy {
+        return EngineDiagnosis {
+            issue: "wedged".to_string(),
+            title: "Medousa is stuck starting up".to_string(),
+            message: "The engine process is running but not responding. Try restarting Medousa.".to_string(),
+            log_path: Some(log_path_display),
+            lock_path: lock_display,
+            bind: Some(bind_display),
+            can_clear_lock: false,
+            can_restart: true,
+        };
+    }
+
+    EngineDiagnosis {
+        issue: "not_running".to_string(),
+        title: "Medousa isn't running".to_string(),
+        message: "Start Medousa on this computer to chat. Your notes and settings stay on this machine.".to_string(),
+        log_path: Some(log_path_display),
+        lock_path: lock_display,
+        bind: Some(bind_display),
+        can_clear_lock: false,
+        can_restart: true,
+    }
+}
+
+pub fn clear_stale_engine_lock(workshop: &WorkshopServer) -> Result<(), String> {
+    if workshop.kind != "local" {
+        return Err("Only local workshops have engine locks".to_string());
+    }
+    let data_dir = resolve_workshop_data_dir(workshop);
+    let backend = resolve_backend();
+    let Some(lock_path) = surreal_kv_lock_path(&backend, &data_dir) else {
+        return Err("This workshop doesn't use on-disk storage locks".to_string());
+    };
+    if !lock_path.exists() {
+        return Ok(());
+    }
+    let pid = read_daemon_pid(&workshop.id);
+    if pid.is_some_and(is_process_alive) {
+        return Err("Medousa is still running — stop it before clearing the lock".to_string());
+    }
+    fs::remove_file(&lock_path).map_err(|err| {
+        format!(
+            "Couldn't remove the lock file ({}): {err}",
+            lock_path.display()
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

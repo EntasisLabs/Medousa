@@ -1,4 +1,5 @@
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+import { friendlyTurnError } from "$lib/utils/normieErrors";
 
 export function isEngineTelemetryText(message: string | null | undefined): boolean {
   const trimmed = message?.trim() ?? "";
@@ -63,12 +64,17 @@ export function operatorStreamErrorLine(
 ): string {
   const operator = event.operator_message?.trim();
   if (operator) return operator;
-  if (showEngineDetails) {
-    const debug = event.debug_message?.trim();
-    if (debug) return debug;
-  }
+
+  const debug = event.debug_message?.trim();
   const legacy = event.message?.trim();
-  if (legacy && !isEngineTelemetryText(legacy)) return legacy;
+  const raw =
+    debug ?? (legacy && !isEngineTelemetryText(legacy) ? legacy : "");
+
+  if (raw) {
+    if (showEngineDetails) return raw;
+    return friendlyTurnError(raw);
+  }
+
   return "Something went wrong on this turn. Try again in a moment.";
 }
 

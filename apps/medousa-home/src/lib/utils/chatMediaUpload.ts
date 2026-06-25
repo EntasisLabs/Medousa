@@ -4,6 +4,10 @@ import {
   mediaRefFromUpload,
   type MediaRef,
 } from "$lib/types/media";
+import {
+  friendlyMediaUploadError,
+  MAX_MEDIA_REFS_PER_TURN,
+} from "$lib/utils/normieErrors";
 import { guessMimeFromPath } from "$lib/utils/vaultAttachments";
 import { isTauri } from "$lib/window";
 
@@ -38,47 +42,60 @@ export async function uploadChatFiles(
 ): Promise<MediaRef[]> {
   const refs: MediaRef[] = [];
   for (const file of files) {
-    const bytes = [...new Uint8Array(await file.arrayBuffer())];
-    const response = await uploadMediaBytes(
-      sessionId,
-      file.name,
-      file.type || guessMimeFromPath(file.name),
-      bytes,
-      file.name,
-    );
-    refs.push(mediaRefFromUpload(response, file.name));
+    try {
+      const bytes = [...new Uint8Array(await file.arrayBuffer())];
+      const response = await uploadMediaBytes(
+        sessionId,
+        file.name,
+        file.type || guessMimeFromPath(file.name),
+        bytes,
+        file.name,
+      );
+      refs.push(mediaRefFromUpload(response, file.name));
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      throw new Error(friendlyMediaUploadError(raw, file.name));
+    }
   }
   return refs;
 }
 
-export async function attachChatFiles(sessionId: string): Promise<MediaRef[]> {
-  if (isTauri()) {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        multiple: true,
-        title: "Attach files",
-      });
-      if (!selected) return [];
-      const paths = Array.isArray(selected) ? selected : [selected];
-      const refs: MediaRef[] = [];
-      for (const path of paths) {
-        const response = await uploadMediaPath(
-          sessionId,
-          path,
-          fileNameFromPath(path),
-        );
-        refs.push(
-          mediaRefFromUpload(response, fileNameFromPath(path)),
-        );
-      }
-      return refs;
-    } catch {
-      return [];
-    }
+export async function attachChatFiles(
+  sessionId: string,
+  options?: { maxNew?: number },
+): Promise<MediaRef[]> {
+  const maxNew = options?.maxNew ?? MAX_MEDIA_REFS_PER_TURN;
+  if (maxNew <= 0) {
+    throw new Error(
+      friendlyMediaUploadError(
+        `too many attachments (max ${MAX_MEDIA_REFS_PER_TURN})`,
+      ),
+    );
   }
 
-  const files = await pickChatAttachmentFiles();
+  if (isTauri()) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      multiple: true,
+      title: "Attach files",
+    });
+    if (!selected) return [];
+    const paths = (Array.isArray(selected) ? selected : [selected]).slice(0, maxNew);
+    const refs: MediaRef[] = [];
+    for (const path of paths) {
+      const name = fileNameFromPath(path);
+      try {
+        const response = await uploadMediaPath(sessionId, path, name);
+        refs.push(mediaRefFromUpload(response, name));
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        throw new Error(friendlyMediaUploadError(raw, name));
+      }
+    }
+    return refs;
+  }
+
+  const files = (await pickChatAttachmentFiles()).slice(0, maxNew);
   if (files.length === 0) return [];
   return uploadChatFiles(sessionId, files);
 }

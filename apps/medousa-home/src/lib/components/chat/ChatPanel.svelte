@@ -391,7 +391,7 @@
       </div>
     </div>
     {#if chat.streamError}
-      <p class="mt-1 text-[11px] text-error-400">{chat.streamError}</p>
+      <p class="mt-1 text-[11px] text-error-400" role="alert">{chat.streamError}</p>
     {:else if !mobile && chat.historyLoading && chat.messages.length === 0}
       <p class="mt-1 text-[11px] text-surface-400">Loading conversation…</p>
     {/if}

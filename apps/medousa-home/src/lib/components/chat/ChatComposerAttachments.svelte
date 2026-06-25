@@ -1,13 +1,16 @@
 <script lang="ts">
   import { Paperclip, X } from "@lucide/svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import {
+    MAX_MEDIA_REFS_PER_TURN,
+    MAX_MEDIA_UPLOAD_MB,
+  } from "$lib/utils/normieErrors";
 
   interface Props {
     disabled?: boolean;
-    mobile?: boolean;
   }
 
-  let { disabled = false, mobile = false }: Props = $props();
+  let { disabled = false }: Props = $props();
 </script>
 
 <div class="chat-attachment-bar flex flex-wrap items-center gap-2 border-b border-surface-500/30 bg-surface-900/35 px-3 py-2">
@@ -23,7 +26,7 @@
 
   {#if chat.pendingMediaRefs.length === 0}
     <span class="text-xs text-surface-500">
-      {mobile ? "Photos, PDFs, spreadsheets — stored locally" : "Attach files (stored locally on this machine)"}
+      Up to {MAX_MEDIA_REFS_PER_TURN} files, {MAX_MEDIA_UPLOAD_MB} MB each — PDF, images, spreadsheets, text
     </span>
   {:else}
     {#each chat.pendingMediaRefs as attachment (attachment.media_id)}

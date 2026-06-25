@@ -23,6 +23,7 @@ import type { WorkCardDetail } from "$lib/types/card";
 import type { SwimlaneMode, WorkView } from "$lib/types/work";
 import type { EnqueueAskJobRequest } from "$lib/utils/askPrompt";
 import { collectActivityCardIds } from "$lib/utils/activityEnrichment";
+import { friendlyUserError } from "$lib/utils/normieErrors";
 import { hubCardsForPrefetch } from "$lib/utils/workHub";
 import {
   isActionableBlockedCard,
@@ -327,7 +328,7 @@ export class WorkspaceStore {
   }
 
   setError(message: string) {
-    this.streamError = message;
+    this.streamError = friendlyUserError(message);
   }
 
   async prefetchCardDetails() {

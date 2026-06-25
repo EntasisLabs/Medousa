@@ -94,6 +94,8 @@ pub fn run() {
             daemon::daemon_health,
             daemon_service::daemon_start,
             daemon_service::daemon_restart,
+            daemon_service::engine_diagnose,
+            daemon_service::engine_clear_stale_lock,
             daemon_service::daemon_wait_healthy,
             daemon_service::workshop_ensure_engine,
             connection_prefs::connection_load_prefs,
