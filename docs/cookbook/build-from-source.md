@@ -25,40 +25,39 @@ Design notes: [architecture/archive/medousa-home-tauri-design.md](../../architec
 
 ---
 
-## Engine only (Cargo)
+## Engine + offline brain (Cargo)
 
-Pick the inference backend for your machine:
+The daemon is a slim catalog/scheduler process. **Offline Gemma inference runs in `medousa_local`** (built separately).
 
-| Platform | Feature | Backend |
-|----------|---------|---------|
+| Platform | `medousa_local` feature | Backend |
+|----------|-------------------------|---------|
 | Apple Silicon / macOS | `embedded-inference-metal` | Metal |
-| Linux / Windows + NVIDIA (CUDA toolkit required at build) | `embedded-inference-cuda` | CUDA |
+| Linux / Windows + NVIDIA | `embedded-inference-cuda` | CUDA |
 | Any (fallback) | `embedded-inference` | CPU |
 
 ```bash
 cd Medousa   # repo root with Cargo.toml
 
-# Apple Silicon / macOS
-cargo build -p medousa --bin medousa_daemon --features embedded-inference-metal
-cargo run -p medousa --bin medousa_daemon --features embedded-inference-metal -- --local-engine
+# Build offline brain sidecar
+cargo build -p medousa --bin medousa_local --features embedded-inference-metal
+cargo run -p medousa --bin medousa_local --features embedded-inference-metal -- --load-recommended
 
-# Linux / Windows CPU (works everywhere, slower)
-cargo build -p medousa --bin medousa_daemon --features embedded-inference
-cargo run -p medousa --bin medousa_daemon --features embedded-inference -- --local-engine
+# Daemon (no embedded inference)
+cargo build -p medousa --bin medousa_daemon
+cargo run -p medousa --bin medousa_daemon
+```
 
-# Linux / Windows + NVIDIA (requires CUDA toolkit + driver at build time)
-cargo build -p medousa --bin medousa_daemon --features embedded-inference-cuda
-cargo run -p medousa --bin medousa_daemon --features embedded-inference-cuda -- --local-engine
+Start both from CLI:
+
+```bash
+medousa start daemon --inference   # spawns medousa_local + medousa_daemon
 ```
 
 Runtime overrides:
 
 - `MEDOUSA_LOCAL_ENGINE_CPU=1` — force CPU even when Metal/CUDA is available
-- `MEDOUSA_LOCAL_ENGINE_CUDA=1` — prefer CUDA when the binary was built with `embedded-inference-cuda`
 
-Desktop app sidecar builds (`scripts/prepare-engine-sidecar.sh`) include **embedded inference** and **iroh-transport** by default (`MEDOUSA_EMBEDDED_INFERENCE=auto|metal|cuda|cpu`, opt out of Iroh with `--without-iroh` or `MEDOUSA_WITH_IROH=0`).
-
-Release tarball builds (`scripts/release/build.sh`) include **iroh-transport** by default; add `--with-inference` for embedded Gemma. Opt out of Iroh with `--without-iroh`. At runtime the Iroh gateway is on when compiled in (opt out with `MEDOUSA_IROH=0`).
+Release builds (`scripts/release/build.sh`) include **iroh-transport** by default and build **medousa_local** via `--with-local-brain` (default on). Opt out of Iroh with `--without-iroh`. At runtime the Iroh gateway is on when compiled in (opt out with `MEDOUSA_IROH=0`).
 
 Or install full CLI set:
 

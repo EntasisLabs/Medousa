@@ -10,10 +10,9 @@ source "${SCRIPT_DIR}/common.sh"
 TARGET=""
 OUTPUT=""
 PRINT_TARGET_ONLY=0
-WITH_INFERENCE=0
+WITH_LOCAL_BRAIN=1
 # Full-private defaults: Iroh on unless explicitly disabled.
 WITH_IROH=1
-WITH_LOCAL_BRAIN=1
 
 usage() {
   cat <<'EOF'
@@ -23,13 +22,14 @@ Options:
   --target <triple>     Rust target triple (default: host)
   --output <dir>        Staging directory (default: dist/build/<target>)
   --print-target        Print resolved target triple and exit
-  --with-inference      (deprecated) Build daemon with embedded inference — prefer medousa_local package
-  --with-local-brain    Also build medousa_local into staging local-brain/ subdirectory
+  --with-local-brain    Also build medousa_local into staging local-brain/ subdirectory (default: on)
+  --without-local-brain Skip medousa_local package build
   --without-iroh        Omit iroh-transport (LAN-only pairing)
   --with-iroh           Include iroh-transport (default)
   -h, --help            Show this help
 
 Builds root workspace binaries + medousa_whatsapp, copies into <output>/bin/.
+Offline brain (Gemma) is medousa_local — built via --with-local-brain, not embedded in medousa_daemon.
 Iroh gateway is on at runtime when built with iroh-transport (opt out with MEDOUSA_IROH=0).
 EOF
 }
@@ -48,12 +48,12 @@ while [[ $# -gt 0 ]]; do
       PRINT_TARGET_ONLY=1
       shift
       ;;
-    --with-inference)
-      WITH_INFERENCE=1
-      shift
-      ;;
     --with-local-brain)
       WITH_LOCAL_BRAIN=1
+      shift
+      ;;
+    --without-local-brain)
+      WITH_LOCAL_BRAIN=0
       shift
       ;;
     --without-iroh)
@@ -104,40 +104,8 @@ VERSION="$(medousa_version)"
 medousa_log "building medousa v${VERSION} for ${TARGET}"
 medousa_log "staging → ${BIN_DIR}"
 
-resolve_inference_feature() {
-  local inference_mode="$1"
-  case "${inference_mode}" in
-    metal)
-      echo "embedded-inference-metal"
-      ;;
-    cuda)
-      echo "embedded-inference-cuda"
-      ;;
-    cpu)
-      echo "embedded-inference"
-      ;;
-    auto)
-      if [[ "${TARGET}" == *-apple-* ]]; then
-        echo "embedded-inference-metal"
-      else
-        echo "embedded-inference"
-      fi
-      ;;
-    *)
-      echo "error: unknown MEDOUSA_EMBEDDED_INFERENCE=${inference_mode}" >&2
-      exit 1
-      ;;
-  esac
-}
-
 CARGO_BUILD_ARGS=(--release)
 CARGO_FEATURES=()
-if [[ "${WITH_INFERENCE}" -eq 1 ]]; then
-  INFERENCE_MODE="${MEDOUSA_EMBEDDED_INFERENCE:-auto}"
-  INFERENCE_FEATURE="$(resolve_inference_feature "${INFERENCE_MODE}")"
-  CARGO_FEATURES+=("${INFERENCE_FEATURE}")
-  medousa_log "embedded inference enabled on daemon (${INFERENCE_FEATURE}) — deprecated; use medousa_local"
-fi
 if [[ "${WITH_IROH}" -eq 1 ]]; then
   CARGO_FEATURES+=("iroh-transport")
   medousa_log "iroh transport enabled (default — runtime opt-out: MEDOUSA_IROH=0)"
@@ -193,8 +161,8 @@ cat >"${OUTPUT}/build-meta.env" <<EOF
 MEDOUSA_VERSION=${VERSION}
 MEDOUSA_TARGET=${TARGET}
 MEDOUSA_BIN_DIR=${BIN_DIR}
-MEDOUSA_WITH_INFERENCE=${WITH_INFERENCE}
 MEDOUSA_WITH_IROH=${WITH_IROH}
+MEDOUSA_WITH_LOCAL_BRAIN=${WITH_LOCAL_BRAIN}
 EOF
 
 medousa_log "done — $(find "${BIN_DIR}" -type f | wc -l | tr -d ' ') binaries in ${BIN_DIR}"

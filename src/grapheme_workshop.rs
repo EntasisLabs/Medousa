@@ -12,6 +12,8 @@ use tokio::sync::Mutex;
 use crate::capability_catalog::{grapheme_allowed_modules, set_grapheme_allowed_modules};
 use crate::tools::extract_module_ops_from_source;
 
+pub use medousa_types::grapheme_extras::*;
+
 static WORKSHOP_SESSION: OnceLock<Mutex<WorkshopGraphemeSession>> = OnceLock::new();
 
 struct WorkshopGraphemeSession {
@@ -48,88 +50,6 @@ pub fn enforce_grapheme_allowlist(source: &str) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphemeAllowlistResponse {
-    pub allowed_modules: Vec<String>,
-    pub enforce: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GraphemeAllowlistUpdateRequest {
-    pub allowed_modules: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GraphemeScriptSaveRequest {
-    pub name: String,
-    pub body: String,
-    #[serde(default)]
-    pub id: Option<String>,
-    #[serde(default)]
-    pub modules: Vec<String>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub intent: Option<String>,
-    #[serde(default)]
-    pub source_session_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphemeScriptSaveResponse {
-    pub script: crate::daemon_api::GraphemeScriptEntryDto,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GraphemeCompileRequest {
-    pub source: String,
-    #[serde(default)]
-    pub mode: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphemeCompileResponse {
-    pub mode: String,
-    pub validated: bool,
-    pub artifact_id: Option<String>,
-    pub lint_warnings: Vec<String>,
-    pub compile_hints: Vec<String>,
-    pub aot_stage: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GraphemeModuleLoadRequest {
-    pub module_id: String,
-    pub wasm_path: String,
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub abi: Option<String>,
-    #[serde(default)]
-    pub compatibility_mode: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphemeModuleLoadResponse {
-    pub module_id: String,
-    pub generation_id: u64,
-    pub version: String,
-    pub content_hash: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphemeLifecycleEventDto {
-    pub kind: String,
-    pub module_id: String,
-    pub generation_id: Option<u64>,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphemeLifecycleResponse {
-    pub events: Vec<GraphemeLifecycleEventDto>,
 }
 
 pub async fn get_allowlist() -> GraphemeAllowlistResponse {

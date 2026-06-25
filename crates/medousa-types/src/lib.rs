@@ -2,7 +2,9 @@
 //!
 //! Used by the server, SDK clients, and channel adapters to prevent contract drift.
 
+pub mod capability;
 pub mod daemon_api;
+pub mod grapheme_extras;
 pub mod inference;
 pub mod local;
 pub mod model_catalog;
@@ -15,7 +17,9 @@ pub mod turn_ticket;
 pub mod workflow;
 pub mod workflow_plan;
 
+pub use capability::*;
 pub use daemon_api::*;
+pub use grapheme_extras::*;
 pub use local::*;
 pub use session::*;
 pub use stage_routing::*;
