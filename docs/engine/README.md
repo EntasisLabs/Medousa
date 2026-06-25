@@ -33,13 +33,18 @@ If your users already run Medousa at home, your enterprise product can offer **t
 │  · Agent runtime + tool loop                            │
 │  · Durable jobs / recurring / delivery                  │
 │  · Identity, vault, workspace APIs                      │
-│  · Optional local Gemma engine (:7421)                  │
 └───────────────────────────┬─────────────────────────────┘
                             │
          ┌──────────────────┼──────────────────┐
          ▼                  ▼                  ▼
     LLM providers      MCP gateway        SurrealKV / mem
     (cloud or local)   (:7420)            persistence
+
+Optional offline brain (separate process):
+
+```
+medousa_local :7421   ← Gemma / mistralrs (spawned by CLI, Tauri, or medousa-host)
+```
 ```
 
 The **Medousa app** is just another client — Tauri shell + IPC that starts the engine and calls the same routes.
@@ -50,7 +55,7 @@ The **Medousa app** is just another client — Tauri shell + IPC that starts the
 
 1. **Drop-in daemon** — run `medousa_daemon` beside your stack; call `/v1/jobs/ask` or `/v1/interactive/turn`.
 2. **Channel adapter** — point Discord/Telegram/Slack/WhatsApp adapters at your daemon URL; users keep their chat habits.
-3. **Local brain only** — ship engine with `embedded-inference`; your UI never mentions models; download via `/v1/local/models/download`.
+3. **Local brain** — run `medousa_local` (or `medousa start daemon --inference`); daemon probes `GET /v1/local/engine/status`; models via `/v1/local/models/*`.
 4. **MCP BYOB** — register Playwright, calendar, CRM servers in `mcp-gateway.toml`; engine invokes with policy tokens.
 
 See [Integrate without the app](../cookbook/integrate-without-the-app.md) and [HTTP API reference](http-api.md).
@@ -61,7 +66,7 @@ See [Integrate without the app](../cookbook/integrate-without-the-app.md) and [H
 
 - **Loopback by default** — `127.0.0.1:7419`; use `--public` + pairing for LAN phones.
 - **Policy profiles** — interactive vs scheduled lanes; OpenShell sandbox for skill scripts.
-- **Observability** — `/health`, `/v1/stats`, Stasis dashboard mount, `medousa doctor --local-engine`.
+- **Observability** — `/health`, `/v1/stats`, Stasis dashboard mount, `medousa doctor` (add `--local-engine` to probe offline brain on `:7421`).
 
 Deep architecture: [enterprise-architecture-and-flow-guide.md](../../architecture/enterprise-architecture-and-flow-guide.md), [component-daemon.md](../../architecture/component-daemon.md).
 

@@ -57,7 +57,7 @@ Every time we say *daemon*, *workshop*, *ingest*, *Surreal*, or show a 47-row se
 - [x] Tauri `externalBin` sidecar for `medousa_daemon`
 - [x] `prepare-engine-sidecar.sh` — build with `embedded-inference-metal` on Apple targets
 - [x] Wire into `beforeBuildCommand` / `npm run tauri:build`
-- [x] Release `build.sh` — optional `--with-inference` for Apple hosts
+- [x] Release `build.sh` — `medousa_local` via `--with-local-brain` (replaces deprecated `--with-inference` on daemon)
 - [x] Normie-friendly error if sidecar missing (dev fallback to PATH)
 
 ### A2. Wizard: fail closed, honest steps, land on Chat

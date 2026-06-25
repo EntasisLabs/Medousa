@@ -1,4 +1,4 @@
-//! Per-workshop local Medousa Engine process management (Phase 2 multi-engine).
+//! Per-workshop process management: slim `medousa_daemon` (:7419) and optional `medousa_local` brain (:7421).
 
 use crate::medousa_paths::{load_tui_defaults_summary, tui_defaults_path};
 use crate::workshop_registry::{WorkshopRegistry, WorkshopServer, PERSONAL_WORKSHOP_ID};

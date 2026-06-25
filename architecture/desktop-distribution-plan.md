@@ -15,7 +15,7 @@ The product README links to [GitHub Releases](https://github.com/EntasisLabs/Med
 
 ### What already works (Mac, manual)
 
-- `prepare-engine-sidecar.sh` bundles `medousa_daemon` + `embedded-inference-metal`
+- `prepare-engine-sidecar.sh` bundles slim `medousa_daemon` + `medousa_local` (`embedded-inference-metal` on Apple Silicon)
 - Welcome wizard, auto-start engine, offline Gemma path
 - `npm run build:desktop` → `src-tauri/target/release/bundle/`
 

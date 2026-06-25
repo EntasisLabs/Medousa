@@ -11,9 +11,11 @@ It is used when you need:
 - separation between clients and runtime workers
 - **centralized agent runtime** for interactive turns (TUI, ingester, API)
 
-## Entry Point
+## Binary layout
 
-- Binary: medousa/src/bin/medousa_daemon.rs
+- **Entry:** `medousa/src/bin/medousa_daemon.rs` (~500 lines) — startup, scheduler side effects, tests.
+- **Handlers:** `medousa/src/daemon/*` — see [daemon-modules.md](../docs/architecture/daemon-modules.md).
+- **Local inference:** `medousa_local` + `GET /v1/local/engine/status` on daemon (probe only).
 
 ## Process Model
 

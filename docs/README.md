@@ -9,7 +9,7 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 | Layer | Audience | What you get |
 |-------|----------|--------------|
 | **Medousa** (app) | Everyone | Welcome wizard, chat, vault, pairing — zero terminal |
-| **Medousa Engine** (`medousa_daemon`) | Devs, corps, power users | Durable agent runtime, HTTP API, channels, local inference, MCP |
+| **Medousa Engine** (`medousa_daemon`) | Devs, corps, power users | Durable agent runtime, HTTP API, channels, MCP; offline brain via `medousa_local` |
 
 **Same engine.** Your company doesn’t re-introduce a foreign stack — employees may already run Medousa at home; your product can speak the same protocol.
 
@@ -35,7 +35,7 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 |-------|----------------|
 | [Engine overview](engine/README.md) | Why corps embed Medousa Engine, topology, trust model |
 | [HTTP API reference](engine/http-api.md) | Routes, contracts, interactive turns, local inference |
-| [Architecture (deep)](../architecture/README.md) | Component boundaries; [turn runtime](../architecture/turn-runtime-and-lanes.md), [roadmap](../architecture/ROADMAP.md) |
+| [Architecture (deep)](../architecture/README.md) | Component boundaries; [daemon modules](architecture/daemon-modules.md), [turn runtime](../architecture/turn-runtime-and-lanes.md), [roadmap](../architecture/ROADMAP.md) |
 
 ### Existing setup guides
 
@@ -55,8 +55,9 @@ Need the terminal workspace or headless engine without the app? Start here:
 curl -fsSL https://raw.githubusercontent.com/EntasisLabs/Medousa/main/scripts/install.sh | bash
 medousa start daemon --inference
 
-# Health
-medousa doctor --local-engine
+# Health (daemon + optional offline brain on :7421)
+medousa doctor
+medousa doctor --local-engine   # extra: probe medousa_local / HF token hints
 
 # Ask via HTTP (no UI)
 curl -s http://127.0.0.1:7419/health

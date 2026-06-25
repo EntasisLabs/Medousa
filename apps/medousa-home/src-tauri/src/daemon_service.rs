@@ -1,4 +1,4 @@
-use crate::local_engine::{
+use crate::workshop_runtime::{
     ensure_local_engine, resolve_workshop_url, stop_local_engine, wait_engine_healthy,
 };
 use crate::workshop_registry::{
@@ -64,7 +64,7 @@ async fn ensure_workshop_engine(
 ) -> Result<DaemonStartResult, String> {
     let mut workshop = workshop.clone();
     if workshop.kind == "local" && workshop.id == PERSONAL_WORKSHOP_ID && public_bind {
-        workshop.bind = Some(crate::local_engine::public_local_bind().to_string());
+        workshop.bind = Some(crate::workshop_runtime::public_local_bind().to_string());
         workshop.url = resolve_workshop_url(&workshop);
     }
 
@@ -96,7 +96,7 @@ pub async fn daemon_start(request: Option<DaemonStartRequest>) -> Result<DaemonS
         private_brain: false,
         public_bind: None,
     });
-    let private_brain = crate::local_engine::should_load_private_brain(request.private_brain);
+    let private_brain = crate::workshop_runtime::should_load_private_brain(request.private_brain);
     let public_bind = resolve_public_bind(Some(&request));
     let registry = ensure_migrated()?;
     let workshop = active_workshop(&registry)
@@ -149,7 +149,7 @@ pub async fn daemon_wait_healthy(
 pub async fn workshop_ensure_engine(
     workshop_id: Option<String>,
     private_brain: Option<bool>,
-) -> Result<crate::local_engine::LocalEngineEnsureResult, String> {
+) -> Result<crate::workshop_runtime::LocalEngineEnsureResult, String> {
     let registry = ensure_migrated()?;
     let workshop = if let Some(id) = workshop_id.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
         registry
@@ -164,6 +164,6 @@ pub async fn workshop_ensure_engine(
             .ok_or_else(|| "No active workshop".to_string())?
     };
     let private_brain =
-        crate::local_engine::should_load_private_brain(private_brain.unwrap_or(false));
+        crate::workshop_runtime::should_load_private_brain(private_brain.unwrap_or(false));
     ensure_local_engine(&workshop, private_brain).await
 }

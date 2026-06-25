@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::connection_prefs::load_connection_prefs;
-use crate::local_engine::{
+use crate::workshop_runtime::{
     local_brain_installed, resolve_backend, resolve_daemon_binary, resolve_local_binary,
     should_load_private_brain, DEFAULT_LOCAL_BIND, DEFAULT_LOCAL_BRAIN_BIND,
 };

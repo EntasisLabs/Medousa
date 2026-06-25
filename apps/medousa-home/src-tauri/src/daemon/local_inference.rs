@@ -2,7 +2,7 @@ use crate::daemon::sdk;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
 use crate::daemon::DaemonState;
-use crate::local_engine;
+use crate::workshop_runtime;
 use crate::workshop_registry::{load_registry, PERSONAL_WORKSHOP_ID};
 use medousa_types::{
     LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelsResponse,
@@ -94,12 +94,12 @@ pub async fn local_inference_spawn_engine(
         .iter()
         .find(|entry| entry.id == PERSONAL_WORKSHOP_ID)
         .ok_or_else(|| "personal workshop not found in registry".to_string())?;
-    let data_dir = local_engine::resolve_workshop_data_dir(workshop);
+    let data_dir = workshop_runtime::resolve_workshop_data_dir(workshop);
     let model = model_id
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    local_engine::ensure_local_brain(&workshop.id, &data_dir, model.as_deref()).await?;
+    workshop_runtime::ensure_local_brain(&workshop.id, &data_dir, model.as_deref()).await?;
 
     sdk::client(&state)
         .local_models()

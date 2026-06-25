@@ -11,10 +11,11 @@ Install first: [install-and-self-host.md](install-and-self-host.md)
 ```
 medousa setup              Configure provider, model, backend, channels (TUI wizard)
 medousa start <service>    Start engine, gateway, or channel bridge
-medousa start daemon --inference   Engine + private Gemma brain
+medousa start daemon --inference   # spawns medousa_daemon + medousa_local (offline brain)
 medousa tui                Terminal workspace (starts engine if needed)
-medousa daemon             Foreground engine (pass-through args)
-medousa doctor [--local-engine]    Health check
+medousa daemon             Foreground slim daemon (pass-through args)
+medousa doctor             Health check (daemon + paths)
+medousa doctor --local-engine   Also probe medousa_local on :7421
 medousa models …           Local model management (power users)
 medousa pair …             LAN phone pairing
 ```

@@ -1,7 +1,7 @@
 //! Client-side registry of Medousa Engine connections (ADR-003).
 
 use crate::daemon::{apply_daemon_url, resolve_daemon_url, DaemonState};
-use crate::local_engine::resolve_workshop_url;
+use crate::workshop_runtime::resolve_workshop_url;
 use crate::daemon::types::DEFAULT_DAEMON_URL;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -135,7 +135,7 @@ pub fn default_personal_workshop() -> WorkshopServer {
         brand_color: None,
         tagline: None,
         data_dir: None,
-        bind: Some(crate::local_engine::DEFAULT_LOCAL_BIND.to_string()),
+        bind: Some(crate::workshop_runtime::DEFAULT_LOCAL_BIND.to_string()),
         pairing: None,
         client_state: None,
     }
@@ -154,7 +154,7 @@ pub fn load_registry() -> Result<WorkshopRegistry, String> {
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
     let mut registry: WorkshopRegistry = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
     validate_registry(&registry)?;
-    crate::local_engine::backfill_local_workshop_fields(&mut registry);
+    crate::workshop_runtime::backfill_local_workshop_fields(&mut registry);
     Ok(registry)
 }
 
@@ -424,9 +424,9 @@ pub async fn workshops_set_active(
     };
 
     if workshop.kind == "local" {
-        let ensure = crate::local_engine::ensure_local_engine(
+        let ensure = crate::workshop_runtime::ensure_local_engine(
             &workshop,
-            crate::local_engine::should_load_private_brain(false),
+            crate::workshop_runtime::should_load_private_brain(false),
         )
         .await?;
         if !ensure.ok {
@@ -494,7 +494,7 @@ pub fn workshops_remove(
 
     if let Some(workshop) = removed {
         if workshop.kind == "local" {
-            crate::local_engine::stop_local_engine(&workshop.id);
+            crate::workshop_runtime::stop_local_engine(&workshop.id);
         }
         if workshop.kind == "paired" {
             let device_id = workshop
@@ -644,7 +644,7 @@ pub fn workshops_add_local(label: String, data_dir: String) -> Result<WorkshopRe
     if trimmed_label.is_empty() {
         return Err("Label is required".to_string());
     }
-    let data_path = crate::local_engine::validate_engine_data_dir(&data_dir)?;
+    let data_path = crate::workshop_runtime::validate_engine_data_dir(&data_dir)?;
     fs::create_dir_all(&data_path).map_err(|err| err.to_string())?;
 
     let mut registry = ensure_migrated()?;
@@ -654,8 +654,8 @@ pub fn workshops_add_local(label: String, data_dir: String) -> Result<WorkshopRe
         ));
     }
 
-    let bind = crate::local_engine::allocate_local_bind(&registry)?;
-    let url = crate::local_engine::url_from_bind(&bind);
+    let bind = crate::workshop_runtime::allocate_local_bind(&registry)?;
+    let url = crate::workshop_runtime::url_from_bind(&bind);
     let workshop_id = format!("local-{}", uuid::Uuid::new_v4().simple());
     let iso = now_iso();
     registry.workshops.push(WorkshopServer {

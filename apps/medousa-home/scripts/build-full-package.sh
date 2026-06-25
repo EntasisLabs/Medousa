@@ -18,8 +18,9 @@ while [[ $# -gt 0 ]]; do
 Usage: scripts/build-full-package.sh [--ios]
 
 Builds:
-  1. medousa_daemon sidecar (embedded inference on Apple Silicon)
-  2. Medousa desktop app (tauri build)
+  1. medousa_daemon sidecar (slim catalog/scheduler)
+  2. medousa_local sidecar (offline brain, Apple Silicon Metal when bundled)
+  3. Medousa desktop app (tauri build)
 
 With --ios (Mac + Xcode + paid Apple Developer for TestFlight):
   3. Medousa iOS IPA (release-testing export)

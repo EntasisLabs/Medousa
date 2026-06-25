@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::local_engine;
+use crate::workshop_runtime;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +13,7 @@ pub struct PackageStatusSummary {
 #[tauri::command]
 pub fn packages_status() -> PackageStatusSummary {
     PackageStatusSummary {
-        local_brain_installed: local_engine::local_brain_installed(),
+        local_brain_installed: workshop_runtime::local_brain_installed(),
         installer_available: resolve_installer_app().is_some(),
     }
 }

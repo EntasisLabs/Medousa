@@ -46,7 +46,11 @@ Blocking CLI helpers: `medousa_sdk::BlockingLocalModelsClient`.
 
 `apps/medousa-home/src-tauri/src/daemon/sdk.rs` implements `Transport` by delegating to the existing LAN/Iroh `workshop_transport` (preserves mobile fallback). Local inference commands use `MedousaClient::local_models()`.
 
-Spawn offline brain via `medousa_host` / `ensure_local_brain` — **not** `POST /v1/local/engine/load` (removed; daemon is probe-only).
+Spawn offline brain via `medousa_host` / Tauri `workshop_runtime::ensure_local_brain` — **not** `POST /v1/local/engine/load` (removed; daemon is probe-only).
+
+## Daemon library layout
+
+See [daemon-modules.md](../architecture/daemon-modules.md) for the `medousa::daemon` module split (`ingest`, `interactive`, `jobs`, `router`, …).
 
 ## Channel adapters
 

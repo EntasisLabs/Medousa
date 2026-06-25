@@ -3,7 +3,8 @@
 > **Status:** Phase 2 landed — Phase 3 next (full Gemma matrix + routing)  
 > **Date:** 2026-06-07 (Gemma 4 catalog lock — June 2026 releases)  
 > **Default brain:** **Gemma 4** family — hero model **Gemma 4 12B Unified** (June 3, 2026) on 16 GB+ Macs  
-> **Goal:** non-devs never install Ollama. Medousa Core downloads a curated Gemma 4 build, runs it in-process, and exposes it to the existing turn pipeline. Home (desktop + iPhone) stays a portal.  
+> **Goal:** non-devs never install Ollama. Medousa downloads a curated Gemma 4 build, runs it in **`medousa_local`** (`:7421`), and exposes it to the existing turn pipeline. Home (desktop + iPhone) stays a portal.  
+> **Architecture update (2026-06):** mistralrs lives in **`medousa_local`** only; **`medousa_daemon`** is slim (catalog, probe `GET /v1/local/engine/status`). Spawn via CLI/Tauri/`medousa-host`. See [daemon-modules.md](../docs/architecture/daemon-modules.md).
 > **Related:** [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing-plan.md), [component-daemon.md](component-daemon.md), [durable-turn-worker-plan.md](durable-turn-worker-plan.md)
 
 ---
@@ -45,15 +46,14 @@ Sources: [Google Gemma 4 12B guide](https://developers.googleblog.com/en/gemma-4
 └───────────────────────────┬─────────────────────────────────┘
                             │ HTTP/SSE :7419
 ┌───────────────────────────▼─────────────────────────────────┐
-│  medousa_daemon (Medousa Core)                              │
+│  medousa_daemon (slim Core) :7419                          │
 │  Stasis · turn worker · identity · vault · pairing          │
-│  GenaiChatClient ──► provider adapter (today: HTTP)         │
-│       ▲                                                     │
-│       │  NEW: embedded engine (in-process or loopback)      │
-│  ┌────┴──────────────────────────────────────────────┐      │
-│  │  Local inference runtime (mistral.rs / Candle)     │      │
-│  │  model store · download manager · hardware tier  │      │
-│  └───────────────────────────────────────────────────┘      │
+│  GenaiChatClient ──► provider adapter (HTTP / cloud)        │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ loopback when offline
+┌───────────────────────────▼─────────────────────────────────┐
+│  medousa_local (offline brain) :7421                          │
+│  mistral.rs runtime · model store · download manager          │
 └─────────────────────────────────────────────────────────────┘
          optional external: Ollama :11434 · OpenAI · Anthropic
 ```
@@ -87,7 +87,7 @@ Stage routing (`orchestrator`, `chunker`, …) can pin cheap models on low tiers
 | Binary size / deploy | Moderate | Smaller if custom | + native lib | Huge |
 | Medousa fit | **Best** — engine, not research framework | Too low-level for product | Good fallback backend | Wrong tool |
 
-**Decision:** depend on **`mistralrs`** inside `medousa_daemon` (feature-gated: `embedded-inference`). mistral.rs has **day-0 Gemma 4** support (text + image + audio + video) via safetensors / **UQFF** / in-situ quant — see [mistral.rs Gemma 4 docs](https://github.com/EricLBuehler/mistral.rs/blob/master/docs/GEMMA4.md).
+**Decision (updated):** **`mistralrs`** in **`medousa_local`** only (`embedded-inference*` features). Crate: `medousa-local-engine`. Daemon probes status; spawn via `medousa-host` / Tauri `workshop_runtime`. mistral.rs has **day-0 Gemma 4** support (text + image + audio + video) via safetensors / **UQFF** / in-situ quant — see [mistral.rs Gemma 4 docs](https://github.com/EricLBuehler/mistral.rs/blob/master/docs/GEMMA4.md).
 
 **Gemma 4 weight format (important):**
 
@@ -307,7 +307,7 @@ Cross-ref: [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing
 - [x] `embedded-inference` feature + mistral.rs (pin ≥0.8.x with Gemma 4)
 - [x] Load **`google/gemma-4-E4B-it`** or **`gemma-4-12B-it`** via ISQ/UQFF in dev
 - [x] Loopback OpenAI server on `:7421`; wire `medousa-local` through `GenaiChatClient`
-- [ ] One interactive turn E2E on CPU (Metal on macOS if easy) — manual smoke with `--local-engine`
+- [ ] One interactive turn E2E on CPU (Metal on macOS if easy) — manual smoke: `medousa start daemon --inference`
 
 **Exit:** Desktop wizard offline path can chat without Ollama on a dev machine.
 

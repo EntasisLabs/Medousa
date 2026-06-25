@@ -56,13 +56,13 @@ Repo paths like `apps/medousa-home` stay for now — **user-facing copy is alway
 
 ### Power-user parity (CLI, not normie path)
 
-- `medousa start daemon --inference` — dev-only Core start with private brain (aliases: `--local-engine`, `--private-brain`)
-- `medousa doctor --local-engine` — tier, installed models, engine on `:7421`, HF token hint.
+- `medousa start daemon --inference` — spawns slim daemon + `medousa_local` (aliases: `--local-engine`, `--private-brain`)
+- `medousa doctor --local-engine` — tier, installed models, brain on `:7421`, HF token hint.
 - `medousa setup` remains TUI; completion prints “Open Medousa” as the recommended next step.
 
 ### Release / packaging gaps (still open)
 
-- [ ] Ship `medousa_daemon` with `embedded-inference-metal` in Home bundle (no cargo flags for end users).
+- [ ] Ship `medousa_daemon` (slim) + `medousa_local` (brain) in Home bundle (no cargo flags for end users).
 - [ ] README = product only; dev/engine content lives in `docs/` — **done** ([docs/README.md](../docs/README.md))
 - [ ] `install.sh` / README primary CTA = **Download Medousa** from Releases
 - [ ] Wizard: Gemma license gate before first download; cache in `wizard.json`.
