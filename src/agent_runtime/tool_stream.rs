@@ -16,7 +16,38 @@ pub fn new_tool_run_id() -> String {
     format!("tr-{}", Uuid::new_v4().simple())
 }
 
-pub fn summarize_tool_input(tool_input: &serde_json::Value) -> String {
+pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> String {
+    if crate::turn_control_tools::is_finish_turn_tool_name(tool_name) {
+        return "Final answer".to_string();
+    }
+    if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name) {
+        return tool_input
+            .get("message")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
+            .unwrap_or_else(|| "Checkpoint".to_string());
+    }
+    if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+        return tool_input
+            .get("message")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
+            .unwrap_or_else(|| "Starting work".to_string());
+    }
+    if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name) {
+        return tool_input
+            .get("title")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
+            .unwrap_or_else(|| "HTML artifact".to_string());
+    }
+
     for key in [
         "query",
         "task",
@@ -26,6 +57,7 @@ pub fn summarize_tool_input(tool_input: &serde_json::Value) -> String {
         "module",
         "capability",
         "reference",
+        "title",
     ] {
         if let Some(value) = tool_input.get(key).and_then(|entry| entry.as_str()) {
             let trimmed = value.trim();
@@ -41,14 +73,38 @@ pub fn summarize_tool_input(tool_input: &serde_json::Value) -> String {
 }
 
 pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -> Option<String> {
+    if crate::turn_control_tools::is_finish_turn_tool_name(tool_name) {
+        return tool_output
+            .get("reason")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
+            .or_else(|| Some("Committed final answer".to_string()));
+    }
+    if crate::turn_control_tools::is_checkpoint_turn_tool_name(tool_name) {
+        return Some("Checkpoint sent".to_string());
+    }
+    if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
+        return Some("Progress noted".to_string());
+    }
+    if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name) {
+        if matches!(tool_output.get("ok").and_then(|value| value.as_bool()), Some(false)) {
+            return tool_output
+                .get("error")
+                .and_then(|value| value.as_str())
+                .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS));
+        }
+        return tool_output
+            .get("label")
+            .and_then(|value| value.as_str())
+            .map(|label| format!("Presented {label}"));
+    }
+
     if let Some(hint) = turn_context::compact_tool_receipt_hint(tool_name, tool_output) {
         return Some(truncate_text_for_budget(&hint, SUMMARY_MAX_CHARS));
     }
-    if let Some(error) = tool_output
-        .get("error")
-        .or_else(|| tool_output.get("message"))
-        .and_then(|value| value.as_str())
-    {
+    if let Some(error) = tool_output.get("error").and_then(|value| value.as_str()) {
         return Some(truncate_text_for_budget(error, SUMMARY_MAX_CHARS));
     }
     if tool_output.is_string() {
@@ -195,7 +251,7 @@ pub async fn emit_tool_run_started(
     tool_input: &serde_json::Value,
     tool_round: usize,
 ) {
-    let input_summary = summarize_tool_input(tool_input);
+    let input_summary = summarize_tool_input(tool_name, tool_input);
     sink.tool_run_started(
         tool_run_id.to_string(),
         tool_name.to_string(),
@@ -213,7 +269,7 @@ pub async fn emit_tool_run_finished(
     input_receipt: Option<ArtifactReceiptMeta>,
     output_receipt: Option<ArtifactReceiptMeta>,
 ) {
-    let input_summary = summarize_tool_input(&invocation.tool_input);
+    let input_summary = summarize_tool_input(&invocation.tool_name, &invocation.tool_input);
     let status = tool_status_from_output(&invocation.tool_output);
     let output_summary = summarize_tool_output(&invocation.tool_name, &invocation.tool_output);
     sink.tool_run_finished(
@@ -238,8 +294,29 @@ mod tests {
 
     #[test]
     fn summarize_tool_input_prefers_query_field() {
-        let summary = summarize_tool_input(&json!({"query": "weather in NYC", "limit": 3}));
+        let summary = summarize_tool_input(
+            "cognition_web_search",
+            &json!({"query": "weather in NYC", "limit": 3}),
+        );
         assert!(summary.contains("weather in NYC"));
+    }
+
+    #[test]
+    fn summarize_turn_finish_input_avoids_raw_json() {
+        let summary = summarize_tool_input(
+            "cognition_turn_finish",
+            &json!({"message": "Hello world", "reason": "done"}),
+        );
+        assert_eq!(summary, "Final answer");
+    }
+
+    #[test]
+    fn summarize_ui_present_output_uses_label() {
+        let summary = summarize_tool_output(
+            "cognition_ui_present",
+            &json!({"ok": true, "label": "Session Recap"}),
+        );
+        assert_eq!(summary.as_deref(), Some("Presented Session Recap"));
     }
 
     #[test]

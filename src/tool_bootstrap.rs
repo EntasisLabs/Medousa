@@ -635,6 +635,13 @@ mod tests {
     }
 
     #[test]
+    fn host_bootstrap_includes_ui_present_on_bus_allowlist() {
+        let allow = host_bus_tool_names();
+        let names = effective_tool_names("sess-ui-present", ToolSurfaceLane::Host, &allow);
+        assert!(names.contains("cognition_ui_present"));
+    }
+
+    #[test]
     fn ensure_host_defaults_unlocks_memory_and_vault() {
         let _guard = surface_test_lock();
         let session_id = format!("sess-defaults-{}", uuid::Uuid::new_v4().simple());

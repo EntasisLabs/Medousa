@@ -41,9 +41,15 @@ export function friendlyMediaUploadError(raw: string, fileName?: string): string
     return "That attachment expired. Remove it and attach the file again.";
   }
   if (
+    lower.includes("artifact not found") ||
+    lower.includes("artifact_id is required")
+  ) {
+    return "That presentation couldn't be loaded. Try asking Medousa to show it again.";
+  }
+  if (
     lower.includes("failed to read") ||
     lower.includes("no such file") ||
-    lower.includes("not found")
+    (lower.includes("not found") && !lower.includes("model"))
   ) {
     return `${prefix}Couldn't read that file. It may have moved — pick it again.`;
   }

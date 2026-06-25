@@ -260,6 +260,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition.capability.search",
             "cognition_capability_resolve",
             "cognition.capability.resolve",
+            "cognition_ui_present",
         ],
     );
 
@@ -387,5 +388,6 @@ mod tests {
         assert!(!names.contains("cognition_turn_prepare_final"));
         assert!(names.contains("cognition_turn_begin_work"));
         assert!(names.contains("cognition_turn_finish"));
+        assert!(names.contains("cognition_ui_present"));
     }
 }

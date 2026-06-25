@@ -46,6 +46,22 @@ impl CognitionUiPresentTool {
         }
     }
 
+    async fn resolve_session_id(&self) -> StasisResult<String> {
+        if let Some(scope) = self.turn_scope.read().await.as_ref() {
+            let session_id = scope.session_id.trim();
+            if !session_id.is_empty() {
+                return Ok(session_id.to_string());
+            }
+        }
+        let fallback = self.session_id.trim();
+        if !fallback.is_empty() {
+            return Ok(fallback.to_string());
+        }
+        Err(StasisError::PortFailure(
+            "session_id unavailable for ui artifact persistence".to_string(),
+        ))
+    }
+
     async fn active_surface_supports_ui_artifacts(&self) -> bool {
         self.turn_scope
             .read()
@@ -123,20 +139,19 @@ impl StasisTool for CognitionUiPresentTool {
             value.clamp(120, 1200) as u32
         });
 
-        let record = tokio::task::spawn_blocking({
-            let session_id = self.session_id.clone();
-            let title = title.to_string();
-            let html = html.to_string();
-            let presentation = presentation.to_string();
-            move || {
-                crate::artifact_store::persist_ui_artifact(
-                    &session_id,
-                    &html,
-                    &title,
-                    &presentation,
-                    height_px,
-                )
-            }
+        let session_id = self.resolve_session_id().await?;
+        let title = title.to_string();
+        let html = html.to_string();
+        let presentation = presentation.to_string();
+
+        let record = tokio::task::spawn_blocking(move || {
+            crate::artifact_store::persist_ui_artifact(
+                &session_id,
+                &html,
+                &title,
+                &presentation,
+                height_px,
+            )
         })
         .await
         .map_err(|err| StasisError::PortFailure(format!("ui present join error: {err}")))?
