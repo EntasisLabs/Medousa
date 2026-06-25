@@ -1,6 +1,5 @@
 //! Explicit main / vision / STT inference profiles (Phase 2).
 
-use serde::{Deserialize, Serialize};
 
 use crate::session::TuiDefaults;
 

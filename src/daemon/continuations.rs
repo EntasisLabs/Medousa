@@ -1,17 +1,9 @@
 //! Turn continuation status, lineage, and replay-and-resume handlers.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
 
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::Json;
-use chrono::Utc;
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::sync::broadcast;
-use uuid::Uuid;
 
 use crate::daemon::heartbeat::{safe_process_once, safe_publish_pending_events};
 use crate::daemon::ingest::{job_succeeded, maybe_resume_agent_turn_from_child_job};
@@ -21,7 +13,7 @@ use crate::daemon_api::{
 };
 
 use crate::daemon::http::internal_error;
-use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::daemon::state::AppState;
 
 pub async fn continuation_status(_state: State<AppState>) -> Json<ContinuationStatusResponse> {
     let snapshot = crate::turn_continuation::continuation_snapshot().await;

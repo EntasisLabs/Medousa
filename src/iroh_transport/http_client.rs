@@ -4,7 +4,6 @@ use anyhow::{Context as AnyhowContext, Result, bail};
 use httparse::{Response, Status, EMPTY_HEADER};
 use iroh::{Endpoint, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::OnceCell;
 
 use super::ALPN;

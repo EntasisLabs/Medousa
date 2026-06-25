@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
@@ -125,15 +125,6 @@ impl TurnWorkerStore {
             return;
         };
         *self.records.lock().expect("turn worker records") = map;
-    }
-
-    fn write_map(map: &HashMap<String, TurnWorkRecord>) -> std::io::Result<()> {
-        let path = Self::path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let body = serde_json::to_string_pretty(map)?;
-        fs::write(path, body)
     }
 
     fn persist(&self, work_id: &str, stasis_job_id: Option<&str>) {

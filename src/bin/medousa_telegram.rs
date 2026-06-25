@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use medousa::{
-    AdapterDeliveryOutcome, IngestRequest, IngestResponse, default_delivery_timeout,
+    AdapterDeliveryOutcome, IngestRequest, default_delivery_timeout,
     format_ingest_ack, wait_for_ask_delivery, resolve_daemon_url,
 };
 use medousa::channel_delivery::{format_for_telegram_markdown_v2, truncate_for_telegram};

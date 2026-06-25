@@ -1,17 +1,10 @@
 //! Health, stats, runtime defaults, and runtime command handlers.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
 
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use chrono::Utc;
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::sync::broadcast;
-use uuid::Uuid;
 
 use crate::daemon::heartbeat::{build_heartbeat_status_response, safe_stats_snapshot};
 use stasis::prelude::RuntimeSdk;
@@ -22,7 +15,7 @@ use crate::daemon_api::{
 };
 
 use crate::daemon::http::internal_error;
-use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::daemon::state::AppState;
 
 fn active_profile_snapshot(
     registry: &crate::user_profiles::UserProfileRegistry,

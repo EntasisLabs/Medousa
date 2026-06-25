@@ -75,7 +75,7 @@ pub async fn probe_local_engine_status() -> LocalEngineStatus {
 pub fn recommended_engine_config(bind: Option<String>) -> Result<LocalEngineConfig, String> {
     let profile = super::hardware::read_hardware_profile()
         .unwrap_or_else(|| super::hardware::build_hardware_profile(super::hardware::probe_hardware()));
-    let catalog = super::catalog::builtin_catalog();
+    let _catalog = super::catalog::builtin_catalog();
     let entry = super::catalog::recommended_model_for_tier(profile.tier).ok_or_else(|| {
         format!(
             "no recommended model for hardware tier {}",

@@ -2,7 +2,6 @@
 //!
 //! Design: docs/internal/runtime-tools-roadmap.md
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::workflow::{WorkflowRunRequest, WorkflowStepSpec};

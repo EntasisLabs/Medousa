@@ -275,7 +275,7 @@ pub async fn get_grapheme_lifecycle() -> Json<GraphemeLifecycleResponse> {
 }
 
 pub fn grapheme_router(state: GraphemeApiState) -> axum::Router {
-    use axum::routing::{get, post, put};
+    use axum::routing::{get, post};
 
     axum::Router::new()
         .route(

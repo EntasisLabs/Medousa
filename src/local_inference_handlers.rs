@@ -11,7 +11,7 @@ use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
 use crate::local_inference::{
-    build_hardware_profile, builtin_catalog, compiled_backends, config_from_catalog_entry,
+    build_hardware_profile, builtin_catalog, compiled_backends,
     filter_catalog_for_tier, probe_hardware, read_hardware_profile,
     resolve_inference_device, write_hardware_profile, CatalogModelEntry, HardwareProfile,
     HardwareTier, InstalledModelRecord, LocalEngineStatus, ModelDownloadProgress, MODEL_STORE,
@@ -151,7 +151,7 @@ async fn local_model_download_status(
 async fn local_model_download_events(
     Path(job_id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, (axum::http::StatusCode, String)> {
-    let mut rx = MODEL_STORE
+    let rx = MODEL_STORE
         .subscribe_job_async(&job_id)
         .await
         .ok_or_else(|| internal_error(format!("unknown download job: {job_id}")))?;

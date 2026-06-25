@@ -22,14 +22,18 @@ Options:
   --target <triple>     Rust target triple (default: host)
   --output <dir>        Staging directory (default: dist/build/<target>)
   --print-target        Print resolved target triple and exit
-  --with-local-brain    Also build medousa_local into staging local-brain/ subdirectory (default: on)
-  --without-local-brain Skip medousa_local package build
+  --with-local-brain    Also build medousa_local into <output>/bin/ (default: on)
+  --without-local-brain Skip medousa_local (mistralrs) build
   --without-iroh        Omit iroh-transport (LAN-only pairing)
   --with-iroh           Include iroh-transport (default)
   -h, --help            Show this help
 
-Builds root workspace binaries + medousa_whatsapp, copies into <output>/bin/.
-Offline brain (Gemma) is medousa_local — built via --with-local-brain, not embedded in medousa_daemon.
+Builds all release binaries into <output>/bin/:
+  medousa, medousa_cli, medousa_daemon, medousa_tui, channel adapters, medousa_mcp_gateway, medousa_whatsapp
+
+By default also builds medousa_local (offline brain) into the same <output>/bin/ and packages
+a separate medousa_local-*.tar.gz. Use --without-local-brain to skip the slow mistralrs build.
+
 Iroh gateway is on at runtime when built with iroh-transport (opt out with MEDOUSA_IROH=0).
 EOF
 }
@@ -104,6 +108,9 @@ VERSION="$(medousa_version)"
 medousa_log "building medousa v${VERSION} for ${TARGET}"
 medousa_log "staging → ${BIN_DIR}"
 
+medousa_log "phase 1/2: building CLI + daemon + channels (${#MEDOUSA_BINARIES[@]} binaries)…"
+medousa_log "  bins: ${MEDOUSA_BINARIES[*]}"
+
 CARGO_BUILD_ARGS=(--release)
 CARGO_FEATURES=()
 if [[ "${WITH_IROH}" -eq 1 ]]; then
@@ -118,7 +125,7 @@ if [[ -n "${TARGET}" ]]; then
   CARGO_BUILD_ARGS+=(--target "${TARGET}")
 fi
 
-medousa_log "cargo build (root workspace, release, slim engine bins)…"
+medousa_log "phase 1/2: cargo build (root workspace, release)…"
 cargo build "${CARGO_BUILD_ARGS[@]}" \
   --bin medousa \
   --bin medousa_cli \
@@ -139,6 +146,7 @@ cargo build "${WA_BUILD_ARGS[@]}"
 MAIN_RELEASE="$(medousa_cargo_release_dir "${TARGET}")"
 WA_RELEASE="$(medousa_whatsapp_cargo_release_dir "${TARGET}")"
 
+medousa_log "phase 1/2: staging release binaries → ${BIN_DIR}"
 for bin in "${MEDOUSA_BINARIES[@]}"; do
   src=""
   if [[ "${bin}" == "medousa_whatsapp" ]]; then
@@ -165,9 +173,24 @@ MEDOUSA_WITH_IROH=${WITH_IROH}
 MEDOUSA_WITH_LOCAL_BRAIN=${WITH_LOCAL_BRAIN}
 EOF
 
-medousa_log "done — $(find "${BIN_DIR}" -type f | wc -l | tr -d ' ') binaries in ${BIN_DIR}"
+medousa_log "phase 1/2 complete — $(find "${BIN_DIR}" -type f | wc -l | tr -d ' ') binaries in ${BIN_DIR}"
 
 if [[ "${WITH_LOCAL_BRAIN}" -eq 1 ]]; then
-  "${SCRIPT_DIR}/build-local-brain.sh" --target "${TARGET}" --output "${ROOT}/dist/build-local-brain/${TARGET}"
-  "${SCRIPT_DIR}/package-local-brain.sh" --target "${TARGET}" --input "${ROOT}/dist/build-local-brain/${TARGET}"
+  BRAIN_STAGING="${ROOT}/dist/build-local-brain/${TARGET}"
+  medousa_log "phase 2/2: building medousa_local offline brain (mistralrs — slow, separate from daemon)…"
+  "${SCRIPT_DIR}/build-local-brain.sh" --target "${TARGET}" --output "${BRAIN_STAGING}"
+  BRAIN_SRC="${BRAIN_STAGING}/bin/$(medousa_binary_filename medousa_local "${TARGET}")"
+  if [[ ! -f "${BRAIN_SRC}" ]]; then
+    echo "error: medousa_local missing after build-local-brain: ${BRAIN_SRC}" >&2
+    exit 1
+  fi
+  cp -f "${BRAIN_SRC}" "${BIN_DIR}/$(medousa_binary_filename medousa_local "${TARGET}")"
+  chmod +x "${BIN_DIR}/$(medousa_binary_filename medousa_local "${TARGET}")" 2>/dev/null || true
+  medousa_log "  medousa_local → ${BIN_DIR}"
+  "${SCRIPT_DIR}/package-local-brain.sh" --target "${TARGET}" --input "${BRAIN_STAGING}"
+  medousa_log "phase 2/2 complete — medousa_local in ${BIN_DIR} + separate brain tarball in dist/"
+else
+  medousa_log "skipping phase 2 (medousa_local) — pass --with-local-brain or omit --without-local-brain"
 fi
+
+medousa_log "done — $(find "${BIN_DIR}" -type f | wc -l | tr -d ' ') binaries in ${BIN_DIR}"

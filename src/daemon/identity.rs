@@ -1,19 +1,11 @@
 //! Identity memory and user profile HTTP handlers.
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 
-use axum::extract::{Path as AxumPath, Query, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
-use chrono::Utc;
-use serde::Deserialize;
-use serde_json::Value;
-use tokio::sync::broadcast;
-use uuid::Uuid;
 
-use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::ports::outbound::memory::identity_memory_models::{
     CommitEntityUpdateRequest, CommitEntityUpdateResponse, GetIdentityContextResponse,
     ListEntityHistoryRequest, ListEntityHistoryResponse, ProposeEntityUpdateRequest,
@@ -35,13 +27,13 @@ use crate::daemon_api::{
 };
 
 use crate::daemon::http::internal_error;
-use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::daemon::state::AppState;
 
 pub(crate) struct ResolvedIdentityContext {
     pub user_id: String,
     pub summary: String,
 }
-pub async fn resolve_identity_context_for_request(
+pub(crate) async fn resolve_identity_context_for_request(
     state: &AppState,
     user_id_override: Option<&str>,
     persona_id_override: Option<&str>,

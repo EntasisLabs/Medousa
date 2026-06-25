@@ -209,7 +209,6 @@ trait SessionCatalogStore: Send + Sync {
     fn upsert_row(&self, row: &SessionCatalogRow);
     fn delete_row(&self, session_id: &str);
     fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow>;
-    fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow>;
     fn list_rows_page(
         &self,
         limit: usize,
@@ -330,32 +329,6 @@ impl SessionCatalogStore for FileSessionCatalogStore {
         let path = catalog_path(session_id);
         let raw = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&raw).ok()
-    }
-
-    fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow> {
-        let dir = catalog_dir();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-
-        let mut rows = entries
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("json")
-            })
-            .filter_map(|entry| {
-                let raw = std::fs::read_to_string(entry.path()).ok()?;
-                serde_json::from_str::<SessionCatalogRow>(&raw).ok()
-            })
-            .collect::<Vec<_>>();
-
-        rows.sort_by(|a, b| b.last_activity_at.cmp(&a.last_activity_at));
-        rows.truncate(limit.max(1));
-        rows
     }
 
     fn list_rows_page(
@@ -566,26 +539,6 @@ impl SessionCatalogStore for SurrealSessionCatalogStore {
             .take::<Vec<SessionCatalogRow>>(0)
             .ok()
             .and_then(|rows| rows.into_iter().next())
-    }
-
-    fn list_rows(&self, limit: usize) -> Vec<SessionCatalogRow> {
-        let sql = "SELECT * FROM type::table($table) \
-                   ORDER BY last_activity_at DESC \
-                   LIMIT $limit";
-        let mut response = match block_on(
-            self.db
-                .query(sql)
-                .bind(("table", SESSION_CATALOG_TABLE))
-                .bind(("limit", limit.max(1) as i64)),
-        ) {
-            Ok(response) => response,
-            Err(err) => {
-                eprintln!("SurrealSessionCatalogStore::list_rows error: {err}");
-                return Vec::new();
-            }
-        };
-
-        response.take(0).unwrap_or_default()
     }
 
     fn list_rows_page(

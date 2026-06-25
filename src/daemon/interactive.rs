@@ -1,7 +1,5 @@
 //! Interactive turns, turn tickets, and session active-turn handlers.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path as AxumPath, Query, State};
@@ -9,14 +7,13 @@ use axum::http::StatusCode;
 use axum::Json;
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::Value;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use std::convert::Infallible;
 
-use axum::response::sse::{{Event, KeepAlive, Sse}};
-use futures_util::stream::{{self, Stream}};
+use axum::response::sse::{Event, Sse};
+use futures_util::stream::Stream;
 use crate::channel_delivery;
 use crate::daemon::ingest::{publish_interactive_turn_event, record_job_delivery_pending, resolve_api_model_routing, resolve_session_runtime_config, stream_events_from_registry};
 use crate::daemon_api::{
@@ -24,8 +21,7 @@ use crate::daemon_api::{
     SessionActiveTurnsResponse, SessionDeleteQuery, SessionDeleteResponse, TurnTicketRecord, TurnTicketResponse,
 };
 
-use crate::daemon::http::internal_error;
-use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::daemon::state::AppState;
 
 fn ticket_record_from_ticket(ticket: &crate::turn_ticket::TurnTicket) -> TurnTicketRecord {
     TurnTicketRecord {
@@ -154,7 +150,7 @@ pub async fn spawn_turn_ticket(
     let stream_registry = state.interactive_turn_streams.clone();
     let turn_tickets = state.turn_tickets.clone();
     let cancelled_interactive_turns = state.cancelled_interactive_turns.clone();
-    let composition = state.composition().clone();
+    let _composition = state.composition().clone();
     let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let delivery_records = state.job_delivery_records.clone();

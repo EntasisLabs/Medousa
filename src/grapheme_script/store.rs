@@ -134,8 +134,8 @@ impl GraphemeScriptStore {
         }
 
         fs::create_dir_all(Self::scripts_dir())?;
+        let absolute = Self::body_path_for(&id);
         let body_path = format!("{SCRIPTS_DIR}/{id}.grapheme");
-        let absolute = Self::root_dir().join(&body_path);
         ensure_within_root(&Self::root_dir(), &absolute)?;
         fs::write(&absolute, body)?;
 

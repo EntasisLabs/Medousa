@@ -6,7 +6,6 @@ use std::sync::OnceLock;
 use grapheme_compiler::{Compiler, CompilerOptions};
 use grapheme_runtime::{CompatibilityMode, LoadModuleRequest, ModuleAbi, ModuleLifecycleEvent};
 use grapheme_sdk::{GraphemeEngine, GraphemeRuntimeSession, GraphemeSdkError};
-use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::capability_catalog::{grapheme_allowed_modules, set_grapheme_allowed_modules};

@@ -40,7 +40,7 @@ use super::system_prompt::DEFAULT_SYSTEM_PROMPT;
 use super::turn_budget::{
     emit_orchestration_summary, try_consume_classifier_budget, try_consume_continuation_budget,
     try_consume_prompt_only_budget, try_consume_retry_budget, try_consume_tool_loop_budget,
-    turn_budget_for_lane, TurnBudget, TurnOrchestrationState,
+    turn_budget_for_lane, TurnOrchestrationState,
 };
 use super::turn_completion::ToolLoopCompletionGate;
 use super::turn_ledger::append_tool_loop_policy;

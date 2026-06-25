@@ -14,8 +14,6 @@ use crate::daemon_api::resolve_daemon_url;
 use crate::local_inference::DEFAULT_LOCAL_ENGINE_BIND;
 use crate::DEFAULT_MEDOUSA_LOCAL_BASE_URL;
 
-const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
-
 fn local_models_client(daemon_url: &str) -> BlockingLocalModelsClient {
     BlockingLocalModelsClient::new(daemon_url.trim_end_matches('/'))
 }

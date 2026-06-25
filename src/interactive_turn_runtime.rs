@@ -146,7 +146,7 @@ struct StreamMessages {
     debug_message: Option<String>,
 }
 
-pub fn classify_stream_messages(phase: &str, message: &str) -> StreamMessages {
+fn classify_stream_messages(phase: &str, message: &str) -> StreamMessages {
     let trimmed = message.trim();
     if trimmed.is_empty() {
         return StreamMessages::default();

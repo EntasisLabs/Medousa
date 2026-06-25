@@ -1,6 +1,4 @@
-use std::str::FromStr;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 pub use super::http_client::{IrohHttpBody, IrohHttpResponse, iroh_http_get_text, iroh_http_request};
 

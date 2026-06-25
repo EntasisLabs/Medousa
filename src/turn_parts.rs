@@ -1,7 +1,6 @@
 //! Ordered turn timeline parts (P3 presentation envelope).
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 pub use medousa_types::turn::{TurnArtifactRef, TurnPart};
 

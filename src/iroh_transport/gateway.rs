@@ -7,7 +7,6 @@ use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
 use iroh::{Endpoint, SecretKey, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
-use tokio::io::AsyncWriteExt;
 
 use super::ALPN;
 

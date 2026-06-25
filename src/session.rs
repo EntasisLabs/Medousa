@@ -1,12 +1,9 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use medousa_types::session::{ConversationTurn, SessionHistorySummary, TuiDefaults};
 
-use crate::turn_parts::TurnPart;
 
 const API_KEY_SERVICE: &str = "medousa.tui";
 const API_KEY_ACCOUNT: &str = "api_key";

@@ -3,9 +3,12 @@
 //! OpenAI-compatible loopback server on `:7421`. Model download/catalog is
 //! handled via the daemon's `/v1/local/*` APIs; this binary only runs mistralrs.
 
+#[cfg(feature = "embedded-inference")]
 use std::env;
+#[cfg(feature = "embedded-inference")]
 use std::sync::Arc;
 
+#[cfg(feature = "embedded-inference")]
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "embedded-inference")]

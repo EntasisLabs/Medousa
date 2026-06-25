@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -597,16 +597,18 @@ fn sanitize_session_filename(session_id: &str) -> String {
         .collect()
 }
 
-fn surface_test_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("tool surface test lock")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::{Mutex, OnceLock};
+
+    fn surface_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("tool surface test lock")
+    }
 
     #[test]
     fn bootstrap_host_tools_are_small() {

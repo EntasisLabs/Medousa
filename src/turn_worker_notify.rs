@@ -14,7 +14,6 @@ use crate::channel_delivery::{
     self, ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState, is_external_push_channel,
     is_home_channel,
 };
-use crate::turn_continuation::StoredDeliveryTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnWorkerSpawnNotifyPayload {

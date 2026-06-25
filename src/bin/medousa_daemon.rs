@@ -3,12 +3,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
-use axum::Router;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use medousa::daemon::heartbeat::{
-    HeartbeatDeliveryMetrics, HeartbeatDeliveryPolicy, HeartbeatDispatchDecision,
-    HeartbeatNotifyConfig, SchedulerHeartbeatContext, SchedulerTickSideEffects, TickReport,
+    HeartbeatDeliveryMetrics, HeartbeatDispatchDecision, SchedulerHeartbeatContext, SchedulerTickSideEffects,
     build_operator_first_run_guide, decide_heartbeat_dispatch, dispatch_heartbeat_notifications,
     format_tick_report, heartbeat_dispatch_decision_label, parse_heartbeat_delivery_policy,
     parse_heartbeat_notify_config, parse_heartbeat_policy, run_scheduler_loop, tick_runtime,
@@ -17,13 +15,10 @@ use medousa::daemon::ingest::{
     job_succeeded, maybe_resume_agent_turn_from_child_job, resolve_api_model_routing,
 };
 use medousa::daemon::router::{
-    DashboardActionAuthConfig, build_daemon_router, parse_dashboard_action_auth,
+    build_daemon_router, parse_dashboard_action_auth,
 };
 use medousa::daemon::state::AppState;
 use medousa::daemon_api::DEFAULT_DAEMON_BIND;
-use medousa::engine_context::{
-    EngineExecutionLane, compile_default_lane_prompt, default_heartbeat_lane_policy,
-};
 use medousa::session_mapping;
 use medousa::user_profiles::UserProfileRegistry;
 use medousa::{
@@ -33,7 +28,6 @@ use medousa::{
 use async_trait::async_trait;
 use tokio::sync::{RwLock, watch};
 
-use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 
 struct DaemonSchedulerSideEffects {
     state: AppState,
@@ -486,10 +480,6 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
     args.get(idx + 1).map(|s| s.as_str())
 }
 
-fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
-    compile_default_lane_prompt(lane, prompt)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -514,9 +504,15 @@ mod tests {
     };
 
     use medousa::engine_context::{
-        HeartbeatAction, LaneSafetyActionClass, default_heartbeat_lane_policy,
+        EngineExecutionLane, HeartbeatAction, LaneSafetyActionClass,
+        default_heartbeat_lane_policy,
     };
-    use super::{EngineExecutionLane, compile_lane_prompt, parse_backend};
+    use super::parse_backend;
+    use medousa::engine_context::compile_default_lane_prompt;
+
+    fn compile_lane_prompt(lane: EngineExecutionLane, prompt: &str) -> String {
+        compile_default_lane_prompt(lane, prompt)
+    }
     use axum::http::StatusCode;
     use axum::Router;
     use medousa::channel_delivery::extract_output_text_from_diagnostics;

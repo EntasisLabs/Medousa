@@ -15,7 +15,7 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
-use stasis::application::runtime::runtime_factory::{RuntimeComposition, RuntimeFactory};
+use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use stasis::prelude::{BackoffPolicy, NewJob};
 use stasis::domain::runtime::job::Job;
 use stasis::ports::outbound::runtime::workflow_engine::WorkflowEngine;

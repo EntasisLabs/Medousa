@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use medousa::channel_delivery::truncate_for_slack;
 use medousa::{
-    AdapterDeliveryOutcome, IngestRequest, IngestResponse, default_delivery_timeout,
+    AdapterDeliveryOutcome, IngestRequest, default_delivery_timeout,
     format_ingest_ack, resolve_daemon_url, wait_for_ask_delivery,
 };
 use medousa_sdk::{HttpTransport, MedousaClient};

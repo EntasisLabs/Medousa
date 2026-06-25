@@ -3,8 +3,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::session::{ConversationTurn, load_history, list_history_sessions_page};

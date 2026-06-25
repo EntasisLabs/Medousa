@@ -110,7 +110,7 @@ use perf::{
     mark_ui_activity, note_frame_rendered,
 };
 use settings_runtime::{
-    apply_env_overrides, apply_settings, finalize_settings_apply_if_ready,
+    apply_settings, finalize_settings_apply_if_ready,
     handle_runtime_env_key_event, handle_settings_key_event, next_ui_wake_delay,
 };
 use slash_commands::handle_slash_command;

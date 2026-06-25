@@ -78,21 +78,15 @@ pub fn cuda_device_present() -> bool {
 }
 
 pub fn detect_gpu_backend() -> GpuBackend {
-    #[cfg(all(
-        target_os = "macos",
-        target_arch = "aarch64",
-        feature = "embedded-inference-metal"
-    ))]
-    {
-        return GpuBackend::Metal;
-    }
-
     #[cfg(all(target_os = "macos", feature = "embedded-inference-metal"))]
-    {
-        // Intel Mac — Metal may exist; mistral.rs metal feature covers Apple GPU path.
-        return GpuBackend::Metal;
-    }
+    return GpuBackend::Metal;
 
+    #[cfg(not(all(target_os = "macos", feature = "embedded-inference-metal")))]
+    return detect_non_metal_gpu_backend();
+}
+
+#[cfg(not(all(target_os = "macos", feature = "embedded-inference-metal")))]
+fn detect_non_metal_gpu_backend() -> GpuBackend {
     #[cfg(feature = "embedded-inference-cuda")]
     if cuda_device_present() || force_cuda_from_env() {
         return GpuBackend::Cuda;
