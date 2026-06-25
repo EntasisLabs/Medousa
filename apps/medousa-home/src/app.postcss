@@ -1,8 +1,9 @@
+@import "./lib/styles/chat-mobile-tokens.postcss";
+@import "./lib/styles/markdown-tokens.postcss";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import "./lib/styles/chat-mobile-tokens.postcss";
 
 @layer base {
   html,
@@ -2357,11 +2358,11 @@
 
   .markdown-inline-code,
   .markdown-content :not(pre) > code {
-    @apply rounded bg-surface-700 px-1 font-mono text-[0.9em] text-surface-100;
+    @apply rounded px-1 font-mono text-[0.9em];
   }
 
   .markdown-content a {
-    @apply text-primary-300 hover:underline;
+    @apply hover:underline;
   }
 
   .markdown-highlight,
@@ -2484,23 +2485,28 @@
   }
 
   .markdown-code-block {
-    @apply my-3 max-w-full min-w-0 overflow-hidden rounded-md border border-surface-500/40 bg-surface-900;
+    @apply my-3 max-w-full min-w-0 overflow-hidden rounded-lg;
+    background-color: rgb(var(--md-code-bg)) !important;
+    border: 1px solid rgb(var(--md-code-border)) !important;
+    box-shadow: var(--md-code-shadow) !important;
   }
 
   .markdown-code-header {
-    @apply flex min-w-0 items-center justify-between gap-2 border-b border-surface-500/35 px-2 py-1;
+    @apply flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5;
+    background-color: rgb(var(--md-code-header-bg)) !important;
+    border-bottom: 1px solid rgb(var(--md-code-border)) !important;
   }
 
   .markdown-code-lang {
-    @apply min-w-0 truncate px-1 font-mono text-[10px] uppercase tracking-wide text-surface-500;
+    @apply min-w-0 truncate px-1 font-mono text-[10px] uppercase tracking-wide;
   }
 
   .markdown-code-lang-muted {
-    @apply normal-case tracking-normal text-surface-600;
+    @apply normal-case tracking-normal;
   }
 
   .markdown-code-copy {
-    @apply shrink-0 rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-surface-400 transition hover:bg-surface-700/60 hover:text-surface-100;
+    @apply shrink-0 rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition;
   }
 
   .markdown-code-copy-done {
@@ -2508,122 +2514,18 @@
   }
 
   .markdown-pre {
-    @apply overflow-x-hidden px-3 py-2.5;
+    @apply overflow-x-hidden px-3 py-3;
+    background-color: rgb(var(--md-code-bg));
   }
 
   .markdown-code {
-    @apply block bg-transparent font-mono text-xs leading-relaxed text-surface-200;
+    @apply block bg-transparent font-mono text-[13px] leading-relaxed;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
   }
 
-  .markdown-code .hljs-comment,
-  .markdown-code .hljs-quote {
-    @apply italic text-surface-500;
-  }
-
-  .markdown-code .hljs-keyword,
-  .markdown-code .hljs-selector-tag,
-  .markdown-code .hljs-built_in,
-  .markdown-code .hljs-meta .hljs-keyword {
-    @apply text-primary-300/90;
-  }
-
-  .markdown-code .hljs-string,
-  .markdown-code .hljs-regexp,
-  .markdown-code .hljs-template-tag,
-  .markdown-code .hljs-template-variable {
-    @apply text-success-300/85;
-  }
-
-  .markdown-code .hljs-number,
-  .markdown-code .hljs-literal {
-    @apply text-warning-300/80;
-  }
-
-  .markdown-code .hljs-title,
-  .markdown-code .hljs-section,
-  .markdown-code .hljs-name,
-  .markdown-code .hljs-type {
-    @apply text-surface-50;
-  }
-
-  .markdown-code .hljs-attr,
-  .markdown-code .hljs-attribute,
-  .markdown-code .hljs-variable,
-  .markdown-code .hljs-params {
-    @apply text-primary-200/85;
-  }
-
-  .markdown-code .hljs-function,
-  .markdown-code .hljs-title.function_ {
-    @apply text-surface-100;
-  }
-
-  .markdown-code .hljs-symbol,
-  .markdown-code .hljs-bullet,
-  .markdown-code .hljs-link,
-  .markdown-code .hljs-meta {
-    @apply text-surface-400;
-  }
-
-  .markdown-code .hljs-emphasis {
-    @apply italic text-surface-300;
-  }
-
-  .markdown-code .hljs-strong {
-    @apply font-semibold text-surface-100;
-  }
-
-  .markdown-code .hljs-addition {
-    @apply text-success-300/90;
-    background-color: rgb(var(--color-success-500) / 0.08);
-  }
-
-  .markdown-code .hljs-deletion {
-    @apply text-error-300/90;
-    background-color: rgb(var(--color-error-500) / 0.08);
-  }
-
-  html:not(.dark) .markdown-code {
-    @apply text-surface-800;
-  }
-
-  html:not(.dark) .markdown-code .hljs-comment,
-  html:not(.dark) .markdown-code .hljs-quote {
-    @apply text-surface-500;
-  }
-
-  html:not(.dark) .markdown-code .hljs-keyword,
-  html:not(.dark) .markdown-code .hljs-selector-tag,
-  html:not(.dark) .markdown-code .hljs-built_in,
-  html:not(.dark) .markdown-code .hljs-meta .hljs-keyword {
-    @apply text-primary-700/90;
-  }
-
-  html:not(.dark) .markdown-code .hljs-string,
-  html:not(.dark) .markdown-code .hljs-regexp {
-    @apply text-success-700/85;
-  }
-
-  html:not(.dark) .markdown-code .hljs-number,
-  html:not(.dark) .markdown-code .hljs-literal {
-    @apply text-warning-700/80;
-  }
-
-  html:not(.dark) .markdown-code .hljs-title,
-  html:not(.dark) .markdown-code .hljs-section,
-  html:not(.dark) .markdown-code .hljs-name,
-  html:not(.dark) .markdown-code .hljs-type {
-    @apply text-surface-900;
-  }
-
-  html:not(.dark) .markdown-code .hljs-attr,
-  html:not(.dark) .markdown-code .hljs-attribute,
-  html:not(.dark) .markdown-code .hljs-variable {
-    @apply text-primary-800/85;
-  }
+  /* Syntax token colors live in markdown-tokens.postcss */
 
   /* Mobile shell (M8) */
   .mobile-shell {
@@ -4528,10 +4430,11 @@
     text-shadow: 0 0 8px rgb(var(--color-primary-500) / 0.25);
   }
 
-  html[data-theme="black-lily"] .markdown-content code:not(pre code) {
+  html.dark[data-theme="black-lily"] .markdown-content code:not(pre code) {
     @apply text-primary-300;
     background-color: rgb(var(--color-primary-500) / 0.16);
     border: 1px solid rgb(var(--color-primary-500) / 0.28);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
   }
 
   html[data-theme="black-lily"] .chat-composer-bar:focus-within {
