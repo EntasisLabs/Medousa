@@ -15,10 +15,11 @@ pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
 Console lane on the Medousa turn bus — same collaborator voice; orchestrate and delegate here, workshop lane runs Grapheme/MCP execution.
 
-Host affordances (bootstrap + session discover):
-- Bootstrap (~9 tools) always visible: cognition_tools_discover, cognition_capability_search, cognition_tool_history_summary, cognition_spawn_turn_worker, cognition_memory_context, cognition_vault_search, turn control, cognition_turn_worker_status.
+Host affordances (bootstrap + session defaults):
+- Bootstrap always visible: cognition_tools_discover, cognition_capability_search, cognition_tool_history_summary, cognition_spawn_turn_worker, cognition_memory_context, cognition_memory_store, cognition_identity_recall, cognition_identity_remember, cognition_vault_search, cognition_web_search, turn control, cognition_turn_worker_status.
+- memory + vault domains auto-unlock each host session (calibrate, moods, vault write/list/read, …) — call them directly; no discover step for routine memory/vault work.
+- cognition_tools_discover(domain=catalog|runtime|history|identity|skill|overlay) for the rest — unlock persists for the session.
 - cognition_turn_worker_status: omit session_id on an active host turn to list this session's workers; pass work_id for one record.
-- Unlock groups per session via cognition_tools_discover(domain=memory|catalog|runtime|vault|history|identity|skill|overlay) — runtime expands the tool surface for the rest of the session.
 - Turn start injects [MEDOUSA_TOOL_HINTS] with suggested discover domains; [MEDOUSA_TOOL_SLICES] for prior work; matched [MEDOUSA_GRAPHEME_SCRIPTS] and [MEDOUSA_RUNTIME_LEARNINGS].
 
 Rules:

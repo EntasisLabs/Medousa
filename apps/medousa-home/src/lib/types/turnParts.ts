@@ -10,6 +10,7 @@ export interface TurnArtifactRef {
 
 export type TurnPart =
   | { kind: "text"; markdown: string }
+  | { kind: "progress"; markdown: string }
   | { kind: "reasoning"; markdown: string }
   | {
       kind: "tool_run";
@@ -78,6 +79,17 @@ export function reasoningFromParts(parts?: TurnPart[] | null): string | null {
   return chunks.length > 0 ? chunks.join("\n") : null;
 }
 
+/** Between-tool-round progress notes persisted on assistant turns (not the final answer). */
+export function progressFromParts(parts?: TurnPart[] | null): string | null {
+  if (!parts?.length) return null;
+  const chunks = parts
+    .filter((part): part is Extract<TurnPart, { kind: "progress" }> => part.kind === "progress")
+    .map((part) => part.markdown)
+    .filter((text) => text.trim().length > 0);
+  if (chunks.length === 0) return null;
+  return chunks[chunks.length - 1] ?? null;
+}
+
 export function userMediaFromParts(parts?: TurnPart[] | null): ChatMediaAttachment[] | undefined {
   if (!parts?.length) return undefined;
   const attachments = parts
@@ -105,6 +117,11 @@ export function composeTurnMarkdown(
     switch (part.kind) {
       case "text":
         sections.push(part.markdown);
+        break;
+      case "progress":
+        if (part.markdown.trim()) {
+          sections.push(`> [!note] Progress\n> ${part.markdown.replace(/\n/g, "\n> ")}`);
+        }
         break;
       case "reasoning":
         if (part.markdown.trim()) {

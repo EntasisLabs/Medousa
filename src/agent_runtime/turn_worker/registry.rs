@@ -11,7 +11,7 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
 use super::policy::tool_allowed;
-use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names};
+use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names, ensure_host_session_tool_defaults};
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
@@ -100,9 +100,11 @@ impl SessionBootstrapToolRegistry {
         session_id: impl Into<String>,
         full_allowlist: HashSet<String>,
     ) -> Self {
+        let session_id = session_id.into();
+        ensure_host_session_tool_defaults(&session_id);
         Self {
             inner,
-            session_id: session_id.into(),
+            session_id,
             lane: ToolSurfaceLane::Host,
             full_allowlist,
         }
@@ -140,7 +142,7 @@ impl ToolRegistry for SessionBootstrapToolRegistry {
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
         if !tool_allowed(tool_name, &self.effective_allowlist()) {
             return Err(StasisError::PortFailure(format!(
-                "tool not on session surface (call cognition_tools_discover to unlock): {tool_name}"
+                "tool not on session surface (call cognition_tools_discover to unlock catalog/runtime/…): {tool_name}"
             )));
         }
         self.inner.invoke_tool(tool_name, input).await

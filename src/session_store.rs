@@ -76,7 +76,17 @@ fn parts_to_json(parts: Option<&[TurnPart]>) -> Option<String> {
 }
 
 fn parts_from_json(value: Option<String>) -> Option<Vec<TurnPart>> {
-    value.and_then(|raw| serde_json::from_str(&raw).ok())
+    let raw = value?;
+    if let Ok(parts) = serde_json::from_str::<Vec<TurnPart>>(&raw) {
+        return (!parts.is_empty()).then_some(parts);
+    }
+    // Tolerant reload: keep recognized parts if the array mixed in an unknown kind.
+    let items: Vec<serde_json::Value> = serde_json::from_str(&raw).ok()?;
+    let parts = items
+        .into_iter()
+        .filter_map(|item| serde_json::from_value::<TurnPart>(item).ok())
+        .collect::<Vec<_>>();
+    (!parts.is_empty()).then_some(parts)
 }
 
 fn slice_summary_from_json(value: Option<String>) -> Option<TurnSliceSummary> {

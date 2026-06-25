@@ -111,7 +111,7 @@ flowchart TD
 - [x] `scratch_reset` clears draft buffer without deleting preserved progress
 - [x] `begin_work` used for progress; prompt/STTP reinforces prose-terminates rule
 - [x] Docs table in turn-runtime-and-lanes.md matches behavior
-- [ ] Session reload shows progress parts + final answer in timeline
+- [x] Session reload shows progress parts + final answer in timeline
 
 ---
 

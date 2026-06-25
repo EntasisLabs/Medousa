@@ -310,6 +310,7 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
                     "\n\n> [!note] Attachment: {label} ({mime})\n> `artifact:{artifact_id}`"
                 ));
             }
+            TurnPart::Unknown => {}
         }
     }
     out.trim().to_string()
@@ -369,5 +370,21 @@ mod tests {
         ]);
         assert!(markdown.contains("Answer"));
         assert!(markdown.contains("Tool: search"));
+    }
+
+    #[test]
+    fn progress_part_roundtrips_json() {
+        let parts = vec![
+            TurnPart::Progress {
+                markdown: "Pulling context…".to_string(),
+            },
+            TurnPart::Text {
+                markdown: "Final.".to_string(),
+            },
+        ];
+        let raw = serde_json::to_string(&parts).expect("serialize");
+        assert!(raw.contains("\"kind\":\"progress\""));
+        let decoded: Vec<TurnPart> = serde_json::from_str(&raw).expect("deserialize");
+        assert!(matches!(&decoded[0], TurnPart::Progress { .. }));
     }
 }

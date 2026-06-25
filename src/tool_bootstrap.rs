@@ -17,6 +17,9 @@ pub const COGNITION_TOOLS_DISCOVER: &str = "cognition_tools_discover";
 
 pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
 
+/// Host console domains unlocked at session start (no `cognition_tools_discover` step).
+pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault"];
+
 /// Always-visible host console tools (~12+).
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
@@ -298,6 +301,11 @@ pub fn bootstrap_tools(lane: ToolSurfaceLane) -> &'static [&'static str] {
     }
 }
 
+/// Unlock memory + vault on host console turns so ritual/write tools are callable without discover.
+pub fn ensure_host_session_tool_defaults(session_id: &str) {
+    let _ = unlock_session_domains(session_id, ToolSurfaceLane::Host, DEFAULT_HOST_AUTO_UNLOCK_DOMAINS);
+}
+
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
     let path = session_surface_path(session_id);
     if let Ok(raw) = fs::read_to_string(&path) {
@@ -432,7 +440,7 @@ pub fn build_tool_hints_block(
     let full_allow = host_bus_tool_names();
     let surface = load_session_tool_surface(session_id);
     let mut lines = vec![
-        "Bootstrap tools are always available; call cognition_tools_discover(domain) to unlock groups for this session.".to_string(),
+        "Bootstrap tools are always available. Host console sessions auto-unlock memory + vault domains (calibrate, vault write, …).".to_string(),
         format!(
             "Unlocked domains: {}",
             if surface.unlocked_domains.is_empty() {
@@ -617,6 +625,23 @@ mod tests {
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
+    }
+
+    #[test]
+    fn ensure_host_defaults_unlocks_memory_and_vault() {
+        let _guard = surface_test_lock();
+        let session_id = format!("sess-defaults-{}", uuid::Uuid::new_v4().simple());
+        let allow = host_bus_tool_names();
+        let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
+        assert!(!before.contains("cognition_vault_write"));
+        assert!(!before.contains("cognition_memory_calibrate"));
+
+        ensure_host_session_tool_defaults(&session_id);
+        let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
+        assert!(after.contains("cognition_vault_write"));
+        assert!(after.contains("cognition_memory_calibrate"));
+
+        let _ = fs::remove_file(session_surface_path(&session_id));
     }
 
     #[test]

@@ -25,7 +25,7 @@ import type {
 } from "$lib/types/session";
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
-import { reasoningFromParts, toolRunsFromParts, userMediaFromParts } from "$lib/types/turnParts";
+import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts } from "$lib/types/turnParts";
 import type { MediaRef } from "$lib/types/media";
 import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -2119,6 +2119,8 @@ function mapTurns(
     tools: turn.tool_names?.length ? turn.tool_names : undefined,
     toolRuns: toolRunsFromParts(turn.parts ?? null),
     reasoning: reasoningFromParts(turn.parts ?? null),
+    statusLine:
+      turn.role === "assistant" ? progressFromParts(turn.parts ?? null) : null,
     mediaAttachments: userMediaFromParts(turn.parts ?? null),
   }));
 }

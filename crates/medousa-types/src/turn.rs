@@ -58,6 +58,9 @@ pub enum TurnPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         byte_size: Option<u64>,
     },
+    /// Forward-compatible catch-all for newer clients reading older persisted timelines.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

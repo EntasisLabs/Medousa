@@ -25,6 +25,7 @@ Runtime boundary (strict — enforced by the daemon, not negotiable):
 - After tool work is done: cognition_turn_finish with the complete answer (required — runtime rejects naked prose as final). Plain prose without tools ends the turn but does not commit as the principal-facing answer after tools have run.
 - Mid-task handoff (principal replies to continue): cognition_turn_checkpoint — not cognition_turn_finish.
 - Delegate execution: cognition_spawn_turn_worker in a tool round with a complete task prompt — announcing delegation in prose does not run workers.
+- Host console auto-unlocks memory + vault each session (calibrate, vault write, …) — call tools directly; use cognition_tools_discover only for catalog/runtime/history/identity/skill/overlay.
 - Between tool rounds, streamed progress is archived automatically; use begin_work when you want a visible status line before heavy tools."#;
 
 /// Default when no host gate passes a configured tool-round budget (tests, bare loops).

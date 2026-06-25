@@ -188,7 +188,7 @@ fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
                     label.as_deref().unwrap_or(media_id.as_str())
                 }
                 TurnPart::AttachmentRef { label, .. } => label.as_str(),
-                TurnPart::ToolRun { .. } => continue,
+                TurnPart::ToolRun { .. } | TurnPart::Unknown => continue,
             };
             if let Some(line) = preview_line_from_content(text) {
                 return Some(truncate_chars(&line, max_chars));

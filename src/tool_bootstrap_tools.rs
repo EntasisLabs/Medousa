@@ -36,8 +36,8 @@ impl StasisTool for CognitionToolsDiscoverTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Unlock a tool domain for this session and return its catalog. Host domains: memory, catalog, \
-             runtime, vault, history, identity, skill, overlay. Worker domains: execute, discover, memory, \
+            "Unlock a tool domain for this session and return its catalog. Host: memory + vault auto-unlock at session start. \
+             Other host domains: catalog, runtime, history, identity, skill, overlay. Worker domains: execute, discover, memory, \
              vault, openshell, scripts. Bootstrap tools stay visible without discover.",
         )
     }

@@ -236,6 +236,7 @@ Tiered pools — do not mix user transcript, host tool transcript, and worker ha
 |------|-------|------------------------|
 | **User lane** | Final assistant answers, user messages | Yes |
 | **Host tool lane** | Tool call/result pairs, scratch, turn control | No (inner loop) |
+| **Progress slices** | Between-round prose archived as `TurnPart::Progress` in persisted `parts` | Yes (timeline metadata; surfaced as status line in Home) |
 | **Worker lane** | Handoff capsule + worker tool transcript | No |
 
 Implemented: scratchpad + host user/tool split (Phases 1–2). Formal event-loop runtime (Ph 3+) still planned — [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md).
