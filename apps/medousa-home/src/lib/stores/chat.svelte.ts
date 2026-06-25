@@ -1620,10 +1620,14 @@ export class ChatStore {
     }
 
     if (event.event_type === "scratch_reset") {
+      const preserved =
+        current.statusLine?.trim() ||
+        (current.content.trim() ? current.content.trim() : undefined);
       const next: ChatMessage = {
         ...current,
         content: "",
-        phase: "streaming",
+        phase: "tool_loop",
+        statusLine: preserved,
       };
       this.messages = [
         ...this.messages.slice(0, idx),

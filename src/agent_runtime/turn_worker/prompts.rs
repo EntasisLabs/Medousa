@@ -1,6 +1,7 @@
 //! Host / worker / synthesis system prompts (Phase 1).
 
 use crate::agent_runtime::system_prompt::{MEDOUSA_COLLABORATOR_VOICE, WORKER_STTP_POLICY};
+use crate::agent_runtime::turn_ledger::TURN_RUNTIME_BOUNDARY_APPENDIX;
 
 use super::policy::TurnWorkerIntent;
 
@@ -29,7 +30,13 @@ Rules:
 - On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps, HOST_TOOL_SLICES excerpt) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
 - Host may call cognition_tool_history_summary / cognition_tool_history_detail(slice_id=turn:N) to verify prior tool receipts without re-running discovery.
 - Persist runtime learnings with cognition_vault_write + tags: [runtime-learning] — turn start injects [MEDOUSA_RUNTIME_LEARNINGS]. Propose manuscript overlays with cognition_manuscript_overlay_propose (operator approves; never kernel STTP edits).
-- Turn control: answer in prose when no tools are needed; cognition_turn_begin_work for a progress line before host tools; cognition_turn_checkpoint to hand a mid-task update back to the principal (conversation continues); cognition_turn_finish when fully done; cognition_turn_request_more_rounds if the round budget is tight."#;
+- Turn control (runtime enforces prose-terminates — see [MEDOUSA_TURN_RUNTIME] in tool policy):
+  - No tools needed: answer in one prose message (ends turn).
+  - Before host tools: cognition_turn_begin_work for a progress line — not interim chat prose.
+  - Mid-task handoff: cognition_turn_checkpoint.
+  - Fully done after tools: cognition_turn_finish (required — naked prose is not committed as final).
+  - Delegate: cognition_spawn_turn_worker in the same round as discovery — not plan prose alone.
+  - Tight budget: cognition_turn_request_more_rounds."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -61,9 +68,8 @@ Memory:
 
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
-- When the result is principal-ready, call cognition_turn_finish with complete prose — host may deliver it without rewrite.
-- Otherwise return structured receipts; host synthesis integrates for the principal.
-- Use cognition_turn_begin_work only when a progress line helps before heavy tools.
+- After tools: call cognition_turn_finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
+- Use cognition_turn_begin_work for progress lines before heavy tools — not naked status prose.
 - If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
@@ -150,7 +156,7 @@ pub fn worker_system_prompt(
     format!(
         "{WORKER_STTP_POLICY}{manuscript_block}\n\n\
          [MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n\
-         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
+         {WORKER_SYSTEM_APPENDIX}\n\n{WORKER_DISCIPLINE_APPENDIX}\n\n{}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n[MEDOUSA_WORKER_CONTEXT]\n\
          session_id={session_id}\n\
          worker_intent={}\n\
          Read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] in the user prompt when present.\n\
@@ -182,7 +188,7 @@ pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_
         return base.to_string();
     }
     let mut out = format!(
-        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}"
+        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}"
     );
     if let Some(intent) = worker_intent {
         out.push('\n');

@@ -30,6 +30,11 @@ pub const COGNITION_TURN_BEGIN_WORK: &str = "cognition_turn_begin_work";
 
 pub const COGNITION_TURN_BEGIN_WORK_DOTTED: &str = "cognition.turn.begin_work";
 
+/// Principal-facing body when the model ends with prose after tools without `cognition_turn_finish`.
+pub const PROSE_REQUIRES_FINISH_STUB: &str =
+    "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
+     deliver the full summary with cognition_turn_finish.";
+
 pub struct RequestMoreRoundsPayload {
     pub requested_rounds: usize,
     pub reason: String,
@@ -120,6 +125,15 @@ pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<St
     None
 }
 
+/// Map FSM termination to the principal-visible body (stub when finish was required but missing).
+pub fn terminal_text_for_fsm_end(termination_reason: &str, draft_text: String) -> String {
+    if termination_reason == "prose_requires_finish" {
+        PROSE_REQUIRES_FINISH_STUB.to_string()
+    } else {
+        draft_text
+    }
+}
+
 pub fn request_more_rounds_from_invocations(
     invocations: &[ToolInvocation],
 ) -> Option<RequestMoreRoundsPayload> {
@@ -207,7 +221,8 @@ impl StasisTool for CognitionTurnBeginWorkTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Tell the principal you are starting tool work and what you are doing. \
-             Call alongside or before execution tools when you need a progress line — not for final answers.",
+             Call alongside execution tools when you need a progress line — not for final answers. \
+             Runtime: assistant prose without tool calls ends the turn immediately; use this tool for status instead of interim chat.",
         )
     }
 
@@ -308,7 +323,8 @@ impl StasisTool for CognitionTurnFinishTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Deliver the complete principal-facing final answer now and end this turn immediately. \
-             Use only when the task is fully done — not for mid-task updates (use cognition_turn_checkpoint).",
+             Required after tool work — naked prose without this tool ends the turn with a stub, not your draft. \
+             Mid-task updates use cognition_turn_checkpoint.",
         )
     }
 

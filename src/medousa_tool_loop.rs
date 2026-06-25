@@ -18,9 +18,8 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
 use crate::agent_runtime::turn_completion_fsm::{
-    append_assistant_draft_to_tool_lane, decide_after_tools_text_round,
-    decide_no_tool_debt_text_round, AfterToolsRoundContext, ContinueReason,
-    NoToolDebtRoundContext, TurnRoundAction,
+    decide_after_tools_text_round, decide_no_tool_debt_text_round, AfterToolsRoundContext,
+    ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
@@ -41,6 +40,7 @@ use crate::turn_control_tools::{
     is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name,
     is_prepare_final_tool_name,
     is_request_more_rounds_tool_name, request_more_rounds_from_invocations,
+    terminal_text_for_fsm_end,
     COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
 };
 
@@ -303,10 +303,6 @@ impl MedousaToolLoopPipeline {
                             .as_ref()
                             .map(|gate| gate.skip_avec_ritual_check)
                             .unwrap_or(false);
-                        let user_prompt_for_fsm = completion_gate
-                            .as_ref()
-                            .and_then(|gate| gate.handoff_parent_user_prompt.as_deref())
-                            .unwrap_or(shared_inputs.user_prompt.as_ref());
                         let action = if invocations.is_empty() {
                             decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
                                 draft_text: text.clone(),
@@ -316,19 +312,18 @@ impl MedousaToolLoopPipeline {
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
-                                user_prompt: user_prompt_for_fsm,
                                 draft_text: text.clone(),
                                 pending_final_answer,
                                 rounds_executed,
                                 max_tool_rounds: effective_max_tool_rounds,
                                 invocations: &invocations,
                                 workshop_lane,
-                                open_gaps: &turn_ctx.scratchpad.open_gaps,
                             })
                         };
 
                         match action {
                             TurnRoundAction::EndTurn { termination_reason } => {
+                                let text = terminal_text_for_fsm_end(termination_reason, text);
                                 let tools = if invocations.is_empty() {
                                     Vec::new()
                                 } else {
@@ -976,8 +971,9 @@ async fn apply_fsm_continue_loop(
             **slot = Some(turn_ctx.scratchpad.clone());
         }
     }
-    append_assistant_draft_to_tool_lane(&mut turn_ctx.tool_lane.messages, text);
-    loop_awareness.record_user_response(text);
+    if !text.trim().is_empty() {
+        loop_awareness.record_user_response(text);
+    }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
         &loop_awareness.wrap_control_body(tool_rounds_remaining, control_message),
@@ -1145,7 +1141,7 @@ mod tests {
     }
 
     #[test]
-    fn celebratory_preamble_after_tools_ends_turn() {
+    fn celebratory_preamble_after_tools_requires_finish() {
         use crate::agent_runtime::turn_completion_fsm::{
             decide_after_tools_text_round, AfterToolsRoundContext, TurnRoundAction,
         };
@@ -1166,21 +1162,33 @@ mod tests {
             },
         ];
         let action = decide_after_tools_text_round(&AfterToolsRoundContext {
-            user_prompt: "pull focused AVEC",
             draft_text: preamble.to_string(),
             pending_final_answer: false,
             rounds_executed: 3,
             max_tool_rounds: 10,
             invocations: &invocations,
             workshop_lane: false,
-            open_gaps: &[],
         });
         assert!(matches!(
             action,
             TurnRoundAction::EndTurn {
-                termination_reason: "tool_debt_complete"
+                termination_reason: "prose_requires_finish"
             }
         ));
+    }
+
+    #[test]
+    fn prose_requires_finish_substitutes_stub_for_terminal_body() {
+        use crate::turn_control_tools::{terminal_text_for_fsm_end, PROSE_REQUIRES_FINISH_STUB};
+        let text = terminal_text_for_fsm_end(
+            "prose_requires_finish",
+            "I'll summarize everything next.".to_string(),
+        );
+        assert_eq!(text, PROSE_REQUIRES_FINISH_STUB);
+        assert_eq!(
+            terminal_text_for_fsm_end("clarifying_question", "Which repo?".to_string()),
+            "Which repo?"
+        );
     }
 
     #[test]

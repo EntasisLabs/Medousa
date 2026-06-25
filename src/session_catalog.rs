@@ -182,6 +182,7 @@ fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
         for part in parts {
             let text = match part {
                 TurnPart::Text { markdown } | TurnPart::Reasoning { markdown } => markdown,
+                TurnPart::Progress { markdown } => markdown,
                 TurnPart::Handoff { text, .. } => text,
                 TurnPart::UserMedia { label, media_id, .. } => {
                     label.as_deref().unwrap_or(media_id.as_str())

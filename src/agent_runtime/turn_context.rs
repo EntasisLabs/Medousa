@@ -500,7 +500,7 @@ fn default_worker_constraints() -> Vec<String> {
         "Read HOST_TOOL_DIGESTS before capability_search, resolve, or grapheme modules search".to_string(),
         "Use session_id on all cognition_memory_* tools".to_string(),
         "Ground final worker text in tool receipts; do not invent results".to_string(),
-        "Prefer cognition_turn_finish with the full reply when fully done; cognition_turn_checkpoint for substantive mid-task updates that hand the turn to the principal; use cognition_turn_begin_work for a short progress line before heavy tools; end early when task is done".to_string(),
+        "After tools: cognition_turn_finish commits the final reply — naked prose ends the turn with a stub. cognition_turn_begin_work for progress; cognition_turn_checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
     ]
 }
 

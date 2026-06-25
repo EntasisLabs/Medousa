@@ -470,10 +470,20 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn scratch_reset(&self, _turn_id: u64) {
-        self.clear_streamed_markdown();
-        if let Ok(mut parts) = self.parts.lock() {
-            parts.scratch_reset();
+        let slice = self.streamed_markdown();
+        if !slice.trim().is_empty() {
+            if let Ok(mut parts) = self.parts.lock() {
+                parts.archive_progress_note(&slice);
+            }
+            let _ = self
+                .publish_tracked(interactive_turn_runtime::turn_progress_stream_event(
+                    &self.turn_id,
+                    slice.trim(),
+                    Vec::new(),
+                ))
+                .await;
         }
+        self.clear_streamed_markdown();
         self.publish_tracked(interactive_turn_runtime::scratch_reset_stream_event(&self.turn_id))
             .await;
     }

@@ -15,6 +15,10 @@ pub enum TurnPart {
     Text {
         markdown: String,
     },
+    /// Ephemeral-style progress captured between tool rounds (not the final answer).
+    Progress {
+        markdown: String,
+    },
     Reasoning {
         markdown: String,
     },

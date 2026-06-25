@@ -109,7 +109,7 @@ pub use vibe_signature::{default_handoff_model_avec, derive_vibe_signature};
 pub use turn_ledger::{
     TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness, TurnLoopDiscipline,
     MAX_TEXT_ONLY_STUCK_CONTINUES, USER_RESPONSE_PREVIEW_MAX_CHARS, append_tool_loop_policy,
-    append_turn_ledger_record, developer_message_for_gatekeeper_continue, persist_ledger_record,
+    append_turn_ledger_record, persist_ledger_record,
     push_turn_control_message, resolve_max_text_only_stuck_continues, stuck_turn_user_message,
 };
 pub use turn_worker::{

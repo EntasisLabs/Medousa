@@ -25,6 +25,7 @@ struct PendingToolRun {
 pub struct TurnPartsAccumulator {
     reasoning: String,
     tool_runs: Vec<PendingToolRun>,
+    progress_notes: Vec<String>,
 }
 
 impl TurnPartsAccumulator {
@@ -39,6 +40,22 @@ impl TurnPartsAccumulator {
 
     pub fn scratch_reset(&mut self) {
         self.reasoning.clear();
+    }
+
+    /// Preserve streamed prose before the next tool round clears the live draft buffer.
+    pub fn archive_progress_note(&mut self, markdown: &str) {
+        let trimmed = markdown.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if self
+            .progress_notes
+            .last()
+            .is_some_and(|last| last == trimmed)
+        {
+            return;
+        }
+        self.progress_notes.push(trimmed.to_string());
     }
 
     pub fn tool_started(
@@ -112,6 +129,9 @@ impl TurnPartsAccumulator {
         handoff: Option<(String, Option<String>)>,
     ) -> Vec<TurnPart> {
         let mut parts = self.tool_run_parts();
+        for note in std::mem::take(&mut self.progress_notes) {
+            parts.push(TurnPart::Progress { markdown: note });
+        }
         if let Some((kind, work_id)) = handoff {
             parts.push(TurnPart::Handoff {
                 handoff_kind: kind,
@@ -234,6 +254,12 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
                 }
                 out.push_str(markdown);
             }
+            TurnPart::Progress { markdown } => {
+                if !markdown.trim().is_empty() {
+                    out.push_str("\n\n> [!note] Progress\n> ");
+                    out.push_str(&markdown.replace('\n', "\n> "));
+                }
+            }
             TurnPart::Reasoning { markdown } => {
                 if !markdown.trim().is_empty() {
                     out.push_str("\n\n> [!abstract] Reasoning\n> ");
@@ -292,6 +318,21 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archive_progress_note_dedupes_and_finalize_includes_progress() {
+        let mut acc = TurnPartsAccumulator::default();
+        acc.archive_progress_note("Pulling context…");
+        acc.archive_progress_note("Pulling context…");
+        acc.tool_started("tr-1", "search", "query=rust", 1);
+        acc.tool_finished("tr-1", "succeeded", Some("3 hits".into()), vec![]);
+
+        let turn = acc.finalize_assistant_turn("Final answer.".into(), vec!["search".into()], None);
+        let parts = turn.parts.expect("parts");
+        assert!(matches!(&parts[0], TurnPart::ToolRun { .. }));
+        assert!(matches!(&parts[1], TurnPart::Progress { markdown } if markdown == "Pulling context…"));
+        assert!(matches!(&parts[2], TurnPart::Text { markdown } if markdown == "Final answer."));
+    }
 
     #[test]
     fn accumulator_builds_tool_and_text_parts() {

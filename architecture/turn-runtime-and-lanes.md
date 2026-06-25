@@ -122,17 +122,23 @@ stateDiagram-v2
     Running --> End: max_rounds fuse
 ```
 
-**Rules (simplified):**
+**Rules (prose-terminates, shipped 2026-06):**
 
 | Situation | Outcome |
 |-----------|---------|
-| Zero tool calls + normal prose | **EndTurn** |
-| Zero tool calls + interim phrasing | **ContinueLoop** (awaiting tools) |
-| After tools + missing AVEC/calibrate receipts | **ContinueLoop** |
-| Host promised delegation but no spawn yet | **ContinueLoop** (PendingDelegation) |
+| Zero tool calls + non-empty prose | **EndTurn** (`no_tools_prose` or `prose_terminates`) |
+| Zero tool calls + clarifying question | **EndTurn** (`clarifying_question`) |
+| After tools + non-empty prose (no tools this round) | **EndTurn** (`prose_requires_finish` — stub body unless clarifying question) |
+| After tools + empty prose (no tools this round) | **ContinueLoop** (`EmptyAfterTools` — control nudge only) |
 | `cognition_turn_finish` | **EndTurn** (terminal commit) |
+| `cognition_spawn_turn_worker` | **EndTurn** (delegated; host ends with ack) |
+| Max tool rounds | **EndTurn** (`max_rounds_fuse`) |
 
-**Single writer:** Terminal chat body only from `cognition_turn_finish` or FSM EndTurn — not from stream deltas or interim status.
+**Progress:** Use `cognition_turn_begin_work` (tool), not interim chat prose. Between tool rounds, streamed draft is archived to `TurnPart::Progress` before the next round.
+
+**Single writer:** Terminal chat body from `cognition_turn_finish` after tools have run; plain prose before any tools or clarifying questions after tools may commit directly. Stream deltas alone are not final.
+
+See [turn-prose-terminates-plan.md](turn-prose-terminates-plan.md).
 
 History: [archive/turn-loop-single-writer-plan.md](archive/turn-loop-single-writer-plan.md), [archive/turn-state-machine-plan.md](archive/turn-state-machine-plan.md).
 

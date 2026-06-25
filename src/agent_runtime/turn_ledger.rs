@@ -11,11 +11,21 @@ use genai::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
-use super::turn_completion::TurnCompletionVerdict;
 use super::turn_context::TurnScratchpad;
 use crate::agent_runtime::turn_completion_fsm::ContinueReason;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
+
+/// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
+pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
+Runtime boundary (strict — enforced by the daemon, not negotiable):
+- Any assistant message with NO tool calls and non-empty prose ENDS this turn immediately. The runtime will not loop for more work in the same turn.
+- Still need tools? Call them in the same model round or a later round — never stream plan-only prose ("I'll check…", "next I'll spawn workers…", "let me calibrate…").
+- Progress or status for the principal: cognition_turn_begin_work (a tool call) — not naked interim chat prose.
+- After tool work is done: cognition_turn_finish with the complete answer (required — runtime rejects naked prose as final). Plain prose without tools ends the turn but does not commit as the principal-facing answer after tools have run.
+- Mid-task handoff (principal replies to continue): cognition_turn_checkpoint — not cognition_turn_finish.
+- Delegate execution: cognition_spawn_turn_worker in a tool round with a complete task prompt — announcing delegation in prose does not run workers.
+- Between tool rounds, streamed progress is archived automatically; use begin_work when you want a visible status line before heavy tools."#;
 
 /// Default when no host gate passes a configured tool-round budget (tests, bare loops).
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
@@ -32,10 +42,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
         "{prompt}\n\n[MEDOUSA_TOOL_POLICY]\n\
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
-         Serve the principal in this turn: use tools when needed; complete prose ends the turn. \
-         Mid-task updates that hand control back to the principal: cognition_turn_checkpoint (not finish_turn). \
-         When execution belongs in the workshop, call cognition_spawn_turn_worker with resolved context — \
-         do not stop on plan prose alone. \
+         {TURN_RUNTIME_BOUNDARY_APPENDIX}\n\
          Turn start injects [MEDOUSA_TOOL_SLICES], [MEDOUSA_TOOL_HINTS], and matched [MEDOUSA_GRAPHEME_SCRIPTS]. \
          Call cognition_tools_discover(domain=…) to unlock tool groups for this session; drill history with cognition_tool_history_detail(slice_id=turn:N)."
     )
@@ -200,26 +207,6 @@ pub fn push_turn_control_message(messages: &mut Vec<ChatMessage>, body: &str) {
     )));
 }
 
-pub fn developer_message_for_gatekeeper_continue(verdict: &TurnCompletionVerdict) -> String {
-    if !verdict.missing_tools.is_empty() {
-        return format!(
-            "Receipt gap (not yet in this turn tool transcript): {}.",
-            verdict.missing_tools.join(", ")
-        );
-    }
-
-    match verdict.source {
-        "receipt_checklist" if verdict.reason.contains("prepare_final") => {
-            "State: cognition_turn_prepare_final was invoked; last draft still matched interim \
-             heuristics (not published as final)."
-                .to_string()
-        }
-        "receipt_checklist" => verdict.reason.clone(),
-        "gatekeeper_model" => format!("Completion gatekeeper (continue): {}", verdict.reason),
-        _ => verdict.reason.clone(),
-    }
-}
-
 pub fn stuck_turn_user_message(
     text_only_limit: usize,
     max_tool_rounds: usize,
@@ -234,38 +221,8 @@ pub fn stuck_turn_user_message(
     )
 }
 
-pub fn record_from_gatekeeper_continue(
-    stream_turn_id: u64,
-    verdict: &TurnCompletionVerdict,
-    rounds_executed: usize,
-    tools_invoked: &[String],
-    scratch: &TurnScratchpad,
-) -> TurnLedgerRecord {
-    let reason = if !verdict.missing_tools.is_empty() {
-        ContinueReason::MissingReceipts
-    } else if verdict.reason.contains("prepare_final") {
-        ContinueReason::PrepareFinalInterim
-    } else {
-        ContinueReason::AwaitingTools
-    };
-    record_fsm_continue(
-        stream_turn_id,
-        reason,
-        &verdict.reason,
-        &verdict.missing_tools,
-        rounds_executed,
-        tools_invoked,
-        scratch,
-    )
-}
-
-fn ledger_kind_for_continue(reason: ContinueReason) -> TurnLedgerEventKind {
-    match reason {
-        ContinueReason::MissingReceipts => TurnLedgerEventKind::ReceiptMissing,
-        ContinueReason::AwaitingTools
-        | ContinueReason::PrepareFinalInterim
-        | ContinueReason::PendingDelegation => TurnLedgerEventKind::TextOnlyContinue,
-    }
+fn ledger_kind_for_continue(_reason: ContinueReason) -> TurnLedgerEventKind {
+    TurnLedgerEventKind::TextOnlyContinue
 }
 
 pub fn record_fsm_continue(
@@ -379,7 +336,6 @@ pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_runtime::turn_completion::TurnCompletionDecision;
 
     #[test]
     fn turn_ledger_record_stamps_active_profile_id() {
@@ -443,6 +399,8 @@ mod tests {
         assert!(p.contains("cognition_tools_discover"));
         assert!(p.contains("[MEDOUSA_TOOL_HINTS]"));
         assert!(p.contains("cognition_spawn_turn_worker"));
+        assert!(p.contains("[MEDOUSA_TURN_RUNTIME]"));
+        assert!(p.contains("ENDS this turn immediately"));
     }
 
     #[test]
@@ -466,18 +424,5 @@ mod tests {
         assert!(msg.contains("10"));
         assert!(msg.contains("turn budget: 10"));
         assert!(msg.contains("used 7 this turn"));
-    }
-
-    #[test]
-    fn gatekeeper_continue_message_mentions_missing() {
-        let msg = developer_message_for_gatekeeper_continue(&TurnCompletionVerdict {
-            decision: TurnCompletionDecision::Continue,
-            confidence: 1.0,
-            reason: "ritual incomplete".to_string(),
-            source: "receipt_checklist",
-            missing_tools: vec!["cognition_memory_calibrate".to_string()],
-        });
-        assert!(msg.contains("cognition_memory_calibrate"));
-        assert!(msg.contains("Receipt gap"));
     }
 }

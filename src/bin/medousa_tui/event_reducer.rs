@@ -62,13 +62,21 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
                 return;
             }
             if let Some(idx) = state.active_agent_stream_turn {
+                let draft = state
+                    .conversation
+                    .get(idx)
+                    .map(|turn| turn.content.trim().to_string())
+                    .unwrap_or_default();
+                if !draft.is_empty() {
+                    super::push_obs(state, format!("◈ {draft}"));
+                }
                 if let Some(turn) = state.conversation.get_mut(idx) {
                     turn.content.clear();
+                    turn.answer_state = Some("tool_loop".to_string());
                 }
             }
             state.pending_agent_chunk_delta.clear();
             state.pending_agent_chunk_count = 0;
-            state.turn_parts.scratch_reset();
             super::invalidate_markdown_cache(state);
         }
         TuiEvent::AgentChunk { turn_id, delta } => {
