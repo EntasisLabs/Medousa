@@ -1,4 +1,10 @@
+pub mod continuations;
+pub mod core;
 pub mod heartbeat;
+pub mod http;
+pub mod identity;
 pub mod ingest;
+pub mod interactive;
+pub mod jobs;
 pub mod router;
 pub mod state;

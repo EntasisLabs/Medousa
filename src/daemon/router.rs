@@ -254,3 +254,139 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
         .and_then(|index| args.get(index + 1))
         .map(String::as_str)
 }
+
+/// Core daemon API routes (health, jobs, sessions, interactive, identity, ingest, continuations).
+pub fn build_core_router(state: AppState) -> Router {
+    use axum::routing::{delete, get, patch, post, put};
+
+    use crate::daemon::continuations::{
+        continuation_lineage, continuation_status, replay_and_resume_job,
+    };
+    use crate::daemon::core::{
+        artifact_command, health, heartbeat_status, runtime_config_command, runtime_defaults, stats,
+        stage_route_command,
+    };
+    use crate::daemon::identity::{
+        create_user_profile, export_user_profile, identity_commit_update, identity_digest_preview,
+        identity_export_markdown, identity_get_context, identity_list_history, identity_propose_update,
+        identity_remember, identity_rollback_version, import_user_profile, list_user_profiles,
+        set_active_user_profile,
+    };
+    use crate::daemon::ingest::{
+        deliver_outbox_webhook, deliver_poll, delivery_status, ingest_handler, ingest_stream,
+    };
+    use crate::daemon::interactive::{
+        cancel_active_session_turn, create_turn_ticket, delete_session_handler,
+        get_active_session_turn, get_turn_ticket, interactive_turn_stream, list_session_turns,
+        start_interactive_turn,
+    };
+    use crate::daemon::jobs::{
+        archive_ask_job, complete_ask_job_actions, delete_recurring_definition, enqueue_ask,
+        enqueue_prompt, enqueue_report, get_job_report, get_job_result, get_recurring_delivery_handler,
+        list_recurring_definitions, list_recurring_runs_handler, register_recurring_prompt,
+        retry_workspace_card, update_recurring_definition,
+    };
+
+    Router::new()
+        .route("/health", get(health))
+        .route("/v1/stats", get(stats))
+        .route("/v1/runtime/defaults", get(runtime_defaults))
+        .route("/v1/sessions", get(crate::daemon_handlers::list_session_history))
+        .route(
+            "/v1/sessions/{session_id}/history",
+            get(crate::daemon_handlers::get_session_history),
+        )
+        .route(
+            "/v1/sessions/{session_id}/turns",
+            post(crate::daemon_handlers::append_session_turn),
+        )
+        .route(
+            "/v1/sessions/{session_id}/name",
+            put(crate::daemon_handlers::set_session_display_name),
+        )
+        .route("/v1/sessions/{session_id}", delete(delete_session_handler))
+        .route(
+            "/v1/sessions/{session_id}/active-turn",
+            get(get_active_session_turn).post(cancel_active_session_turn),
+        )
+        .route("/v1/sessions/{session_id}/turns", get(list_session_turns))
+        .route("/v1/turns", post(create_turn_ticket))
+        .route("/v1/turns/{turn_id}", get(get_turn_ticket))
+        .route("/v1/heartbeat/status", get(heartbeat_status))
+        .route("/v1/jobs/{job_id}/result", get(get_job_result))
+        .route("/v1/jobs/{job_id}/report", get(get_job_report))
+        .route(
+            "/v1/jobs/{job_id}/complete-actions",
+            post(complete_ask_job_actions),
+        )
+        .route("/v1/jobs/{job_id}/archive", post(archive_ask_job))
+        .route("/v1/jobs/ask", post(enqueue_ask))
+        .route("/v1/jobs/report", post(enqueue_report))
+        .route("/v1/jobs/prompt", post(enqueue_prompt))
+        .route("/v1/recurring", get(list_recurring_definitions))
+        .route("/v1/recurring/prompt", post(register_recurring_prompt))
+        .route(
+            "/v1/recurring/{recurring_id}",
+            patch(update_recurring_definition).delete(delete_recurring_definition),
+        )
+        .route(
+            "/v1/recurring/{recurring_id}/runs",
+            get(list_recurring_runs_handler),
+        )
+        .route(
+            "/v1/recurring/{recurring_id}/delivery",
+            get(get_recurring_delivery_handler),
+        )
+        .route("/v1/interactive/turn", post(start_interactive_turn))
+        .route(
+            "/v1/interactive/turn/{turn_id}/stream",
+            get(interactive_turn_stream),
+        )
+        .route("/v1/runtime/artifact/command", post(artifact_command))
+        .route("/v1/runtime/config/command", post(runtime_config_command))
+        .route("/v1/runtime/stage-route/command", post(stage_route_command))
+        .route("/v1/identity/context", post(identity_get_context))
+        .route("/v1/identity/remember", post(identity_remember))
+        .route("/v1/identity/digest-preview", post(identity_digest_preview))
+        .route("/v1/identity/export-markdown", post(identity_export_markdown))
+        .route(
+            "/v1/identity/profiles",
+            get(list_user_profiles).post(create_user_profile),
+        )
+        .route("/v1/identity/profiles/active", put(set_active_user_profile))
+        .route("/v1/identity/profiles/export", post(export_user_profile))
+        .route("/v1/identity/profiles/import", post(import_user_profile))
+        .route("/v1/identity/update/propose", post(identity_propose_update))
+        .route("/v1/identity/update/commit", post(identity_commit_update))
+        .route("/v1/identity/history", post(identity_list_history))
+        .route("/v1/identity/rollback", post(identity_rollback_version))
+        .route("/v1/ingest", post(ingest_handler))
+        .route("/v1/ingest/{stream_id}/stream", get(ingest_stream))
+        .route("/v1/media/upload", post(crate::media_handlers::upload_media))
+        .route("/v1/media/{media_id}", get(crate::media_handlers::get_media))
+        .route("/v1/deliver/outbox", post(deliver_outbox_webhook))
+        .route("/v1/deliver/poll/{job_id}", get(deliver_poll))
+        .route("/v1/delivery/status", get(delivery_status))
+        .route("/v1/continuations/status", get(continuation_status))
+        .route(
+            "/v1/continuations/lineage/{turn_correlation_id}",
+            get(continuation_lineage),
+        )
+        .route(
+            "/v1/jobs/{job_id}/replay-and-resume",
+            post(replay_and_resume_job),
+        )
+        .route(
+            "/v1/workspace/cards/{card_id}/retry",
+            post(retry_workspace_card),
+        )
+        .with_state(state)
+}
+
+/// Full daemon HTTP surface: core routes plus feature routers (catalog, vault, dashboard, …).
+pub fn build_daemon_router(
+    state: AppState,
+    dashboard_action_auth: &DashboardActionAuthConfig,
+) -> Router {
+    build_core_router(state.clone()).merge(build_feature_routers(&state, dashboard_action_auth))
+}
