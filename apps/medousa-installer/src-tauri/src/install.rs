@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
-use medousa::install::manifest::{mark_package_installed, read_release_manifest, ReleaseManifest};
+use medousa::install::manifest::{mark_package_installed, ReleaseManifest};
 use medousa::install::packages::is_model_pack;
 use medousa::local_inference::{builtin_catalog, MODEL_STORE};
 use reqwest::Client;

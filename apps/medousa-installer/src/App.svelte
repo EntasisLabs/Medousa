@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { onMount } from "svelte";
 
   type Screen = "welcome" | "workloads" | "custom" | "progress" | "complete";
 
@@ -106,10 +107,22 @@
   }
 
   async function launchMedousa() {
-    await invoke("installer_launch_medousa");
+    try {
+      await invoke("installer_launch_medousa");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
-  $effect(() => {
+  async function openReleaseNotes() {
+    try {
+      await openUrl("https://github.com/EntasisLabs/Medousa");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  onMount(() => {
     void bootstrap();
   });
 </script>
@@ -133,7 +146,7 @@
     <h1>Choose a workload</h1>
     <p class="lead">Express is recommended for most people. Pick Offline if you want Gemma on-device.</p>
     <div class="profile-grid">
-      {#each profiles as profile}
+      {#each profiles as profile (profile.id)}
         <button
           class="profile {selectedProfile === profile.id ? 'selected' : ''}"
           onclick={() => {
@@ -165,7 +178,7 @@
     <h1>Custom packages</h1>
     <p class="lead">{diskEstimate}</p>
     <div class="card packages">
-      {#each packages as pkg}
+      {#each packages as pkg (pkg.id)}
         <label class="package-row">
           <input
             type="checkbox"
@@ -186,7 +199,7 @@
     <h1>Installing…</h1>
     <p class="lead">Downloading and verifying packages. This may take a while for model packs.</p>
     <div class="progress-list">
-      {#each progress as item}
+      {#each progress as item (item.packageId)}
         <div class="progress-item">
           <div>{item.packageId} — {item.message}</div>
           <div class="progress-bar">
@@ -203,7 +216,7 @@
     <p class="lead">Medousa is ready. The first-run wizard will help you configure your brain and pairing.</p>
     <div class="actions">
       <button class="primary" onclick={launchMedousa}>Launch Medousa</button>
-      <button class="secondary" onclick={() => openUrl("https://github.com/EntasisLabs/Medousa")}>Release notes</button>
+      <button class="secondary" onclick={openReleaseNotes}>Release notes</button>
     </div>
   {/if}
 </div>

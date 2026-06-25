@@ -6,5 +6,5 @@
     "strict": true,
     "types": ["svelte"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "src/vite-env.d.ts"]
 }

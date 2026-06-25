@@ -131,6 +131,12 @@ fn installer_bootstrap() -> Result<BootstrapResponse, String> {
 #[tauri::command]
 async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), String> {
     let install_root = PathBuf::from(request.install_root.trim());
+    let manifest_path = install::install_manifest_path(&install_root);
+    let existing_manifest = if request.modify_mode && manifest_path.exists() {
+        read_install_manifest(&manifest_path).ok()
+    } else {
+        None
+    };
     let expanded: Vec<String> = expand_package_dependencies(
         &request
             .package_ids
@@ -140,6 +146,20 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
     );
 
     for package_id in expanded {
+        if existing_manifest
+            .as_ref()
+            .is_some_and(|manifest| manifest.packages.iter().any(|entry| entry.id == package_id))
+        {
+            emit_progress(
+                &app,
+                &package_id,
+                "ready",
+                100.0,
+                "Already installed",
+            );
+            continue;
+        }
+
         emit_progress(
             &app,
             &package_id,
