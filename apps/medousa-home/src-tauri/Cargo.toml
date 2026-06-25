@@ -37,6 +37,11 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 sha2 = "0.10"
 bytes = "1"
+medousa-types = { path = "../../../crates/medousa-types" }
+medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async"] }
+
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+medousa-host = { path = "../../../crates/medousa-host" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

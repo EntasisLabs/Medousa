@@ -113,7 +113,7 @@ export async function startLocalModelDownload(modelId: string): Promise<ModelDow
 
 export async function loadLocalEngine(modelId?: string | null): Promise<LocalEngineStatus> {
   if (!isTauri()) throw new Error("Local inference requires the desktop app");
-  return invoke<LocalEngineStatus>("local_inference_load_engine", { modelId: modelId ?? null });
+  return invoke<LocalEngineStatus>("local_inference_spawn_engine", { modelId: modelId ?? null });
 }
 
 export async function fetchLocalEngineStatus(): Promise<LocalEngineStatus> {

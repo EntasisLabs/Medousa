@@ -8,6 +8,7 @@ use medousa::{
     AdapterDeliveryOutcome, IngestRequest, IngestResponse, default_delivery_timeout,
     format_ingest_ack, resolve_daemon_url, wait_for_ask_delivery,
 };
+use medousa_sdk::{HttpTransport, MedousaClient};
 use reqwest::Client;
 use slack_morphism::hyper_tokio::SlackClientHyperHttpsConnector;
 use slack_morphism::listener::SlackClientEventsListenerEnvironment;
@@ -134,18 +135,13 @@ async fn handle_push_event(
     };
 
     let daemon_url = state.daemon_url.trim_end_matches('/');
-    let response = state
-        .http_client
-        .post(format!("{daemon_url}/v1/ingest"))
-        .json(&request)
-        .send()
+    let sdk = MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url);
+    let response = sdk
+        .ingest()
+        .post(&request)
         .await
-        .context("ingest request failed")?
-        .error_for_status()
-        .context("ingest returned error status")?
-        .json::<IngestResponse>()
-        .await
-        .context("decode ingest response")?;
+        .map_err(|err| anyhow!(err.to_string()))
+        .context("ingest request failed")?;
 
     if response.stream_ready {
         let delivery_outcome = wait_for_ask_delivery(

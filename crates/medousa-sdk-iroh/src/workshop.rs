@@ -121,4 +121,17 @@ impl Transport for WorkshopTransport {
                 .await
         })
     }
+
+    fn put_json<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let path = path.to_string();
+        Box::pin(async move {
+            self.request_json(reqwest::Method::PUT, &path, Some(body))
+                .await
+        })
+    }
 }

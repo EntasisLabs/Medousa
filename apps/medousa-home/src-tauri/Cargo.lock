@@ -6006,6 +6006,9 @@ dependencies = [
  "libc",
  "locus-core-rs",
  "mdns-sd",
+ "medousa-host",
+ "medousa-sdk",
+ "medousa-types",
  "once_cell",
  "pdf-extract",
  "qrcode",
@@ -6045,6 +6048,9 @@ dependencies = [
  "keyring",
  "libc",
  "medousa",
+ "medousa-host",
+ "medousa-sdk",
+ "medousa-types",
  "objc2",
  "rand 0.8.6",
  "reqwest 0.12.28",
@@ -6063,6 +6069,37 @@ dependencies = [
  "toml 0.8.2",
  "urlencoding",
  "uuid",
+]
+
+[[package]]
+name = "medousa-host"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "libc",
+ "medousa-types",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-sdk"
+version = "0.1.0"
+dependencies = [
+ "medousa-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

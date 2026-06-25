@@ -7,6 +7,7 @@ use medousa::{
     default_delivery_timeout, wait_for_ask_delivery, resolve_daemon_url,
 };
 use medousa::channel_delivery::truncate_for_discord;
+use medousa_sdk::{HttpTransport, MedousaClient};
 use reqwest::Client;
 use serenity::all::GatewayIntents;
 use serenity::model::channel::Message;
@@ -119,18 +120,13 @@ async fn handle_message(
 
     let daemon_url = state.daemon_url.trim_end_matches('/');
 
-    let response = state
-        .client
-        .post(format!("{daemon_url}/v1/ingest"))
-        .json(&request)
-        .send()
+    let sdk = MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url);
+    let response = sdk
+        .ingest()
+        .post(&request)
         .await
-        .context("failed to reach daemon ingest endpoint")?
-        .error_for_status()
-        .context("daemon ingest endpoint returned error")?
-        .json::<IngestResponse>()
-        .await
-        .context("failed to decode daemon ingest response")?;
+        .map_err(|err| anyhow!(err.to_string()))
+        .context("failed to reach daemon ingest endpoint")?;
 
     if response.stream_ready {
         let http = ctx.http.clone();

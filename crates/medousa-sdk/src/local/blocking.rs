@@ -87,4 +87,27 @@ impl BlockingLocalModelsClient {
             },
         )
     }
+
+    pub fn download_status(
+        &self,
+        job_id: &str,
+    ) -> Result<medousa_types::ModelDownloadProgress, crate::SdkError> {
+        self.blocking_get(&format!("/v1/local/models/download/{job_id}"))
+    }
+
+    pub fn remove_model(&self, model_id: &str) -> Result<(), crate::SdkError> {
+        let url = format!("{}{}", self.inner.base_url(), format!("/v1/local/models/{model_id}"));
+        let response = reqwest::blocking::Client::new()
+            .delete(&url)
+            .send()
+            .map_err(|e| crate::SdkError::Http(e.to_string()))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .map_err(|e| crate::SdkError::Http(e.to_string()))?;
+        if !status.is_success() {
+            return Err(crate::SdkError::Http(format!("{status}: {body}")));
+        }
+        Ok(())
+    }
 }

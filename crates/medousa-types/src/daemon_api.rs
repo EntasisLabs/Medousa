@@ -659,7 +659,7 @@ pub struct GraphemeScriptDetailResponse {
     pub body_truncated: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphemeRunRequest {
     pub source: String,
 }
@@ -743,7 +743,7 @@ pub struct WorkflowRunResponse {
     pub lane: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowScheduleRequest {
     #[serde(flatten)]
     pub workflow: WorkflowRunRequest,
@@ -1902,7 +1902,7 @@ pub struct ManuscriptDetailResponse {
     pub palette_tools: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateManuscriptRequest {
     #[serde(default)]
     pub task_template: Option<String>,
@@ -1924,7 +1924,7 @@ pub struct UpdateManuscriptRequest {
     pub openshell_allow_scheduled: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ManuscriptImportRequest {
     #[serde(default)]
     pub path: Option<String>,

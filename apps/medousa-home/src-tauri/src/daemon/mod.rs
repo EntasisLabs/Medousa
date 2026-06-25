@@ -9,6 +9,7 @@ pub mod media;
 pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
+pub mod sdk;
 pub mod session;
 pub mod sse;
 pub mod stt;
@@ -349,6 +350,14 @@ pub async fn interactive_turn_send(
             channel_id: Some(session_id.clone()),
             user_id: None,
         }),
+        max_tool_rounds: None,
+        retry_runtime_max_rounds: None,
+        manuscript_id: None,
+        additional_manuscript_ids: None,
+        suggested_capability_ids: None,
+        voice_preset_id: None,
+        voice_appendix: None,
+        scheduled_tool_allowlist: None,
         media_refs: Vec::new(),
         identity_user_id: None,
     };

@@ -7,12 +7,12 @@ use medousa::{
     format_ingest_ack, wait_for_ask_delivery, resolve_daemon_url,
 };
 use medousa::channel_delivery::{format_for_telegram_markdown_v2, truncate_for_telegram};
-use teloxide::types::ParseMode;
+use medousa_sdk::{HttpTransport, MedousaClient};
 use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use teloxide::dptree;
 use teloxide::prelude::*;
-use teloxide::types::ChatAction;
+use teloxide::types::{ChatAction, ParseMode};
 
 /// Thin Telegram adapter — forwards to daemon ingester, shows typing during processing,
 /// and relies on outbox-driven push for final replies.
@@ -96,34 +96,9 @@ async fn handle_message(
 
     let daemon_url = state.daemon_url.trim_end_matches('/');
 
-    let response = match state
-        .client
-        .post(format!("{daemon_url}/v1/ingest"))
-        .json(&request)
-        .send()
-        .await
-    {
-        Ok(resp) => match resp.error_for_status() {
-            Ok(resp) => match resp.json::<IngestResponse>().await {
-                Ok(response) => response,
-                Err(err) => {
-                    let error_msg = format!(
-                        "ingester error: {}",
-                        single_line_summary(&err.to_string(), 300)
-                    );
-                    bot.send_message(msg.chat.id, error_msg).await?;
-                    return Ok(());
-                }
-            },
-            Err(err) => {
-                let error_msg = format!(
-                    "ingester error: {}",
-                    single_line_summary(&err.to_string(), 300)
-                );
-                bot.send_message(msg.chat.id, error_msg).await?;
-                return Ok(());
-            }
-        },
+    let sdk = MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url);
+    let response = match sdk.ingest().post(&request).await {
+        Ok(response) => response,
         Err(err) => {
             let error_msg = format!(
                 "ingester error: {}",

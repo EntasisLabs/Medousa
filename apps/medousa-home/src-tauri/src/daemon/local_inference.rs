@@ -1,64 +1,16 @@
+use crate::daemon::sdk;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
 use crate::daemon::DaemonState;
+use crate::local_engine;
+use crate::workshop_registry::{load_registry, PERSONAL_WORKSHOP_ID};
+use medousa_types::{
+    LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelsResponse,
+    ModelDownloadProgress,
+};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalHardwareResponse {
-    pub profile: serde_json::Value,
-    pub engine_available: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub compiled_backends: Vec<String>,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalCatalogResponse {
-    pub tier: String,
-    pub tier_label: String,
-    pub family_default: String,
-    pub recommended_model_id: String,
-    pub models: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalModelsResponse {
-    pub installed: Vec<serde_json::Value>,
-    pub active_downloads: Vec<ModelDownloadProgress>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelDownloadProgress {
-    pub job_id: String,
-    pub model_id: String,
-    pub phase: String,
-    pub bytes_done: u64,
-    pub bytes_total: u64,
-    pub percent: f32,
-    pub current_file: Option<String>,
-    pub message: String,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalEngineStatus {
-    pub feature_enabled: bool,
-    pub loaded: bool,
-    pub base_url: String,
-    pub bind: Option<String>,
-    pub model_repo: Option<String>,
-    pub model_alias: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inference_backend: Option<String>,
-    pub message: String,
-}
 
 pub struct LocalInferenceStreamState {
     cancel: Mutex<Option<watch::Sender<bool>>>,
@@ -76,21 +28,33 @@ impl LocalInferenceStreamState {
 pub async fn local_inference_hardware(
     state: State<'_, DaemonState>,
 ) -> Result<LocalHardwareResponse, String> {
-    workshop_http::get_json(&state, "/v1/local/hardware").await
+    sdk::client(&state)
+        .local_models()
+        .hardware()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 pub async fn local_inference_catalog(
     state: State<'_, DaemonState>,
 ) -> Result<LocalCatalogResponse, String> {
-    workshop_http::get_json(&state, "/v1/local/catalog").await
+    sdk::client(&state)
+        .local_models()
+        .catalog()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 pub async fn local_inference_models(
     state: State<'_, DaemonState>,
 ) -> Result<LocalModelsResponse, String> {
-    workshop_http::get_json(&state, "/v1/local/models").await
+    sdk::client(&state)
+        .local_models()
+        .list()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -98,25 +62,12 @@ pub async fn local_inference_start_download(
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<ModelDownloadProgress, String> {
-    #[derive(serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Body {
-        model_id: String,
-    }
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Response {
-        job: ModelDownloadProgress,
-    }
-    let response: Response = workshop_http::post_json(
-        &state,
-        "/v1/local/models/download",
-        &Body {
-            model_id: model_id.trim().to_string(),
-        },
-    )
-    .await?;
-    Ok(response.job)
+    sdk::client(&state)
+        .local_models()
+        .start_download(model_id.trim())
+        .await
+        .map(|response| response.job)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -131,33 +82,41 @@ pub async fn local_inference_download_status(
     .await
 }
 
+/// Spawn `medousa_local` on the desktop (daemon only probes engine status).
 #[tauri::command]
-pub async fn local_inference_load_engine(
+pub async fn local_inference_spawn_engine(
     state: State<'_, DaemonState>,
     model_id: Option<String>,
 ) -> Result<LocalEngineStatus, String> {
-    #[derive(serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Body {
-        model_id: Option<String>,
-    }
-    workshop_http::post_json(
-        &state,
-        "/v1/local/engine/load",
-        &Body {
-            model_id: model_id
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
-        },
-    )
-    .await
+    let registry = load_registry()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|entry| entry.id == PERSONAL_WORKSHOP_ID)
+        .ok_or_else(|| "personal workshop not found in registry".to_string())?;
+    let data_dir = local_engine::resolve_workshop_data_dir(workshop);
+    let model = model_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    local_engine::ensure_local_brain(&workshop.id, &data_dir, model.as_deref()).await?;
+
+    sdk::client(&state)
+        .local_models()
+        .engine_status()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 pub async fn local_inference_engine_status(
     state: State<'_, DaemonState>,
 ) -> Result<LocalEngineStatus, String> {
-    workshop_http::get_json(&state, "/v1/local/engine/status").await
+    sdk::client(&state)
+        .local_models()
+        .engine_status()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -165,11 +124,11 @@ pub async fn local_inference_remove_model(
     state: State<'_, DaemonState>,
     model_id: String,
 ) -> Result<serde_json::Value, String> {
-    workshop_http::delete_json(
-        &state,
-        &format!("/v1/local/models/{}", model_id.trim()),
-    )
-    .await
+    sdk::client(&state)
+        .local_models()
+        .remove_model(model_id.trim())
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

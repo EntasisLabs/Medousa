@@ -26,6 +26,13 @@ pub trait Transport: Send + Sync {
         base_url: &'a str,
         path: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
+
+    fn put_json<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
 }
 
 pub async fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, SdkError> {
@@ -116,6 +123,19 @@ impl Transport for HttpTransport {
         let client = self.client.clone();
         Box::pin(async move {
             Self::request(client, reqwest::Method::DELETE, url, None).await
+        })
+    }
+
+    fn put_json<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let url = Self::url(base_url, path);
+        let client = self.client.clone();
+        Box::pin(async move {
+            Self::request(client, reqwest::Method::PUT, url, Some(body)).await
         })
     }
 }

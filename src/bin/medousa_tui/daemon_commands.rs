@@ -1,15 +1,15 @@
 use std::str::SplitWhitespace;
+use std::sync::Arc;
 
 use anyhow::Result;
-use reqwest::Client;
+use medousa_sdk::{HttpTransport, MedousaClient};
 
 use medousa::{
     ArtifactCommandRequest, ArtifactCommandResponse, EnqueueAskRequest, EnqueueResponse,
-    HealthResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
-    InteractiveTurnRequest, InteractiveTurnResponse,
-    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListResponse,
-    SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    HealthResponse, InteractiveTurnRequest, InteractiveTurnResponse,
+    RegisterRecurringPromptRequest, RegisterRecurringResponse, RuntimeConfigCommandRequest,
+    RuntimeConfigCommandResponse, SessionAppendTurnRequest, SessionAppendTurnResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
     StageRouteCommandRequest, StageRouteCommandResponse,
 };
 use medousa::daemon_api::{
@@ -20,6 +20,14 @@ use medousa::daemon_api::{
 use super::{
     EventOutcome, TuiState, WorkerCommand, next_worker_request_id, push_obs, queue_worker_command,
 };
+
+fn daemon_client(daemon_url: &str) -> MedousaClient {
+    MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url)
+}
+
+fn sdk_err(err: medousa_sdk::SdkError) -> anyhow::Error {
+    anyhow::anyhow!(err.to_string())
+}
 
 pub(crate) fn handle_daemon_command(
     parts: &mut SplitWhitespace<'_>,
@@ -156,17 +164,14 @@ pub(crate) fn handle_watch_command(
 }
 
 pub(crate) async fn daemon_health(daemon_url: &str) -> Result<HealthResponse> {
-    let client = Client::new();
-    let response = client
-        .get(format!("{daemon_url}/health"))
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<HealthResponse>().await?)
+    daemon_client(daemon_url)
+        .health()
+        .get()
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_enqueue_ask(daemon_url: &str, prompt: &str) -> Result<EnqueueResponse> {
-    let client = Client::new();
     let request = EnqueueAskRequest {
         prompt: prompt.to_string(),
         policy_profile: Some("interactive".to_string()),
@@ -179,14 +184,11 @@ pub(crate) async fn daemon_enqueue_ask(daemon_url: &str, prompt: &str) -> Result
         additional_manuscript_ids: None,
         suggested_capability_ids: None,
     };
-
-    let response = client
-        .post(format!("{daemon_url}/v1/jobs/ask"))
-        .json(&request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<EnqueueResponse>().await?)
+    daemon_client(daemon_url)
+        .jobs()
+        .enqueue_ask(&request)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_register_recurring_prompt(
@@ -194,7 +196,6 @@ pub(crate) async fn daemon_register_recurring_prompt(
     cron_expr: &str,
     prompt: &str,
 ) -> Result<RegisterRecurringResponse> {
-    let client = Client::new();
     let request = RegisterRecurringPromptRequest {
         id: None,
         queue: Some("default".to_string()),
@@ -215,97 +216,77 @@ pub(crate) async fn daemon_register_recurring_prompt(
         manuscript_id: None,
         display_name: None,
     };
-
-    let response = client
-        .post(format!("{daemon_url}/v1/recurring/prompt"))
-        .json(&request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<RegisterRecurringResponse>().await?)
+    daemon_client(daemon_url)
+        .recurring()
+        .register_prompt(&request)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_artifact_command(
     daemon_url: &str,
     request: &ArtifactCommandRequest,
 ) -> Result<ArtifactCommandResponse> {
-    let client = Client::new();
-    let response = client
-        .post(format!("{daemon_url}/v1/runtime/artifact/command"))
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<ArtifactCommandResponse>().await?)
+    daemon_client(daemon_url)
+        .runtime()
+        .artifact_command(request)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_stage_route_command(
     daemon_url: &str,
     request: &StageRouteCommandRequest,
 ) -> Result<StageRouteCommandResponse> {
-    let client = Client::new();
-    let response = client
-        .post(format!("{daemon_url}/v1/runtime/stage-route/command"))
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<StageRouteCommandResponse>().await?)
+    daemon_client(daemon_url)
+        .runtime()
+        .stage_route_command(request)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_runtime_config_command(
     daemon_url: &str,
     request: &RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse> {
-    let client = Client::new();
-    let response = client
-        .post(format!("{daemon_url}/v1/runtime/config/command"))
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<RuntimeConfigCommandResponse>().await?)
+    daemon_client(daemon_url)
+        .runtime()
+        .config_command(request)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_start_interactive_turn(
     daemon_url: &str,
     request: &InteractiveTurnRequest,
 ) -> Result<InteractiveTurnResponse> {
-    let client = Client::new();
-    let response = client
-        .post(format!("{daemon_url}/v1/interactive/turn"))
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<InteractiveTurnResponse>().await?)
+    daemon_client(daemon_url)
+        .interactive()
+        .start_turn(request)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_list_history_sessions(
     daemon_url: &str,
     limit: usize,
 ) -> Result<SessionHistoryListResponse> {
-    let client = Client::new();
-    let response = client
-        .get(format!("{daemon_url}/v1/sessions"))
-        .query(&[("limit", limit)])
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<SessionHistoryListResponse>().await?)
+    daemon_client(daemon_url)
+        .sessions()
+        .list(limit)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_load_session_history(
     daemon_url: &str,
     session_id: &str,
 ) -> Result<SessionHistoryResponse> {
-    let client = Client::new();
-    let response = client
-        .get(format!("{daemon_url}/v1/sessions/{session_id}/history"))
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<SessionHistoryResponse>().await?)
+    daemon_client(daemon_url)
+        .sessions()
+        .history(session_id)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_set_session_display_name(
@@ -313,31 +294,22 @@ pub(crate) async fn daemon_set_session_display_name(
     session_id: &str,
     display_name: &str,
 ) -> Result<SessionSetDisplayNameResponse> {
-    let client = Client::new();
-    let request = SessionSetDisplayNameRequest {
-        display_name: display_name.to_string(),
-    };
-    let response = client
-        .put(format!("{daemon_url}/v1/sessions/{session_id}/name"))
-        .json(&request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<SessionSetDisplayNameResponse>().await?)
+    daemon_client(daemon_url)
+        .sessions()
+        .set_display_name(session_id, display_name)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_list_budget_requests(
     daemon_url: &str,
     pending_only: bool,
 ) -> Result<TurnBudgetRequestListResponse> {
-    let client = Client::new();
-    let url = if pending_only {
-        format!("{daemon_url}/v1/turns/budget-requests?status=pending&limit=20")
-    } else {
-        format!("{daemon_url}/v1/turns/budget-requests?limit=20")
-    };
-    let response = client.get(url).send().await?.error_for_status()?;
-    Ok(response.json::<TurnBudgetRequestListResponse>().await?)
+    daemon_client(daemon_url)
+        .budget()
+        .list(pending_only)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_approve_budget_request(
@@ -345,17 +317,11 @@ pub(crate) async fn daemon_approve_budget_request(
     request_id: &str,
     body: &TurnBudgetApproveRequest,
 ) -> Result<TurnBudgetRequestResponse> {
-    let client = Client::new();
-    let request_id = request_id.trim();
-    let response = client
-        .post(format!(
-            "{daemon_url}/v1/turns/budget-requests/{request_id}/approve"
-        ))
-        .json(body)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<TurnBudgetRequestResponse>().await?)
+    daemon_client(daemon_url)
+        .budget()
+        .approve(request_id, body)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_deny_budget_request(
@@ -363,15 +329,11 @@ pub(crate) async fn daemon_deny_budget_request(
     request_id: &str,
     body: &TurnBudgetDenyRequest,
 ) -> Result<TurnBudgetRequestResponse> {
-    let client = Client::new();
-    let request_id = request_id.trim();
-    let response = client
-        .post(format!("{daemon_url}/v1/turns/budget-requests/{request_id}/deny"))
-        .json(body)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<TurnBudgetRequestResponse>().await?)
+    daemon_client(daemon_url)
+        .budget()
+        .deny(request_id, body)
+        .await
+        .map_err(sdk_err)
 }
 
 pub(crate) async fn daemon_append_session_turn(
@@ -379,12 +341,9 @@ pub(crate) async fn daemon_append_session_turn(
     session_id: &str,
     request: &SessionAppendTurnRequest,
 ) -> Result<SessionAppendTurnResponse> {
-    let client = Client::new();
-    let response = client
-        .post(format!("{daemon_url}/v1/sessions/{session_id}/turns"))
-        .json(request)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<SessionAppendTurnResponse>().await?)
+    daemon_client(daemon_url)
+        .sessions()
+        .append_turn(session_id, request)
+        .await
+        .map_err(sdk_err)
 }

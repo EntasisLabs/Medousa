@@ -2,7 +2,17 @@ use std::sync::Arc;
 
 use crate::local::LocalModelsApi;
 #[cfg(feature = "async")]
+use crate::budget::BudgetApi;
+#[cfg(feature = "async")]
 use crate::health::{HealthApi, IngestApi};
+#[cfg(feature = "async")]
+use crate::interactive::InteractiveApi;
+#[cfg(feature = "async")]
+use crate::jobs::{JobsApi, RecurringApi};
+#[cfg(feature = "async")]
+use crate::runtime::RuntimeApi;
+#[cfg(feature = "async")]
+use crate::sessions::SessionsApi;
 use crate::transport::Transport;
 
 pub struct MedousaClient {
@@ -48,5 +58,35 @@ impl MedousaClient {
         LocalModelsApi {
             client: self,
         }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn jobs(&self) -> JobsApi<'_> {
+        JobsApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn recurring(&self) -> RecurringApi<'_> {
+        RecurringApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn sessions(&self) -> SessionsApi<'_> {
+        SessionsApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn interactive(&self) -> InteractiveApi<'_> {
+        InteractiveApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn runtime(&self) -> RuntimeApi<'_> {
+        RuntimeApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn budget(&self) -> BudgetApi<'_> {
+        BudgetApi { client: self }
     }
 }

@@ -256,7 +256,7 @@ pub fn run() {
             daemon::local_inference::local_inference_models,
             daemon::local_inference::local_inference_start_download,
             daemon::local_inference::local_inference_download_status,
-            daemon::local_inference::local_inference_load_engine,
+            daemon::local_inference::local_inference_spawn_engine,
             daemon::local_inference::local_inference_engine_status,
             daemon::local_inference::local_inference_remove_model,
             daemon::local_inference::local_inference_stream_download,

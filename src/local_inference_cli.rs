@@ -4,19 +4,25 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use reqwest::blocking::Client;
-use serde_json::json;
+use medousa_sdk::BlockingLocalModelsClient;
+use medousa_types::{
+    LocalCatalogResponse, LocalEngineStatus, LocalHardwareResponse, LocalModelDownloadResponse,
+    LocalModelsResponse, ModelDownloadProgress,
+};
 
 use crate::daemon_api::resolve_daemon_url;
 use crate::local_inference::DEFAULT_LOCAL_ENGINE_BIND;
 use crate::DEFAULT_MEDOUSA_LOCAL_BASE_URL;
-use crate::local_inference_handlers::{
-    LocalCatalogResponse, LocalHardwareResponse, LocalModelDownloadRequest,
-    LocalModelDownloadResponse, LocalModelsResponse,
-};
-use crate::local_inference::LocalEngineStatus;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn local_models_client(daemon_url: &str) -> BlockingLocalModelsClient {
+    BlockingLocalModelsClient::new(daemon_url.trim_end_matches('/'))
+}
+
+fn sdk_err(err: medousa_sdk::SdkError) -> anyhow::Error {
+    anyhow::anyhow!(err.to_string())
+}
 
 pub fn resolve_models_daemon_url(args: &[String]) -> String {
     let explicit = args
@@ -25,13 +31,6 @@ pub fn resolve_models_daemon_url(args: &[String]) -> String {
         .and_then(|index| args.get(index + 1))
         .map(String::as_str);
     resolve_daemon_url(explicit)
-}
-
-fn local_http_client() -> Result<Client> {
-    Client::builder()
-        .timeout(HTTP_TIMEOUT)
-        .build()
-        .context("build HTTP client")
 }
 
 fn is_bind_reachable(bind: &str) -> bool {
@@ -60,109 +59,44 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 pub fn fetch_local_hardware(daemon_url: &str) -> Result<LocalHardwareResponse> {
-    let client = local_http_client()?;
-    let response = client
-        .get(format!("{daemon_url}/v1/local/hardware"))
-        .send()
-        .context("GET /v1/local/hardware")?;
-    if !response.status().is_success() {
-        bail!(
-            "GET /v1/local/hardware returned {} — is Medousa Engine running?",
-            response.status()
-        );
-    }
-    response
-        .json()
-        .context("parse /v1/local/hardware json")
+    local_models_client(daemon_url)
+        .hardware()
+        .map_err(sdk_err)
 }
 
 pub fn fetch_local_catalog(daemon_url: &str) -> Result<LocalCatalogResponse> {
-    let client = local_http_client()?;
-    let response = client
-        .get(format!("{daemon_url}/v1/local/catalog"))
-        .send()
-        .context("GET /v1/local/catalog")?;
-    if !response.status().is_success() {
-        bail!("GET /v1/local/catalog returned {}", response.status());
-    }
-    response.json().context("parse /v1/local/catalog json")
+    local_models_client(daemon_url).catalog().map_err(sdk_err)
 }
 
 pub fn fetch_local_models(daemon_url: &str) -> Result<LocalModelsResponse> {
-    let client = local_http_client()?;
-    let response = client
-        .get(format!("{daemon_url}/v1/local/models"))
-        .send()
-        .context("GET /v1/local/models")?;
-    if !response.status().is_success() {
-        bail!("GET /v1/local/models returned {}", response.status());
-    }
-    response.json().context("parse /v1/local/models json")
+    local_models_client(daemon_url).list().map_err(sdk_err)
 }
 
 pub fn fetch_local_engine_status(daemon_url: &str) -> Result<LocalEngineStatus> {
-    let client = local_http_client()?;
-    let response = client
-        .get(format!("{daemon_url}/v1/local/engine/status"))
-        .send()
-        .context("GET /v1/local/engine/status")?;
-    if !response.status().is_success() {
-        bail!("GET /v1/local/engine/status returned {}", response.status());
-    }
-    response
-        .json()
-        .context("parse /v1/local/engine/status json")
+    local_models_client(daemon_url)
+        .engine_status()
+        .map_err(sdk_err)
 }
 
 pub fn post_local_model_download(
     daemon_url: &str,
     model_id: &str,
 ) -> Result<LocalModelDownloadResponse> {
-    let client = local_http_client()?;
-    let response = client
-        .post(format!("{daemon_url}/v1/local/models/download"))
-        .json(&LocalModelDownloadRequest {
-            model_id: model_id.to_string(),
-        })
-        .send()
-        .context("POST /v1/local/models/download")?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-        bail!("POST /v1/local/models/download returned {status}: {body}");
-    }
-    response
-        .json()
-        .context("parse /v1/local/models/download json")
+    local_models_client(daemon_url)
+        .start_download(model_id)
+        .map_err(sdk_err)
 }
 
-pub fn fetch_download_progress(
-    daemon_url: &str,
-    job_id: &str,
-) -> Result<crate::local_inference::ModelDownloadProgress> {
-    let client = local_http_client()?;
-    let response = client
-        .get(format!("{daemon_url}/v1/local/models/download/{job_id}"))
-        .send()
-        .context("GET download progress")?;
-    if !response.status().is_success() {
-        bail!("GET download progress returned {}", response.status());
-    }
-    response.json().context("parse download progress json")
+pub fn fetch_download_progress(daemon_url: &str, job_id: &str) -> Result<ModelDownloadProgress> {
+    local_models_client(daemon_url)
+        .download_status(job_id)
+        .map_err(sdk_err)
 }
 
 pub fn delete_local_model(daemon_url: &str, model_id: &str) -> Result<()> {
-    let client = local_http_client()?;
-    let response = client
-        .delete(format!("{daemon_url}/v1/local/models/{model_id}"))
-        .send()
-        .context("DELETE /v1/local/models/{model_id}")?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-        bail!("DELETE /v1/local/models/{model_id} returned {status}: {body}");
-    }
-    Ok(())
+    local_models_client(daemon_url)
+        .remove_model(model_id)
+        .map_err(sdk_err)
 }
 
 pub fn post_local_engine_load(
