@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Check } from "@lucide/svelte";
+
   interface Props {
     onLaunch: () => void;
     onModify: () => void;
@@ -8,15 +10,20 @@
   let { onLaunch, onModify, onReleaseNotes }: Props = $props();
 </script>
 
-<section class="screen">
+<section class="complete-screen">
+  <div class="success-icon" aria-hidden="true">
+    <Check size={32} strokeWidth={2.5} />
+  </div>
+
   <header class="screen-header">
-    <h1>Installation complete</h1>
-    <p class="lead">Medousa is ready. The first-run wizard will help you configure your brain and pairing.</p>
+    <h1>You're all set</h1>
+    <p class="lead">First-run setup will configure your brain and devices.</p>
   </header>
 
-  <footer class="footer-actions">
-    <button class="primary" type="button" onclick={onLaunch}>Launch Medousa</button>
-    <button class="secondary" type="button" onclick={onModify}>Modify installation</button>
-    <button class="secondary" type="button" onclick={onReleaseNotes}>Release notes</button>
-  </footer>
+  <button class="btn-launch" type="button" onclick={onLaunch}>Launch Medousa</button>
+
+  <div class="complete-links">
+    <button class="complete-link" type="button" onclick={onModify}>Modify installation</button>
+    <button class="complete-link" type="button" onclick={onReleaseNotes}>What's new</button>
+  </div>
 </section>

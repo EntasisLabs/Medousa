@@ -1,11 +1,13 @@
-export type Screen = "configure" | "hub" | "progress" | "complete";
+export type InstallerStep = "welcome" | "hub" | "progress" | "complete";
+export type Screen = InstallerStep;
 export type HubTab = "workloads" | "components" | "locations";
-export type ConfigureMode = "express" | "existing" | "manual";
 
 export interface ProfileSummary {
   id: string;
   displayName: string;
   description: string;
+  icon: string;
+  section: string;
   packages: string[];
   sizeLabel: string;
 }
@@ -14,6 +16,8 @@ export interface PackageSummary {
   id: string;
   displayName: string;
   category: string;
+  categoryLabel: string;
+  icon: string;
   depends: string[];
   binaries: string[];
   sizeLabel: string;
@@ -30,9 +34,9 @@ export interface BootstrapResponse {
   installRoot: string;
   dataDir: string;
   modelCacheDir: string;
-  releaseManifestUrl: string;
   releaseBaseUrl: string | null;
   releaseChannel: string;
+  installerVersion: string;
   profiles: ProfileSummary[];
   packages: PackageSummary[];
   modifyMode: boolean;
@@ -59,7 +63,9 @@ export interface ResolveSelectionResponse {
 
 export interface DownloadProgress {
   packageId: string;
+  displayName: string;
   phase: string;
+  phaseLabel: string;
   percent: number;
   message: string;
 }

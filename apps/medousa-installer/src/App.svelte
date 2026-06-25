@@ -3,21 +3,23 @@
   import { listen } from "@tauri-apps/api/event";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
+  import InstallerChrome from "./lib/components/InstallerChrome.svelte";
+  import InstallerFooter from "./lib/components/InstallerFooter.svelte";
   import CompleteScreen from "./lib/screens/CompleteScreen.svelte";
-  import ConfigureScreen from "./lib/screens/ConfigureScreen.svelte";
   import HubScreen from "./lib/screens/HubScreen.svelte";
   import ProgressScreen from "./lib/screens/ProgressScreen.svelte";
+  import WelcomeScreen from "./lib/screens/WelcomeScreen.svelte";
   import type {
     BootstrapResponse,
-    ConfigureMode,
     DownloadProgress,
     HubTab,
+    InstallerStep,
     PackageSummary,
     ResolveSelectionResponse,
-    Screen,
   } from "./lib/types";
+  import markUrl from "./assets/medousa-mark.png";
 
-  let screen = $state<Screen>("configure");
+  let screen = $state<InstallerStep>("welcome");
   let hubTab = $state<HubTab>("workloads");
   let bootstrap = $state<BootstrapResponse | null>(null);
   let packages = $state<PackageSummary[]>([]);
@@ -36,6 +38,34 @@
   let modifyMode = $state(false);
   let initialPackageIds = $state<string[]>([]);
 
+  const expressSizeLabel = $derived.by(() => {
+    const express = bootstrap?.profiles.find((p) => p.id === "express");
+    return express?.sizeLabel ?? selection.sizeLabel;
+  });
+
+  const hasSelection = $derived(selectedPackageIds().length > 0);
+
+  const hasChanges = $derived.by(() => {
+    if (!modifyMode) return hasSelection;
+    const current = new Set(selectedPackageIds());
+    const initial = new Set(initialPackageIds);
+    if (current.size !== initial.size) return true;
+    for (const id of current) {
+      if (!initial.has(id)) return true;
+    }
+    return false;
+  });
+
+  const footerPrimaryLabel = $derived(
+    modifyMode && hasChanges ? "Apply changes" : "Install",
+  );
+
+  const showFooter = $derived(screen === "welcome" || screen === "hub");
+
+  function selectedPackageIds(): string[] {
+    return packages.filter((entry) => entry.selected).map((entry) => entry.id);
+  }
+
   async function refreshCatalog(selectedIds: string[]) {
     const catalog = await invoke<{ packages: PackageSummary[] }>("installer_catalog", {
       selectedIds,
@@ -44,6 +74,15 @@
     selection = await invoke<ResolveSelectionResponse>("installer_resolve_selection", {
       packageIds: selectedIds,
     });
+  }
+
+  async function applyExpressSelection() {
+    if (!bootstrap) return;
+    const express = bootstrap.profiles.find((p) => p.id === "express");
+    const ids = express?.packages ?? ["desktop", "engine"];
+    packages = packages.map((pkg) => ({ ...pkg, selected: ids.includes(pkg.id) }));
+    selectedProfileId = "express";
+    await refreshCatalog(ids);
   }
 
   async function loadBootstrap() {
@@ -59,31 +98,25 @@
         ? summary.packages.filter((p) => p.installed).map((p) => p.id)
         : selectedIds;
       await refreshCatalog(selectedIds);
+      screen = summary.modifyMode ? "hub" : "welcome";
+      hubTab = summary.modifyMode ? "components" : "workloads";
+      if (!summary.modifyMode) {
+        await applyExpressSelection();
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
   }
 
-  function selectedPackageIds(): string[] {
-    return packages.filter((entry) => entry.selected).map((entry) => entry.id);
+  async function handleExpressInstall() {
+    if (!bootstrap) return;
+    await applyExpressSelection();
+    await startInstall();
   }
 
-  async function handleConfigureNext(mode: ConfigureMode) {
-    if (!bootstrap) return;
-    if (mode === "express") {
-      const express = bootstrap.profiles.find((p) => p.id === "express");
-      const ids = express?.packages ?? ["desktop", "engine"];
-      packages = packages.map((pkg) => ({ ...pkg, selected: ids.includes(pkg.id) }));
-      selectedProfileId = "express";
-    } else if (mode === "existing") {
-      packages = packages.map((pkg) => ({
-        ...pkg,
-        selected: pkg.installed || initialPackageIds.includes(pkg.id),
-      }));
-    }
-    await refreshCatalog(selectedPackageIds());
+  function goToCustomize() {
     screen = "hub";
-    hubTab = mode === "manual" || mode === "existing" ? "components" : "workloads";
+    hubTab = "components";
   }
 
   async function handleSelectProfile(profileId: string) {
@@ -118,7 +151,7 @@
   }
 
   async function startInstall() {
-    if (!bootstrap) return;
+    if (!bootstrap || !hasSelection) return;
     busy = true;
     error = null;
     screen = "progress";
@@ -184,6 +217,20 @@
     modifyMode = true;
   }
 
+  function goBackFromHub() {
+    if (modifyMode) return;
+    screen = "welcome";
+  }
+
+  async function openLicense() {
+    const url = bootstrap?.releaseBaseUrl ?? "https://github.com/EntasisLabs/Medousa";
+    try {
+      await openUrl(url);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   onMount(() => {
     void loadBootstrap();
   });
@@ -191,36 +238,67 @@
 
 <div class="installer-shell">
   {#if !bootstrap}
-    <section class="screen">
-      <p class="status">Loading installer…</p>
-      {#if error}<p class="error">{error}</p>{/if}
-    </section>
-  {:else if screen === "configure"}
-    <ConfigureScreen
-      {bootstrap}
-      onNext={handleConfigureNext}
-      onPickLocation={pickInstallRoot}
-    />
-  {:else if screen === "hub"}
-    <HubScreen
-      {bootstrap}
-      tab={hubTab}
-      profiles={bootstrap.profiles}
-      {packages}
-      {selectedProfileId}
-      {selection}
-      {busy}
-      {error}
-      onTabChange={(tab) => (hubTab = tab)}
-      onSelectProfile={handleSelectProfile}
-      onTogglePackage={handleTogglePackage}
-      onBack={() => (screen = "configure")}
-      onInstall={startInstall}
-      onPickLocation={pickInstallRoot}
-    />
-  {:else if screen === "progress"}
-    <ProgressScreen {progress} />
+    <div class="boot-splash" role="status" aria-live="polite">
+      <img class="boot-mark" src={markUrl} alt="" width="56" height="56" />
+      <div class="boot-bar" aria-hidden="true"></div>
+    </div>
   {:else}
-    <CompleteScreen onLaunch={launchMedousa} onModify={goToModify} onReleaseNotes={openReleaseNotes} />
+    <InstallerChrome
+      step={screen}
+      version={bootstrap.installerVersion}
+    >
+        {#if screen === "welcome"}
+          <WelcomeScreen
+            {bootstrap}
+            onExpressInstall={handleExpressInstall}
+            onCustomize={goToCustomize}
+            onPickLocation={pickInstallRoot}
+            {busy}
+          />
+        {:else if screen === "hub"}
+          <HubScreen
+            {bootstrap}
+            tab={hubTab}
+            profiles={bootstrap.profiles}
+            {packages}
+            {selectedProfileId}
+            {selection}
+            {modifyMode}
+            {error}
+            onTabChange={(tab) => (hubTab = tab)}
+            onSelectProfile={handleSelectProfile}
+            onTogglePackage={handleTogglePackage}
+            onPickLocation={pickInstallRoot}
+          />
+        {:else if screen === "progress"}
+          <ProgressScreen
+            {progress}
+            version={bootstrap.remoteVersion ?? bootstrap.installedVersion ?? ""}
+          />
+        {:else}
+          <CompleteScreen
+            onLaunch={launchMedousa}
+            onModify={goToModify}
+            onReleaseNotes={openReleaseNotes}
+          />
+        {/if}
+
+      {#if showFooter}
+        {#snippet footer()}
+          <InstallerFooter
+            {installRoot}
+            sizeLabel={screen === "welcome" ? expressSizeLabel : selection.sizeLabel}
+            primaryLabel={footerPrimaryLabel}
+            busy={busy}
+            disabled={!hasSelection || (modifyMode && !hasChanges)}
+            showBack={screen === "hub" && !modifyMode}
+            onPrimary={screen === "welcome" ? handleExpressInstall : startInstall}
+            onPickLocation={pickInstallRoot}
+            onBack={goBackFromHub}
+            onLicense={openLicense}
+          />
+        {/snippet}
+      {/if}
+    </InstallerChrome>
   {/if}
 </div>

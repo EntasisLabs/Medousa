@@ -9,9 +9,9 @@ use medousa::install::manifest::{
 };
 use medousa::install::packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, package_catalog,
-    sort_for_install, visible_catalog,
+    phase_label, sort_for_install, visible_catalog,
 };
-use medousa::install::release_config::{host_target, release_base_url, release_channel, release_manifest_url};
+use medousa::install::release_config::{host_target, release_base_url, release_channel};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
@@ -22,6 +22,8 @@ struct ProfileSummary {
     id: String,
     display_name: String,
     description: String,
+    icon: String,
+    section: String,
     packages: Vec<String>,
     size_label: String,
 }
@@ -32,6 +34,8 @@ struct PackageSummary {
     id: String,
     display_name: String,
     category: String,
+    category_label: String,
+    icon: String,
     depends: Vec<String>,
     binaries: Vec<String>,
     size_label: String,
@@ -50,9 +54,9 @@ struct BootstrapResponse {
     install_root: String,
     data_dir: String,
     model_cache_dir: String,
-    release_manifest_url: String,
     release_base_url: Option<String>,
     release_channel: String,
+    installer_version: String,
     profiles: Vec<ProfileSummary>,
     packages: Vec<PackageSummary>,
     modify_mode: bool,
@@ -113,7 +117,9 @@ struct InstallRequest {
 #[serde(rename_all = "camelCase")]
 struct DownloadProgressEvent {
     package_id: String,
+    display_name: String,
     phase: String,
+    phase_label: String,
     percent: f32,
     message: String,
 }
@@ -152,16 +158,6 @@ fn modify_mode_from_args() -> bool {
     std::env::args().any(|arg| arg == "--modify" || arg == "--repair" || arg == "--update")
 }
 
-fn profile_description(profile_id: &str) -> &'static str {
-    match profile_id {
-        "express" => "Desktop app and engine — recommended for most people.",
-        "offline-workstation" => "Desktop, engine, offline brain, and a balanced Gemma model.",
-        "developer" => "Desktop, engine, CLI tools, and MCP gateway.",
-        "headless-server" => "Engine only — no desktop UI.",
-        _ => "",
-    }
-}
-
 fn build_profile_summaries(remote: &Option<ReleaseManifest>) -> Vec<ProfileSummary> {
     default_install_profiles()
         .into_iter()
@@ -175,7 +171,9 @@ fn build_profile_summaries(remote: &Option<ReleaseManifest>) -> Vec<ProfileSumma
             ProfileSummary {
                 id: profile.id.to_string(),
                 display_name: profile.display_name.to_string(),
-                description: profile_description(profile.id).to_string(),
+                description: profile.short_description.to_string(),
+                icon: profile.icon.to_string(),
+                section: profile.section.to_string(),
                 packages,
                 size_label: format_bytes(bytes),
             }
@@ -269,6 +267,8 @@ fn build_package_summaries(
                 id: entry.id.to_string(),
                 display_name: entry.display_name.to_string(),
                 category: entry.category.as_str().to_string(),
+                category_label: entry.category_label.to_string(),
+                icon: entry.icon.to_string(),
                 depends: entry.depends.iter().map(|d| d.to_string()).collect(),
                 binaries: entry.binaries.iter().map(|b| b.to_string()).collect(),
                 size_label: format_bytes(size_bytes),
@@ -312,9 +312,9 @@ async fn installer_bootstrap() -> Result<BootstrapResponse, String> {
         install_root: install_root.display().to_string(),
         data_dir: data_dir().display().to_string(),
         model_cache_dir: model_cache_dir().display().to_string(),
-        release_manifest_url: release_manifest_url(),
         release_base_url: release_base_url(),
         release_channel: release_channel(),
+        installer_version: env!("CARGO_PKG_VERSION").to_string(),
         profiles: build_profile_summaries(&remote),
         packages: build_package_summaries(&selected, &remote, &installed),
         modify_mode: modify_mode_from_args()
@@ -625,11 +625,17 @@ async fn installer_run(app: AppHandle, request: InstallRequest) -> Result<(), St
 }
 
 fn emit_progress(app: &AppHandle, package_id: &str, phase: &str, percent: f32, message: &str) {
+    let display_name = catalog_entry(package_id)
+        .map(|entry| entry.display_name.to_string())
+        .unwrap_or_else(|| package_id.to_string());
+    let phase_label_text = phase_label(phase).to_string();
     let _ = app.emit(
         "install-progress",
         DownloadProgressEvent {
             package_id: package_id.to_string(),
+            display_name,
             phase: phase.to_string(),
+            phase_label: phase_label_text,
             percent,
             message: message.to_string(),
         },

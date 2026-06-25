@@ -11,7 +11,7 @@ pub use manifest::{
 };
 pub use packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, is_desktop_package,
-    is_model_pack, is_tarball_package, package_catalog, package_disk_estimate_bytes,
+    is_model_pack, is_tarball_package, package_catalog, package_disk_estimate_bytes, phase_label,
     sort_for_install, visible_catalog, PackageCatalogEntry, PackageCategory, PackageProfile,
 };
 pub use release_config::{

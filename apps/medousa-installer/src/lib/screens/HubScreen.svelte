@@ -1,5 +1,10 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { Search } from "@lucide/svelte";
+  import ComponentRow from "../components/ComponentRow.svelte";
   import InstallationSidebar from "../components/InstallationSidebar.svelte";
+  import WorkloadCard from "../components/WorkloadCard.svelte";
+  import { categoryLabel, truncatePath } from "../copy";
   import type {
     BootstrapResponse,
     HubTab,
@@ -15,13 +20,11 @@
     packages: PackageSummary[];
     selectedProfileId: string;
     selection: ResolveSelectionResponse;
-    busy: boolean;
+    modifyMode: boolean;
     error: string | null;
     onTabChange: (tab: HubTab) => void;
     onSelectProfile: (id: string) => void;
     onTogglePackage: (id: string) => void;
-    onBack: () => void;
-    onInstall: () => void;
     onPickLocation: () => void;
   }
 
@@ -32,17 +35,16 @@
     packages,
     selectedProfileId,
     selection,
-    busy,
+    modifyMode,
     error,
     onTabChange,
     onSelectProfile,
     onTogglePackage,
-    onBack,
-    onInstall,
     onPickLocation,
   }: Props = $props();
 
   let search = $state("");
+  let searchInput: HTMLInputElement | undefined = $state();
 
   const filteredPackages = $derived(
     packages.filter((pkg) => {
@@ -50,8 +52,7 @@
       if (!q) return true;
       return (
         pkg.displayName.toLowerCase().includes(q) ||
-        pkg.id.toLowerCase().includes(q) ||
-        pkg.category.toLowerCase().includes(q)
+        pkg.categoryLabel.toLowerCase().includes(q)
       );
     }),
   );
@@ -59,118 +60,152 @@
   const groupedPackages = $derived.by(() => {
     const groups = new Map<string, PackageSummary[]>();
     for (const pkg of filteredPackages) {
-      const key = pkg.category;
+      const key = pkg.categoryLabel || categoryLabel(pkg.category);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(pkg);
     }
     return [...groups.entries()];
   });
 
-  function statusBadge(pkg: PackageSummary): string | null {
-    if (pkg.updateAvailable) return "update available";
-    if (pkg.installed) return "installed";
-    return null;
-  }
+  const profileSections = $derived.by(() => {
+    const sections = new Map<string, ProfileSummary[]>();
+    for (const profile of profiles) {
+      const key = profile.section || "Desktop & Core";
+      if (!sections.has(key)) sections.set(key, []);
+      sections.get(key)!.push(profile);
+    }
+    return [...sections.entries()];
+  });
+
+  onMount(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        if (tab === "components") {
+          event.preventDefault();
+          searchInput?.focus();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 </script>
 
 <section class="hub">
+  {#if modifyMode}
+    <div class="modify-banner" role="status">Modify your Medousa installation</div>
+  {/if}
+
   <header class="screen-header">
-    <h1>Install Medousa</h1>
+    <h1>{modifyMode ? "Modify installation" : "Customize installation"}</h1>
     <p class="lead">Choose workloads and components for your installation.</p>
   </header>
 
   <div class="hub-body">
     <div class="hub-main">
-      <nav class="tabs">
-        <button class="tab {tab === 'workloads' ? 'active' : ''}" type="button" onclick={() => onTabChange("workloads")}>
+      <div class="tabs" role="tablist" aria-label="Installation sections">
+        <button
+          class="tab"
+          class:active={tab === "workloads"}
+          type="button"
+          role="tab"
+          aria-selected={tab === "workloads"}
+          onclick={() => onTabChange("workloads")}
+        >
           Workloads
         </button>
-        <button class="tab {tab === 'components' ? 'active' : ''}" type="button" onclick={() => onTabChange("components")}>
+        <button
+          class="tab"
+          class:active={tab === "components"}
+          type="button"
+          role="tab"
+          aria-selected={tab === "components"}
+          onclick={() => onTabChange("components")}
+        >
           Individual components
         </button>
-        <button class="tab {tab === 'locations' ? 'active' : ''}" type="button" onclick={() => onTabChange("locations")}>
+        <button
+          class="tab"
+          class:active={tab === "locations"}
+          type="button"
+          role="tab"
+          aria-selected={tab === "locations"}
+          onclick={() => onTabChange("locations")}
+        >
           Installation locations
         </button>
-      </nav>
+      </div>
 
       {#if tab === "workloads"}
-        <div class="section-label">Desktop &amp; Core</div>
-        <div class="profile-grid">
-          {#each profiles as profile (profile.id)}
-            <button
-              class="profile {selectedProfileId === profile.id ? 'selected' : ''}"
-              type="button"
-              onclick={() => onSelectProfile(profile.id)}
-            >
-              <div class="profile-title">{profile.displayName}</div>
-              <div class="profile-desc">{profile.description}</div>
-              <div class="profile-meta">{profile.sizeLabel}</div>
-            </button>
-          {/each}
-        </div>
+        {#each profileSections as [section, items] (section)}
+          <div class="section-label">{section}</div>
+          <div class="profile-grid" role="group" aria-label={section}>
+            {#each items as profile (profile.id)}
+              <WorkloadCard
+                title={profile.displayName}
+                description={profile.description}
+                sizeLabel={profile.sizeLabel}
+                icon={profile.icon}
+                selected={selectedProfileId === profile.id}
+                onclick={() => onSelectProfile(profile.id)}
+              />
+            {/each}
+          </div>
+        {/each}
       {:else if tab === "components"}
         <div class="search-row">
+          <span class="search-icon" aria-hidden="true">
+            <Search size={16} strokeWidth={1.75} />
+          </span>
           <input
+            bind:this={searchInput}
             class="search-input"
             type="search"
             placeholder="Search components"
             bind:value={search}
+            aria-label="Search components"
           />
+          <span class="search-hint">Ctrl+F</span>
         </div>
-        {#each groupedPackages as [category, items] (category)}
-          <div class="section-label">{category}</div>
+        {#each groupedPackages as [label, items] (label)}
+          <div class="section-label">{label}</div>
           <div class="card packages">
             {#each items as pkg (pkg.id)}
-              <label class="package-row">
-                <input
-                  type="checkbox"
-                  checked={pkg.selected}
-                  disabled={!pkg.optional}
-                  onchange={() => onTogglePackage(pkg.id)}
-                />
-                <span class="package-name">{pkg.displayName}</span>
-                {#if statusBadge(pkg)}
-                  <span class="badge">{statusBadge(pkg)}</span>
-                {/if}
-                <span class="muted package-size">{pkg.sizeLabel}</span>
-              </label>
+              <ComponentRow
+                name={pkg.displayName}
+                sizeLabel={pkg.sizeLabel}
+                selected={pkg.selected}
+                optional={pkg.optional}
+                installed={pkg.installed}
+                updateAvailable={pkg.updateAvailable}
+                ontoggle={() => onTogglePackage(pkg.id)}
+              />
             {/each}
           </div>
         {/each}
       {:else}
         <div class="card locations">
           <div class="location-item">
-            <div class="muted">Application</div>
-            <div>{bootstrap.installRoot}</div>
+            <div class="location-label">Application</div>
+            <div class="location-value" title={bootstrap.installRoot}>
+              {truncatePath(bootstrap.installRoot, 48)}
+            </div>
             <button class="link-btn" type="button" onclick={onPickLocation}>Change…</button>
           </div>
           <div class="location-item">
-            <div class="muted">Data &amp; packages</div>
-            <div>{bootstrap.dataDir}</div>
+            <div class="location-label">Data</div>
+            <div class="location-value">{bootstrap.dataDir}</div>
           </div>
           <div class="location-item">
-            <div class="muted">Model cache</div>
-            <div>{bootstrap.modelCacheDir}</div>
-          </div>
-          <div class="location-item">
-            <div class="muted">Release endpoint</div>
-            <div class="muted small">{bootstrap.releaseManifestUrl}</div>
+            <div class="location-label">Models</div>
+            <div class="location-value">{bootstrap.modelCacheDir}</div>
           </div>
         </div>
       {/if}
 
       {#if error}<p class="error">{error}</p>{/if}
-
-      <footer class="footer-actions hub-footer">
-        <button class="secondary" type="button" onclick={onBack}>Back</button>
-        <button class="primary" type="button" disabled={busy} onclick={onInstall}>Install</button>
-      </footer>
     </div>
 
-    <InstallationSidebar
-      tree={selection.tree}
-      sizeLabel={selection.sizeLabel}
-      warnings={selection.warnings}
-    />
+    <InstallationSidebar tree={selection.tree} warnings={selection.warnings} />
   </div>
 </section>
