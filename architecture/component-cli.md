@@ -1,66 +1,43 @@
-# Component: medousa-cli
+# Component: CLI surfaces
 
-## Role in the Product
+## Dual-surface product model
 
-medousa-cli is the non-interactive control surface for Medousa.
+| Surface | Audience | Job |
+|---------|----------|-----|
+| **Medousa Home** | Normie operators | Felt experience — chat, vault, settings without terminal |
+| **`medousa` CLI** | Power users / headless | Run engine, diagnose, automate, script |
+| **`medousa-cli`** | HTTP/script helpers | One-shot daemon API calls |
 
-Use it when you want:
+CLI is operator-first: honest framing, plain language, scriptable (`--json`). Curious normies are welcome — no gatekeeping — but the terminal is not the primary onboarding path.
 
-- one-shot prompt/ask execution
-- scripted automation in shell environments
-- daemon interaction without opening the TUI
+## Entry points
 
-## Entry Point
+- **`medousa`** — `src/bin/medousa.rs` — lifecycle, diagnose, workshop, configure, channels
+- **`medousa-cli`** — `src/bin/medousa_cli.rs` — `daemon-ask`, `daemon-health`, etc.
+- **`medousa_tui`** — terminal workspace (optional; not required for headless)
 
-- Binary: medousa/src/bin/medousa_cli.rs
+## Command taxonomy (`medousa --help`)
 
-## Command Categories
+1. **Lifecycle** — `start`, `stop`, `status`, `daemon`
+2. **Diagnose** — `doctor [--config] [--json]`, `models probe`
+3. **Workshop** — `workspace`, `vault`, `pair`, `iroh`
+4. **Configure** — `setup --yes`, `doctor --config`
+5. **Extend** — identity, manuscripts, skills
+6. **Channels** — discord, telegram, slack, whatsapp (secondary)
 
-Local runtime commands:
+## Headless operator path
 
-- ask
-- llm
+```bash
+./scripts/install.sh --profile headless-server --from-source
+medousa setup --yes   # non-interactive when flags provided
+medousa start daemon
+medousa doctor --config --json
+medousa status
+```
 
-Daemon client commands:
+Docker: `Dockerfile` + `docker-compose.yml`. systemd: `contrib/systemd/medousa-engine.service`.
 
-- daemon-health
-- daemon-stats
-- daemon-ask
-- daemon-watch-add
+## Related
 
-## Local Execution Flow
-
-For ask and llm commands, the CLI performs a full local runtime cycle:
-
-1. resolve backend/provider/model/base-url from args/env defaults
-2. build runtime composition via build_runtime(...)
-3. construct workflow/prompt payload contract
-4. build NewJob with Stasis workflow builder
-5. enqueue job into runtime
-6. process one cycle (process_once)
-7. read attempt diagnostics and print output
-
-This gives deterministic one-command behavior while still using durable runtime primitives.
-
-## Daemon Client Flow
-
-For daemon-* commands, CLI acts as an HTTP client against daemon endpoints:
-
-- /health
-- /v1/stats
-- /v1/jobs/ask
-- /v1/recurring/prompt
-
-## State and Persistence Characteristics
-
-CLI is intentionally near-stateless:
-
-- no long-lived in-process application state
-- no local session history owned by CLI
-- durable state is owned by runtime backend and/or daemon stores
-
-## Operational Expectations
-
-- local commands return attempt-level diagnostics when available
-- daemon commands return typed API responses or HTTP failure information
-- behavior remains aligned with TUI/daemon because execution primitives are shared
+- [cli-and-workspace.md](../docs/cookbook/cli-and-workspace.md)
+- [road-to-production-plan.md](../architecture/road-to-production-plan.md)

@@ -128,11 +128,37 @@ pub fn plan_turn_media(
     })
 }
 
-fn is_image_media_ref(media_ref: &MediaRef) -> bool {
+pub fn is_image_media_ref(media_ref: &MediaRef) -> bool {
     if media_ref.kind == "image" {
         return true;
     }
     media_ref.mime.trim().to_ascii_lowercase().starts_with("image/")
+}
+
+pub fn has_vision_media(media_refs: &[MediaRef]) -> bool {
+    media_refs.iter().any(is_image_media_ref)
+}
+
+pub fn has_document_media(media_refs: &[MediaRef]) -> bool {
+    media_refs.iter().any(|media_ref| {
+        if is_image_media_ref(media_ref) {
+            return false;
+        }
+        is_extractable_document_mime(&media_ref.mime)
+    })
+}
+
+fn is_extractable_document_mime(mime: &str) -> bool {
+    matches!(
+        mime.trim().to_ascii_lowercase().as_str(),
+        "text/plain"
+            | "text/markdown"
+            | "text/csv"
+            | "text/tab-separated-values"
+            | "application/pdf"
+            | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            | "application/vnd.ms-excel"
+    )
 }
 
 #[cfg(test)]
@@ -162,5 +188,53 @@ mod tests {
         let plan = TurnMediaVisionPlan::empty();
         let message = plan.build_user_message("hello");
         assert_eq!(message.content.first_text(), Some("hello"));
+    }
+
+    #[test]
+    fn document_only_refs_are_not_vision_media() {
+        let refs = vec![MediaRef {
+            media_id: "usr:s1:abc".to_string(),
+            kind: "document".to_string(),
+            mime: "application/pdf".to_string(),
+            label: Some("report.pdf".to_string()),
+        }];
+        assert!(!has_vision_media(&refs));
+        assert!(has_document_media(&refs));
+    }
+
+    #[test]
+    fn mixed_image_and_pdf_requires_vision_for_image_only() {
+        let refs = vec![
+            MediaRef {
+                media_id: "usr:s1:img".to_string(),
+                kind: "image".to_string(),
+                mime: "image/png".to_string(),
+                label: None,
+            },
+            MediaRef {
+                media_id: "usr:s1:pdf".to_string(),
+                kind: "document".to_string(),
+                mime: "application/pdf".to_string(),
+                label: Some("notes.pdf".to_string()),
+            },
+        ];
+        assert!(has_vision_media(&refs));
+        assert!(has_document_media(&refs));
+        let plan = plan_turn_media("session-1", &refs, "openai", "gpt-3.5-turbo").expect("plan");
+        assert_eq!(plan.vision_image_count, 1);
+        assert!(!plan.supports_vision);
+    }
+
+    #[test]
+    fn document_only_plan_has_no_vision_images() {
+        let refs = vec![MediaRef {
+            media_id: "usr:s1:csv".to_string(),
+            kind: "spreadsheet".to_string(),
+            mime: "text/csv".to_string(),
+            label: None,
+        }];
+        let plan = plan_turn_media("session-1", &refs, "openai", "gpt-4o-mini").expect("plan");
+        assert_eq!(plan.vision_image_count, 0);
+        assert!(!plan.merge_options.vision_active);
     }
 }

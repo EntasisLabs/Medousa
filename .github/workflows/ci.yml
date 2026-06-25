@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check -p medousa --all-targets
+      - name: cargo test (lib)
+        run: cargo test -p medousa --lib
+
+  home:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/medousa-home
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/medousa-home/package-lock.json
+      - run: npm ci
+      - run: npm run check

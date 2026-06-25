@@ -68,6 +68,8 @@ fn main() -> Result<()> {
         "slack" => run_slack(&args[1..]),
         "whatsapp" => run_whatsapp(&args[1..]),
         "doctor" => run_doctor(&args[1..]),
+        "status" => run_status(&args[1..]),
+        "stop" => run_stop(&args[1..]),
         "identity-export" => run_identity_export(&args[1..]),
         "identity-remember" => run_identity_remember(&args[1..]),
         "identity-profiles" => run_identity_profiles(&args[1..]),
@@ -1032,8 +1034,74 @@ fn run_whatsapp(args: &[String]) -> Result<()> {
     }
 }
 
+fn run_status(_args: &[String]) -> Result<()> {
+    let profile = load_onboard_profile();
+    let product_config = load_product_config();
+    let plan = resolve_daemon_launch_plan(&[], &profile, &product_config);
+    let defaults = load_tui_defaults();
+    let backend = medousa::resolve_daemon_launch_backend(
+        None,
+        profile.daemon_backend.as_deref(),
+        &product_config,
+        &defaults,
+    );
+    let daemon_running = is_medousa_daemon_process_running();
+    let tcp = is_bind_reachable(&plan.bind);
+    let healthy = daemon_http_healthy(&plan.health_url);
+    println!("medousa status");
+    println!("engine_process={}", if daemon_running { "running" } else { "stopped" });
+    println!("bind={}", plan.bind);
+    println!("health_url={}", plan.health_url);
+    println!("tcp_reachable={tcp}");
+    println!("http_healthy={healthy}");
+    println!("backend={backend}");
+    println!(
+        "data_dir={}",
+        medousa::paths::medousa_data_dir().display()
+    );
+    if let Ok(workshop) = env::var("MEDOUSA_WORKSHOP_ID") {
+        let trimmed = workshop.trim();
+        if !trimmed.is_empty() {
+            println!("workshop_id={trimmed}");
+        }
+    }
+    if healthy {
+        println!("next=medousa tui  |  open Medousa app");
+    } else if daemon_running {
+        println!("next=medousa doctor  |  medousa start daemon-restart");
+    } else {
+        println!("next=medousa start daemon");
+    }
+    Ok(())
+}
+
+fn run_stop(args: &[String]) -> Result<()> {
+    let include_local = has_flag(args, "--local-engine") || has_flag(args, "--all");
+    println!("medousa stop");
+    if is_medousa_daemon_process_running() {
+        stop_medousa_daemon_process();
+        println!("engine=stopped");
+    } else {
+        println!("engine=not_running");
+    }
+    if include_local {
+        #[cfg(unix)]
+        {
+            let _ = Command::new("pkill")
+                .args(["-x", "medousa_local"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            println!("local_brain=stop_requested");
+        }
+    }
+    Ok(())
+}
+
 fn run_doctor(args: &[String]) -> Result<()> {
     let local_engine_verbose = has_flag(args, "--local-engine");
+    let config_mode = has_flag(args, "--config");
+    let json_output = has_flag(args, "--json");
     let defaults = load_tui_defaults();
     let profile = load_onboard_profile();
     let mut product_config = load_product_config();
@@ -1048,8 +1116,49 @@ fn run_doctor(args: &[String]) -> Result<()> {
     let daemon_bind = resolve_daemon_bind(&[], &profile, &product_config);
     let daemon_tcp_reachable = is_bind_reachable(&daemon_bind);
     let daemon_http = probe_daemon_http(&daemon_url);
+    let backend_name = profile
+        .daemon_backend
+        .clone()
+        .or_else(|| defaults.backend.clone())
+        .unwrap_or_else(|| "in-memory".to_string());
 
-    println!("medousa doctor");
+    if json_output {
+        let profiles = defaults.inference_profiles.clone().unwrap_or_default();
+        let main = medousa::inference_profiles::main_target(&defaults);
+        let vision = medousa::inference_profiles::vision_target(&defaults);
+        let stt = medousa::inference_profiles::stt_target(&defaults);
+        let payload = serde_json::json!({
+            "data_dir": medousa::paths::medousa_data_dir().display().to_string(),
+            "data_dir_source": medousa::paths::medousa_data_dir_source(),
+            "config_dir": medousa::paths::medousa_config_dir().display().to_string(),
+            "vault_root": medousa::vault::path::user_vault_root().display().to_string(),
+            "product_config": medousa::paths::medousa_data_dir().join("product_config.json").display().to_string(),
+            "tui_defaults": medousa::paths::medousa_data_dir().join("tui_defaults.json").display().to_string(),
+            "daemon_url": daemon_url,
+            "daemon_bind": daemon_bind,
+            "daemon_tcp_reachable": daemon_tcp_reachable,
+            "daemon_http_healthy": daemon_http.healthy,
+            "provider": main.provider,
+            "model": main.model,
+            "base_url": main.base_url,
+            "backend": backend_name,
+            "inference_profiles": {
+                "main": profiles.main,
+                "vision": vision.map(|t| serde_json::json!({"provider": t.provider, "model": t.model, "base_url": t.base_url})),
+                "stt": stt.map(|t| serde_json::json!({"provider": t.provider, "model": t.model, "base_url": t.base_url})),
+            },
+            "mcp_gateway_url": medousa::resolve_mcp_gateway_url(None),
+            "api_key": load_tui_api_key().is_some(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
+    if config_mode {
+        println!("medousa doctor --config");
+    } else {
+        println!("medousa doctor");
+    }
     println!(
         "data_dir={} source={} config_dir={} vault_root={}",
         medousa::paths::medousa_data_dir().display(),
@@ -1063,11 +1172,31 @@ fn run_doctor(args: &[String]) -> Result<()> {
             println!("MEDOUSA_DATA_DIR={trimmed}");
         }
     }
-    let backend_name = profile
-        .daemon_backend
-        .clone()
-        .or_else(|| defaults.backend.clone())
-        .unwrap_or_else(|| "in-memory".to_string());
+    if config_mode {
+        println!(
+            "product_config={}",
+            medousa::paths::medousa_data_dir()
+                .join("product_config.json")
+                .display()
+        );
+        println!(
+            "tui_defaults={}",
+            medousa::paths::medousa_data_dir()
+                .join("tui_defaults.json")
+                .display()
+        );
+        if let Some(vision) = medousa::inference_profiles::vision_target(&defaults) {
+            println!(
+                "vision_profile={}:{}",
+                vision.provider, vision.model
+            );
+        } else {
+            println!("vision_profile=(unset — required for image attachments)");
+        }
+        if let Some(stt) = medousa::inference_profiles::stt_target(&defaults) {
+            println!("stt_profile={}:{}", stt.provider, stt.model);
+        }
+    }
     println!(
         "provider={} model={} base_url={} backend={}",
         defaults
@@ -3479,41 +3608,42 @@ fn parse_workspace_sse_data(frame: &str) -> Option<String> {
 }
 
 fn print_help() {
-    println!("Medousa — your second brain, always here, always yours.");
+    println!("Medousa operator CLI — run and troubleshoot your engine.");
+    println!("Everyday chat → open the Medousa app. This surface is for operators and automation.");
     println!();
-    println!("Start here: open Medousa. No terminal required.");
+    println!("Lifecycle (run the engine):");
+    println!("  medousa start <service>     daemon, mcp-gateway, discord, telegram, slack, whatsapp, all");
+    println!("  medousa stop [--local-engine]   Graceful engine shutdown");
+    println!("  medousa status              Engine bind, health, data dir");
+    println!("  medousa daemon [--backend <name>] [--bind <host:port>] [--public]");
+    println!("  medousa tui [--daemon-url <url>] [--no-daemon]");
     println!();
-    println!("Power users & troubleshooting:");
+    println!("Diagnose:");
+    println!("  medousa doctor [--config] [--json] [--local-engine]");
+    println!("  medousa models probe|catalog|list|download|remove|engine-status|engine-load");
     println!();
-    println!("USAGE:");
-    println!("  medousa onboard|setup|init [--yes] [--advanced] [--provider <name>] [--model <name>] [--base-url <url>] [--api-key <key>] [--backend <name>] [--daemon-url <url>] [--no-daemon] [--no-tui]");
-    println!("  medousa start <service>   Core, adapters — see: medousa start --help");
-    println!("  medousa tui [--daemon-url <url>] [--no-daemon] [-- <medousa_tui args>]");
-    println!("  medousa daemon [--backend <name>] [--bind <host:port>] [--public] [-- <medousa_daemon args>]  (foreground)");
-    println!("  medousa discord [--daemon-url <url>] [--token <token>] [-- <medousa_discord args>]");
-    println!("  medousa telegram [--daemon-url <url>] [--token <token>] [-- <medousa_telegram args>]");
-    println!("    Telegram allowlist is configured in medousa setup (product_config.json).");
-    println!("  medousa slack [--daemon-url <url>] [--bot-token <xoxb-…>] [--app-token <xapp-…>]");
-    println!("  medousa whatsapp [--daemon-url <url>] [--deliver-bind <host:port>] [--session-db <path>]");
-    println!("    WhatsApp uses a local deliver endpoint; session persists in ~/.local/share/medousa/whatsapp/session.db by default.");
-    println!("  medousa doctor [--local-engine]");
-    println!("  medousa models probe|catalog|list|download|remove|engine-status|engine-load [--daemon-url <url>]");
-    println!("  medousa identity-export [--user-id <id>] [--dir <path>]");
-    println!("  medousa identity-remember --kind <preference|person|note> --subject <key|name> --statement <text> [--source user_direct] [--attributes a,b]");
-    println!("  medousa identity-profiles list|create <slug> [display_name]|use <profile_id>|export <profile_id> [--out file.json]|import <file.json> [--dry-run] [--daemon-url <url>]");
-    println!("  medousa manuscript-list");
-    println!("  medousa manuscript-validate <id>");
-    println!("  medousa manuscript-install <path-to.yaml> [--project]");
-    println!("  medousa skill-import <path> [--project] [--force] [--extends <id>|--no-extends]");
-    println!("  medousa skill-import --from-hermes|--from-openclaw|--from-cursor [--project] [--force]");
-    println!("  medousa openshell-probe [<manuscript-id>] [--script scripts/echo.sh] [--from medousa-openshell-sandbox:local] [--policy skill-sandbox] [--skip-grapheme]");
-    println!("  medousa workspace [snapshot|cards|feed|stream|card <id>|cancel <id>|retry <id>|link-vault <id> --path <vault-path>] [--daemon-url <url>] [--limit N] [--include-terminal] [--column backlog|in_flight|wrapping_up|done|blocked] [--since-revision N] [--max-events N]");
-    println!("  medousa vault [list|read <path>|write <path> --content <md>|--stdin|search <q>|delete <path>|backlinks <path>] [--daemon-url <url>] [--prefix <dir/>] [--limit N]");
-    println!("  medousa pair status|list|qr [--term] [--open]|remove <pairing_id> [--daemon-url <url>]");
+    println!("Workshop (sessions, artifacts, remote):");
+    println!("  medousa workspace …");
+    println!("  medousa vault …");
+    println!("  medousa pair status|list|qr|remove …");
+    println!("  medousa iroh …");
+    println!();
+    println!("Configure:");
+    println!("  medousa setup|onboard|init [--yes] [--provider <name>] [--model <name>] …");
+    println!("  medousa doctor --config      Paths, profiles, MCP — script with --json");
+    println!();
+    println!("Extend:");
+    println!("  medousa identity-export|identity-remember|identity-profiles …");
+    println!("  medousa manuscript-list|manuscript-install|skill-import|openshell-probe");
+    println!();
+    println!("Channels (adapters):");
+    println!("  medousa discord|telegram|slack|whatsapp …");
     println!();
     println!("EXAMPLES:");
-    println!("  Open Medousa");
-    println!("  medousa start daemon --inference   (offline private brain — dev only)");
-    println!("  medousa doctor");
-    println!("  medousa models probe");
+    println!("  medousa status");
+    println!("  medousa doctor --config");
+    println!("  medousa start daemon --inference");
+    println!("  medousa tui");
+    println!();
+    println!("Run medousa <command> --help for flags.");
 }

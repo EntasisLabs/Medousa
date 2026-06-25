@@ -13,6 +13,7 @@ MEDOUSA_BINARIES=(
   medousa
   medousa_cli
   medousa_daemon
+  medousa_local
   medousa_tui
   medousa_telegram
   medousa_discord

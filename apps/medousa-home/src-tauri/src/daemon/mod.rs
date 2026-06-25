@@ -68,6 +68,7 @@ fn daemon_url_store_path() -> PathBuf {
 }
 
 fn read_persisted_daemon_url() -> Option<String> {
+    // Legacy seed for first-run personal workshop; active URL comes from workshops.json.
     let raw = std::fs::read_to_string(daemon_url_store_path()).ok()?;
     let trimmed = raw.trim().trim_end_matches('/').to_string();
     if trimmed.is_empty() {

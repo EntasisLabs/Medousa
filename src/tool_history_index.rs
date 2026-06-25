@@ -413,6 +413,7 @@ pub fn new_workflow_id_for_promotion() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
 
     #[test]
     fn sanitize_redacts_secret_keys() {

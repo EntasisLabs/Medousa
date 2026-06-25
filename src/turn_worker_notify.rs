@@ -179,6 +179,7 @@ pub async fn deliver_worker_result_to_ingest_channel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::turn_continuation::StoredDeliveryTarget;
 
     #[test]
     fn compose_spawn_text_uses_user_ack_only() {

@@ -231,6 +231,7 @@ pub fn build_feature_routers(
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())
         .merge(crate::inference_profiles_handlers::routes())
+        .merge(crate::daemon::runtime_tui_defaults::routes())
         .merge(crate::stt_handlers::routes())
         .merge(dashboard)
 }

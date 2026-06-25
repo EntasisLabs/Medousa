@@ -235,6 +235,14 @@ export function workshopBrandCssVars(
   return color ? `--workshop-brand:${color}` : undefined;
 }
 
+export function workshopRemoteAccessNote(
+  workshop: WorkshopServer,
+  isMobile: boolean,
+): string | null {
+  if (isMobile || workshop.kind !== "paired") return null;
+  return "LAN only on desktop — use the mobile app for LTE";
+}
+
 export function workshopHostLabel(url: string, kind: WorkshopKind): string {
   if (kind === "local") return "This Mac";
   try {

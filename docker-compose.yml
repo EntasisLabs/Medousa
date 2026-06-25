@@ -1,0 +1,13 @@
+services:
+  medousa-engine:
+    build: .
+    ports:
+      - "7419:7419"
+    volumes:
+      - medousa-data:/data
+    environment:
+      MEDOUSA_DATA_DIR: /data
+    restart: unless-stopped
+
+volumes:
+  medousa-data:

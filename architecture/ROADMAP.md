@@ -64,8 +64,8 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) 
 | Phase 2 — inference profiles (main / vision / STT) | ✅ |
 | Phase 3 — per-provider keys + fallback router | ✅ |
 | Phase 4 — STT on daemon | ✅ |
-| P5a envelope + media API + composer UI | ⬜ |
-| P5a text extract (PDF/xlsx/csv) | ⬜ |
+| P5a envelope + media API + composer UI | ✅ |
+| P5a text extract (PDF/xlsx/csv) | ✅ |
 | P5b vision (uses **vision** profile + registry) | ✅ |
 | Epic polish — catalog badges + TUI profiles | ✅ |
 
@@ -94,7 +94,9 @@ Runbook: [connection-reliability](../docs/runbooks/connection-reliability.md)
 | Deliverable | Status |
 |-------------|--------|
 | [configuration-reference.md](../docs/configuration-reference.md) | ✅ started |
-| `medousa doctor --config` summary | ⬜ |
+| `medousa doctor --config` summary | ✅ |
+| `medousa status` / `medousa stop` | ✅ |
+| Per-engine settings on desktop (engine API) | ✅ |
 | LLM provider picker in Home | ✅ |
 | MCP add/edit in Home | ✅ |
 | Capabilities toggles in Home | ✅ |
@@ -110,6 +112,22 @@ Signed `.app` / `.msi` / AppImage in CI — [desktop-distribution-plan.md](deskt
 ## 6. Embedded local inference
 
 Gemma matrix + routing — [embedded-local-inference-plan.md](embedded-local-inference-plan.md)
+
+---
+
+## 7. Road To Production (power users)
+
+**Goal:** Operator parity — per-engine settings, power-user CLI, headless packaging, CI gates.
+
+Full plan: [road-to-production-plan.md](road-to-production-plan.md)
+
+| Workstream | Status |
+|------------|--------|
+| WS1 P5a media routing | ✅ |
+| WS2 Per-engine desktop settings | ✅ |
+| WS3 CLI + headless install/Docker | ✅ |
+| WS4 Multi-workshop hardening | ✅ |
+| WS5 PR CI + version unify | ✅ |
 
 ---
 

@@ -46,6 +46,7 @@ import type {
   StageRouteCommandResponse,
   StageRoutingMatrix,
 } from "$lib/types/runtime";
+import type { TuiDefaults } from "$lib/types/workshopDefaults";
 import type {
   VaultBacklinksResponse,
   VaultNoteContentResponse,
@@ -354,6 +355,18 @@ export async function getRuntimeStats(): Promise<DaemonStatsResponse> {
 
 export async function getRuntimeDefaults(): Promise<RuntimeDefaultsResponse> {
   return invoke<RuntimeDefaultsResponse>("runtime_get_defaults");
+}
+
+export async function getEngineTuiDefaults(): Promise<TuiDefaults> {
+  return invoke<TuiDefaults>("runtime_get_tui_defaults");
+}
+
+export async function putEngineTuiDefaults(dto: TuiDefaults): Promise<void> {
+  await invoke("runtime_put_tui_defaults", { dto });
+}
+
+export async function migrateGlobalTuiDefaultsToEngine(): Promise<boolean> {
+  return invoke<boolean>("migrate_global_tui_defaults_to_engine");
 }
 
 export async function getDeliveryStatus(): Promise<DeliveryHealthResponse> {

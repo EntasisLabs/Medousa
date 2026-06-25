@@ -449,6 +449,45 @@ pub fn load_tui_defaults() -> TuiDefaultsDto {
     file_to_dto(&read_tui_defaults_file())
 }
 
+pub fn tui_defaults_dto_from_value(value: &serde_json::Value) -> TuiDefaultsDto {
+    let file: TuiDefaultsFile = serde_json::from_value(value.clone()).unwrap_or_default();
+    file_to_dto(&file)
+}
+
+pub fn tui_defaults_value_from_dto(dto: &TuiDefaultsDto) -> serde_json::Value {
+    let mut file = TuiDefaultsFile::default();
+    apply_dto_to_file(&mut file, dto);
+    serde_json::to_value(&file).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+pub fn global_host_tui_defaults_path() -> PathBuf {
+    crate::paths::default_medousa_data_dir().join("tui_defaults.json")
+}
+
+pub fn global_host_tui_defaults_migrated_marker() -> PathBuf {
+    crate::paths::default_medousa_data_dir().join("tui_defaults.json.host-migrated")
+}
+
+/// One-time import of legacy host-global `tui_defaults.json` into the active engine.
+pub fn migrate_global_tui_defaults_if_needed() -> Result<bool, String> {
+    let legacy = global_host_tui_defaults_path();
+    let marker = global_host_tui_defaults_migrated_marker();
+    if !legacy.is_file() || marker.is_file() {
+        return Ok(false);
+    }
+    let raw = std::fs::read_to_string(&legacy).map_err(|err| err.to_string())?;
+    if raw.trim().is_empty() {
+        return Ok(false);
+    }
+    let _: TuiDefaultsDto = {
+        let file: TuiDefaultsFile =
+            serde_json::from_str(&raw).map_err(|err| format!("legacy defaults invalid: {err}"))?;
+        file_to_dto(&file)
+    };
+    std::fs::rename(&legacy, &marker).map_err(|err| err.to_string())?;
+    Ok(true)
+}
+
 #[tauri::command]
 pub fn persist_tui_defaults(dto: TuiDefaultsDto) -> Result<(), String> {
     let mut file = read_tui_defaults_file();

@@ -22,7 +22,7 @@ DRY_RUN=0
 FORCE=0
 SKIP_CHECKSUM=0
 VERIFY_ONLY=0
-UNINSTALL=0
+INSTALL_PROFILE=""
 
 INSTALL_RECORD="${STATE_DIR}/install.json"
 
@@ -45,6 +45,7 @@ Options:
   --uninstall           Remove installed Medousa binaries from the install directory
   --registry-url <url>  Self-hosted release base URL (or MEDOUSA_RELEASE_BASE_URL)
   --channel <name>      Release channel (default: stable)
+  --profile <name>      Install profile: default | headless-server (engine CLI only)
   -h, --help            Show this help
 
 Environment:
@@ -149,6 +150,10 @@ while [[ $# -gt 0 ]]; do
       RELEASE_CHANNEL="$2"
       shift 2
       ;;
+    --profile)
+      INSTALL_PROFILE="$2"
+      shift 2
+      ;;
     -h | --help)
       usage
       exit 0
@@ -158,6 +163,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${INSTALL_PROFILE}" == "headless-server" ]]; then
+  MEDOUSA_BINARIES=(medousa medousa_cli medousa_daemon medousa_local)
+  log "profile=headless-server (engine binaries only — no TUI/adapters)"
+elif [[ -n "${INSTALL_PROFILE}" && "${INSTALL_PROFILE}" != "default" ]]; then
+  die "unknown profile: ${INSTALL_PROFILE} (try default or headless-server)"
+fi
 
 if [[ "${FROM_SOURCE}" -eq 1 && -n "${FROM_DIST}" ]]; then
   die "use either --from-source or --from-dist, not both"

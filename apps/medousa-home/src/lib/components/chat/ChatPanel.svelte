@@ -32,6 +32,7 @@
   import { isTauri, showChatPopout } from "$lib/window";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
+  import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
@@ -222,7 +223,7 @@
     const prompt = chat.draft.trim();
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
-    if (hasAttachments) {
+    if (hasVisionMediaRefs(chat.pendingMediaRefs)) {
       if (!workshopDefaults.loaded) {
         await workshopDefaults.load();
       }

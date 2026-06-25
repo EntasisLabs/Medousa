@@ -35,6 +35,15 @@ export function mediaKindFromMime(mime: string): string {
   return "document";
 }
 
+export function isImageMediaRef(ref: MediaRef): boolean {
+  if (ref.kind === "image") return true;
+  return ref.mime.trim().toLowerCase().startsWith("image/");
+}
+
+export function hasVisionMediaRefs(refs: MediaRef[]): boolean {
+  return refs.some(isImageMediaRef);
+}
+
 export function mediaRefFromUpload(
   response: MediaUploadResponse,
   label?: string | null,

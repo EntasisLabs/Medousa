@@ -19,11 +19,10 @@ pub struct MediaTextExtract {
 }
 
 pub fn extract_media_text(bytes: &[u8], mime: &str, label: Option<&str>) -> Option<MediaTextExtract> {
-    let mime = mime.trim().to_ascii_lowercase();
+    let mime = resolve_extract_mime(mime, bytes, label);
     let hint = label
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .or_else(|| None);
+        .filter(|value| !value.is_empty());
 
     let result = match mime.as_str() {
         "text/plain" | "text/markdown" => extract_plain_text(bytes),
@@ -40,6 +39,46 @@ pub fn extract_media_text(bytes: &[u8], mime: &str, label: Option<&str>) -> Opti
         cap_extract(&mut extract, MAX_MEDIA_EXTRACT_CHARS);
         extract
     })
+}
+
+fn resolve_extract_mime(mime: &str, bytes: &[u8], label: Option<&str>) -> String {
+    let mime = mime.trim().to_ascii_lowercase();
+    if !mime.is_empty() && mime != "application/octet-stream" {
+        return mime;
+    }
+    if bytes.starts_with(b"%PDF") {
+        return "application/pdf".to_string();
+    }
+    if let Some(name) = label.map(str::trim).filter(|value| !value.is_empty()) {
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with(".pdf") {
+            return "application/pdf".to_string();
+        }
+        if lower.ends_with(".csv") {
+            return "text/csv".to_string();
+        }
+        if lower.ends_with(".tsv") {
+            return "text/tab-separated-values".to_string();
+        }
+        if lower.ends_with(".md") {
+            return "text/markdown".to_string();
+        }
+        if lower.ends_with(".txt") {
+            return "text/plain".to_string();
+        }
+        if lower.ends_with(".xlsx") {
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_string();
+        }
+        if lower.ends_with(".xls") {
+            return "application/vnd.ms-excel".to_string();
+        }
+    }
+    if mime.is_empty() {
+        "application/octet-stream".to_string()
+    } else {
+        mime
+    }
 }
 
 pub fn extract_path_for_media(payload_path: &str) -> std::path::PathBuf {

@@ -63,7 +63,7 @@ pub fn persist_user_media(
         ));
     }
 
-    let mime = normalize_mime(mime);
+    let mime = infer_mime(bytes, mime, label);
     if !mime_allowed(&mime) {
         return Err(format!("mime type not allowed: {mime}"));
     }
@@ -185,6 +185,37 @@ pub fn read_media_extract(record: &MediaRecord) -> Option<String> {
         .filter(|text| !text.trim().is_empty())
 }
 
+/// Read cached extract or run text extraction from the payload at turn time.
+pub fn resolve_media_extract(record: &MediaRecord) -> Option<(String, bool)> {
+    if let Some(text) = read_media_extract(record) {
+        return Some((text, record.extract_truncated));
+    }
+    let bytes = open_media_payload(record).ok()?;
+    let mime = infer_mime_for_record(record);
+    let extract = crate::media_text_extract::extract_media_text(
+        &bytes,
+        &mime,
+        record.label.as_deref(),
+    )?;
+    if extract.text.trim().is_empty() {
+        return None;
+    }
+    Some((extract.text, extract.truncated))
+}
+
+fn append_extract_block(block: &mut String, text: &str, truncated: bool) {
+    block.push_str("  ```\n");
+    for line in text.lines() {
+        block.push_str("  ");
+        block.push_str(line);
+        block.push('\n');
+    }
+    block.push_str("  ```\n");
+    if truncated {
+        block.push_str("  (extract truncated at import)\n");
+    }
+}
+
 pub fn merge_media_refs_into_prompt(
     prompt: &str,
     session_id: &str,
@@ -223,18 +254,9 @@ pub fn merge_media_refs_into_prompt(
         }
 
         if let Some(record) = get_media_record(session_id, &media_ref.media_id) {
-            if let Some(extract) = read_media_extract(&record) {
-                block.push_str("  ```\n");
-                for line in extract.lines() {
-                    block.push_str("  ");
-                    block.push_str(line);
-                    block.push('\n');
-                }
-                block.push_str("  ```\n");
-                if record.extract_truncated {
-                    block.push_str("  (extract truncated at import)\n");
-                }
-            } else if media_ref.mime == "application/pdf" {
+            if let Some((extract, truncated)) = resolve_media_extract(&record) {
+                append_extract_block(&mut block, &extract, truncated);
+            } else if is_pdf_attachment(media_ref, &record) {
                 block.push_str(
                     "  (no text layer — scanned PDF may need vision/OCR in a later release)\n",
                 );
@@ -268,6 +290,75 @@ fn normalize_mime(mime: &str) -> String {
     } else {
         mime
     }
+}
+
+fn infer_mime(bytes: &[u8], mime: &str, label: Option<&str>) -> String {
+    let mut mime = normalize_mime(mime);
+    if mime != "application/octet-stream" {
+        return mime;
+    }
+    if bytes.starts_with(b"%PDF") {
+        return "application/pdf".to_string();
+    }
+    if let Some(label) = label {
+        if let Some(from_name) = mime_from_filename(label) {
+            return from_name;
+        }
+    }
+    mime
+}
+
+fn mime_from_filename(name: &str) -> Option<String> {
+    let lower = name.trim().to_ascii_lowercase();
+    if lower.ends_with(".pdf") {
+        return Some("application/pdf".to_string());
+    }
+    if lower.ends_with(".csv") {
+        return Some("text/csv".to_string());
+    }
+    if lower.ends_with(".tsv") {
+        return Some("text/tab-separated-values".to_string());
+    }
+    if lower.ends_with(".md") {
+        return Some("text/markdown".to_string());
+    }
+    if lower.ends_with(".txt") {
+        return Some("text/plain".to_string());
+    }
+    if lower.ends_with(".xlsx") {
+        return Some(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
+        );
+    }
+    if lower.ends_with(".xls") {
+        return Some("application/vnd.ms-excel".to_string());
+    }
+    None
+}
+
+fn is_pdf_attachment(media_ref: &MediaRef, record: &MediaRecord) -> bool {
+    if infer_mime_for_record(record) == "application/pdf" {
+        return true;
+    }
+    media_ref.mime.trim().eq_ignore_ascii_case("application/pdf")
+}
+
+fn infer_mime_for_record(record: &MediaRecord) -> String {
+    let mime = normalize_mime(&record.mime);
+    if mime != "application/octet-stream" {
+        return mime;
+    }
+    if let Ok(bytes) = open_media_payload(record) {
+        if bytes.starts_with(b"%PDF") {
+            return "application/pdf".to_string();
+        }
+    }
+    if let Some(label) = record.label.as_deref() {
+        if let Some(from_name) = mime_from_filename(label) {
+            return from_name;
+        }
+    }
+    mime
 }
 
 fn mime_allowed(mime: &str) -> bool {

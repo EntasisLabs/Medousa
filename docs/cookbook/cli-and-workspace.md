@@ -1,24 +1,25 @@
 # CLI & workspace
 
-Everything runs through the `medousa` launcher binary (installed to `~/.local/bin`).
+Power-user operator surface. Everyday chat → open Medousa. This doc is for engine lifecycle, scripting, and troubleshooting.
 
-Install first: [install-and-self-host.md](install-and-self-host.md)
+Install: [install-and-self-host.md](install-and-self-host.md) · Headless: `./scripts/install.sh --profile headless-server`
 
 ---
 
 ## Core commands
 
 ```
-medousa setup              Configure provider, model, backend, channels (TUI wizard)
-medousa start <service>    Start engine, gateway, or channel bridge
-medousa start daemon --inference   # spawns medousa_daemon + medousa_local (offline brain)
-medousa tui                Terminal workspace (starts engine if needed)
-medousa daemon             Foreground slim daemon (pass-through args)
-medousa doctor             Health check (daemon + paths)
-medousa doctor --local-engine   Also probe medousa_local on :7421
-medousa models …           Local model management (power users)
-medousa pair …             LAN phone pairing
+medousa status             Engine bind, health, data dir
+medousa stop [--local-engine]
+medousa doctor --config [--json]
+medousa setup --yes        Non-interactive bootstrap (flags/env)
+medousa start daemon --inference
+medousa tui                Terminal workspace
+medousa pair …             LAN / QR pairing
+medousa iroh …             Relay smoke / tickets
 ```
+
+Desktop Settings now read/write **per-engine** `tui_defaults.json` via `GET/PUT /v1/runtime/tui-defaults` (not host-global file).
 
 ### Start services
 

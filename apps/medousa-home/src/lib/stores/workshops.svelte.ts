@@ -1,3 +1,4 @@
+import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { getDaemonUrl } from "$lib/daemon";
 import {
   addLocalWorkshop,
@@ -182,6 +183,8 @@ export class WorkshopsStore {
       await reconnectWorkshop((health) => {
         options?.onHealthChange?.(health);
       });
+      workshopDefaults.resetForReconnect();
+      await workshopDefaults.load(true);
       this.applyThemeForActiveWorkshop();
       await this.restoreLastSession();
       toast.show(`Connected to ${this.activeLabel}`);

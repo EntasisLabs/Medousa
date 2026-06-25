@@ -93,9 +93,13 @@
         </p>
       {/if}
 
-      {#if message.content?.trim() || message.streaming}
+      {#if message.content?.trim()}
         <div class="chat-voice">
-          <MarkdownContent content={message.content || "…"} />
+          <MarkdownContent content={message.content} />
+        </div>
+      {:else if message.streaming && !message.toolRuns?.length}
+        <div class="chat-voice">
+          <MarkdownContent content="…" />
         </div>
       {/if}
 

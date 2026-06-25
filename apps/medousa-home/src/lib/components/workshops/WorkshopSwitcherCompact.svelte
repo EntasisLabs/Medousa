@@ -11,7 +11,9 @@
     workshopBrandCssVars,
     workshopHostLabel,
     workshopMonogram,
+    workshopRemoteAccessNote,
   } from "$lib/types/workshopRegistry";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { isTauri } from "$lib/window";
 
   interface Props {
@@ -65,14 +67,21 @@
   }
 
   function workshopMeta(workshop: WorkshopServer): string {
+    const remoteNote = workshopRemoteAccessNote(workshop, isTauriMobilePlatform());
     const host = workshopHostLabel(workshop.url, workshop.kind);
     if (workshop.id === workshops.activeWorkshopId) {
       if (connection.checking) return "Connecting…";
-      if (connection.online) return `Connected · ${host}`;
-      if (connection.offline) return `Offline · ${host}`;
+      if (connection.online) {
+        return remoteNote ? `${remoteNote} · ${host}` : `Connected · ${host}`;
+      }
+      if (connection.offline) {
+        return remoteNote
+          ? `Offline · ${remoteNote}`
+          : `Offline · ${host} — try medousa doctor`;
+      }
     }
     if (workshop.kind === "local") return host;
-    return `Team · ${host}`;
+    return remoteNote ? `${remoteNote}` : `Team · ${host}`;
   }
 
   function avatarStyle(workshop: WorkshopServer): string | undefined {

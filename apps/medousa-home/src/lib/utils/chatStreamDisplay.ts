@@ -73,10 +73,18 @@ export function operatorStreamErrorLine(
 }
 
 export function shouldMirrorStatusIntoContent(
-  event: InteractiveTurnStreamEvent,
-  showEngineDetails: boolean,
+  _event: InteractiveTurnStreamEvent,
+  _showEngineDetails: boolean,
 ): boolean {
-  if (event.event_type !== "turn_progress") return false;
-  if (showEngineDetails) return true;
-  return streamOperatorMessage(event) != null;
+  // Progress whispers belong in statusLine + tool chips, not the answer body.
+  return false;
+}
+
+export function shouldSuppressStreamContentDelta(message: {
+  streaming?: boolean;
+  toolRuns?: unknown[] | null;
+}): boolean {
+  if (!message.streaming) return false;
+  // After the first tool receipt, interim streamed prose belongs in chips/status only.
+  return (message.toolRuns?.length ?? 0) > 0;
 }

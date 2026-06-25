@@ -1,10 +1,12 @@
 import {
-  loadTuiDefaults,
-  persistTuiDefaults,
-  persistTuiFavoriteModels,
   persistTuiRuntimePrefs,
 } from "$lib/config";
-import { getRuntimeDefaults } from "$lib/daemon";
+import {
+  getEngineTuiDefaults,
+  getRuntimeDefaults,
+  migrateGlobalTuiDefaultsToEngine,
+  putEngineTuiDefaults,
+} from "$lib/daemon";
 import { messagingSecretStatus, messagingSaveSecret, messagingClearSecret } from "$lib/messaging";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
@@ -69,6 +71,7 @@ export class WorkshopDefaultsStore {
           baseUrl: defaults.base_url,
           responseDepthMode: defaults.response_depth_mode,
           stageRouting: defaults.stage_routing,
+          inferenceProfiles: defaults.inference_profiles ?? null,
         });
         this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
         this.apiKeySet = false;
@@ -78,7 +81,8 @@ export class WorkshopDefaultsStore {
         return;
       }
 
-      const raw = await loadTuiDefaults();
+      await migrateGlobalTuiDefaultsToEngine().catch(() => false);
+      const raw = await getEngineTuiDefaults();
       this.draft = normalizeWorkshopDefaults(raw);
       this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
       if (!this.draft.stageRouting?.orchestrator?.role) {
@@ -148,7 +152,7 @@ export class WorkshopDefaultsStore {
     if (!isTauri() || isTauriMobilePlatform()) return;
     const next = toggleFavoriteModel(this.favoriteModels(), provider, model);
     this.draft = { ...this.draft, favoriteModels: next };
-    await persistTuiFavoriteModels(next);
+    await putEngineTuiDefaults(syncFlatFieldsFromProfiles(this.draft));
   }
 
   private flashModelsNotice(text: string) {
@@ -173,7 +177,7 @@ export class WorkshopDefaultsStore {
         baseUrl: this.draft.baseUrl?.trim() || null,
         sttBaseUrl: this.draft.sttBaseUrl?.trim() || null,
       });
-      await persistTuiDefaults(payload);
+      await putEngineTuiDefaults(payload);
       this.draft = payload;
 
       runtime.provider = payload.provider ?? runtime.provider;
@@ -229,7 +233,7 @@ export class WorkshopDefaultsStore {
         payload.sliceColdWindowTurns = payload.sliceHotWindowTurns;
       }
 
-      await persistTuiDefaults(payload);
+      await putEngineTuiDefaults(payload);
 
       if (this.clearApiKey) {
         await messagingClearSecret("api_key");
@@ -281,7 +285,7 @@ export class WorkshopDefaultsStore {
       );
       runtime.defaultsLoaded = true;
 
-      this.message = "Workshop defaults saved to tui_defaults.json";
+      this.message = "Workshop defaults saved to engine";
     } catch (err) {
       this.message = err instanceof Error ? err.message : String(err);
     } finally {

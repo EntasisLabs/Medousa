@@ -33,7 +33,7 @@ import {
   isEngineTelemetryText,
   operatorStreamErrorLine,
   operatorStreamStatusLine,
-  shouldMirrorStatusIntoContent,
+  shouldSuppressStreamContentDelta,
 } from "$lib/utils/chatStreamDisplay";
 import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
 import {
@@ -1557,17 +1557,8 @@ export class ChatStore {
     let content = current.content;
 
     if (event.event_type === "turn_progress") {
-      const statusLine = this.resolveStatusLine(event, current.statusLine);
-      if (
-        !content.trim() &&
-        statusLine &&
-        shouldMirrorStatusIntoContent(event, settings.showEngineDetailsInChat)
-      ) {
-        content = statusLine;
-      }
       const next: ChatMessage = {
         ...current,
-        content,
         phase: "tool_loop",
         statusLine: this.resolveStatusLine(event, current.statusLine),
         tools: event.tool_names?.length
@@ -1620,14 +1611,11 @@ export class ChatStore {
     }
 
     if (event.event_type === "scratch_reset") {
-      const preserved =
-        current.statusLine?.trim() ||
-        (current.content.trim() ? current.content.trim() : undefined);
       const next: ChatMessage = {
         ...current,
         content: "",
         phase: "tool_loop",
-        statusLine: preserved,
+        statusLine: current.statusLine,
       };
       this.messages = [
         ...this.messages.slice(0, idx),
@@ -1638,7 +1626,9 @@ export class ChatStore {
     }
 
     if (event.content_delta) {
-      content += event.content_delta;
+      if (!shouldSuppressStreamContentDelta(current)) {
+        content += event.content_delta;
+      }
     } else if (event.final_text) {
       const terminal = isTerminalContentCommit(event);
       const workerLink = this.workerLinkForTurn(event.turn_id);

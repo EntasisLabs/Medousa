@@ -1,0 +1,14 @@
+[Unit]
+Description=Medousa Engine (medousa_daemon)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=MEDOUSA_DATA_DIR=%h/.local/share/medousa
+ExecStart=%h/.local/bin/medousa_daemon --backend surreal-mem --bind 127.0.0.1:7419
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

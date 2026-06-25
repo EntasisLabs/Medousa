@@ -694,6 +694,7 @@ async fn run_agent_turn_inner(
     let session_id = request.session_id.trim().to_string();
     let prompt = request.prompt.trim().to_string();
     let has_media = !request.media_refs.is_empty();
+    let has_vision_media = media_vision::has_vision_media(&request.media_refs);
     if session_id.is_empty() || (prompt.is_empty() && !has_media) {
         sink.agent_error(1, "session_id and prompt are required".to_string())
             .await;
@@ -709,7 +710,8 @@ async fn run_agent_turn_inner(
 
     let saved_defaults = crate::session::load_tui_defaults();
     let settings = runtime_settings_for_interactive_turn(backend, &request);
-    let vision_target = if has_media {
+    let main_target = crate::inference_profiles::main_target(&saved_defaults);
+    let vision_target = if has_vision_media {
         match crate::inference_profiles::vision_target(&saved_defaults) {
             Some(target) => target,
             None => {
@@ -723,19 +725,23 @@ async fn run_agent_turn_inner(
             }
         }
     } else {
-        crate::inference_profiles::main_target(&saved_defaults)
+        main_target.clone()
     };
-    let vision_plan = match media_vision::plan_turn_media(
-        &session_id,
-        &request.media_refs,
-        &vision_target.provider,
-        &vision_target.model,
-    ) {
-        Ok(plan) => plan,
-        Err(err) => {
-            sink.agent_error(1, err).await;
-            return;
+    let vision_plan = if has_vision_media {
+        match media_vision::plan_turn_media(
+            &session_id,
+            &request.media_refs,
+            &vision_target.provider,
+            &vision_target.model,
+        ) {
+            Ok(plan) => plan,
+            Err(err) => {
+                sink.agent_error(1, err).await;
+                return;
+            }
         }
+    } else {
+        media_vision::TurnMediaVisionPlan::empty()
     };
 
     let effective_prompt = merge_media_refs_into_prompt(
@@ -745,8 +751,12 @@ async fn run_agent_turn_inner(
         &vision_plan.merge_options,
     );
 
-    if let Some(notice) = vision_plan.stream_notice(&vision_target.provider, &vision_target.model) {
-        sink.notice(notice).await;
+    if has_vision_media {
+        if let Some(notice) =
+            vision_plan.stream_notice(&vision_target.provider, &vision_target.model)
+        {
+            sink.notice(notice).await;
+        }
     }
 
     let stage_routing = stage_routing_for_interactive_turn(&request);
@@ -896,7 +906,7 @@ async fn run_agent_turn_inner(
         scheduled_tool_allowlist,
         media_refs: request.media_refs.clone(),
         vision_plan,
-        inference_profile_kind: if has_media {
+        inference_profile_kind: if has_vision_media {
             crate::inference_profiles::InferenceProfileKind::Vision
         } else {
             crate::inference_profiles::InferenceProfileKind::Main

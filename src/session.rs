@@ -275,6 +275,39 @@ pub fn save_tui_defaults(defaults: &TuiDefaults) {
     }
 }
 
+pub fn load_tui_defaults_value() -> serde_json::Value {
+    let path = tui_defaults_path();
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// Merge incoming JSON (may include client-only keys) with normalized `TuiDefaults` fields.
+pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaults, String> {
+    let mut typed: TuiDefaults =
+        serde_json::from_value(incoming.clone()).unwrap_or_default();
+    crate::inference_profiles::normalize_tui_defaults(&mut typed);
+    crate::inference_profiles::sync_top_level_from_main(&mut typed);
+
+    let mut merged = incoming;
+    if let serde_json::Value::Object(ref mut obj) = merged {
+        let normalized =
+            serde_json::to_value(&typed).map_err(|err| format!("encode defaults: {err}"))?;
+        if let serde_json::Value::Object(norm_obj) = normalized {
+            for (key, value) in norm_obj {
+                obj.insert(key, value);
+            }
+        }
+    }
+
+    let path = tui_defaults_path();
+    let json =
+        serde_json::to_string_pretty(&merged).map_err(|err| format!("serialize defaults: {err}"))?;
+    atomic_write(&path, json.as_bytes()).map_err(|err| err.to_string())?;
+    Ok(typed)
+}
+
 pub fn load_tui_api_key() -> Option<String> {
     if let Ok(entry) = api_key_keyring_entry() {
         if let Ok(value) = entry.get_password() {
