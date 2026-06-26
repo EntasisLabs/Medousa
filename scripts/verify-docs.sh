@@ -30,6 +30,15 @@ if ! grep -q 'docs/sdk/README.md\|sdk/README.md' "$DOCS/README.md"; then
   fail "docs/README.md missing SDK link"
 fi
 
+# docs/README.md must link Python SDK
+if ! grep -q 'sdk/python.md' "$DOCS/README.md"; then
+  fail "docs/README.md missing Python SDK link"
+fi
+
+if [[ ! -f "$DOCS/sdk/python.md" ]]; then
+  fail "docs/sdk/python.md missing"
+fi
+
 # ADR index must list ADR-003
 if ! grep -q 'adr-003' "$DOCS/architecture/decisions/README.md"; then
   fail "ADR index missing adr-003"

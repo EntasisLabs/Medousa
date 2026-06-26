@@ -14,7 +14,7 @@ Audience tags used throughout `docs/`:
 |-------|-------------------|--------|
 | HTTP routes, request types | [`docs/engine/http-api.md`](engine/http-api.md) | Source of truth: [`src/daemon/router.rs`](../src/daemon/router.rs) |
 | Subsystem behavior (artifacts, vault, streaming) | [`docs/engine/*.md`](engine/) | Link to `architecture/` for FSM internals |
-| SDK methods and examples | [`docs/sdk/`](sdk/) | Source of truth: [`crates/medousa-sdk/src/`](../crates/medousa-sdk/src/) |
+| SDK methods and examples | [`docs/sdk/`](sdk/) | Source of truth: Rust [`crates/medousa-sdk/src/`](../crates/medousa-sdk/src/), Python [`python/medousa-sdk/src/`](../python/medousa-sdk/src/medousa/) |
 | Task-oriented how-tos | [`docs/cookbook/`](cookbook/) | Install, channels, mobile, custom UI |
 | Env vars and ops | [`configuration-reference.md`](configuration-reference.md), [`docs/runbooks/`](runbooks/) | |
 | Turn FSM, component design, epics | [`architecture/`](../architecture/) | Living plans; **not** duplicated in `docs/engine/` |

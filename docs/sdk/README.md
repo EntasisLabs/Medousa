@@ -2,14 +2,15 @@
 
 Shared client libraries for talking to **medousa_daemon** without duplicating HTTP paths or serde types.
 
-**Docs:** [API reference](api-reference.md) · [Interactive streaming](interactive-streaming.md) · [Transports](transports.md) · [Artifacts](artifacts.md) · [Examples](examples/README.md)
+**Docs:** [API reference](api-reference.md) · [Python SDK](python.md) · [Interactive streaming](interactive-streaming.md) · [Transports](transports.md) · [Artifacts](artifacts.md) · [Examples](examples/README.md)
 
-## Crates
+## Packages
 
-| Crate | Role |
-|-------|------|
+| Package | Role |
+|---------|------|
 | [`medousa-types`](../../crates/medousa-types/) | Serde DTOs for daemon API (`daemon_api`, `session`, `local`, …) |
-| [`medousa-sdk`](../../crates/medousa-sdk/) | `MedousaClient` + `HttpTransport` |
+| [`medousa-sdk`](../../crates/medousa-sdk/) (Rust) | `MedousaClient` + `HttpTransport` |
+| [`medousa-sdk`](../../python/medousa-sdk/) (Python) | Async `MedousaClient`, SSE streaming, `MedousaClientSync` |
 | [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) | `WorkshopTransport` — LAN HTTP with auth headers |
 | [`medousa-host`](../../crates/medousa-host/) | Spawn `medousa_local`, binary resolution, bind probes |
 

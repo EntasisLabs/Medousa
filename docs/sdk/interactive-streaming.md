@@ -28,7 +28,9 @@ let stream_url = response.stream_url; // e.g. /v1/interactive/turn/{turn_id}/str
 
 ## Step 2 — Open SSE
 
-The SDK does not ship an SSE client yet. Options:
+**Python SDK** — use `interactive().stream_turn()` or `stream(stream_url)` (built-in SSE iterator). See [python.md](python.md).
+
+**Rust SDK** — no built-in SSE client yet. Options:
 
 1. **HTTP client** — `GET {base_url}{stream_url}` with `Accept: text/event-stream`, parse `data:` lines as JSON → `InteractiveTurnStreamEvent`.
 2. **Tauri app** — `interactive_stream_start` bridge (`apps/medousa-home`).

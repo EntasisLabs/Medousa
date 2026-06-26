@@ -25,6 +25,21 @@ Create implicit sessions by sending interactive turns with a stable `session_id`
 
 Details: [interactive-streaming.md](../engine/interactive-streaming.md) · [SDK guide](../sdk/interactive-streaming.md)
 
+**Python** (built-in SSE):
+
+```python
+async with client.interactive().stream_turn(
+    InteractiveTurnRequest(session_id="my-session", prompt="Hello"),
+) as events:
+    async for event in events:
+        if event.content_delta:
+            print(event.content_delta, end="")
+        if event.terminal:
+            break
+```
+
+See [python.md](../sdk/python.md).
+
 ---
 
 ## Artifact panel

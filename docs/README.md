@@ -50,11 +50,12 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Extensions](engine/extensions.md) | Grapheme, Locus, workflows, media, STT |
 | [Architecture (deep)](../architecture/README.md) | Component boundaries; [daemon modules](architecture/daemon-modules.md), [turn runtime](../architecture/turn-runtime-and-lanes.md), [roadmap](../architecture/ROADMAP.md) |
 
-### SDK — Rust client
+### SDK — Rust & Python clients
 
 | Guide | You want to… |
 |-------|----------------|
 | [SDK overview](sdk/README.md) | Crates, quick start, Tauri pattern |
+| [Python SDK](sdk/python.md) | `pip install`, async client, SSE streaming |
 | [API reference](sdk/api-reference.md) | Every `MedousaClient` method |
 | [Interactive streaming (SDK)](sdk/interactive-streaming.md) | Client-side SSE flow |
 | [Transports](sdk/transports.md) | HTTP, Workshop, custom `Transport` |
