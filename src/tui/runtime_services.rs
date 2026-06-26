@@ -217,7 +217,6 @@ pub(crate) async fn assemble_tui_runtime(
     )?;
     crate::ui_present_tools::register_ui_present_tools(
         &mut tool_registry,
-        session_id.to_string(),
         turn_scope.clone(),
     )?;
     crate::skill_tools::register_skill_tools(
@@ -306,6 +305,7 @@ pub(crate) async fn assemble_tui_runtime(
         event_tx.clone(),
         session_id.to_string(),
         compaction_target,
+        turn_scope.clone(),
     ))?;
     tool_registry.register_tool(CognitionGraphemePromoteToJobTool::new(
         runtime.clone(),
@@ -398,11 +398,13 @@ pub(crate) async fn assemble_tui_runtime(
     tool_registry.register_tool(CognitionMcpDiscoverTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMcpInvokeTool::new(
         mcp_gateway_client.clone(),
         session_id.to_string(),
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMcpServersTool::new(mcp_gateway_client.clone()))?;
@@ -411,6 +413,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         mcp_gateway_client.clone(),
         session_id.to_string(),
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
     tool_registry.register_tool(CognitionMcpPromoteToJobTool::new(
@@ -428,6 +431,7 @@ pub(crate) async fn assemble_tui_runtime(
         runtime.clone(),
         mcp_gateway_client.clone(),
         session_id.to_string(),
+        turn_scope.clone(),
         event_tx.clone(),
     ))?;
 

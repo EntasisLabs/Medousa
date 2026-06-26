@@ -75,7 +75,7 @@ impl PlatformBuildConfig {
             base_url: None,
             deliver_webhook_url: deliver_webhook_url.into(),
             allowed_grapheme_modules: Vec::new(),
-            session_id: "daemon-agent-runtime".to_string(),
+            session_id: crate::runtime_session::runtime_bootstrap_session_id().to_string(),
             backend_label: "in-memory".to_string(),
         }
     }

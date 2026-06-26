@@ -312,7 +312,8 @@ pub fn profile_slug_from_id(profile_id: &str) -> Option<&str> {
 }
 
 pub fn is_reserved_profile_slug(slug: &str) -> bool {
-    slug.starts_with("medousa-prompts") || slug == "daemon-agent-runtime"
+    slug.starts_with("medousa-prompts")
+        || crate::runtime_session::is_runtime_bootstrap_session_id(slug)
 }
 
 fn normalize_display_name(raw: &str) -> Result<String> {
@@ -339,7 +340,12 @@ mod tests {
     #[test]
     fn rejects_reserved_slug() {
         assert!(is_reserved_profile_slug("medousa-prompts-system"));
-        assert!(is_reserved_profile_slug("daemon-agent-runtime"));
+        assert!(is_reserved_profile_slug(
+            crate::runtime_session::RUNTIME_BOOTSTRAP_SESSION_ID
+        ));
+        assert!(is_reserved_profile_slug(
+            crate::runtime_session::LEGACY_RUNTIME_BOOTSTRAP_SESSION_ID
+        ));
     }
 
     #[test]

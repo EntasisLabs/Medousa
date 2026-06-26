@@ -70,24 +70,18 @@ pub fn identity_bridge_locus_session() -> String {
 pub async fn resolve_memory_tool_session_id(
     input: &Value,
     turn_scope: &RwLock<Option<TurnContinuationScope>>,
-    fallback_chat_session_id: &str,
+    bootstrap_fallback: &str,
     workshop_dynamic: bool,
 ) -> String {
-    if let Some(explicit) = input
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return explicit.to_string();
+    if let Some(explicit) = crate::runtime_session::explicit_chat_session_id_from_input(input) {
+        return explicit;
     }
 
-    let scoped_chat_session_id = turn_scope
-        .read()
-        .await
-        .as_ref()
-        .map(|scope| scope.session_id.clone())
-        .unwrap_or_else(|| fallback_chat_session_id.to_string());
+    let scoped_chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+        turn_scope,
+        bootstrap_fallback,
+    )
+    .await;
 
     if workshop_dynamic {
         resolve_workshop_locus_session(&scoped_chat_session_id)

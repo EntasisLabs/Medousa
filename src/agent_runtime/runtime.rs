@@ -8,6 +8,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 use stasis::prelude::RuntimeComposition;
+use crate::runtime_session::runtime_bootstrap_session_id;
 use tokio::sync::mpsc;
 
 use crate::runtime::memory_bundle::MemoryAdapterBundle;
@@ -47,7 +48,7 @@ pub async fn build_daemon_agent_runtime_from_composition(
         model,
         base_url,
         allowed_grapheme_modules,
-        "daemon-agent-runtime",
+        runtime_bootstrap_session_id(),
         true,
         event_tx,
     )
@@ -88,7 +89,7 @@ pub async fn build_daemon_agent_runtime(
         model,
         base_url,
         allowed_grapheme_modules,
-        "daemon-agent-runtime",
+        runtime_bootstrap_session_id(),
         true,
         event_tx,
     )

@@ -662,12 +662,17 @@ impl StasisTool for CognitionGraphemeRunTool {
                 obj.insert("continuation".to_string(), meta);
             }
         }
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
         let serialized_raw_output =
             serde_json::to_string(&raw_output).unwrap_or_else(|_| raw_output.to_string());
 
         let output = maybe_compact_output_to_sttp(
             self.name(),
-            &self.session_id,
+            &session_id,
             raw_output,
             &self.model_target,
         )
@@ -929,6 +934,7 @@ pub struct CognitionGraphemeCliRunTool {
     event_tx: mpsc::Sender<TuiEvent>,
     session_id: String,
     model_target: GraphemeCompactionModelTarget,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionGraphemeCliRunTool {
@@ -937,12 +943,14 @@ impl CognitionGraphemeCliRunTool {
         event_tx: mpsc::Sender<TuiEvent>,
         session_id: String,
         model_target: GraphemeCompactionModelTarget,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     ) -> Self {
         Self {
             runtime,
             event_tx,
             session_id,
             model_target,
+            turn_scope,
         }
     }
 }
@@ -1015,9 +1023,14 @@ impl StasisTool for CognitionGraphemeCliRunTool {
 
         let serialized_raw_output =
             serde_json::to_string(&result).unwrap_or_else(|_| result.to_string());
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
 
         let output =
-            maybe_compact_output_to_sttp(self.name(), &self.session_id, result, &self.model_target)
+            maybe_compact_output_to_sttp(self.name(), &session_id, result, &self.model_target)
                 .await?;
         emit_compaction_observability(
             &self.event_tx,
@@ -2115,6 +2128,7 @@ impl StasisTool for CognitionCapabilitySearchTool {
 pub struct CognitionMcpDiscoverTool {
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -2122,11 +2136,13 @@ impl CognitionMcpDiscoverTool {
     pub fn new(
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             gateway_client,
             session_id: session_id.into(),
+            turn_scope,
             event_tx,
         }
     }
@@ -2178,7 +2194,12 @@ impl StasisTool for CognitionMcpDiscoverTool {
             })
             .await;
 
-        let turn_context = build_agent_mcp_turn_context(&self.session_id);
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
+        let turn_context = build_agent_mcp_turn_context(&session_id);
         let request = McpDiscoverRequest {
             query: query.to_string(),
             server_id,
@@ -2205,6 +2226,7 @@ impl StasisTool for CognitionMcpDiscoverTool {
 pub struct CognitionMcpInvokeTool {
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -2212,11 +2234,13 @@ impl CognitionMcpInvokeTool {
     pub fn new(
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
             gateway_client,
             session_id: session_id.into(),
+            turn_scope,
             event_tx,
         }
     }
@@ -2269,7 +2293,12 @@ impl StasisTool for CognitionMcpInvokeTool {
             })
             .await;
 
-        let turn_context = build_agent_mcp_turn_context(&self.session_id);
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
+        let turn_context = build_agent_mcp_turn_context(&session_id);
         let turn_token = if let Some(token) = input.get("turn_token").and_then(|value| value.as_str()) {
             Some(token.to_string())
         } else {

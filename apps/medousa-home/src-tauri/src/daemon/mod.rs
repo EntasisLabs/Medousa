@@ -23,9 +23,8 @@ pub mod workshop_http;
 
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
-    DaemonHealth, HealthResponse, InteractiveTurnAccepted, InteractiveTurnRequest,
-    InteractiveTurnResponse, InteractiveTurnStreamEvent, StageRoutingMatrix,
-    TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
+    DaemonHealth, InteractiveTurnAccepted, InteractiveTurnRequest, InteractiveTurnStreamEvent,
+    StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
 use crate::workshop_transport;
 use reqwest::Client;
@@ -185,13 +184,13 @@ pub fn apply_daemon_url(state: &DaemonState, url: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth, String> {
-    let config = workshop_http::transport_config(&state);
-    match workshop_transport::workshop_get_json::<HealthResponse>(&config, "/health").await {
+    match self::sdk::client(&state).health().get().await {
         Ok(detail) => Ok(DaemonHealth {
             ok: true,
             message: format!(
                 "connected to {} · {} tools",
-                config.lan_base, detail.tool_registry_count
+                state.daemon_url.lock().expect("daemon url lock"),
+                detail.tool_registry_count
             ),
             backend: Some(detail.backend),
             worker_id: Some(detail.worker_id),
@@ -216,7 +215,7 @@ pub async fn daemon_health(state: State<'_, DaemonState>) -> Result<DaemonHealth
         }),
         Err(err) => Ok(DaemonHealth {
             ok: false,
-            message: err,
+            message: self::sdk::sdk_error(err),
             backend: None,
             worker_id: None,
             tool_registry_count: None,
@@ -240,7 +239,7 @@ pub async fn workspace_stream_start(
         path.push_str(&format!("?since_revision={revision}"));
     }
 
-    let config = workshop_http::transport_config(&state);
+    let config = self::sdk::transport_config(&state);
     let cancel_rx = replace_cancel_slot(&state.workspace_cancel);
 
     tokio::spawn(async move {
@@ -364,13 +363,12 @@ pub async fn interactive_turn_send(
         identity_user_id: None,
     };
 
-    let config = workshop_http::transport_config(&state);
-    let parsed: InteractiveTurnResponse = workshop_transport::workshop_post_json(
-        &config,
-        "/v1/interactive/turn",
-        &request,
-    )
-    .await?;
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    let parsed = self::sdk::client(&state)
+        .interactive()
+        .start_turn(&request)
+        .await
+        .map_err(self::sdk::sdk_error)?;
     Ok(InteractiveTurnAccepted {
         turn_id: parsed.turn_id,
         stream_url: rewrite_stream_url_for_client(&parsed.stream_url, &base),
@@ -389,7 +387,7 @@ pub async fn interactive_stream_start(
         .ok_or_else(|| "stream URL missing turn id".to_string())?;
     let cancel_rx = add_interactive_stream_slot(&state.interactive_streams, &turn_id);
 
-    let config = workshop_http::transport_config(&state);
+    let config = self::sdk::transport_config(&state);
     let path = reqwest::Url::parse(&stream_url)
         .ok()
         .map(|url| {

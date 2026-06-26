@@ -69,7 +69,13 @@ impl StasisTool for CognitionToolsDiscoverTool {
     }
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = resolve_session_id(&self.turn_scope, &input).await?;
+        let session_id =
+            crate::runtime_session::require_active_chat_session_id_from_input(
+                &input,
+                &self.turn_scope,
+                "cognition_tools_discover",
+            )
+            .await?;
         let lane = resolve_lane(&self.turn_scope, &input);
         let list_only = input
             .get("list_only")
@@ -198,29 +204,6 @@ fn domain_detail(
         "unlocked": surface.unlocked_domains.iter().any(|d| d == entry.domain),
         "tools": tools,
     })
-}
-
-async fn resolve_session_id(
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
-    input: &Value,
-) -> StasisResult<String> {
-    if let Some(session_id) = input
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return Ok(session_id.to_string());
-    }
-    let scope = turn_scope.read().await;
-    scope
-        .as_ref()
-        .map(|turn| turn.session_id.clone())
-        .ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_tools_discover: session_id required when no active turn scope".to_string(),
-            )
-        })
 }
 
 fn resolve_lane(

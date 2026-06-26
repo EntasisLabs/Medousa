@@ -33,10 +33,53 @@ pub trait Transport: Send + Sync {
         path: &'a str,
         body: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
+
+    fn patch_json<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
+
+    fn post_empty_json<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
 }
 
 pub async fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, SdkError> {
     serde_json::from_value(value).map_err(Into::into)
+}
+
+pub fn path_with_query(path: &str, query: &[(&str, String)]) -> String {
+    if query.is_empty() {
+        return normalize_path(path);
+    }
+    let mut out = normalize_path(path);
+    out.push('?');
+    out.push_str(
+        &query
+            .iter()
+            .map(|(key, value)| {
+                format!(
+                    "{}={}",
+                    urlencoding::encode(key),
+                    urlencoding::encode(value)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("&"),
+    );
+    out
+}
+
+fn normalize_path(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
 }
 
 #[derive(Clone, Default)]
@@ -136,6 +179,31 @@ impl Transport for HttpTransport {
         let client = self.client.clone();
         Box::pin(async move {
             Self::request(client, reqwest::Method::PUT, url, Some(body)).await
+        })
+    }
+
+    fn patch_json<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let url = Self::url(base_url, path);
+        let client = self.client.clone();
+        Box::pin(async move {
+            Self::request(client, reqwest::Method::PATCH, url, Some(body)).await
+        })
+    }
+
+    fn post_empty_json<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let url = Self::url(base_url, path);
+        let client = self.client.clone();
+        Box::pin(async move {
+            Self::request(client, reqwest::Method::POST, url, None).await
         })
     }
 }

@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
         base_url: base_url.map(str::to_string),
         deliver_webhook_url: deliver_webhook_url.clone(),
         allowed_grapheme_modules: Vec::new(),
-        session_id: "daemon-agent-runtime".to_string(),
+        session_id: medousa::runtime_session::runtime_bootstrap_session_id().to_string(),
         backend_label: backend_name.clone(),
     };
 

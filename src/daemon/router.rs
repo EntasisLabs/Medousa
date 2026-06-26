@@ -87,6 +87,10 @@ pub fn build_feature_routers(
             "/v1/capabilities/reindex",
             axum::routing::post(crate::mcp_daemon_handlers::reindex_capabilities),
         )
+        .route(
+            "/v1/mcp/gateway/status",
+            axum::routing::get(crate::mcp_daemon_handlers::mcp_gateway_status),
+        )
         .with_state(crate::mcp_daemon_handlers::CapabilityApiState {
             agent_runtime: state.platform.agent_handle(),
         });

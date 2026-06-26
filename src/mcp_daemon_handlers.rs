@@ -4,13 +4,19 @@ use axum::Json;
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 
 use crate::capability_catalog::{
-    CapabilityListResponse, CapabilityReindexResponse, CapabilityResolveResponse,
-    capabilities_manifest_path, load_capability_manifest, CapabilityRegistry,
+    capabilities_manifest_path, load_capability_manifest, CapabilityListResponse,
+    CapabilityReindexResponse, CapabilityRegistry, CapabilityResolveResponse,
 };
 use crate::mcp_gateway::verify_policy_bearer;
-use crate::mcp_gateway_api::{McpPolicyEvaluateRequest, McpPolicyEvaluateResponse};
+use crate::mcp_gateway_api::{
+    resolve_mcp_gateway_url, McpGatewayHealthResponse, McpPolicyEvaluateRequest,
+    McpPolicyEvaluateResponse, McpServerSummary, McpServersResponse,
+};
 use crate::mcp_policy::evaluate_mcp_policy_with_identity;
 use crate::tools::TuiRuntime;
+use medousa_types::{
+    McpGatewayHealthSnapshot, McpGatewayServerRuntime, McpGatewayStatusResponse,
+};
 
 #[derive(Clone)]
 pub struct CapabilityApiState {
@@ -84,6 +90,76 @@ pub async fn reindex_capabilities(
     })
 }
 
+pub async fn mcp_gateway_status(
+    State(state): State<CapabilityApiState>,
+) -> Json<McpGatewayStatusResponse> {
+    let gateway_url = resolve_mcp_gateway_url(None);
+    let client = &state.agent_runtime.mcp_gateway_client;
+    let health_result = client.health().await;
+    let servers_result = if health_result.is_ok() {
+        client.list_servers().await
+    } else {
+        Err(anyhow::anyhow!("gateway health check failed"))
+    };
+
+    Json(build_mcp_gateway_status_response(
+        gateway_url,
+        health_result,
+        servers_result,
+    ))
+}
+
+fn build_mcp_gateway_status_response(
+    gateway_url: String,
+    health_result: Result<McpGatewayHealthResponse, anyhow::Error>,
+    servers_result: Result<McpServersResponse, anyhow::Error>,
+) -> McpGatewayStatusResponse {
+    match health_result {
+        Ok(health) => {
+            let servers = servers_result
+                .map(|response| response.servers.into_iter().map(map_server_runtime).collect())
+                .unwrap_or_default();
+            McpGatewayStatusResponse {
+                gateway_url,
+                reachable: true,
+                message: "MCP gateway is running".to_string(),
+                health: Some(map_health_snapshot(&health)),
+                servers,
+            }
+        }
+        Err(err) => McpGatewayStatusResponse {
+            gateway_url,
+            reachable: false,
+            message: format!(
+                "MCP gateway is not running on the workshop host ({err:#})"
+            ),
+            health: None,
+            servers: Vec::new(),
+        },
+    }
+}
+
+fn map_health_snapshot(health: &McpGatewayHealthResponse) -> McpGatewayHealthSnapshot {
+    McpGatewayHealthSnapshot {
+        status: health.status.clone(),
+        invokes_enabled: health.invokes_enabled,
+        registered_servers: u32::try_from(health.registered_servers).unwrap_or(u32::MAX),
+        connected_servers: u32::try_from(health.connected_servers).unwrap_or(u32::MAX),
+        catalog_entries: u32::try_from(health.catalog_entries).unwrap_or(u32::MAX),
+    }
+}
+
+fn map_server_runtime(server: McpServerSummary) -> McpGatewayServerRuntime {
+    McpGatewayServerRuntime {
+        server_id: server.server_id,
+        title: server.title,
+        enabled: server.enabled,
+        connected: server.connected,
+        tool_count: u32::try_from(server.tool_count).unwrap_or(u32::MAX),
+        allowed_lanes: server.allowed_lanes,
+    }
+}
+
 pub async fn mcp_policy_evaluate(
     State(state): State<McpPolicyApiState>,
     headers: HeaderMap,
@@ -102,4 +178,53 @@ pub async fn mcp_policy_evaluate(
     Ok(Json(
         evaluate_mcp_policy_with_identity(&request, state.identity_service.as_ref()).await,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn build_status_when_gateway_healthy() {
+        let response = build_mcp_gateway_status_response(
+            "http://127.0.0.1:7420".to_string(),
+            Ok(McpGatewayHealthResponse {
+                status: "ok".to_string(),
+                invokes_enabled: true,
+                registered_servers: 2,
+                connected_servers: 1,
+                catalog_entries: 4,
+                now_utc: Utc::now(),
+            }),
+            Ok(McpServersResponse {
+                servers: vec![McpServerSummary {
+                    server_id: "notion".to_string(),
+                    title: "Notion".to_string(),
+                    enabled: true,
+                    connected: true,
+                    tool_count: 3,
+                    allowed_lanes: vec!["interactive".to_string()],
+                }],
+            }),
+        );
+        assert!(response.reachable);
+        assert_eq!(response.servers.len(), 1);
+        assert_eq!(
+            response.health.as_ref().map(|health| health.catalog_entries),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn build_status_when_gateway_unreachable() {
+        let response = build_mcp_gateway_status_response(
+            "http://127.0.0.1:7420".to_string(),
+            Err(anyhow::anyhow!("connection refused")),
+            Err(anyhow::anyhow!("skipped")),
+        );
+        assert!(!response.reachable);
+        assert!(response.health.is_none());
+        assert!(response.servers.is_empty());
+    }
 }

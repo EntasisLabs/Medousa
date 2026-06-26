@@ -980,7 +980,10 @@ mod tests {
 
     #[test]
     fn workshop_operator_identity_ignores_runtime_session_label() {
-        let resolved = resolve_tool_identity_user_id("daemon-agent-runtime", true);
+        let resolved = resolve_tool_identity_user_id(
+            crate::runtime_session::RUNTIME_BOOTSTRAP_SESSION_ID,
+            true,
+        );
         assert_eq!(resolved, DEFAULT_USER_ID);
     }
 

@@ -10,6 +10,7 @@ use stasis::prelude::{Result as StasisResult, StasisError};
 use tokio::sync::RwLock;
 
 use crate::daemon_api::TurnSurfaceContext;
+use crate::runtime_session::{require_active_chat_session_id_async, runtime_bootstrap_session_id};
 use crate::turn_continuation::TurnContinuationScope;
 
 pub const COGNITION_UI_PRESENT: &str = "cognition_ui_present";
@@ -26,40 +27,28 @@ pub fn surface_supports_ui_artifacts(surface: Option<&TurnSurfaceContext>) -> bo
 
 pub fn register_ui_present_tools(
     registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
-    session_id: String,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> stasis::prelude::Result<()> {
-    registry.register_tool(CognitionUiPresentTool::new(session_id, turn_scope))?;
+    registry.register_tool(CognitionUiPresentTool::new(turn_scope))?;
     Ok(())
 }
 
 pub struct CognitionUiPresentTool {
-    session_id: String,
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
 
 impl CognitionUiPresentTool {
-    pub fn new(session_id: String, turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
-        Self {
-            session_id,
-            turn_scope,
-        }
+    pub fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+        Self { turn_scope }
     }
 
     async fn resolve_session_id(&self) -> StasisResult<String> {
-        if let Some(scope) = self.turn_scope.read().await.as_ref() {
-            let session_id = scope.session_id.trim();
-            if !session_id.is_empty() {
-                return Ok(session_id.to_string());
-            }
-        }
-        let fallback = self.session_id.trim();
-        if !fallback.is_empty() {
-            return Ok(fallback.to_string());
-        }
-        Err(StasisError::PortFailure(
-            "session_id unavailable for ui artifact persistence".to_string(),
-        ))
+        require_active_chat_session_id_async(
+            &self.turn_scope,
+            runtime_bootstrap_session_id(),
+            COGNITION_UI_PRESENT,
+        )
+        .await
     }
 
     async fn active_surface_supports_ui_artifacts(&self) -> bool {
@@ -173,6 +162,9 @@ impl StasisTool for CognitionUiPresentTool {
 mod tests {
     use super::*;
     use crate::daemon_api::TurnSurfaceContext;
+    use crate::runtime_session::{
+        RUNTIME_BOOTSTRAP_SESSION_ID, is_runtime_bootstrap_session_id,
+    };
 
     #[test]
     fn surface_supports_ui_artifacts_requires_client_flag() {
@@ -181,5 +173,31 @@ mod tests {
         assert!(surface_supports_ui_artifacts(Some(
             &TurnSurfaceContext::tui().with_ui_artifacts(true)
         )));
+    }
+
+    #[tokio::test]
+    async fn ui_present_rejects_bootstrap_only_session_resolution() {
+        let turn_scope = Arc::new(RwLock::new(None::<TurnContinuationScope>));
+        let tool = CognitionUiPresentTool::new(turn_scope);
+        let err = tool.resolve_session_id().await.expect_err("bootstrap-only");
+        assert!(err.to_string().contains("not a chat session"));
+        assert!(is_runtime_bootstrap_session_id(RUNTIME_BOOTSTRAP_SESSION_ID));
+    }
+
+    #[tokio::test]
+    async fn ui_present_uses_active_turn_session_not_bootstrap() {
+        let turn_scope = Arc::new(RwLock::new(Some(TurnContinuationScope {
+            turn_correlation_id: "turn-1".to_string(),
+            session_id: "medousa-home".to_string(),
+            original_prompt: "hi".to_string(),
+            delivery_target: None,
+            provider: "openai".to_string(),
+            model: "gpt-4".to_string(),
+            response_depth_mode: "standard".to_string(),
+            supports_ui_artifacts: true,
+        })));
+        let tool = CognitionUiPresentTool::new(turn_scope);
+        let session_id = tool.resolve_session_id().await.expect("turn scope session");
+        assert_eq!(session_id, "medousa-home");
     }
 }

@@ -120,6 +120,7 @@ pub mod stage_route_command_runtime;
 pub mod stage_routing;
 pub mod bridge_tools;
 pub mod runtime;
+pub mod runtime_session;
 pub mod runtime_tools;
 pub mod workflow_handlers;
 pub mod workflow;
@@ -185,6 +186,9 @@ pub use mcp_gateway_api::{
     McpPolicyDecision, McpPolicyEvaluateRequest, McpPolicyEvaluateResponse, McpServerSummary,
     McpServersResponse, McpToolCatalogEntry, McpTurnContext, McpTurnLane,
     resolve_mcp_gateway_url, DEFAULT_MCP_GATEWAY_BIND, DEFAULT_MCP_GATEWAY_URL,
+};
+pub use medousa_types::{
+    McpGatewayHealthSnapshot, McpGatewayServerRuntime, McpGatewayStatusResponse,
 };
 pub use product_config::{
     ProductConfig, load_product_config, save_product_config, ingest_sender_allowed,

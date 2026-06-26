@@ -29,29 +29,6 @@ pub fn register_tool_history_tools(
     Ok(())
 }
 
-async fn resolve_session_id(
-    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
-    input: &Value,
-) -> StasisResult<String> {
-    if let Some(session_id) = input
-        .get("session_id")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return Ok(session_id.to_string());
-    }
-    let scope = turn_scope.read().await;
-    scope
-        .as_ref()
-        .map(|turn| turn.session_id.clone())
-        .ok_or_else(|| {
-            StasisError::PortFailure(
-                "cognition_tool_history_*: session_id required when no active turn scope".to_string(),
-            )
-        })
-}
-
 pub struct CognitionToolHistorySummaryTool {
     turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 }
@@ -82,7 +59,13 @@ impl StasisTool for CognitionToolHistorySummaryTool {
     }
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = resolve_session_id(&self.turn_scope, &input).await?;
+        let session_id =
+            crate::runtime_session::require_active_chat_session_id_from_input(
+                &input,
+                &self.turn_scope,
+                COGNITION_TOOL_HISTORY_SUMMARY,
+            )
+            .await?;
         let last_k = input
             .get("last_k")
             .and_then(Value::as_u64)
@@ -146,7 +129,13 @@ impl StasisTool for CognitionToolHistoryDetailTool {
     }
 
     async fn invoke(&self, input: Value) -> StasisResult<Value> {
-        let session_id = resolve_session_id(&self.turn_scope, &input).await?;
+        let session_id =
+            crate::runtime_session::require_active_chat_session_id_from_input(
+                &input,
+                &self.turn_scope,
+                COGNITION_TOOL_HISTORY_DETAIL,
+            )
+            .await?;
         let slice_id = input
             .get("slice_id")
             .and_then(Value::as_str)

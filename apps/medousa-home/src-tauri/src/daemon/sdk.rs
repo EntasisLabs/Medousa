@@ -7,10 +7,18 @@ use std::sync::Arc;
 use medousa_sdk::{MedousaClient, SdkError, Transport};
 use tauri::State;
 
-use crate::daemon::workshop_http;
 use crate::daemon::DaemonState;
 use crate::pairing_client::WorkshopTransportConfig;
 use crate::workshop_transport;
+
+pub fn sdk_error(err: SdkError) -> String {
+    err.to_string()
+}
+
+pub fn transport_config(state: &State<DaemonState>) -> WorkshopTransportConfig {
+    let base = state.daemon_url.lock().expect("daemon url lock").clone();
+    workshop_transport::config_from_lan_base(&base)
+}
 
 #[derive(Clone)]
 struct TauriWorkshopTransport {
@@ -81,10 +89,39 @@ impl Transport for TauriWorkshopTransport {
                 .map_err(SdkError::Http)
         })
     }
+
+    fn patch_json<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: &'a str,
+        body: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let config = self.config.clone();
+        let path = path.to_string();
+        Box::pin(async move {
+            workshop_transport::workshop_patch_json::<serde_json::Value, _>(&config, &path, &body)
+                .await
+                .map_err(SdkError::Http)
+        })
+    }
+
+    fn post_empty_json<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let config = self.config.clone();
+        let path = path.to_string();
+        Box::pin(async move {
+            workshop_transport::workshop_post_empty_json::<serde_json::Value>(&config, &path)
+                .await
+                .map_err(SdkError::Http)
+        })
+    }
 }
 
 pub fn client(state: &State<DaemonState>) -> MedousaClient {
     let base_url = state.daemon_url.lock().expect("daemon url lock").clone();
-    let config = workshop_http::transport_config(state);
+    let config = transport_config(state);
     MedousaClient::with_transport(Arc::new(TauriWorkshopTransport::new(config)), base_url)
 }

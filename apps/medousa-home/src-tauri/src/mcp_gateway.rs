@@ -437,37 +437,6 @@ async fn gateway_http_healthy(base_url: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn fetch_gateway_health(base_url: &str) -> Result<McpGatewayHealthDto, String> {
-    let client = http_client()?;
-    let response = client
-        .get(format!("{}/health", base_url.trim_end_matches('/')))
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach MCP gateway at {base_url}: {err}"))?;
-    if !response.status().is_success() {
-        return Err(format!("MCP gateway returned HTTP {}", response.status()));
-    }
-    #[derive(Debug, Deserialize)]
-    struct HealthPayload {
-        status: String,
-        invokes_enabled: bool,
-        registered_servers: u32,
-        connected_servers: u32,
-        catalog_entries: u32,
-    }
-    let payload = response
-        .json::<HealthPayload>()
-        .await
-        .map_err(|err| err.to_string())?;
-    Ok(McpGatewayHealthDto {
-        status: payload.status,
-        invokes_enabled: payload.invokes_enabled,
-        registered_servers: payload.registered_servers,
-        connected_servers: payload.connected_servers,
-        catalog_entries: payload.catalog_entries,
-    })
-}
-
 async fn fetch_runtime_servers(base_url: &str) -> Result<Vec<McpServerRuntimeDto>, String> {
     let client = http_client()?;
     let response = apply_gateway_auth(
@@ -530,21 +499,13 @@ async fn admin_refresh_catalog(base_url: &str) -> Result<(), String> {
     Err(format!("catalog refresh returned HTTP {}", response.status()))
 }
 
-async fn reindex_daemon_capabilities() -> Result<(), String> {
-    let base = crate::daemon::resolve_daemon_url();
-    let client = http_client()?;
-    let response = client
-        .post(format!("{}/v1/capabilities/reindex", base.trim_end_matches('/')))
-        .send()
+async fn reindex_daemon_capabilities(state: &tauri::State<'_, crate::daemon::DaemonState>) -> Result<(), String> {
+    crate::daemon::sdk::client(state)
+        .capabilities()
+        .reindex()
         .await
-        .map_err(|err| format!("cannot reach daemon at {base}: {err}"))?;
-    if response.status().is_success() {
-        return Ok(());
-    }
-    Err(format!(
-        "daemon capability reindex returned HTTP {}",
-        response.status()
-    ))
+        .map(|_| ())
+        .map_err(crate::daemon::sdk::sdk_error)
 }
 
 fn bind_port(bind: &str) -> Option<u16> {
@@ -675,64 +636,96 @@ pub async fn mcp_gateway_load_config() -> Result<McpGatewayConfigLoadResult, Str
 }
 
 #[tauri::command]
-pub async fn mcp_gateway_status() -> Result<McpGatewayStatusResult, String> {
+pub async fn mcp_gateway_status(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+) -> Result<McpGatewayStatusResult, String> {
     let (config, path, _) = load_file_config()?;
-    let gateway_url = resolve_gateway_url();
-    let reachable = gateway_http_healthy(&gateway_url).await;
-    if !reachable {
-        return Ok(McpGatewayStatusResult {
-            gateway_url,
+    let config_path = path.display().to_string();
+
+    match crate::daemon::sdk::client(&state)
+        .mcp_gateway()
+        .status()
+        .await
+    {
+        Ok(daemon_status) => Ok(merge_daemon_gateway_status(daemon_status, &config, config_path)),
+        Err(err) => Ok(McpGatewayStatusResult {
+            gateway_url: resolve_gateway_url(),
             reachable: false,
             message: format!(
-                "MCP gateway is not running — start it after adding servers (log: {})",
-                gateway_log_path().display()
+                "Workshop unavailable — cannot check MCP gateway status ({err})"
             ),
             health: None,
-            servers: config
-                .servers
-                .iter()
-                .map(|server| McpServerRuntimeDto {
-                    server_id: server.id.clone(),
-                    title: server.title.clone(),
-                    enabled: server.enabled,
-                    connected: false,
-                    tool_count: 0,
-                    allowed_lanes: server.allowed_lanes.clone(),
-                })
-                .collect(),
-            config_path: path.display().to_string(),
-        });
+            servers: servers_from_local_config(&config, false),
+            config_path,
+        }),
     }
-
-    let health = fetch_gateway_health(&gateway_url).await.ok();
-    let servers = fetch_runtime_servers(&gateway_url).await.unwrap_or_else(|err| {
-        eprintln!("mcp gateway servers fetch failed: {err}");
-        config
-            .servers
-            .iter()
-            .map(|server| McpServerRuntimeDto {
-                server_id: server.id.clone(),
-                title: server.title.clone(),
-                enabled: server.enabled,
-                connected: false,
-                tool_count: 0,
-                allowed_lanes: server.allowed_lanes.clone(),
-            })
-            .collect()
-    });
-
-    Ok(McpGatewayStatusResult {
-        gateway_url: gateway_url.clone(),
-        reachable: true,
-        message: "MCP gateway is running".to_string(),
-        health,
-        servers,
-        config_path: path.display().to_string(),
-    })
 }
 
-#[tauri::command]
-pub async fn mcp_gateway_restart() -> Result<McpGatewayRestartResult, String> {
+fn merge_daemon_gateway_status(
+    daemon_status: medousa_types::McpGatewayStatusResponse,
+    config: &McpGatewayFileConfig,
+    config_path: String,
+) -> McpGatewayStatusResult {
+    let servers = if daemon_status.servers.is_empty() {
+        servers_from_local_config(config, daemon_status.reachable)
+    } else {
+        daemon_status
+            .servers
+            .into_iter()
+            .map(|server| McpServerRuntimeDto {
+                server_id: server.server_id,
+                title: server.title,
+                enabled: server.enabled,
+                connected: server.connected,
+                tool_count: server.tool_count,
+                allowed_lanes: server.allowed_lanes,
+            })
+            .collect()
+    };
+
+    McpGatewayStatusResult {
+        gateway_url: daemon_status.gateway_url,
+        reachable: daemon_status.reachable,
+        message: if daemon_status.reachable {
+            daemon_status.message
+        } else {
+            format!(
+                "{} — start it after adding servers (log: {})",
+                daemon_status.message,
+                gateway_log_path().display()
+            )
+        },
+        health: daemon_status.health.map(|health| McpGatewayHealthDto {
+            status: health.status,
+            invokes_enabled: health.invokes_enabled,
+            registered_servers: health.registered_servers,
+            connected_servers: health.connected_servers,
+            catalog_entries: health.catalog_entries,
+        }),
+        servers,
+        config_path,
+    }
+}
+
+fn servers_from_local_config(
+    config: &McpGatewayFileConfig,
+    connected: bool,
+) -> Vec<McpServerRuntimeDto> {
+    config
+        .servers
+        .iter()
+        .map(|server| McpServerRuntimeDto {
+            server_id: server.id.clone(),
+            title: server.title.clone(),
+            enabled: server.enabled,
+            connected,
+            tool_count: 0,
+            allowed_lanes: server.allowed_lanes.clone(),
+        })
+        .collect()
+}
+
+async fn perform_mcp_gateway_restart() -> Result<(McpGatewayRestartResult, bool), String> {
     let (config, _, _) = load_file_config()?;
     let bind = config.gateway.bind.trim();
     let log_path = gateway_log_path();
@@ -746,12 +739,15 @@ pub async fn mcp_gateway_restart() -> Result<McpGatewayRestartResult, String> {
     }
 
     if gateway_http_healthy(&base_url).await {
-        return Ok(McpGatewayRestartResult {
-            started: false,
-            already_running: true,
-            log_path: log_path.display().to_string(),
-            message: format!("MCP gateway already running at {base_url}"),
-        });
+        return Ok((
+            McpGatewayRestartResult {
+                started: false,
+                already_running: true,
+                log_path: log_path.display().to_string(),
+                message: format!("MCP gateway already running at {base_url}"),
+            },
+            true,
+        ));
     }
 
     if is_bind_reachable(bind) {
@@ -763,22 +759,33 @@ pub async fn mcp_gateway_restart() -> Result<McpGatewayRestartResult, String> {
 
     let (pid, log_path) = spawn_gateway_background(bind)?;
     let ready = wait_for_gateway(bind, 15).await;
-    if ready {
-        let _ = reindex_daemon_capabilities().await;
-    }
-    Ok(McpGatewayRestartResult {
-        started: true,
-        already_running: false,
-        log_path: log_path.display().to_string(),
-        message: if ready {
-            format!("MCP gateway restarted (pid {pid})")
-        } else {
-            format!(
-                "MCP gateway started (pid {pid}) but is not healthy yet — check {}",
-                log_path.display()
-            )
+    Ok((
+        McpGatewayRestartResult {
+            started: true,
+            already_running: false,
+            log_path: log_path.display().to_string(),
+            message: if ready {
+                format!("MCP gateway restarted (pid {pid})")
+            } else {
+                format!(
+                    "MCP gateway started (pid {pid}) but is not healthy yet — check {}",
+                    log_path.display()
+                )
+            },
         },
-    })
+        ready,
+    ))
+}
+
+#[tauri::command]
+pub async fn mcp_gateway_restart(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
+) -> Result<McpGatewayRestartResult, String> {
+    let (result, ready) = perform_mcp_gateway_restart().await?;
+    if ready {
+        let _ = reindex_daemon_capabilities(&state).await;
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -848,13 +855,16 @@ pub async fn mcp_gateway_set_server_enabled(
 
 #[tauri::command]
 pub async fn mcp_gateway_apply_server(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
     request: McpServerUpsertRequest,
 ) -> Result<McpGatewayTestResult, String> {
     mcp_gateway_upsert_server(request.clone()).await?;
-    mcp_gateway_restart().await?;
+    let (_, ready) = perform_mcp_gateway_restart().await?;
     let gateway_url = resolve_gateway_url();
     let _ = admin_refresh_catalog(&gateway_url).await;
-    let _ = reindex_daemon_capabilities().await;
+    if ready {
+        let _ = reindex_daemon_capabilities(&state).await;
+    }
     tokio::time::sleep(Duration::from_millis(750)).await;
 
     let id = normalize_server_id(&request.id)?;

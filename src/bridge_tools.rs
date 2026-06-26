@@ -478,6 +478,7 @@ pub struct CognitionCapabilityInvokeTool {
     runtime: Arc<RuntimeComposition>,
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -487,6 +488,7 @@ impl CognitionCapabilityInvokeTool {
         runtime: Arc<RuntimeComposition>,
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -494,6 +496,7 @@ impl CognitionCapabilityInvokeTool {
             runtime,
             gateway_client,
             session_id: session_id.into(),
+            turn_scope,
             event_tx,
         }
     }
@@ -574,13 +577,19 @@ impl StasisTool for CognitionCapabilityInvokeTool {
             .cloned()
             .unwrap_or_else(|| input.clone());
 
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
+
         let mut last_error = None;
         for (index, binding) in candidates.iter().enumerate() {
             let result = match binding.source {
                 CapabilitySource::Mcp => {
                     invoke_mcp_binding(
                         &self.gateway_client,
-                        &self.session_id,
+                        &session_id,
                         binding,
                         &tool_input,
                     )
@@ -889,6 +898,7 @@ pub struct CognitionWebSearchTool {
     runtime: Arc<RuntimeComposition>,
     gateway_client: Arc<McpGatewayClient>,
     session_id: String,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
     event_tx: mpsc::Sender<TuiEvent>,
 }
 
@@ -898,6 +908,7 @@ impl CognitionWebSearchTool {
         runtime: Arc<RuntimeComposition>,
         gateway_client: Arc<McpGatewayClient>,
         session_id: impl Into<String>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
         event_tx: mpsc::Sender<TuiEvent>,
     ) -> Self {
         Self {
@@ -905,6 +916,7 @@ impl CognitionWebSearchTool {
             runtime,
             gateway_client,
             session_id: session_id.into(),
+            turn_scope,
             event_tx,
         }
     }
@@ -1002,13 +1014,18 @@ impl StasisTool for CognitionWebSearchTool {
         }
 
         let tool_input = json!({ "query": query });
+        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
         let mut last_error = None;
         for (index, binding) in candidates.iter().enumerate() {
             let result = match binding.source {
                 CapabilitySource::Mcp => {
                     invoke_mcp_binding(
                         &self.gateway_client,
-                        &self.session_id,
+                        &session_id,
                         binding,
                         &tool_input,
                     )

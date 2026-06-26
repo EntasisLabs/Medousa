@@ -4,11 +4,17 @@ use crate::local::LocalModelsApi;
 #[cfg(feature = "async")]
 use crate::budget::BudgetApi;
 #[cfg(feature = "async")]
+use crate::capabilities::CapabilitiesApi;
+#[cfg(feature = "async")]
 use crate::health::{HealthApi, IngestApi};
+#[cfg(feature = "async")]
+use crate::http::HttpApi;
 #[cfg(feature = "async")]
 use crate::interactive::InteractiveApi;
 #[cfg(feature = "async")]
 use crate::jobs::{JobsApi, RecurringApi};
+#[cfg(feature = "async")]
+use crate::mcp_gateway::McpGatewayApi;
 #[cfg(feature = "async")]
 use crate::runtime::RuntimeApi;
 #[cfg(feature = "async")]
@@ -48,6 +54,16 @@ impl MedousaClient {
     }
 
     #[cfg(feature = "async")]
+    pub fn http(&self) -> HttpApi<'_> {
+        HttpApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn capabilities(&self) -> CapabilitiesApi<'_> {
+        CapabilitiesApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
     pub fn ingest(&self) -> IngestApi<'_> {
         IngestApi {
             client: self,
@@ -83,6 +99,11 @@ impl MedousaClient {
     #[cfg(feature = "async")]
     pub fn runtime(&self) -> RuntimeApi<'_> {
         RuntimeApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn mcp_gateway(&self) -> McpGatewayApi<'_> {
+        McpGatewayApi { client: self }
     }
 
     #[cfg(feature = "async")]

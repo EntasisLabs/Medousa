@@ -1,13 +1,12 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    ArtifactCommandRequest, ArtifactCommandResponse, RuntimeConfigCommandRequest,
-    RuntimeConfigCommandResponse, StageRouteCommandRequest, StageRouteCommandResponse,
+    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactFetchRequest, ArtifactFetchResponse,
+    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, StageRouteCommandRequest,
+    StageRouteCommandResponse,
 };
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
-#[cfg(feature = "async")]
-use crate::transport::decode;
 
 #[cfg(feature = "async")]
 pub struct RuntimeApi<'a> {
@@ -20,38 +19,39 @@ impl RuntimeApi<'_> {
         &self,
         request: &ArtifactCommandRequest,
     ) -> Result<ArtifactCommandResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let value = self
-            .client
-            .transport()
-            .post_json(self.client.base_url(), "/v1/runtime/artifact/command", body)
-            .await?;
-        decode(value).await
+        self.client
+            .http()
+            .post("/v1/runtime/artifact/command", request)
+            .await
+    }
+
+    pub async fn artifact_fetch(
+        &self,
+        request: &ArtifactFetchRequest,
+    ) -> Result<ArtifactFetchResponse, crate::SdkError> {
+        self.client
+            .http()
+            .post("/v1/runtime/artifact/fetch", request)
+            .await
     }
 
     pub async fn stage_route_command(
         &self,
         request: &StageRouteCommandRequest,
     ) -> Result<StageRouteCommandResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let value = self
-            .client
-            .transport()
-            .post_json(self.client.base_url(), "/v1/runtime/stage-route/command", body)
-            .await?;
-        decode(value).await
+        self.client
+            .http()
+            .post("/v1/runtime/stage-route/command", request)
+            .await
     }
 
     pub async fn config_command(
         &self,
         request: &RuntimeConfigCommandRequest,
     ) -> Result<RuntimeConfigCommandResponse, crate::SdkError> {
-        let body = serde_json::to_value(request).map_err(|e| crate::SdkError::Serde(e.to_string()))?;
-        let value = self
-            .client
-            .transport()
-            .post_json(self.client.base_url(), "/v1/runtime/config/command", body)
-            .await?;
-        decode(value).await
+        self.client
+            .http()
+            .post("/v1/runtime/config/command", request)
+            .await
     }
 }
