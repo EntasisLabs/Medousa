@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { ChevronLeft, MessageCircle, MoreHorizontal } from "@lucide/svelte";
+  import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
+  import ArtifactLibraryList from "$lib/components/artifacts/ArtifactLibraryList.svelte";
   import VaultTree from "$lib/components/vault/VaultTree.svelte";
   import VaultEditor from "$lib/components/vault/VaultEditor.svelte";
   import VaultSpaceChips from "$lib/components/vault/VaultSpaceChips.svelte";
@@ -8,6 +10,7 @@
   import VaultNewNoteDialog from "$lib/components/vault/VaultNewNoteDialog.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { artifacts } from "$lib/stores/artifacts.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { prepareTalkAboutNote } from "$lib/utils/vaultNoteBridge";
@@ -17,6 +20,11 @@
     shouldSuppressVaultContextMenuClick,
   } from "$lib/utils/vaultContextMenuEvents";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { artifactSummaryToUi } from "$lib/types/artifact";
+  import type { ArtifactSummary } from "$lib/types/artifact";
+  import type { UiArtifact } from "$lib/types/chat";
+
+  type LibraryTab = "notes" | "presentations";
 
   interface Props {
     visible: boolean;
@@ -26,11 +34,23 @@
   let { visible, onOpenChat }: Props = $props();
 
   let listScrollEl = $state<HTMLDivElement | null>(null);
+  let libraryTab = $state<LibraryTab>("notes");
+  let presentationArtifact = $state<ArtifactSummary | null>(null);
+  let presentationFullscreenOpen = $state(false);
 
   const view = $derived(layout.libraryView);
+  const presentationUiArtifact = $derived.by((): UiArtifact | null =>
+    presentationArtifact ? artifactSummaryToUi(presentationArtifact) : null,
+  );
 
   onMount(() => {
     void vault.refreshNotes();
+  });
+
+  $effect(() => {
+    if (libraryTab === "presentations") {
+      void artifacts.refresh();
+    }
   });
 
   $effect(() => {
@@ -65,9 +85,16 @@
   $effect(() => {
     if (!visible) return;
     return registerMobileBackHandler(() => {
-      if (layout.libraryView === "list") return false;
-      backToList();
-      return true;
+      if (libraryTab === "presentations" && presentationFullscreenOpen) {
+        presentationFullscreenOpen = false;
+        return true;
+      }
+      if (libraryTab === "notes" && layout.libraryView === "list") return false;
+      if (libraryTab === "notes") {
+        backToList();
+        return true;
+      }
+      return false;
     });
   });
 
@@ -93,10 +120,102 @@
     chat.prefillFromVaultNote(scope, draft, { pin: true });
     await onOpenChat();
   }
+
+  function openPresentation(artifact: ArtifactSummary) {
+    presentationArtifact = artifact;
+    presentationFullscreenOpen = true;
+  }
+
+  async function openPresentationChat(artifact: ArtifactSummary) {
+    chat.sessionId = artifact.session_id;
+    await onOpenChat?.();
+  }
 </script>
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
-  {#if view === "list"}
+  {#if view === "reader" && libraryTab === "notes"}
+    <header class="mobile-you-subheader flex items-center gap-2">
+      <button
+        type="button"
+        class="mobile-icon-btn shrink-0"
+        aria-label="Back to notes"
+        onclick={backToList}
+      >
+        <ChevronLeft size={20} strokeWidth={1.75} />
+      </button>
+      <p class="min-w-0 flex-1 truncate text-sm font-medium text-surface-100">{readerTitle}</p>
+      {#if saveWhisper}
+        <span class="shrink-0 text-xs text-surface-400">{saveWhisper}</span>
+      {/if}
+      {#if vault.selectedPath}
+        {#if onOpenChat}
+          <button
+            type="button"
+            class="mobile-icon-btn shrink-0 text-primary-300"
+            aria-label="Talk about this note"
+            title="Talk about this note"
+            disabled={vault.noteLoading}
+            onclick={() => void handleTalkAboutNote()}
+          >
+            <MessageCircle size={18} strokeWidth={1.75} />
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="btn btn-sm shrink-0 {vault.editorMode === 'edit'
+            ? 'variant-soft-primary'
+            : 'variant-ghost-surface'}"
+          onclick={() =>
+            vault.editorMode === "edit"
+              ? vault.enterPreviewMode()
+              : vault.enterEditMode()}
+        >
+          {vault.editorMode === "edit" ? "Preview" : "Edit"}
+        </button>
+        <button
+          type="button"
+          class="mobile-icon-btn shrink-0"
+          aria-label="Note actions"
+          onclick={() => vault.openNoteActions()}
+        >
+          <MoreHorizontal size={18} strokeWidth={1.75} />
+        </button>
+      {/if}
+    </header>
+    <VaultEditor visible={true} mobile={true} />
+  {:else}
+    <div
+      class="mobile-library-tabs flex shrink-0 gap-1 border-b border-surface-500/40 px-3 py-2"
+      role="tablist"
+      aria-label="Library sections"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={libraryTab === "notes"}
+        class="mobile-library-tab {libraryTab === 'notes' ? 'mobile-library-tab-active' : ''}"
+        onclick={() => {
+          libraryTab = "notes";
+        }}
+      >
+        Notes
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={libraryTab === "presentations"}
+        class="mobile-library-tab {libraryTab === 'presentations'
+          ? 'mobile-library-tab-active'
+          : ''}"
+        onclick={() => {
+          libraryTab = "presentations";
+        }}
+      >
+        Presentations
+      </button>
+    </div>
+
+    {#if libraryTab === "notes"}
     <div
       bind:this={listScrollEl}
       class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto"
@@ -160,57 +279,52 @@
         onSelect={openNote}
       />
     </div>
-  {:else}
-    <header class="mobile-you-subheader flex items-center gap-2">
-      <button
-        type="button"
-        class="mobile-icon-btn shrink-0"
-        aria-label="Back to notes"
-        onclick={backToList}
-      >
-        <ChevronLeft size={20} strokeWidth={1.75} />
-      </button>
-      <p class="min-w-0 flex-1 truncate text-sm font-medium text-surface-100">{readerTitle}</p>
-      {#if saveWhisper}
-        <span class="shrink-0 text-xs text-surface-400">{saveWhisper}</span>
+    {:else}
+      <div class="flex min-h-0 flex-1 flex-col">
+      <div class="space-y-2 border-b border-surface-500/40 p-3">
+        <input
+          class="input w-full text-sm"
+          type="search"
+          placeholder="Filter presentations…"
+          value={artifacts.searchQuery}
+          oninput={(event) => artifacts.setSearchQuery(event.currentTarget.value)}
+        />
+      </div>
+      {#if artifacts.error}
+        <p class="mx-3 mt-3 rounded-container-token border border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-error-300">
+          {artifacts.error}
+        </p>
       {/if}
-      {#if vault.selectedPath}
-        {#if onOpenChat}
-          <button
-            type="button"
-            class="mobile-icon-btn shrink-0 text-primary-300"
-            aria-label="Talk about this note"
-            title="Talk about this note"
-            disabled={vault.noteLoading}
-            onclick={() => void handleTalkAboutNote()}
-          >
-            <MessageCircle size={18} strokeWidth={1.75} />
-          </button>
-        {/if}
-        <button
-          type="button"
-          class="btn btn-sm shrink-0 {vault.editorMode === 'edit'
-            ? 'variant-soft-primary'
-            : 'variant-ghost-surface'}"
-          onclick={() =>
-            vault.editorMode === "edit"
-              ? vault.enterPreviewMode()
-              : vault.enterEditMode()}
-        >
-          {vault.editorMode === "edit" ? "Preview" : "Edit"}
-        </button>
-        <button
-          type="button"
-          class="mobile-icon-btn shrink-0"
-          aria-label="Note actions"
-          onclick={() => vault.openNoteActions()}
-        >
-          <MoreHorizontal size={18} strokeWidth={1.75} />
-        </button>
+      {#if artifacts.loading}
+        <p class="px-3 py-4 text-sm text-surface-500">Loading presentations…</p>
+      {:else}
+        <ArtifactLibraryList
+          artifacts={artifacts.filteredArtifacts}
+          selectedArtifactId={presentationArtifact?.artifact_id ?? null}
+          sessionTitle={(sessionId) => artifacts.sessionTitle(sessionId)}
+          onSelect={(artifactId) => {
+            const match = artifacts.filteredArtifacts.find(
+              (artifact) => artifact.artifact_id === artifactId,
+            );
+            if (match) openPresentation(match);
+          }}
+          onOpenChat={onOpenChat ? openPresentationChat : undefined}
+        />
       {/if}
-    </header>
-    <VaultEditor visible={true} mobile={true} />
+      </div>
+    {/if}
   {/if}
 </section>
+
+{#if presentationUiArtifact && presentationArtifact}
+  <ArtifactFullscreen
+    open={presentationFullscreenOpen}
+    sessionId={presentationArtifact.session_id}
+    artifact={presentationUiArtifact}
+    onClose={() => {
+      presentationFullscreenOpen = false;
+    }}
+  />
+{/if}
 
 <VaultNewNoteDialog />

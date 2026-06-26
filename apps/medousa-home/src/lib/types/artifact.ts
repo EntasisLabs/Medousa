@@ -36,6 +36,27 @@ export interface ArtifactPreview {
 
 export type UiArtifactPresentation = "inline" | "panel" | "fullscreen";
 
+export function artifactSummaryToUi(artifact: ArtifactSummary): {
+  artifactId: string;
+  mime: string;
+  label: string;
+  presentation: UiArtifactPresentation;
+  byteSize: number | null;
+  heightPx: number | null;
+} {
+  return {
+    artifactId: artifact.artifact_id,
+    mime: "text/html",
+    label: artifact.label,
+    presentation:
+      artifact.presentation === "panel" || artifact.presentation === "fullscreen"
+        ? artifact.presentation
+        : "inline",
+    byteSize: artifact.byte_size,
+    heightPx: null,
+  };
+}
+
 export function mapStreamUiArtifact(
   artifact: {
     artifact_id: string;

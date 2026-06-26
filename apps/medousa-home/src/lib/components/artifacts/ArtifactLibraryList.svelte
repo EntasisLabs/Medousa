@@ -1,14 +1,16 @@
 <script lang="ts">
   import type { ArtifactSummary } from "$lib/types/artifact";
+  import { MessageSquare } from "@lucide/svelte";
 
   interface Props {
     artifacts: ArtifactSummary[];
     selectedArtifactId: string | null;
     sessionTitle: (sessionId: string) => string;
     onSelect: (artifactId: string) => void;
+    onOpenChat?: (artifact: ArtifactSummary) => void;
   }
 
-  let { artifacts, selectedArtifactId, sessionTitle, onSelect }: Props = $props();
+  let { artifacts, selectedArtifactId, sessionTitle, onSelect, onOpenChat }: Props = $props();
 
   const grouped = $derived.by(() => {
     const map = new Map<string, ArtifactSummary[]>();
@@ -48,20 +50,35 @@
         <ul class="space-y-0.5">
           {#each items as artifact (artifact.artifact_id)}
             <li>
-              <button
-                type="button"
-                class="artifact-library-item"
-                class:artifact-library-item-active={selectedArtifactId === artifact.artifact_id}
-                onclick={() => onSelect(artifact.artifact_id)}
-              >
-                <span class="artifact-library-item-title">{artifact.label}</span>
-                <span class="artifact-library-item-meta">
-                  {formatWhen(artifact.stored_at_utc)}
-                  {#if artifact.presentation}
-                    · {artifact.presentation}
-                  {/if}
-                </span>
-              </button>
+              <div class="artifact-library-item-row">
+                <button
+                  type="button"
+                  class="artifact-library-item"
+                  class:artifact-library-item-active={selectedArtifactId === artifact.artifact_id}
+                  onclick={() => onSelect(artifact.artifact_id)}
+                >
+                  <span class="artifact-library-item-title">{artifact.label}</span>
+                  <span class="artifact-library-item-meta">
+                    {formatWhen(artifact.stored_at_utc)}
+                    {#if artifact.presentation}
+                      · {artifact.presentation}
+                    {/if}
+                  </span>
+                </button>
+                {#if onOpenChat}
+                  <button
+                    type="button"
+                    class="artifact-library-chat-btn"
+                    aria-label="Open chat for this presentation"
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      onOpenChat(artifact);
+                    }}
+                  >
+                    <MessageSquare size={15} aria-hidden="true" />
+                  </button>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>
@@ -71,6 +88,36 @@
 </div>
 
 <style>
+  .artifact-library-item-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.25rem;
+  }
+
+  .artifact-library-item-row .artifact-library-item {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .artifact-library-chat-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.625rem;
+    color: rgb(var(--color-primary-300));
+    background: transparent;
+    cursor: pointer;
+    transition: background 140ms ease;
+  }
+
+  .artifact-library-chat-btn:hover {
+    background: rgb(var(--color-surface-800) / 0.55);
+  }
+
   .artifact-library-item {
     display: flex;
     width: 100%;

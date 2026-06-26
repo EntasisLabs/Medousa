@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { UiArtifact } from "$lib/types/chat";
   import ArtifactEmbed from "$lib/components/chat/ArtifactEmbed.svelte";
   import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
   import ArtifactPanel from "$lib/components/chat/ArtifactPanel.svelte";
   import type { ArtifactSummary } from "$lib/types/artifact";
+  import { artifactSummaryToUi } from "$lib/types/artifact";
   import { Expand, MessageSquare } from "@lucide/svelte";
 
   interface Props {
@@ -18,20 +18,9 @@
   let panelOpen = $state(false);
   let fullscreenOpen = $state(false);
 
-  const uiArtifact = $derived.by((): UiArtifact | null => {
-    if (!artifact) return null;
-    return {
-      artifactId: artifact.artifact_id,
-      mime: "text/html",
-      label: artifact.label,
-      presentation:
-        artifact.presentation === "panel" || artifact.presentation === "fullscreen"
-          ? artifact.presentation
-          : "inline",
-      byteSize: artifact.byte_size,
-      heightPx: null,
-    };
-  });
+  const uiArtifact = $derived.by(() =>
+    artifact ? artifactSummaryToUi(artifact) : null,
+  );
 </script>
 
 <div class="artifact-library-preview flex h-full min-h-0 flex-col">

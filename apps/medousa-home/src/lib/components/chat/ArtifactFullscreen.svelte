@@ -4,6 +4,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { layout } from "$lib/stores/layout.svelte";
   import type { UiArtifact } from "$lib/types/chat";
 
   interface Props {
@@ -58,7 +59,11 @@
       }}
     >
       <div class="artifact-chrome-stage artifact-fullscreen-stage">
-        <ArtifactPresentationChrome title={artifact.label} onClose={handleClose}>
+        <ArtifactPresentationChrome
+          title={artifact.label}
+          onClose={handleClose}
+          leadingClose={layout.isMobile}
+        >
           <ArtifactEmbed
             {sessionId}
             artifactId={artifact.artifactId}
@@ -118,10 +123,6 @@
   }
 
   @media (max-width: 640px) {
-    .artifact-fullscreen-backdrop {
-      padding: 0;
-    }
-
     .artifact-fullscreen-stage {
       width: 100%;
       border-radius: 0;
