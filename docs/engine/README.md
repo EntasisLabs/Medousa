@@ -60,6 +60,20 @@ The **Medousa app** is just another client — Tauri shell + IPC that starts the
 
 See [Integrate without the app](../cookbook/integrate-without-the-app.md) and [HTTP API reference](http-api.md).
 
+## Subsystem guides
+
+| Guide | Topic |
+|-------|--------|
+| [interactive-streaming.md](interactive-streaming.md) | Two-step turn + SSE |
+| [artifacts.md](artifacts.md) | HTML artifacts |
+| [vault.md](vault.md) | Notes API |
+| [workspace.md](workspace.md) | Work board |
+| [agent-tools.md](agent-tools.md) | Cognition tools |
+| [runtime-config.md](runtime-config.md) | Profiles & routing |
+| [extensions.md](extensions.md) | Grapheme, Locus, media |
+
+SDK: [../sdk/README.md](../sdk/README.md)
+
 ---
 
 ## Trust & operations

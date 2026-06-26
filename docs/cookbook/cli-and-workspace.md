@@ -79,6 +79,8 @@ Useful for scripts and CI calling the engine without the TUI.
 
 Full-screen workspace: turn history, slash commands, artifact previews, settings panel, job rail beside the conversation.
 
+Artifacts: [artifacts-and-presentations.md](artifacts-and-presentations.md) · Vault: [vault-and-library.md](vault-and-library.md)
+
 Connects to Medousa Engine automatically; starts engine if not running (unless `--no-daemon`).
 
 ---

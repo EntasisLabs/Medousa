@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant C as Client
+    participant D as Daemon
+    participant R as AgentRuntime
+
+    C->>D: POST /v1/interactive/turn
+    D->>R: enqueue
+    D-->>C: stream_url
+    C->>D: GET stream SSE
+
+    loop events
+        R-->>D: stream event
+        D-->>C: InteractiveTurnStreamEvent
+    end
+
+    C->>D: POST /v1/sessions/id/active-turn
+    D->>R: cancel
+    D-->>C: cancelled

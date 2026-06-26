@@ -1,45 +1,44 @@
 flowchart LR
-    subgraph Channels["Operator Channels"]
+    subgraph Clients["Clients"]
+        Home["medousa-home Tauri"]
+        SDK["medousa-sdk HttpTransport"]
         TUI["medousa_tui"]
-        CLI["medousa_cli"]
-        API["medousa_daemon API"]
+        Adapters["Channel adapters"]
     end
 
-    subgraph Product["Medousa Product Runtime"]
-        Router["Stage Routing Matrix\n(role -> provider/model/policy)"]
-        ToolLoop["Tool Loop Pipeline\n(stream + tool invocations)"]
-        Verifier["Verification + Context Pack"]
+    subgraph Engine["Medousa Engine medousa_daemon"]
+        Router["Stage routing"]
+        ToolLoop["Tool loop"]
+        Verifier["Verification"]
     end
 
-    subgraph Stasis["Stasis Orchestration Backbone"]
-        Jobs["Job Lifecycle\n(enqueue/attempt/outcome)"]
-        Scheduler["Recurring Materialization"]
-        Outbox["Outbox + Delivery"]
+    subgraph Stasis["Stasis"]
+        Jobs["Jobs"]
+        Outbox["Delivery"]
     end
 
-    subgraph Data["Persistence + Evidence"]
-        Hist["Session History"]
-        Art["Artifact Store + Chunk Refs"]
-        Verify["Verification Store"]
+    subgraph Data["Persistence"]
+        Hist["Sessions"]
+        Art["Artifacts"]
+        Vault["Vault"]
     end
 
-    TUI --> Router
-    CLI --> Router
-    API --> Router
+    subgraph Local["Offline brain"]
+        LocalEng["medousa_local :7421"]
+    end
 
+    Home --> SDK
+    SDK --> Engine
+    TUI --> Engine
+    Adapters --> Engine
+
+    Engine --> Router
     Router --> ToolLoop
     ToolLoop --> Verifier
     ToolLoop --> Jobs
-    Verifier --> Verify
-
-    Jobs --> Scheduler
     Jobs --> Outbox
 
     ToolLoop --> Hist
     ToolLoop --> Art
-    Verifier --> Hist
-    Verifier --> Art
-
-    Hist --> TUI
-    Art --> TUI
-    Verify --> TUI
+    ToolLoop --> Vault
+    Engine -. probe .-> LocalEng

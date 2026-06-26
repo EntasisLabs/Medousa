@@ -31,3 +31,11 @@ jobs:
           cache-dependency-path: apps/medousa-home/package-lock.json
       - run: npm ci
       - run: npm run check
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: verify docs (advisory)
+        run: bash scripts/verify-docs.sh
+        continue-on-error: true

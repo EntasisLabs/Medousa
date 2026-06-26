@@ -3,10 +3,12 @@
 Living documentation for system shape, component boundaries, and active roadmap.
 
 **Product README:** [../README.md](../README.md)  
-**Developer docs:** [../docs/README.md](../docs/README.md)  
+**Integrator docs (canonical):** [../docs/README.md](../docs/README.md)  
 **Active roadmap:** [ROADMAP.md](ROADMAP.md)  
 **Architecture decisions (ADRs):** [../docs/architecture/decisions/README.md](../docs/architecture/decisions/README.md)  
 **Historical milestone plans:** [archive/README.md](archive/README.md)
+
+> Integrator-facing HTTP/SDK guides live in **`docs/`**. This folder holds turn runtime internals, component boundaries, and living epics.
 
 ---
 
@@ -27,9 +29,14 @@ Living documentation for system shape, component boundaries, and active roadmap.
 
 ## Diagrams
 
-- [medousa-state.mmd](medousa-state.mmd)
-- [medousa-prompt.mmd](medousa-prompt.mmd)
-- [MedousaFlow.mmd](MedousaFlow.mmd)
+- [medousa-state.mmd](medousa-state.mmd) — turn FSM
+- [medousa-prompt.mmd](medousa-prompt.mmd) — interactive turn + SSE
+- [MedousaFlow.mmd](MedousaFlow.mmd) — clients → engine → persistence
+- [medousa-client-transport.mmd](medousa-client-transport.mmd) — SDK + Tauri transport
+- [medousa-artifact-lifecycle.mmd](medousa-artifact-lifecycle.mmd) — artifact revisions
+- [medousa-interactive-stream.mmd](medousa-interactive-stream.mmd) — POST turn → SSE → cancel
+
+Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shell](../docs/apps/medousa-home.md), [presentations library](../docs/cookbook/artifacts-and-presentations.md)
 
 ---
 

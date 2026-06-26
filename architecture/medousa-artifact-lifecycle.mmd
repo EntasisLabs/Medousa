@@ -1,0 +1,14 @@
+flowchart LR
+    Write[cognition_artifact_write]
+    Store[artifact_store lineage]
+    Stream[SSE ui_artifact / artifact_updated]
+    ListUI[POST list-ui]
+    Fetch[POST fetch]
+    UI[Panel / Fullscreen / Library]
+
+    Write --> Store
+    Store --> Stream
+    Store --> ListUI
+    ListUI --> UI
+    Fetch --> UI
+    Stream --> UI

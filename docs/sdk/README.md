@@ -2,13 +2,15 @@
 
 Shared client libraries for talking to **medousa_daemon** without duplicating HTTP paths or serde types.
 
+**Docs:** [API reference](api-reference.md) · [Interactive streaming](interactive-streaming.md) · [Transports](transports.md) · [Artifacts](artifacts.md) · [Examples](examples/README.md)
+
 ## Crates
 
 | Crate | Role |
 |-------|------|
 | [`medousa-types`](../../crates/medousa-types/) | Serde DTOs for daemon API (`daemon_api`, `session`, `local`, …) |
 | [`medousa-sdk`](../../crates/medousa-sdk/) | `MedousaClient` + `HttpTransport` |
-| [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) | `WorkshopTransport` — LAN HTTP with auth headers (Tauri workshop routing) |
+| [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) | `WorkshopTransport` — LAN HTTP with auth headers |
 | [`medousa-host`](../../crates/medousa-host/) | Spawn `medousa_local`, binary resolution, bind probes |
 
 ## Quick start (async)
@@ -26,45 +28,53 @@ let health = client.health().get().await?;
 let sessions = client.sessions().list(20).await?;
 ```
 
-## API surface (`MedousaClient`)
+## `MedousaClient` accessors
 
-| Method | Endpoints |
-|--------|-----------|
-| `health()` | `GET /health` |
-| `ingest()` | `POST /v1/ingest` |
-| `local_models()` | `GET/POST/DELETE /v1/local/*` |
-| `jobs()` | `POST /v1/jobs/ask` |
-| `recurring()` | `POST /v1/recurring/prompt` |
-| `sessions()` | `/v1/sessions/*` |
-| `interactive()` | `POST /v1/interactive/turn` |
-| `runtime()` | `/v1/runtime/*/command`, `/v1/runtime/artifact/fetch`, `/v1/runtime/artifact/list-ui` |
-| `budget()` | `/v1/turns/budget-requests/*` |
+| Accessor | Purpose |
+|----------|---------|
+| `health()` | Liveness |
+| `http()` | Generic GET/POST/PUT/PATCH/DELETE |
+| `ingest()` | Channel ingest |
+| `local_models()` | Local inference probe & downloads |
+| `jobs()` | Headless ask |
+| `recurring()` | Cron prompts |
+| `sessions()` | Session history & append |
+| `interactive()` | Start streaming turn |
+| `runtime()` | Artifacts, config, stage-route commands |
+| `capabilities()` | Capability catalog |
+| `mcp_gateway()` | Gateway status |
+| `budget()` | Turn budget approve/deny |
 
-Blocking CLI helpers: `medousa_sdk::BlockingLocalModelsClient`.
+Full method table: [api-reference.md](api-reference.md)
+
+## Transport diagram
+
+```mermaid
+flowchart LR
+  App[Your app or Tauri]
+  SDK[MedousaClient]
+  Http[HttpTransport]
+  Workshop[WorkshopTransport]
+  Daemon[medousa_daemon]
+
+  App --> SDK
+  SDK --> Http
+  SDK --> Workshop
+  Http --> Daemon
+  Workshop --> Daemon
+```
+
+See [transports.md](transports.md).
 
 ## Tauri desktop
 
-`apps/medousa-home/src-tauri/src/daemon/sdk.rs` implements `Transport` by delegating to the existing LAN/Iroh `workshop_transport` (preserves mobile fallback). Local inference commands use `MedousaClient::local_models()`.
+`apps/medousa-home/src-tauri/src/daemon/sdk.rs` implements `Transport` via `workshop_transport` (LAN/Iroh). Artifact routes use typed `client.runtime().artifact_*()`.
 
-Spawn offline brain via `medousa_host` / Tauri `workshop_runtime::ensure_local_brain` — **not** `POST /v1/local/engine/load` (removed; daemon is probe-only).
-
-## Daemon library layout
-
-See [daemon-modules.md](../architecture/daemon-modules.md) for the `medousa::daemon` module split (`ingest`, `interactive`, `jobs`, `router`, …).
-
-## Channel adapters
-
-Telegram, Discord, and Slack bins use `client.ingest().post(&IngestRequest)`.
-
-## TUI
-
-`src/bin/medousa_tui/daemon_commands.rs` uses `MedousaClient` for health, jobs, sessions, interactive turns, runtime commands, and budget approval.
+Spawn offline brain via `medousa_host` — **not** `POST /v1/local/engine/load` (removed; daemon is probe-only).
 
 ## Types
 
-Import from `medousa_types` (or `medousa::daemon_api` re-exports on the server). Do **not** mirror structs in app `types.rs` files.
-
-Artifact catalog + fetch:
+Import from `medousa_types`. Do **not** mirror structs in app `types.rs`.
 
 ```rust
 use medousa_types::{ArtifactFetchRequest, ArtifactListUiRequest};
@@ -74,15 +84,12 @@ let list = client.runtime().artifact_list_ui(&ArtifactListUiRequest {
     limit: 50,
     query: None,
 }).await?;
-
-let body = client.runtime().artifact_fetch(&ArtifactFetchRequest {
-    session_id: "medousa-home".into(),
-    artifact_id: list.artifacts[0].artifact_id.clone(),
-}).await?;
 ```
 
-## Workshop LAN + Iroh
+## Channel adapters & TUI
 
-For simple LAN-only clients, use `medousa_sdk_iroh::WorkshopTransport::from_lan_base(url)` with bearer token config.
+Telegram/Discord/Slack bins use `client.ingest().post()`. TUI uses `MedousaClient` in `src/bin/medousa_tui/daemon_commands.rs`.
 
-Tauri keeps the full LAN→Iroh failover in `workshop_transport.rs`; the SDK Iroh crate is the thin HTTP adapter for authenticated workshop base URLs.
+## Contributing
+
+When adding SDK methods, update [api-reference.md](api-reference.md) and [../engine/http-api.md](../engine/http-api.md).

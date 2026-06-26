@@ -2,6 +2,7 @@ stateDiagram-v2
     [*] --> Drafting: Prompt submitted
     Drafting --> Tooling: Tool call requested
     Tooling --> Drafting: Tool output received
+    note right of Tooling: vault/artifact/MCP tools
     Drafting --> Continuation: Large evidence detected
     Continuation --> Drafting: Refined synthesis
 

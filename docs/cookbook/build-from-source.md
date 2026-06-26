@@ -71,7 +71,7 @@ Or install full CLI set:
 
 Clone on Mac, engine on LAN, install to device:
 
-[apps/medousa-home/MOBILE-DEV.md](../../apps/medousa-home/MOBILE-DEV.md)
+[apps/medousa-home/MOBILE-DEV.md](../../apps/medousa-home/MOBILE-DEV.md) · [Mobile & LAN cookbook](../cookbook/mobile-and-lan.md)
 
 ---
 
@@ -80,6 +80,9 @@ Clone on Mac, engine on LAN, install to device:
 | Path | Purpose |
 |------|---------|
 | `apps/medousa-home/` | Medousa desktop + mobile shell |
+| `crates/medousa-sdk/` | Rust SDK (`MedousaClient`) |
+| `crates/medousa-types/` | Shared HTTP DTOs |
 | `src/bin/medousa_daemon.rs` | Medousa Engine |
 | `src/bin/medousa.rs` | CLI launcher |
 | `architecture/` | Plans & component docs |
+| `docs/` | Integrator & operator documentation |

@@ -65,7 +65,7 @@ medousa start daemon --inference
 |------|-----|
 | Tier probe | `GET /v1/local/hardware` |
 | Download | `POST /v1/local/models/download` |
-| Load | `POST /v1/local/engine/load` |
+| Load | `medousa models engine-load` or `medousa_host::spawn_medousa_local` — **not** a daemon HTTP route |
 | Chat | OpenAI-compatible `http://127.0.0.1:7421/v1` with provider `medousa-local` |
 
 Your product UI handles progress bars; engine handles bytes and SHA256.

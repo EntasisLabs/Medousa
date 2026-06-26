@@ -1,116 +1,298 @@
 # HTTP API reference (Medousa Engine)
 
+**Audience:** integrator
+
 Base URL default: `http://127.0.0.1:7419`  
 Override: `MEDOUSA_DAEMON_URL`
 
-Full component notes: [component-daemon.md](../../architecture/component-daemon.md)
+Types: [`medousa-types`](../../crates/medousa-types/) (`daemon_api`, `session`, `local`, …).  
+SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).  
+Component notes: [component-daemon.md](../../architecture/component-daemon.md).
+
+Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [workspace](workspace.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
 
 ---
 
 ## Health & ops
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | Liveness, agent runtime version, tool count, last turn latency |
-| GET | `/v1/stats` | Job counters (enqueued, running, succeeded, failed) |
-| GET | `/v1/delivery/status` | Outbox / webhook delivery health |
-| GET | `/v1/continuations/status` | Turn continuation / DLQ posture |
+| Method | Path | Types / response | SDK | CLI |
+|--------|------|------------------|-----|-----|
+| GET | `/health` | `HealthResponse` | `health().get()` | `medousa doctor` |
+| GET | `/v1/stats` | `DaemonStatsResponse` | `http().get` | — |
+| GET | `/v1/heartbeat/status` | `HeartbeatStatusResponse` | `http().get` | — |
+| GET | `/v1/delivery/status` | `DeliveryHealthResponse` | `http().get` | — |
+| GET | `/v1/continuations/status` | `ContinuationStatusResponse` | `http().get` | — |
+| GET | `/v1/continuations/lineage/{turn_correlation_id}` | `TurnContinuationLineageResponse` | `http().get` | — |
+| POST | `/v1/jobs/{job_id}/replay-and-resume` | `ReplayAndResumeResponse` | `http().post` | — |
+
+Stasis dashboard mounted at `/dashboard` (HTML UI).
 
 ---
 
-## Interactive chat
+## Interactive chat (two-step)
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/v1/interactive/turn` | TUI / app streaming turns (SSE) |
-| POST | `/v1/ingest` | Channel adapters — enqueue ask from Discord, Telegram, CLI, etc. |
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| POST | `/v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` (includes `stream_url`) | `interactive().start_turn` |
+| GET | `/v1/interactive/turn/{turn_id}/stream` | SSE: `InteractiveTurnStreamEvent` | use `http()` or app stream bridge |
 
----
+See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
 
-## Jobs (headless ask / report)
+### Sessions & turns
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/v1/jobs/ask` | Agent turn; poll result |
-| GET | `/v1/jobs/{id}/result` | Fetch completed job output |
-| POST | `/v1/jobs/report` | Structured report flow with citations |
-| POST | `/v1/jobs/prompt` | Legacy Stasis prompt job |
-| POST | `/v1/recurring/prompt` | Register cron-style recurring work |
-
-CLI wrappers: `medousa-cli daemon-ask`, `daemon-report`, `daemon-watch-add`.
-
----
-
-## Workspace & vault (app parity)
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/v1/workspace/...` | Work board, feed, cards — see workspace handlers |
-| GET/POST | `/v1/vault/...` | Notes, search, backlinks |
-
-Used by the Medousa app; available to any client with daemon access.
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| GET | `/v1/sessions` | `SessionHistoryListResponse` | `sessions().list` |
+| GET | `/v1/sessions/{session_id}/history` | `SessionHistoryResponse` | `sessions().history` |
+| PUT | `/v1/sessions/{session_id}/name` | `SessionSetDisplayNameRequest` | `sessions().set_display_name` |
+| DELETE | `/v1/sessions/{session_id}` | — | `http().delete` |
+| POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
+| GET | `/v1/sessions/{session_id}/turns` | turn list | `http().get` |
+| GET | `/v1/sessions/{session_id}/active-turn` | active turn ticket | `http().get` |
+| POST | `/v1/sessions/{session_id}/active-turn` | cancel active turn | `http().post` |
+| POST | `/v1/turns` | create turn ticket | `http().post` |
+| GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
 
 ---
 
-## Local inference (private brain)
+## Ingest & channels
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/v1/local/hardware` | RAM tier, recommended Gemma SKU |
-| GET | `/v1/local/catalog` | Models allowed for tier |
-| GET | `/v1/local/models` | Installed models + active downloads |
-| POST | `/v1/local/models/download` | Start HF download job |
-| GET | `/v1/local/models/download/{job_id}` | Progress |
-| DELETE | `/v1/local/models/{model_id}` | Remove installed model |
-| GET | `/v1/local/engine/status` | Loopback server on `:7421` |
-| POST | `/v1/local/engine/load` | Load Gemma into engine |
-
-Provider id: `medousa-local` → base URL `http://127.0.0.1:7421/v1`
-
-CLI parity: `medousa models probe|download|engine-load`, `medousa start daemon --inference`
-
-Plan: [embedded-local-inference-plan.md](../../architecture/embedded-local-inference-plan.md)
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| POST | `/v1/ingest` | `IngestRequest` → `IngestResponse` | `ingest().post` |
+| GET | `/v1/ingest/{stream_id}/stream` | ingest SSE | `http().get` |
+| POST | `/v1/deliver/outbox` | webhook delivery | `http().post` |
+| GET | `/v1/deliver/poll/{job_id}` | `DeliverPollResponse` | `http().get` |
 
 ---
 
-## Pairing (LAN phone)
+## Jobs & recurring
+
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| POST | `/v1/jobs/ask` | `EnqueueAskRequest` → `EnqueueResponse` | `jobs().enqueue_ask` |
+| GET | `/v1/jobs/{job_id}/result` | `JobResultResponse` | `http().get` |
+| GET | `/v1/jobs/{job_id}/report` | `JobReportResponse` | `http().get` |
+| POST | `/v1/jobs/{job_id}/complete-actions` | `AskJobCompleteActionsRequest` | `http().post` |
+| POST | `/v1/jobs/{job_id}/archive` | `ArchiveAskJobRequest` | `http().post` |
+| POST | `/v1/jobs/report` | `EnqueueReportRequest` | `http().post` |
+| POST | `/v1/jobs/prompt` | `EnqueuePromptRequest` | `http().post` |
+| GET | `/v1/recurring` | list definitions | `http().get` |
+| POST | `/v1/recurring/prompt` | `RegisterRecurringPromptRequest` | `recurring().register_prompt` |
+| PATCH | `/v1/recurring/{recurring_id}` | update | `http().patch` |
+| DELETE | `/v1/recurring/{recurring_id}` | delete | `http().delete` |
+| GET | `/v1/recurring/{recurring_id}/runs` | runs | `http().get` |
+| GET | `/v1/recurring/{recurring_id}/delivery` | delivery status | `http().get` |
+
+---
+
+## Runtime commands & artifacts
+
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| GET | `/v1/runtime/defaults` | runtime defaults | `http().get` |
+| GET/PUT | `/v1/runtime/tui-defaults` | JSON defaults blob | `http().get/put` |
+| PUT | `/v1/runtime/inference-profiles` | inference profiles | `http().put` |
+| POST | `/v1/runtime/config/command` | `RuntimeConfigCommandRequest` | `runtime().config_command` |
+| POST | `/v1/runtime/stage-route/command` | `StageRouteCommandRequest` | `runtime().stage_route_command` |
+| POST | `/v1/runtime/artifact/command` | `ArtifactCommandRequest` | `runtime().artifact_command` |
+| POST | `/v1/runtime/artifact/fetch` | `ArtifactFetchRequest` | `runtime().artifact_fetch` |
+| POST | `/v1/runtime/artifact/list-ui` | `ArtifactListUiRequest` | `runtime().artifact_list_ui` |
+
+See [artifacts.md](artifacts.md), [runtime-config.md](runtime-config.md).
+
+---
+
+## Turn budget
+
+| Method | Path | SDK |
+|--------|------|-----|
+| GET | `/v1/turns/budget-requests` | `budget().list` |
+| GET | `/v1/turns/budget-requests/{request_id}` | `http().get` |
+| POST | `/v1/turns/budget-requests/{request_id}/approve` | `budget().approve` |
+| POST | `/v1/turns/budget-requests/{request_id}/deny` | `budget().deny` |
+
+---
+
+## Vault
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/qr` | Pairing QR payload |
-| GET | `/pair/status` | Paired devices |
+| GET/POST | `/v1/vault/roots` | List / add vault roots |
+| PUT | `/v1/vault/active` | Set active root |
+| GET/POST | `/v1/vault/notes` | List / create notes |
+| GET/PUT/DELETE | `/v1/vault/notes/{*note_path}` | Read / write / delete note |
+| GET | `/v1/vault/tags` | List tags |
+| GET | `/v1/vault/search` | Full-text search |
+| GET | `/v1/vault/backlinks` | Backlinks for path |
 
-Protocol: [first-run-and-lan-pairing-plan.md](../../architecture/archive/first-run-and-lan-pairing-plan.md)
+See [vault.md](vault.md).
+
+---
+
+## Workspace
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/workspace/cards` | List cards |
+| GET | `/v1/workspace/cards/{card_id}` | Card detail |
+| POST | `/v1/workspace/cards/{card_id}/cancel` | Cancel |
+| POST | `/v1/workspace/cards/{card_id}/archive` | Archive |
+| POST | `/v1/workspace/cards/{card_id}/retry` | Retry |
+| POST | `/v1/workspace/cards/{card_id}/link-vault` | Link vault note |
+| GET | `/v1/workspace/feed` | Activity feed |
+| GET | `/v1/workspace/snapshot` | Board snapshot |
+| POST | `/v1/workspace/rebuild` | Rebuild projector |
+| GET | `/v1/workspace/stream` | SSE feed |
+
+See [workspace.md](workspace.md).
 
 ---
 
 ## Identity
 
-Identity propose/commit/history routes under `/v1/identity/...` — see `medousa-cli daemon-identity-*` commands.
+| Method | Path |
+|--------|------|
+| POST | `/v1/identity/context` |
+| POST | `/v1/identity/remember` |
+| POST | `/v1/identity/digest-preview` |
+| POST | `/v1/identity/export-markdown` |
+| GET/POST | `/v1/identity/profiles` |
+| PUT | `/v1/identity/profiles/active` |
+| POST | `/v1/identity/profiles/export` |
+| POST | `/v1/identity/profiles/import` |
+| POST | `/v1/identity/update/propose` |
+| POST | `/v1/identity/update/commit` |
+| POST | `/v1/identity/history` |
+| POST | `/v1/identity/rollback` |
+
+CLI: `medousa-cli daemon-identity-*`
 
 ---
 
-## MCP
+## Local inference (probe-only daemon)
 
-Medousa Engine delegates tool calls to **MCP gateway** (default `http://127.0.0.1:7420`).  
+The daemon **probes** `medousa_local` on `:7421`. Loading models uses `medousa models engine-load` or [`medousa-host`](../../crates/medousa-host/) — **not** a daemon `engine/load` route.
+
+| Method | Path | SDK |
+|--------|------|-----|
+| GET | `/v1/local/hardware` | `local_models().hardware` |
+| GET | `/v1/local/catalog` | `local_models().catalog` |
+| GET | `/v1/local/models` | `local_models().list` |
+| POST | `/v1/local/models/download` | `local_models().start_download` |
+| GET | `/v1/local/models/download/{job_id}` | blocking `download_status` |
+| GET | `/v1/local/models/download/{job_id}/events` | SSE progress |
+| DELETE | `/v1/local/models/{model_id}` | `local_models().remove_model` |
+| GET | `/v1/local/engine/status` | `local_models().engine_status` |
+
+Provider id: `medousa-local` → `http://127.0.0.1:7421/v1`
+
+---
+
+## Capabilities & MCP
+
+| Method | Path | SDK |
+|--------|------|-----|
+| GET | `/v1/capabilities` | `capabilities().list` |
+| GET | `/v1/capabilities/{capability_id}` | `capabilities().get` |
+| POST | `/v1/capabilities/reindex` | `capabilities().reindex` |
+| GET | `/v1/mcp/gateway/status` | `mcp_gateway().status` |
+| POST | `/v1/mcp/policy/evaluate` | `http().post` |
+
 Setup: [mcp-gateway-setup.md](../mcp-gateway-setup.md)
 
 ---
 
-## Suggested integration patterns
+## Manuscripts, models catalog, media, STT
 
-**Sync ask (script):**
+| Method | Path |
+|--------|------|
+| GET/POST | `/v1/manuscripts` |
+| GET/PATCH | `/v1/manuscripts/{manuscript_id}` |
+| GET | `/v1/models/catalog` |
+| GET | `/v1/models/capabilities` |
+| POST | `/v1/models/catalog/refresh` |
+| POST | `/v1/media/upload` |
+| GET | `/v1/media/{media_id}` |
+| GET | `/v1/stt/status` |
+| POST | `/v1/stt/transcribe` |
+
+See [extensions.md](extensions.md).
+
+---
+
+## Workflows & tool history
+
+| Method | Path |
+|--------|------|
+| GET/POST | `/v1/workflows` |
+| POST | `/v1/workflows/plan` |
+| POST | `/v1/workflows/schedule` |
+| GET | `/v1/workflows/{workflow_id}` |
+| GET | `/v1/workflows/{workflow_id}/runs` |
+| GET | `/v1/tool-history/slices` |
+| POST | `/v1/workflows/from-slice` |
+
+---
+
+## Grapheme & Locus
+
+| Method | Path |
+|--------|------|
+| GET | `/v1/grapheme/modules` |
+| GET | `/v1/grapheme/modules/{module_id}` |
+| GET | `/v1/grapheme/modules/{module_id}/ops` |
+| GET/PUT | `/v1/grapheme/allowlist` |
+| GET/POST | `/v1/grapheme/scripts` |
+| GET | `/v1/grapheme/scripts/{script_id}` |
+| POST | `/v1/grapheme/compile` |
+| POST | `/v1/grapheme/modules/load` |
+| GET | `/v1/grapheme/lifecycle` |
+| GET | `/v1/grapheme/lsp/workspace` |
+| GET | `/v1/grapheme/lsp` (WebSocket) |
+| POST | `/v1/grapheme/run` |
+| GET | `/v1/locus/nodes` |
+| GET | `/v1/locus/nodes/{sync_key}` |
+| GET | `/v1/locus/tags` |
+
+---
+
+## Pairing (LAN / phone)
+
+| Method | Path |
+|--------|------|
+| GET | `/qr` |
+| GET | `/qr/image` |
+| GET | `/qr.png` |
+| POST | `/qr/rotate` |
+| GET | `/pair/status` |
+| GET | `/pair/iroh-ticket` |
+| GET | `/pair/code` |
+| POST | `/pair/init` |
+| POST | `/pair/verify` |
+| GET | `/pair/heartbeat` |
+| DELETE | `/pair/{pairing_id}` |
+
+Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
+
+---
+
+## Integration patterns
+
+**Sync ask:**
 
 ```bash
 medousa-cli daemon-ask "Summarize open risks" --daemon-url http://127.0.0.1:7419
 ```
 
-**Async job (your service):**
+**Async job:**
 
-1. `POST /v1/jobs/ask` with JSON body (channel, user_id, text)
-2. Poll `GET /v1/jobs/{id}/result` until complete
-3. Deliver via your UI or `/v1/delivery` webhook
+1. `POST /v1/jobs/ask`
+2. Poll `GET /v1/jobs/{id}/result`
 
-**Replace your chat UI entirely** — keep engine; swap only presentation.
+**Streaming chat:**
 
-More recipes: [integrate-without-the-app.md](../cookbook/integrate-without-the-app.md)
+1. `POST /v1/interactive/turn`
+2. `GET` the returned `stream_url` as SSE
+
+More: [integrate-without-the-app.md](../cookbook/integrate-without-the-app.md)
