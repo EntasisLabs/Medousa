@@ -426,6 +426,48 @@ fn repair_ui_artifact_index_from_disk() {
     }
 }
 
+const ARTIFACT_HOST_STYLE: &str = concat!(
+    "<style id=\"medousa-artifact-host\">",
+    ":root{--medousa-host-bg:transparent;--medousa-host-fg:inherit;--medousa-host-muted:inherit}",
+    "html,body{margin:0;padding:0;background:var(--medousa-host-bg,transparent);overflow:hidden;",
+    "scrollbar-width:none;-ms-overflow-style:none}",
+    "html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0;height:0}",
+    "/* Agent utility: .medousa-fill { min-height:100%; width:100% } */",
+    "</style>"
+);
+
+fn inject_artifact_host_styles(html: &str) -> String {
+    if html.contains("medousa-artifact-host") {
+        return html.to_string();
+    }
+    let lower = html.to_ascii_lowercase();
+    if let Some(idx) = lower.find("</head>") {
+        let mut out = String::with_capacity(html.len() + ARTIFACT_HOST_STYLE.len());
+        out.push_str(&html[..idx]);
+        out.push_str(ARTIFACT_HOST_STYLE);
+        out.push_str(&html[idx..]);
+        return out;
+    }
+    if let Some(idx) = lower.find("<head>") {
+        let insert_at = idx + "<head>".len();
+        let mut out = String::with_capacity(html.len() + ARTIFACT_HOST_STYLE.len());
+        out.push_str(&html[..insert_at]);
+        out.push_str(ARTIFACT_HOST_STYLE);
+        out.push_str(&html[insert_at..]);
+        return out;
+    }
+    if let Some(idx) = lower.find("<body") {
+        let mut out = String::with_capacity(html.len() + ARTIFACT_HOST_STYLE.len() + 32);
+        out.push_str(&html[..idx]);
+        out.push_str("<head>");
+        out.push_str(ARTIFACT_HOST_STYLE);
+        out.push_str("</head>");
+        out.push_str(&html[idx..]);
+        return out;
+    }
+    html.to_string()
+}
+
 fn wrap_html_document(html: &str) -> String {
     let trimmed = html.trim();
     if trimmed.is_empty() {
@@ -433,10 +475,10 @@ fn wrap_html_document(html: &str) -> String {
     }
     let lower = trimmed.to_ascii_lowercase();
     if lower.contains("<html") || lower.contains("<!doctype") {
-        return trimmed.to_string();
+        return inject_artifact_host_styles(trimmed);
     }
     format!(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\"></head><body>{trimmed}</body></html>"
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\">{ARTIFACT_HOST_STYLE}</head><body>{trimmed}</body></html>"
     )
 }
 
@@ -826,6 +868,20 @@ mod tests {
         let err = persist_ui_artifact(session_id, &huge, "Big", "inline", None)
             .expect_err("should fail");
         assert!(err.contains("exceeds"));
+    }
+
+    #[test]
+    fn wrap_html_document_injects_host_scrollbar_styles() {
+        let wrapped = wrap_html_document("<div>Chart</div>");
+        assert!(wrapped.contains("medousa-artifact-host"));
+        assert!(wrapped.contains("overflow:hidden"));
+        assert!(wrapped.contains("--medousa-host-bg"));
+
+        let full = wrap_html_document(
+            "<!DOCTYPE html><html><head></head><body><p>Full doc</p></body></html>",
+        );
+        assert!(full.contains("medousa-artifact-host"));
+        assert!(full.contains("medousa-fill"));
     }
 
     #[test]

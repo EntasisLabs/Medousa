@@ -1,5 +1,9 @@
 <script lang="ts">
   import ArtifactEmbed from "$lib/components/chat/ArtifactEmbed.svelte";
+  import ArtifactPresentationChrome from "$lib/components/chat/ArtifactPresentationChrome.svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import type { UiArtifact } from "$lib/types/chat";
 
   interface Props {
@@ -10,65 +14,124 @@
   }
 
   let { open, sessionId, artifact, onClose }: Props = $props();
+
+  function handleClose() {
+    haptic("light");
+    onClose();
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!open || event.key !== "Escape") return;
+    event.preventDefault();
+    handleClose();
+  }
+
+  $effect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  });
+
+  $effect(() => {
+    if (!open) return;
+    return registerMobileBackHandler(() => {
+      handleClose();
+      return true;
+    });
+  });
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if open}
-  <div class="artifact-fullscreen" role="dialog" aria-modal="true" aria-label={artifact.label}>
-    <header class="artifact-fullscreen-header">
-      <h3 class="artifact-fullscreen-title">{artifact.label}</h3>
-      <button type="button" class="artifact-fullscreen-close" onclick={onClose}>Close</button>
-    </header>
-    <div class="artifact-fullscreen-body">
-      <ArtifactEmbed
-        {sessionId}
-        artifactId={artifact.artifactId}
-        label={artifact.label}
-        mime={artifact.mime}
-        heightPx={artifact.heightPx ?? 900}
-      />
+  <BodyPortal>
+    <div
+      class="artifact-chrome-backdrop artifact-fullscreen-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={artifact.label}
+      onclick={(event) => {
+        if (event.target === event.currentTarget) handleClose();
+      }}
+    >
+      <div class="artifact-chrome-stage artifact-fullscreen-stage">
+        <ArtifactPresentationChrome title={artifact.label} onClose={handleClose}>
+          <ArtifactEmbed
+            {sessionId}
+            artifactId={artifact.artifactId}
+            label={artifact.label}
+            mime={artifact.mime}
+            heightPx={artifact.heightPx ?? 900}
+            bare={true}
+            mode="fullscreen"
+          />
+        </ArtifactPresentationChrome>
+      </div>
     </div>
-  </div>
+  </BodyPortal>
 {/if}
 
 <style>
-  .artifact-fullscreen {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
+  .artifact-fullscreen-backdrop {
+    z-index: 110;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    padding: max(0.75rem, env(safe-area-inset-top, 0px))
+      max(0.75rem, env(safe-area-inset-right, 0px))
+      max(0.75rem, env(safe-area-inset-bottom, 0px))
+      max(0.75rem, env(safe-area-inset-left, 0px));
+    animation: artifact-backdrop-in 180ms ease-out;
+  }
+
+  .artifact-fullscreen-stage {
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-950);
+    width: min(72rem, calc(100vw - 1.5rem));
+    height: 100%;
+    min-height: 0;
+    border-radius: 1.125rem;
+    animation: artifact-stage-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .artifact-fullscreen-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-700) 60%, transparent);
+  @keyframes artifact-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
-  .artifact-fullscreen-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--color-surface-100);
+  @keyframes artifact-stage-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98) translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 
-  .artifact-fullscreen-close {
-    border: 0;
-    border-radius: 0.5rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    color: var(--color-surface-300);
-    background: color-mix(in srgb, var(--color-surface-800) 80%, transparent);
-    cursor: pointer;
+  @media (max-width: 640px) {
+    .artifact-fullscreen-backdrop {
+      padding: 0;
+    }
+
+    .artifact-fullscreen-stage {
+      width: 100%;
+      border-radius: 0;
+    }
   }
 
-  .artifact-fullscreen-body {
-    flex: 1;
-    overflow: auto;
-    padding: 1rem;
+  @media (prefers-reduced-motion: reduce) {
+    .artifact-fullscreen-backdrop,
+    .artifact-fullscreen-stage {
+      animation: none;
+    }
   }
 </style>

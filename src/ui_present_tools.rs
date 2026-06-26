@@ -69,7 +69,8 @@ impl StasisTool for CognitionUiPresentTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. \
-             Use for interactive charts, layouts, or rich UI — not plain markdown.",
+             inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. \
+             Use height only for inline preview cap.",
         )
     }
 
@@ -84,7 +85,7 @@ impl StasisTool for CognitionUiPresentTool {
                 },
                 "html": {
                     "type": "string",
-                    "description": "Full HTML document or fragment (fragments are wrapped server-side)"
+                    "description": "HTML fragment or document. For panel/fullscreen prefer transparent outer background; avoid full-page black fills. Card layouts up to ~900px centered are ideal."
                 },
                 "presentation": {
                     "type": "string",

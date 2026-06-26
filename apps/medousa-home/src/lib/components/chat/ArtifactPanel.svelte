@@ -1,5 +1,9 @@
 <script lang="ts">
   import ArtifactEmbed from "$lib/components/chat/ArtifactEmbed.svelte";
+  import ArtifactPresentationChrome from "$lib/components/chat/ArtifactPresentationChrome.svelte";
+  import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
+  import { haptic } from "$lib/haptics";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import type { UiArtifact } from "$lib/types/chat";
 
   interface Props {
@@ -7,81 +11,122 @@
     sessionId: string;
     artifact: UiArtifact;
     onClose: () => void;
+    onExpand?: () => void;
   }
 
-  let { open, sessionId, artifact, onClose }: Props = $props();
+  let { open, sessionId, artifact, onClose, onExpand }: Props = $props();
+
+  function handleClose() {
+    haptic("light");
+    onClose();
+  }
+
+  function handleExpand() {
+    haptic("light");
+    onExpand?.();
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!open || event.key !== "Escape") return;
+    event.preventDefault();
+    handleClose();
+  }
+
+  $effect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  });
+
+  $effect(() => {
+    if (!open) return;
+    return registerMobileBackHandler(() => {
+      handleClose();
+      return true;
+    });
+  });
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if open}
-  <div class="artifact-panel-backdrop" role="presentation" onclick={onClose}></div>
-  <aside class="artifact-panel" aria-label={artifact.label}>
-    <header class="artifact-panel-header">
-      <h3 class="artifact-panel-title">{artifact.label}</h3>
-      <button type="button" class="artifact-panel-close" onclick={onClose}>Close</button>
-    </header>
-    <div class="artifact-panel-body">
-      <ArtifactEmbed
-        {sessionId}
-        artifactId={artifact.artifactId}
-        label={artifact.label}
-        mime={artifact.mime}
-        heightPx={artifact.heightPx ?? 720}
-      />
+  <BodyPortal>
+    <div
+      class="artifact-chrome-backdrop artifact-panel-backdrop"
+      role="presentation"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) handleClose();
+      }}
+    >
+      <aside
+        class="artifact-chrome-stage artifact-panel-stage"
+        aria-label={artifact.label}
+      >
+        <ArtifactPresentationChrome
+          title={artifact.label}
+          onClose={handleClose}
+          onExpand={onExpand ? handleExpand : undefined}
+        >
+          <ArtifactEmbed
+            {sessionId}
+            artifactId={artifact.artifactId}
+            label={artifact.label}
+            mime={artifact.mime}
+            heightPx={artifact.heightPx ?? 720}
+            bare={true}
+            mode="panel"
+          />
+        </ArtifactPresentationChrome>
+      </aside>
     </div>
-  </aside>
+  </BodyPortal>
 {/if}
 
 <style>
   .artifact-panel-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    background: rgb(0 0 0 / 0.45);
-  }
-
-  .artifact-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    z-index: 61;
+    z-index: 100;
     display: flex;
-    flex-direction: column;
-    width: min(42rem, 100vw);
-    height: 100vh;
-    border-left: 1px solid color-mix(in srgb, var(--color-surface-600) 70%, transparent);
-    background: var(--color-surface-950);
-    box-shadow: -12px 0 40px rgb(0 0 0 / 0.25);
+    justify-content: flex-end;
+    animation: artifact-backdrop-in 160ms ease-out;
   }
 
-  .artifact-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-surface-700) 60%, transparent);
+  .artifact-panel-stage {
+    width: min(44rem, 100vw);
+    height: 100%;
+    border-left: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
+    box-shadow: -20px 0 56px rgb(0 0 0 / 0.22);
+    animation: artifact-panel-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .artifact-panel-title {
-    margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--color-surface-100);
+  :global(html:not(.dark)) .artifact-panel-stage {
+    box-shadow: -16px 0 40px rgb(0 0 0 / 0.08);
   }
 
-  .artifact-panel-close {
-    border: 0;
-    border-radius: 0.5rem;
-    padding: 0.375rem 0.625rem;
-    font-size: 0.75rem;
-    color: var(--color-surface-300);
-    background: color-mix(in srgb, var(--color-surface-800) 80%, transparent);
-    cursor: pointer;
+  @keyframes artifact-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
-  .artifact-panel-body {
-    flex: 1;
-    overflow: auto;
-    padding: 0.75rem;
+  @keyframes artifact-panel-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .artifact-panel-backdrop,
+    .artifact-panel-stage {
+      animation: none;
+    }
   }
 </style>
