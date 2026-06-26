@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::IntoFuture;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use stasis::prelude::RuntimeComposition;
 use surrealdb::engine::any::Any;
@@ -25,12 +26,19 @@ const ARTIFACT_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD byte_size ON TABLE artifact_record TYPE int",
     "DEFINE FIELD stored_at_utc ON TABLE artifact_record TYPE datetime",
     "DEFINE FIELD payload_path ON TABLE artifact_record TYPE string",
+    "DEFINE FIELD content_type ON TABLE artifact_record TYPE option<string>",
+    "DEFINE FIELD label ON TABLE artifact_record TYPE option<string>",
+    "DEFINE FIELD presentation ON TABLE artifact_record TYPE option<string>",
+    "DEFINE FIELD height_px ON TABLE artifact_record TYPE option<int>",
     "DEFINE INDEX idx_artifact_record_session ON TABLE artifact_record COLUMNS session_id",
     "DEFINE INDEX idx_artifact_record_id ON TABLE artifact_record COLUMNS artifact_id UNIQUE",
 ];
 
 static ARTIFACT_INDEX_STORE: Lazy<RwLock<Arc<dyn ArtifactIndexStore>>> =
     Lazy::new(|| RwLock::new(Arc::new(FileArtifactIndexStore)));
+
+/// When true, the primary index lives in SurrealDB; UI artifacts are also mirrored to `index.jsonl`.
+static ARTIFACT_INDEX_USES_SURREAL: AtomicBool = AtomicBool::new(false);
 
 pub async fn init_artifact_store_with_runtime(runtime: &RuntimeComposition) {
     match runtime {
@@ -42,8 +50,10 @@ pub async fn init_artifact_store_with_runtime(runtime: &RuntimeComposition) {
                 );
                 return;
             }
+            ARTIFACT_INDEX_USES_SURREAL.store(true, Ordering::Release);
             set_artifact_index_store(Arc::new(store));
             eprintln!("Surreal runtime detected; artifact index switched to SurrealDB backend");
+            repair_ui_artifact_index_from_disk();
         }
         _ => {}
     }
@@ -230,11 +240,25 @@ pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArti
         return None;
     }
 
-    let record = read_index_records()
-        .into_iter()
-        .filter(|record| record.session_id == session_id)
-        .find(|record| record.artifact_id == query || record.artifact_id.starts_with(query))?;
+    let records = read_index_records();
+    let record = records
+        .iter()
+        .find(|record| {
+            record.session_id == session_id
+                && (record.artifact_id == query || record.artifact_id.starts_with(query))
+        })
+        .or_else(|| {
+            records.iter().find(|record| {
+                record.artifact_id == query || record.artifact_id.starts_with(query)
+            })
+        })
+        .cloned()
+        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, query))?;
 
+    load_fetched_from_record(record)
+}
+
+fn load_fetched_from_record(record: ArtifactRecord) -> Option<FetchedArtifact> {
     let path = Path::new(&record.payload_path);
     if !path.exists() {
         return None;
@@ -265,6 +289,141 @@ pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArti
         body,
         mime,
     })
+}
+
+fn ui_artifact_hash_short(artifact_id: &str) -> Option<&str> {
+    let hash_short = artifact_id.rsplit(':').next()?.trim();
+    if hash_short.len() < 8 {
+        return None;
+    }
+    Some(hash_short)
+}
+
+fn build_ui_artifact_id(session_id: &str, hash64: &str) -> String {
+    format!(
+        "art:{}:cognition_ui_present:ui:{}",
+        short_session(session_id),
+        hash64.chars().take(12).collect::<String>()
+    )
+}
+
+fn ui_artifact_record_from_path(session_id: &str, path: &Path) -> Option<ArtifactRecord> {
+    if path.extension().and_then(|ext| ext.to_str()) != Some("html") {
+        return None;
+    }
+    let hash64 = path.file_stem()?.to_str()?.to_string();
+    if hash64.is_empty() {
+        return None;
+    }
+    let byte_size = std::fs::metadata(path).ok()?.len() as usize;
+    let stored_at_utc = std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|modified| {
+            modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|duration| {
+                    DateTime::<Utc>::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
+                })
+        })
+        .unwrap_or_else(Utc::now);
+
+    Some(ArtifactRecord {
+        artifact_id: build_ui_artifact_id(session_id, &hash64),
+        session_id: session_id.to_string(),
+        tool_name: "cognition_ui_present".to_string(),
+        direction: "ui".to_string(),
+        hash64,
+        byte_size,
+        stored_at_utc,
+        payload_path: path.to_string_lossy().to_string(),
+        content_type: "text/html".to_string(),
+        label: Some("Presentation".to_string()),
+        presentation: Some("inline".to_string()),
+        height_px: None,
+    })
+}
+
+fn find_ui_payload_in_session_dir(session_id: &str, hash_short: &str) -> Option<ArtifactRecord> {
+    let ui_dir = artifacts_root()
+        .join(session_id)
+        .join("cognition_ui_present")
+        .join("ui");
+    let path = std::fs::read_dir(ui_dir).ok()?.flatten().find_map(|entry| {
+        let path = entry.path();
+        let stem = path.file_stem().and_then(|stem| stem.to_str())?;
+        if stem.starts_with(hash_short) {
+            Some(path)
+        } else {
+            None
+        }
+    })?;
+    ui_artifact_record_from_path(session_id, &path)
+}
+
+fn fetch_ui_artifact_record_from_disk(session_id: &str, artifact_id: &str) -> Option<ArtifactRecord> {
+    let hash_short = ui_artifact_hash_short(artifact_id)?;
+    if let Some(record) = find_ui_payload_in_session_dir(session_id, hash_short) {
+        return Some(record);
+    }
+
+    let root = artifacts_root();
+    let entries = std::fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        if !entry.file_type().ok()?.is_dir() {
+            continue;
+        }
+        let candidate_session = entry.file_name().to_string_lossy().to_string();
+        if candidate_session == session_id {
+            continue;
+        }
+        if let Some(record) = find_ui_payload_in_session_dir(&candidate_session, hash_short) {
+            return Some(record);
+        }
+    }
+    None
+}
+
+fn repair_ui_artifact_index_from_disk() {
+    let indexed_keys: HashSet<(String, String)> = artifact_index_store()
+        .read_all()
+        .into_iter()
+        .map(|record| (record.session_id, record.hash64))
+        .collect();
+
+    let root = artifacts_root();
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        if !entry.file_type().ok().is_some_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let session_id = entry.file_name().to_string_lossy().to_string();
+        let ui_dir = root
+            .join(&session_id)
+            .join("cognition_ui_present")
+            .join("ui");
+        let Ok(files) = std::fs::read_dir(ui_dir) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let Some(record) = ui_artifact_record_from_path(&session_id, &file.path()) else {
+                continue;
+            };
+            if indexed_keys.contains(&(record.session_id.clone(), record.hash64.clone())) {
+                continue;
+            }
+            if append_index_record(&record).is_ok() {
+                eprintln!(
+                    "Repaired missing UI artifact index entry {} ({})",
+                    record.artifact_id, record.session_id
+                );
+            }
+        }
+    }
 }
 
 fn wrap_html_document(html: &str) -> String {
@@ -434,7 +593,11 @@ pub fn run_artifact_maintenance(
 }
 
 fn append_index_record(record: &ArtifactRecord) -> std::result::Result<(), String> {
-    artifact_index_store().append(record)
+    artifact_index_store().append(record)?;
+    if ARTIFACT_INDEX_USES_SURREAL.load(Ordering::Acquire) && record.direction == "ui" {
+        let _ = file_append_index_record(record);
+    }
+    Ok(())
 }
 
 fn overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<(), String> {
@@ -442,7 +605,27 @@ fn overwrite_index_records(records: &[ArtifactRecord]) -> std::result::Result<()
 }
 
 fn read_index_records() -> Vec<ArtifactRecord> {
-    artifact_index_store().read_all()
+    let primary = artifact_index_store().read_all();
+    if !ARTIFACT_INDEX_USES_SURREAL.load(Ordering::Acquire) {
+        return primary;
+    }
+    merge_artifact_records(primary, file_read_index_records())
+}
+
+fn merge_artifact_records(
+    primary: Vec<ArtifactRecord>,
+    secondary: Vec<ArtifactRecord>,
+) -> Vec<ArtifactRecord> {
+    let mut by_id: HashMap<String, ArtifactRecord> = HashMap::new();
+    for record in secondary {
+        by_id.entry(record.artifact_id.clone()).or_insert(record);
+    }
+    for record in primary {
+        by_id.insert(record.artifact_id.clone(), record);
+    }
+    let mut merged: Vec<ArtifactRecord> = by_id.into_values().collect();
+    merged.sort_by(|left, right| left.stored_at_utc.cmp(&right.stored_at_utc));
+    merged
 }
 
 fn artifact_index_store() -> Arc<dyn ArtifactIndexStore> {
@@ -509,12 +692,13 @@ impl ArtifactIndexStore for SurrealArtifactIndexStore {
     }
 
     fn append(&self, record: &ArtifactRecord) -> std::result::Result<(), String> {
+        // Record ids must not contain `:` — artifact_id does (art:session:tool:dir:hash).
         let sql = "UPSERT type::record($table, $id) CONTENT $data";
         block_on(
             self.db
                 .query(sql)
                 .bind(("table", ARTIFACT_INDEX_TABLE))
-                .bind(("id", record.artifact_id.clone()))
+                .bind(("id", record.hash64.clone()))
                 .bind(("data", record.clone())),
         )
         .map_err(|err| err.to_string())?;
@@ -642,5 +826,28 @@ mod tests {
         let err = persist_ui_artifact(session_id, &huge, "Big", "inline", None)
             .expect_err("should fail");
         assert!(err.contains("exceeds"));
+    }
+
+    #[test]
+    fn fetch_ui_artifact_falls_back_to_disk_without_index_entry() {
+        let session_id = "test-ui-artifact-disk-fallback";
+        let html = "<p>Disk fallback</p>";
+        let wrapped = wrap_html_document(html);
+        let hash64 = crate::payload_receipt::hash_text(&wrapped);
+        let artifact_id = build_ui_artifact_id(session_id, &hash64);
+
+        let payload_dir = artifacts_root()
+            .join(session_id)
+            .join("cognition_ui_present")
+            .join("ui");
+        std::fs::create_dir_all(&payload_dir).expect("mkdir");
+        let payload_path = payload_dir.join(format!("{hash64}.html"));
+        std::fs::write(&payload_path, wrapped.as_bytes()).expect("write html");
+
+        let fetched = fetch_artifact(session_id, &artifact_id).expect("disk fallback fetch");
+        assert_eq!(fetched.mime, "text/html");
+        assert!(fetched.body.contains("Disk fallback"));
+
+        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
     }
 }
