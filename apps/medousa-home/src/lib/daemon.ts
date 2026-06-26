@@ -880,6 +880,20 @@ export async function fetchArtifact(
   });
 }
 
+export async function listUiArtifacts(options?: {
+  sessionId?: string;
+  query?: string;
+  limit?: number;
+}): Promise<import("$lib/types/artifact").ArtifactListUiResponse> {
+  return invoke<import("$lib/types/artifact").ArtifactListUiResponse>("artifact_list_ui", {
+    request: {
+      session_id: options?.sessionId ?? null,
+      query: options?.query ?? null,
+      limit: options?.limit ?? 50,
+    },
+  });
+}
+
 export async function updateRecurring(
   recurringId: string,
   request: UpdateRecurringRequest,

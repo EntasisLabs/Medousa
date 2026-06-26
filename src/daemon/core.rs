@@ -184,6 +184,14 @@ pub async fn artifact_fetch(
     Ok(Json(response))
 }
 
+pub async fn artifact_list_ui(
+    Json(request): Json<crate::daemon_api::ArtifactListUiRequest>,
+) -> Result<Json<crate::daemon_api::ArtifactListUiResponse>, (StatusCode, String)> {
+    let response = crate::artifact_command_runtime::execute_artifact_list_ui(request)
+        .map_err(internal_error)?;
+    Ok(Json(response))
+}
+
 pub async fn runtime_config_command(
     Json(request): Json<RuntimeConfigCommandRequest>,
 ) -> Result<Json<RuntimeConfigCommandResponse>, (StatusCode, String)> {

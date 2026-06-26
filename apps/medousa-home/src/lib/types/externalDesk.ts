@@ -13,4 +13,4 @@ export interface PinnedRoot {
   label: string;
 }
 
-export type LibrarySidebarMode = "vault" | "files";
+export type LibrarySidebarMode = "vault" | "files" | "presentations";

@@ -439,3 +439,35 @@ pub fn execute_artifact_fetch(
         height_px: fetched.record.height_px,
     })
 }
+
+pub fn execute_artifact_list_ui(
+    request: crate::daemon_api::ArtifactListUiRequest,
+) -> Result<crate::daemon_api::ArtifactListUiResponse> {
+    let session_id = request
+        .session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let query = request
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let records = crate::artifact_store::list_ui_artifacts(session_id, request.limit, query);
+    let artifacts = records
+        .into_iter()
+        .map(|record| crate::daemon_api::ArtifactSummary {
+            artifact_id: record.artifact_id,
+            session_id: record.session_id,
+            label: record
+                .label
+                .unwrap_or_else(|| "Presentation".to_string()),
+            presentation: record.presentation,
+            byte_size: record.byte_size,
+            stored_at_utc: record.stored_at_utc,
+            root_artifact_id: record.root_artifact_id,
+            supersedes_artifact_id: record.supersedes_artifact_id,
+        })
+        .collect();
+    Ok(crate::daemon_api::ArtifactListUiResponse { artifacts })
+}

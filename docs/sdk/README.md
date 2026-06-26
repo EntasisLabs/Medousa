@@ -37,7 +37,7 @@ let sessions = client.sessions().list(20).await?;
 | `recurring()` | `POST /v1/recurring/prompt` |
 | `sessions()` | `/v1/sessions/*` |
 | `interactive()` | `POST /v1/interactive/turn` |
-| `runtime()` | `/v1/runtime/*/command` |
+| `runtime()` | `/v1/runtime/*/command`, `/v1/runtime/artifact/fetch`, `/v1/runtime/artifact/list-ui` |
 | `budget()` | `/v1/turns/budget-requests/*` |
 
 Blocking CLI helpers: `medousa_sdk::BlockingLocalModelsClient`.
@@ -63,6 +63,23 @@ Telegram, Discord, and Slack bins use `client.ingest().post(&IngestRequest)`.
 ## Types
 
 Import from `medousa_types` (or `medousa::daemon_api` re-exports on the server). Do **not** mirror structs in app `types.rs` files.
+
+Artifact catalog + fetch:
+
+```rust
+use medousa_types::{ArtifactFetchRequest, ArtifactListUiRequest};
+
+let list = client.runtime().artifact_list_ui(&ArtifactListUiRequest {
+    session_id: None,
+    limit: 50,
+    query: None,
+}).await?;
+
+let body = client.runtime().artifact_fetch(&ArtifactFetchRequest {
+    session_id: "medousa-home".into(),
+    artifact_id: list.artifacts[0].artifact_id.clone(),
+}).await?;
+```
 
 ## Workshop LAN + Iroh
 

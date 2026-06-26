@@ -78,6 +78,41 @@ impl TurnPartsAccumulator {
         });
     }
 
+    pub fn replace_attachment_ref(
+        &mut self,
+        previous_artifact_id: &str,
+        artifact_id: &str,
+        mime: &str,
+        label: &str,
+        byte_size: Option<u64>,
+        presentation: Option<String>,
+        height_px: Option<u32>,
+    ) {
+        for part in &mut self.attachment_parts {
+            if let TurnPart::AttachmentRef { artifact_id: existing, .. } = part {
+                if existing == previous_artifact_id {
+                    *part = TurnPart::AttachmentRef {
+                        artifact_id: artifact_id.to_string(),
+                        mime: mime.to_string(),
+                        label: label.to_string(),
+                        byte_size,
+                        presentation,
+                        height_px,
+                    };
+                    return;
+                }
+            }
+        }
+        self.push_attachment_ref(
+            artifact_id,
+            mime,
+            label,
+            byte_size,
+            presentation,
+            height_px,
+        );
+    }
+
     pub fn tool_started(
         &mut self,
         run_id: &str,

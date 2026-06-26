@@ -1,8 +1,8 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactFetchRequest, ArtifactFetchResponse,
-    RuntimeConfigCommandRequest, RuntimeConfigCommandResponse, StageRouteCommandRequest,
-    StageRouteCommandResponse,
+    ArtifactListUiRequest, ArtifactListUiResponse, RuntimeConfigCommandRequest,
+    RuntimeConfigCommandResponse, StageRouteCommandRequest, StageRouteCommandResponse,
 };
 
 #[cfg(feature = "async")]
@@ -32,6 +32,16 @@ impl RuntimeApi<'_> {
         self.client
             .http()
             .post("/v1/runtime/artifact/fetch", request)
+            .await
+    }
+
+    pub async fn artifact_list_ui(
+        &self,
+        request: &ArtifactListUiRequest,
+    ) -> Result<ArtifactListUiResponse, crate::SdkError> {
+        self.client
+            .http()
+            .post("/v1/runtime/artifact/list-ui", request)
             .await
     }
 

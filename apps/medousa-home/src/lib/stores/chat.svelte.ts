@@ -26,7 +26,7 @@ import type {
 import type { WorkCard } from "$lib/types/workspace";
 import { isAskJobId, askJobIdFromSession, askSessionId } from "$lib/types/askJob";
 import { reasoningFromParts, progressFromParts, toolRunsFromParts, userMediaFromParts, uiArtifactsFromParts } from "$lib/types/turnParts";
-import type { UiArtifact } from "$lib/types/chat";
+import { mapStreamUiArtifact, replaceUiArtifactEntry } from "$lib/types/artifact";
 import type { MediaRef } from "$lib/types/media";
 import { chatMediaAttachmentsFromRefs } from "$lib/utils/chatMediaUpload";
 import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -1408,6 +1408,19 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "artifact_updated") {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (messageId && event.ui_artifact && event.previous_artifact_id) {
+        this.applyArtifactUpdated(
+          messageId,
+          event.previous_artifact_id,
+          event.root_artifact_id ?? null,
+          event.ui_artifact,
+        );
+      }
+      return;
+    }
+
     if (event.event_type === "scratch_reset") {
       const messageId = this.messageIdForTurn(event.turn_id);
       if (messageId) {
@@ -1561,17 +1574,7 @@ export class ChatStore {
     if (idx < 0) return;
 
     const current = this.messages[idx];
-    const nextArtifact: UiArtifact = {
-      artifactId: artifact.artifact_id,
-      mime: artifact.mime,
-      label: artifact.label,
-      presentation:
-        artifact.presentation === "panel" || artifact.presentation === "fullscreen"
-          ? artifact.presentation
-          : "inline",
-      byteSize: artifact.byte_size ?? null,
-      heightPx: artifact.height_px ?? null,
-    };
+    const nextArtifact = mapStreamUiArtifact(artifact);
 
     const existing = current.uiArtifacts ?? [];
     if (existing.some((item) => item.artifactId === nextArtifact.artifactId)) {
@@ -1583,6 +1586,35 @@ export class ChatStore {
       {
         ...current,
         uiArtifacts: [...existing, nextArtifact],
+      },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
+  private applyArtifactUpdated(
+    messageId: string,
+    previousArtifactId: string,
+    rootArtifactId: string | null,
+    artifact: NonNullable<InteractiveTurnStreamEvent["ui_artifact"]>,
+  ) {
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0) return;
+
+    const current = this.messages[idx];
+    const nextArtifact = mapStreamUiArtifact(artifact);
+    const existing = current.uiArtifacts ?? [];
+    const updated = replaceUiArtifactEntry(
+      existing,
+      previousArtifactId,
+      rootArtifactId,
+      nextArtifact,
+    );
+
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        uiArtifacts: updated,
       },
       ...this.messages.slice(idx + 1),
     ];

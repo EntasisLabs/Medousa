@@ -4,7 +4,9 @@ pub mod channel_delivery;
 pub mod recurring_delivery;
 pub mod recurring_agent_turn;
 pub mod recurring_handlers;
+pub mod line_grep;
 pub mod artifact_chunking;
+pub mod artifact_tools;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
 pub mod artifact_store;
@@ -149,7 +151,8 @@ use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 
 pub use daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
-    ArtifactVerificationPolicyInput, DaemonStatsResponse, EnqueueAskRequest,
+    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactSummary, ArtifactVerificationPolicyInput, DaemonStatsResponse, EnqueueAskRequest,
     EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
     HeartbeatPolicyResponse, HeartbeatStatusResponse,

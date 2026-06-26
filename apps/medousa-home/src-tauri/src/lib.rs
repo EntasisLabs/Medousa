@@ -226,6 +226,7 @@ pub fn run() {
             daemon::locus::locus_get_node,
             daemon::artifact::artifact_command,
             daemon::artifact::artifact_fetch,
+            daemon::artifact::artifact_list_ui,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]

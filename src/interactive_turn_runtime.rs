@@ -415,6 +415,28 @@ pub fn artifact_presented_stream_event(
     Ok(event)
 }
 
+pub fn artifact_updated_stream_event(
+    turn_id: &str,
+    previous_artifact_id: &str,
+    artifact: crate::daemon_api::StreamUiArtifact,
+    root_artifact_id: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let label = artifact.label.clone();
+    let mut event = build_event_messages(
+        turn_id,
+        "artifact_updated",
+        "tool_loop",
+        StreamMessages {
+            operator_message: Some(format!("Updated {label}")),
+            debug_message: None,
+        },
+    )?;
+    event.ui_artifact = Some(artifact);
+    event.previous_artifact_id = Some(previous_artifact_id.to_string());
+    event.root_artifact_id = root_artifact_id.map(str::to_string);
+    Ok(event)
+}
+
 pub fn budget_approval_stream_event(
     turn_id: &str,
     request_id: &str,
@@ -494,6 +516,8 @@ fn build_event_messages(
         tool_round: None,
         tool_artifact_refs: None,
         ui_artifact: None,
+        previous_artifact_id: None,
+        root_artifact_id: None,
     })
 }
 

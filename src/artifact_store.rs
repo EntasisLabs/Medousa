@@ -30,6 +30,8 @@ const ARTIFACT_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD label ON TABLE artifact_record TYPE option<string>",
     "DEFINE FIELD presentation ON TABLE artifact_record TYPE option<string>",
     "DEFINE FIELD height_px ON TABLE artifact_record TYPE option<int>",
+    "DEFINE FIELD supersedes_artifact_id ON TABLE artifact_record TYPE option<string>",
+    "DEFINE FIELD root_artifact_id ON TABLE artifact_record TYPE option<string>",
     "DEFINE INDEX idx_artifact_record_session ON TABLE artifact_record COLUMNS session_id",
     "DEFINE INDEX idx_artifact_record_id ON TABLE artifact_record COLUMNS artifact_id UNIQUE",
 ];
@@ -88,6 +90,10 @@ pub struct ArtifactRecord {
     pub presentation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_px: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes_artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_artifact_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +172,8 @@ pub fn persist_tool_artifact(
         label: None,
         presentation: None,
         height_px: None,
+        supersedes_artifact_id: None,
+        root_artifact_id: None,
     };
 
     append_index_record(&record)?;
@@ -178,6 +186,17 @@ pub fn persist_ui_artifact(
     label: &str,
     presentation: &str,
     height_px: Option<u32>,
+) -> std::result::Result<ArtifactRecord, String> {
+    persist_ui_artifact_revision(session_id, html, label, presentation, height_px, None)
+}
+
+pub fn persist_ui_artifact_revision(
+    session_id: &str,
+    html: &str,
+    label: &str,
+    presentation: &str,
+    height_px: Option<u32>,
+    supersedes_artifact_id: Option<&str>,
 ) -> std::result::Result<ArtifactRecord, String> {
     let wrapped = wrap_html_document(html);
     let byte_size = wrapped.len();
@@ -215,6 +234,26 @@ pub fn persist_ui_artifact(
         std::fs::write(&payload_path, wrapped.as_bytes()).map_err(|err| err.to_string())?;
     }
 
+    let (supersedes, root_artifact_id) = if let Some(previous_id) = supersedes_artifact_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let previous = fetch_artifact_at_id(session_id, previous_id).ok_or_else(|| {
+            format!("supersedes artifact not found in this session: {previous_id}")
+        })?;
+        if previous.mime != "text/html" || previous.record.direction != "ui" {
+            return Err("supersedes artifact must be a UI HTML presentation".to_string());
+        }
+        let root = previous
+            .record
+            .root_artifact_id
+            .clone()
+            .unwrap_or_else(|| previous.record.artifact_id.clone());
+        (Some(previous.record.artifact_id), Some(root))
+    } else {
+        (None, None)
+    };
+
     let record = ArtifactRecord {
         artifact_id,
         session_id: session_id.to_string(),
@@ -228,6 +267,8 @@ pub fn persist_ui_artifact(
         label: Some(label.trim().to_string()),
         presentation: Some(presentation),
         height_px,
+        supersedes_artifact_id: supersedes,
+        root_artifact_id,
     };
 
     append_index_record(&record)?;
@@ -235,6 +276,16 @@ pub fn persist_ui_artifact(
 }
 
 pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArtifact> {
+    let query = artifact_id.trim();
+    if query.is_empty() {
+        return None;
+    }
+
+    let latest_id = resolve_latest_artifact_id(session_id, query).unwrap_or_else(|| query.to_string());
+    fetch_artifact_at_id(session_id, &latest_id)
+}
+
+pub fn fetch_artifact_at_id(session_id: &str, artifact_id: &str) -> Option<FetchedArtifact> {
     let query = artifact_id.trim();
     if query.is_empty() {
         return None;
@@ -256,6 +307,137 @@ pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArti
         .or_else(|| fetch_ui_artifact_record_from_disk(session_id, query))?;
 
     load_fetched_from_record(record)
+}
+
+pub fn is_ui_html_record(record: &ArtifactRecord) -> bool {
+    record.direction == "ui"
+        && (record.content_type == "text/html"
+            || record.payload_path.ends_with(".html"))
+}
+
+pub fn list_ui_artifacts(
+    session_id: Option<&str>,
+    limit: usize,
+    query: Option<&str>,
+) -> Vec<ArtifactRecord> {
+    let limit = limit.clamp(1, 500);
+    let query = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase);
+
+    let mut records: Vec<ArtifactRecord> = read_index_records()
+        .into_iter()
+        .filter(|record| is_ui_html_record(record))
+        .filter(|record| {
+            session_id.is_none_or(|sid| record.session_id == sid)
+        })
+        .filter(|record| {
+            query.as_ref().is_none_or(|needle| {
+                record.artifact_id.to_ascii_lowercase().contains(needle)
+                    || record
+                        .label
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_ascii_lowercase()
+                        .contains(needle)
+            })
+        })
+        .collect();
+
+    records.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    dedupe_ui_artifacts_to_latest(records)
+        .into_iter()
+        .take(limit)
+        .collect()
+}
+
+fn dedupe_ui_artifacts_to_latest(mut records: Vec<ArtifactRecord>) -> Vec<ArtifactRecord> {
+    records.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    let mut seen_roots = HashSet::new();
+    let mut kept = Vec::new();
+    for record in records {
+        let root = record
+            .root_artifact_id
+            .clone()
+            .unwrap_or_else(|| record.artifact_id.clone());
+        if seen_roots.insert(root) {
+            kept.push(record);
+        }
+    }
+    kept.sort_by(|a, b| b.stored_at_utc.cmp(&a.stored_at_utc));
+    kept
+}
+
+pub fn resolve_latest_artifact_id(session_id: &str, artifact_id: &str) -> Option<String> {
+    let query = artifact_id.trim();
+    if query.is_empty() {
+        return None;
+    }
+    let records = read_index_records();
+    let mut current = records
+        .iter()
+        .find(|record| {
+            record.session_id == session_id
+                && (record.artifact_id == query || record.artifact_id.starts_with(query))
+        })
+        .or_else(|| {
+            records
+                .iter()
+                .find(|record| record.artifact_id == query || record.artifact_id.starts_with(query))
+        })
+        .cloned()
+        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, query))?;
+
+    for _ in 0..64 {
+        let next = records.iter().find(|record| {
+            record.session_id == current.session_id
+                && record
+                    .supersedes_artifact_id
+                    .as_deref()
+                    .is_some_and(|value| value == current.artifact_id)
+        });
+        match next {
+            Some(record) if record.artifact_id != current.artifact_id => current = record.clone(),
+            _ => return Some(current.artifact_id),
+        }
+    }
+    Some(current.artifact_id)
+}
+
+pub fn grep_ui_artifact(
+    session_id: &str,
+    artifact_id: &str,
+    pattern: &str,
+    context_lines: usize,
+    limit: usize,
+) -> std::result::Result<crate::line_grep::LineGrepResult, String> {
+    let fetched = fetch_artifact(session_id, artifact_id)
+        .ok_or_else(|| format!("artifact not found: {artifact_id}"))?;
+    if fetched.mime != "text/html" {
+        return Err("artifact is not HTML".to_string());
+    }
+    crate::line_grep::grep_lines(&fetched.body, pattern, context_lines, limit)
+}
+
+pub fn read_ui_artifact_excerpt(
+    session_id: &str,
+    artifact_id: &str,
+    line_start: Option<usize>,
+    line_end: Option<usize>,
+    max_chars: usize,
+) -> std::result::Result<crate::line_grep::LineExcerpt, String> {
+    let fetched = fetch_artifact(session_id, artifact_id)
+        .ok_or_else(|| format!("artifact not found: {artifact_id}"))?;
+    if fetched.mime != "text/html" {
+        return Err("artifact is not HTML".to_string());
+    }
+    Ok(crate::line_grep::excerpt_lines(
+        &fetched.body,
+        line_start,
+        line_end,
+        max_chars,
+    ))
 }
 
 fn load_fetched_from_record(record: ArtifactRecord) -> Option<FetchedArtifact> {
@@ -342,6 +524,8 @@ fn ui_artifact_record_from_path(session_id: &str, path: &Path) -> Option<Artifac
         label: Some("Presentation".to_string()),
         presentation: Some("inline".to_string()),
         height_px: None,
+        supersedes_artifact_id: None,
+        root_artifact_id: None,
     })
 }
 
@@ -904,6 +1088,56 @@ mod tests {
         assert_eq!(fetched.mime, "text/html");
         assert!(fetched.body.contains("Disk fallback"));
 
+        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+    }
+
+    #[test]
+    fn resolve_latest_artifact_id_follows_supersedes_chain() {
+        let session_id = "test-ui-artifact-lineage";
+        let first = persist_ui_artifact(
+            session_id,
+            "<p>v1</p>",
+            "Lineage",
+            "inline",
+            None,
+        )
+        .expect("first");
+        let second = persist_ui_artifact_revision(
+            session_id,
+            "<p>v2</p>",
+            "Lineage",
+            "inline",
+            None,
+            Some(&first.artifact_id),
+        )
+        .expect("second");
+        assert_eq!(
+            second.supersedes_artifact_id.as_deref(),
+            Some(first.artifact_id.as_str())
+        );
+        assert_eq!(
+            resolve_latest_artifact_id(session_id, &first.artifact_id).as_deref(),
+            Some(second.artifact_id.as_str())
+        );
+        let fetched = fetch_artifact(session_id, &first.artifact_id).expect("latest fetch");
+        assert!(fetched.body.contains("v2"));
+        let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+    }
+
+    #[test]
+    fn grep_ui_artifact_finds_html_snippet() {
+        let session_id = "test-ui-artifact-grep";
+        let record = persist_ui_artifact(
+            session_id,
+            "<style>.badge{color:red}</style>",
+            "Grep me",
+            "inline",
+            None,
+        )
+        .expect("persist");
+        let result = grep_ui_artifact(session_id, &record.artifact_id, ".badge", 0, 10)
+            .expect("grep");
+        assert_eq!(result.match_count, 1);
         let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
     }
 }

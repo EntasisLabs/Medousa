@@ -12,6 +12,7 @@
   import VaultNewGroupDialog from "./VaultNewGroupDialog.svelte";
   import VaultSidebarCollapsedStrip from "./VaultSidebarCollapsedStrip.svelte";
   import VaultLibraryChrome from "./VaultLibraryChrome.svelte";
+  import ArtifactLibraryPanel from "$lib/components/artifacts/ArtifactLibraryPanel.svelte";
   import { openAttachmentPath } from "$lib/utils/vaultAttachmentPicker";
   import { canPreviewAttachment } from "$lib/utils/vaultAttachments";
   import type { ExternalFileEntry } from "$lib/types/externalDesk";
@@ -28,8 +29,9 @@
 
   const externalHits = $derived(externalDesk.searchHitsList);
   const showVaultChrome = $derived(externalDesk.sidebarMode === "vault");
+  const showPresentations = $derived(externalDesk.sidebarMode === "presentations");
   const showFilesSearch = $derived(
-    !showVaultChrome && vault.searchQuery.trim().length > 0,
+    !showVaultChrome && !showPresentations && vault.searchQuery.trim().length > 0,
   );
   const canLinkFiles = $derived(Boolean(vault.selectedPath));
 
@@ -71,7 +73,12 @@
 </script>
 
 <section class="flex h-full min-w-0 flex-1 {visible ? '' : 'hidden'}">
-  {#if layout.vaultSidebarCollapsed}
+  {#if showPresentations}
+    <div class="flex h-full min-w-0 flex-1 flex-col">
+      <VaultLibraryChrome showVaultChrome={false} />
+      <ArtifactLibraryPanel {onOpenChat} />
+    </div>
+  {:else if layout.vaultSidebarCollapsed}
     <VaultSidebarCollapsedStrip onExpand={() => layout.setVaultSidebarCollapsed(false)} />
   {:else}
     <SplitPane
@@ -134,12 +141,14 @@
     </SplitPane>
   {/if}
 
+  {#if !showPresentations}
   <VaultEditor
     visible={true}
     {onOpenChat}
     {onOpenWork}
     {onSelectCard}
   />
+  {/if}
 </section>
 
 <VaultNewNoteDialog />

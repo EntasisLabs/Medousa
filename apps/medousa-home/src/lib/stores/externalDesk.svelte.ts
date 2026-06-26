@@ -24,7 +24,10 @@ function loadPinnedRoots(): PinnedRoot[] {
 
 function loadSidebarMode(): LibrarySidebarMode {
   if (typeof localStorage === "undefined") return "vault";
-  return localStorage.getItem(SIDEBAR_MODE_KEY) === "files" ? "files" : "vault";
+  const stored = localStorage.getItem(SIDEBAR_MODE_KEY);
+  if (stored === "files") return "files";
+  if (stored === "presentations") return "presentations";
+  return "vault";
 }
 
 function savePinnedRoots(roots: PinnedRoot[]) {
@@ -66,6 +69,9 @@ export class ExternalDeskStore {
     localStorage.setItem(SIDEBAR_MODE_KEY, mode);
     if (mode === "files" && this.pinnedRoots.length > 0) {
       void this.refreshAllRoots();
+    }
+    if (mode === "presentations") {
+      void import("$lib/stores/artifacts.svelte").then(({ artifacts }) => artifacts.refresh());
     }
   }
 

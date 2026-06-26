@@ -268,7 +268,7 @@ pub fn build_core_router(state: AppState) -> Router {
         continuation_lineage, continuation_status, replay_and_resume_job,
     };
     use crate::daemon::core::{
-        artifact_command, artifact_fetch, health, heartbeat_status, runtime_config_command,
+        artifact_command, artifact_fetch, artifact_list_ui, health, heartbeat_status, runtime_config_command,
         runtime_defaults, stats, stage_route_command,
     };
     use crate::daemon::identity::{
@@ -349,6 +349,7 @@ pub fn build_core_router(state: AppState) -> Router {
         )
         .route("/v1/runtime/artifact/command", post(artifact_command))
         .route("/v1/runtime/artifact/fetch", post(artifact_fetch))
+        .route("/v1/runtime/artifact/list-ui", post(artifact_list_ui))
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))

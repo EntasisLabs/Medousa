@@ -115,6 +115,8 @@ export interface InteractiveTurnStreamEvent {
     byte_size?: number | null;
     height_px?: number | null;
   } | null;
+  previous_artifact_id?: string | null;
+  root_artifact_id?: string | null;
   /** Human-facing status whisper (Home default). */
   operator_message?: string | null;
   /** Engine telemetry — shown only with engine details enabled. */

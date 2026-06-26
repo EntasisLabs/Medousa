@@ -24,6 +24,7 @@ pub fn register_vault_tools(
 ) -> StasisResult<()> {
     registry.register_tool(CognitionVaultListTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultReadTool::new(event_tx.clone()))?;
+    registry.register_tool(CognitionVaultGrepTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultTagsTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultWriteTool::new(
@@ -129,7 +130,9 @@ impl StasisTool for CognitionVaultReadTool {
             "required": ["path"],
             "properties": {
                 "path": { "type": "string" },
-                "max_chars": { "type": "integer", "minimum": 256, "maximum": 20000 }
+                "max_chars": { "type": "integer", "minimum": 256, "maximum": 20000 },
+                "line_start": { "type": "integer", "minimum": 1 },
+                "line_end": { "type": "integer", "minimum": 1 }
             }
         }))
     }
@@ -147,15 +150,104 @@ impl StasisTool for CognitionVaultReadTool {
             .map(|value| value as usize)
             .unwrap_or(READ_BUDGET_CHARS)
             .clamp(256, 20_000);
+        let line_start = input.get("line_start").and_then(Value::as_u64).map(|v| v as usize);
+        let line_end = input.get("line_end").and_then(Value::as_u64).map(|v| v as usize);
         emit_invoked(&self.event_tx, self.name(), path);
         let note = VaultService::get_note(path)
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        if line_start.is_some() || line_end.is_some() {
+            let excerpt = crate::line_grep::excerpt_lines(
+                &note.content,
+                line_start,
+                line_end,
+                max_chars,
+            );
+            return Ok(json!({
+                "note": note.note,
+                "content": excerpt.content,
+                "truncated": excerpt.truncated,
+                "total_lines": excerpt.total_lines,
+                "total_chars": excerpt.total_chars,
+                "line_start": excerpt.line_start,
+                "line_end": excerpt.line_end,
+            }));
+        }
         let truncated = truncate_chars(&note.content, max_chars);
         Ok(json!({
             "note": note.note,
             "content": truncated.body,
             "truncated": truncated.truncated,
+            "total_lines": note.content.lines().count(),
+            "total_chars": note.content.chars().count(),
         }))
+    }
+}
+
+pub struct CognitionVaultGrepTool {
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionVaultGrepTool {
+    pub fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionVaultGrepTool {
+    fn name(&self) -> &'static str {
+        "cognition_vault_grep"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Search inside a vault note (literal case-insensitive match with line numbers). \
+             Use cognition_vault_search to discover notes; use grep for surgical edits.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["path", "pattern"],
+            "properties": {
+                "path": { "type": "string" },
+                "pattern": { "type": "string" },
+                "context_lines": { "type": "integer", "minimum": 0, "maximum": 10 },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let path = input
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?;
+        let pattern = input
+            .get("pattern")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("pattern is required".to_string()))?;
+        let context_lines = input
+            .get("context_lines")
+            .and_then(Value::as_u64)
+            .unwrap_or(2)
+            .clamp(0, 10) as usize;
+        let limit = input
+            .get("limit")
+            .and_then(Value::as_u64)
+            .unwrap_or(20)
+            .clamp(1, 200) as usize;
+        emit_invoked(&self.event_tx, self.name(), path);
+        let note = VaultService::get_note(path)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        let result = crate::line_grep::grep_lines(&note.content, pattern, context_lines, limit)
+            .map_err(StasisError::PortFailure)?;
+        serde_json::to_value(result).map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }
 

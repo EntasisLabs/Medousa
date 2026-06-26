@@ -1240,6 +1240,12 @@ pub struct InteractiveTurnStreamEvent {
     /// Rich UI artifact presented inline in chat (cognition_ui_present).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_artifact: Option<StreamUiArtifact>,
+    /// Previous artifact id when cognition_artifact_write supersedes a revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_artifact_id: Option<String>,
+    /// Root artifact lineage id for revision chains.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_artifact_id: Option<String>,
     /// Human-facing status whisper for rich surfaces (Home default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operator_message: Option<String>,
@@ -1289,6 +1295,39 @@ pub struct ArtifactFetchResponse {
     pub presentation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_px: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactListUiRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default = "default_artifact_list_limit")]
+    pub limit: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+fn default_artifact_list_limit() -> usize {
+    50
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactSummary {
+    pub artifact_id: String,
+    pub session_id: String,
+    pub label: String,
+    pub presentation: Option<String>,
+    pub byte_size: usize,
+    pub stored_at_utc: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes_artifact_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactListUiResponse {
+    pub artifacts: Vec<ArtifactSummary>,
 }
 
 // ── Ingester types ────────────────────────────────────────────────────────────

@@ -69,6 +69,7 @@ impl StasisTool for CognitionUiPresentTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. \
+             For first-time publish only — use cognition_artifact_write to revise an existing artifact. \
              inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. \
              Use height only for inline preview cap.",
         )

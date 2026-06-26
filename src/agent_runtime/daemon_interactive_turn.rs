@@ -600,16 +600,39 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 output_summary.clone(),
                 artifact_refs_from_stream(&artifact_refs),
             );
-            if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT {
+            if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
+                || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+            {
                 if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
-                    parts.push_attachment_ref(
-                        &ui_artifact.artifact_id,
-                        &ui_artifact.mime,
-                        &ui_artifact.label,
-                        ui_artifact.byte_size,
-                        Some(ui_artifact.presentation.clone()),
-                        ui_artifact.height_px,
-                    );
+                    if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE
+                        && tool_output
+                            .get("previous_artifact_id")
+                            .and_then(|value| value.as_str())
+                            .is_some_and(|value| !value.trim().is_empty())
+                    {
+                        let previous = tool_output
+                            .get("previous_artifact_id")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default();
+                        parts.replace_attachment_ref(
+                            previous,
+                            &ui_artifact.artifact_id,
+                            &ui_artifact.mime,
+                            &ui_artifact.label,
+                            ui_artifact.byte_size,
+                            Some(ui_artifact.presentation.clone()),
+                            ui_artifact.height_px,
+                        );
+                    } else {
+                        parts.push_attachment_ref(
+                            &ui_artifact.artifact_id,
+                            &ui_artifact.mime,
+                            &ui_artifact.label,
+                            ui_artifact.byte_size,
+                            Some(ui_artifact.presentation.clone()),
+                            ui_artifact.height_px,
+                        );
+                    }
                 }
             }
         }
@@ -620,6 +643,35 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     ui_artifact,
                 ))
                 .await;
+            }
+        }
+        if tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE {
+            if let Some(ui_artifact) = super::tool_stream::ui_artifact_from_tool_output(&tool_output) {
+                if let Some(previous) = tool_output
+                    .get("previous_artifact_id")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    let root = tool_output
+                        .get("root_artifact_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    self.publish_tracked(interactive_turn_runtime::artifact_updated_stream_event(
+                        &self.turn_id,
+                        previous,
+                        ui_artifact,
+                        root,
+                    ))
+                    .await;
+                } else {
+                    self.publish_tracked(interactive_turn_runtime::artifact_presented_stream_event(
+                        &self.turn_id,
+                        ui_artifact,
+                    ))
+                    .await;
+                }
             }
         }
         self.publish_tracked(interactive_turn_runtime::tool_finished_stream_event(

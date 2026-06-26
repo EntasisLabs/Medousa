@@ -13,8 +13,79 @@ export interface ArtifactFetchResponse {
   height_px?: number | null;
 }
 
+export interface ArtifactSummary {
+  artifact_id: string;
+  session_id: string;
+  label: string;
+  presentation?: string | null;
+  byte_size: number;
+  stored_at_utc: string;
+  root_artifact_id?: string | null;
+  supersedes_artifact_id?: string | null;
+}
+
+export interface ArtifactListUiResponse {
+  artifacts: ArtifactSummary[];
+}
+
 export interface ArtifactPreview {
   artifact_id: string;
   rendered_output: string;
   error?: string | null;
+}
+
+export type UiArtifactPresentation = "inline" | "panel" | "fullscreen";
+
+export function mapStreamUiArtifact(
+  artifact: {
+    artifact_id: string;
+    mime: string;
+    label: string;
+    presentation: string;
+    byte_size?: number | null;
+    height_px?: number | null;
+  },
+): {
+  artifactId: string;
+  mime: string;
+  label: string;
+  presentation: UiArtifactPresentation;
+  byteSize: number | null;
+  heightPx: number | null;
+} {
+  return {
+    artifactId: artifact.artifact_id,
+    mime: artifact.mime,
+    label: artifact.label,
+    presentation:
+      artifact.presentation === "panel" || artifact.presentation === "fullscreen"
+        ? artifact.presentation
+        : "inline",
+    byteSize: artifact.byte_size ?? null,
+    heightPx: artifact.height_px ?? null,
+  };
+}
+
+export function replaceUiArtifactEntry<
+  T extends { artifactId: string; rootArtifactId?: string | null },
+>(
+  entries: T[],
+  previousArtifactId: string,
+  rootArtifactId: string | null | undefined,
+  next: T,
+): T[] {
+  let replaced = false;
+  const mapped = entries.map((entry) => {
+    const matchesPrevious = entry.artifactId === previousArtifactId;
+    const matchesRoot =
+      rootArtifactId != null &&
+      entry.rootArtifactId != null &&
+      entry.rootArtifactId === rootArtifactId;
+    if (matchesPrevious || matchesRoot) {
+      replaced = true;
+      return next;
+    }
+    return entry;
+  });
+  return replaced ? mapped : [...mapped, next];
 }
