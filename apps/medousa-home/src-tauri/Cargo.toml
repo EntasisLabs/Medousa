@@ -42,6 +42,8 @@ medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, 
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../../../crates/medousa-host" }
+axum = "0.8"
+medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

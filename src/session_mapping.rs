@@ -530,6 +530,7 @@ pub fn build_interactive_turn_request_for_ingest(
             channel_id: None,
             user_id: None,
             supports_ui_artifacts: false,
+            supports_browser_host: false,
         })
     });
     InteractiveTurnRequest {

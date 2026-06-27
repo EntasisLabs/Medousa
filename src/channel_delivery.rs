@@ -783,6 +783,7 @@ mod tests {
                 channel_id: None,
                 user_id: None,
                 supports_ui_artifacts: true,
+                supports_browser_host: true,
             }),
             max_tool_rounds: None,
             retry_runtime_max_rounds: None,

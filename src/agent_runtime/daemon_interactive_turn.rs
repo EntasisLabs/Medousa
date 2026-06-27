@@ -518,6 +518,26 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         .await;
     }
 
+    async fn browser_challenge_required(
+        &self,
+        _turn_correlation_id: &str,
+        session_id: String,
+        challenge_url: String,
+        reason: String,
+    ) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        self.publish_tracked(interactive_turn_runtime::browser_challenge_stream_event(
+            &self.turn_id,
+            &session_id,
+            &challenge_url,
+            &reason,
+        ))
+        .await;
+    }
+
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         self.publish_tracked(interactive_turn_runtime::debug_status_stream_event(
             &self.turn_id,
@@ -729,6 +749,12 @@ pub async fn run_agent_turn(
         .map(|scope| scope.turn_correlation_id.clone());
     let supports_ui_artifacts =
         crate::ui_present_tools::surface_supports_ui_artifacts(request.surface.as_ref());
+    let supports_browser_host =
+        crate::browser_tools::surface_supports_browser_host(request.surface.as_ref());
+    let channel_surface = request
+        .surface
+        .as_ref()
+        .and_then(|surface| surface.channel_surface.clone());
     let mut effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
         turn_correlation_id: _turn_id.to_string(),
         session_id: request.session_id.clone(),
@@ -738,8 +764,12 @@ pub async fn run_agent_turn(
         model: request.model.clone(),
         response_depth_mode: request.response_depth_mode.clone(),
         supports_ui_artifacts,
+        supports_browser_host,
+        channel_surface: channel_surface.clone(),
     });
     effective_scope.supports_ui_artifacts = supports_ui_artifacts;
+    effective_scope.supports_browser_host = supports_browser_host;
+    effective_scope.channel_surface = channel_surface;
     *agent_rt.turn_scope.write().await = Some(effective_scope);
     let outcome: Arc<RwLock<Option<TurnOutcome>>> = Arc::new(RwLock::new(None));
     let tracking_sink: SharedAgentStreamSink = Arc::new(TurnOutcomeTrackingSink {

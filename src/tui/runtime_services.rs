@@ -439,6 +439,11 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
+    crate::browser_fetch_tools::register_browser_fetch_tool(
+        &mut tool_registry,
+        turn_scope.clone(),
+        event_tx.clone(),
+    )?;
 
     let prompt_pipeline = PromptExecutionPipeline::new(chat_client);
     let base_registry: Arc<dyn ToolRegistry> = Arc::new(tool_registry);

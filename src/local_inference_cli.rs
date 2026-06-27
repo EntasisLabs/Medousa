@@ -58,20 +58,28 @@ fn format_bytes(bytes: u64) -> String {
 
 pub fn fetch_local_hardware(daemon_url: &str) -> Result<LocalHardwareResponse> {
     local_models_client(daemon_url)
+        .local_models()
         .hardware()
         .map_err(sdk_err)
 }
 
 pub fn fetch_local_catalog(daemon_url: &str) -> Result<LocalCatalogResponse> {
-    local_models_client(daemon_url).catalog().map_err(sdk_err)
+    local_models_client(daemon_url)
+        .local_models()
+        .catalog()
+        .map_err(sdk_err)
 }
 
 pub fn fetch_local_models(daemon_url: &str) -> Result<LocalModelsResponse> {
-    local_models_client(daemon_url).list().map_err(sdk_err)
+    local_models_client(daemon_url)
+        .local_models()
+        .list()
+        .map_err(sdk_err)
 }
 
 pub fn fetch_local_engine_status(daemon_url: &str) -> Result<LocalEngineStatus> {
     local_models_client(daemon_url)
+        .local_models()
         .engine_status()
         .map_err(sdk_err)
 }
@@ -81,20 +89,24 @@ pub fn post_local_model_download(
     model_id: &str,
 ) -> Result<LocalModelDownloadResponse> {
     local_models_client(daemon_url)
+        .local_models()
         .start_download(model_id)
         .map_err(sdk_err)
 }
 
 pub fn fetch_download_progress(daemon_url: &str, job_id: &str) -> Result<ModelDownloadProgress> {
     local_models_client(daemon_url)
+        .local_models()
         .download_status(job_id)
         .map_err(sdk_err)
 }
 
 pub fn delete_local_model(daemon_url: &str, model_id: &str) -> Result<()> {
     local_models_client(daemon_url)
+        .local_models()
         .remove_model(model_id)
-        .map_err(sdk_err)
+        .map_err(sdk_err)?;
+    Ok(())
 }
 
 pub fn post_local_engine_load(

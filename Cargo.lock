@@ -6413,6 +6413,7 @@ dependencies = [
  "libc",
  "locus-core-rs",
  "mdns-sd",
+ "medousa-browser-lite",
  "medousa-host",
  "medousa-local-engine",
  "medousa-sdk",
@@ -6442,6 +6443,21 @@ dependencies = [
  "tower 0.5.3",
  "urlencoding",
  "uuid 1.23.1",
+]
+
+[[package]]
+name = "medousa-browser-lite"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "once_cell",
+ "parking_lot",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
 ]
 
 [[package]]

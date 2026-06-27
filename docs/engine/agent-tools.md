@@ -15,7 +15,9 @@ Deep dive: [turn-runtime-and-lanes.md](../../architecture/turn-runtime-and-lanes
 | **Host** | Bootstrap, vault read, artifact read, MCP | Interactive chat, TUI |
 | **Worker** | Long jobs, sandboxed skills | Background ask jobs |
 
-Worker allowlists can strip UI-only tools when `supports_ui_artifacts=false`.
+Worker allowlists can strip UI-only tools when `supports_ui_artifacts=false`, and browser tools when `supports_browser_host=false`.
+
+See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search/fetch/CAPTCHA design.
 
 ---
 
@@ -25,6 +27,7 @@ Worker allowlists can strip UI-only tools when `supports_ui_artifacts=false`.
 
 - **documents** — vault + artifact list/read/grep/write
 - **presentation** — artifact presentation tools
+- **browser** — `cognition_browser_fetch` (auto-unlocked on browser-capable clients)
 - Standard rings: bootstrap, MCP, finish, etc.
 
 Source: `src/tool_bootstrap.rs`
@@ -39,6 +42,8 @@ Source: `src/tool_bootstrap.rs`
 | Artifacts | `cognition_artifact_*` — [artifacts.md](artifacts.md) |
 | MCP | `cognition.mcp.*` — [mcp-gateway-setup.md](../mcp-gateway-setup.md) |
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
+| Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
+| Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
 | Finish | `cognition_finish` — ends tool loop |
 
 ---
@@ -54,4 +59,4 @@ Capabilities catalog: `GET /v1/capabilities` — SDK `capabilities().list()`.
 ## Integrator guidance
 
 - **HTTP-only clients** do not invoke tools directly; they send prompts via interactive turn or jobs API.
-- **Custom UIs** should handle stream events (`tool_*`, `ui_artifact`, `artifact_updated`) — [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
+- **Custom UIs** should handle stream events (`tool_*`, `ui_artifact`, `artifact_updated`, `browser_challenge`) — [custom-chat-ui.md](../cookbook/custom-chat-ui.md).

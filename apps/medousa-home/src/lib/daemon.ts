@@ -636,6 +636,40 @@ export async function denyTurnBudgetRequest(
   });
 }
 
+export async function resumeBrowserHostSession(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  return invoke<Record<string, unknown>>("browser_host_resume_session", {
+    sessionId,
+  });
+}
+
+export async function completeBrowserSession(
+  sessionId: string,
+  payload: {
+    searchResponse?: unknown;
+    error?: string | null;
+  },
+): Promise<Record<string, unknown>> {
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const response = await fetch(
+    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}/complete`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        search_response: payload.searchResponse ?? null,
+        error: payload.error ?? null,
+      }),
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
 export interface TurnBudgetRequestRecord {
   request_id: string;
   turn_correlation_id?: string | null;

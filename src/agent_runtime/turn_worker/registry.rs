@@ -11,7 +11,8 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
 use super::policy::tool_allowed;
-use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names, ensure_host_session_tool_defaults};
+use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names, ensure_host_session_tool_defaults, ensure_browser_domain_for_capable_clients};
+use crate::browser_tools::BROWSER_COGNITION_TOOLS;
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
     let lower = tool_name.to_ascii_lowercase();
@@ -93,6 +94,7 @@ pub struct SessionBootstrapToolRegistry {
     lane: ToolSurfaceLane,
     full_allowlist: HashSet<String>,
     supports_ui_artifacts: bool,
+    supports_browser_host: bool,
 }
 
 impl SessionBootstrapToolRegistry {
@@ -101,15 +103,18 @@ impl SessionBootstrapToolRegistry {
         session_id: impl Into<String>,
         full_allowlist: HashSet<String>,
         supports_ui_artifacts: bool,
+        supports_browser_host: bool,
     ) -> Self {
         let session_id = session_id.into();
         ensure_host_session_tool_defaults(&session_id);
+        ensure_browser_domain_for_capable_clients(&session_id, supports_browser_host);
         Self {
             inner,
             session_id,
             lane: ToolSurfaceLane::Host,
             full_allowlist,
             supports_ui_artifacts,
+            supports_browser_host,
         }
     }
 
@@ -124,6 +129,7 @@ impl SessionBootstrapToolRegistry {
             lane: ToolSurfaceLane::Worker,
             full_allowlist,
             supports_ui_artifacts: false,
+            supports_browser_host: false,
         }
     }
 
@@ -133,6 +139,11 @@ impl SessionBootstrapToolRegistry {
         if !self.supports_ui_artifacts {
             allowed.remove(crate::ui_present_tools::COGNITION_UI_PRESENT);
             for name in crate::artifact_tools::ARTIFACT_COGNITION_TOOLS {
+                allowed.remove(*name);
+            }
+        }
+        if !self.supports_browser_host {
+            for name in BROWSER_COGNITION_TOOLS {
                 allowed.remove(*name);
             }
         }
@@ -218,5 +229,27 @@ mod tests {
             "my-session",
         );
         assert_eq!(out["session_id"], "other");
+    }
+
+    #[test]
+    fn browser_tools_stripped_when_host_disabled() {
+        use std::collections::HashSet;
+        use std::sync::Arc;
+        use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
+
+        let inner = Arc::new(InMemoryToolRegistry::new());
+        let registry = SessionBootstrapToolRegistry::host(
+            inner,
+            "sess-1",
+            HashSet::from([
+                "cognition_web_search".to_string(),
+                crate::browser_tools::COGNITION_BROWSER_FETCH.to_string(),
+            ]),
+            false,
+            false,
+        );
+        let allowed = registry.effective_allowlist();
+        assert!(allowed.contains("cognition_web_search"));
+        assert!(!allowed.contains(crate::browser_tools::COGNITION_BROWSER_FETCH));
     }
 }

@@ -17,6 +17,8 @@ mod workshop_registry;
 mod workshop_transport;
 mod capabilities;
 mod mcp_gateway;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod browser_host;
 mod provider_catalog;
 mod providers;
 mod tray;
@@ -68,6 +70,11 @@ pub fn run() {
 
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             setup_desktop_tray(app)?;
+
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                browser_host::start_browser_host_background();
+            }
 
             Ok(())
         });
@@ -129,6 +136,12 @@ pub fn run() {
             mcp_gateway::mcp_gateway_remove_server,
             mcp_gateway::mcp_gateway_set_server_enabled,
             mcp_gateway::mcp_gateway_apply_server,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            browser_host::browser_host_status,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            browser_host::browser_host_restart,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            browser_host::browser_host_resume_session,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,

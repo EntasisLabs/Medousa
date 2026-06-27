@@ -387,6 +387,7 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/workspace/cards/{card_id}/retry",
             post(retry_workspace_card),
         )
+        .merge(crate::browser_handlers::browser_router())
         .with_state(state)
 }
 

@@ -6,6 +6,7 @@ use stasis::application::use_cases::identity_memory_service::IdentityMemoryServi
 use stasis::prelude::RuntimeComposition;
 use tokio::sync::{RwLock, broadcast};
 
+use crate::browser_handlers::ClientRegistry;
 use crate::MedousaPlatformRuntime;
 use crate::channel_delivery;
 use crate::daemon::heartbeat::{
@@ -72,6 +73,7 @@ pub struct AppState {
     pub webhook_client: Option<reqwest::Client>,
     pub retention_config: crate::session_retention::SessionRetentionConfig,
     pub last_retention_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    pub client_registry: ClientRegistry,
 }
 
 impl AppState {

@@ -245,6 +245,7 @@ async fn main() -> Result<()> {
         webhook_client,
         retention_config,
         last_retention_at: Arc::new(RwLock::new(None)),
+        client_registry: medousa::browser_handlers::ClientRegistry::new(),
     };
 
     medousa::turn_worker_notify::register_ingest_channel_delivery_bridge(

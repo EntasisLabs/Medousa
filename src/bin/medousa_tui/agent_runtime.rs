@@ -604,6 +604,8 @@ pub(crate) async fn start_prompt_run(
             model: model.clone(),
             response_depth_mode: continuation_response_depth_mode.clone(),
             supports_ui_artifacts: false,
+            supports_browser_host: false,
+            channel_surface: Some("tui".to_string()),
         });
 
         turn_orchestrator::execute_local_turn(
@@ -642,6 +644,7 @@ pub(crate) async fn start_prompt_run(
                 current_turn_user_message,
                 inference_profile_kind: medousa::inference_profiles::InferenceProfileKind::Main,
                 supports_ui_artifacts: false,
+                supports_browser_host: false,
             },
         )
         .await;

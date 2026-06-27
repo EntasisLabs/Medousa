@@ -299,11 +299,14 @@ pub async fn turn_create(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
+    let supports_browser_host = super::resolve_supports_browser_host().await;
+
     let surface = channel_surface.map(|channel_surface| TurnSurfaceContext {
         channel_surface: Some(channel_surface),
         channel_id: Some(trimmed_session.to_string()),
         user_id: None,
         supports_ui_artifacts: true,
+        supports_browser_host,
     });
 
     let body = CreateTurnTicketBody {

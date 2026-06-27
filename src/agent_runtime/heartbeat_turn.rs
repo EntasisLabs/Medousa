@@ -73,6 +73,7 @@ pub fn build_heartbeat_turn_prompt(snapshot: &HeartbeatRuntimeSnapshot) -> Strin
         channel_id: None,
         user_id: None,
         supports_ui_artifacts: false,
+        supports_browser_host: false,
     };
     let ambient = super::ambient_context::build_ambient_context(super::ambient_context::AmbientContextInput {
         session_id: "heartbeat",

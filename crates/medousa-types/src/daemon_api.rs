@@ -1099,6 +1099,10 @@ pub struct TurnSurfaceContext {
     /// Channel adapters and clients set this — the daemon does not infer it from channel name.
     #[serde(default)]
     pub supports_ui_artifacts: bool,
+    /// When true, the connected client can run Agent Browser (local BrowserHost or client WebView).
+    /// Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.
+    #[serde(default)]
+    pub supports_browser_host: bool,
 }
 
 impl TurnSurfaceContext {
@@ -1108,6 +1112,7 @@ impl TurnSurfaceContext {
             channel_id: Some(channel_id.trim().to_string()),
             user_id: Some(user_id.trim().to_string()),
             supports_ui_artifacts: false,
+            supports_browser_host: false,
         }
     }
 
@@ -1117,11 +1122,17 @@ impl TurnSurfaceContext {
             channel_id: None,
             user_id: None,
             supports_ui_artifacts: false,
+            supports_browser_host: false,
         }
     }
 
     pub fn with_ui_artifacts(mut self, enabled: bool) -> Self {
         self.supports_ui_artifacts = enabled;
+        self
+    }
+
+    pub fn with_browser_host(mut self, enabled: bool) -> Self {
+        self.supports_browser_host = enabled;
         self
     }
 }
@@ -1376,6 +1387,12 @@ pub struct InteractiveTurnStreamEvent {
     /// Engine/TUI telemetry — shown only when the operator opts into engine details.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug_message: Option<String>,
+    /// Agent Browser CAPTCHA / verification handoff session id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_session_id: Option<String>,
+    /// URL the client should load in Agent Browser WebView.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_challenge_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

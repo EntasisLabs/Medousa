@@ -20,6 +20,8 @@ pub const DEFAULT_TOOL_HINTS_BLOCK_CHARS: usize = 700;
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
 pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault"];
 
+pub const BROWSER_HOST_AUTO_UNLOCK_DOMAIN: &str = "browser";
+
 /// Always-visible host console tools (~12+).
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
@@ -210,6 +212,11 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_manuscript_overlay_list",
                 ],
             },
+            ToolDomainCatalogEntry {
+                domain: "browser",
+                summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
+                tools: &["cognition_browser_fetch"],
+            },
         ]
     })
     .as_slice()
@@ -311,6 +318,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_vault_grep" => "Grep inside a vault note by line",
         "cognition_vault_tags" => "List semantic tags across vault notes (shared with Locus)",
         "cognition_web_search" => "Search the public web (provider fallback from config)",
+        "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
         "cognition_turn_begin_work" => "Progress line before heavy tools (not chat prose — prose without tools ends the turn)",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
@@ -344,6 +352,17 @@ pub fn bootstrap_tools(lane: ToolSurfaceLane) -> &'static [&'static str] {
 /// Unlock memory + vault on host console turns so ritual/write tools are callable without discover.
 pub fn ensure_host_session_tool_defaults(session_id: &str) {
     let _ = unlock_session_domains(session_id, ToolSurfaceLane::Host, DEFAULT_HOST_AUTO_UNLOCK_DOMAINS);
+}
+
+/// Unlock browser domain when the connected client advertises Agent Browser Host.
+pub fn ensure_browser_domain_for_capable_clients(session_id: &str, supports_browser_host: bool) {
+    if supports_browser_host {
+        let _ = unlock_session_domains(
+            session_id,
+            ToolSurfaceLane::Host,
+            &[BROWSER_HOST_AUTO_UNLOCK_DOMAIN],
+        );
+    }
 }
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {

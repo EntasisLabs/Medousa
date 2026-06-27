@@ -16,6 +16,8 @@ spec:
       - cognition_memory_recall
       - cognition_capability_invoke
       - cognition_capability_search
+      - cognition_web_search
+      - cognition_browser_fetch
       - cognition_grapheme_modules
       - cognition_grapheme_template_run
   identity:

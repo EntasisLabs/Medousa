@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   InteractiveTurnStreamEvent,
   PendingBudgetApproval,
+  PendingBrowserChallenge,
   ToolRunState,
   TurnTicketState,
 } from "$lib/types/chat";
@@ -47,6 +48,7 @@ import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErr
 import { settings } from "$lib/stores/settings.svelte";
 import {
   isBudgetApprovalStreamEvent,
+  isBrowserChallengeStreamEvent,
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
@@ -102,6 +104,8 @@ export class ChatStore {
   historyNotice = $state<string | null>(null);
   /** Desktop in-app alert when a turn pauses for budget approval. */
   budgetAlert = $state<PendingBudgetApproval | null>(null);
+  /** Agent Browser CAPTCHA / verification handoff. */
+  browserChallenge = $state<PendingBrowserChallenge | null>(null);
   /** Daemon turn id for the live interactive stream, if any. */
   activeTurnId = $state<string | null>(null);
   /** Turn-centric state keyed by daemon turn id. */
@@ -175,6 +179,25 @@ export class ChatStore {
 
   clearBudgetAlert() {
     this.budgetAlert = null;
+  }
+
+  clearBrowserChallenge(sessionId?: string) {
+    if (!sessionId || this.browserChallenge?.sessionId === sessionId) {
+      this.browserChallenge = null;
+    }
+  }
+
+  handleBrowserChallenge(event: InteractiveTurnStreamEvent) {
+    const sessionId = event.browser_session_id?.trim();
+    if (!sessionId) return;
+    const messageId = this.messageIdForTurn(event.turn_id);
+    this.browserChallenge = {
+      turnId: event.turn_id,
+      messageId,
+      sessionId,
+      challengeUrl: event.browser_challenge_url ?? null,
+      message: event.message || event.operator_message || "",
+    };
   }
 
   hasPendingBudgetApproval(requestId: string): boolean {
@@ -1397,6 +1420,11 @@ export class ChatStore {
       if (messageId) {
         this.applyToolStreamEvent(messageId, event);
       }
+      return;
+    }
+
+    if (isBrowserChallengeStreamEvent(event)) {
+      this.handleBrowserChallenge(event);
       return;
     }
 

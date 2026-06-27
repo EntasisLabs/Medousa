@@ -264,6 +264,7 @@ pub struct LocalTurnExecutionParams {
     pub current_turn_user_message: ChatMessage,
     pub inference_profile_kind: crate::inference_profiles::InferenceProfileKind,
     pub supports_ui_artifacts: bool,
+    pub supports_browser_host: bool,
 }
 
 pub struct AssembleLocalTurnParams<'a> {
@@ -444,6 +445,9 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             current_turn_user_message,
             inference_profile_kind: params.inference_profile_kind,
             supports_ui_artifacts: crate::ui_present_tools::surface_supports_ui_artifacts(
+                params.surface.as_ref(),
+            ),
+            supports_browser_host: crate::browser_tools::surface_supports_browser_host(
                 params.surface.as_ref(),
             ),
         },
@@ -693,6 +697,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         current_turn_user_message,
         inference_profile_kind,
         supports_ui_artifacts,
+        supports_browser_host,
     } = params;
 
     let capability_required = if inference_profile_kind
@@ -786,6 +791,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             true,
             Some(session_id.as_str()),
             params.supports_ui_artifacts,
+            params.supports_browser_host,
         )
     } else {
         default_pipeline
@@ -1009,6 +1015,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             host_bus,
             Some(session_id.as_str()),
             params.supports_ui_artifacts,
+            params.supports_browser_host,
         );
 
         let mut same_target_retries = 0u8;

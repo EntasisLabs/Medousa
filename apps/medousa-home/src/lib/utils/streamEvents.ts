@@ -14,6 +14,12 @@ export function isBudgetApprovalStreamEvent(
   );
 }
 
+export function isBrowserChallengeStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return event.event_type === "browser_challenge";
+}
+
 /** Transport-level SSE failures that should reattach rather than settle turns. */
 export function isRecoverableStreamError(message: string): boolean {
   const trimmed = message.trim();

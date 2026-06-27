@@ -3,6 +3,7 @@
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -678,6 +679,7 @@
         if (pending) void workspace.selectCard(pending.workCardId);
       }}
     />
+    <AgentBrowserPanel />
     {/if}
     <form
       class="{embedded

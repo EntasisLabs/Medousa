@@ -117,6 +117,17 @@ pub trait AgentStreamSink: Send + Sync {
             progress_summary,
         );
     }
+
+    /// Agent Browser CAPTCHA / verification — client should open WebView panel.
+    async fn browser_challenge_required(
+        &self,
+        turn_correlation_id: &str,
+        session_id: String,
+        challenge_url: String,
+        reason: String,
+    ) {
+        let _ = (turn_correlation_id, session_id, challenge_url, reason);
+    }
 }
 
 pub type SharedAgentStreamSink = Arc<dyn AgentStreamSink>;

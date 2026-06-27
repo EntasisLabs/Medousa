@@ -12,6 +12,7 @@ members = [
     "crates/medousa-sdk-iroh",
     "crates/medousa-local-engine",
     "crates/medousa-host",
+    "crates/medousa-browser-lite",
 ]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 
@@ -55,6 +56,7 @@ path = "src/bin/medousa_mcp_gateway.rs"
 medousa-types = { path = "crates/medousa-types" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }
+medousa-browser-lite = { path = "crates/medousa-browser-lite" }
 medousa-local-engine = { path = "crates/medousa-local-engine", optional = true }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }

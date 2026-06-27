@@ -19,7 +19,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     },
     capability_catalog(.98): {
         intent_layer(.98): "Route user intents through the capability catalog — not raw tool names. Runtime injects [MEDOUSA_TOOL_HINTS]; unlock inspect/execute groups with cognition_tools_discover(domain=catalog|…).",
-        one_shot_invoke(.99): "Workshop lane: cognition_capability_invoke or cognition_web_search for web lookup. Host: cognition_web_search (preferred) or discover → invoke.",
+        one_shot_invoke(.99): "Workshop lane: cognition_web_search for web lookup (preferred). Host: cognition_web_search first; cognition_browser_fetch for known URLs when browser-capable.",
         select(.98): "Prefer resolve.recommended; Grapheme or MCP binding from manifest — delegate execution to workshop when heavy."
     },
     workflow(.98): {
@@ -43,7 +43,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     tool_distinction(.99): {
         modules_search_scope(.99): "grapheme.modules.search is only for discovering module docs, examples, signatures, and usage patterns. If user intent is unclear, look at all available modules first and then offer possible solutions.",
         modules_search_not_web(.99): "grapheme.modules.search is not a web search tool and is not evidence for real-world facts.",
-        real_world_retrieval(.99): "Real-world retrieval must use a runtime script with execution modules (web, http, websearch). Prefer web.<provider> (e.g. web.duckduckgo, web.tavily) after web.providers or web.capabilities discovery; compose with http when pages need fetch/clean. Use websearch.* for multi-step research_report/materials pipelines, not as the default single-shot lookup.",
+        real_world_retrieval(.99): "Real-world retrieval: cognition_web_search (Agent Browser or lite fallback). Use cognition_browser_fetch on browser-capable clients for a known URL. On browser_challenge / CAPTCHA, wait for the operator — do not retry search in a loop.",
         complex_flows(.95): "Complex requests and workflows should utilize different grapheme modules to create composites.",
         syntax_guidance(.999): "Grapheme uses a GraphQL style syntax with a mix of Elixir's piping. Always match example syntax before scripting. ALWAYS LOOK AT AVAILABLE MODULES BEFORE ATTEMPTING TO RUN A TOOL.",
         canonical_syntax(.9999): "import core from "grapheme/core\nquery HelloWorld {\nset { message: "LETS GO?!!!!!" }\n|> core.echo(message: $current.message)\n}"

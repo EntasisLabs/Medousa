@@ -993,6 +993,61 @@ impl StasisTool for CognitionWebSearchTool {
             })
             .await;
 
+        let max_results = input
+            .get("max_results")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(8) as usize;
+        let chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
+            &self.turn_scope,
+            &self.session_id,
+        )
+        .await;
+        let turn_correlation_id = self
+            .turn_scope
+            .read()
+            .await
+            .as_ref()
+            .map(|scope| scope.turn_correlation_id.clone())
+            .unwrap_or_else(|| chat_session_id.clone());
+
+        if mode.eq_ignore_ascii_case("search") {
+            match crate::browser_search::run_browser_backed_search(
+                query,
+                max_results,
+                &self.turn_scope,
+                &turn_correlation_id,
+                &chat_session_id,
+                None,
+            )
+            .await
+            {
+                Ok(response) if response.challenge.is_none() && !response.results.is_empty() => {
+                    let binding = if response.provider.contains("duckduckgo") {
+                        "browser_host_lite"
+                    } else {
+                        "browser_host"
+                    };
+                    return Ok(crate::browser_search::search_response_to_tool_json(
+                        query,
+                        mode,
+                        provider,
+                        &response,
+                        binding,
+                    ));
+                }
+                Ok(response) if response.challenge.is_some() => {
+                    return Ok(crate::browser_search::search_response_to_tool_json(
+                        query,
+                        mode,
+                        provider,
+                        &response,
+                        "browser_host_lite",
+                    ));
+                }
+                Ok(_) | Err(_) => {}
+            }
+        }
+
         let mut invoke_input = json!({
             "capability": "web_research",
             "input": { "query": query },
@@ -1012,15 +1067,22 @@ impl StasisTool for CognitionWebSearchTool {
         if try_fallbacks {
             candidates.append(&mut fallbacks);
         }
+        candidates.retain(|binding| !crate::browser_search::is_discovery_binding(&binding.reference));
+        if candidates.is_empty() {
+            return Err(StasisError::PortFailure(
+                "cognition_web_search: no search bindings available after filtering discovery ops"
+                    .to_string(),
+            ));
+        }
+        let mut fallbacks = candidates.split_off(1);
+        let primary = candidates.remove(0);
 
         let tool_input = json!({ "query": query });
-        let session_id = crate::runtime_session::resolve_active_chat_session_id_async(
-            &self.turn_scope,
-            &self.session_id,
-        )
-        .await;
+        let session_id = chat_session_id;
         let mut last_error = None;
-        for (index, binding) in candidates.iter().enumerate() {
+        let mut candidate_list = vec![primary];
+        candidate_list.append(&mut fallbacks);
+        for (index, binding) in candidate_list.iter().enumerate() {
             let result = match binding.source {
                 CapabilitySource::Mcp => {
                     invoke_mcp_binding(
@@ -1038,7 +1100,7 @@ impl StasisTool for CognitionWebSearchTool {
 
             match result {
                 Ok(result) if invoke_succeeded(binding, &result) => {
-                    let remaining = candidates.iter().skip(index + 1).cloned().collect::<Vec<_>>();
+                    let remaining = candidate_list.iter().skip(index + 1).cloned().collect::<Vec<_>>();
                     return Ok(json!({
                         "query": query,
                         "mode": mode,
@@ -1069,11 +1131,11 @@ impl StasisTool for CognitionWebSearchTool {
             "query": query,
             "mode": mode,
             "provider_requested": provider,
-            "binding_used": binding_ref_json(&candidates[0]),
+            "binding_used": binding_ref_json(&candidate_list[0]),
             "decision": "deny",
             "effect_class": effect_class_for_capability("web_research"),
             "result": last_error,
-            "fallback_available": fallback_bindings_json(&candidates[1..])
+            "fallback_available": fallback_bindings_json(&candidate_list[1..])
         }))
     }
 }

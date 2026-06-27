@@ -229,6 +229,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_vault_search",
             "cognition_vault_write",
             "cognition_web_search",
+            "cognition_browser_fetch",
             "cognition_tool_history_summary",
             "cognition_tool_history_detail",
             "cognition_grapheme_script_list",

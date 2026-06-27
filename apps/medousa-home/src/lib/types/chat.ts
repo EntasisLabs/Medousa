@@ -62,6 +62,15 @@ export interface ChatMessage {
   requestedRounds?: number | null;
   /** Turn index in session history (1-based, matches slice_id turn:N). */
   turnIndex?: number | null;
+}
+
+export interface PendingBrowserChallenge {
+  turnId: string;
+  messageId: string | null;
+  sessionId: string;
+  challengeUrl: string | null;
+  message: string;
+}
 
 export interface PendingBudgetApproval {
   turnId: string;
@@ -121,4 +130,6 @@ export interface InteractiveTurnStreamEvent {
   operator_message?: string | null;
   /** Engine telemetry — shown only with engine details enabled. */
   debug_message?: string | null;
+  browser_session_id?: string | null;
+  browser_challenge_url?: string | null;
 }

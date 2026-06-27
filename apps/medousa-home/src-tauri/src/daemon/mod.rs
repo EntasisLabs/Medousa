@@ -295,6 +295,17 @@ fn default_home_channel_surface() -> String {
     }
 }
 
+async fn resolve_supports_browser_host() -> bool {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        true
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        crate::browser_host::browser_host_http_healthy().await
+    }
+}
+
 #[tauri::command]
 pub async fn interactive_turn_send(
     state: State<'_, DaemonState>,
@@ -336,6 +347,8 @@ pub async fn interactive_turn_send(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(default_home_channel_surface);
 
+    let supports_browser_host = resolve_supports_browser_host().await;
+
     let request = InteractiveTurnRequest {
         session_id: session_id.clone(),
         prompt,
@@ -346,10 +359,11 @@ pub async fn interactive_turn_send(
         model: model.clone(),
         stage_routing,
         surface: Some(TurnSurfaceContext {
-            channel_surface: Some(channel_surface),
+            channel_surface: Some(channel_surface.clone()),
             channel_id: Some(session_id.clone()),
             user_id: None,
             supports_ui_artifacts: true,
+            supports_browser_host,
         }),
         max_tool_rounds: None,
         retry_runtime_max_rounds: None,

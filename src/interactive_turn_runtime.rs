@@ -472,6 +472,29 @@ pub fn budget_approval_stream_event(
     Ok(event)
 }
 
+pub fn browser_challenge_stream_event(
+    turn_id: &str,
+    session_id: &str,
+    challenge_url: &str,
+    reason: &str,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event_messages(
+        turn_id,
+        "browser_challenge",
+        "awaiting_operator",
+        StreamMessages {
+            operator_message: Some(format!(
+                "Medousa needs help with a web verification ({reason}). Open the Agent Browser panel to continue."
+            )),
+            debug_message: None,
+        },
+    )?;
+    event.browser_session_id = Some(session_id.to_string());
+    event.browser_challenge_url = Some(challenge_url.to_string());
+    event.terminal = false;
+    Ok(event)
+}
+
 fn build_event(
     turn_id: &str,
     event_type: &str,
@@ -518,6 +541,8 @@ fn build_event_messages(
         ui_artifact: None,
         previous_artifact_id: None,
         root_artifact_id: None,
+        browser_session_id: None,
+        browser_challenge_url: None,
     })
 }
 

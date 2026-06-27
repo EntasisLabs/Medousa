@@ -1,5 +1,6 @@
 <script lang="ts">
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
@@ -154,6 +155,7 @@
       if (pending) void workspace.selectCard(pending.workCardId);
     }}
   />
+  <AgentBrowserPanel mobile />
   <ChatComposerBar
     mobile
     disabled={connection.offline}

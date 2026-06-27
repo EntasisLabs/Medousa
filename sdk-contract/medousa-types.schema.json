@@ -1470,6 +1470,11 @@
             "default": false,
             "type": "boolean"
           },
+          "supports_browser_host": {
+            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Home desktop/iOS set this; Telegram/TUI/ingest leave false.",
+            "default": false,
+            "type": "boolean"
+          },
           "user_id": {
             "default": null,
             "type": [
@@ -1538,6 +1543,20 @@
     "properties": {
       "budget_request_id": {
         "description": "Turn budget approval pause — card id for Home deep link / notifications.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "browser_challenge_url": {
+        "description": "URL the client should load in Agent Browser WebView during CAPTCHA handoff.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "browser_session_id": {
+        "description": "Agent Browser session id for CAPTCHA / client-executed search handoff.",
         "type": [
           "string",
           "null"
