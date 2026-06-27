@@ -5,6 +5,12 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+/** Native iOS shell (iPhone/iPad Tauri build). */
+export function isTauriIos(): boolean {
+  if (!isTauri() || typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 /** Native iOS/Android shell — always use mobile UI, not viewport width. */
 export function isTauriMobilePlatform(): boolean {
   if (!isTauri() || typeof navigator === "undefined") return false;

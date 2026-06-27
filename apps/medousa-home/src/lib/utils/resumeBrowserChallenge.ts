@@ -56,5 +56,5 @@ export async function resumeBrowserChallenge(sessionId: string): Promise<void> {
     return;
   }
 
-  throw new Error("Browser verification resume requires the Medousa desktop app.");
+  throw new Error("Browser verification resume requires the Medousa app.");
 }

@@ -28,7 +28,7 @@ export function isLocalTabGroupId(tabGroupId: string): boolean {
 }
 
 function useTauriBridge(): boolean {
-  return isTauri();
+  return isTauri() && !isTauriMobilePlatform();
 }
 
 export async function browserHostBaseUrl(): Promise<string | null> {

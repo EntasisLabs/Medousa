@@ -55,6 +55,24 @@ medousa = { path = "../../../", default-features = false, features = ["iroh-tran
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
+block2 = "0.6"
+objc2-core-foundation = { version = "0.3", features = ["CFCGTypes", "objc2"] }
+objc2-foundation = { version = "0.3", features = [
+  "NSString",
+  "NSURL",
+  "NSURLRequest",
+  "NSGeometry",
+  "NSDate",
+  "NSRunLoop",
+  "NSObjCRuntime",
+  "objc2-core-foundation",
+] }
+objc2-ui-kit = { version = "0.3", features = [
+  "UIView",
+  "UIViewController",
+  "UIWindow",
+  "UIApplication",
+] }
 tauri-plugin-ios-webview-insets = "0.1"
 
 [patch.crates-io]

@@ -30,7 +30,7 @@
     bind:this={inputEl}
     type="text"
     class="input min-w-0 flex-1 text-sm {mobile
-      ? 'mobile-browser-url-pill rounded-full border-surface-700 bg-surface-800/90 py-1.5 text-center'
+      ? 'mobile-browser-url-pill rounded-full border-surface-700 bg-surface-800/90 px-3 py-1.5 text-left'
       : ''}"
     placeholder={mobile ? "Search or enter URL" : "Search or enter URL"}
     bind:value={humanBrowser.urlDraft}

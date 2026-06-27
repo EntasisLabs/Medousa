@@ -1,5 +1,7 @@
 fn main() {
     embed_macos_dev_info_plist();
+    #[cfg(target_os = "ios")]
+    println!("cargo:rustc-link-lib=framework=WebKit");
     tauri_build::build();
 }
 

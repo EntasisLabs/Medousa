@@ -1,5 +1,5 @@
-//! Mobile stubs for desktop embedded native webviews (unavailable on iOS/Android).
-//! Browser UI on mobile uses in-app iframe fallback via `BrowserWebView.svelte`.
+//! Mobile stubs for desktop embedded native webviews (Android only).
+//! iOS uses [`crate::human_browser_ios`]. Browser UI on Android uses iframe fallback.
 
 use medousa_browser_lite::SearchResponse;
 use serde::{Deserialize, Serialize};

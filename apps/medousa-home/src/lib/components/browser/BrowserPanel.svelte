@@ -3,7 +3,7 @@
    * Mobile Web tab — embed height = panel height − chrome block + chrome padding-top.
    */
   import { onMount, tick } from "svelte";
-  import { ArrowLeft, ArrowRight, Globe, RefreshCw, Layers } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Globe, Layers } from "@lucide/svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
@@ -352,20 +352,15 @@
         >
           <ArrowRight size={18} />
         </button>
-        <HumanBrowserUrlBar mobile />
-        <BrowserChromeActions
-          mobile
-          onMobileToast={(message, actionLabel, onAction) =>
-            showMobileToast(message, actionLabel, onAction)}
-        />
-        <button
-          type="button"
-          class="btn btn-icon btn-sm shrink-0"
-          aria-label="Reload"
-          onclick={() => void reloadView()}
-        >
-          <RefreshCw size={18} />
-        </button>
+        <div class="flex min-w-0 flex-1 items-center gap-1">
+          <HumanBrowserUrlBar mobile />
+          <BrowserChromeActions
+            mobile
+            onReload={() => reloadView()}
+            onMobileToast={(message, actionLabel, onAction) =>
+              showMobileToast(message, actionLabel, onAction)}
+          />
+        </div>
       </div>
     </div>
 

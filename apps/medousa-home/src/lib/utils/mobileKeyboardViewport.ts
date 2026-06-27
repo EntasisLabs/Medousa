@@ -16,7 +16,11 @@ export function attachMobileKeyboardViewport(
     const inset = Math.max(0, layoutHeight - viewport.height - viewport.offsetTop);
     root.style.setProperty("--mobile-keyboard-inset", `${inset}px`);
 
-    if (inset < 8 && root.dataset.mobileComposerActive !== "true") {
+    if (
+      inset < 8 &&
+      root.dataset.mobileComposerActive !== "true" &&
+      root.dataset.mobileBrowserUrlActive !== "true"
+    ) {
       layoutHeight = window.innerHeight;
     }
   };
@@ -44,6 +48,17 @@ export function attachMobileKeyboardViewport(
 export function setMobileComposerFocus(active: boolean) {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.mobileComposerActive = active ? "true" : "false";
+}
+
+/** Web tab URL bar — float bottom chrome above keyboard without resizing native embed. */
+export function setMobileBrowserUrlFocus(active: boolean) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.mobileBrowserUrlActive = active ? "true" : "false";
+}
+
+export function isMobileBrowserUrlFocused(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.documentElement.dataset.mobileBrowserUrlActive === "true";
 }
 
 function isLayoutDebugEnabled(): boolean {

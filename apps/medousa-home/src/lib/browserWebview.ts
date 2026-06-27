@@ -1,6 +1,6 @@
 /** Browser pane measurement — native embed (Tauri desktop) vs iframe (mobile webviews). */
 
-import { isTauri, isTauriMobilePlatform } from "$lib/platform";
+import { isTauri, isTauriIos, isTauriMobilePlatform } from "$lib/platform";
 
 export type BrowserWebviewBounds = {
   x: number;
@@ -9,9 +9,9 @@ export type BrowserWebviewBounds = {
   height: number;
 };
 
-/** Tauri desktop (including narrow viewport / mobile shell) — native WKWebView child. */
+/** Tauri desktop (including narrow viewport / mobile shell) or native iOS WKWebView overlay. */
 export function canUseNativeBrowserWebview(): boolean {
-  return isTauri() && !isTauriMobilePlatform();
+  return isTauri() && (!isTauriMobilePlatform() || isTauriIos());
 }
 
 /** Plain DOM rect for native webview placement — no visualViewport offsets. */

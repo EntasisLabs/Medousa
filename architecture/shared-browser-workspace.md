@@ -41,6 +41,12 @@ All embed layout is **Rust-only** ([`human_browser.rs`](Medousa/apps/medousa-hom
 
 Web lives under the **Web tab** ([`BrowserPanel`](Medousa/apps/medousa-home/src/lib/components/browser/BrowserPanel.svelte)). Agent handoff + CAPTCHA strip in bottom chrome. [`MobileBrowserWorkshop`](Medousa/apps/medousa-home/src/lib/components/mobile/MobileBrowserWorkshop.svelte) for scoped chat.
 
+### iOS native overlay
+
+Tauri 2 `Window::add_child` is desktop-only. On **iOS**, the human browser uses a **UIKit WKWebView overlay** attached to the root view controller ([`human_browser_ios.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser_ios.rs)) — same `human_browser_*` invoke surface as desktop. Svelte chrome in the main webview positions the overlay via `human_browser_embed_apply_mobile_layout`; snapshots run through `evaluateJavaScript` with shared cookies.
+
+Android still uses iframe stubs until a native `WebView` overlay ships ([`human_browser_mobile.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser_mobile.rs)).
+
 ## Agent backend
 
 ```

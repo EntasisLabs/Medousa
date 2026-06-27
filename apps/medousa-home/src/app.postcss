@@ -2574,6 +2574,19 @@
     transform: translateY(calc(-1 * var(--mobile-keyboard-inset, 0px)));
   }
 
+  html[data-mobile-browser-url-active="true"] [data-browser-bottom-chrome] {
+    transform: translateY(calc(-1 * var(--mobile-keyboard-inset, 0px)));
+  }
+
+  html[data-mobile-browser-url-active="true"] .mobile-bottom-chrome {
+    transform: translateY(calc(-1 * var(--mobile-keyboard-inset, 0px)));
+  }
+
+  [data-browser-bottom-chrome],
+  html[data-mobile-browser-url-active="true"] .mobile-bottom-chrome {
+    transition: transform 0.2s ease-out;
+  }
+
   .mobile-shell:not([data-mobile-tab="chat"]) .mobile-bottom-chrome {
     border-top: 1px solid rgb(var(--color-surface-600) / 0.45);
   }

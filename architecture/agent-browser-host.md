@@ -61,8 +61,9 @@ Read-only DOM snapshot shares session cookies with the visible tab. Click/type a
 
 | Surface | `supports_browser_host` | Browser execution |
 |---------|-------------------------|-------------------|
-| `home-desktop` | true when `:7422/health` ok | Local BrowserHost |
-| `home-ios` | true | Client WebView |
+| `home-desktop` | true when `:7422/health` ok | Local BrowserHost + Tauri child webview |
+| `home-ios` | true | UIKit WKWebView overlay + `human_browser_snapshot_*` |
+| `home-android` | true (iframe v1) | iframe + local tab groups; native WebView overlay deferred |
 | `telegram`, `tui`, ingest | false | Lite + Grapheme only |
 
 ## Out of scope (v1)
