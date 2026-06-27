@@ -1,0 +1,5667 @@
+{
+  "ArchiveAskJobRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArchiveAskJobRequest",
+    "type": "object",
+    "properties": {
+      "purge_output": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  },
+  "ArchiveAskJobResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArchiveAskJobResponse",
+    "type": "object",
+    "required": [
+      "archived",
+      "job_id",
+      "message"
+    ],
+    "properties": {
+      "archived": {
+        "type": "boolean"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      }
+    }
+  },
+  "ArtifactCommandRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactCommandRequest",
+    "type": "object",
+    "required": [
+      "command",
+      "session_id"
+    ],
+    "properties": {
+      "command": {
+        "$ref": "#/definitions/ArtifactCommandSpec"
+      },
+      "selected_context_pack_query": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "verification_policy": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ArtifactVerificationPolicyInput"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "verifier_route_label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "ArtifactCommandSpec": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "lookup"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "chunks"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command",
+              "limit"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "list"
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command",
+              "max_age_days",
+              "max_per_session"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "maintain"
+                ]
+              },
+              "max_age_days": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "max_per_session": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "extract"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command",
+              "limit"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "extractions"
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact_query",
+              "command",
+              "max_chunks",
+              "max_claims",
+              "max_tokens"
+            ],
+            "properties": {
+              "artifact_query": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string",
+                "enum": [
+                  "pack"
+                ]
+              },
+              "max_chunks": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "max_claims": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              },
+              "max_tokens": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command",
+              "limit"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "packs"
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "pack_use"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "pack_auto"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "verify"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command",
+              "limit"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "verifications"
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "verification"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ArtifactVerificationPolicyInput": {
+        "type": "object",
+        "required": [
+          "min_avg_support_strength",
+          "min_citation_coverage",
+          "min_claim_support_strength",
+          "min_supported_claim_ratio"
+        ],
+        "properties": {
+          "min_avg_support_strength": {
+            "type": "number",
+            "format": "float"
+          },
+          "min_citation_coverage": {
+            "type": "number",
+            "format": "float"
+          },
+          "min_claim_support_strength": {
+            "type": "number",
+            "format": "float"
+          },
+          "min_supported_claim_ratio": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      }
+    }
+  },
+  "ArtifactCommandResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactCommandResponse",
+    "type": "object",
+    "required": [
+      "rendered_output"
+    ],
+    "properties": {
+      "rendered_output": {
+        "type": "string"
+      },
+      "selected_context_pack_query": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "ArtifactFetchRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactFetchRequest",
+    "type": "object",
+    "required": [
+      "artifact_id",
+      "session_id"
+    ],
+    "properties": {
+      "artifact_id": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    }
+  },
+  "ArtifactFetchResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactFetchResponse",
+    "type": "object",
+    "required": [
+      "artifact_id",
+      "body",
+      "byte_size",
+      "label",
+      "mime"
+    ],
+    "properties": {
+      "artifact_id": {
+        "type": "string"
+      },
+      "body": {
+        "type": "string"
+      },
+      "byte_size": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "height_px": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "label": {
+        "type": "string"
+      },
+      "mime": {
+        "type": "string"
+      },
+      "presentation": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "ArtifactListUiRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactListUiRequest",
+    "type": "object",
+    "properties": {
+      "limit": {
+        "default": 50,
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "query": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "session_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "ArtifactListUiResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactListUiResponse",
+    "type": "object",
+    "required": [
+      "artifacts"
+    ],
+    "properties": {
+      "artifacts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ArtifactSummary"
+        }
+      }
+    },
+    "definitions": {
+      "ArtifactSummary": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "byte_size",
+          "label",
+          "session_id",
+          "stored_at_utc"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "root_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "stored_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "supersedes_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "AskJobCompleteActionsRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AskJobCompleteActionsRequest",
+    "type": "object",
+    "properties": {
+      "notify_channel": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "write_journal_path": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "AskJobCompleteActionsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AskJobCompleteActionsResponse",
+    "type": "object",
+    "required": [
+      "job_id",
+      "message",
+      "ok"
+    ],
+    "properties": {
+      "job_id": {
+        "type": "string"
+      },
+      "journal_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "message": {
+        "type": "string"
+      },
+      "notified_channel": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ok": {
+        "type": "boolean"
+      }
+    }
+  },
+  "CapabilityListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CapabilityListResponse",
+    "type": "object",
+    "required": [
+      "capabilities"
+    ],
+    "properties": {
+      "capabilities": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CapabilityListEntry"
+        }
+      }
+    },
+    "definitions": {
+      "CapabilityBindingSummary": {
+        "type": "object",
+        "required": [
+          "available",
+          "reference",
+          "source"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invoke_via": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reference": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "CapabilityListEntry": {
+        "type": "object",
+        "required": [
+          "binding_count",
+          "domain",
+          "has_grapheme",
+          "has_mcp",
+          "id",
+          "title"
+        ],
+        "properties": {
+          "binding_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "bindings_summary": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CapabilityBindingSummary"
+            }
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "has_grapheme": {
+            "type": "boolean"
+          },
+          "has_mcp": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "CapabilityResolveResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CapabilityResolveResponse",
+    "type": "object",
+    "required": [
+      "capability",
+      "implementations",
+      "title"
+    ],
+    "properties": {
+      "capability": {
+        "type": "string"
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "gateway_unreachable": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "implementations": {
+        "$ref": "#/definitions/CapabilityImplementations"
+      },
+      "recommended": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CapabilityRecommendation"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "CapabilityBinding": {
+        "type": "object",
+        "required": [
+          "available",
+          "priority",
+          "reference",
+          "source"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invoke_via": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "reference": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CapabilityImplementations": {
+        "type": "object",
+        "properties": {
+          "grapheme": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CapabilityBinding"
+            }
+          },
+          "mcp": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CapabilityBinding"
+            }
+          }
+        }
+      },
+      "CapabilityRecommendation": {
+        "type": "object",
+        "required": [
+          "reason",
+          "reference",
+          "source"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "DeleteRecurringResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeleteRecurringResponse",
+    "type": "object",
+    "required": [
+      "deleted",
+      "recurring_id"
+    ],
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      },
+      "recurring_id": {
+        "type": "string"
+      }
+    }
+  },
+  "EnqueueAskRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnqueueAskRequest",
+    "type": "object",
+    "required": [
+      "prompt"
+    ],
+    "properties": {
+      "additional_manuscript_ids": {
+        "description": "Extra manuscript specialties beyond `manuscript_id`.",
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "identity_channel_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "identity_persona_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "identity_user_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "manuscript_id": {
+        "description": "Primary YAML manuscript specialty for the ask turn.",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "max_turns": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "model_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "policy_profile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "suggested_capability_ids": {
+        "description": "Capability catalog ids the operator suggests for this ask.",
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "EnqueuePromptRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnqueuePromptRequest",
+    "type": "object",
+    "required": [
+      "prompt"
+    ],
+    "properties": {
+      "identity_channel_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "identity_persona_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "identity_user_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "model_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "policy_profile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "system_prompt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "EnqueueReportRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnqueueReportRequest",
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "identity_channel_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "identity_persona_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "identity_user_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "max_turns": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "model_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "policy_profile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "query": {
+        "type": "string"
+      }
+    }
+  },
+  "EnqueueResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnqueueResponse",
+    "type": "object",
+    "required": [
+      "accepted_at_utc",
+      "job_id",
+      "queue"
+    ],
+    "properties": {
+      "accepted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "queue": {
+        "type": "string"
+      }
+    }
+  },
+  "HealthResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "HealthResponse",
+    "type": "object",
+    "required": [
+      "backend",
+      "now_utc",
+      "status",
+      "worker_id"
+    ],
+    "properties": {
+      "active_profile_display_name": {
+        "description": "Human label for `active_profile_id`.",
+        "type": "string"
+      },
+      "active_profile_id": {
+        "description": "Active workshop identity profile (`user:{slug}`).",
+        "type": "string"
+      },
+      "agent_runtime_version": {
+        "default": "centralized-v1",
+        "type": "string"
+      },
+      "backend": {
+        "type": "string"
+      },
+      "last_agent_turn_at_utc": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "last_agent_turn_latency_ms": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "now_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tool_registry_count": {
+        "default": 0,
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "worker_id": {
+        "type": "string"
+      }
+    }
+  },
+  "IngestRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IngestRequest",
+    "description": "Request from any channel adapter to the centralized ingester.",
+    "type": "object",
+    "required": [
+      "channel",
+      "channel_id",
+      "text",
+      "user_id"
+    ],
+    "properties": {
+      "attachments": {
+        "description": "Optional attachment payloads merged into ask prompts",
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/IngestAttachment"
+        }
+      },
+      "channel": {
+        "description": "Channel type identifier, e.g. \"telegram\", \"discord\", \"cli\"",
+        "type": "string"
+      },
+      "channel_id": {
+        "description": "Channel/chat/conversation identifier, e.g. \"telegram:chat:67890\"",
+        "type": "string"
+      },
+      "text": {
+        "description": "The text content of the message (command or prompt)",
+        "type": "string"
+      },
+      "user_id": {
+        "description": "User identifier within the channel, e.g. \"telegram:user:12345\"",
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "IngestAttachment": {
+        "description": "Optional attachment forwarded by a channel adapter.",
+        "type": "object",
+        "required": [
+          "content",
+          "kind"
+        ],
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "IngestResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "IngestResponse",
+    "description": "Response from the centralized ingester.",
+    "type": "object",
+    "required": [
+      "is_new_session",
+      "reply",
+      "session_id"
+    ],
+    "properties": {
+      "is_new_session": {
+        "description": "Whether this is a brand-new session (first message or after /new)",
+        "type": "boolean"
+      },
+      "job_id": {
+        "description": "If a job was enqueued, its id (for polling/streaming)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reply": {
+        "description": "Immediate text reply (help text, confirmation, error message)",
+        "type": "string"
+      },
+      "session_id": {
+        "description": "The resolved or created session_id for this channel+user pair",
+        "type": "string"
+      },
+      "stream_id": {
+        "description": "SSE stream id when a job-backed ask is processing",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "stream_ready": {
+        "description": "Whether the stream endpoint is ready for subscription",
+        "default": false,
+        "type": "boolean"
+      },
+      "stream_url": {
+        "description": "Absolute URL for SSE stream consumption by adapters",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "InteractiveTurnRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InteractiveTurnRequest",
+    "type": "object",
+    "required": [
+      "model",
+      "persist_user_turn",
+      "prompt",
+      "provider",
+      "response_depth_mode",
+      "session_id",
+      "stage_routing"
+    ],
+    "properties": {
+      "additional_manuscript_ids": {
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "identity_user_id": {
+        "description": "Optional identity principal override (debug/internal). Default: active workshop profile.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "manuscript_id": {
+        "description": "YAML manuscript specialty for ranked digest + scheduled tool allowlist.",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "max_tool_rounds": {
+        "description": "When set, overrides `tui_defaults.json` for this turn (TUI live settings).",
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "media_refs": {
+        "description": "User media uploaded to local medousa/media/ before this turn (P5a).",
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/MediaRef"
+        }
+      },
+      "model": {
+        "type": "string"
+      },
+      "persist_user_turn": {
+        "type": "boolean"
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "reasoning_effort": {
+        "default": "",
+        "type": "string"
+      },
+      "response_depth_mode": {
+        "type": "string"
+      },
+      "retry_runtime_max_rounds": {
+        "default": null,
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "scheduled_tool_allowlist": {
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "stage_routing": {
+        "$ref": "#/definitions/StageRoutingMatrix"
+      },
+      "suggested_capability_ids": {
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "surface": {
+        "description": "Channel adapter context for ambient prompting (ingest/TUI surfaces).",
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TurnSurfaceContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "voice_appendix": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "voice_preset_id": {
+        "description": "Composer voice stance — short appendix block (not a manuscript specialty).",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "kind": {
+            "description": "image | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          }
+        }
+      },
+      "StageRoute": {
+        "type": "object",
+        "required": [
+          "fallback_chain",
+          "model",
+          "policy_profile",
+          "provider",
+          "role"
+        ],
+        "properties": {
+          "fallback_chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "policy_profile": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StageRoutingMatrix": {
+        "type": "object",
+        "required": [
+          "chunker",
+          "extractor",
+          "final_response",
+          "orchestrator",
+          "packer",
+          "summarizer",
+          "verifier"
+        ],
+        "properties": {
+          "chunker": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "extractor": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "final_response": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "orchestrator": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "packer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "summarizer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "verifier": {
+            "$ref": "#/definitions/StageRoute"
+          }
+        }
+      },
+      "TurnSurfaceContext": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_surface": {
+            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …",
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supports_ui_artifacts": {
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
+            "default": false,
+            "type": "boolean"
+          },
+          "user_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "InteractiveTurnResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InteractiveTurnResponse",
+    "type": "object",
+    "required": [
+      "accepted_at_utc",
+      "fallback_to_local",
+      "stream_ready",
+      "stream_url",
+      "turn_id"
+    ],
+    "properties": {
+      "accepted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "daemon_notice": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fallback_reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fallback_to_local": {
+        "type": "boolean"
+      },
+      "stream_ready": {
+        "type": "boolean"
+      },
+      "stream_url": {
+        "type": "string"
+      },
+      "turn_id": {
+        "type": "string"
+      }
+    }
+  },
+  "InteractiveTurnStreamEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InteractiveTurnStreamEvent",
+    "type": "object",
+    "required": [
+      "emitted_at_utc",
+      "event_type",
+      "message",
+      "phase",
+      "terminal",
+      "turn_id"
+    ],
+    "properties": {
+      "budget_request_id": {
+        "description": "Turn budget approval pause — card id for Home deep link / notifications.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "content_delta": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "debug_message": {
+        "description": "Engine/TUI telemetry — shown only when the operator opts into engine details.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "emitted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "event_type": {
+        "type": "string"
+      },
+      "final_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "message": {
+        "type": "string"
+      },
+      "operator_message": {
+        "description": "Human-facing status whisper for rich surfaces (Home default).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "phase": {
+        "type": "string"
+      },
+      "previous_artifact_id": {
+        "description": "Previous artifact id when cognition_artifact_write supersedes a revision.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reasoning_delta": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "requested_rounds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "root_artifact_id": {
+        "description": "Root artifact lineage id for revision chains.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "terminal": {
+        "type": "boolean"
+      },
+      "tool_artifact_refs": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/StreamToolArtifactRef"
+        }
+      },
+      "tool_input_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tool_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tool_names": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "tool_output_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tool_round": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "tool_run_id": {
+        "description": "Structured tool bus (P1) — correlates started/finished pair.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tool_status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "turn_id": {
+        "type": "string"
+      },
+      "ui_artifact": {
+        "description": "Rich UI artifact presented inline in chat (cognition_ui_present).",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/StreamUiArtifact"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "work_id": {
+        "description": "Turn worker handoff — workspace card id (`work-…`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "StreamToolArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamUiArtifact": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "label",
+          "mime",
+          "presentation"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "height_px": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "label": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "JobReportResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "JobReportResponse",
+    "type": "object",
+    "required": [
+      "attempt_count",
+      "citations",
+      "is_terminal",
+      "job_id",
+      "status"
+    ],
+    "properties": {
+      "attempt_count": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "citations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/JobCitationResponse"
+        }
+      },
+      "evidence_report": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/JobEvidenceReportResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "is_terminal": {
+        "type": "boolean"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "latest_execution_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "latest_outcome": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "output_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "JobCitationResponse": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "JobEvidenceReportResponse": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "citation_coverage",
+          "confidence_score",
+          "pack_id",
+          "session_id",
+          "supported_claim_ratio",
+          "supported_claims",
+          "total_claims",
+          "verification_state"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "citation_coverage": {
+            "type": "number",
+            "format": "float"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "float"
+          },
+          "extraction_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pack_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "supported_claim_ratio": {
+            "type": "number",
+            "format": "float"
+          },
+          "supported_claims": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "total_claims": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "verification_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verification_state": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "JobResultResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "JobResultResponse",
+    "type": "object",
+    "required": [
+      "attempt_count",
+      "is_terminal",
+      "job_id",
+      "status"
+    ],
+    "properties": {
+      "attempt_count": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "interim_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "is_terminal": {
+        "type": "boolean"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "latest_execution_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "latest_outcome": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "output_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "status": {
+        "type": "string"
+      }
+    }
+  },
+  "LocalCatalogResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalCatalogResponse",
+    "type": "object",
+    "required": [
+      "familyDefault",
+      "models",
+      "recommendedModelId",
+      "tier",
+      "tierLabel"
+    ],
+    "properties": {
+      "familyDefault": {
+        "type": "string"
+      },
+      "models": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CatalogModelEntry"
+        }
+      },
+      "recommendedModelId": {
+        "type": "string"
+      },
+      "tier": {
+        "$ref": "#/definitions/HardwareTier"
+      },
+      "tierLabel": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "CatalogModelEntry": {
+        "type": "object",
+        "required": [
+          "contextLength",
+          "displayName",
+          "engine",
+          "family",
+          "format",
+          "id",
+          "license",
+          "modalities",
+          "ramEstimateMb",
+          "repo",
+          "sizeBytes",
+          "source",
+          "tierMax",
+          "tierMin",
+          "variant"
+        ],
+        "properties": {
+          "contextLength": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "engineArgs": {
+            "default": null
+          },
+          "fallback": {
+            "default": null
+          },
+          "family": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "modalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ramEstimateMb": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "repo": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source": {
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tierMax": {
+            "type": "string"
+          },
+          "tierMin": {
+            "type": "string"
+          },
+          "tierRecommended": {
+            "default": false,
+            "type": "boolean"
+          },
+          "variant": {
+            "type": "string"
+          }
+        }
+      },
+      "HardwareTier": {
+        "type": "string",
+        "enum": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      }
+    }
+  },
+  "LocalEngineStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalEngineStatus",
+    "type": "object",
+    "required": [
+      "baseUrl",
+      "featureEnabled",
+      "loaded",
+      "message"
+    ],
+    "properties": {
+      "baseUrl": {
+        "type": "string"
+      },
+      "bind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "featureEnabled": {
+        "type": "boolean"
+      },
+      "inferenceBackend": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "loaded": {
+        "type": "boolean"
+      },
+      "message": {
+        "type": "string"
+      },
+      "modelAlias": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "modelRepo": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "LocalHardwareResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalHardwareResponse",
+    "type": "object",
+    "required": [
+      "compiledBackends",
+      "engineAvailable",
+      "message",
+      "profile"
+    ],
+    "properties": {
+      "compiledBackends": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "engineAvailable": {
+        "type": "boolean"
+      },
+      "message": {
+        "type": "string"
+      },
+      "profile": {
+        "$ref": "#/definitions/HardwareProfile"
+      }
+    },
+    "definitions": {
+      "GpuBackend": {
+        "type": "string",
+        "enum": [
+          "none",
+          "metal",
+          "cuda",
+          "other"
+        ]
+      },
+      "HardwareProbe": {
+        "type": "object",
+        "required": [
+          "availableRamMb",
+          "cpuArch",
+          "cpuCores",
+          "freeDiskGb",
+          "gpuBackend",
+          "totalRamMb"
+        ],
+        "properties": {
+          "availableRamMb": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "cpuArch": {
+            "type": "string"
+          },
+          "cpuCores": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "freeDiskGb": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "gpuBackend": {
+            "$ref": "#/definitions/GpuBackend"
+          },
+          "totalRamMb": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HardwareProfile": {
+        "type": "object",
+        "required": [
+          "probe",
+          "probedAt",
+          "recommendedDisplayName",
+          "recommendedModelId",
+          "tier",
+          "tierLabel"
+        ],
+        "properties": {
+          "probe": {
+            "$ref": "#/definitions/HardwareProbe"
+          },
+          "probedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recommendedDisplayName": {
+            "type": "string"
+          },
+          "recommendedModelId": {
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/definitions/HardwareTier"
+          },
+          "tierLabel": {
+            "type": "string"
+          }
+        }
+      },
+      "HardwareTier": {
+        "type": "string",
+        "enum": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      }
+    }
+  },
+  "LocalModelDownloadRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalModelDownloadRequest",
+    "type": "object",
+    "required": [
+      "modelId"
+    ],
+    "properties": {
+      "modelId": {
+        "type": "string"
+      }
+    }
+  },
+  "LocalModelDownloadResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalModelDownloadResponse",
+    "type": "object",
+    "required": [
+      "job"
+    ],
+    "properties": {
+      "job": {
+        "$ref": "#/definitions/ModelDownloadProgress"
+      }
+    },
+    "definitions": {
+      "ModelDownloadProgress": {
+        "type": "object",
+        "required": [
+          "bytesDone",
+          "bytesTotal",
+          "jobId",
+          "message",
+          "modelId",
+          "percent",
+          "phase"
+        ],
+        "properties": {
+          "bytesDone": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "bytesTotal": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "currentFile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "percent": {
+            "type": "number",
+            "format": "float"
+          },
+          "phase": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "LocalModelsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LocalModelsResponse",
+    "type": "object",
+    "required": [
+      "activeDownloads",
+      "installed"
+    ],
+    "properties": {
+      "activeDownloads": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ModelDownloadProgress"
+        }
+      },
+      "installed": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/InstalledModelRecord"
+        }
+      }
+    },
+    "definitions": {
+      "DownloadFileRecord": {
+        "type": "object",
+        "required": [
+          "bytes",
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "InstalledModelRecord": {
+        "type": "object",
+        "required": [
+          "bytesOnDisk",
+          "installedAt",
+          "localPath",
+          "modelId",
+          "repo",
+          "verified"
+        ],
+        "properties": {
+          "bytesOnDisk": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "files": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/DownloadFileRecord"
+            }
+          },
+          "installedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "localPath": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ModelDownloadProgress": {
+        "type": "object",
+        "required": [
+          "bytesDone",
+          "bytesTotal",
+          "jobId",
+          "message",
+          "modelId",
+          "percent",
+          "phase"
+        ],
+        "properties": {
+          "bytesDone": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "bytesTotal": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "currentFile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "percent": {
+            "type": "number",
+            "format": "float"
+          },
+          "phase": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "McpGatewayStatusResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "McpGatewayStatusResponse",
+    "description": "Daemon-proxied MCP gateway liveness + server runtime snapshot.",
+    "type": "object",
+    "required": [
+      "gatewayUrl",
+      "message",
+      "reachable",
+      "servers"
+    ],
+    "properties": {
+      "gatewayUrl": {
+        "type": "string"
+      },
+      "health": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/McpGatewayHealthSnapshot"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "message": {
+        "type": "string"
+      },
+      "reachable": {
+        "type": "boolean"
+      },
+      "servers": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/McpGatewayServerRuntime"
+        }
+      }
+    },
+    "definitions": {
+      "McpGatewayHealthSnapshot": {
+        "type": "object",
+        "required": [
+          "catalogEntries",
+          "connectedServers",
+          "invokesEnabled",
+          "registeredServers",
+          "status"
+        ],
+        "properties": {
+          "catalogEntries": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "connectedServers": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "invokesEnabled": {
+            "type": "boolean"
+          },
+          "registeredServers": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "McpGatewayServerRuntime": {
+        "type": "object",
+        "required": [
+          "allowedLanes",
+          "connected",
+          "enabled",
+          "serverId",
+          "title",
+          "toolCount"
+        ],
+        "properties": {
+          "allowedLanes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "serverId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "ModelDownloadProgress": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ModelDownloadProgress",
+    "type": "object",
+    "required": [
+      "bytesDone",
+      "bytesTotal",
+      "jobId",
+      "message",
+      "modelId",
+      "percent",
+      "phase"
+    ],
+    "properties": {
+      "bytesDone": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "bytesTotal": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "currentFile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "jobId": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "modelId": {
+        "type": "string"
+      },
+      "percent": {
+        "type": "number",
+        "format": "float"
+      },
+      "phase": {
+        "type": "string"
+      }
+    }
+  },
+  "RecurringDeliveryResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RecurringDeliveryResponse",
+    "type": "object",
+    "required": [
+      "delivery_label",
+      "recurring_id"
+    ],
+    "properties": {
+      "delivery": true,
+      "delivery_label": {
+        "type": "string"
+      },
+      "recurring_id": {
+        "type": "string"
+      }
+    }
+  },
+  "RecurringListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RecurringListResponse",
+    "type": "object",
+    "required": [
+      "count",
+      "recurring"
+    ],
+    "properties": {
+      "count": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "recurring": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/RecurringDefinitionEntry"
+        }
+      }
+    },
+    "definitions": {
+      "RecurringDefinitionEntry": {
+        "type": "object",
+        "required": [
+          "cron_expr",
+          "enabled",
+          "job_type",
+          "next_run_at_utc",
+          "queue",
+          "recurring_id",
+          "timezone"
+        ],
+        "properties": {
+          "cron_expr": {
+            "type": "string"
+          },
+          "delivery_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "execution_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_type": {
+            "type": "string"
+          },
+          "last_run_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_run_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "manuscript_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_run_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "prompt_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "queue": {
+            "type": "string"
+          },
+          "recurring_id": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "RecurringRunsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RecurringRunsResponse",
+    "type": "object",
+    "required": [
+      "count",
+      "recurring_id",
+      "runs"
+    ],
+    "properties": {
+      "count": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "recurring_id": {
+        "type": "string"
+      },
+      "runs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/RecurringRunEntry"
+        }
+      }
+    },
+    "definitions": {
+      "RecurringRunEntry": {
+        "type": "object",
+        "required": [
+          "attempt_count",
+          "is_terminal",
+          "job_id",
+          "scheduled_at_utc",
+          "status",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "attempt_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "is_terminal": {
+            "type": "boolean"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "latest_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduled_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "RegisterRecurringPromptRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RegisterRecurringPromptRequest",
+    "type": "object",
+    "required": [
+      "cron_expr",
+      "prompt"
+    ],
+    "properties": {
+      "cron_expr": {
+        "type": "string"
+      },
+      "delivery": {
+        "description": "Optional channel push target for each successful materialized run."
+      },
+      "display_name": {
+        "description": "Human-readable title for Automations list rows.",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "enabled": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "execution_mode": {
+        "description": "`agent_turn` (default) or `prompt` (single LLM, no tools).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "jitter_seconds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "int64"
+      },
+      "manuscript_id": {
+        "description": "Optional YAML identity manuscript (loads task template, tool allowlist, pins).",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "max_attempts": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "model_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "policy_profile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "queue": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "session_id": {
+        "description": "Medousa session id for `delivery.mode=linked_channel` (defaults to `recurring-{id}`).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "system_prompt": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "timezone": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "RegisterRecurringResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RegisterRecurringResponse",
+    "type": "object",
+    "required": [
+      "cron_expr",
+      "next_run_at_utc",
+      "queue",
+      "recurring_id",
+      "timezone"
+    ],
+    "properties": {
+      "cron_expr": {
+        "type": "string"
+      },
+      "next_run_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "queue": {
+        "type": "string"
+      },
+      "recurring_id": {
+        "type": "string"
+      },
+      "timezone": {
+        "type": "string"
+      }
+    }
+  },
+  "RuntimeConfigCommandRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RuntimeConfigCommandRequest",
+    "type": "object",
+    "required": [
+      "command",
+      "current_model",
+      "current_provider",
+      "current_response_depth_mode",
+      "draft_model",
+      "draft_provider"
+    ],
+    "properties": {
+      "command": {
+        "$ref": "#/definitions/RuntimeConfigCommandSpec"
+      },
+      "current_model": {
+        "type": "string"
+      },
+      "current_provider": {
+        "type": "string"
+      },
+      "current_reasoning_effort": {
+        "default": "",
+        "type": "string"
+      },
+      "current_response_depth_mode": {
+        "type": "string"
+      },
+      "draft_model": {
+        "type": "string"
+      },
+      "draft_provider": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "RuntimeConfigCommandSpec": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "args",
+              "command"
+            ],
+            "properties": {
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "command": {
+                "type": "string",
+                "enum": [
+                  "model"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "depth"
+                ]
+              },
+              "mode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              },
+              "mode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "args",
+              "command",
+              "current"
+            ],
+            "properties": {
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "command": {
+                "type": "string",
+                "enum": [
+                  "verify_policy"
+                ]
+              },
+              "current": {
+                "$ref": "#/definitions/RuntimeVerifyPolicyState"
+              }
+            }
+          }
+        ]
+      },
+      "RuntimeVerifyPolicyState": {
+        "type": "object",
+        "required": [
+          "min_avg_support_strength",
+          "min_citation_coverage",
+          "min_claim_support_strength",
+          "min_supported_claim_ratio"
+        ],
+        "properties": {
+          "min_avg_support_strength": {
+            "type": "string"
+          },
+          "min_citation_coverage": {
+            "type": "string"
+          },
+          "min_claim_support_strength": {
+            "type": "string"
+          },
+          "min_supported_claim_ratio": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "RuntimeConfigCommandResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RuntimeConfigCommandResponse",
+    "type": "object",
+    "required": [
+      "next_draft_model",
+      "next_draft_provider",
+      "next_reasoning_effort",
+      "next_response_depth_mode",
+      "should_apply_settings",
+      "should_persist_depth_defaults",
+      "should_persist_reasoning_defaults"
+    ],
+    "properties": {
+      "next_draft_model": {
+        "type": "string"
+      },
+      "next_draft_provider": {
+        "type": "string"
+      },
+      "next_reasoning_effort": {
+        "type": "string"
+      },
+      "next_response_depth_mode": {
+        "type": "string"
+      },
+      "next_verify_policy_draft": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/RuntimeVerifyPolicyState"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "rendered_output": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "should_apply_settings": {
+        "type": "boolean"
+      },
+      "should_persist_depth_defaults": {
+        "type": "boolean"
+      },
+      "should_persist_reasoning_defaults": {
+        "type": "boolean"
+      }
+    },
+    "definitions": {
+      "RuntimeVerifyPolicyState": {
+        "type": "object",
+        "required": [
+          "min_avg_support_strength",
+          "min_citation_coverage",
+          "min_claim_support_strength",
+          "min_supported_claim_ratio"
+        ],
+        "properties": {
+          "min_avg_support_strength": {
+            "type": "string"
+          },
+          "min_citation_coverage": {
+            "type": "string"
+          },
+          "min_claim_support_strength": {
+            "type": "string"
+          },
+          "min_supported_claim_ratio": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "SessionAppendTurnRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionAppendTurnRequest",
+    "type": "object",
+    "required": [
+      "turn"
+    ],
+    "properties": {
+      "turn": {
+        "$ref": "#/definitions/ConversationTurn"
+      }
+    },
+    "definitions": {
+      "ConversationTurn": {
+        "type": "object",
+        "required": [
+          "content",
+          "role",
+          "timestamp",
+          "tool_names"
+        ],
+        "properties": {
+          "answer_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "parts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/TurnPart"
+            }
+          },
+          "role": {
+            "type": "string"
+          },
+          "slice_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSliceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tool_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TurnArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnPart": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "description": "Ephemeral-style progress captured between tool rounds (not the final answer).",
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "kind",
+              "run_id",
+              "started_at",
+              "status",
+              "tool_name"
+            ],
+            "properties": {
+              "artifact_refs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/TurnArtifactRef"
+                }
+              },
+              "finished_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_run"
+                ]
+              },
+              "output_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoff_kind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoff_kind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "media_id",
+              "mime"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user_media"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact_id",
+              "kind",
+              "label",
+              "mime"
+            ],
+            "properties": {
+              "artifact_id": {
+                "type": "string"
+              },
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "height_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "attachment_ref"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "presentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Forward-compatible catch-all for newer clients reading older persisted timelines.",
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnSliceSummary": {
+        "type": "object",
+        "required": [
+          "failures",
+          "goal",
+          "outcomes",
+          "tool_rounds",
+          "tools"
+        ],
+        "properties": {
+          "delegate_intent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delegate_work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "goal": {
+            "type": "string"
+          },
+          "open_gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scratch_phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "SessionAppendTurnResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionAppendTurnResponse",
+    "type": "object",
+    "required": [
+      "session_id",
+      "stored"
+    ],
+    "properties": {
+      "session_id": {
+        "type": "string"
+      },
+      "stored": {
+        "type": "boolean"
+      }
+    }
+  },
+  "SessionDeleteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionDeleteResponse",
+    "type": "object",
+    "required": [
+      "cancelled_active_turn",
+      "deleted",
+      "locus_nodes_deleted",
+      "locus_purged",
+      "session_id"
+    ],
+    "properties": {
+      "cancelled_active_turn": {
+        "type": "boolean"
+      },
+      "deleted": {
+        "type": "boolean"
+      },
+      "locus_nodes_deleted": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "locus_purged": {
+        "type": "boolean"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    }
+  },
+  "SessionHistoryListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionHistoryListResponse",
+    "type": "object",
+    "required": [
+      "sessions"
+    ],
+    "properties": {
+      "next_cursor": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sessions": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SessionHistorySummary"
+        }
+      }
+    },
+    "definitions": {
+      "SessionHistorySummary": {
+        "type": "object",
+        "required": [
+          "preview",
+          "session_id",
+          "turns",
+          "verification_runs"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_verification_confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "last_verification_coverage": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "last_verification_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_verification_verified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "preview": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "verification_runs": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "SessionHistoryResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionHistoryResponse",
+    "type": "object",
+    "required": [
+      "session_id",
+      "turns"
+    ],
+    "properties": {
+      "session_id": {
+        "type": "string"
+      },
+      "turns": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ConversationTurn"
+        }
+      }
+    },
+    "definitions": {
+      "ConversationTurn": {
+        "type": "object",
+        "required": [
+          "content",
+          "role",
+          "timestamp",
+          "tool_names"
+        ],
+        "properties": {
+          "answer_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "parts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/TurnPart"
+            }
+          },
+          "role": {
+            "type": "string"
+          },
+          "slice_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSliceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tool_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TurnArtifactRef": {
+        "type": "object",
+        "required": [
+          "byte_size",
+          "content_type",
+          "hash64",
+          "role"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "hash64": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnPart": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "description": "Ephemeral-style progress captured between tool rounds (not the final answer).",
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "progress"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "markdown"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              },
+              "markdown": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "input_summary",
+              "kind",
+              "run_id",
+              "started_at",
+              "status",
+              "tool_name"
+            ],
+            "properties": {
+              "artifact_refs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/TurnArtifactRef"
+                }
+              },
+              "finished_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "input_summary": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_run"
+                ]
+              },
+              "output_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "tool_round": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "handoff_kind",
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "handoff_kind": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "handoff"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "work_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "media_id",
+              "mime"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user_media"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "artifact_id",
+              "kind",
+              "label",
+              "mime"
+            ],
+            "properties": {
+              "artifact_id": {
+                "type": "string"
+              },
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "height_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "attachment_ref"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "presentation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Forward-compatible catch-all for newer clients reading older persisted timelines.",
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "TurnSliceSummary": {
+        "type": "object",
+        "required": [
+          "failures",
+          "goal",
+          "outcomes",
+          "tool_rounds",
+          "tools"
+        ],
+        "properties": {
+          "delegate_intent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delegate_work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "goal": {
+            "type": "string"
+          },
+          "open_gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scratch_phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "SessionSetDisplayNameRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionSetDisplayNameRequest",
+    "type": "object",
+    "required": [
+      "display_name"
+    ],
+    "properties": {
+      "display_name": {
+        "type": "string"
+      }
+    }
+  },
+  "SessionSetDisplayNameResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionSetDisplayNameResponse",
+    "type": "object",
+    "required": [
+      "display_name",
+      "session_id"
+    ],
+    "properties": {
+      "display_name": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    }
+  },
+  "StageRouteCommandRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "StageRouteCommandRequest",
+    "type": "object",
+    "required": [
+      "command",
+      "model",
+      "provider",
+      "stage_routing"
+    ],
+    "properties": {
+      "command": {
+        "$ref": "#/definitions/StageRouteCommandSpec"
+      },
+      "model": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "stage_routing": {
+        "$ref": "#/definitions/StageRoutingMatrix"
+      }
+    },
+    "definitions": {
+      "StageRoute": {
+        "type": "object",
+        "required": [
+          "fallback_chain",
+          "model",
+          "policy_profile",
+          "provider",
+          "role"
+        ],
+        "properties": {
+          "fallback_chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "policy_profile": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StageRouteCommandSpec": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "routes"
+                ]
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command",
+              "role",
+              "target"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "set"
+                ]
+              },
+              "fallback_chain": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "policy_profile": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "enum": [
+                  "reset"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "StageRoutingMatrix": {
+        "type": "object",
+        "required": [
+          "chunker",
+          "extractor",
+          "final_response",
+          "orchestrator",
+          "packer",
+          "summarizer",
+          "verifier"
+        ],
+        "properties": {
+          "chunker": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "extractor": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "final_response": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "orchestrator": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "packer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "summarizer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "verifier": {
+            "$ref": "#/definitions/StageRoute"
+          }
+        }
+      }
+    }
+  },
+  "StageRouteCommandResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "StageRouteCommandResponse",
+    "type": "object",
+    "required": [
+      "rendered_output",
+      "stage_routing"
+    ],
+    "properties": {
+      "rendered_output": {
+        "type": "string"
+      },
+      "stage_routing": {
+        "$ref": "#/definitions/StageRoutingMatrix"
+      }
+    },
+    "definitions": {
+      "StageRoute": {
+        "type": "object",
+        "required": [
+          "fallback_chain",
+          "model",
+          "policy_profile",
+          "provider",
+          "role"
+        ],
+        "properties": {
+          "fallback_chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "policy_profile": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StageRoutingMatrix": {
+        "type": "object",
+        "required": [
+          "chunker",
+          "extractor",
+          "final_response",
+          "orchestrator",
+          "packer",
+          "summarizer",
+          "verifier"
+        ],
+        "properties": {
+          "chunker": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "extractor": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "final_response": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "orchestrator": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "packer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "summarizer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "verifier": {
+            "$ref": "#/definitions/StageRoute"
+          }
+        }
+      }
+    }
+  },
+  "TurnBudgetApproveRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnBudgetApproveRequest",
+    "type": "object",
+    "properties": {
+      "extra_rounds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "TurnBudgetDenyRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnBudgetDenyRequest",
+    "type": "object",
+    "properties": {
+      "resolved_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "TurnBudgetRequestListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnBudgetRequestListResponse",
+    "type": "object",
+    "required": [
+      "requests"
+    ],
+    "properties": {
+      "requests": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/TurnBudgetRequestRecord"
+        }
+      }
+    },
+    "definitions": {
+      "TurnBudgetRequestRecord": {
+        "type": "object",
+        "required": [
+          "created_at_utc",
+          "max_tool_rounds",
+          "reason",
+          "request_id",
+          "requested_rounds",
+          "rounds_executed",
+          "session_id",
+          "status",
+          "stream_turn_id",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "granted_rounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "max_tool_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "progress_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "requested_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rounds_executed": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stream_turn_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "turn_correlation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "TurnBudgetRequestResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnBudgetRequestResponse",
+    "type": "object",
+    "required": [
+      "message",
+      "request"
+    ],
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "request": {
+        "$ref": "#/definitions/TurnBudgetRequestRecord"
+      }
+    },
+    "definitions": {
+      "TurnBudgetRequestRecord": {
+        "type": "object",
+        "required": [
+          "created_at_utc",
+          "max_tool_rounds",
+          "reason",
+          "request_id",
+          "requested_rounds",
+          "rounds_executed",
+          "session_id",
+          "status",
+          "stream_turn_id",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "granted_rounds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "max_tool_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "progress_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "requested_rounds": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "resolved_at_utc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "resolved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rounds_executed": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stream_turn_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "turn_correlation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "UpdateRecurringRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UpdateRecurringRequest",
+    "type": "object",
+    "properties": {
+      "cron_expr": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "delivery": {
+        "description": "Replace delivery binding; pass `{ \"delivery\": null }` to clear channel push.",
+        "default": null
+      },
+      "display_name": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "enabled": {
+        "default": null,
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "timezone": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "UpdateRecurringResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UpdateRecurringResponse",
+    "type": "object",
+    "required": [
+      "cron_expr",
+      "enabled",
+      "next_run_at_utc",
+      "recurring_id",
+      "timezone"
+    ],
+    "properties": {
+      "cron_expr": {
+        "type": "string"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "next_run_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "recurring_id": {
+        "type": "string"
+      },
+      "timezone": {
+        "type": "string"
+      }
+    }
+  },
+  "VaultAddRootRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultAddRootRequest",
+    "type": "object",
+    "required": [
+      "label",
+      "path"
+    ],
+    "properties": {
+      "id": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "label": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "VaultBacklinksResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultBacklinksResponse",
+    "type": "object",
+    "required": [
+      "backlinks",
+      "path"
+    ],
+    "properties": {
+      "backlinks": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "VaultDeleteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultDeleteResponse",
+    "type": "object",
+    "required": [
+      "deleted",
+      "path"
+    ],
+    "properties": {
+      "deleted": {
+        "type": "boolean"
+      },
+      "path": {
+        "type": "string"
+      }
+    }
+  },
+  "VaultNoteContentResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultNoteContentResponse",
+    "type": "object",
+    "required": [
+      "content",
+      "note"
+    ],
+    "properties": {
+      "content": {
+        "type": "string"
+      },
+      "note": {
+        "$ref": "#/definitions/VaultNote"
+      }
+    },
+    "definitions": {
+      "VaultNote": {
+        "type": "object",
+        "required": [
+          "backlinks",
+          "byte_size",
+          "content_hash",
+          "created_at_utc",
+          "modified_at_utc",
+          "path",
+          "tags",
+          "title",
+          "wikilinks_out"
+        ],
+        "properties": {
+          "backlinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "default": "",
+            "type": "string"
+          },
+          "modified_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "wikilinks_out": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "VaultNotesListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultNotesListResponse",
+    "type": "object",
+    "required": [
+      "notes"
+    ],
+    "properties": {
+      "notes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/VaultNote"
+        }
+      }
+    },
+    "definitions": {
+      "VaultNote": {
+        "type": "object",
+        "required": [
+          "backlinks",
+          "byte_size",
+          "content_hash",
+          "created_at_utc",
+          "modified_at_utc",
+          "path",
+          "tags",
+          "title",
+          "wikilinks_out"
+        ],
+        "properties": {
+          "backlinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "default": "",
+            "type": "string"
+          },
+          "modified_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "wikilinks_out": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "VaultRootsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultRootsResponse",
+    "type": "object",
+    "required": [
+      "activeRootId",
+      "roots"
+    ],
+    "properties": {
+      "activeRootId": {
+        "type": "string"
+      },
+      "roots": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/VaultRootView"
+        }
+      }
+    },
+    "definitions": {
+      "VaultRootView": {
+        "type": "object",
+        "required": [
+          "active",
+          "id",
+          "isDefault",
+          "label",
+          "path"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "VaultSearchResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultSearchResponse",
+    "type": "object",
+    "required": [
+      "hits",
+      "query"
+    ],
+    "properties": {
+      "hits": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/VaultSearchHit"
+        }
+      },
+      "query": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "VaultNoteSummary": {
+        "type": "object",
+        "required": [
+          "modified_at_utc",
+          "path",
+          "title"
+        ],
+        "properties": {
+          "kind": {
+            "default": "",
+            "type": "string"
+          },
+          "modified_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "VaultSearchHit": {
+        "type": "object",
+        "required": [
+          "matched_terms",
+          "note",
+          "score"
+        ],
+        "properties": {
+          "matched_terms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "$ref": "#/definitions/VaultNoteSummary"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
+          },
+          "snippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "VaultSetActiveRootRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultSetActiveRootRequest",
+    "type": "object",
+    "required": [
+      "rootId"
+    ],
+    "properties": {
+      "rootId": {
+        "type": "string"
+      }
+    }
+  },
+  "VaultTagsListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultTagsListResponse",
+    "type": "object",
+    "required": [
+      "count",
+      "tags"
+    ],
+    "properties": {
+      "count": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "VaultWriteRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultWriteRequest",
+    "type": "object",
+    "required": [
+      "content"
+    ],
+    "properties": {
+      "auto_workshop_tags": {
+        "description": "Merge default workshop + vault tags on write (default true).",
+        "default": true,
+        "type": "boolean"
+      },
+      "content": {
+        "type": "string"
+      },
+      "path": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "semantic_tags": {
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "session_id": {
+        "description": "Chat session id for workshop linking tags (`chat:…`, `session`, `profile:…`).",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "VaultWriteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "VaultWriteResponse",
+    "type": "object",
+    "required": [
+      "created",
+      "note"
+    ],
+    "properties": {
+      "created": {
+        "type": "boolean"
+      },
+      "note": {
+        "$ref": "#/definitions/VaultNote"
+      }
+    },
+    "definitions": {
+      "VaultNote": {
+        "type": "object",
+        "required": [
+          "backlinks",
+          "byte_size",
+          "content_hash",
+          "created_at_utc",
+          "modified_at_utc",
+          "path",
+          "tags",
+          "title",
+          "wikilinks_out"
+        ],
+        "properties": {
+          "backlinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "default": "",
+            "type": "string"
+          },
+          "modified_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "path": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "wikilinks_out": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "WorkspaceCardActionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkspaceCardActionResponse",
+    "type": "object",
+    "required": [
+      "action",
+      "card_id",
+      "message",
+      "ok",
+      "workspace_revision"
+    ],
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "associations": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkCardAssociations"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "card_id": {
+        "type": "string"
+      },
+      "job_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "job_succeeded": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "message": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "replayed": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "workspace_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorkCardAssociations": {
+        "type": "object",
+        "properties": {
+          "artifact_ids": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "locus_node_ids": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vault_paths": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "WorkspaceLinkVaultRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkspaceLinkVaultRequest",
+    "type": "object",
+    "required": [
+      "vault_path"
+    ],
+    "properties": {
+      "vault_path": {
+        "type": "string"
+      }
+    }
+  },
+  "WorkspaceStreamEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkspaceStreamEvent",
+    "type": "object",
+    "required": [
+      "emitted_at_utc",
+      "stream_event_type",
+      "workspace_revision"
+    ],
+    "properties": {
+      "card": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkCard"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "counts": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "emitted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "feed_event": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkspaceEvent"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "snapshot": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkspaceSnapshot"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "stream_event_type": {
+        "type": "string"
+      },
+      "workspace_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorkBoardColumn": {
+        "type": "string",
+        "enum": [
+          "backlog",
+          "in_flight",
+          "wrapping_up",
+          "done",
+          "blocked"
+        ]
+      },
+      "WorkCard": {
+        "type": "object",
+        "required": [
+          "column",
+          "created_at_utc",
+          "id",
+          "status_label",
+          "title",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "column": {
+            "$ref": "#/definitions/WorkBoardColumn"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "$ref": "#/definitions/WorkCardId"
+          },
+          "status_label": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkCardId": {
+        "type": "string"
+      },
+      "WorkspaceEvent": {
+        "type": "object",
+        "required": [
+          "actor",
+          "id",
+          "kind",
+          "summary",
+          "timestamp_utc"
+        ],
+        "properties": {
+          "actor": {
+            "$ref": "#/definitions/WorkspaceEventActor"
+          },
+          "context_line": {
+            "description": "Secondary context: intent, tools, wrapping-up reasons.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail_line": {
+            "description": "Operator-facing task label (full prompt when user_ack is a slug).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "intent": {
+            "description": "Worker intent or job family at emit time.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/definitions/WorkspaceEventKind"
+          },
+          "refs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkspaceEventRef"
+            }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "timestamp_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tool_names": {
+            "description": "Tools invoked on the work card when the event was emitted.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WorkspaceEventActor": {
+        "type": "string",
+        "enum": [
+          "system",
+          "agent",
+          "operator",
+          "scheduler"
+        ]
+      },
+      "WorkspaceEventKind": {
+        "type": "string",
+        "enum": [
+          "job_enqueued",
+          "job_started",
+          "job_succeeded",
+          "job_failed",
+          "work_delegated",
+          "work_completed",
+          "work_wrapping_up",
+          "work_unblocked",
+          "turn_accepted",
+          "turn_completed",
+          "agent_replied",
+          "vault_note_created",
+          "vault_note_updated",
+          "identity_remembered",
+          "locus_bridge_written"
+        ]
+      },
+      "WorkspaceEventRef": {
+        "type": "object",
+        "required": [
+          "ref_id",
+          "ref_type"
+        ],
+        "properties": {
+          "ref_id": {
+            "type": "string"
+          },
+          "ref_type": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkspaceSnapshot": {
+        "type": "object",
+        "required": [
+          "cards",
+          "counts_by_column",
+          "feed_tail",
+          "server_time_utc",
+          "workspace_revision"
+        ],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkCard"
+            }
+          },
+          "counts_by_column": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "feed_tail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkspaceEvent"
+            }
+          },
+          "server_time_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspace_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  }
+}

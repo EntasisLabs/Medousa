@@ -1,7 +1,7 @@
 #[cfg(feature = "async")]
 use medousa_types::{
     TurnBudgetApproveRequest, TurnBudgetDenyRequest, TurnBudgetRequestListResponse,
-    TurnBudgetRequestResponse,
+    TurnBudgetRequestRecord, TurnBudgetRequestResponse,
 };
 
 #[cfg(feature = "async")]
@@ -62,6 +62,19 @@ impl BudgetApi<'_> {
             .client
             .transport()
             .post_json(self.client.base_url(), &path, payload)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn get(
+        &self,
+        request_id: &str,
+    ) -> Result<TurnBudgetRequestRecord, crate::SdkError> {
+        let path = format!("/v1/turns/budget-requests/{}", request_id.trim());
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
             .await?;
         decode(value).await
     }

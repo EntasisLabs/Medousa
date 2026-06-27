@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayHealthSnapshot {
     pub status: String,
@@ -13,6 +14,7 @@ pub struct McpGatewayHealthSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayServerRuntime {
     pub server_id: String,
@@ -25,6 +27,7 @@ pub struct McpGatewayServerRuntime {
 
 /// Daemon-proxied MCP gateway liveness + server runtime snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct McpGatewayStatusResponse {
     pub gateway_url: String,

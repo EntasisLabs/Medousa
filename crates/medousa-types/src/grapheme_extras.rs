@@ -3,17 +3,20 @@ use serde::{Deserialize, Serialize};
 use crate::daemon_api::GraphemeScriptEntryDto;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeAllowlistResponse {
     pub allowed_modules: Vec<String>,
     pub enforce: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeAllowlistUpdateRequest {
     pub allowed_modules: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeCompileRequest {
     pub source: String,
     #[serde(default)]
@@ -21,6 +24,7 @@ pub struct GraphemeCompileRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeCompileResponse {
     pub mode: String,
     pub validated: bool,
@@ -31,6 +35,7 @@ pub struct GraphemeCompileResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeModuleLoadRequest {
     pub module_id: String,
     pub wasm_path: String,
@@ -43,6 +48,7 @@ pub struct GraphemeModuleLoadRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeModuleLoadResponse {
     pub module_id: String,
     pub generation_id: u64,
@@ -51,6 +57,7 @@ pub struct GraphemeModuleLoadResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeLifecycleEventDto {
     pub kind: String,
     pub module_id: String,
@@ -61,11 +68,13 @@ pub struct GraphemeLifecycleEventDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeLifecycleResponse {
     pub events: Vec<GraphemeLifecycleEventDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeLspWorkspaceResponse {
     pub root_path: String,
     pub root_uri: String,
@@ -73,6 +82,7 @@ pub struct GraphemeLspWorkspaceResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeScriptSaveRequest {
     pub name: String,
     pub body: String,
@@ -89,6 +99,7 @@ pub struct GraphemeScriptSaveRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeScriptSaveResponse {
     pub script: GraphemeScriptEntryDto,
 }

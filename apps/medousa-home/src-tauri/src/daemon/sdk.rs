@@ -118,6 +118,37 @@ impl Transport for TauriWorkshopTransport {
                 .map_err(SdkError::Http)
         })
     }
+
+    fn put_text<'a>(
+        &'a self,
+        _base_url: &'a str,
+        path: &'a str,
+        _body: String,
+        _extra_headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let _path = path.to_string();
+        Box::pin(async move {
+            Err(SdkError::Transport(
+                "put_text via Tauri bridge is not implemented".to_string(),
+            ))
+        })
+    }
+
+    fn stream_sse<'a>(
+        &'a self,
+        _base_url: &'a str,
+        _path: String,
+    ) -> Pin<
+        Box<
+            dyn futures_util::Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
+        >,
+    > {
+        Box::pin(futures_util::stream::once(async {
+            Err(SdkError::Transport(
+                "SSE via Tauri bridge".to_string(),
+            ))
+        }))
+    }
 }
 
 pub fn client(state: &State<DaemonState>) -> MedousaClient {

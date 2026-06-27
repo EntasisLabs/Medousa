@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::workflow::WorkflowRunRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowPlanRequest {
     pub goal: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -11,6 +12,7 @@ pub struct WorkflowPlanRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowScheduleSuggestion {
     pub cron_expr: String,
     #[serde(default = "default_timezone")]
@@ -22,6 +24,7 @@ fn default_timezone() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowPlanResponse {
     pub goal: String,
     pub confidence: String,

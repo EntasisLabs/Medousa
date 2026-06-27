@@ -45,8 +45,10 @@ let sessions = client.sessions().list(20).await?;
 | `capabilities()` | Capability catalog |
 | `mcp_gateway()` | Gateway status |
 | `budget()` | Turn budget approve/deny |
+| `vault()` | Multi-root notes library |
+| `workspace()` | Work board cards & feed |
 
-Full method table: [api-reference.md](api-reference.md)
+Full method table: [api-reference.md](api-reference.md) · contract: [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml)
 
 ## Transport diagram
 
@@ -75,7 +77,7 @@ Spawn offline brain via `medousa_host` — **not** `POST /v1/local/engine/load` 
 
 ## Types
 
-Import from `medousa_types`. Do **not** mirror structs in app `types.rs`.
+Rust: `medousa_types`. Python: `medousa.types` (generated — see [python.md](python.md)).
 
 ```rust
 use medousa_types::{ArtifactFetchRequest, ArtifactListUiRequest};
@@ -87,10 +89,14 @@ let list = client.runtime().artifact_list_ui(&ArtifactListUiRequest {
 }).await?;
 ```
 
+## Sync clients
+
+`BlockingMedousaClient` (Rust) and `MedousaClientSync` (Python) mirror the same accessors without SSE.
+
 ## Channel adapters & TUI
 
 Telegram/Discord/Slack bins use `client.ingest().post()`. TUI uses `MedousaClient` in `src/bin/medousa_tui/daemon_commands.rs`.
 
 ## Contributing
 
-When adding SDK methods, update [api-reference.md](api-reference.md) and [../engine/http-api.md](../engine/http-api.md).
+When adding SDK methods, update [`sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml), [api-reference.md](api-reference.md), and [../engine/http-api.md](../engine/http-api.md).

@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::workflow::WorkflowRunRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ToolHistoryRunEntry {
     pub entry_id: String,
     pub session_id: String,
@@ -26,6 +27,7 @@ pub struct ToolHistoryRunEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ToolHistoryListQuery {
     #[serde(default)]
     pub limit: Option<usize>,
@@ -40,12 +42,14 @@ pub struct ToolHistoryListQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ToolHistoryListResponse {
     pub count: usize,
     pub runs: Vec<ToolHistoryRunEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ToolHistorySliceRef {
     pub session_id: String,
     pub slice_id: String,
@@ -56,6 +60,7 @@ pub struct ToolHistorySliceRef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowFromSliceRequest {
     pub refs: Vec<ToolHistorySliceRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,6 +70,7 @@ pub struct WorkflowFromSliceRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowFromSliceResponse {
     pub workflow_id: Option<String>,
     pub draft: WorkflowRunRequest,

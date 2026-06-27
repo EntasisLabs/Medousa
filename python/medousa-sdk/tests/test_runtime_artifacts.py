@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from mock_transport import MockTransport
 
 from medousa import MedousaClient
 from medousa.types import ArtifactFetchRequest, ArtifactListUiRequest
-from mock_transport import MockTransport
 
 FETCH_RESPONSE = {
     "artifact_id": "art-1",

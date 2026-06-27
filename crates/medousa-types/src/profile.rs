@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ProfileExportBundle {
     pub format_version: u32,
     pub profile_id: String,
@@ -12,6 +13,7 @@ pub struct ProfileExportBundle {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ProfileIdentityExport {
     pub user_id: String,
     pub channel_id: String,
@@ -19,6 +21,7 @@ pub struct ProfileIdentityExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ProfileLocusExport {
     pub profile_slug: String,
     pub sessions: Vec<ProfileLocusSessionExport>,
@@ -26,6 +29,7 @@ pub struct ProfileLocusExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ProfileLocusSessionExport {
     pub chat_session_id: String,
     pub scoped_session_id: String,
@@ -33,6 +37,7 @@ pub struct ProfileLocusSessionExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ProfileLocusNodeExport {
     pub sync_key: String,
     pub raw: String,

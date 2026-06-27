@@ -39,6 +39,10 @@ if [[ ! -f "$DOCS/sdk/python.md" ]]; then
   fail "docs/sdk/python.md missing"
 fi
 
+if [[ ! -f "$ROOT/sdk-contract/manifest.yaml" ]]; then
+  fail "sdk-contract/manifest.yaml missing"
+fi
+
 # ADR index must list ADR-003
 if ! grep -q 'adr-003' "$DOCS/architecture/decisions/README.md"; then
   fail "ADR index missing adr-003"

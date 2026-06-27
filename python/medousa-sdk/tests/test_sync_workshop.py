@@ -28,6 +28,6 @@ def test_sync_client_health(monkeypatch):
     client = MedousaClientSync("http://127.0.0.1:7419")
     monkeypatch.setattr(client, "_transport", FakeSyncTransport())
 
-    health = client.health_get()
+    health = client.health().get()
     assert health.status == "ok"
     assert calls == [("http://127.0.0.1:7419", "/health")]

@@ -1,13 +1,15 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    SessionAppendTurnRequest, SessionAppendTurnResponse, SessionHistoryListResponse,
+    ActiveSessionTurnResponse, CancelActiveSessionTurnResponse, SessionAppendTurnRequest,
+    SessionAppendTurnResponse, SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse,
     SessionHistoryResponse, SessionSetDisplayNameRequest, SessionSetDisplayNameResponse,
+    SessionActiveTurnsResponse,
 };
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;
 #[cfg(feature = "async")]
-use crate::transport::decode;
+use crate::transport::{decode, path_with_query};
 
 #[cfg(feature = "async")]
 pub struct SessionsApi<'a> {
@@ -65,6 +67,62 @@ impl SessionsApi<'_> {
             .client
             .transport()
             .post_json(self.client.base_url(), &path, body)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn delete(
+        &self,
+        session_id: &str,
+        query: &SessionDeleteQuery,
+    ) -> Result<SessionDeleteResponse, crate::SdkError> {
+        let path = path_with_query(
+            &format!("/v1/sessions/{session_id}"),
+            &[("purge_memory", query.purge_memory.to_string())],
+        );
+        let value = self
+            .client
+            .transport()
+            .delete_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn list_turns(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionActiveTurnsResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/turns");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn active_turn(
+        &self,
+        session_id: &str,
+    ) -> Result<ActiveSessionTurnResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/active-turn");
+        let value = self
+            .client
+            .transport()
+            .get_json(self.client.base_url(), &path)
+            .await?;
+        decode(value).await
+    }
+
+    pub async fn cancel_active_turn(
+        &self,
+        session_id: &str,
+    ) -> Result<CancelActiveSessionTurnResponse, crate::SdkError> {
+        let path = format!("/v1/sessions/{session_id}/active-turn");
+        let value = self
+            .client
+            .transport()
+            .post_empty_json(self.client.base_url(), &path)
             .await?;
         decode(value).await
     }

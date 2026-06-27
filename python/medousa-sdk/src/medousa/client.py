@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from medousa.recurring import RecurringApi
     from medousa.runtime import RuntimeApi
     from medousa.sessions import SessionsApi
+    from medousa.vault import VaultApi
+    from medousa.workspace import WorkspaceApi
 
 
 class MedousaClient:
@@ -90,6 +92,16 @@ class MedousaClient:
         from medousa.budget import BudgetApi
 
         return BudgetApi(self)
+
+    def vault(self) -> VaultApi:
+        from medousa.vault import VaultApi
+
+        return VaultApi(self)
+
+    def workspace(self) -> WorkspaceApi:
+        from medousa.workspace import WorkspaceApi
+
+        return WorkspaceApi(self)
 
     async def aclose(self) -> None:
         if isinstance(self.transport, HttpTransport):

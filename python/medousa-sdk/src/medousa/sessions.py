@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import Any
+
 from medousa._decode import decode
 from medousa.client import MedousaClient
 from medousa.types import (
     SessionAppendTurnRequest,
     SessionAppendTurnResponse,
+    SessionDeleteResponse,
     SessionHistoryListResponse,
     SessionHistoryResponse,
     SessionSetDisplayNameRequest,
@@ -54,3 +57,29 @@ class SessionsApi:
             request.model_dump(mode="json"),
         )
         return decode(SessionAppendTurnResponse, value)
+
+    async def delete(self, session_id: str) -> SessionDeleteResponse:
+        value = await self._client.transport.delete_json(
+            self._client.base_url,
+            f"/v1/sessions/{session_id}",
+        )
+        return decode(SessionDeleteResponse, value)
+
+    async def list_turns(self, session_id: str) -> SessionHistoryResponse:
+        value = await self._client.transport.get_json(
+            self._client.base_url,
+            f"/v1/sessions/{session_id}/turns",
+        )
+        return decode(SessionHistoryResponse, value)
+
+    async def active_turn(self, session_id: str) -> dict[str, Any]:
+        return await self._client.transport.get_json(
+            self._client.base_url,
+            f"/v1/sessions/{session_id}/active-turn",
+        )
+
+    async def cancel_active_turn(self, session_id: str) -> dict[str, Any]:
+        return await self._client.transport.post_empty_json(
+            self._client.base_url,
+            f"/v1/sessions/{session_id}/active-turn",
+        )

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkflowStepSpec {
     Grapheme {
@@ -42,6 +43,7 @@ pub enum WorkflowStepSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowRunRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,

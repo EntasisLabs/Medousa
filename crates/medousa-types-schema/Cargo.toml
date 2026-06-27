@@ -1,0 +1,15 @@
+[package]
+name = "medousa-types-schema"
+version = "0.1.0"
+edition = "2024"
+description = "Export JSON Schema from medousa-types for Python codegen"
+publish = false
+
+[[bin]]
+name = "medousa-types-schema"
+path = "src/main.rs"
+
+[dependencies]
+medousa-types = { path = "../medousa-types", features = ["json-schema"] }
+schemars = { version = "0.8", features = ["chrono"] }
+serde_json = "1"

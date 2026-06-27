@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from mock_transport import MockTransport
+
 from medousa import MedousaClient
 from medousa.types import InteractiveTurnRequest
-from mock_transport import MockTransport
 
 TURN_RESPONSE = {
     "turn_id": "turn-1",
     "accepted_at_utc": datetime.now(timezone.utc).isoformat(),
     "stream_url": "/v1/interactive/turn/turn-1/stream",
     "stream_ready": True,
+    "fallback_to_local": False,
 }
 
 EVENT_JSON = (
@@ -35,7 +37,15 @@ async def test_interactive_stream_turn(monkeypatch):
     client = MedousaClient("http://127.0.0.1:7419", transport=transport)
 
     async with client.interactive().stream_turn(
-        InteractiveTurnRequest(session_id="s1", prompt="Hello"),
+        InteractiveTurnRequest(
+            session_id="s1",
+            prompt="Hello",
+            model="gpt-4",
+            provider="openai",
+            persist_user_turn=True,
+            response_depth_mode="standard",
+            stage_routing={},
+        ),
     ) as events:
         collected = [event async for event in events]
 

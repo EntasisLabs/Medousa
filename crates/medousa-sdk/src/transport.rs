@@ -4,6 +4,9 @@ use std::sync::Arc;
 
 use serde::de::DeserializeOwned;
 
+#[cfg(feature = "sse")]
+use futures_util::Stream;
+
 use crate::error::SdkError;
 
 /// Object-safe HTTP transport for the Medousa daemon API.
@@ -46,6 +49,27 @@ pub trait Transport: Send + Sync {
         base_url: &'a str,
         path: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
+
+    /// PUT raw UTF-8 body (vault note content).
+    fn put_text<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: String,
+        extra_headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>>;
+
+    /// Open an SSE byte stream (`Accept: text/event-stream`).
+    #[cfg(feature = "sse")]
+    fn stream_sse<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: String,
+    ) -> Pin<
+        Box<
+            dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
+        >,
+    >;
 }
 
 pub async fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, SdkError> {
@@ -205,6 +229,70 @@ impl Transport for HttpTransport {
         Box::pin(async move {
             Self::request(client, reqwest::Method::POST, url, None).await
         })
+    }
+
+    fn put_text<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: &'a str,
+        body: String,
+        extra_headers: Vec<(&'static str, String)>,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
+        let url = Self::url(base_url, path);
+        let client = self.client.clone();
+        Box::pin(async move {
+            let mut builder = client
+                .request(reqwest::Method::PUT, url)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .body(body);
+            for (key, value) in extra_headers {
+                builder = builder.header(key, value);
+            }
+            let response = builder.send().await?;
+            let status = response.status();
+            let text = response.text().await?;
+            if !status.is_success() {
+                return Err(SdkError::Http(format!("{status}: {text}")));
+            }
+            if text.trim().is_empty() {
+                return Ok(serde_json::Value::Null);
+            }
+            Ok(serde_json::from_str(&text)?)
+        })
+    }
+
+    #[cfg(feature = "sse")]
+    fn stream_sse<'a>(
+        &'a self,
+        base_url: &'a str,
+        path: String,
+    ) -> Pin<
+        Box<
+            dyn Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
+        >,
+    > {
+        use futures_util::{StreamExt, TryStreamExt};
+        let url = Self::url(base_url, &path);
+        let client = self.client.clone();
+        Box::pin(
+            futures_util::stream::once(async move {
+                let response = client
+                    .get(&url)
+                    .header("Accept", "text/event-stream")
+                    .send()
+                    .await
+                    .map_err(SdkError::from)?;
+                let status = response.status();
+                if !status.is_success() {
+                    let text = response.text().await.unwrap_or_default();
+                    return Err(SdkError::Http(format!("{status}: {text}")));
+                }
+                Ok(response.bytes_stream().map(|r| {
+                    r.map_err(|e| SdkError::Http(e.to_string()))
+                }))
+            })
+            .try_flatten(),
+        )
     }
 }
 

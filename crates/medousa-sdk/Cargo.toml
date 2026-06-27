@@ -5,10 +5,16 @@ edition = "2024"
 description = "HTTP client SDK for the Medousa daemon API"
 
 [features]
-default = ["async", "blocking"]
+default = ["async", "blocking", "sse"]
 async = ["dep:tokio", "dep:reqwest"]
 blocking = ["dep:reqwest"]
-sse = ["async", "dep:futures-util", "dep:eventsource-stream"]
+sse = ["async", "dep:futures-util", "dep:eventsource-stream", "dep:bytes"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+medousa-types = { path = "../medousa-types" }
+futures-util = "0.3"
+bytes = "1"
 
 [dependencies]
 medousa-types = { path = "../medousa-types" }
@@ -20,3 +26,4 @@ tokio = { version = "1", features = ["sync"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "blocking"], optional = true }
 futures-util = { version = "0.3", optional = true }
 eventsource-stream = { version = "0.2", optional = true }
+bytes = { version = "1", optional = true }

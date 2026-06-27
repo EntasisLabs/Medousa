@@ -6085,6 +6085,9 @@ dependencies = [
 name = "medousa-sdk"
 version = "0.1.0"
 dependencies = [
+ "bytes",
+ "eventsource-stream",
+ "futures-util",
  "medousa-types",
  "reqwest 0.12.28",
  "serde",

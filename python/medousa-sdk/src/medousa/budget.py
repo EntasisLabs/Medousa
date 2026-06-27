@@ -23,6 +23,13 @@ class BudgetApi:
         value = await self._client.transport.get_json(self._client.base_url, path)
         return decode(TurnBudgetRequestListResponse, value)
 
+    async def get(self, request_id: str) -> TurnBudgetRequestResponse:
+        value = await self._client.transport.get_json(
+            self._client.base_url,
+            f"/v1/turns/budget-requests/{request_id.strip()}",
+        )
+        return decode(TurnBudgetRequestResponse, value)
+
     async def approve(
         self,
         request_id: str,

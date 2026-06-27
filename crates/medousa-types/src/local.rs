@@ -6,6 +6,7 @@ pub const DEFAULT_LOCAL_ENGINE_BIND: &str = "127.0.0.1:7421";
 pub const DEFAULT_LOCAL_ENGINE_BASE_URL: &str = "http://127.0.0.1:7421/v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HardwareTier {
     A,
@@ -38,6 +39,7 @@ impl HardwareTier {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum GpuBackend {
     None,
@@ -47,6 +49,7 @@ pub enum GpuBackend {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HardwareProbe {
     pub total_ram_mb: u64,
@@ -58,6 +61,7 @@ pub struct HardwareProbe {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HardwareProfile {
     pub probed_at: DateTime<Utc>,
@@ -69,6 +73,7 @@ pub struct HardwareProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogModelEntry {
     pub id: String,
@@ -97,6 +102,7 @@ pub struct CatalogModelEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadFileRecord {
     pub path: String,
@@ -105,6 +111,7 @@ pub struct DownloadFileRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledModelRecord {
     pub model_id: String,
@@ -118,6 +125,7 @@ pub struct InstalledModelRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ModelDownloadProgress {
     pub job_id: String,
@@ -132,6 +140,7 @@ pub struct ModelDownloadProgress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalEngineStatus {
     pub feature_enabled: bool,
@@ -165,6 +174,7 @@ impl LocalEngineStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalHardwareResponse {
     pub profile: HardwareProfile,
@@ -174,6 +184,7 @@ pub struct LocalHardwareResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalCatalogResponse {
     pub tier: HardwareTier,
@@ -184,6 +195,7 @@ pub struct LocalCatalogResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelsResponse {
     pub installed: Vec<InstalledModelRecord>,
@@ -200,12 +212,14 @@ pub struct LocalEngineLoadRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelDownloadRequest {
     pub model_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelDownloadResponse {
     pub job: ModelDownloadProgress,

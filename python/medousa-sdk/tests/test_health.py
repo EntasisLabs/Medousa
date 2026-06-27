@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from mock_transport import MockTransport
 
 from medousa import MedousaClient
-from mock_transport import MockTransport
 
 HEALTH_PAYLOAD = {
     "status": "ok",

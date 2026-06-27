@@ -40,6 +40,27 @@ jobs:
         run: bash scripts/verify-docs.sh
         continue-on-error: true
 
+  sdk-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install pyyaml
+        run: pip install pyyaml
+      - name: check SDK contract
+        run: bash scripts/check-sdk-contract.sh
+
+  rust-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test medousa-sdk
+        run: cargo test -p medousa-sdk --features async,sse,blocking
+
   python-sdk:
     runs-on: ubuntu-latest
     defaults:
@@ -47,12 +68,22 @@ jobs:
         working-directory: python/medousa-sdk
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: install package
         run: pip install -e ".[dev]"
+      - name: export JSON schema and verify generated types
+        working-directory: .
+        run: |
+          cargo run -p medousa-types-schema
+          python scripts/gen-python-types.py
+          git diff --exit-code python/medousa-sdk/src/medousa/types/_generated/ || (echo "Run scripts/gen-python-types.py" && exit 1)
       - name: ruff check
+        working-directory: python/medousa-sdk
         run: ruff check .
       - name: pytest
+        working-directory: python/medousa-sdk
         run: pytest

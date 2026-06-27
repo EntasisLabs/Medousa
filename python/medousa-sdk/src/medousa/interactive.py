@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from medousa._decode import decode
 from medousa.streaming import iter_sse_events
@@ -75,8 +75,5 @@ class InteractiveApi:
         """Open SSE for an existing stream URL from start_turn."""
         return InteractiveStream(self._client, stream_url)
 
-    async def cancel(self, session_id: str) -> dict:
-        return await self._client.transport.post_empty_json(
-            self._client.base_url,
-            f"/v1/sessions/{session_id}/active-turn",
-        )
+    async def cancel(self, session_id: str) -> dict[str, Any]:
+        return await self._client.sessions().cancel_active_turn(session_id)

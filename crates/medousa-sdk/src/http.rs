@@ -1,5 +1,5 @@
 #[cfg(feature = "async")]
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 #[cfg(feature = "async")]
 use crate::client::MedousaClient;

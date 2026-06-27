@@ -6,6 +6,8 @@ Async-first HTTP client for **medousa_daemon**, mirroring the Rust [`medousa-sdk
 
 Rust reference: [README.md](README.md) · [API reference](api-reference.md)
 
+Contract: [`../../sdk-contract/manifest.yaml`](../../sdk-contract/manifest.yaml)
+
 ---
 
 ## Install
@@ -41,30 +43,23 @@ asyncio.run(main())
 
 ## Accessors
 
-Same names as Rust `MedousaClient`:
+Same names as Rust `MedousaClient` (full table in [api-reference.md](api-reference.md)):
 
-| Accessor | Module | Notes |
-|----------|--------|-------|
-| `health()` | `health.py` | `get()` |
-| `http()` | `http.py` | Generic JSON GET/POST/PUT/PATCH/DELETE |
-| `ingest()` | `ingest.py` | Channel ingest |
-| `local_models()` | `local_models.py` | Hardware, catalog, downloads |
-| `jobs()` | `jobs.py` | `enqueue_ask` |
-| `recurring()` | `recurring.py` | `register_prompt` |
-| `sessions()` | `sessions.py` | List, history, display name, append turn |
-| `interactive()` | `interactive.py` | `start_turn`, `stream_turn`, `cancel` |
-| `runtime()` | `runtime.py` | Artifacts, config, stage-route commands |
-| `capabilities()` | `capabilities.py` | List, get, reindex |
-| `mcp_gateway()` | `mcp_gateway.py` | Gateway status |
-| `budget()` | `budget.py` | List, approve, deny |
-
-Full method table: [api-reference.md](api-reference.md) (Rust-oriented; paths are identical).
+| Accessor | Notes |
+|----------|-------|
+| `health()`, `http()`, `ingest()` | Core |
+| `local_models()` | Hardware, catalog, downloads, SSE progress |
+| `jobs()`, `recurring()` | Headless jobs + cron |
+| `sessions()`, `interactive()` | Chat sessions + streaming turns |
+| `runtime()` | Artifacts, config, stage routing |
+| `capabilities()`, `mcp_gateway()`, `budget()` | Catalog + gateway + budget |
+| `vault()`, `workspace()` | Library + work board |
 
 ---
 
 ## Interactive streaming
 
-Python includes a first-class SSE client (Rust SDK still documents manual SSE).
+Both Rust (`sse` feature, default) and Python ship built-in SSE clients:
 
 ```python
 from medousa import MedousaClient
@@ -81,13 +76,9 @@ async def chat(client: MedousaClient):
                 break
 ```
 
-Cancel an active turn:
+Cancel: `await client.interactive().cancel("my-session")`
 
-```python
-await client.interactive().cancel("my-session")
-```
-
-See [interactive-streaming.md](interactive-streaming.md) and [../engine/interactive-streaming.md](../engine/interactive-streaming.md).
+See [interactive-streaming.md](interactive-streaming.md).
 
 ---
 
@@ -103,33 +94,42 @@ client = MedousaClient(
 )
 ```
 
-No Iroh wire protocol in Python v1 — use a known HTTP base URL on LAN or tailnet.
-
 ---
 
 ## Sync client
 
-For scripts and notebooks:
+Accessor-based blocking client (mirrors Rust `BlockingMedousaClient`):
 
 ```python
 from medousa import MedousaClientSync
 
 with MedousaClientSync("http://127.0.0.1:7419") as client:
-    health = client.health_get()
-    progress = client.local_models_download_status("job-id")
+    health = client.health().get()
+    roots = client.vault().list_roots()
 ```
 
----
-
-## Types
-
-Pydantic v2 models in `medousa.types`, aligned with `medousa-types` Rust DTOs. Local/MCP JSON uses `camelCase` where the daemon does.
+SSE is async-only.
 
 ---
 
-## HTTP-only routes
+## Types (codegen from Rust)
 
-Vault, workspace, identity, grapheme, and other routes without typed wrappers: use `client.http().get/post(...)` with paths from [../engine/http-api.md](../engine/http-api.md).
+Python types are **generated** from `medousa-types` JSON Schema — not hand-maintained.
+
+After changing Rust DTOs:
+
+```bash
+cargo run -p medousa-types-schema          # writes sdk-contract/medousa-types.schema.json
+python scripts/gen-python-types.py         # writes python/medousa-sdk/src/medousa/types/_generated/
+```
+
+Import generated models:
+
+```python
+from medousa.types import HealthResponse, JobResultResponse, VaultRootsResponse
+```
+
+CI fails if `_generated/` is stale relative to the schema export.
 
 ---
 
@@ -141,4 +141,12 @@ ruff check .
 pytest
 ```
 
-`tests/test_parity_paths.py` guards route drift against [api-reference.md](api-reference.md).
+`tests/test_parity_paths.py` loads `sdk-contract/manifest.yaml` and validates every method exists on async + sync clients.
+
+Repository-wide: `bash scripts/check-sdk-contract.sh`
+
+---
+
+## Remaining gaps
+
+Identity, grapheme, workflows — use `client.http()` until wrapped. See [api-reference.md](api-reference.md).

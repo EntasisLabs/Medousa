@@ -7,6 +7,7 @@ use crate::turn::TurnPart;
 use crate::turn::TurnSliceSummary;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ConversationTurn {
     pub role: String,
     pub content: String,
@@ -21,6 +22,7 @@ pub struct ConversationTurn {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TuiDefaults {
     pub backend: Option<String>,
     pub theme_id: Option<String>,
@@ -79,6 +81,7 @@ pub struct TuiDefaults {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistorySummary {
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

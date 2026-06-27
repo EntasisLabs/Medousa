@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityBindingSummary {
     pub source: String,
     pub reference: String,
@@ -12,6 +13,7 @@ pub struct CapabilityBindingSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityListEntry {
     pub id: String,
     pub title: String,
@@ -26,11 +28,13 @@ pub struct CapabilityListEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityListResponse {
     pub capabilities: Vec<CapabilityListEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityBinding {
     pub source: String,
     pub reference: String,
@@ -45,6 +49,7 @@ pub struct CapabilityBinding {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityImplementations {
     #[serde(default)]
     pub grapheme: Vec<CapabilityBinding>,
@@ -53,6 +58,7 @@ pub struct CapabilityImplementations {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityRecommendation {
     pub source: String,
     pub reference: String,
@@ -60,6 +66,7 @@ pub struct CapabilityRecommendation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CapabilityResolveResponse {
     pub capability: String,
     pub title: String,

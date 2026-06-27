@@ -1,0 +1,532 @@
+# SDK contract — single source of truth for Rust + Python accessor parity.
+# Validated by scripts/check-sdk-contract.sh
+
+version: 1
+
+methods:
+  # health
+  - accessor: health
+    method: get
+    http: GET
+    path: /health
+    response_type: HealthResponse
+    streaming: false
+    sync: true
+
+  # ingest
+  - accessor: ingest
+    method: post
+    http: POST
+    path: /v1/ingest
+    request_type: IngestRequest
+    response_type: IngestResponse
+    streaming: false
+    sync: true
+
+  # local_models
+  - accessor: local_models
+    method: hardware
+    http: GET
+    path: /v1/local/hardware
+    response_type: LocalHardwareResponse
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: catalog
+    http: GET
+    path: /v1/local/catalog
+    response_type: LocalCatalogResponse
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: list
+    http: GET
+    path: /v1/local/models
+    response_type: LocalModelsResponse
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: engine_status
+    http: GET
+    path: /v1/local/engine/status
+    response_type: LocalEngineStatus
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: start_download
+    http: POST
+    path: /v1/local/models/download
+    request_type: LocalModelDownloadRequest
+    response_type: LocalModelDownloadResponse
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: remove_model
+    http: DELETE
+    path: /v1/local/models/{model_id}
+    response_type: JsonValue
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: download_status
+    http: GET
+    path: /v1/local/models/download/{job_id}
+    response_type: ModelDownloadProgress
+    streaming: false
+    sync: true
+  - accessor: local_models
+    method: download_events
+    http: GET
+    path: /v1/local/models/download/{job_id}/events
+    response_type: ModelDownloadProgress
+    streaming: true
+    sync: false
+
+  # jobs
+  - accessor: jobs
+    method: enqueue_ask
+    http: POST
+    path: /v1/jobs/ask
+    request_type: EnqueueAskRequest
+    response_type: EnqueueResponse
+    streaming: false
+    sync: true
+  - accessor: jobs
+    method: result
+    http: GET
+    path: /v1/jobs/{job_id}/result
+    response_type: JobResultResponse
+    streaming: false
+    sync: true
+  - accessor: jobs
+    method: report
+    http: GET
+    path: /v1/jobs/{job_id}/report
+    response_type: JobReportResponse
+    streaming: false
+    sync: true
+  - accessor: jobs
+    method: enqueue_report
+    http: POST
+    path: /v1/jobs/report
+    request_type: EnqueueReportRequest
+    response_type: EnqueueResponse
+    streaming: false
+    sync: true
+  - accessor: jobs
+    method: enqueue_prompt
+    http: POST
+    path: /v1/jobs/prompt
+    request_type: EnqueuePromptRequest
+    response_type: EnqueueResponse
+    streaming: false
+    sync: true
+  - accessor: jobs
+    method: complete_actions
+    http: POST
+    path: /v1/jobs/{job_id}/complete-actions
+    request_type: AskJobCompleteActionsRequest
+    response_type: AskJobCompleteActionsResponse
+    streaming: false
+    sync: true
+  - accessor: jobs
+    method: archive
+    http: POST
+    path: /v1/jobs/{job_id}/archive
+    request_type: ArchiveAskJobRequest
+    response_type: ArchiveAskJobResponse
+    streaming: false
+    sync: true
+
+  # recurring
+  - accessor: recurring
+    method: register_prompt
+    http: POST
+    path: /v1/recurring/prompt
+    request_type: RegisterRecurringPromptRequest
+    response_type: RegisterRecurringResponse
+    streaming: false
+    sync: true
+  - accessor: recurring
+    method: list
+    http: GET
+    path: /v1/recurring
+    response_type: RecurringListResponse
+    streaming: false
+    sync: true
+  - accessor: recurring
+    method: update
+    http: PATCH
+    path: /v1/recurring/{recurring_id}
+    request_type: UpdateRecurringRequest
+    response_type: UpdateRecurringResponse
+    streaming: false
+    sync: true
+  - accessor: recurring
+    method: delete
+    http: DELETE
+    path: /v1/recurring/{recurring_id}
+    response_type: DeleteRecurringResponse
+    streaming: false
+    sync: true
+  - accessor: recurring
+    method: runs
+    http: GET
+    path: /v1/recurring/{recurring_id}/runs
+    response_type: RecurringRunsResponse
+    streaming: false
+    sync: true
+  - accessor: recurring
+    method: delivery_status
+    http: GET
+    path: /v1/recurring/{recurring_id}/delivery
+    response_type: RecurringDeliveryResponse
+    streaming: false
+    sync: true
+
+  # sessions
+  - accessor: sessions
+    method: list
+    http: GET
+    path: /v1/sessions
+    response_type: SessionHistoryListResponse
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: history
+    http: GET
+    path: /v1/sessions/{session_id}/history
+    response_type: SessionHistoryResponse
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: set_display_name
+    http: PUT
+    path: /v1/sessions/{session_id}/name
+    request_type: SessionSetDisplayNameRequest
+    response_type: SessionSetDisplayNameResponse
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: append_turn
+    http: POST
+    path: /v1/sessions/{session_id}/turns
+    request_type: SessionAppendTurnRequest
+    response_type: SessionAppendTurnResponse
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: delete
+    http: DELETE
+    path: /v1/sessions/{session_id}
+    response_type: SessionDeleteResponse
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: list_turns
+    http: GET
+    path: /v1/sessions/{session_id}/turns
+    response_type: SessionHistoryResponse
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: active_turn
+    http: GET
+    path: /v1/sessions/{session_id}/active-turn
+    response_type: JsonValue
+    streaming: false
+    sync: true
+  - accessor: sessions
+    method: cancel_active_turn
+    http: POST
+    path: /v1/sessions/{session_id}/active-turn
+    response_type: JsonValue
+    streaming: false
+    sync: true
+
+  # interactive
+  - accessor: interactive
+    method: start_turn
+    http: POST
+    path: /v1/interactive/turn
+    request_type: InteractiveTurnRequest
+    response_type: InteractiveTurnResponse
+    streaming: false
+    sync: true
+  - accessor: interactive
+    method: stream
+    http: GET
+    path: /v1/interactive/turn/{turn_id}/stream
+    response_type: InteractiveTurnStreamEvent
+    streaming: true
+    sync: false
+  - accessor: interactive
+    method: cancel
+    http: POST
+    path: /v1/sessions/{session_id}/active-turn
+    response_type: JsonValue
+    streaming: false
+    sync: true
+
+  # runtime
+  - accessor: runtime
+    method: artifact_command
+    http: POST
+    path: /v1/runtime/artifact/command
+    request_type: ArtifactCommandRequest
+    response_type: ArtifactCommandResponse
+    streaming: false
+    sync: true
+  - accessor: runtime
+    method: artifact_fetch
+    http: POST
+    path: /v1/runtime/artifact/fetch
+    request_type: ArtifactFetchRequest
+    response_type: ArtifactFetchResponse
+    streaming: false
+    sync: true
+  - accessor: runtime
+    method: artifact_list_ui
+    http: POST
+    path: /v1/runtime/artifact/list-ui
+    request_type: ArtifactListUiRequest
+    response_type: ArtifactListUiResponse
+    streaming: false
+    sync: true
+  - accessor: runtime
+    method: config_command
+    http: POST
+    path: /v1/runtime/config/command
+    request_type: RuntimeConfigCommandRequest
+    response_type: RuntimeConfigCommandResponse
+    streaming: false
+    sync: true
+  - accessor: runtime
+    method: stage_route_command
+    http: POST
+    path: /v1/runtime/stage-route/command
+    request_type: StageRouteCommandRequest
+    response_type: StageRouteCommandResponse
+    streaming: false
+    sync: true
+
+  # capabilities
+  - accessor: capabilities
+    method: list
+    http: GET
+    path: /v1/capabilities
+    response_type: CapabilityListResponse
+    streaming: false
+    sync: true
+  - accessor: capabilities
+    method: get
+    http: GET
+    path: /v1/capabilities/{capability_id}
+    response_type: CapabilityResolveResponse
+    streaming: false
+    sync: true
+  - accessor: capabilities
+    method: reindex
+    http: POST
+    path: /v1/capabilities/reindex
+    response_type: JsonValue
+    streaming: false
+    sync: true
+
+  # mcp_gateway
+  - accessor: mcp_gateway
+    method: status
+    http: GET
+    path: /v1/mcp/gateway/status
+    response_type: McpGatewayStatusResponse
+    streaming: false
+    sync: true
+
+  # budget
+  - accessor: budget
+    method: list
+    http: GET
+    path: /v1/turns/budget-requests
+    response_type: TurnBudgetRequestListResponse
+    streaming: false
+    sync: true
+  - accessor: budget
+    method: get
+    http: GET
+    path: /v1/turns/budget-requests/{request_id}
+    response_type: TurnBudgetRequestResponse
+    streaming: false
+    sync: true
+  - accessor: budget
+    method: approve
+    http: POST
+    path: /v1/turns/budget-requests/{request_id}/approve
+    request_type: TurnBudgetApproveRequest
+    response_type: TurnBudgetRequestResponse
+    streaming: false
+    sync: true
+  - accessor: budget
+    method: deny
+    http: POST
+    path: /v1/turns/budget-requests/{request_id}/deny
+    request_type: TurnBudgetDenyRequest
+    response_type: TurnBudgetRequestResponse
+    streaming: false
+    sync: true
+
+  # vault
+  - accessor: vault
+    method: list_roots
+    http: GET
+    path: /v1/vault/roots
+    response_type: VaultRootsResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: add_root
+    http: POST
+    path: /v1/vault/roots
+    request_type: VaultAddRootRequest
+    response_type: VaultRootsResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: set_active_root
+    http: PUT
+    path: /v1/vault/active
+    request_type: VaultSetActiveRootRequest
+    response_type: VaultRootsResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: list_notes
+    http: GET
+    path: /v1/vault/notes
+    response_type: VaultNotesListResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: create_note
+    http: POST
+    path: /v1/vault/notes
+    request_type: VaultWriteRequest
+    response_type: VaultWriteResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: get_note
+    http: GET
+    path: /v1/vault/notes/{note_path}
+    response_type: VaultNoteContentResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: update_note
+    http: PUT
+    path: /v1/vault/notes/{note_path}
+    request_type: VaultWriteRequest
+    response_type: VaultWriteResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: delete_note
+    http: DELETE
+    path: /v1/vault/notes/{note_path}
+    response_type: VaultDeleteResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: list_tags
+    http: GET
+    path: /v1/vault/tags
+    response_type: VaultTagsListResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: search
+    http: GET
+    path: /v1/vault/search
+    response_type: VaultSearchResponse
+    streaming: false
+    sync: true
+  - accessor: vault
+    method: backlinks
+    http: GET
+    path: /v1/vault/backlinks
+    response_type: VaultBacklinksResponse
+    streaming: false
+    sync: true
+
+  # workspace
+  - accessor: workspace
+    method: list_cards
+    http: GET
+    path: /v1/workspace/cards
+    response_type: JsonValue
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: get_card
+    http: GET
+    path: /v1/workspace/cards/{card_id}
+    response_type: JsonValue
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: cancel_card
+    http: POST
+    path: /v1/workspace/cards/{card_id}/cancel
+    response_type: WorkspaceCardActionResponse
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: archive_card
+    http: POST
+    path: /v1/workspace/cards/{card_id}/archive
+    response_type: WorkspaceCardActionResponse
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: retry_card
+    http: POST
+    path: /v1/workspace/cards/{card_id}/retry
+    response_type: WorkspaceCardActionResponse
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: link_vault
+    http: POST
+    path: /v1/workspace/cards/{card_id}/link-vault
+    request_type: WorkspaceLinkVaultRequest
+    response_type: WorkspaceCardActionResponse
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: feed
+    http: GET
+    path: /v1/workspace/feed
+    response_type: JsonValue
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: snapshot
+    http: GET
+    path: /v1/workspace/snapshot
+    response_type: JsonValue
+    streaming: false
+    sync: true
+  - accessor: workspace
+    method: stream
+    http: GET
+    path: /v1/workspace/stream
+    response_type: WorkspaceStreamEvent
+    streaming: true
+    sync: false
+    status: planned
+
+planned_streaming:
+  - accessor: http
+    method: ingest_stream
+    path: /v1/ingest/{stream_id}/stream
+    response_type: InteractiveTurnStreamEvent
+    status: planned

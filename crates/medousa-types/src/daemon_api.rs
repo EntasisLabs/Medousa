@@ -84,6 +84,7 @@ pub fn resolve_daemon_public_base_url(bind: &str) -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HealthResponse {
     pub status: String,
     pub backend: String,
@@ -110,6 +111,7 @@ fn default_agent_runtime_version() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct EnqueueAskRequest {
     pub prompt: String,
     pub policy_profile: Option<String>,
@@ -130,6 +132,7 @@ pub struct EnqueueAskRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct EnqueueReportRequest {
     pub query: String,
     pub policy_profile: Option<String>,
@@ -141,6 +144,7 @@ pub struct EnqueueReportRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct EnqueuePromptRequest {
     pub prompt: String,
     pub system_prompt: Option<String>,
@@ -152,6 +156,7 @@ pub struct EnqueuePromptRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IdentityContextRequest {
     pub user_id: Option<String>,
     pub persona_id: Option<String>,
@@ -163,6 +168,7 @@ pub struct IdentityContextRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct UserProfileRecordDto {
     pub profile_id: String,
     pub display_name: String,
@@ -173,6 +179,7 @@ pub struct UserProfileRecordDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ListUserProfilesResponse {
     pub profiles: Vec<UserProfileRecordDto>,
     pub active_profile_id: String,
@@ -180,6 +187,7 @@ pub struct ListUserProfilesResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateUserProfileRequest {
     /// Short slug (`work`, `home`) — stored as `user:{slug}`.
     pub slug: String,
@@ -187,6 +195,7 @@ pub struct CreateUserProfileRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateUserProfileResponse {
     pub profile: UserProfileRecordDto,
     pub active_profile_id: String,
@@ -194,17 +203,20 @@ pub struct CreateUserProfileResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SetActiveUserProfileRequest {
     pub profile_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SetActiveUserProfileResponse {
     pub active_profile_id: String,
     pub resolved_user_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IdentityRememberRequest {
     pub user_id: Option<String>,
     /// `preference` | `person` | `note`
@@ -218,6 +230,7 @@ pub struct IdentityRememberRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IdentityRememberResponse {
     pub committed: bool,
     pub requires_confirmation: bool,
@@ -228,6 +241,7 @@ pub struct IdentityRememberResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IdentityDigestPreviewResponse {
     pub digest_text: String,
     pub preference_count: usize,
@@ -237,18 +251,21 @@ pub struct IdentityDigestPreviewResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IdentityExportMarkdownRequest {
     pub user_id: Option<String>,
     pub dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IdentityExportMarkdownResponse {
     pub export_dir: String,
     pub files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ExportUserProfileRequest {
     pub profile_id: String,
     #[serde(default = "default_profile_export_session_limit")]
@@ -266,11 +283,13 @@ fn default_profile_export_node_limit() -> usize {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ExportUserProfileResponse {
     pub bundle: crate::profile::ProfileExportBundle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ImportUserProfileRequest {
     pub bundle: crate::profile::ProfileExportBundle,
     #[serde(default)]
@@ -278,6 +297,7 @@ pub struct ImportUserProfileRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ImportUserProfileResponse {
     pub dry_run: bool,
     pub profile_id: String,
@@ -291,6 +311,7 @@ pub struct ImportUserProfileResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct EnqueueResponse {
     pub job_id: String,
     pub queue: String,
@@ -298,6 +319,7 @@ pub struct EnqueueResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistoryListRequest {
     pub limit: Option<usize>,
     /// When `false`, omit verification trust fields from each session row (smaller payloads).
@@ -309,6 +331,7 @@ pub struct SessionHistoryListRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistoryListResponse {
     pub sessions: Vec<SessionHistorySummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -316,34 +339,40 @@ pub struct SessionHistoryListResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionHistoryResponse {
     pub session_id: String,
     pub turns: Vec<ConversationTurn>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionAppendTurnRequest {
     pub turn: ConversationTurn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionAppendTurnResponse {
     pub session_id: String,
     pub stored: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionSetDisplayNameRequest {
     pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionSetDisplayNameResponse {
     pub session_id: String,
     pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionDeleteQuery {
     /// When false, keep Locus nodes for this session (transcript/catalog only).
     #[serde(default = "default_purge_memory")]
@@ -355,6 +384,7 @@ fn default_purge_memory() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionDeleteResponse {
     pub session_id: String,
     pub deleted: bool,
@@ -364,6 +394,7 @@ pub struct SessionDeleteResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct JobResultResponse {
     pub job_id: String,
     pub status: String,
@@ -377,6 +408,7 @@ pub struct JobResultResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AskJobCompleteActionsRequest {
     #[serde(default)]
     pub write_journal_path: Option<String>,
@@ -385,6 +417,7 @@ pub struct AskJobCompleteActionsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AskJobCompleteActionsResponse {
     pub job_id: String,
     pub ok: bool,
@@ -396,12 +429,14 @@ pub struct AskJobCompleteActionsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArchiveAskJobRequest {
     #[serde(default)]
     pub purge_output: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArchiveAskJobResponse {
     pub job_id: String,
     pub archived: bool,
@@ -409,12 +444,14 @@ pub struct ArchiveAskJobResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct JobCitationResponse {
     pub source: String,
     pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct JobEvidenceReportResponse {
     pub session_id: String,
     pub artifact_id: String,
@@ -430,6 +467,7 @@ pub struct JobEvidenceReportResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct JobReportResponse {
     pub job_id: String,
     pub status: String,
@@ -443,6 +481,7 @@ pub struct JobReportResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RegisterRecurringPromptRequest {
     pub id: Option<String>,
     pub queue: Option<String>,
@@ -470,6 +509,7 @@ pub struct RegisterRecurringPromptRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RegisterRecurringResponse {
     pub recurring_id: String,
     pub queue: String,
@@ -479,12 +519,14 @@ pub struct RegisterRecurringResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringListQuery {
     #[serde(default)]
     pub enabled_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringDefinitionEntry {
     pub recurring_id: String,
     pub queue: String,
@@ -509,12 +551,14 @@ pub struct RecurringDefinitionEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringListResponse {
     pub count: usize,
     pub recurring: Vec<RecurringDefinitionEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct UpdateRecurringRequest {
     #[serde(default)]
     pub enabled: Option<bool>,
@@ -530,12 +574,14 @@ pub struct UpdateRecurringRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringRunsQuery {
     #[serde(default)]
     pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringRunEntry {
     pub job_id: String,
     pub status: String,
@@ -548,6 +594,7 @@ pub struct RecurringRunEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringRunsResponse {
     pub recurring_id: String,
     pub count: usize,
@@ -555,6 +602,7 @@ pub struct RecurringRunsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RecurringDeliveryResponse {
     pub recurring_id: String,
     pub delivery_label: String,
@@ -563,6 +611,7 @@ pub struct RecurringDeliveryResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct UpdateRecurringResponse {
     pub recurring_id: String,
     pub enabled: bool,
@@ -572,12 +621,14 @@ pub struct UpdateRecurringResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct DeleteRecurringResponse {
     pub recurring_id: String,
     pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeModuleSummary {
     pub module_id: String,
     pub version: String,
@@ -589,18 +640,21 @@ pub struct GraphemeModuleSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeModulesListResponse {
     pub count: usize,
     pub modules: Vec<GraphemeModuleSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeModuleDetailResponse {
     pub info: serde_json::Value,
     pub examples: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeModuleOpsResponse {
     pub module_id: String,
     pub query: String,
@@ -620,6 +674,7 @@ pub struct GraphemeScriptsListQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeScriptEntryDto {
     pub id: String,
     pub name: String,
@@ -647,12 +702,14 @@ pub struct GraphemeScriptEntryDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeScriptsListResponse {
     pub count: usize,
     pub scripts: Vec<GraphemeScriptEntryDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeScriptDetailResponse {
     pub script: GraphemeScriptEntryDto,
     pub body_preview: String,
@@ -660,11 +717,13 @@ pub struct GraphemeScriptDetailResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeRunRequest {
     pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct GraphemeRunResponse {
     pub result: serde_json::Value,
 }
@@ -673,12 +732,14 @@ pub use crate::workflow::{WorkflowRunRequest, WorkflowStepSpec};
 pub use crate::workflow_plan::{WorkflowPlanRequest, WorkflowPlanResponse};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowsListQuery {
     #[serde(default)]
     pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowListEntry {
     pub workflow_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -696,12 +757,14 @@ pub struct WorkflowListEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowsListResponse {
     pub count: usize,
     pub workflows: Vec<WorkflowListEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowStepResultDto {
     pub id: String,
     pub kind: String,
@@ -713,6 +776,7 @@ pub struct WorkflowStepResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowDetailResponse {
     pub workflow_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -734,6 +798,7 @@ pub struct WorkflowDetailResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowRunResponse {
     pub workflow_id: String,
     pub status: String,
@@ -744,6 +809,7 @@ pub struct WorkflowRunResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowScheduleRequest {
     #[serde(flatten)]
     pub workflow: WorkflowRunRequest,
@@ -761,6 +827,7 @@ pub struct WorkflowScheduleRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowScheduleResponse {
     pub workflow_id: String,
     pub status: String,
@@ -773,12 +840,14 @@ pub struct WorkflowScheduleResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowRunsQuery {
     #[serde(default)]
     pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkflowRunsResponse {
     pub workflow_id: String,
     pub count: usize,
@@ -791,6 +860,7 @@ pub use crate::tool_history::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct DaemonStatsResponse {
     pub enqueued_jobs: usize,
     pub running_jobs: usize,
@@ -804,6 +874,7 @@ pub struct DaemonStatsResponse {
 
 /// Live workshop runtime defaults from the daemon host (`tui_defaults.json` + env).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RuntimeDefaultsResponse {
     pub backend: String,
     pub provider: String,
@@ -829,6 +900,7 @@ pub struct RuntimeDefaultsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HeartbeatPolicyResponse {
     pub min_significance: f32,
     pub dead_letter_weight: f32,
@@ -838,6 +910,7 @@ pub struct HeartbeatPolicyResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HeartbeatDeliveryPolicyResponse {
     pub min_notify_interval_secs: u64,
     pub quiet_hours_start_utc: Option<u8>,
@@ -846,6 +919,7 @@ pub struct HeartbeatDeliveryPolicyResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HeartbeatDeliveryMetricsResponse {
     pub tick_evaluations: u64,
     pub notify_decisions: u64,
@@ -857,6 +931,7 @@ pub struct HeartbeatDeliveryMetricsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct HeartbeatStatusResponse {
     pub lane: String,
     pub lane_policy_profile: String,
@@ -877,6 +952,7 @@ pub struct HeartbeatStatusResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactVerificationPolicyInput {
     pub min_citation_coverage: f32,
     pub min_avg_support_strength: f32,
@@ -885,6 +961,7 @@ pub struct ArtifactVerificationPolicyInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum ArtifactCommandSpec {
     Lookup { query: Option<String> },
@@ -911,6 +988,7 @@ pub enum ArtifactCommandSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactCommandRequest {
     pub session_id: String,
     pub selected_context_pack_query: Option<String>,
@@ -920,12 +998,14 @@ pub struct ArtifactCommandRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactCommandResponse {
     pub selected_context_pack_query: Option<String>,
     pub rendered_output: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum StageRouteCommandSpec {
     Routes {
@@ -941,6 +1021,7 @@ pub enum StageRouteCommandSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct StageRouteCommandRequest {
     pub stage_routing: StageRoutingMatrix,
     pub provider: String,
@@ -949,12 +1030,14 @@ pub struct StageRouteCommandRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct StageRouteCommandResponse {
     pub stage_routing: StageRoutingMatrix,
     pub rendered_output: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RuntimeVerifyPolicyState {
     pub min_citation_coverage: String,
     pub min_avg_support_strength: String,
@@ -963,6 +1046,7 @@ pub struct RuntimeVerifyPolicyState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum RuntimeConfigCommandSpec {
     Model { args: Vec<String> },
@@ -975,6 +1059,7 @@ pub enum RuntimeConfigCommandSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RuntimeConfigCommandRequest {
     pub current_provider: String,
     pub current_model: String,
@@ -987,6 +1072,7 @@ pub struct RuntimeConfigCommandRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RuntimeConfigCommandResponse {
     pub rendered_output: Option<String>,
     pub next_draft_provider: String,
@@ -1000,6 +1086,7 @@ pub struct RuntimeConfigCommandResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnSurfaceContext {
     /// Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …
     #[serde(default)]
@@ -1040,6 +1127,7 @@ impl TurnSurfaceContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InteractiveTurnRequest {
     pub session_id: String,
     pub prompt: String,
@@ -1082,6 +1170,7 @@ pub struct InteractiveTurnRequest {
 
 /// Reference to a user file stored locally under medousa/media/ (not inline bytes).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct MediaRef {
     pub media_id: String,
     /// image | document | spreadsheet | audio
@@ -1092,6 +1181,7 @@ pub struct MediaRef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct MediaUploadResponse {
     pub media_id: String,
     pub mime: String,
@@ -1104,6 +1194,7 @@ pub struct MediaUploadResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InteractiveTurnResponse {
     pub turn_id: String,
     pub accepted_at_utc: DateTime<Utc>,
@@ -1116,6 +1207,7 @@ pub struct InteractiveTurnResponse {
 
 /// Unified turn ticket — interactive chat or background `/ask` on the same SSE contract.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct CreateTurnTicketRequest {
     pub session_id: String,
     pub prompt: String,
@@ -1167,6 +1259,7 @@ fn default_response_depth_mode() -> String {
 pub use crate::turn_ticket::{TurnTicketMode, TurnTicketPhase};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnTicketResponse {
     pub turn_id: String,
     pub session_id: String,
@@ -1181,13 +1274,43 @@ pub struct TurnTicketResponse {
     pub daemon_notice: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ActiveSessionTurn {
+    pub turn_id: String,
+    pub session_id: String,
+    pub stream_url: String,
+    pub phase: String,
+    pub composer_handoff: bool,
+    pub started_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ActiveSessionTurnResponse {
+    pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn: Option<ActiveSessionTurn>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CancelActiveSessionTurnResponse {
+    pub cancelled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct SessionActiveTurnsResponse {
     pub session_id: String,
     pub turns: Vec<TurnTicketRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnTicketRecord {
     pub turn_id: String,
     pub session_id: String,
@@ -1203,6 +1326,7 @@ pub struct TurnTicketRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InteractiveTurnStreamEvent {
     pub turn_id: String,
     pub event_type: String,
@@ -1255,6 +1379,7 @@ pub struct InteractiveTurnStreamEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct StreamToolArtifactRef {
     pub role: String,
     pub content_type: String,
@@ -1267,6 +1392,7 @@ pub struct StreamToolArtifactRef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct StreamUiArtifact {
     pub artifact_id: String,
     pub mime: String,
@@ -1279,12 +1405,14 @@ pub struct StreamUiArtifact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactFetchRequest {
     pub session_id: String,
     pub artifact_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactFetchResponse {
     pub artifact_id: String,
     pub mime: String,
@@ -1298,6 +1426,7 @@ pub struct ArtifactFetchResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactListUiRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
@@ -1312,6 +1441,7 @@ fn default_artifact_list_limit() -> usize {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactSummary {
     pub artifact_id: String,
     pub session_id: String,
@@ -1326,6 +1456,7 @@ pub struct ArtifactSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactListUiResponse {
     pub artifacts: Vec<ArtifactSummary>,
 }
@@ -1334,6 +1465,7 @@ pub struct ArtifactListUiResponse {
 
 /// Optional attachment forwarded by a channel adapter.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IngestAttachment {
     pub kind: String,
     pub content: String,
@@ -1341,6 +1473,7 @@ pub struct IngestAttachment {
 
 /// Request from any channel adapter to the centralized ingester.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IngestRequest {
     /// Channel type identifier, e.g. "telegram", "discord", "cli"
     pub channel: String,
@@ -1357,6 +1490,7 @@ pub struct IngestRequest {
 
 /// Response from the centralized ingester.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct IngestResponse {
     /// The resolved or created session_id for this channel+user pair
     pub session_id: String,
@@ -1378,6 +1512,7 @@ pub struct IngestResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct DeliverPollResponse {
     pub job_id: String,
     /// pending | delivered | failed | not_registered
@@ -1387,6 +1522,7 @@ pub struct DeliverPollResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct DeliveryHealthResponse {
     pub endpoint_id: String,
     pub endpoint_seeded: bool,
@@ -1398,6 +1534,7 @@ pub struct DeliveryHealthResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ContinuationStatusResponse {
     pub pending_count: usize,
     pub consumed_count: usize,
@@ -1410,6 +1547,7 @@ pub struct ContinuationStatusResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnContinuationLineageEntry {
     pub child_job_id: String,
     pub turn_correlation_id: String,
@@ -1426,12 +1564,14 @@ pub struct TurnContinuationLineageEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnContinuationLineageResponse {
     pub turn_correlation_id: String,
     pub records: Vec<TurnContinuationLineageEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ReplayAndResumeResponse {
     pub job_id: String,
     pub replayed: bool,
@@ -1443,12 +1583,14 @@ pub struct ReplayAndResumeResponse {
 // ── Turn budget requests (tool-round extensions) ─────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnBudgetRequestListQuery {
     pub limit: Option<usize>,
     pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnBudgetRequestRecord {
     pub request_id: String,
     pub turn_correlation_id: Option<String>,
@@ -1469,22 +1611,26 @@ pub struct TurnBudgetRequestRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnBudgetRequestListResponse {
     pub requests: Vec<TurnBudgetRequestRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnBudgetApproveRequest {
     pub extra_rounds: Option<usize>,
     pub resolved_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnBudgetDenyRequest {
     pub resolved_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnBudgetRequestResponse {
     pub request: TurnBudgetRequestRecord,
     pub message: String,
@@ -1493,6 +1639,7 @@ pub struct TurnBudgetRequestResponse {
 // ── Workspace (Medousa Home — Phase W1) ─────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkBoardColumn {
     Backlog,
@@ -1503,9 +1650,11 @@ pub enum WorkBoardColumn {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkCardId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkCard {
     pub id: WorkCardId,
     pub column: WorkBoardColumn,
@@ -1516,6 +1665,7 @@ pub struct WorkCard {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkCardKind {
     StasisJob,
@@ -1527,6 +1677,7 @@ pub enum WorkCardKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkCardAssociations {
     #[serde(default)]
     pub vault_paths: Vec<String>,
@@ -1537,6 +1688,7 @@ pub struct WorkCardAssociations {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkCardDetail {
     pub card: WorkCard,
     pub kind: WorkCardKind,
@@ -1572,6 +1724,7 @@ pub struct WorkCardDetail {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceEventKind {
     JobEnqueued,
@@ -1592,6 +1745,7 @@ pub enum WorkspaceEventKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceEventActor {
     System,
@@ -1601,12 +1755,14 @@ pub enum WorkspaceEventActor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceEventRef {
     pub ref_type: String,
     pub ref_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceEvent {
     pub id: String,
     pub timestamp_utc: DateTime<Utc>,
@@ -1630,6 +1786,7 @@ pub struct WorkspaceEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceSnapshot {
     pub workspace_revision: u64,
     pub server_time_utc: DateTime<Utc>,
@@ -1639,6 +1796,7 @@ pub struct WorkspaceSnapshot {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceCardsQuery {
     pub session_id: Option<String>,
     pub column: Option<String>,
@@ -1648,12 +1806,14 @@ pub struct WorkspaceCardsQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceCardsResponse {
     pub workspace_revision: u64,
     pub cards: Vec<WorkCard>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceFeedQuery {
     pub since_id: Option<String>,
     pub since_revision: Option<u64>,
@@ -1662,18 +1822,21 @@ pub struct WorkspaceFeedQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceFeedResponse {
     pub workspace_revision: u64,
     pub events: Vec<WorkspaceEvent>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceSnapshotQuery {
     pub since_revision: Option<u64>,
     pub feed_tail_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceStreamQuery {
     pub since_revision: Option<u64>,
     pub session_id: Option<String>,
@@ -1681,6 +1844,7 @@ pub struct WorkspaceStreamQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceStreamEvent {
     pub workspace_revision: u64,
     pub stream_event_type: String,
@@ -1699,6 +1863,7 @@ pub struct WorkspaceStreamEvent {
 pub const WORKSPACE_API_VERSION: &str = "workspace-v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceLinkVaultRequest {
     pub vault_path: String,
 }
@@ -1709,6 +1874,7 @@ pub struct WorkspaceLinkVaultRequest {
 pub const VAULT_API_VERSION: &str = "vault-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNote {
     pub path: String,
     pub title: String,
@@ -1724,6 +1890,7 @@ pub struct VaultNote {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNoteSummary {
     pub path: String,
     pub title: String,
@@ -1733,11 +1900,13 @@ pub struct VaultNoteSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNotesListResponse {
     pub notes: Vec<VaultNote>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNotesQuery {
     pub prefix: Option<String>,
     pub limit: Option<usize>,
@@ -1748,12 +1917,14 @@ pub struct VaultNotesQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultNoteContentResponse {
     pub note: VaultNote,
     pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultWriteRequest {
     #[serde(default)]
     pub path: Option<String>,
@@ -1785,6 +1956,7 @@ impl Default for VaultWriteRequest {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultPutQuery {
     pub session_id: Option<String>,
     #[serde(default)]
@@ -1792,18 +1964,21 @@ pub struct VaultPutQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultWriteResponse {
     pub note: VaultNote,
     pub created: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultDeleteResponse {
     pub path: String,
     pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchHit {
     pub note: VaultNoteSummary,
     pub score: f32,
@@ -1813,12 +1988,14 @@ pub struct VaultSearchHit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchResponse {
     pub query: String,
     pub hits: Vec<VaultSearchHit>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultSearchQuery {
     pub q: Option<String>,
     pub limit: Option<usize>,
@@ -1827,18 +2004,21 @@ pub struct VaultSearchQuery {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultTagsQuery {
     pub prefix: Option<String>,
     pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultTagsListResponse {
     pub tags: Vec<String>,
     pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct VaultRootView {
     pub id: String,
@@ -1849,6 +2029,7 @@ pub struct VaultRootView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct VaultRootsResponse {
     pub active_root_id: String,
@@ -1856,12 +2037,14 @@ pub struct VaultRootsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct VaultSetActiveRootRequest {
     pub root_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct VaultAddRootRequest {
     pub label: String,
@@ -1871,17 +2054,20 @@ pub struct VaultAddRootRequest {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultBacklinksQuery {
     pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct VaultBacklinksResponse {
     pub path: String,
     pub backlinks: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceCardActionResponse {
     pub workspace_revision: u64,
     pub card_id: String,
@@ -1899,6 +2085,7 @@ pub struct WorkspaceCardActionResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceRebuildResponse {
     pub workspace_revision: u64,
     pub card_count: usize,
@@ -1906,6 +2093,7 @@ pub struct WorkspaceRebuildResponse {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptCatalogQuery {
     pub prefix: Option<String>,
     pub limit: Option<usize>,
@@ -1914,12 +2102,14 @@ pub struct ManuscriptCatalogQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptScriptEntry {
     pub relative_path: String,
     pub risk_class: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptCatalogEntry {
     pub id: String,
     pub name: String,
@@ -1934,12 +2124,14 @@ pub struct ManuscriptCatalogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptCatalogResponse {
     pub count: usize,
     pub manuscripts: Vec<ManuscriptCatalogEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptScheduledToolEntry {
     pub tool: String,
     pub allowed_on_schedule: bool,
@@ -1948,6 +2140,7 @@ pub struct ManuscriptScheduledToolEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptOpenshellSummary {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1959,6 +2152,7 @@ pub struct ManuscriptOpenshellSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptDetailResponse {
     pub id: String,
     pub name: String,
@@ -1991,6 +2185,7 @@ pub struct ManuscriptDetailResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct UpdateManuscriptRequest {
     #[serde(default)]
     pub task_template: Option<String>,
@@ -2013,6 +2208,7 @@ pub struct UpdateManuscriptRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptImportRequest {
     #[serde(default)]
     pub path: Option<String>,
@@ -2025,6 +2221,7 @@ pub struct ManuscriptImportRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptImportResultEntry {
     pub id: String,
     pub name: String,
@@ -2033,6 +2230,7 @@ pub struct ManuscriptImportResultEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ManuscriptImportResponse {
     pub count: usize,
     pub imported: Vec<ManuscriptImportResultEntry>,
@@ -2041,6 +2239,7 @@ pub struct ManuscriptImportResponse {
 // ── Locus / STTP (read-only context view) ─────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocusNodeSummary {
     pub sync_key: String,
     pub session_id: String,
@@ -2059,12 +2258,14 @@ pub struct LocusNodeSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocusNodesListResponse {
     pub retrieved: usize,
     pub nodes: Vec<LocusNodeSummary>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocusNodesQuery {
     pub session_id: Option<String>,
     pub limit: Option<usize>,
@@ -2076,6 +2277,7 @@ pub struct LocusNodesQuery {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocusTagsQuery {
     pub session_id: Option<String>,
     pub prefix: Option<String>,
@@ -2083,6 +2285,7 @@ pub struct LocusTagsQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocusTagsListResponse {
     pub tenant_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2092,6 +2295,7 @@ pub struct LocusTagsListResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocusNodeDetailResponse {
     pub node: LocusNodeSummary,
     pub raw: String,

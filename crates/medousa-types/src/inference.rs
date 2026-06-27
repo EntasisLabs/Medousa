@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InferenceTarget {
     pub provider: String,
     pub model: String,
@@ -9,6 +10,7 @@ pub struct InferenceTarget {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InferenceProfile {
     pub provider: String,
     pub model: String,
@@ -19,6 +21,7 @@ pub struct InferenceProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InferenceProfilesConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main: Option<InferenceProfile>,

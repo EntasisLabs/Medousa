@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct StageRoute {
     pub role: String,
     pub provider: String,
@@ -10,6 +11,7 @@ pub struct StageRoute {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct StageRoutingMatrix {
     pub orchestrator: StageRoute,
     pub chunker: StageRoute,

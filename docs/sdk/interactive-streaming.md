@@ -4,6 +4,8 @@
 
 Engine contract: [../engine/interactive-streaming.md](../engine/interactive-streaming.md)
 
+Both **Rust** (`sse` feature, default) and **Python** ship built-in SSE clients.
+
 ---
 
 ## Step 1 — Start turn
@@ -16,35 +18,73 @@ let response: InteractiveTurnResponse = client
     .start_turn(&InteractiveTurnRequest {
         session_id: "my-session".into(),
         prompt: "Hello".into(),
-        // surface, attachments, …
         ..Default::default()
     })
     .await?;
 
-let stream_url = response.stream_url; // e.g. /v1/interactive/turn/{turn_id}/stream
+let stream_url = response.stream_url;
 ```
 
 ---
 
 ## Step 2 — Open SSE
 
-**Python SDK** — use `interactive().stream_turn()` or `stream(stream_url)` (built-in SSE iterator). See [python.md](python.md).
+### Rust (`medousa-sdk` feature `sse`)
 
-**Rust SDK** — no built-in SSE client yet. Options:
+Combined helper:
 
-1. **HTTP client** — `GET {base_url}{stream_url}` with `Accept: text/event-stream`, parse `data:` lines as JSON → `InteractiveTurnStreamEvent`.
-2. **Tauri app** — `interactive_stream_start` bridge (`apps/medousa-home`).
-3. **`client.http()`** — for non-streaming poll of `GET /v1/sessions/{id}/active-turn`.
+```rust
+use futures_util::StreamExt;
+use medousa_types::InteractiveTurnRequest;
+
+let mut events = client
+    .interactive()
+    .stream_turn(&InteractiveTurnRequest {
+        session_id: "my-session".into(),
+        prompt: "Hello".into(),
+        ..Default::default()
+    })
+    .await?;
+
+while let Some(event) = events.next().await {
+    let event = event?;
+    if event.terminal {
+        break;
+    }
+}
+```
+
+Or open an existing `stream_url`:
+
+```rust
+let mut events = client.interactive().stream(&stream_url).await?;
+```
+
+### Python
+
+```python
+async with client.interactive().stream_turn(request) as events:
+    async for event in events:
+        if event.terminal:
+            break
+```
+
+See [python.md](python.md).
+
+### Tauri desktop
+
+When using `TauriWorkshopTransport`, SSE may require the Tauri bridge (`interactive_stream_start`) instead of the SDK stream helper.
 
 ---
 
 ## Cancel
 
 ```rust
-// HTTP until SDK wrapper exists:
-client.http().post_empty::<serde_json::Value>(
-    &format!("/v1/sessions/{session_id}/active-turn"),
-).await?;
+client.interactive().cancel("my-session").await?;
+```
+
+```python
+await client.interactive().cancel("my-session")
 ```
 
 ---
@@ -55,17 +95,14 @@ Deserialize each SSE payload to `InteractiveTurnStreamEvent`. Key cases:
 
 - `content_delta` — append to assistant bubble
 - `ui_artifact` — show artifact embed
-- `previous_artifact_id` — refresh artifact revision (`artifact_updated`)
+- `previous_artifact_id` — refresh artifact revision
 - `budget_request_id` — show approval UI
 - `terminal: true` — close stream
 
-Example loop (pseudo-Rust with `eventsource-stream` or your HTTP stack):
-
-```rust
-// while let Some(event) = sse.next().await {
-//     let ev: InteractiveTurnStreamEvent = serde_json::from_str(&event.data)?;
-//     if ev.terminal { break; }
-// }
-```
-
 See [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
+
+---
+
+## Local model download SSE
+
+Both SDKs: `local_models().download_events(job_id)` streams `ModelDownloadProgress` events.

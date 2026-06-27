@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from mock_transport import MockTransport
 
 from medousa import MedousaClient
 from medousa.types import IngestRequest
-from mock_transport import MockTransport
 
 INGEST_RESPONSE = {
     "session_id": "sess-1",

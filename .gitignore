@@ -16,3 +16,8 @@ target-local/
 .tmp/
 adapters/**/target/
 *.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
