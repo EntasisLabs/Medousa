@@ -18,7 +18,7 @@ export async function launchBrowserWorkshop(input?: {
   }
 
   if (layout.isMobile) {
-    layout.openYou("web");
+    layout.openWeb();
     browser.linkSession(sessionId);
     await browser.ensureTabGroup(sessionId);
     if (input?.navigateUrl?.trim()) {

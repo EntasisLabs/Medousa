@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { Activity, LayoutGrid, MessageCircle, User } from "@lucide/svelte";
+  import { Activity, BookOpen, Globe, MessageCircle, MoreHorizontal } from "@lucide/svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { layout } from "$lib/stores/layout.svelte";
   import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
   import type { Component } from "svelte";
 
   const icons: Record<MobileTab, Component> = {
-    pulse: Activity,
-    work: LayoutGrid,
+    home: Activity,
     chat: MessageCircle,
-    you: User,
+    notes: BookOpen,
+    web: Globe,
+    more: MoreHorizontal,
   };
 
   const iconProps = { size: 20, strokeWidth: 2 };

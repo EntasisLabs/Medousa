@@ -41,8 +41,7 @@
 
   async function openNote(path: string) {
     if (layout.isMobile) {
-      layout.setMobileTab("you");
-      layout.setLibraryView("reader");
+      layout.openNotes({ view: "reader" });
     } else {
       layout.navigateDesktop("library", { bump: true });
     }

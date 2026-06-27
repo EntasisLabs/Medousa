@@ -77,7 +77,7 @@
       return;
     }
     if (mobile) {
-      layout.openYou("settings");
+      layout.openMore("settings");
     }
   }
 

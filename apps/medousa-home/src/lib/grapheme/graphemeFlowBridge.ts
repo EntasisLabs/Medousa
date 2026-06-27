@@ -16,8 +16,7 @@ export function promoteScriptToFlow(
   automationsNav.openSection("flows");
 
   if (layout.isMobile) {
-    layout.setMobileTab("you", { bump: true });
-    layout.openYou("automations");
+    layout.openMore("automations");
     return;
   }
 

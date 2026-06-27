@@ -80,7 +80,7 @@
     flowDraft.queuePromotion([ref]);
     automationsNav.openSection("flows");
     layout.navigateDesktop("automations", { bump: true });
-    if (mobile) layout.openYou("automations");
+    if (mobile) layout.openMore("automations");
   }
   const sessionLabel = $derived.by(() => {
     const session = chat.sessions.find((entry) => entry.session_id === chat.sessionId);
@@ -476,7 +476,7 @@
           <button
             type="button"
             class="mobile-chat-rail-chip"
-            onclick={() => switchMobileTab("work")}
+            onclick={() => switchMobileTab("home")}
           >
             <span>
               {askThreads.length} background ask{askThreads.length === 1 ? "" : "s"} in Work
@@ -538,7 +538,7 @@
           <button
             type="button"
             class="mobile-chat-rail-chip"
-            onclick={() => switchMobileTab("work")}
+            onclick={() => switchMobileTab("home")}
           >
             <span>
               {workerThreads.length} worker{workerThreads.length === 1 ? "" : "s"} in Work

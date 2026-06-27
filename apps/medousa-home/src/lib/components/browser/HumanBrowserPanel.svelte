@@ -7,7 +7,6 @@
   import {
     humanBrowserEmbedApplyLayout,
     humanBrowserEmbedHide,
-    humanBrowserEmbedShow,
     type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
@@ -26,7 +25,7 @@
   let urlBarFocusNonce = $state(0);
   let saving = $state(false);
 
-  async function syncEmbedLayout() {
+  async function presentEmbed() {
     if (!isTauri() || !visible) return;
     const rails = layoutDesktopRails({
       viewportWidth: layout.viewportWidth,
@@ -44,19 +43,14 @@
 
   $effect(() => {
     if (!isTauri() || !visible) return;
-    void humanBrowserEmbedShow().then(() => syncEmbedLayout());
-    return () => {
-      void humanBrowserEmbedHide();
-    };
-  });
-
-  $effect(() => {
     layout.activityWidth;
     layout.activityCollapsed;
     layout.viewportWidth;
     workRailVisible;
-    if (!visible) return;
-    void syncEmbedLayout();
+    void presentEmbed();
+    return () => {
+      void humanBrowserEmbedHide();
+    };
   });
 
   onMount(() => {

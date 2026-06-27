@@ -48,12 +48,12 @@ export function tryMobileBackNavigation(): boolean {
   for (let index = mobileBackHandlers.length - 1; index >= 0; index -= 1) {
     if (mobileBackHandlers[index]()) return true;
   }
-  if (layout.mobileTab === "work" && workspace.selectedCardId) {
+  if (layout.mobileTab === "home" && workspace.selectedCardId) {
     workspace.clearSelection();
     return true;
   }
-  if (layout.mobileTab === "you" && layout.youDestination !== "hub") {
-    layout.backToYouHub();
+  if (layout.mobileTab === "more" && layout.moreDestination !== "hub") {
+    layout.backToMoreHub();
     return true;
   }
   return false;

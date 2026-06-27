@@ -1,8 +1,7 @@
-/** Open a URL in the embedded Web surface (desktop) or You → Web (mobile). */
+/** Open a URL in the embedded Web surface (desktop) or Web tab (mobile). */
 
-import { browser } from "$lib/stores/browser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
-import { humanBrowserNavigate } from "$lib/humanBrowser";
+import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { isTauri } from "$lib/window";
 
 export async function openInBrowser(
@@ -19,24 +18,25 @@ export async function openInBrowser(
   if (!trimmed) return;
 
   if (layout.isMobile) {
-    layout.openYou("web");
-    await browser.navigate(trimmed, "user", _options?.title);
-    if (_options?.openWorkshop) {
-      const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
-      browserWorkshop.openForBrowser({
-        sessionId: _options?.sessionId ?? null,
-        tabGroupId: browser.tabGroupId,
-        scopeLabel: browser.scopeLabel,
-      });
-    }
+    layout.openWeb();
+  } else if (isTauri()) {
+    layout.navigateDesktop("web");
+  } else {
     return;
   }
 
-  if (!isTauri()) return;
-
-  layout.navigateDesktop("web");
   const normalized = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
-  await humanBrowserNavigate(normalized);
+  await humanBrowser.navigate(normalized);
+
+  if (layout.isMobile && _options?.openWorkshop) {
+    const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
+    const { browser } = await import("$lib/stores/browser.svelte");
+    browserWorkshop.openForBrowser({
+      sessionId: _options?.sessionId ?? null,
+      tabGroupId: browser.tabGroupId,
+      scopeLabel: humanBrowser.scopeLabel,
+    });
+  }
 }
 
 export function isHttpUrl(value: string): boolean {
@@ -51,7 +51,7 @@ export function isHttpUrl(value: string): boolean {
 /** Switch to the Web surface without navigating. */
 export async function openBrowserWindow() {
   if (layout.isMobile) {
-    layout.openYou("web");
+    layout.openWeb();
     return;
   }
   if (!isTauri()) return;

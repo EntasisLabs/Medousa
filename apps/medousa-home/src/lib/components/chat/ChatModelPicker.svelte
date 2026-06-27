@@ -246,7 +246,7 @@
   function openModelsSettings() {
     settingsNav.openSection("models");
     if (layout.isMobile) {
-      layout.openYou("settings");
+      layout.openMore("settings");
       return;
     }
     layout.navigateDesktop("settings");

@@ -17,12 +17,13 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { applyNativeMobileShellLayout, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
+  import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
 
   let commandPaletteOpen = $state(false);
 
   async function openWorkCard(cardId: string) {
     if (layout.isMobile) {
-      layout.setMobileTab("work");
+      layout.setMobileTab("home");
     } else {
       workspace.workView = "kanban";
     }
@@ -36,7 +37,13 @@
       ? () => {
           layout.setMobile(true);
         }
-      : watchMobileViewport((mobile) => layout.setMobile(mobile));
+      : watchMobileViewport((mobile) => {
+          const wasMobile = layout.isMobile;
+          layout.setMobile(mobile);
+          if (wasMobile !== mobile) {
+            handoffBrowserShell(mobile);
+          }
+        });
     const stopNative = initMobileNative(openWorkCard);
 
     const onKeydown = (event: KeyboardEvent) => {

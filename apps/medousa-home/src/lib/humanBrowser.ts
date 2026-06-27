@@ -8,10 +8,33 @@ export interface HumanBrowserEmbedLayout {
   workRailVisible: boolean;
 }
 
+export interface HumanBrowserEmbedBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export async function humanBrowserEmbedSetBounds(
+  bounds: HumanBrowserEmbedBounds,
+): Promise<void> {
+  return invoke("human_browser_embed_set_bounds", { bounds });
+}
+
 export async function humanBrowserEmbedApplyLayout(
   params: HumanBrowserEmbedLayout,
 ): Promise<void> {
   return invoke("human_browser_embed_apply_layout", { params });
+}
+
+export interface HumanBrowserEmbedMobileLayout {
+  bottomChromeHeight: number;
+}
+
+export async function humanBrowserEmbedApplyMobileLayout(
+  params: HumanBrowserEmbedMobileLayout,
+): Promise<void> {
+  return invoke("human_browser_embed_apply_mobile_layout", { params });
 }
 
 export async function humanBrowserNavigate(url: string): Promise<void> {

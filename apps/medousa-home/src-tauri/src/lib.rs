@@ -184,6 +184,8 @@ pub fn run() {
             human_browser::human_browser_go_back,
             human_browser::human_browser_go_forward,
             human_browser::human_browser_embed_apply_layout,
+            human_browser::human_browser_embed_apply_mobile_layout,
+            human_browser::human_browser_embed_set_bounds,
             human_browser::human_browser_embed_show,
             human_browser::human_browser_embed_hide,
             capabilities::capabilities_load_overlay,

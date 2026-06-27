@@ -33,8 +33,7 @@
   function openFullProfiles() {
     haptic("light");
     sheetOpen = false;
-    layout.setMobileTab("you");
-    layout.openYou("profiles");
+    layout.openMore("profiles");
   }
 </script>
 

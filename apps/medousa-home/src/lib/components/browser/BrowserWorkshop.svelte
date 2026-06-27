@@ -20,7 +20,7 @@
 
   $effect(() => {
     if (!browserWorkshop.open) return;
-    if (layout.isMobile && layout.youDestination !== "web") {
+    if (layout.isMobile && layout.mobileTab !== "web") {
       browserWorkshop.close();
     }
   });

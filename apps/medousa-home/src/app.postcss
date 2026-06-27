@@ -2596,11 +2596,17 @@
   }
 
   .mobile-tab-bar-inner {
-    @apply flex h-12 items-center justify-around px-1;
+    @apply flex h-12 items-center justify-around px-0.5;
   }
 
   .mobile-tab-btn {
-    @apply flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[10px] font-medium leading-none text-surface-500 transition active:scale-95;
+    @apply flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 py-1 text-[9px] font-medium leading-none text-surface-500 transition active:scale-95;
+  }
+
+  @media (min-width: 360px) {
+    .mobile-tab-btn {
+      @apply text-[10px];
+    }
   }
 
   .mobile-tab-btn-active {
@@ -2692,6 +2698,50 @@
 
   .mobile-pulse-whisper {
     @apply text-[11px] text-surface-500;
+  }
+
+  .mobile-home {
+    background-color: rgb(var(--color-surface-950));
+  }
+
+  .mobile-home-cards {
+    @apply flex gap-2 overflow-x-auto pb-1;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-home-cards::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-home-card {
+    @apply flex min-w-[7.5rem] max-w-[9rem] shrink-0 flex-col gap-1 rounded-2xl border border-surface-500/35 bg-surface-900/45 px-2.5 py-3 text-left transition active:bg-surface-800/80 disabled:opacity-45;
+  }
+
+  .mobile-home-card-icon {
+    @apply text-surface-400;
+  }
+
+  .mobile-home-card-label {
+    @apply truncate text-sm font-medium text-surface-100;
+  }
+
+  .mobile-home-card-hint {
+    @apply truncate text-[10px] leading-tight text-surface-500;
+  }
+
+  .mobile-home-fab {
+    @apply fixed z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary-600 text-surface-50 shadow-lg transition active:scale-95;
+    right: 1rem;
+    bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
+  }
+
+  .mobile-notes-header {
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  }
+
+  .mobile-notes-subheader {
+    @apply flex h-14 shrink-0 items-center border-b border-surface-500/40 px-3;
   }
 
   .mobile-work-status {
@@ -3533,7 +3583,7 @@
   }
 
   .mobile-you-subheader {
-    @apply shrink-0 border-b border-surface-500/40 px-3 py-2;
+    @apply flex h-14 shrink-0 items-center border-b border-surface-500/40 px-3;
   }
 
   .mobile-you-destination {

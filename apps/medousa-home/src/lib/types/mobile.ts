@@ -1,10 +1,8 @@
-export type MobileTab = "pulse" | "work" | "chat" | "you";
+export type MobileTab = "home" | "chat" | "notes" | "web" | "more";
 
-export type YouDestination =
+export type MoreDestination =
   | "hub"
   | "profiles"
-  | "library"
-  | "web"
   | "context"
   | "workshop"
   | "automations"
@@ -13,41 +11,40 @@ export type YouDestination =
   | "runtime";
 
 export const MOBILE_TABS: { id: MobileTab; label: string }[] = [
-  { id: "pulse", label: "Pulse" },
-  { id: "work", label: "Work" },
+  { id: "home", label: "Home" },
   { id: "chat", label: "Chat" },
-  { id: "you", label: "You" },
+  { id: "notes", label: "Notes" },
+  { id: "web", label: "Web" },
+  { id: "more", label: "More" },
 ];
 
-export const YOU_DESTINATIONS: {
-  id: Exclude<YouDestination, "hub">;
+export const MORE_DESTINATIONS: {
+  id: Exclude<MoreDestination, "hub">;
   label: string;
   hint: string;
 }[] = [
   { id: "profiles", label: "Profiles", hint: "Who you are — teach her facts" },
-  { id: "library", label: "Notes", hint: "Your vault" },
-  { id: "web", label: "Web", hint: "Browse and research with Medousa" },
   { id: "context", label: "Context", hint: "What she remembers about you" },
   { id: "workshop", label: "Capabilities", hint: "Specialists & connections" },
-  { id: "automations", label: "Automations", hint: "Scripts, flows, schedules & history" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
   { id: "settings", label: "Preferences", hint: "Models, voice, rhythm & reach" },
   { id: "runtime", label: "Workshop", hint: "Live pulse, jobs & delivery" },
 ];
 
-export const YOU_HUB_SECTIONS: {
+/** Destinations listed on the More hub home (automations is deep-link only). */
+export const MORE_HUB_SECTIONS: {
   title: string;
   subtitle: string;
-  destinations: Exclude<YouDestination, "hub">[];
+  destinations: Exclude<MoreDestination, "hub" | "automations">[];
 }[] = [
   {
     title: "Stay in touch",
-    subtitle: "Notes, memory, skills, and channels",
-    destinations: ["profiles", "library", "web", "context", "workshop", "messaging"],
+    subtitle: "Memory, skills, and channels",
+    destinations: ["profiles", "context", "workshop", "messaging"],
   },
   {
     title: "Capabilities",
-    subtitle: "Automations, preferences, and tuning",
-    destinations: ["automations", "settings", "runtime"],
+    subtitle: "Preferences and tuning",
+    destinations: ["settings", "runtime"],
   },
 ];

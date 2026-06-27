@@ -1,4 +1,4 @@
-import type { MobileTab, YouDestination } from "$lib/types/mobile";
+import type { MobileTab, MoreDestination } from "$lib/types/mobile";
 import type { Surface } from "$lib/types/ui";
 import { shouldUseMobileShell } from "$lib/platform";
 
@@ -16,7 +16,7 @@ const IDENTITY_DRAWER_KEY = "medousa-home-identity-drawer";
 const ACTIVITY_COLLAPSED_KEY = "medousa-home-activity-collapsed";
 const VAULT_SIDEBAR_COLLAPSED_KEY = "medousa-home-vault-sidebar-collapsed";
 const MOBILE_TAB_KEY = "medousa-home-mobile-tab";
-const YOU_DESTINATION_KEY = "medousa-home-you-destination";
+const MORE_DESTINATION_KEY = "medousa-home-you-destination";
 const LIBRARY_VIEW_KEY = "medousa-home-library-view";
 
 export type LibraryView = "list" | "reader";
@@ -30,7 +30,7 @@ export class LayoutStore {
   /** Bumped on every explicit nav action so keyed panels remount even when revisiting the same surface/tab. */
   navigationEpoch = $state(0);
   mobileTab = $state<MobileTab>(loadMobileTab());
-  youDestination = $state<YouDestination>(loadYouDestination());
+  moreDestination = $state<MoreDestination>(loadMoreDestination());
   libraryView = $state<LibraryView>(loadLibraryView());
   libraryListScrollTop = $state(0);
   activitySheetOpen = $state(false);
@@ -175,15 +175,30 @@ export class LayoutStore {
     }
   }
 
-  openYou(destination: YouDestination) {
-    this.youDestination = destination;
-    this.mobileTab = "you";
-    saveYouDestination(destination);
+  openWeb() {
+    this.setMobileTab("web", { bump: true });
   }
 
-  backToYouHub() {
-    this.youDestination = "hub";
-    saveYouDestination("hub");
+  openNotes(options?: { view?: LibraryView }) {
+    if (options?.view) {
+      this.setLibraryView(options.view);
+    }
+    this.setMobileTab("notes", { bump: true });
+  }
+
+  openMore(destination: MoreDestination) {
+    this.moreDestination = destination;
+    this.mobileTab = "more";
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(MOBILE_TAB_KEY, "more");
+    }
+    saveMoreDestination(destination);
+    this.bumpNavigation();
+  }
+
+  backToMoreHub() {
+    this.moreDestination = "hub";
+    saveMoreDestination("hub");
   }
 
   setLibraryView(view: LibraryView) {
@@ -213,22 +228,32 @@ export class LayoutStore {
 }
 
 function loadMobileTab(): MobileTab {
-  if (typeof localStorage === "undefined") return "pulse";
+  if (typeof localStorage === "undefined") return "home";
   const stored = localStorage.getItem(MOBILE_TAB_KEY);
-  if (stored === "pulse" || stored === "work" || stored === "chat" || stored === "you") {
-    return stored;
+  const migrated =
+    stored === "pulse" || stored === "work"
+      ? "home"
+      : stored === "you"
+        ? "more"
+        : stored;
+  if (
+    migrated === "home" ||
+    migrated === "chat" ||
+    migrated === "notes" ||
+    migrated === "web" ||
+    migrated === "more"
+  ) {
+    return migrated;
   }
-  return "pulse";
+  return "home";
 }
 
-function loadYouDestination(): YouDestination {
+function loadMoreDestination(): MoreDestination {
   if (typeof localStorage === "undefined") return "hub";
-  const stored = localStorage.getItem(YOU_DESTINATION_KEY);
-  const valid: YouDestination[] = [
+  const stored = localStorage.getItem(MORE_DESTINATION_KEY);
+  const valid: MoreDestination[] = [
     "hub",
     "profiles",
-    "library",
-    "web",
     "context",
     "workshop",
     "automations",
@@ -236,15 +261,17 @@ function loadYouDestination(): YouDestination {
     "settings",
     "runtime",
   ];
-  if (stored && valid.includes(stored as YouDestination)) {
-    return stored as YouDestination;
+  if (stored === "library") return "hub";
+  if (stored === "web") return "hub";
+  if (stored && valid.includes(stored as MoreDestination)) {
+    return stored as MoreDestination;
   }
   return "hub";
 }
 
-function saveYouDestination(destination: YouDestination) {
+function saveMoreDestination(destination: MoreDestination) {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(YOU_DESTINATION_KEY, destination);
+  localStorage.setItem(MORE_DESTINATION_KEY, destination);
 }
 
 function loadLibraryView(): LibraryView {

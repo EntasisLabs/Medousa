@@ -150,7 +150,7 @@
   <BudgetApprovalBar
     mobile
     onOpenWork={() => {
-      switchMobileTab("work");
+      switchMobileTab("home");
       const pending = chat.budgetAlert ?? chat.pendingBudgetApprovals[0];
       if (pending) void workspace.selectCard(pending.workCardId);
     }}

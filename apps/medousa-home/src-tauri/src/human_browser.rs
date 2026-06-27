@@ -24,7 +24,24 @@ const CHROME_HEIGHT_LOGICAL: f64 = 132.0;
 static POPOUT_SHELL_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_VISIBLE: AtomicBool = AtomicBool::new(false);
-static LAST_EMBED_LAYOUT: Mutex<Option<EmbedLayoutParams>> = Mutex::new(None);
+static LAST_EMBED_PLACEMENT: Mutex<Option<EmbedPlacement>> = Mutex::new(None);
+
+#[derive(Debug, Clone, Copy)]
+enum EmbedPlacement {
+    Workshop(EmbedLayoutParams),
+    Mobile(EmbedMobileLayoutParams),
+    Freeform(EmbedBounds),
+}
+
+/// Mobile Web tab toolbar — must match `h-[52px]` on BrowserPanel toolbar row.
+const MOBILE_WEB_CHROME_HEIGHT: f64 = 52.0;
+
+/// Mobile Safari UA for responsive sites when the mobile shell is active (Tauri desktop resize).
+/// Tauri sets UA at WebviewBuilder time only — apply when recreating the embed webview.
+#[allow(dead_code)]
+const MOBILE_SAFARI_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+/// Default bottom tab bar — matches `--mobile-bottom-chrome-height` fallback (5.5rem).
+const MOBILE_BOTTOM_CHROME_DEFAULT: f64 = 88.0;
 
 /// Left nav rail width — must match `.workshop-icon-rail` (`w-[52px]`).
 const NAV_RAIL_WIDTH: f64 = 52.0;
@@ -37,10 +54,25 @@ const WORK_RAIL_HEIGHT: f64 = 96.0;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EmbedMobileLayoutParams {
+    pub bottom_chrome_height: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EmbedLayoutParams {
     pub activity_width: f64,
     pub activity_collapsed: bool,
     pub work_rail_visible: bool,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedBoundsDto {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +81,17 @@ struct EmbedBounds {
     y: f64,
     width: f64,
     height: f64,
+}
+
+impl From<EmbedBoundsDto> for EmbedBounds {
+    fn from(value: EmbedBoundsDto) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+            width: value.width,
+            height: value.height,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -168,6 +211,28 @@ fn compute_embedded_bounds(
     })
 }
 
+fn default_mobile_embed_layout() -> EmbedMobileLayoutParams {
+    EmbedMobileLayoutParams {
+        bottom_chrome_height: MOBILE_BOTTOM_CHROME_DEFAULT,
+    }
+}
+
+/// Fixed Rust layout for mobile Web tab — single chrome row, no DOM measurement.
+fn compute_mobile_embedded_bounds(
+    window: &tauri::Window,
+    params: EmbedMobileLayoutParams,
+) -> Result<EmbedBounds, String> {
+    let (win_w, win_h) = window_inner_logical(window)?;
+    let bottom = params.bottom_chrome_height.max(0.0);
+
+    Ok(EmbedBounds {
+        x: 0.0,
+        y: MOBILE_WEB_CHROME_HEIGHT,
+        width: win_w.max(8.0),
+        height: (win_h - MOBILE_WEB_CHROME_HEIGHT - bottom).max(8.0),
+    })
+}
+
 fn apply_embedded_bounds(app: &AppHandle, bounds: EmbedBounds) -> Result<(), String> {
     let width = bounds.width.max(8.0);
     let height = bounds.height.max(8.0);
@@ -189,10 +254,52 @@ fn apply_embedded_layout(app: &AppHandle, params: EmbedLayoutParams) -> Result<(
     ensure_embedded_content(app)?;
     let window = workshop_window(app)?;
     let bounds = compute_embedded_bounds(&window, params)?;
-    if let Ok(mut last) = LAST_EMBED_LAYOUT.lock() {
-        *last = Some(params);
+    if let Ok(mut last) = LAST_EMBED_PLACEMENT.lock() {
+        *last = Some(EmbedPlacement::Workshop(params));
+    }
+    apply_embedded_bounds(app, bounds)?;
+    EMBED_VISIBLE.store(true, Ordering::SeqCst);
+    if let Some(content) = embedded_content_webview(app) {
+        content.show().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn apply_embedded_mobile_layout(
+    app: &AppHandle,
+    params: EmbedMobileLayoutParams,
+) -> Result<(), String> {
+    ensure_embedded_content(app)?;
+    let window = workshop_window(app)?;
+    let bounds = compute_mobile_embedded_bounds(&window, params)?;
+    if let Ok(mut last) = LAST_EMBED_PLACEMENT.lock() {
+        *last = Some(EmbedPlacement::Mobile(params));
+    }
+    apply_embedded_bounds(app, bounds)?;
+    EMBED_VISIBLE.store(true, Ordering::SeqCst);
+    if let Some(content) = embedded_content_webview(app) {
+        content.show().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn apply_embedded_freeform(app: &AppHandle, bounds: EmbedBounds) -> Result<(), String> {
+    ensure_embedded_content(app)?;
+    if let Ok(mut last) = LAST_EMBED_PLACEMENT.lock() {
+        *last = Some(EmbedPlacement::Freeform(bounds));
     }
     apply_embedded_bounds(app, bounds)
+}
+
+fn reapply_embedded_placement(app: &AppHandle) -> Result<(), String> {
+    let Some(placement) = LAST_EMBED_PLACEMENT.lock().ok().and_then(|guard| *guard) else {
+        return Ok(());
+    };
+    match placement {
+        EmbedPlacement::Workshop(params) => apply_embedded_layout(app, params),
+        EmbedPlacement::Mobile(params) => apply_embedded_mobile_layout(app, params),
+        EmbedPlacement::Freeform(bounds) => apply_embedded_bounds(app, bounds),
+    }
 }
 
 /// Create the embedded content webview on the main window if needed.
@@ -210,25 +317,25 @@ pub fn ensure_embedded_content(app: &AppHandle) -> Result<(), String> {
     }
 
     let window = workshop_window(app)?;
-    let params = LAST_EMBED_LAYOUT
-        .lock()
-        .ok()
-        .and_then(|guard| *guard)
-        .unwrap_or_else(default_embed_layout);
-    let bounds = compute_embedded_bounds(&window, params)?;
+    let initial_bounds = match LAST_EMBED_PLACEMENT.lock().ok().and_then(|guard| *guard) {
+        Some(EmbedPlacement::Freeform(bounds)) => bounds,
+        Some(EmbedPlacement::Workshop(params)) => compute_embedded_bounds(&window, params)?,
+        Some(EmbedPlacement::Mobile(params)) => compute_mobile_embedded_bounds(&window, params)?,
+        None => compute_embedded_bounds(&window, default_embed_layout())?,
+    };
 
     window
         .add_child(
             content_builder(app, EMBED_CONTENT_LABEL),
-            LogicalPosition::new(bounds.x, bounds.y),
-            LogicalSize::new(bounds.width, bounds.height),
+            LogicalPosition::new(initial_bounds.x, initial_bounds.y),
+            LogicalSize::new(initial_bounds.width, initial_bounds.height),
         )
         .map_err(|err| err.to_string())?;
 
     EMBED_READY.store(true, Ordering::SeqCst);
 
     if EMBED_VISIBLE.load(Ordering::SeqCst) {
-        apply_embedded_bounds(app, bounds)?;
+        apply_embedded_bounds(app, initial_bounds)?;
     } else if let Some(content) = embedded_content_webview(app) {
         let _ = content.hide();
     }
@@ -245,11 +352,32 @@ pub fn human_browser_embed_apply_layout(
 }
 
 #[tauri::command]
+pub fn human_browser_embed_apply_mobile_layout(
+    app: AppHandle,
+    params: EmbedMobileLayoutParams,
+) -> Result<(), String> {
+    apply_embedded_mobile_layout(&app, params)
+}
+
+#[tauri::command]
+pub fn human_browser_embed_set_bounds(
+    app: AppHandle,
+    bounds: EmbedBoundsDto,
+) -> Result<(), String> {
+    apply_embedded_freeform(&app, bounds.into())
+}
+
+#[tauri::command]
 pub fn human_browser_embed_show(app: AppHandle) -> Result<(), String> {
     ensure_embedded_content(&app)?;
     EMBED_VISIBLE.store(true, Ordering::SeqCst);
-    if let Some(params) = LAST_EMBED_LAYOUT.lock().ok().and_then(|guard| *guard) {
-        apply_embedded_layout(&app, params)?;
+    if LAST_EMBED_PLACEMENT
+        .lock()
+        .ok()
+        .and_then(|guard| *guard)
+        .is_some()
+    {
+        reapply_embedded_placement(&app)?;
     } else if let Some(content) = embedded_content_webview(&app) {
         content.show().map_err(|err| err.to_string())?;
     }
@@ -260,14 +388,15 @@ pub fn on_main_window_resized(app: &AppHandle) {
     if !EMBED_VISIBLE.load(Ordering::SeqCst) {
         return;
     }
-    if let Some(params) = LAST_EMBED_LAYOUT.lock().ok().and_then(|guard| *guard) {
-        let _ = apply_embedded_layout(app, params);
-    }
+    let _ = reapply_embedded_placement(app);
 }
 
 #[tauri::command]
 pub fn human_browser_embed_hide(app: AppHandle) -> Result<(), String> {
     EMBED_VISIBLE.store(false, Ordering::SeqCst);
+    if let Ok(mut last) = LAST_EMBED_PLACEMENT.lock() {
+        *last = None;
+    }
     if let Some(content) = embedded_content_webview(&app) {
         content.hide().map_err(|err| err.to_string())?;
     }

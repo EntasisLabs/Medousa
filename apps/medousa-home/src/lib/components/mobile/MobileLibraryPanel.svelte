@@ -134,7 +134,7 @@
 
 <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col {visible ? '' : 'hidden'}">
   {#if view === "reader" && libraryTab === "notes"}
-    <header class="mobile-you-subheader flex items-center gap-2">
+    <header class="mobile-notes-subheader flex items-center gap-2">
       <button
         type="button"
         class="mobile-icon-btn shrink-0"
@@ -184,6 +184,9 @@
     </header>
     <VaultEditor visible={true} mobile={true} />
   {:else}
+    <header class="mobile-notes-header px-4 pb-2 pt-3">
+      <h1 class="text-lg font-semibold tracking-tight text-surface-50">Notes</h1>
+    </header>
     <div
       class="mobile-library-tabs flex shrink-0 gap-1 border-b border-surface-500/40 px-3 py-2"
       role="tablist"

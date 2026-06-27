@@ -1,4 +1,6 @@
-/** Iframe helpers (mobile) and embedded browser bounds measurement (desktop). */
+/** Browser pane measurement — native embed (Tauri desktop) vs iframe (mobile webviews). */
+
+import { isTauri, isTauriMobilePlatform } from "$lib/platform";
 
 export type BrowserWebviewBounds = {
   x: number;
@@ -7,10 +9,23 @@ export type BrowserWebviewBounds = {
   height: number;
 };
 
+/** Tauri desktop (including narrow viewport / mobile shell) — native WKWebView child. */
 export function canUseNativeBrowserWebview(): boolean {
-  return false;
+  return isTauri() && !isTauriMobilePlatform();
 }
 
+/** Plain DOM rect for native webview placement — no visualViewport offsets. */
+export function measureBrowserWebviewBounds(el: HTMLElement): BrowserWebviewBounds {
+  const rect = el.getBoundingClientRect();
+  return {
+    x: Math.round(rect.left),
+    y: Math.round(rect.top),
+    width: Math.max(8, Math.round(rect.width)),
+    height: Math.max(8, Math.round(rect.height)),
+  };
+}
+
+/** Iframe sizing on iOS/Android — account for visual viewport keyboard inset. */
 export function measureBrowserPaneForIframe(el: HTMLElement): BrowserWebviewBounds {
   const rect = el.getBoundingClientRect();
   const viewport = window.visualViewport;
@@ -31,8 +46,4 @@ export function measureBrowserPaneForIframe(el: HTMLElement): BrowserWebviewBoun
 
 export function isPaneLayoutReady(bounds: BrowserWebviewBounds): boolean {
   return bounds.width >= 8 && bounds.height >= 120;
-}
-
-export async function hideNativeBrowserWebview(): Promise<void> {
-  // No-op: desktop uses human_browser Rust shell.
 }

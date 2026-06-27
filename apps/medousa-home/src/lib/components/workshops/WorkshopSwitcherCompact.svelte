@@ -58,8 +58,7 @@
     haptic("light");
     sheetOpen = false;
     if (variant === "mobile") {
-      layout.setMobileTab("you");
-      layout.openYou("settings");
+      layout.openMore("settings");
     } else {
       settingsNav.openSection("basement");
       layout.navigateDesktop("settings", { bump: true });

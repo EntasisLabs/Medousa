@@ -5,10 +5,11 @@
   import ActivitySheet from "$lib/components/mobile/ActivitySheet.svelte";
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
   import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
-  import PulsePanel from "$lib/components/mobile/PulsePanel.svelte";
+  import HomePanel from "$lib/components/mobile/HomePanel.svelte";
   import WorkStory from "$lib/components/mobile/WorkStory.svelte";
-  import WorkTimeline from "$lib/components/mobile/WorkTimeline.svelte";
-  import YouHub from "$lib/components/mobile/YouHub.svelte";
+  import MoreHub from "$lib/components/mobile/MoreHub.svelte";
+  import MobileLibraryPanel from "$lib/components/mobile/MobileLibraryPanel.svelte";
+  import BrowserPanel from "$lib/components/browser/BrowserPanel.svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
@@ -81,11 +82,11 @@
     await vault.openNote(path);
     vault.enterPreviewMode();
     layout.setLibraryView("reader");
-    layout.openYou("library");
+    layout.openNotes();
   }
 
   async function handleSelectCard(id: string) {
-    switchMobileTab("work");
+    switchMobileTab("home");
     await workspace.selectCard(id);
   }
 
@@ -107,21 +108,14 @@
 >
   <main bind:this={mainEl} class="min-h-0 flex-1 overflow-hidden">
     {#key layout.navigationEpoch}
-      {#if layout.mobileTab === "pulse"}
-        <PulsePanel
+      {#if layout.mobileTab === "home"}
+        <HomePanel
           health={daemonHealth}
           onSelectCard={handleSelectCard}
           onOpenChat={handleOpenChat}
           onOpenNote={handleOpenNote}
-          onOpenSettings={() => layout.openYou("settings")}
+          onOpenSettings={() => layout.openMore("settings")}
           onToggleActivity={() => layout.toggleActivitySheet()}
-        />
-      {:else if layout.mobileTab === "work"}
-        <WorkTimeline
-          visible={true}
-          onSelectCard={handleSelectCard}
-          onOpenNote={handleOpenNote}
-          onOpenChat={handleOpenChat}
         />
       {:else if layout.mobileTab === "chat"}
         <ChatPanel
@@ -130,12 +124,16 @@
           mobile={true}
           onOpenContext={() => {
             layout.setIdentityDrawerOpen(false);
-            layout.openYou("context");
+            layout.openMore("context");
           }}
-          onOpenConnection={() => layout.openYou("settings")}
+          onOpenConnection={() => layout.openMore("settings")}
         />
-      {:else}
-        <YouHub
+      {:else if layout.mobileTab === "notes"}
+        <MobileLibraryPanel visible={true} onOpenChat={handleOpenChat} />
+      {:else if layout.mobileTab === "web"}
+        <BrowserPanel visible={true} />
+      {:else if layout.mobileTab === "more"}
+        <MoreHub
           visible={true}
           health={daemonHealth}
           revision={workspace.revision}
@@ -169,13 +167,13 @@
     onClose={() => layout.setIdentityDrawerOpen(false)}
     onOpenFullContext={() => {
       layout.setIdentityDrawerOpen(false);
-      layout.openYou("context");
+      layout.openMore("context");
     }}
   />
 
   <ActivitySheet onOpenNote={handleOpenNote} />
 
-  {#if layout.mobileTab === "work"}
+  {#if layout.mobileTab === "home"}
     <WorkStory
       onOpenNote={handleOpenNote}
       onOpenChat={handleOpenChat}
