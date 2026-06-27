@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { browser } from "$lib/stores/browser.svelte";
+  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 
   interface Props {
-    onSubmit?: (url: string) => void;
     urlBarFocusNonce?: number;
   }
 
-  let { onSubmit, urlBarFocusNonce = 0 }: Props = $props();
+  let { urlBarFocusNonce = 0 }: Props = $props();
 
   let inputEl = $state<HTMLInputElement | null>(null);
 
@@ -18,10 +17,9 @@
 
   function handleSubmit(event: Event) {
     event.preventDefault();
-    const url = browser.urlDraft.trim();
+    const url = humanBrowser.urlDraft.trim();
     if (!url) return;
-    onSubmit?.(url);
-    void browser.navigate(url, "user");
+    void humanBrowser.navigate(url);
   }
 </script>
 
@@ -31,7 +29,7 @@
     type="text"
     class="input min-w-0 flex-1 text-sm"
     placeholder="Search or enter URL"
-    bind:value={browser.urlDraft}
+    bind:value={humanBrowser.urlDraft}
     spellcheck="false"
     autocomplete="off"
     aria-label="Address bar"

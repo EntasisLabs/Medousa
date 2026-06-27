@@ -10,12 +10,6 @@ export async function launchBrowserWorkshop(input?: {
   navigateUrl?: string | null;
   openMinimized?: boolean;
 }) {
-  if (layout.isMobile) {
-    layout.openYou("web");
-  } else {
-    layout.navigateDesktop("web", { bump: true });
-  }
-
   const sessionId = input?.sessionId?.trim() || chat.sessionId?.trim() || null;
   if (sessionId && sessionId !== chat.sessionId) {
     await chat.switchSession(sessionId);
@@ -23,20 +17,23 @@ export async function launchBrowserWorkshop(input?: {
     void chat.ensureSessionHydrated();
   }
 
-  browser.linkSession(sessionId);
-  await browser.ensureTabGroup(sessionId);
-
-  if (input?.navigateUrl?.trim()) {
-    await browser.navigate(input.navigateUrl.trim(), "agent");
+  if (layout.isMobile) {
+    layout.openYou("web");
+    browser.linkSession(sessionId);
+    await browser.ensureTabGroup(sessionId);
+    if (input?.navigateUrl?.trim()) {
+      await browser.navigate(input.navigateUrl.trim(), "agent");
+    }
+    browserWorkshop.openForBrowser({
+      sessionId,
+      tabGroupId: browser.tabGroupId,
+      scopeLabel: browser.scopeLabel,
+    });
+    if (input?.openMinimized) browserWorkshop.minimized = true;
+    return;
   }
 
-  browserWorkshop.openForBrowser({
-    sessionId,
-    tabGroupId: browser.tabGroupId,
-    scopeLabel: browser.scopeLabel,
-  });
-
-  if (input?.openMinimized) {
-    browserWorkshop.minimized = true;
-  }
+  // Desktop human-first browser: open main chat until agent workshop reattaches.
+  layout.navigateDesktop("chat", { bump: true });
+  void chat.ensureSessionHydrated();
 }

@@ -28,6 +28,8 @@
     chatActivity?: number;
     workActivity?: number;
     activeProfileLabel?: string;
+    /** Dedicated browser window is open/focused (desktop). */
+    webActive?: boolean;
   }
 
   let {
@@ -36,6 +38,7 @@
     chatActivity = 0,
     workActivity = 0,
     activeProfileLabel = "Personal",
+    webActive = false,
   }: Props = $props();
 
   const lifeOrbit: NavItem[] = [
@@ -71,7 +74,8 @@
   }
 
   function railBtnClass(id: Surface, tier: "life" | "utility"): string {
-    const activeClass = active === id ? "workshop-rail-btn-active" : "";
+    const isActive = id === "web" ? webActive : active === id;
+    const activeClass = isActive ? "workshop-rail-btn-active" : "";
     const tierClass =
       tier === "life" ? "workshop-rail-btn-tier-life" : "workshop-rail-btn-tier-utility";
     return `workshop-rail-btn relative ${tierClass} ${activeClass}`;
@@ -90,7 +94,7 @@
         class={railBtnClass(item.id, "life")}
         title={navTitle(item)}
         aria-label={badge > 0 ? `${navTitle(item)} (${badge} active)` : navTitle(item)}
-        aria-current={active === item.id ? "page" : undefined}
+        aria-current={(item.id === "web" ? webActive : active === item.id) ? "page" : undefined}
         onclick={() => onSelect(item.id)}
       >
         <Icon {...iconProps} />

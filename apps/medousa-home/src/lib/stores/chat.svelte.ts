@@ -205,12 +205,8 @@ export class ChatStore {
           openedBy: "agent",
           sessionId: this.sessionId,
           workCardId,
-          openWorkshop: true,
         }),
       );
-      void import("$lib/stores/browser.svelte").then(({ browser }) => {
-        void browser.setControl("awaiting_operator");
-      });
     }
   }
 

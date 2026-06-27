@@ -1,20 +1,13 @@
-/** Open a URL on the Web surface (shared browser workspace). */
+/** Open a URL in the dedicated browser window (desktop) or You → Web (mobile). */
 
 import { browser } from "$lib/stores/browser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
-import { chat } from "$lib/stores/chat.svelte";
-
-function navigateToWebSurface() {
-  if (layout.isMobile) {
-    layout.openYou("web");
-    return;
-  }
-  layout.navigateDesktop("web", { bump: true });
-}
+import { humanBrowserNavigate } from "$lib/humanBrowser";
+import { isTauri, showBrowser } from "$lib/window";
 
 export async function openInBrowser(
   url: string,
-  options?: {
+  _options?: {
     openedBy?: "agent" | "user";
     sessionId?: string | null;
     workCardId?: string | null;
@@ -25,30 +18,25 @@ export async function openInBrowser(
   const trimmed = url.trim();
   if (!trimmed) return;
 
-  navigateToWebSurface();
-
-  const sessionId = options?.sessionId?.trim() || chat.sessionId?.trim() || null;
-  if (sessionId) {
-    browser.linkSession(sessionId);
-    if (sessionId !== chat.sessionId) {
-      await chat.switchSession(sessionId);
+  if (layout.isMobile) {
+    layout.openYou("web");
+    await browser.navigate(trimmed, "user", _options?.title);
+    if (_options?.openWorkshop) {
+      const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
+      browserWorkshop.openForBrowser({
+        sessionId: _options?.sessionId ?? null,
+        tabGroupId: browser.tabGroupId,
+        scopeLabel: browser.scopeLabel,
+      });
     }
+    return;
   }
 
-  if (options?.workCardId) {
-    await browser.linkWorkCard(options.workCardId);
-  }
+  if (!isTauri()) return;
 
-  await browser.navigate(trimmed, options?.openedBy ?? "user", options?.title);
-
-  if (options?.openWorkshop) {
-    const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
-    browserWorkshop.openForBrowser({
-      sessionId,
-      tabGroupId: browser.tabGroupId,
-      scopeLabel: browser.scopeLabel,
-    });
-  }
+  await showBrowser();
+  const normalized = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+  await humanBrowserNavigate(normalized);
 }
 
 export function isHttpUrl(value: string): boolean {
@@ -58,4 +46,14 @@ export function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Open or focus the browser window without navigating. */
+export async function openBrowserWindow() {
+  if (layout.isMobile) {
+    layout.openYou("web");
+    return;
+  }
+  if (!isTauri()) return;
+  await showBrowser();
 }

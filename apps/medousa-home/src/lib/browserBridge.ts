@@ -1,7 +1,7 @@
 /** Browser tab group API — Tauri invoke in desktop app (no CORS); HTTP fallback for web-only dev. */
 
 import { invoke } from "@tauri-apps/api/core";
-import { isTauri } from "$lib/window";
+import { isTauri } from "$lib/platform";
 
 export type TabOpenedBy = "agent" | "user";
 export type BrowserControl = "agent" | "user" | "awaiting_operator";

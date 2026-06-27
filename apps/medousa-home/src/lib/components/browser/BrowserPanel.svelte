@@ -1,17 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ArrowLeft, ArrowRight, BookmarkPlus, Globe, MessageCircle, RefreshCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
   import BrowserTabBar from "$lib/components/browser/BrowserTabBar.svelte";
   import BrowserUrlBar from "$lib/components/browser/BrowserUrlBar.svelte";
-  import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
-  import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserWebView from "$lib/components/browser/BrowserWebView.svelte";
-  import { hideNativeBrowserWebview } from "$lib/browserWebview";
   import { browser } from "$lib/stores/browser.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { launchBrowserWorkshop } from "$lib/utils/launchBrowserWorkshop";
   import { bridgeSnapshot } from "$lib/browserBridge";
 
   interface Props {
@@ -21,9 +17,7 @@
 
   let { visible = true, mobile = false }: Props = $props();
 
-  const boundsSyncKey = $derived(
-    `${layout.activityWidth}:${layout.activityCollapsed}:${layout.viewportWidth}:${layout.navigationEpoch}`,
-  );
+  const boundsSyncKey = $derived(`${layout.viewportWidth}`);
 
   let browserPaneEl = $state<HTMLDivElement | null>(null);
   let webView = $state<{ reload: () => Promise<void>; goBack: () => Promise<void>; goForward: () => Promise<void> } | null>(null);
@@ -31,16 +25,11 @@
 
   onMount(() => {
     void browser.ensureTabGroup(chat.sessionId);
-    return () => {
-      void hideNativeBrowserWebview();
-    };
+    void browser.refreshFromBridge();
   });
 
   $effect(() => {
-    if (!visible) {
-      void hideNativeBrowserWebview();
-      return;
-    }
+    if (!visible) return;
     void browser.ensureTabGroup(chat.sessionId);
   });
 
@@ -81,7 +70,7 @@
         ? 'py-1.5'
         : 'py-2'}"
     >
-      <div class="flex items-center gap-1">
+      <div class="flex shrink-0 items-center gap-1">
         <button
           type="button"
           class="btn btn-icon btn-sm"
@@ -105,29 +94,7 @@
         </button>
       </div>
       <BrowserUrlBar />
-      {#if !mobile}
-        <BrowserControlHandoff compact={true} />
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface shrink-0"
-          disabled={saving || browser.activeUrl === "about:blank"}
-          onclick={() => void saveToVault()}
-          title="Save page to Library"
-        >
-          <BookmarkPlus size={14} class="mr-1 inline" />
-          Save
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-primary shrink-0"
-          onclick={() => void launchBrowserWorkshop({ sessionId: chat.sessionId })}
-        >
-          <MessageCircle size={14} class="mr-1 inline" />
-          Ask Medousa
-        </button>
-      {/if}
     </div>
-    <BrowserCaptchaBanner />
     <div
       bind:this={browserPaneEl}
       data-browser-surface
@@ -142,18 +109,9 @@
           {boundsSyncKey}
         />
       {:else}
-        <div class="flex h-full flex-col items-center justify-center gap-3 bg-surface-900 text-surface-300">
+        <div class="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-surface-900 text-surface-300">
           <Globe size={40} strokeWidth={1.25} />
           <p class="text-sm">Enter a URL above to start browsing.</p>
-          {#if !mobile}
-            <button
-              type="button"
-              class="btn btn-sm variant-soft-primary"
-              onclick={() => void launchBrowserWorkshop({ sessionId: chat.sessionId })}
-            >
-              Ask Medousa to research
-            </button>
-          {/if}
         </div>
       {/if}
       {#if browser.loading}

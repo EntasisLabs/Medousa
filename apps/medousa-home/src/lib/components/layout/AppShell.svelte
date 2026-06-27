@@ -8,7 +8,6 @@
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
   import VaultQuickSwitcher from "$lib/components/vault/VaultQuickSwitcher.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
-  import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
   import MobileBrowserWorkshop from "$lib/components/mobile/MobileBrowserWorkshop.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
@@ -99,12 +98,6 @@
 />
 {#if !layout.isMobile}
   <VaultNoteWorkshop
-    onOpenFullChat={() => {
-      layout.navigateDesktop("chat", { bump: true });
-      void chat.ensureSessionHydrated();
-    }}
-  />
-  <BrowserWorkshop
     onOpenFullChat={() => {
       layout.navigateDesktop("chat", { bump: true });
       void chat.ensureSessionHydrated();

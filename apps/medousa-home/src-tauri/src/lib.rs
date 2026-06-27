@@ -20,7 +20,7 @@ mod mcp_gateway;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-mod browser_webview;
+mod human_browser;
 mod provider_catalog;
 mod providers;
 mod tray;
@@ -88,6 +88,11 @@ pub fn run() {
         // The hidden chat-popout window would also keep the process alive if we only
         // destroyed main; exit(0) tears down the whole app. Use tray → Hide to background.
         builder = builder.on_window_event(|window, event| {
+            if window.label() == "browser" {
+                if let tauri::WindowEvent::Resized { .. } = event {
+                    human_browser::on_browser_window_resized(window.app_handle());
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if window.label() == "main" {
                     window.app_handle().exit(0);
@@ -154,12 +159,10 @@ pub fn run() {
             browser_host::browser_bridge_set_control,
             browser_host::browser_bridge_link_work_card,
             browser_host::browser_bridge_snapshot,
-            browser_webview::browser_webview_sync,
-            browser_webview::browser_webview_navigate,
-            browser_webview::browser_webview_reload,
-            browser_webview::browser_webview_go_back,
-            browser_webview::browser_webview_go_forward,
-            browser_webview::browser_webview_hide,
+            human_browser::human_browser_navigate,
+            human_browser::human_browser_reload,
+            human_browser::human_browser_go_back,
+            human_browser::human_browser_go_forward,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,
@@ -262,6 +265,14 @@ pub fn run() {
             window::window_show_chat_popout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_hide_chat_popout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_show_browser,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_hide_browser,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::window_focus_browser,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            window::browser_window_present,
             tray::tray_update_blocked_count,
             medousa_paths::medousa_config_paths,
             medousa_paths::connection_runbook_path,
@@ -313,9 +324,10 @@ pub fn run() {
 fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Medousa", true, None::<&str>)?;
     let chat = MenuItem::with_id(app, "chat", "Open Chat", true, None::<&str>)?;
+    let web = MenuItem::with_id(app, "web", "Open Web", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &chat, &hide, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &chat, &web, &hide, &quit])?;
 
     if let Some(icon) = app.default_window_icon().cloned() {
         TrayIconBuilder::with_id("main-tray")
@@ -326,6 +338,9 @@ fn setup_desktop_tray(app: &tauri::App) -> tauri::Result<()> {
                 "show" => show_main_window(app),
                 "chat" => {
                     let _ = window::window_show_chat_popout(app.clone());
+                }
+                "web" => {
+                    let _ = window::window_show_browser(app.clone());
                 }
                 "hide" => hide_main_window(app),
                 "quit" => app.exit(0),

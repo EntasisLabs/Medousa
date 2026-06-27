@@ -11,6 +11,7 @@ use medousa_browser_bridge::{
     BrowserControl, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
 };
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7422";
@@ -562,12 +563,19 @@ pub async fn browser_host_register_client(
 
 // ── Browser bridge (in-process; avoids CORS from Vite dev → :7422) ───────────
 
+fn emit_browser_context_updated(app: &AppHandle, tab_group_id: &str) {
+    let _ = app.emit("browser-context-updated", tab_group_id.to_string());
+}
+
 #[tauri::command]
 pub fn browser_bridge_create_tab_group(
+    app: AppHandle,
     chat_session_id: Option<String>,
     work_card_id: Option<String>,
 ) -> Result<TabGroup, String> {
-    Ok(TabGroupManager::create_group(chat_session_id, work_card_id))
+    let group = TabGroupManager::create_group(chat_session_id, work_card_id);
+    emit_browser_context_updated(&app, &group.id);
+    Ok(group)
 }
 
 #[tauri::command]
@@ -577,6 +585,7 @@ pub fn browser_bridge_get_tab_group(tab_group_id: String) -> Result<Option<TabGr
 
 #[tauri::command]
 pub fn browser_bridge_open_tab(
+    app: AppHandle,
     tab_group_id: String,
     url: String,
     opened_by: Option<String>,
@@ -589,11 +598,16 @@ pub fn browser_bridge_open_tab(
         parse_opened_by(opened_by.as_deref()),
     )
     .and_then(|_| TabGroupManager::get_group(&tab_group_id))
+    .map(|group| {
+        emit_browser_context_updated(&app, &tab_group_id);
+        group
+    })
     .ok_or_else(|| "tab group not found".to_string())
 }
 
 #[tauri::command]
 pub fn browser_bridge_navigate_tab(
+    app: AppHandle,
     tab_group_id: String,
     url: String,
     opened_by: Option<String>,
@@ -607,34 +621,59 @@ pub fn browser_bridge_navigate_tab(
         parse_opened_by(opened_by.as_deref()),
     )
     .and_then(|_| TabGroupManager::get_group(&tab_group_id))
+    .map(|group| {
+        emit_browser_context_updated(&app, &tab_group_id);
+        group
+    })
     .ok_or_else(|| "navigation failed".to_string())
 }
 
 #[tauri::command]
-pub fn browser_bridge_activate_tab(tab_group_id: String, tab_id: String) -> Result<TabGroup, String> {
-    TabGroupManager::activate_tab(&tab_group_id, &tab_id)
-        .ok_or_else(|| "tab not found".to_string())
+pub fn browser_bridge_activate_tab(
+    app: AppHandle,
+    tab_group_id: String,
+    tab_id: String,
+) -> Result<TabGroup, String> {
+    let group = TabGroupManager::activate_tab(&tab_group_id, &tab_id)
+        .ok_or_else(|| "tab not found".to_string())?;
+    emit_browser_context_updated(&app, &tab_group_id);
+    Ok(group)
 }
 
 #[tauri::command]
-pub fn browser_bridge_close_tab(tab_group_id: String, tab_id: String) -> Result<TabGroup, String> {
-    TabGroupManager::close_tab(&tab_group_id, &tab_id)
-        .ok_or_else(|| "tab group not found".to_string())
+pub fn browser_bridge_close_tab(
+    app: AppHandle,
+    tab_group_id: String,
+    tab_id: String,
+) -> Result<TabGroup, String> {
+    let group = TabGroupManager::close_tab(&tab_group_id, &tab_id)
+        .ok_or_else(|| "tab group not found".to_string())?;
+    emit_browser_context_updated(&app, &tab_group_id);
+    Ok(group)
 }
 
 #[tauri::command]
-pub fn browser_bridge_set_control(tab_group_id: String, control: String) -> Result<TabGroup, String> {
-    TabGroupManager::set_control(&tab_group_id, parse_control(&control))
-        .ok_or_else(|| "tab group not found".to_string())
+pub fn browser_bridge_set_control(
+    app: AppHandle,
+    tab_group_id: String,
+    control: String,
+) -> Result<TabGroup, String> {
+    let group = TabGroupManager::set_control(&tab_group_id, parse_control(&control))
+        .ok_or_else(|| "tab group not found".to_string())?;
+    emit_browser_context_updated(&app, &tab_group_id);
+    Ok(group)
 }
 
 #[tauri::command]
 pub fn browser_bridge_link_work_card(
+    app: AppHandle,
     tab_group_id: String,
     work_card_id: Option<String>,
 ) -> Result<TabGroup, String> {
-    TabGroupManager::link_work_card(&tab_group_id, work_card_id.as_deref())
-        .ok_or_else(|| "tab group not found".to_string())
+    let group = TabGroupManager::link_work_card(&tab_group_id, work_card_id.as_deref())
+        .ok_or_else(|| "tab group not found".to_string())?;
+    emit_browser_context_updated(&app, &tab_group_id);
+    Ok(group)
 }
 
 #[tauri::command]

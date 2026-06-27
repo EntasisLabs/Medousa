@@ -1,7 +1,4 @@
-/** Sync embedded native browser webview bounds (desktop Tauri only). */
-
-import { invoke } from "@tauri-apps/api/core";
-import { isTauri, isTauriMobilePlatform } from "$lib/platform";
+/** Iframe-only browser helpers (mobile / non-Tauri). */
 
 export type BrowserWebviewBounds = {
   x: number;
@@ -11,18 +8,14 @@ export type BrowserWebviewBounds = {
 };
 
 export function canUseNativeBrowserWebview(): boolean {
-  return isTauri() && !isTauriMobilePlatform();
+  return false;
 }
 
-/** Measure a DOM element for native webview placement. */
-export function measureBrowserWebviewBounds(el: HTMLElement): BrowserWebviewBounds {
+export function measureBrowserPaneForIframe(el: HTMLElement): BrowserWebviewBounds {
   const rect = el.getBoundingClientRect();
   const viewport = window.visualViewport;
-
-  // iOS / mobile WKWebView: visual viewport can be offset from the layout viewport.
   const offsetLeft = viewport?.offsetLeft ?? 0;
   const offsetTop = viewport?.offsetTop ?? 0;
-
   const top = rect.top + offsetTop;
   const left = rect.left + offsetLeft;
   const viewportBottom = offsetTop + (viewport?.height ?? window.innerHeight);
@@ -36,40 +29,10 @@ export function measureBrowserWebviewBounds(el: HTMLElement): BrowserWebviewBoun
   };
 }
 
-export async function syncNativeBrowserWebview(
-  bounds: BrowserWebviewBounds,
-  visible: boolean,
-  initialUrl?: string | null,
-): Promise<void> {
-  if (!canUseNativeBrowserWebview()) return;
-  await invoke("browser_webview_sync", {
-    bounds,
-    visible,
-    url: initialUrl ?? null,
-  });
-}
-
-export async function navigateNativeBrowserWebview(url: string): Promise<void> {
-  if (!canUseNativeBrowserWebview()) return;
-  await invoke("browser_webview_navigate", { url });
+export function isPaneLayoutReady(bounds: BrowserWebviewBounds): boolean {
+  return bounds.width >= 8 && bounds.height >= 120;
 }
 
 export async function hideNativeBrowserWebview(): Promise<void> {
-  if (!canUseNativeBrowserWebview()) return;
-  await invoke("browser_webview_hide");
-}
-
-export async function reloadNativeBrowserWebview(): Promise<void> {
-  if (!canUseNativeBrowserWebview()) return;
-  await invoke("browser_webview_reload");
-}
-
-export async function nativeBrowserGoBack(): Promise<void> {
-  if (!canUseNativeBrowserWebview()) return;
-  await invoke("browser_webview_go_back");
-}
-
-export async function nativeBrowserGoForward(): Promise<void> {
-  if (!canUseNativeBrowserWebview()) return;
-  await invoke("browser_webview_go_forward");
+  // No-op: desktop uses human_browser Rust shell.
 }
