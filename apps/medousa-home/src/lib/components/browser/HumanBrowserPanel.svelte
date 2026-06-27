@@ -8,7 +8,6 @@
   import {
     humanBrowserEmbedApplyLayout,
     humanBrowserEmbedHide,
-    humanBrowserEmbedShow,
     humanBrowserSetMobileShellActive,
     type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
@@ -117,62 +116,58 @@
   });
 </script>
 
-<!-- Native webview fills panel; chrome floats on top (Safari-style). -->
-<div class="relative h-full min-h-0 bg-surface-950 text-surface-50" data-browser-panel>
-  <div class="absolute inset-0 overflow-hidden bg-surface-900" data-browser-embed-host>
+<div class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50" data-browser-panel>
+  <!-- Chrome band — native webview is positioned below this (y=132 in Rust). Must stay 132px. -->
+  <div class="human-browser-chrome relative z-50 flex h-[132px] w-full shrink-0 flex-col">
+    <HumanBrowserTabBar />
+
+    <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
+      <div class="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          class="btn btn-icon btn-sm"
+          aria-label="Back"
+          disabled={!humanBrowser.canGoBack}
+          onclick={() => void humanBrowser.goBack()}
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <button
+          type="button"
+          class="btn btn-icon btn-sm"
+          aria-label="Forward"
+          disabled={!humanBrowser.canGoForward}
+          onclick={() => void humanBrowser.goForward()}
+        >
+          <ArrowRight size={16} />
+        </button>
+        <button
+          type="button"
+          class="btn btn-icon btn-sm"
+          aria-label="Reload"
+          onclick={() => void humanBrowser.reload()}
+        >
+          <RefreshCw size={16} />
+        </button>
+      </div>
+      <HumanBrowserUrlBar {urlBarFocusNonce} />
+      <BrowserChromeActions />
+    </div>
+
+    {#if humanBrowser.loading}
+      <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
+    {/if}
+  </div>
+
+  <!-- Native embed sits in this region (Rust-positioned below chrome). -->
+  <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-900" data-browser-embed-host>
     {#if humanBrowser.activeUrl === "about:blank"}
       <div
-        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 pt-28 text-surface-400"
+        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-surface-400"
       >
         <Globe size={40} strokeWidth={1.25} class="opacity-40" />
         <p class="text-sm">Enter a URL above or open a link from Chat</p>
       </div>
     {/if}
-    {#if humanBrowser.loading}
-      <div class="pointer-events-none absolute inset-x-0 top-28 h-0.5 bg-primary-500/80"></div>
-    {/if}
-  </div>
-
-  <div class="human-browser-chrome-overlay pointer-events-none absolute inset-x-0 top-0 z-50">
-    <div class="pointer-events-auto">
-      <HumanBrowserTabBar />
-
-      <div class="flex shrink-0 items-center gap-2 border-b border-surface-800/80 px-2 py-1.5">
-        <div class="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            class="btn btn-icon btn-sm"
-            aria-label="Back"
-            disabled={!humanBrowser.canGoBack}
-            onclick={() => void humanBrowser.goBack()}
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <button
-            type="button"
-            class="btn btn-icon btn-sm"
-            aria-label="Forward"
-            disabled={!humanBrowser.canGoForward}
-            onclick={() => void humanBrowser.goForward()}
-          >
-            <ArrowRight size={16} />
-          </button>
-          <button
-            type="button"
-            class="btn btn-icon btn-sm"
-            aria-label="Reload"
-            onclick={() => void humanBrowser.reload()}
-          >
-            <RefreshCw size={16} />
-          </button>
-        </div>
-        <HumanBrowserUrlBar {urlBarFocusNonce} />
-        <BrowserChromeActions />
-      </div>
-
-      {#if humanBrowser.loading}
-        <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
-      {/if}
-    </div>
   </div>
 </div>

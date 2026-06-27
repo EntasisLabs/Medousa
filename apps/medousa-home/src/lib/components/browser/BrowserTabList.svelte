@@ -27,7 +27,7 @@
 </script>
 
 {#if variant === "bar"}
-  <div class="flex min-w-0 items-end gap-1 overflow-x-auto border-b border-surface-800/60 bg-surface-950/40 px-2 pt-1.5">
+  <div class="flex min-w-0 items-end gap-1 overflow-x-auto border-b border-surface-800 bg-surface-950 px-2 pt-1.5">
     {#each humanBrowser.tabs as tab (tab.id)}
       <div
         class="group flex max-w-[220px] min-w-[120px] items-center gap-1 rounded-t-md border px-2 py-1.5 text-xs {tab.active

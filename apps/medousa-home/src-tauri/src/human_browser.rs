@@ -242,9 +242,9 @@ fn compute_embedded_bounds(
 
     Ok(EmbedBounds {
         x: NAV_RAIL_WIDTH,
-        y: 0.0,
+        y: CHROME_HEIGHT_LOGICAL,
         width: (win_w - NAV_RAIL_WIDTH - activity_w).max(8.0),
-        height: (win_h - bottom_chrome).max(8.0),
+        height: (win_h - CHROME_HEIGHT_LOGICAL - bottom_chrome).max(8.0),
     })
 }
 
