@@ -1,5 +1,7 @@
 /** Mobile browser chrome heights — must stay in sync with human_browser.rs */
 
+import type { HumanBrowserEmbedBounds } from "$lib/humanBrowser";
+
 /** `h-[52px]` BrowserPanel URL/toolbar row (single chrome owner on Web tab). */
 export const MOBILE_WEB_CHROME_HEIGHT = 52;
 
@@ -15,21 +17,32 @@ export function readMobileBottomChromeHeight(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : MOBILE_BOTTOM_CHROME_DEFAULT;
 }
 
+/** Measure the Web tab content pane — plain viewport coords, no visualViewport offset. */
+export function measureMobileBrowserSurfaceBounds(): HumanBrowserEmbedBounds | null {
+  if (typeof document === "undefined") return null;
+  const surface = document.querySelector("[data-browser-surface]");
+  if (!(surface instanceof HTMLElement)) return null;
+
+  const rect = surface.getBoundingClientRect();
+  if (rect.width < 8 || rect.height < 8) return null;
+
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
 /** Dev-only: compare Rust top chrome vs DOM content pane (enable via html[data-layout-debug]). */
-export function logMobileBrowserLayoutDebug(): void {
+export function logMobileBrowserLayoutDebug(measured: HumanBrowserEmbedBounds | null): void {
   if (typeof document === "undefined") return;
   if (!document.documentElement.hasAttribute("data-layout-debug")) return;
 
-  const surface = document.querySelector("[data-browser-surface]");
-  const rect = surface?.getBoundingClientRect();
-  const bottomChrome = readMobileBottomChromeHeight();
-
   console.info("[mobile-browser-layout]", {
     rustTopChrome: MOBILE_WEB_CHROME_HEIGHT,
-    surfaceTop: rect?.top ?? null,
-    surfaceHeight: rect?.height ?? null,
-    deltaTop: rect != null ? rect.top - MOBILE_WEB_CHROME_HEIGHT : null,
-    bottomChrome,
+    measured,
+    bottomChrome: readMobileBottomChromeHeight(),
     windowInner: { w: window.innerWidth, h: window.innerHeight },
   });
 }

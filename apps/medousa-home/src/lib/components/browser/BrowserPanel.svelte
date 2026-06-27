@@ -2,9 +2,9 @@
   /**
    * Mobile Web tab browser surface.
    * Shares `humanBrowser` with desktop; native WKWebView on Tauri desktop
-   * (fixed Rust layout), iframe fallback on iOS/Android.
+   * (DOM-measured layout), iframe fallback on iOS/Android.
    */
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
@@ -17,7 +17,11 @@
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { readMobileBottomChromeHeight, logMobileBrowserLayoutDebug } from "$lib/utils/mobileBrowserLayout";
+  import {
+    readMobileBottomChromeHeight,
+    measureMobileBrowserSurfaceBounds,
+    logMobileBrowserLayoutDebug,
+  } from "$lib/utils/mobileBrowserLayout";
 
   interface Props {
     visible?: boolean;
@@ -33,20 +37,55 @@
     goForward: () => Promise<void>;
   } | null>(null);
 
+  let surfaceEl = $state<HTMLElement | null>(null);
+  let resizeObserver: ResizeObserver | null = null;
+
   async function presentEmbed() {
     if (!useNative || !visible) return;
-    await humanBrowserEmbedApplyMobileLayout({
+
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const contentBounds = measureMobileBrowserSurfaceBounds();
+    const recreated = await humanBrowserEmbedApplyMobileLayout({
       bottomChromeHeight: readMobileBottomChromeHeight(),
+      contentBounds,
     });
-    requestAnimationFrame(() => logMobileBrowserLayoutDebug());
+
+    logMobileBrowserLayoutDebug(contentBounds);
+
+    const url = humanBrowser.activeUrl;
+    if (recreated && url && url !== "about:blank") {
+      await humanBrowser.navigate(url);
+    }
   }
+
+  $effect(() => {
+    if (!useNative || !visible) return;
+    return () => {
+      void humanBrowserEmbedHide();
+    };
+  });
 
   $effect(() => {
     if (!useNative || !visible) return;
     layout.viewportWidth;
     void presentEmbed();
+  });
+
+  $effect(() => {
+    if (!useNative || !visible || !surfaceEl) return;
+
+    resizeObserver?.disconnect();
+    resizeObserver = new ResizeObserver(() => {
+      void presentEmbed();
+    });
+    resizeObserver.observe(surfaceEl);
+
     return () => {
-      void humanBrowserEmbedHide();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
     };
   });
 
@@ -67,6 +106,7 @@
 
     return () => {
       if (useNative) window.removeEventListener("resize", onResize);
+      resizeObserver?.disconnect();
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
   });
@@ -82,7 +122,7 @@
 
 {#if visible}
   <div class="flex h-full min-h-0 flex-col bg-surface-950">
-    <!-- Fixed toolbar height — must match MOBILE_BROWSER_TOOLBAR_HEIGHT in human_browser.rs -->
+    <!-- Fixed toolbar height — must match MOBILE_WEB_CHROME_HEIGHT in human_browser.rs -->
     <div
       class="flex h-[52px] shrink-0 items-center gap-2 overflow-hidden border-b border-surface-800 px-3"
     >
@@ -118,6 +158,7 @@
     </div>
 
     <div
+      bind:this={surfaceEl}
       data-browser-surface
       class="relative min-h-0 flex-1 overflow-hidden bg-surface-950"
     >

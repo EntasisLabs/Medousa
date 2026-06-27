@@ -29,11 +29,12 @@ export async function humanBrowserEmbedApplyLayout(
 
 export interface HumanBrowserEmbedMobileLayout {
   bottomChromeHeight: number;
+  contentBounds?: HumanBrowserEmbedBounds | null;
 }
 
 export async function humanBrowserEmbedApplyMobileLayout(
   params: HumanBrowserEmbedMobileLayout,
-): Promise<void> {
+): Promise<boolean> {
   return invoke("human_browser_embed_apply_mobile_layout", { params });
 }
 
