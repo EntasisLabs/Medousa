@@ -1,12 +1,15 @@
 /** Open a URL in the embedded Web surface (desktop) or Web tab (mobile). */
 
-import { layout } from "$lib/stores/layout.svelte";
+import { browser } from "$lib/stores/browser.svelte";
+import { chat } from "$lib/stores/chat.svelte";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+import { layout } from "$lib/stores/layout.svelte";
+import { markAgentNavigation } from "$lib/utils/agentBrowserCoord";
 import { isTauri } from "$lib/window";
 
 export async function openInBrowser(
   url: string,
-  _options?: {
+  options?: {
     openedBy?: "agent" | "user";
     sessionId?: string | null;
     workCardId?: string | null;
@@ -25,17 +28,48 @@ export async function openInBrowser(
     return;
   }
 
+  const openedBy = options?.openedBy ?? "user";
+  const sessionId =
+    options?.sessionId?.trim() || chat.sessionId?.trim() || null;
+
+  if (sessionId) {
+    browser.linkSession(sessionId);
+  }
+  if (options?.workCardId?.trim()) {
+    await browser.linkWorkCard(options.workCardId.trim());
+  }
+  await browser.ensureTabGroup(sessionId);
+
   const normalized = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+
+  if (openedBy === "agent") {
+    markAgentNavigation();
+    await browser.handleAgentNavigation(normalized, options?.title);
+  }
+
   await humanBrowser.navigate(normalized);
 
-  if (layout.isMobile && _options?.openWorkshop) {
-    const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
-    const { browser } = await import("$lib/stores/browser.svelte");
-    browserWorkshop.openForBrowser({
-      sessionId: _options?.sessionId ?? null,
-      tabGroupId: browser.tabGroupId,
-      scopeLabel: humanBrowser.scopeLabel,
-    });
+  if (openedBy === "user") {
+    await browser.syncFromNative(normalized);
+  } else if (browser.control !== "awaiting_operator") {
+    await browser.setControl("agent");
+  }
+
+  if (options?.openWorkshop) {
+    if (layout.isMobile) {
+      const { browserWorkshop } = await import("$lib/stores/browserWorkshop.svelte");
+      browserWorkshop.openForBrowser({
+        sessionId,
+        tabGroupId: browser.tabGroupId,
+        scopeLabel: humanBrowser.scopeLabel,
+      });
+    } else {
+      const { launchBrowserWorkshop } = await import("$lib/utils/launchBrowserWorkshop");
+      await launchBrowserWorkshop({
+        sessionId,
+        navigateUrl: null,
+      });
+    }
   }
 }
 

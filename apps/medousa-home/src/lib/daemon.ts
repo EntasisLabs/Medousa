@@ -653,7 +653,9 @@ export async function resumeBrowserSession(
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     const { isTauriMobilePlatform } = await import("$lib/platform");
     if (!isTauriMobilePlatform()) {
-      return resumeBrowserHostSession(sessionId);
+      const { resumeBrowserChallenge } = await import("$lib/utils/resumeBrowserChallenge");
+      await resumeBrowserChallenge(sessionId);
+      return { ok: true, session_id: sessionId };
     }
   }
   const base = (await getDaemonUrl()).replace(/\/$/, "");
@@ -712,6 +714,35 @@ export async function completeBrowserSession(
     throw new Error(text || `HTTP ${response.status}`);
   }
   return response.json() as Promise<Record<string, unknown>>;
+}
+
+export interface BrowserSessionRecord {
+  session_id: string;
+  query: string;
+  max_results: number;
+  status: string;
+}
+
+export async function fetchBrowserSession(
+  sessionId: string,
+): Promise<BrowserSessionRecord> {
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const response = await fetch(
+    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}`,
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as {
+    ok?: boolean;
+    session?: BrowserSessionRecord;
+    error?: string;
+  };
+  if (!body.ok || !body.session) {
+    throw new Error(body.error || "browser session not found");
+  }
+  return body.session;
 }
 
 export interface TurnBudgetRequestRecord {

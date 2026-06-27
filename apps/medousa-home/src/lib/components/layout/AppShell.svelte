@@ -18,7 +18,9 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { applyNativeMobileShellLayout, isTauri, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
   import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
+  import { attachAgentBrowserCoord } from "$lib/utils/agentBrowserCoord";
   import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
+  import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
 
   let commandPaletteOpen = $state(false);
 
@@ -50,6 +52,7 @@
           }
         });
     const stopNative = initMobileNative(openWorkCard);
+    const stopAgentBrowserCoord = attachAgentBrowserCoord();
 
     const onKeydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -76,6 +79,7 @@
       stopViewport();
       stopMobileViewport();
       stopNative();
+      stopAgentBrowserCoord();
       window.removeEventListener("keydown", onKeydown);
     };
   });
@@ -111,6 +115,12 @@
 />
 {#if !layout.isMobile}
   <VaultNoteWorkshop
+    onOpenFullChat={() => {
+      layout.navigateDesktop("chat", { bump: true });
+      void chat.ensureSessionHydrated();
+    }}
+  />
+  <BrowserWorkshop
     onOpenFullChat={() => {
       layout.navigateDesktop("chat", { bump: true });
       void chat.ensureSessionHydrated();

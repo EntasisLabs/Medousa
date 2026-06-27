@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
   import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
+  import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
+  import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import {
     humanBrowserEmbedApplyLayout,
     humanBrowserEmbedHide,
     humanBrowserSetMobileShellActive,
-    type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -60,13 +60,6 @@
   });
 
   onMount(() => {
-    const unlisteners: Promise<() => void>[] = [];
-    unlisteners.push(
-      listen<HumanBrowserNavigatedPayload>("human-browser-navigated", (event) => {
-        humanBrowser.syncFromNative(event.payload);
-      }),
-    );
-
     const onKeydown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
@@ -111,14 +104,13 @@
     return () => {
       window.removeEventListener("keydown", onKeydown);
       window.removeEventListener("resize", onResize);
-      Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
   });
 </script>
 
 <div class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50" data-browser-panel>
-  <!-- Chrome band — native webview is positioned below this (y=132 in Rust). Must stay 132px. -->
-  <div class="human-browser-chrome relative z-50 flex h-[132px] w-full shrink-0 flex-col">
+  <!-- Chrome band — native webview is positioned below this (y=156 in Rust). Must stay 156px. -->
+  <div class="human-browser-chrome relative z-50 flex h-[156px] w-full shrink-0 flex-col">
     <HumanBrowserTabBar />
 
     <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
@@ -151,8 +143,11 @@
         </button>
       </div>
       <HumanBrowserUrlBar {urlBarFocusNonce} />
+      <BrowserControlHandoff compact={true} />
       <BrowserChromeActions />
     </div>
+
+    <BrowserCaptchaBanner compact={true} />
 
     {#if humanBrowser.loading}
       <div class="h-0.5 shrink-0 bg-primary-500/80"></div>

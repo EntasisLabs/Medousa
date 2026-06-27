@@ -3,7 +3,9 @@
 import { browser } from "$lib/stores/browser.svelte";
 import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
 import { chat } from "$lib/stores/chat.svelte";
+import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
+import { openInBrowser } from "$lib/utils/openInBrowser";
 
 export async function launchBrowserWorkshop(input?: {
   sessionId?: string | null;
@@ -22,18 +24,33 @@ export async function launchBrowserWorkshop(input?: {
     browser.linkSession(sessionId);
     await browser.ensureTabGroup(sessionId);
     if (input?.navigateUrl?.trim()) {
-      await browser.navigate(input.navigateUrl.trim(), "agent");
+      await openInBrowser(input.navigateUrl.trim(), {
+        openedBy: "agent",
+        sessionId,
+      });
     }
     browserWorkshop.openForBrowser({
       sessionId,
       tabGroupId: browser.tabGroupId,
-      scopeLabel: browser.scopeLabel,
+      scopeLabel: humanBrowser.scopeLabel,
     });
     if (input?.openMinimized) browserWorkshop.minimized = true;
     return;
   }
 
-  // Desktop human-first browser: open main chat until agent workshop reattaches.
-  layout.navigateDesktop("chat", { bump: true });
-  void chat.ensureSessionHydrated();
+  layout.navigateDesktop("web");
+  browser.linkSession(sessionId);
+  await browser.ensureTabGroup(sessionId);
+  if (input?.navigateUrl?.trim()) {
+    await openInBrowser(input.navigateUrl.trim(), {
+      openedBy: "agent",
+      sessionId,
+    });
+  }
+  browserWorkshop.openForBrowser({
+    sessionId,
+    tabGroupId: browser.tabGroupId,
+    scopeLabel: humanBrowser.scopeLabel,
+  });
+  if (input?.openMinimized) browserWorkshop.minimized = true;
 }

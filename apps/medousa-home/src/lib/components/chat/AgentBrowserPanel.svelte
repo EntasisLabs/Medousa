@@ -1,8 +1,10 @@
 <script lang="ts">
   import { chat } from "$lib/stores/chat.svelte";
-  import { resumeBrowserSession } from "$lib/daemon";
+  import { browser } from "$lib/stores/browser.svelte";
+  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { haptic } from "$lib/haptics";
   import { openInBrowser } from "$lib/utils/openInBrowser";
+  import { resumeBrowserChallenge } from "$lib/utils/resumeBrowserChallenge";
 
   interface Props {
     mobile?: boolean;
@@ -25,12 +27,13 @@
   }
 
   async function continueAgent() {
-    if (!pending || busy) return;
+    if (!pending || busy || humanBrowser.loading) return;
     busy = true;
     feedback = null;
     try {
-      await resumeBrowserSession(pending.sessionId);
+      await resumeBrowserChallenge(pending.sessionId);
       chat.clearBrowserChallenge(pending.sessionId);
+      await browser.setControl("agent");
       feedback = "Verification submitted — agent will continue.";
       haptic("success");
     } catch (err) {
@@ -74,7 +77,7 @@
         <button
           type="button"
           class="btn btn-sm variant-filled-primary"
-          disabled={busy}
+          disabled={busy || humanBrowser.loading}
           onclick={() => void continueAgent()}
         >
           Continue agent

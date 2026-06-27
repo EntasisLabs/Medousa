@@ -32,6 +32,17 @@ pub fn fetch_url_markdown(url: &str, max_chars: usize) -> Result<FetchResult, St
     })
 }
 
+pub fn markdown_from_html(html: &str, url: &str, max_chars: usize) -> FetchResult {
+    let max_chars = max_chars.clamp(256, 32_000);
+    let title = extract_title(html).unwrap_or_else(|| url.to_string());
+    let markdown = html_to_markdown_lite(html, max_chars);
+    FetchResult {
+        url: url.to_string(),
+        title,
+        markdown,
+    }
+}
+
 fn extract_title(html: &str) -> Option<String> {
     let lower = html.to_ascii_lowercase();
     let start = lower.find("<title>")? + 7;

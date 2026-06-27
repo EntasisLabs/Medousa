@@ -73,6 +73,33 @@ export async function humanBrowserSetMobileShellActive(active: boolean): Promise
   return invoke("human_browser_set_mobile_shell_active", { active });
 }
 
+export interface HumanBrowserSnapshotMarkdown {
+  url: string;
+  title: string;
+  markdown: string;
+}
+
+export interface HumanBrowserSearchSnapshot {
+  query: string;
+  provider: string;
+  results: Array<{ title: string; url: string; snippet: string }>;
+  cached: boolean;
+  challenge?: string | null;
+}
+
+export async function humanBrowserSnapshotSearch(
+  query: string,
+  maxResults = 8,
+): Promise<HumanBrowserSearchSnapshot> {
+  return invoke("human_browser_snapshot_search", { query, maxResults });
+}
+
+export async function humanBrowserSnapshotMarkdown(
+  maxChars = 4000,
+): Promise<HumanBrowserSnapshotMarkdown> {
+  return invoke("human_browser_snapshot_markdown", { maxChars });
+}
+
 export interface HumanBrowserNavigatedPayload {
   url: string;
   title?: string | null;

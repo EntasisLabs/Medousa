@@ -109,6 +109,25 @@ pub fn search_ddg_html(query: &str, max_results: usize) -> Result<SearchResponse
     })
 }
 
+pub fn search_response_from_ddg_html(
+    html: &str,
+    page_url: &str,
+    query: &str,
+    max_results: usize,
+) -> SearchResponse {
+    let trimmed = query.trim();
+    let max_results = max_results.clamp(1, 20);
+    let results = parse_ddg_results(html, max_results);
+    let challenge = detect_challenge(page_url, 200, html, results.len()).map(challenge_label);
+    SearchResponse {
+        query: trimmed.to_string(),
+        provider: "duckduckgo_html".to_string(),
+        results,
+        cached: false,
+        challenge,
+    }
+}
+
 fn challenge_label(reason: ChallengeReason) -> String {
     match reason {
         ChallengeReason::CaptchaUrl => "captcha_url".to_string(),

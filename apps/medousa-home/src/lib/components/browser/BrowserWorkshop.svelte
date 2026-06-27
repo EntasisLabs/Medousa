@@ -6,6 +6,7 @@
   import { browser } from "$lib/stores/browser.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
 
   interface Props {
@@ -22,7 +23,16 @@
     if (!browserWorkshop.open) return;
     if (layout.isMobile && layout.mobileTab !== "web") {
       browserWorkshop.close();
+      return;
     }
+    if (!layout.isMobile && layout.desktopSurface !== "web") {
+      browserWorkshop.close();
+    }
+  });
+
+  $effect(() => {
+    if (!browserWorkshop.open) return;
+    browserWorkshop.scopeLabel = humanBrowser.scopeLabel;
   });
 
   onMount(() => {

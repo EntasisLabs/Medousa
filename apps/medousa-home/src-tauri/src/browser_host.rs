@@ -100,6 +100,23 @@ async fn search(Json(request): Json<SearchRequest>) -> Result<Json<SearchRespons
 async fn fetch(Json(request): Json<FetchRequest>) -> Result<Json<serde_json::Value>, String> {
     let url = request.url.clone();
     let max_chars = request.max_chars;
+    if let Some(app) = crate::human_browser::app_handle() {
+        if crate::human_browser::urls_match_for_snapshot(
+            &crate::human_browser::human_browser_active_url(),
+            &url,
+        ) {
+            if let Ok(fetched) =
+                crate::human_browser::snapshot_markdown_for_url(&app, &url, max_chars).await
+            {
+                return Ok(Json(serde_json::json!({
+                    "url": fetched.url,
+                    "title": fetched.title,
+                    "markdown": fetched.markdown,
+                    "binding_used": "human_webview",
+                })));
+            }
+        }
+    }
     let fetched = tokio::task::spawn_blocking(move || fetch_url_markdown(&url, max_chars))
         .await
         .map_err(|err| err.to_string())??;
@@ -107,6 +124,7 @@ async fn fetch(Json(request): Json<FetchRequest>) -> Result<Json<serde_json::Val
         "url": fetched.url,
         "title": fetched.title,
         "markdown": fetched.markdown,
+        "binding_used": "browser_host_lite",
     })))
 }
 
@@ -292,6 +310,32 @@ async fn snapshot_tab_group(
     Path(tab_group_id): Path<String>,
     Json(request): Json<TabSnapshotRequest>,
 ) -> Result<Json<BrowserSnapshot>, String> {
+    if let Some(app) = crate::human_browser::app_handle() {
+        if let Some(group) = TabGroupManager::get_group(&tab_group_id) {
+            if let Some(tab) = group.tabs.iter().find(|tab| tab.active) {
+                if crate::human_browser::urls_match_for_snapshot(
+                    &crate::human_browser::human_browser_active_url(),
+                    &tab.url,
+                ) {
+                    if let Ok(fetched) = crate::human_browser::snapshot_markdown_for_url(
+                        &app,
+                        &tab.url,
+                        request.max_chars,
+                    )
+                    .await
+                    {
+                        return Ok(Json(BrowserSnapshot {
+                            tab_id: tab.id.clone(),
+                            url: fetched.url,
+                            title: fetched.title,
+                            markdown: fetched.markdown,
+                            links: Vec::new(),
+                        }));
+                    }
+                }
+            }
+        }
+    }
     let snapshot =
         TabGroupManager::snapshot_active_tab(&tab_group_id, request.max_chars)?;
     Ok(Json(snapshot))
@@ -678,10 +722,31 @@ pub fn browser_bridge_link_work_card(
 
 #[tauri::command]
 pub async fn browser_bridge_snapshot(
+    app: AppHandle,
     tab_group_id: String,
     max_chars: Option<usize>,
 ) -> Result<BrowserSnapshot, String> {
     let max_chars = max_chars.unwrap_or(4000);
+    if let Some(group) = TabGroupManager::get_group(&tab_group_id) {
+        if let Some(tab) = group.tabs.iter().find(|tab| tab.active) {
+            if crate::human_browser::urls_match_for_snapshot(
+                &crate::human_browser::human_browser_active_url(),
+                &tab.url,
+            ) {
+                if let Ok(fetched) =
+                    crate::human_browser::snapshot_markdown_for_url(&app, &tab.url, max_chars).await
+                {
+                    return Ok(BrowserSnapshot {
+                        tab_id: tab.id.clone(),
+                        url: fetched.url,
+                        title: fetched.title,
+                        markdown: fetched.markdown,
+                        links: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
     tokio::task::spawn_blocking(move || TabGroupManager::snapshot_active_tab(&tab_group_id, max_chars))
         .await
         .map_err(|err| err.to_string())?

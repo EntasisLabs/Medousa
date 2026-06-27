@@ -39,7 +39,23 @@ flowchart LR
 
 - Daemon stores in-memory `BrowserSession` records (`src/browser_sessions.rs`)
 - Challenge: tool returns `challenge_required`; SSE emits `browser_challenge` with `browser_session_id` + `browser_challenge_url`
-- Resume: desktop → BrowserHost `POST /v1/sessions/{id}/resume`; iOS → daemon `POST /v1/browser/sessions/{id}/complete`
+- Resume:
+  - **home-desktop (reattached):** operator solves CAPTCHA in human webview → `resumeBrowserChallenge()` snapshots page HTML → `POST /v1/browser/sessions/{id}/complete`
+  - **home-ios / home-android:** client WebView → daemon `POST /v1/browser/sessions/{id}/complete`
+  - **Legacy fallback:** BrowserHost lite DDG retry (no shared cookies — avoid when human webview is active)
+
+## Desktop human webview reattach
+
+Home desktop now uses the **embedded human browser webview** as the operator-facing surface (see [`shared-browser-workspace.md`](shared-browser-workspace.md)):
+
+| Concern | Implementation |
+|---------|----------------|
+| Navigate on agent SSE | [`openInBrowser.ts`](Medousa/apps/medousa-home/src/lib/utils/openInBrowser.ts) |
+| Control handoff | [`browser.svelte.ts`](Medousa/apps/medousa-home/src/lib/stores/browser.svelte.ts) + `BrowserControlHandoff` |
+| CAPTCHA complete | [`resumeBrowserChallenge.ts`](Medousa/apps/medousa-home/src/lib/utils/resumeBrowserChallenge.ts) + `human_browser_snapshot_*` |
+| Fetch/snapshot tools | BrowserHost `/v1/fetch` + `browser_bridge_snapshot` prefer human webview when URL matches |
+
+Read-only DOM snapshot shares session cookies with the visible tab. Click/type automation (`cognition_browser_act`) remains out of scope.
 
 ## Surfaces
 

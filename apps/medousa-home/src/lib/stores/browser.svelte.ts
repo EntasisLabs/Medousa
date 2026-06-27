@@ -298,7 +298,7 @@ export class BrowserStore {
 
   handleAgentNavigation(url: string, title?: string) {
     void this.navigate(url, "agent", title);
-    if (this.control === "user") return;
+    if (this.control === "user" || this.control === "awaiting_operator") return;
     void this.setControl("agent");
   }
 

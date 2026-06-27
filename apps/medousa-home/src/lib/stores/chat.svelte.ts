@@ -199,6 +199,9 @@ export class ChatStore {
       message: event.message || event.operator_message || "",
     };
     const workCardId = this.workCardIdForTurn(event.turn_id);
+    void import("$lib/stores/browser.svelte").then(({ browser }) =>
+      browser.setControl("awaiting_operator"),
+    );
     if (event.browser_challenge_url) {
       void import("$lib/utils/openInBrowser").then(({ openInBrowser }) =>
         openInBrowser(event.browser_challenge_url!, {

@@ -3,10 +3,11 @@
    * Mobile Web tab — embed height = panel height − chrome block + chrome padding-top.
    */
   import { onMount, tick } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
   import { ArrowLeft, ArrowRight, Globe, RefreshCw, Layers } from "@lucide/svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
+  import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
+  import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserTabSheet from "$lib/components/browser/BrowserTabSheet.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import BrowserWebView from "$lib/components/browser/BrowserWebView.svelte";
@@ -17,7 +18,6 @@
     humanBrowserEmbedReadBounds,
     humanBrowserEmbedShow,
     humanBrowserSetMobileShellActive,
-    type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -217,13 +217,6 @@
   onMount(() => {
     void humanBrowserSetMobileShellActive(true);
 
-    const unlisteners: Promise<() => void>[] = [];
-    unlisteners.push(
-      listen<HumanBrowserNavigatedPayload>("human-browser-navigated", (event) => {
-        humanBrowser.syncFromNative(event.payload);
-      }),
-    );
-
     const onResize = () => {
       void presentEmbed();
     };
@@ -235,7 +228,6 @@
       if (useNative) window.removeEventListener("resize", onResize);
       if (embedRaf != null) cancelAnimationFrame(embedRaf);
       resizeObserver?.disconnect();
-      Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
   });
 
@@ -319,6 +311,10 @@
         ? 'absolute inset-x-0 bottom-0 z-20 border-t-0'
         : 'shrink-0 border-t border-surface-800/80'} bg-surface-950/95 backdrop-blur-md"
     >
+      <BrowserCaptchaBanner compact={true} />
+      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-surface-800/80 px-2 py-1">
+        <BrowserControlHandoff compact={true} />
+      </div>
       <div data-browser-controls class="flex items-center gap-1 overflow-x-auto">
         <button
           bind:this={tabsAnchorEl}

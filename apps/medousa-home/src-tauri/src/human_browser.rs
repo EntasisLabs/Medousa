@@ -8,10 +8,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
+use medousa_browser_lite::{markdown_from_html, search_response_from_ddg_html, FetchResult, SearchResponse};
 use serde::{Deserialize, Serialize};
 use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, WebviewUrl};
+use tokio::sync::oneshot;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const EMBED_CONTENT_LABEL: &str = "main-browser-content";
@@ -19,7 +22,7 @@ const EMBED_CONTENT_LABEL: &str = "main-browser-content";
 const BROWSER_WINDOW_LABEL: &str = "browser";
 const BROWSER_CONTENT_LABEL: &str = "browser-content";
 const BROWSER_CHROME_LABEL: &str = "browser-chrome";
-const CHROME_HEIGHT_LOGICAL: f64 = 132.0;
+const CHROME_HEIGHT_LOGICAL: f64 = 156.0;
 
 static POPOUT_SHELL_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_READY: AtomicBool = AtomicBool::new(false);
@@ -29,6 +32,13 @@ static EMBED_MOBILE_UA: AtomicBool = AtomicBool::new(false);
 /// Set by the frontend when the mobile shell owns embed layout (blocks workshop resize reapply).
 static MOBILE_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LAST_EMBED_PLACEMENT: Mutex<Option<EmbedPlacement>> = Mutex::new(None);
+static LAST_ACTIVE_URL: std::sync::OnceLock<Mutex<String>> = std::sync::OnceLock::new();
+static SNAPSHOT_TX: Mutex<Option<oneshot::Sender<SnapshotReport>>> = Mutex::new(None);
+static APP_HANDLE: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+fn active_url_lock() -> &'static Mutex<String> {
+    LAST_ACTIVE_URL.get_or_init(|| Mutex::new(String::new()))
+}
 
 #[derive(Debug, Clone, Copy)]
 enum EmbedPlacement {
@@ -118,6 +128,53 @@ pub struct HumanBrowserNavigatedPayload {
     pub title: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotReport {
+    pub url: String,
+    pub html: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotHtmlDto {
+    pub url: String,
+    pub html: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotMarkdownDto {
+    pub url: String,
+    pub title: String,
+    pub markdown: String,
+}
+
+pub fn init_app_handle(app: AppHandle) {
+    let _ = APP_HANDLE.set(app);
+}
+
+pub fn app_handle() -> Option<AppHandle> {
+    APP_HANDLE.get().cloned()
+}
+
+pub fn human_browser_active_url() -> String {
+    active_url_lock().lock().expect("last active url").clone()
+}
+
+pub fn urls_match_for_snapshot(active: &str, requested: &str) -> bool {
+    let active = active.trim();
+    let requested = requested.trim();
+    if active.is_empty() || requested.is_empty() || active == "about:blank" {
+        return false;
+    }
+    if active == requested {
+        return true;
+    }
+    let normalize = |value: &str| value.trim_end_matches('/').to_ascii_lowercase();
+    normalize(active) == normalize(requested)
+}
+
 fn popout_main_webview(app: &AppHandle) -> Option<tauri::Webview> {
     app.get_webview(BROWSER_WINDOW_LABEL)
 }
@@ -164,6 +221,10 @@ fn window_inner_logical(window: &tauri::Window) -> Result<(f64, f64), String> {
 }
 
 fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>) {
+    {
+        let mut guard = active_url_lock().lock().expect("last active url");
+        *guard = url.to_string();
+    }
     let payload = HumanBrowserNavigatedPayload {
         url: url.to_string(),
         title,
@@ -691,4 +752,89 @@ pub fn human_browser_report_title(app: AppHandle, url: String, title: String) ->
     }
     emit_navigated(&app, url.trim(), Some(trimmed.to_string()));
     Ok(())
+}
+
+const SNAPSHOT_CAPTURE_JS: &str = r#"(function(){
+try{
+  var html=document.documentElement?document.documentElement.outerHTML:"";
+  var url=window.location.href||"";
+  var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+  if(!i||!i.invoke)return;
+  i.invoke("human_browser_report_snapshot",{url:url,html:html});
+}catch(e){}
+})();"#;
+
+#[tauri::command]
+pub fn human_browser_report_snapshot(payload: SnapshotReport) -> Result<(), String> {
+    if let Some(tx) = SNAPSHOT_TX.lock().expect("snapshot").take() {
+        let _ = tx.send(payload);
+    }
+    Ok(())
+}
+
+async fn capture_html(app: &AppHandle) -> Result<SnapshotReport, String> {
+    let content =
+        embedded_content_webview(app).ok_or_else(|| "embedded browser content not ready".to_string())?;
+    let (tx, rx) = oneshot::channel();
+    *SNAPSHOT_TX.lock().expect("snapshot") = Some(tx);
+    content
+        .eval(SNAPSHOT_CAPTURE_JS)
+        .map_err(|err| err.to_string())?;
+    tokio::time::timeout(Duration::from_secs(8), rx)
+        .await
+        .map_err(|_| "snapshot timed out waiting for page content".to_string())?
+        .map_err(|_| "snapshot channel closed".to_string())
+}
+
+#[tauri::command]
+pub async fn human_browser_snapshot_html(app: AppHandle) -> Result<SnapshotHtmlDto, String> {
+    let report = capture_html(&app).await?;
+    Ok(SnapshotHtmlDto {
+        url: report.url,
+        html: report.html,
+    })
+}
+
+#[tauri::command]
+pub async fn human_browser_snapshot_markdown(
+    app: AppHandle,
+    max_chars: Option<usize>,
+) -> Result<SnapshotMarkdownDto, String> {
+    let report = capture_html(&app).await?;
+    let fetched = markdown_from_html(&report.html, &report.url, max_chars.unwrap_or(4000));
+    Ok(SnapshotMarkdownDto {
+        url: fetched.url,
+        title: fetched.title,
+        markdown: fetched.markdown,
+    })
+}
+
+#[tauri::command]
+pub async fn human_browser_snapshot_search(
+    app: AppHandle,
+    query: String,
+    max_results: Option<usize>,
+) -> Result<SearchResponse, String> {
+    let report = capture_html(&app).await?;
+    Ok(search_response_from_ddg_html(
+        &report.html,
+        &report.url,
+        &query,
+        max_results.unwrap_or(8),
+    ))
+}
+
+pub async fn snapshot_markdown_for_url(
+    app: &AppHandle,
+    url: &str,
+    max_chars: usize,
+) -> Result<FetchResult, String> {
+    let active = human_browser_active_url();
+    if !urls_match_for_snapshot(&active, url) {
+        return Err(format!(
+            "human browser active url mismatch: active={active} requested={url}"
+        ));
+    }
+    let report = capture_html(app).await?;
+    Ok(markdown_from_html(&report.html, &report.url, max_chars))
 }
