@@ -3,7 +3,7 @@ import type { Surface } from "$lib/types/ui";
 import { shouldUseMobileShell } from "$lib/platform";
 
 const LAST_SURFACE_KEY = "medousa-home-last-surface";
-const LANDING_SURFACES: Surface[] = ["chat", "work", "library", "workshop"];
+const LANDING_SURFACES: Surface[] = ["chat", "work", "library", "web", "workshop"];
 
 const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
@@ -281,7 +281,7 @@ export const layout = new LayoutStore();
 export function loadLastSurface(): Surface {
   if (typeof localStorage === "undefined") return "chat";
   const stored = localStorage.getItem(LAST_SURFACE_KEY);
-  if (stored === "home" || stored === "web") return "chat";
+  if (stored === "home") return "chat";
   if (stored && isLandingSurface(stored)) {
     return stored;
   }

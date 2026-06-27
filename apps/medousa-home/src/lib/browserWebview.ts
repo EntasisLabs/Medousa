@@ -1,4 +1,4 @@
-/** Iframe-only browser helpers (mobile / non-Tauri). */
+/** Iframe helpers (mobile) and embedded browser bounds measurement (desktop). */
 
 export type BrowserWebviewBounds = {
   x: number;

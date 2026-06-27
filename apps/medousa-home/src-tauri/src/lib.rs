@@ -35,6 +35,7 @@ use tauri::Manager;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -93,9 +94,28 @@ pub fn run() {
                     human_browser::on_browser_window_resized(window.app_handle());
                 }
             }
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if window.label() == "main" {
-                    window.app_handle().exit(0);
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Resized { .. } = event {
+                    human_browser::on_main_window_resized(window.app_handle());
+                }
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                match window.label() {
+                    "main" => {
+                        window.app_handle().exit(0);
+                    }
+                    "browser" => {
+                        // Hide instead of destroy so Web nav can reopen the window.
+                        api.prevent_close();
+                        let app = window.app_handle();
+                        let _ = window.hide();
+                        let _ = app.emit("browser-window-visibility", false);
+                    }
+                    "chat-popout" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    _ => {}
                 }
             }
         });
@@ -163,6 +183,9 @@ pub fn run() {
             human_browser::human_browser_reload,
             human_browser::human_browser_go_back,
             human_browser::human_browser_go_forward,
+            human_browser::human_browser_embed_apply_layout,
+            human_browser::human_browser_embed_show,
+            human_browser::human_browser_embed_hide,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,

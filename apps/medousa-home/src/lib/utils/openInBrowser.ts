@@ -1,9 +1,9 @@
-/** Open a URL in the dedicated browser window (desktop) or You → Web (mobile). */
+/** Open a URL in the embedded Web surface (desktop) or You → Web (mobile). */
 
 import { browser } from "$lib/stores/browser.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { humanBrowserNavigate } from "$lib/humanBrowser";
-import { isTauri, showBrowser } from "$lib/window";
+import { isTauri } from "$lib/window";
 
 export async function openInBrowser(
   url: string,
@@ -34,7 +34,7 @@ export async function openInBrowser(
 
   if (!isTauri()) return;
 
-  await showBrowser();
+  layout.navigateDesktop("web");
   const normalized = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
   await humanBrowserNavigate(normalized);
 }
@@ -48,12 +48,12 @@ export function isHttpUrl(value: string): boolean {
   }
 }
 
-/** Open or focus the browser window without navigating. */
+/** Switch to the Web surface without navigating. */
 export async function openBrowserWindow() {
   if (layout.isMobile) {
     layout.openYou("web");
     return;
   }
   if (!isTauri()) return;
-  await showBrowser();
+  layout.navigateDesktop("web", { bump: true });
 }

@@ -35,10 +35,9 @@
   import { runtime } from "$lib/stores/runtime.svelte";
   import { isTauri } from "$lib/platform";
   import { updateTrayBlockedCount } from "$lib/window";
-  import { openBrowserWindow } from "$lib/utils/openInBrowser";
+  import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
-  import { listen } from "@tauri-apps/api/event";
 
   let daemonHealth = $state<DaemonHealth | null>(null);
 
@@ -58,16 +57,10 @@
       },
     });
     const detachBrowserContext = browserContext.attachListeners();
-    const browserVisibilityListener = isTauri()
-      ? listen<boolean>("browser-window-visibility", (event) => {
-          layout.setBrowserWindowActive(event.payload);
-        })
-      : Promise.resolve(() => {});
     return () => {
       detachViewport();
       detachWorkshop();
       detachBrowserContext();
-      void browserVisibilityListener.then((unlisten) => unlisten());
     };
   });
 
@@ -97,10 +90,6 @@
   }
 
   function handleSurfaceSelect(surface: Surface) {
-    if (surface === "web") {
-      void openBrowserWindow();
-      return;
-    }
     navigateToSurface(surface);
   }
 
@@ -119,7 +108,6 @@
   <div class="flex min-h-0 flex-1">
     <NavSidebar
       active={activeSurface}
-      webActive={layout.browserWindowActive}
       onSelect={handleSurfaceSelect}
       chatActivity={chat.backgroundActivity}
       workActivity={workspace.inMotionCount()}
@@ -202,6 +190,11 @@
                 daemonHealth = await refreshDaemonHealth();
               }}
             />
+          {:else if activeSurface === "web"}
+            <HumanBrowserPanel
+              visible={true}
+              workRailVisible={workspace.inMotionCount() > 0}
+            />
           {/if}
         {/key}
         </div>
@@ -234,7 +227,7 @@
               cardError={workspace.cardDetailError}
               noteDiffChip={vault.diffChipText}
               onOpenNote={handleOpenNote}
-              onOpenWeb={() => void openBrowserWindow()}
+              onOpenWeb={() => navigateToSurface("web")}
               onSelectCard={handleCardSelect}
               onCollapse={() => layout.setActivityCollapsed(true)}
             />

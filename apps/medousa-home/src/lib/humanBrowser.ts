@@ -2,6 +2,18 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+export interface HumanBrowserEmbedLayout {
+  activityWidth: number;
+  activityCollapsed: boolean;
+  workRailVisible: boolean;
+}
+
+export async function humanBrowserEmbedApplyLayout(
+  params: HumanBrowserEmbedLayout,
+): Promise<void> {
+  return invoke("human_browser_embed_apply_layout", { params });
+}
+
 export async function humanBrowserNavigate(url: string): Promise<void> {
   return invoke("human_browser_navigate", { url });
 }
@@ -16,6 +28,14 @@ export async function humanBrowserGoBack(): Promise<void> {
 
 export async function humanBrowserGoForward(): Promise<void> {
   return invoke("human_browser_go_forward");
+}
+
+export async function humanBrowserEmbedShow(): Promise<void> {
+  return invoke("human_browser_embed_show");
+}
+
+export async function humanBrowserEmbedHide(): Promise<void> {
+  return invoke("human_browser_embed_hide");
 }
 
 export interface HumanBrowserNavigatedPayload {
