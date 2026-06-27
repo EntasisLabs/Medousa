@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
+  import { ArrowDown, ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
@@ -64,9 +64,9 @@
   }: Props = $props();
 
   let scrollEl: HTMLDivElement | undefined = $state();
-  let stickToBottom = $state(true);
+  let atBottom = $state(true);
 
-  const SCROLL_PIN_THRESHOLD_PX = 96;
+  const scrollPinThresholdPx = $derived(mobile ? 24 : 96);
 
   const chatMessages = $derived(chat.messages.filter((message) => isChatLaneMessage(message)));
   const askThreads = $derived(groupAskThreads(chat.messages));
@@ -140,9 +140,15 @@
     return "Ready when you are";
   });
 
+  const showScrollFab = $derived(
+    mobile &&
+      !atBottom &&
+      (chatMessages.length > 0 || askThreads.length > 0 || workerThreads.length > 0),
+  );
+
   $effect(() => {
     void chat.sessionId;
-    stickToBottom = true;
+    atBottom = true;
   });
 
   $effect(() => {
@@ -159,10 +165,20 @@
   });
 
   $effect(() => {
-    if (!mobile || !visible) return;
-    const onComposerFocus = () => scrollToLatest(true);
+    if (!visible) return;
+    const onComposerFocus = () => {
+      if (atBottom) scrollToLatest(true);
+    };
+    const onScrollRequest = (event: Event) => {
+      const force = (event as CustomEvent<{ force?: boolean }>).detail?.force ?? false;
+      scrollToLatest(force, force ? "smooth" : "auto");
+    };
     window.addEventListener("medousa-chat-composer-focus", onComposerFocus);
-    return () => window.removeEventListener("medousa-chat-composer-focus", onComposerFocus);
+    window.addEventListener("medousa-chat-scroll-to-bottom", onScrollRequest);
+    return () => {
+      window.removeEventListener("medousa-chat-composer-focus", onComposerFocus);
+      window.removeEventListener("medousa-chat-scroll-to-bottom", onScrollRequest);
+    };
   });
 
   $effect(() => {
@@ -211,6 +227,7 @@
     });
     chat.beginTurn(userContent, accepted, mediaRefs);
     chat.clearPendingMedia();
+    scrollToLatest(true);
     await chat.startTurnStream(
       accepted.turn_id,
       accepted.session_id,
@@ -237,7 +254,7 @@
 
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
-    chat.draft = "";
+    chat.clearComposerDraft();
     if (!chat.pinVaultNoteContext) {
       chat.clearVaultNoteContext();
     }
@@ -274,17 +291,23 @@
     if (!scrollEl) return;
     const distanceFromBottom =
       scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-    stickToBottom = distanceFromBottom <= SCROLL_PIN_THRESHOLD_PX;
+    atBottom = distanceFromBottom <= scrollPinThresholdPx;
   }
 
-  function scrollToLatest(force = false) {
+  function scrollToLatest(force = false, behavior: ScrollBehavior = "auto") {
     if (!scrollEl) return;
-    if (!force && !stickToBottom) return;
+    if (!force && !atBottom) return;
     requestAnimationFrame(() => {
       if (!scrollEl) return;
-      scrollEl.scrollTop = scrollEl.scrollHeight;
-      stickToBottom = true;
+      if (!force && !atBottom) return;
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior });
+      atBottom = true;
     });
+  }
+
+  function scrollToBottomFromFab() {
+    if (mobile) haptic("light");
+    scrollToLatest(true, "smooth");
   }
 
   async function resumeSession(sessionId: string) {
@@ -714,5 +737,16 @@
 
   {#if visible && connection.offline}
     <OfflineChatGate {mobile} {onOpenConnection} />
+  {/if}
+
+  {#if showScrollFab && visible}
+    <button
+      type="button"
+      class="mobile-chat-scroll-fab"
+      aria-label="Scroll to latest message"
+      onclick={scrollToBottomFromFab}
+    >
+      <ArrowDown size={22} strokeWidth={2} />
+    </button>
   {/if}
 </section>

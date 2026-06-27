@@ -21,6 +21,10 @@ mod mcp_gateway;
 mod browser_host;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod human_browser;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod browser_host_mobile;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod human_browser_mobile;
 mod provider_catalog;
 mod providers;
 mod tray;
@@ -170,32 +174,98 @@ pub fn run() {
             browser_host::browser_host_restart,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_resume_session,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_register_client,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_create_tab_group,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_get_tab_group,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_open_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_navigate_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_activate_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_close_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_set_control,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_link_work_card,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_snapshot,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            browser_host_mobile::browser_host_register_client,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            browser_host_mobile::browser_host_status,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            browser_host_mobile::browser_host_restart,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            browser_host_mobile::browser_host_resume_session,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_navigate,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_go_back,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_go_forward,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_apply_layout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_apply_mobile_layout,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_set_bounds,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_show,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_hide,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_read_bounds,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_title,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_snapshot,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_html,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_markdown,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_search,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_navigate,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_reload,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_go_back,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_go_forward,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_embed_apply_layout,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_embed_apply_mobile_layout,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_embed_set_bounds,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_embed_show,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_embed_hide,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_embed_read_bounds,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_set_mobile_shell_active,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_report_title,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_report_snapshot,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_snapshot_html,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_snapshot_markdown,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            human_browser_mobile::human_browser_snapshot_search,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,

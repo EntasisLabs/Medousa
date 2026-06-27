@@ -2870,6 +2870,12 @@
     bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
   }
 
+  .mobile-chat-scroll-fab {
+    @apply fixed z-20 flex h-11 w-11 items-center justify-center rounded-full border border-surface-500/50 bg-surface-800/95 text-surface-100 shadow-lg backdrop-blur-sm transition active:scale-95;
+    right: 1rem;
+    bottom: calc(var(--mobile-bottom-chrome-height, 5.5rem) + 0.75rem);
+  }
+
   .mobile-notes-header {
     padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   }

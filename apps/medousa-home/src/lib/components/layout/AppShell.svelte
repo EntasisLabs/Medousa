@@ -24,6 +24,12 @@
 
   let commandPaletteOpen = $state(false);
 
+  $effect(() => {
+    void chat.sessionId;
+    void chat.draft;
+    chat.scheduleDraftPersist();
+  });
+
   async function openWorkCard(cardId: string) {
     if (layout.isMobile) {
       layout.setMobileTab("home");

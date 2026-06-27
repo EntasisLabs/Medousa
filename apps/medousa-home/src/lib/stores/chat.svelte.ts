@@ -59,6 +59,9 @@ import type { ScriptWorkbenchContextScope } from "$lib/utils/scriptWorkbenchBrid
 
 const SESSION_KEY = "medousa-home-session-id";
 const PINS_KEY = "medousa-home-pinned-sessions";
+const DRAFTS_KEY = "medousa-home-chat-drafts";
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
 
@@ -78,7 +81,7 @@ export class ChatStore {
 
   sessionId = $state(loadSessionId());
   messages = $state<ChatMessage[]>([]);
-  draft = $state("");
+  draft = $state(loadDraftForSession(loadSessionId()));
   /** Vault note scope when chat opened from Library (Phase D3). */
   vaultNoteContext = $state<VaultNoteContextScope | null>(null);
   pinVaultNoteContext = $state(false);
@@ -120,6 +123,7 @@ export class ChatStore {
   private sessionsRefreshInFlight: Promise<void> | null = null;
   /** Turn ids with an active local SSE listener (subset of `turns`). */
   private streamOwners = new Map<string, StreamOwner>();
+  private draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** True while the composer must wait — Tier 2c: always open. */
   get composerBlocked(): boolean {
@@ -386,12 +390,14 @@ export class ChatStore {
   }
 
   async newSession() {
+    this.flushDraftPersist();
     this.transcriptEpoch += 1;
     this.historyLoading = false;
     this.sessionPristine = true;
     const id = `medousa-home-${crypto.randomUUID()}`;
     localStorage.setItem(SESSION_KEY, id);
     this.sessionId = id;
+    this.draft = loadDraftForSession(id);
     this.messages = [];
     this.streamError = null;
     this.historyNotice = null;
@@ -495,10 +501,12 @@ export class ChatStore {
       await this.reloadCurrentSession({ notice: false });
       return;
     }
+    this.flushDraftPersist();
     this.sessionPristine = false;
     this.transcriptEpoch += 1;
     this.sessionId = sessionId;
     localStorage.setItem(SESSION_KEY, sessionId);
+    this.draft = loadDraftForSession(sessionId);
     this.streamError = null;
     this.historyNotice = null;
     this.messages = [];
@@ -935,6 +943,21 @@ export class ChatStore {
     }
   }
 
+  private isRelevantWorkerDetail(detail: WorkCardDetail, workId: string): boolean {
+    if (this.workers.has(workId)) return true;
+
+    const parentTurnId = detail.correlation_id?.trim();
+    if (parentTurnId) {
+      if (this.turns.has(parentTurnId)) return true;
+      if (this.messages.some((message) => message.turnId === parentTurnId)) {
+        return true;
+      }
+    }
+
+    const sessionId = detail.session_id?.trim();
+    return Boolean(sessionId && this.isRelevantSession(sessionId));
+  }
+
   private isRelevantSession(sessionId: string | null | undefined): boolean {
     const trimmed = sessionId?.trim();
     if (!trimmed) return false;
@@ -1037,26 +1060,30 @@ export class ChatStore {
     previousColumn: string | undefined,
   ) {
     if (detail.kind !== "turn_worker") return;
-    const sessionId = detail.session_id?.trim();
-    if (!sessionId || !this.isRelevantSession(sessionId)) return;
 
     const workId = detail.work_id?.trim() || detail.card.id;
+    if (!this.isRelevantWorkerDetail(detail, workId)) return;
+
     const parentTurnId = detail.correlation_id?.trim() || null;
     const messageId = parentTurnId ? this.messageIdForTurn(parentTurnId) : null;
+    const existing = this.workers.get(workId);
+    const linkSessionId =
+      existing?.sessionId ??
+      (parentTurnId ? this.resolveTurnSessionId(parentTurnId) : this.sessionId);
     this.linkWorker({
       workId,
       parentTurnId,
       messageId,
-      sessionId,
+      sessionId: linkSessionId,
     });
 
     if (column === "wrapping_up" && previousColumn !== "wrapping_up") {
       this.noteWorkerSynthesizing(workId);
     }
-    if (
-      (column === "done" || (column === "blocked" && detail.terminal)) &&
-      previousColumn !== column
-    ) {
+    const isTerminal =
+      column === "done" || (column === "blocked" && detail.terminal);
+    const link = this.workers.get(workId);
+    if (isTerminal && (previousColumn !== column || !link?.synthesisDelivered)) {
       void this.deliverWorkerSynthesis(workId, detail);
     }
   }
@@ -1069,11 +1096,14 @@ export class ChatStore {
     for (const card of cards) {
       const detail = details.get(card.id);
       if (!detail || detail.kind !== "turn_worker") continue;
-      if (!this.isRelevantSession(detail.session_id?.trim())) continue;
-      this.onWorkerCardDetail(detail, card.column, undefined);
       const workId = detail.work_id?.trim() || card.id;
+      if (!this.isRelevantWorkerDetail(detail, workId)) continue;
+      this.onWorkerCardDetail(detail, card.column, undefined);
       const link = this.workers.get(workId);
-      if (link && !link.synthesisDelivered && card.column === "done") {
+      const isTerminal =
+        card.column === "done" ||
+        (card.column === "blocked" && detail.terminal);
+      if (link && !link.synthesisDelivered && isTerminal) {
         await this.deliverWorkerSynthesis(workId, detail);
       }
     }
@@ -1087,8 +1117,8 @@ export class ChatStore {
     for (const card of cards) {
       const detail = details.get(card.id);
       if (!detail || detail.kind !== "turn_worker") continue;
-      if (!this.isRelevantSession(detail.session_id?.trim())) continue;
       const workId = detail.work_id?.trim() || card.id;
+      if (!this.isRelevantWorkerDetail(detail, workId)) continue;
       const statusLine = workerStatusLineForColumn(card.column);
       const streaming =
         card.column === "backlog" || card.column === "in_flight";
@@ -1256,8 +1286,16 @@ export class ChatStore {
       : null;
     const handoffContent =
       handoffMessage?.stageWhisper?.trim() || handoffMessage?.content || null;
-    const fromHistory = await this.fetchLatestAssistantTurn(link.sessionId, handoffContent);
-    if (fromHistory) return fromHistory;
+
+    const sessionIds = [link.sessionId];
+    const workerSession = detail?.session_id?.trim();
+    if (workerSession && !sessionIds.includes(workerSession)) {
+      sessionIds.push(workerSession);
+    }
+    for (const sessionId of sessionIds) {
+      const fromHistory = await this.fetchLatestAssistantTurn(sessionId, handoffContent);
+      if (fromHistory) return fromHistory;
+    }
 
     const excerpt = detail?.result_excerpt?.trim();
     if (excerpt) return excerpt;
@@ -2067,6 +2105,7 @@ export class ChatStore {
 
   prefillDraft(text: string) {
     this.draft = text;
+    this.scheduleDraftPersist();
   }
 
   prefillFromVaultNote(
@@ -2077,6 +2116,7 @@ export class ChatStore {
     this.vaultNoteContext = scope;
     this.draft = draft;
     this.pinVaultNoteContext = options?.pin ?? false;
+    this.scheduleDraftPersist();
   }
 
   clearVaultNoteContext() {
@@ -2096,6 +2136,7 @@ export class ChatStore {
     this.scriptWorkbenchContext = scope;
     this.draft = draft;
     this.pinScriptWorkbenchContext = options?.pin ?? false;
+    this.scheduleDraftPersist();
   }
 
   clearScriptWorkbenchContext() {
@@ -2105,6 +2146,32 @@ export class ChatStore {
 
   clearPendingMedia() {
     this.pendingMediaRefs = [];
+  }
+
+  /** Debounced localStorage persist for composer draft (per session). */
+  scheduleDraftPersist() {
+    if (this.draftPersistTimer) {
+      clearTimeout(this.draftPersistTimer);
+    }
+    this.draftPersistTimer = setTimeout(() => {
+      this.draftPersistTimer = null;
+      this.flushDraftPersist();
+    }, DRAFT_PERSIST_DEBOUNCE_MS);
+  }
+
+  /** Immediate persist — call before session switch or app background. */
+  flushDraftPersist() {
+    if (this.draftPersistTimer) {
+      clearTimeout(this.draftPersistTimer);
+      this.draftPersistTimer = null;
+    }
+    persistDraftForSession(this.sessionId, this.draft);
+  }
+
+  /** Clear composer after send. */
+  clearComposerDraft() {
+    this.draft = "";
+    clearDraftForSession(this.sessionId);
   }
 
   removePendingMedia(mediaId: string) {
@@ -2289,6 +2356,59 @@ function loadSessionId(): string {
   const id = "medousa-home";
   localStorage.setItem(SESSION_KEY, id);
   return id;
+}
+
+interface StoredDraft {
+  text: string;
+  updatedAt: number;
+}
+
+function loadDraftStore(): Record<string, StoredDraft> {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(DRAFTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, StoredDraft>;
+    if (!parsed || typeof parsed !== "object") return {};
+    const now = Date.now();
+    const pruned: Record<string, StoredDraft> = {};
+    for (const [sessionId, entry] of Object.entries(parsed)) {
+      if (!entry || typeof entry.text !== "string") continue;
+      if (!entry.text.trim()) continue;
+      if (now - (entry.updatedAt ?? 0) > DRAFT_MAX_AGE_MS) continue;
+      pruned[sessionId] = entry;
+    }
+    if (Object.keys(pruned).length !== Object.keys(parsed).length) {
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(pruned));
+    }
+    return pruned;
+  } catch {
+    return {};
+  }
+}
+
+function loadDraftForSession(sessionId: string): string {
+  const trimmed = sessionId.trim();
+  if (!trimmed) return "";
+  return loadDraftStore()[trimmed]?.text ?? "";
+}
+
+function persistDraftForSession(sessionId: string, text: string) {
+  if (typeof localStorage === "undefined") return;
+  const trimmed = sessionId.trim();
+  if (!trimmed) return;
+  const store = loadDraftStore();
+  const value = text;
+  if (!value.trim()) {
+    delete store[trimmed];
+  } else {
+    store[trimmed] = { text: value, updatedAt: Date.now() };
+  }
+  localStorage.setItem(DRAFTS_KEY, JSON.stringify(store));
+}
+
+function clearDraftForSession(sessionId: string) {
+  persistDraftForSession(sessionId, "");
 }
 
 export const chat = new ChatStore();

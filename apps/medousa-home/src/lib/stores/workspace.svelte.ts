@@ -183,6 +183,7 @@ export class WorkspaceStore {
       !isAskJobId(card.id)
     ) {
       chat.noteBackgroundSettled();
+      void this.syncTurnWorkerCardsToChat();
     }
     if (
       previous === "blocked" &&
@@ -395,6 +396,14 @@ export class WorkspaceStore {
         const card = this.cards.find((item) => item.id === id);
         if (card) {
           chat.onWorkerCardDetail(cached, card.column, previousColumn);
+          chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+          if (
+            cached.kind === "turn_worker" &&
+            (card.column === "done" ||
+              (card.column === "blocked" && cached.terminal))
+          ) {
+            void chat.recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
+          }
         }
         return;
       }
@@ -410,6 +419,13 @@ export class WorkspaceStore {
       if (card) {
         chat.onWorkerCardDetail(detail, card.column, previousColumn);
         chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+        if (
+          detail.kind === "turn_worker" &&
+          (card.column === "done" ||
+            (card.column === "blocked" && detail.terminal))
+        ) {
+          void chat.recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
+        }
       }
     } catch {
       // Swimlane label falls back when detail is missing.

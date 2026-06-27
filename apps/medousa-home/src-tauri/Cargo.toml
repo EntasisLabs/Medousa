@@ -40,11 +40,11 @@ bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
+medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 medousa-host = { path = "../../../crates/medousa-host" }
 axum = "0.8"
-medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 
 [target.'cfg(unix)'.dependencies]

@@ -61,6 +61,9 @@
     });
     chat.beginTurn(userContent, accepted, mediaRefs);
     chat.clearPendingMedia();
+    window.dispatchEvent(
+      new CustomEvent("medousa-chat-scroll-to-bottom", { detail: { force: true } }),
+    );
     await chat.startTurnStream(
       accepted.turn_id,
       accepted.session_id,
@@ -87,7 +90,7 @@
 
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
-    chat.draft = "";
+    chat.clearComposerDraft();
     chat.clearVaultNoteContext();
 
     try {
@@ -128,6 +131,7 @@
   }
 
   function handleComposerBlur() {
+    chat.flushDraftPersist();
     composerBlurTimer = setTimeout(() => {
       setMobileComposerFocus(false);
       composerBlurTimer = undefined;
