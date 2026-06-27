@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 
 use medousa_browser_lite::{search_ddg_html_cached_async, SearchResponse};
 
+use crate::agent_runtime::active_stream_sink::active_stream_sink;
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::browser_host_client::{browser_host_healthy, browser_host_search};
 use crate::browser_sessions::{
@@ -20,6 +21,7 @@ use crate::turn_continuation::TurnContinuationScope;
 
 const CLIENT_WAIT_SECS: u64 = 120;
 const CLIENT_POLL_MS: u64 = 500;
+const CHALLENGE_WAIT_SECS: u64 = 180;
 
 pub fn is_discovery_binding(reference: &str) -> bool {
     matches!(reference, "web.providers" | "web.capabilities")
@@ -94,6 +96,7 @@ pub async fn run_browser_backed_search(
     chat_session_id: &str,
     sink: Option<SharedAgentStreamSink>,
 ) -> Result<SearchResponse, String> {
+    let sink = sink.or(active_stream_sink().await);
     let (enabled, channel) = resolve_browser_host_enabled(turn_scope).await;
     if !enabled {
         return search_ddg_html_cached_async(query, max_results).await;
@@ -114,7 +117,98 @@ pub async fn run_browser_backed_search(
         .await;
     }
 
-    browser_host_search(query, max_results).await
+    let response = browser_host_search(query, max_results).await?;
+    if response.challenge.is_some() {
+        return wait_for_challenge_resolution(
+            query,
+            max_results,
+            turn_correlation_id,
+            chat_session_id,
+            &response,
+            sink,
+        )
+        .await;
+    }
+    if let Some(sink) = sink.as_ref() {
+        let search_url = format!(
+            "https://html.duckduckgo.com/html/?q={}",
+            urlencoding(query)
+        );
+        sink.browser_navigated(
+            turn_correlation_id,
+            search_url,
+            Some(format!("Search: {query}")),
+            true,
+        )
+        .await;
+    }
+    Ok(response)
+}
+
+async fn wait_for_challenge_resolution(
+    query: &str,
+    max_results: usize,
+    turn_correlation_id: &str,
+    chat_session_id: &str,
+    initial: &SearchResponse,
+    sink: Option<SharedAgentStreamSink>,
+) -> Result<SearchResponse, String> {
+    let challenge_url = format!(
+        "https://html.duckduckgo.com/html/?q={}",
+        urlencoding(query)
+    );
+    let reason = initial
+        .challenge
+        .clone()
+        .unwrap_or_else(|| "captcha".to_string());
+
+    let session = create_browser_session(BrowserSessionCreateRequest {
+        turn_id: turn_correlation_id.to_string(),
+        chat_session_id: chat_session_id.to_string(),
+        query: query.to_string(),
+        max_results,
+        client_executed: false,
+    });
+    let _ = mark_browser_challenge(&session.session_id, challenge_url.clone(), reason.clone());
+
+    if let Some(sink) = sink {
+        sink.browser_challenge_required(
+            turn_correlation_id,
+            session.session_id.clone(),
+            challenge_url.clone(),
+            reason.clone(),
+        )
+        .await;
+        sink.browser_navigated(
+            turn_correlation_id,
+            challenge_url.clone(),
+            Some(format!("Search: {query}")),
+            true,
+        )
+        .await;
+    }
+
+    let deadline = Duration::from_secs(CHALLENGE_WAIT_SECS);
+    let started = std::time::Instant::now();
+    while started.elapsed() < deadline {
+        if let Some(current) = get_browser_session(&session.session_id) {
+            match current.status {
+                BrowserSessionStatus::Completed => {
+                    return current.search_response.ok_or_else(|| {
+                        "browser session completed without results".to_string()
+                    });
+                }
+                BrowserSessionStatus::Failed => {
+                    return Err(current
+                        .error
+                        .unwrap_or_else(|| "browser session failed".to_string()));
+                }
+                BrowserSessionStatus::ChallengeRequired | BrowserSessionStatus::PendingClient => {}
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(CLIENT_POLL_MS)).await;
+    }
+    Err("browser challenge timed out waiting for operator".to_string())
 }
 
 async fn run_client_executed_search(
@@ -145,6 +239,13 @@ async fn run_client_executed_search(
             "client_search".to_string(),
         )
         .await;
+        sink.browser_navigated(
+            turn_correlation_id,
+            navigate_url.clone(),
+            Some(format!("Search: {query}")),
+            true,
+        )
+        .await;
     }
 
     let deadline = Duration::from_secs(CLIENT_WAIT_SECS);
@@ -162,10 +263,7 @@ async fn run_client_executed_search(
                         .error
                         .unwrap_or_else(|| "browser session failed".to_string()));
                 }
-                BrowserSessionStatus::ChallengeRequired => {
-                    // still waiting on user
-                }
-                BrowserSessionStatus::PendingClient => {}
+                BrowserSessionStatus::ChallengeRequired | BrowserSessionStatus::PendingClient => {}
             }
         }
         tokio::time::sleep(Duration::from_millis(CLIENT_POLL_MS)).await;
@@ -180,6 +278,7 @@ pub async fn handle_search_challenge(
     sink: Option<SharedAgentStreamSink>,
     turn_correlation_id: &str,
 ) -> Value {
+    let sink = sink.or(active_stream_sink().await);
     let _ = mark_browser_challenge(session_id, url.clone(), reason.clone());
     if let Some(sink) = sink {
         sink.browser_challenge_required(turn_correlation_id, session_id.to_string(), url, reason)
@@ -235,4 +334,15 @@ pub fn supports_browser(scope: Option<&TurnContinuationScope>) -> bool {
 
 pub fn client_executed(scope: Option<&TurnContinuationScope>) -> bool {
     is_client_executed_browser(surface_from_scope(scope).as_ref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovery_bindings_filtered() {
+        assert!(is_discovery_binding("web.providers"));
+        assert!(!is_discovery_binding("web.duckduckgo"));
+    }
 }

@@ -12,6 +12,10 @@ use medousa_browser_lite::SearchResponse;
 
 const SESSION_TTL: Duration = Duration::from_secs(15 * 60);
 
+fn default_max_results() -> usize {
+    8
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserSessionStatus {
@@ -27,6 +31,8 @@ pub struct BrowserSession {
     pub turn_id: String,
     pub chat_session_id: String,
     pub query: String,
+    #[serde(default = "default_max_results")]
+    pub max_results: usize,
     pub status: BrowserSessionStatus,
     pub challenge_url: Option<String>,
     pub challenge_reason: Option<String>,
@@ -71,6 +77,7 @@ pub fn create_browser_session(request: BrowserSessionCreateRequest) -> BrowserSe
         turn_id: request.turn_id,
         chat_session_id: request.chat_session_id,
         query: request.query,
+        max_results: request.max_results,
         status,
         challenge_url: None,
         challenge_reason: None,

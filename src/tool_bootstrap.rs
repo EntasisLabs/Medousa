@@ -215,7 +215,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             ToolDomainCatalogEntry {
                 domain: "browser",
                 summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
-                tools: &["cognition_browser_fetch"],
+                tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
             },
         ]
     })
@@ -319,6 +319,7 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_vault_tags" => "List semantic tags across vault notes (shared with Locus)",
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
+        "cognition_browser_snapshot" => "Snapshot a URL via Agent Browser for synthesis",
         "cognition_turn_begin_work" => "Progress line before heavy tools (not chat prose — prose without tools ends the turn)",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",

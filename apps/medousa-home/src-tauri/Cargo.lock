@@ -6006,6 +6006,7 @@ dependencies = [
  "libc",
  "locus-core-rs",
  "mdns-sd",
+ "medousa-browser-lite",
  "medousa-host",
  "medousa-sdk",
  "medousa-types",
@@ -6036,9 +6037,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-browser-bridge"
+version = "0.1.0"
+dependencies = [
+ "medousa-browser-lite",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "medousa-browser-lite"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "once_cell",
+ "parking_lot",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
 name = "medousa-home"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64 0.22.1",
  "bytes",
  "chrono",
@@ -6048,6 +6076,8 @@ dependencies = [
  "keyring",
  "libc",
  "medousa",
+ "medousa-browser-bridge",
+ "medousa-browser-lite",
  "medousa-host",
  "medousa-sdk",
  "medousa-types",
@@ -6067,6 +6097,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 0.8.2",
+ "url",
  "urlencoding",
  "uuid",
 ]

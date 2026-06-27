@@ -128,6 +128,17 @@ pub trait AgentStreamSink: Send + Sync {
     ) {
         let _ = (turn_correlation_id, session_id, challenge_url, reason);
     }
+
+    /// Agent navigated a shared browser tab — client should update Web surface.
+    async fn browser_navigated(
+        &self,
+        turn_correlation_id: &str,
+        url: String,
+        title: Option<String>,
+        opened_by_agent: bool,
+    ) {
+        let _ = (turn_correlation_id, url, title, opened_by_agent);
+    }
 }
 
 pub type SharedAgentStreamSink = Arc<dyn AgentStreamSink>;

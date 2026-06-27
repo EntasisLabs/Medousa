@@ -495,6 +495,18 @@ pub fn browser_challenge_stream_event(
     Ok(event)
 }
 
+pub fn browser_navigated_stream_event(
+    turn_id: &str,
+    url: &str,
+    title: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event(turn_id, "browser_navigated", "tool", url)?;
+    if let Some(title) = title.filter(|value| !value.trim().is_empty()) {
+        event.operator_message = Some(title.trim().to_string());
+    }
+    Ok(event)
+}
+
 fn build_event(
     turn_id: &str,
     event_type: &str,

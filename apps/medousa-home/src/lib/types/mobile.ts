@@ -4,6 +4,7 @@ export type YouDestination =
   | "hub"
   | "profiles"
   | "library"
+  | "web"
   | "context"
   | "workshop"
   | "automations"
@@ -25,6 +26,7 @@ export const YOU_DESTINATIONS: {
 }[] = [
   { id: "profiles", label: "Profiles", hint: "Who you are — teach her facts" },
   { id: "library", label: "Notes", hint: "Your vault" },
+  { id: "web", label: "Web", hint: "Browse and research with Medousa" },
   { id: "context", label: "Context", hint: "What she remembers about you" },
   { id: "workshop", label: "Capabilities", hint: "Specialists & connections" },
   { id: "automations", label: "Automations", hint: "Scripts, flows, schedules & history" },
@@ -41,7 +43,7 @@ export const YOU_HUB_SECTIONS: {
   {
     title: "Stay in touch",
     subtitle: "Notes, memory, skills, and channels",
-    destinations: ["profiles", "library", "context", "workshop", "messaging"],
+    destinations: ["profiles", "library", "web", "context", "workshop", "messaging"],
   },
   {
     title: "Capabilities",

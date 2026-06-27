@@ -3,6 +3,7 @@ export type Surface =
   | "chat"
   | "work"
   | "library"
+  | "web"
   | "context"
   | "profiles"
   | "workshop"

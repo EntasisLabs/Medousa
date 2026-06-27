@@ -639,8 +639,52 @@ export async function denyTurnBudgetRequest(
 export async function resumeBrowserHostSession(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
+  const daemonUrl = (await getDaemonUrl()).replace(/\/$/, "");
   return invoke<Record<string, unknown>>("browser_host_resume_session", {
     sessionId,
+    daemonUrl,
+  });
+}
+
+/** Resume browser session after operator verification (desktop + mobile). */
+export async function resumeBrowserSession(
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    const { isTauriMobilePlatform } = await import("$lib/platform");
+    if (!isTauriMobilePlatform()) {
+      return resumeBrowserHostSession(sessionId);
+    }
+  }
+  const base = (await getDaemonUrl()).replace(/\/$/, "");
+  const response = await fetch(
+    `${base}/v1/browser/sessions/${encodeURIComponent(sessionId)}/resume`,
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function registerBrowserClient(
+  daemonUrl: string,
+  channelSurface: string,
+): Promise<void> {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    await invoke("browser_host_register_client", { daemonUrl, channelSurface });
+    return;
+  }
+  const base = daemonUrl.replace(/\/$/, "");
+  await fetch(`${base}/v1/clients/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: `home-${channelSurface}`,
+      channel_surface: channelSurface,
+      supports_browser_host: true,
+    }),
   });
 }
 

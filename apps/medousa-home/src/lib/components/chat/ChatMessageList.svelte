@@ -96,7 +96,7 @@
 
       {#if message.content?.trim()}
         <div class="chat-voice">
-          <MarkdownContent content={message.content} />
+          <MarkdownContent content={message.content} openLinksInWeb={true} />
         </div>
       {:else if message.streaming && !message.toolRuns?.length}
         <div class="chat-voice">

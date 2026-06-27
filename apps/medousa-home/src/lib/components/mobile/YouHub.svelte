@@ -30,6 +30,8 @@
   } from "$lib/types/mobile";
   import type { DaemonHealth } from "$lib/daemon";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { Globe } from "@lucide/svelte";
+  import BrowserPanel from "$lib/components/browser/BrowserPanel.svelte";
   import type { Component } from "svelte";
 
   interface Props {
@@ -45,6 +47,7 @@
   const destinationIcons: Record<Exclude<YouDestination, "hub">, Component> = {
     profiles: UserRound,
     library: BookOpen,
+    web: Globe,
     context: Orbit,
     workshop: Sparkles,
     automations: Calendar,
@@ -135,6 +138,8 @@
             await onOpenChat();
           }}
         />
+      {:else if layout.youDestination === "web"}
+        <BrowserPanel visible={true} mobile={true} />
       {:else if layout.youDestination === "context"}
         <ContextPanel
           visible={true}

@@ -20,6 +20,12 @@ export function isBrowserChallengeStreamEvent(
   return event.event_type === "browser_challenge";
 }
 
+export function isBrowserNavigatedStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return event.event_type === "browser_navigated";
+}
+
 /** Transport-level SSE failures that should reattach rather than settle turns. */
 export function isRecoverableStreamError(message: string): boolean {
   const trimmed = message.trim();

@@ -2866,6 +2866,15 @@
     @apply max-h-[92vh];
   }
 
+  .mobile-browser-workshop-sheet {
+    max-height: min(88dvh, 820px);
+    min-height: min(56dvh, 520px);
+  }
+
+  .mobile-browser-workshop-dock {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .mobile-sheet-peek-backdrop {
     background-color: rgb(var(--color-surface-950) / 0.42);
     backdrop-filter: blur(3px);

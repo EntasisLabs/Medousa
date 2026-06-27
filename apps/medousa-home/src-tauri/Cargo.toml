@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "unstable"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -37,6 +37,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 sha2 = "0.10"
 bytes = "1"
+url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 
@@ -44,6 +45,7 @@ medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, 
 medousa-host = { path = "../../../crates/medousa-host" }
 axum = "0.8"
 medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
+medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -13,6 +13,7 @@ members = [
     "crates/medousa-local-engine",
     "crates/medousa-host",
     "crates/medousa-browser-lite",
+    "crates/medousa-browser-bridge",
 ]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 

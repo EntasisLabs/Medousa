@@ -3,8 +3,10 @@
 use medousa_types::daemon_api::TurnSurfaceContext;
 
 pub const COGNITION_BROWSER_FETCH: &str = "cognition_browser_fetch";
+pub const COGNITION_BROWSER_SNAPSHOT: &str = "cognition_browser_snapshot";
 
-pub const BROWSER_COGNITION_TOOLS: &[&str] = &[COGNITION_BROWSER_FETCH];
+pub const BROWSER_COGNITION_TOOLS: &[&str] =
+    &[COGNITION_BROWSER_FETCH, COGNITION_BROWSER_SNAPSHOT];
 
 pub fn surface_supports_browser_host(surface: Option<&TurnSurfaceContext>) -> bool {
     surface.is_some_and(|ctx| ctx.supports_browser_host)

@@ -19,6 +19,8 @@ mod capabilities;
 mod mcp_gateway;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+mod browser_webview;
 mod provider_catalog;
 mod providers;
 mod tray;
@@ -142,6 +144,22 @@ pub fn run() {
             browser_host::browser_host_restart,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_resume_session,
+            browser_host::browser_host_register_client,
+            browser_host::browser_bridge_create_tab_group,
+            browser_host::browser_bridge_get_tab_group,
+            browser_host::browser_bridge_open_tab,
+            browser_host::browser_bridge_navigate_tab,
+            browser_host::browser_bridge_activate_tab,
+            browser_host::browser_bridge_close_tab,
+            browser_host::browser_bridge_set_control,
+            browser_host::browser_bridge_link_work_card,
+            browser_host::browser_bridge_snapshot,
+            browser_webview::browser_webview_sync,
+            browser_webview::browser_webview_navigate,
+            browser_webview::browser_webview_reload,
+            browser_webview::browser_webview_go_back,
+            browser_webview::browser_webview_go_forward,
+            browser_webview::browser_webview_hide,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,

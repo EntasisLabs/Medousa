@@ -126,6 +126,7 @@ pub mod browser_handlers;
 pub mod browser_host_client;
 pub mod browser_search;
 pub mod browser_sessions;
+pub mod browser_snapshot_tools;
 pub mod browser_tools;
 pub mod runtime;
 pub mod runtime_session;

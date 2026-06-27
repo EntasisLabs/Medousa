@@ -31,6 +31,8 @@
   } from "$lib/utils/cardTimeline";
   import { haptic } from "$lib/haptics";
   import { homeChannelSurface } from "$lib/platform";
+  import { browser } from "$lib/stores/browser.svelte";
+  import { openInBrowser } from "$lib/utils/openInBrowser";
   import { shareWorkResult } from "$lib/share";
   import { formatToolName } from "$lib/utils/formatTurn";
 
@@ -111,6 +113,15 @@
   );
   const manifestation = $derived(
     detail ? buildWorkManifestation(detail.card, detail, workspace.feed) : null,
+  );
+
+  const linkedBrowserUrl = $derived(
+    detail &&
+      browser.workCardId === detail.card.id &&
+      browser.activeUrl &&
+      browser.activeUrl !== "about:blank"
+      ? browser.activeUrl
+      : null,
   );
 
   $effect(() => {
@@ -443,6 +454,41 @@
         onChat={() => void openLinkedChat()}
         onTools={scrollToTools}
       />
+
+      {#if linkedBrowserUrl}
+        <div class="mt-4 rounded-lg border border-primary-500/25 bg-primary-500/5 p-3">
+          <p class="text-[11px] font-medium text-primary-200">Web research</p>
+          <p class="workshop-faint mt-1 truncate text-xs" title={linkedBrowserUrl}>
+            {browser.scopeLabel}
+          </p>
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-primary mt-2"
+            onclick={() =>
+              void openInBrowser(linkedBrowserUrl, {
+                workCardId: detail.card.id,
+                sessionId: detail.session_id,
+              })}
+          >
+            Open in Web
+          </button>
+        </div>
+      {:else if detail.card.column === "in_motion" || detail.card.column === "blocked"}
+        <div class="mt-4">
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-surface"
+            onclick={() =>
+              void openInBrowser("about:blank", {
+                workCardId: detail.card.id,
+                sessionId: detail.session_id,
+                openWorkshop: true,
+              })}
+          >
+            Open research browser
+          </button>
+        </div>
+      {/if}
 
       {#if manifestation.resultPreview && !jobResult?.output_text}
         <div class="manifest-result mt-4">

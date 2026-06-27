@@ -538,6 +538,25 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         .await;
     }
 
+    async fn browser_navigated(
+        &self,
+        _turn_correlation_id: &str,
+        url: String,
+        title: Option<String>,
+        _opened_by_agent: bool,
+    ) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        self.publish_tracked(interactive_turn_runtime::browser_navigated_stream_event(
+            &self.turn_id,
+            &url,
+            title.as_deref(),
+        ))
+        .await;
+    }
+
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         self.publish_tracked(interactive_turn_runtime::debug_status_stream_event(
             &self.turn_id,
@@ -776,6 +795,7 @@ pub async fn run_agent_turn(
         inner: sink,
         outcome: outcome.clone(),
     });
+    super::active_stream_sink::set_active_stream_sink(Some(tracking_sink.clone())).await;
 
     run_agent_turn_inner(
         _turn_id,
@@ -796,6 +816,7 @@ pub async fn run_agent_turn(
             .await;
     }
 
+    super::active_stream_sink::set_active_stream_sink(None).await;
     *agent_rt.turn_scope.write().await = previous_scope;
 }
 

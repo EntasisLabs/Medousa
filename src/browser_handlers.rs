@@ -9,6 +9,8 @@ use medousa_browser_lite::SearchResponse;
 use serde::{Deserialize, Serialize};
 
 use crate::browser_host_client::browser_host_healthy;
+use medousa_browser_lite::search_ddg_html_cached_async;
+
 use crate::browser_sessions::{
     complete_browser_session, get_browser_session, BrowserSessionCompleteRequest,
 };
@@ -139,7 +141,55 @@ pub async fn get_browser_session_handler(
     }
 }
 
-pub fn browser_router() -> Router<AppState> {
+pub async fn resume_browser_session_handler(
+    Path(session_id): Path<String>,
+) -> Json<serde_json::Value> {
+    let Some(session) = get_browser_session(&session_id) else {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": format!("session not found: {session_id}"),
+        }));
+    };
+    let query = session.query.trim();
+    if query.is_empty() {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "browser session missing query",
+        }));
+    }
+    match search_ddg_html_cached_async(query, session.max_results).await {
+        Ok(search) => match complete_browser_session(
+            &session_id,
+            BrowserSessionCompleteRequest {
+                search_response: Some(search.clone()),
+                error: None,
+            },
+        ) {
+            Some(updated) => Json(serde_json::json!({
+                "ok": true,
+                "session_id": updated.session_id,
+                "status": updated.status,
+                "search_response": search,
+            })),
+            None => Json(serde_json::json!({
+                "ok": false,
+                "error": format!("session not found: {session_id}"),
+            })),
+        },
+        Err(err) => {
+            let _ = complete_browser_session(
+                &session_id,
+                BrowserSessionCompleteRequest {
+                    search_response: None,
+                    error: Some(err.clone()),
+                },
+            );
+            Json(serde_json::json!({ "ok": false, "error": err }))
+        }
+    }
+}
+
+fn browser_routes() -> Router<AppState> {
     Router::new()
         .route("/clients/register", post(register_client))
         .route("/clients", get(list_clients))
@@ -151,4 +201,13 @@ pub fn browser_router() -> Router<AppState> {
             "/browser/sessions/{session_id}/complete",
             post(complete_browser_session_handler),
         )
+        .route(
+            "/browser/sessions/{session_id}/resume",
+            post(resume_browser_session_handler),
+        )
+}
+
+pub fn browser_router() -> Router<AppState> {
+    let routes = browser_routes();
+    Router::new().merge(routes.clone()).nest("/v1", routes)
 }

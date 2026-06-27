@@ -26,8 +26,10 @@
   import { catalog } from "$lib/stores/catalog.svelte";
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import LibraryPanel from "$lib/components/vault/LibraryPanel.svelte";
+  import BrowserPanel from "$lib/components/browser/BrowserPanel.svelte";
   import WorkPanel from "$lib/components/work/WorkPanel.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
+  import { browser } from "$lib/stores/browser.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { automations } from "$lib/stores/automations.svelte";
@@ -76,6 +78,9 @@
     }
     if (surface === "chat") {
       void chat.refreshSessions();
+      void chat.ensureSessionHydrated();
+    }
+    if (surface === "web") {
       void chat.ensureSessionHydrated();
     }
   }
@@ -132,6 +137,8 @@
               onOpenWork={() => goToSurface("work")}
               onSelectCard={handleCardSelect}
             />
+          {:else if activeSurface === "web"}
+            <BrowserPanel visible={true} />
           {:else if activeSurface === "context"}
             <ContextPanel
               visible={true}
@@ -209,12 +216,15 @@
               noteTitle={vault.title}
               wikilinksOut={vault.wikilinksOut}
               backlinks={vault.backlinks}
+              browserUrl={browser.activeUrl}
+              browserTitle={browser.scopeLabel}
               cardDetail={activeSurface === "work"
                 ? null
                 : workspace.selectedCardDetail}
               cardError={workspace.cardDetailError}
               noteDiffChip={vault.diffChipText}
               onOpenNote={handleOpenNote}
+              onOpenWeb={() => layout.navigateDesktop("web", { bump: true })}
               onSelectCard={handleCardSelect}
               onCollapse={() => layout.setActivityCollapsed(true)}
             />

@@ -15,6 +15,7 @@ const NOTIFICATIONS_KEY = "medousa-home-notifications";
 const TECHNICAL_ACTIVITY_KEY = "medousa-home-technical-activity";
 const WORKSHOP_GUIDANCE_KEY = "medousa-home-workshop-guidance";
 const ENGINE_DETAILS_KEY = "medousa-home-engine-details-chat";
+const AUTO_OPEN_WEB_KEY = "medousa-home-auto-open-web-on-agent";
 const WORK_HIDE_HOURS_KEY = "medousa-home-work-hide-hours";
 const WORK_WIPE_DAYS_KEY = "medousa-home-work-wipe-days";
 
@@ -30,6 +31,8 @@ export class SettingsStore {
   showWorkshopGuidance = $state(loadWorkshopGuidance());
   /** Show orchestrator/fallback/tool telemetry in chat (hidden by default; never deleted from history). */
   showEngineDetailsInChat = $state(loadEngineDetailsInChat());
+  /** When agent browses, switch to Web surface automatically (inverse: stay on Chat). */
+  autoOpenWebOnAgentBrowse = $state(loadAutoOpenWebOnAgentBrowse());
   workCardHideAfterHours = $state(loadWorkCardHideAfterHours());
   workCardWipeAfterDays = $state(loadWorkCardWipeAfterDays());
   diagnosticsOpen = $state(false);
@@ -86,6 +89,11 @@ export class SettingsStore {
   setShowEngineDetailsInChat(enabled: boolean) {
     this.showEngineDetailsInChat = enabled;
     localStorage.setItem(ENGINE_DETAILS_KEY, enabled ? "1" : "0");
+  }
+
+  setAutoOpenWebOnAgentBrowse(enabled: boolean) {
+    this.autoOpenWebOnAgentBrowse = enabled;
+    localStorage.setItem(AUTO_OPEN_WEB_KEY, enabled ? "1" : "0");
   }
 
   setWorkCardHideAfterHours(hours: number) {
@@ -149,6 +157,11 @@ function loadWorkshopGuidance(): boolean {
 function loadEngineDetailsInChat(): boolean {
   if (typeof localStorage === "undefined") return false;
   return localStorage.getItem(ENGINE_DETAILS_KEY) === "1";
+}
+
+function loadAutoOpenWebOnAgentBrowse(): boolean {
+  if (typeof localStorage === "undefined") return true;
+  return localStorage.getItem(AUTO_OPEN_WEB_KEY) !== "0";
 }
 
 function loadWorkCardHideAfterHours(): number {

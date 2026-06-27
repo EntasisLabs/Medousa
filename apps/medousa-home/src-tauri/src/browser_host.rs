@@ -7,6 +7,9 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use medousa_browser_lite::{fetch_url_markdown, search_ddg_html_cached, SearchResponse};
+use medousa_browser_bridge::{
+    BrowserControl, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
@@ -132,12 +135,191 @@ async fn resume_session(
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct TabGroupCreateRequest {
+    #[serde(default)]
+    chat_session_id: Option<String>,
+    #[serde(default)]
+    work_card_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TabOpenRequest {
+    url: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    opened_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TabNavigateRequest {
+    url: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    opened_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TabControlRequest {
+    control: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TabSnapshotRequest {
+    #[serde(default = "default_max_chars")]
+    max_chars: usize,
+}
+
+fn parse_opened_by(value: Option<&str>) -> TabOpenedBy {
+    match value.unwrap_or("user").trim().to_lowercase().as_str() {
+        "agent" => TabOpenedBy::Agent,
+        _ => TabOpenedBy::User,
+    }
+}
+
+fn parse_control(value: &str) -> BrowserControl {
+    match value.trim().to_lowercase().as_str() {
+        "agent" => BrowserControl::Agent,
+        "awaiting_operator" => BrowserControl::AwaitingOperator,
+        _ => BrowserControl::User,
+    }
+}
+
+async fn create_tab_group(Json(request): Json<TabGroupCreateRequest>) -> Json<TabGroup> {
+    Json(TabGroupManager::create_group(
+        request.chat_session_id,
+        request.work_card_id,
+    ))
+}
+
+async fn get_tab_group(Path(tab_group_id): Path<String>) -> Json<serde_json::Value> {
+    match TabGroupManager::get_group(&tab_group_id) {
+        Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
+        None => Json(serde_json::json!({
+            "ok": false,
+            "error": format!("tab group not found: {tab_group_id}"),
+        })),
+    }
+}
+
+async fn open_tab(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabOpenRequest>,
+) -> Json<serde_json::Value> {
+    match TabGroupManager::open_tab(
+        &tab_group_id,
+        &request.url,
+        request.title.as_deref(),
+        parse_opened_by(request.opened_by.as_deref()),
+    ) {
+        Some(tab) => {
+            let group = TabGroupManager::get_group(&tab_group_id);
+            Json(serde_json::json!({ "ok": true, "tab": tab, "tab_group": group }))
+        }
+        None => Json(serde_json::json!({ "ok": false, "error": "tab group not found" })),
+    }
+}
+
+async fn navigate_tab(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabNavigateRequest>,
+) -> Json<serde_json::Value> {
+    TabGroupManager::ensure_group(&tab_group_id);
+    match TabGroupManager::navigate_active_tab(
+        &tab_group_id,
+        &request.url,
+        request.title.as_deref(),
+        parse_opened_by(request.opened_by.as_deref()),
+    ) {
+        Some(tab) => {
+            let group = TabGroupManager::get_group(&tab_group_id);
+            Json(serde_json::json!({ "ok": true, "tab": tab, "tab_group": group }))
+        }
+        None => Json(serde_json::json!({ "ok": false, "error": "navigation failed" })),
+    }
+}
+
+async fn activate_tab(
+    Path((tab_group_id, tab_id)): Path<(String, String)>,
+) -> Json<serde_json::Value> {
+    match TabGroupManager::activate_tab(&tab_group_id, &tab_id) {
+        Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
+        None => Json(serde_json::json!({ "ok": false, "error": "tab not found" })),
+    }
+}
+
+async fn close_tab(
+    Path((tab_group_id, tab_id)): Path<(String, String)>,
+) -> Json<serde_json::Value> {
+    match TabGroupManager::close_tab(&tab_group_id, &tab_id) {
+        Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
+        None => Json(serde_json::json!({ "ok": false, "error": "tab group not found" })),
+    }
+}
+
+async fn set_tab_group_control(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabControlRequest>,
+) -> Json<serde_json::Value> {
+    match TabGroupManager::set_control(&tab_group_id, parse_control(&request.control)) {
+        Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
+        None => Json(serde_json::json!({ "ok": false, "error": "tab group not found" })),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct LinkWorkCardRequest {
+    work_card_id: Option<String>,
+}
+
+async fn link_work_card_handler(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<LinkWorkCardRequest>,
+) -> Json<serde_json::Value> {
+    match TabGroupManager::link_work_card(
+        &tab_group_id,
+        request.work_card_id.as_deref(),
+    ) {
+        Some(group) => Json(serde_json::json!({ "ok": true, "tab_group": group })),
+        None => Json(serde_json::json!({ "ok": false, "error": "tab group not found" })),
+    }
+}
+
+async fn snapshot_tab_group(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabSnapshotRequest>,
+) -> Result<Json<BrowserSnapshot>, String> {
+    let snapshot =
+        TabGroupManager::snapshot_active_tab(&tab_group_id, request.max_chars)?;
+    Ok(Json(snapshot))
+}
+
 fn build_router(state: BrowserHostState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/search", post(search))
         .route("/v1/fetch", post(fetch))
         .route("/v1/sessions/{session_id}/resume", post(resume_session))
+        .route("/v1/tab-groups", post(create_tab_group))
+        .route("/v1/tab-groups/{tab_group_id}", get(get_tab_group))
+        .route("/v1/tab-groups/{tab_group_id}/tabs", post(open_tab))
+        .route("/v1/tab-groups/{tab_group_id}/navigate", post(navigate_tab))
+        .route(
+            "/v1/tab-groups/{tab_group_id}/tabs/{tab_id}/activate",
+            post(activate_tab),
+        )
+        .route(
+            "/v1/tab-groups/{tab_group_id}/tabs/{tab_id}",
+            axum::routing::delete(close_tab),
+        )
+        .route("/v1/tab-groups/{tab_group_id}/control", post(set_tab_group_control))
+        .route(
+            "/v1/tab-groups/{tab_group_id}/link-work",
+            post(link_work_card_handler),
+        )
+        .route("/v1/tab-groups/{tab_group_id}/snapshot", post(snapshot_tab_group))
         .with_state(state)
 }
 
@@ -239,11 +421,77 @@ pub async fn browser_host_restart() -> Result<BrowserHostStatusDto, String> {
 }
 
 #[tauri::command]
-pub async fn browser_host_resume_session(session_id: String) -> Result<serde_json::Value, String> {
+pub async fn browser_host_resume_session(
+    session_id: String,
+    daemon_url: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let session_id = session_id.trim().to_string();
+    let session = fetch_daemon_browser_session(&session_id, daemon_url.as_deref()).await?;
+    let query = session
+        .get("query")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if query.is_empty() {
+        return Err("browser session missing query".to_string());
+    }
+    let max_results = session
+        .get("max_results")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(8) as usize;
+
+    let search = tokio::task::spawn_blocking(move || {
+        medousa_browser_lite::search_ddg_html_cached(&query, max_results)
+    })
+    .await
+    .map_err(|err| err.to_string())??;
+
+    if let Some(base) = daemon_url {
+        complete_daemon_browser_session(&base, &session_id, &search).await?;
+    }
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "session_id": session_id,
+        "search_response": search,
+    }))
+}
+
+async fn fetch_daemon_browser_session(
+    session_id: &str,
+    daemon_url: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let base = resolve_daemon_url(daemon_url)?;
     let url = format!(
-        "{}/v1/sessions/{}/resume",
-        browser_host_base_url(),
-        session_id.trim()
+        "{}/v1/browser/sessions/{}",
+        base.trim_end_matches('/'),
+        session_id
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    let body: serde_json::Value = response.json().await.map_err(|err| err.to_string())?;
+    body.get("session")
+        .cloned()
+        .ok_or_else(|| "daemon session response missing session".to_string())
+}
+
+async fn complete_daemon_browser_session(
+    daemon_base: &str,
+    session_id: &str,
+    search: &SearchResponse,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/v1/browser/sessions/{}/complete",
+        daemon_base.trim_end_matches('/'),
+        session_id
     );
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
@@ -251,16 +499,27 @@ pub async fn browser_host_resume_session(session_id: String) -> Result<serde_jso
         .map_err(|err| err.to_string())?;
     let response = client
         .post(url)
-        .json(&ResumeRequest {
-            operator_message: None,
-        })
+        .json(&serde_json::json!({
+            "search_response": search,
+            "error": null,
+        }))
         .send()
         .await
         .map_err(|err| err.to_string())?;
-    response
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|err| err.to_string())
+    if !response.status().is_success() {
+        return Err(format!("daemon complete failed: {}", response.status()));
+    }
+    Ok(())
+}
+
+fn resolve_daemon_url(daemon_url: Option<&str>) -> Result<String, String> {
+    if let Some(url) = daemon_url.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(url.trim_end_matches('/').to_string());
+    }
+    std::env::var("MEDOUSA_DAEMON_URL")
+        .or_else(|_| std::env::var("STASIS_DAEMON_URL"))
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .map_err(|_| "MEDOUSA_DAEMON_URL not set".to_string())
 }
 
 pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: &str) {
@@ -290,4 +549,101 @@ pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surfa
         return;
     };
     let _ = client.post(url).json(&body).send().await;
+}
+
+#[tauri::command]
+pub async fn browser_host_register_client(
+    daemon_url: String,
+    channel_surface: String,
+) -> Result<(), String> {
+    register_browser_client_with_daemon(&daemon_url, &channel_surface).await;
+    Ok(())
+}
+
+// ── Browser bridge (in-process; avoids CORS from Vite dev → :7422) ───────────
+
+#[tauri::command]
+pub fn browser_bridge_create_tab_group(
+    chat_session_id: Option<String>,
+    work_card_id: Option<String>,
+) -> Result<TabGroup, String> {
+    Ok(TabGroupManager::create_group(chat_session_id, work_card_id))
+}
+
+#[tauri::command]
+pub fn browser_bridge_get_tab_group(tab_group_id: String) -> Result<Option<TabGroup>, String> {
+    Ok(TabGroupManager::get_group(&tab_group_id))
+}
+
+#[tauri::command]
+pub fn browser_bridge_open_tab(
+    tab_group_id: String,
+    url: String,
+    opened_by: Option<String>,
+    title: Option<String>,
+) -> Result<TabGroup, String> {
+    TabGroupManager::open_tab(
+        &tab_group_id,
+        &url,
+        title.as_deref(),
+        parse_opened_by(opened_by.as_deref()),
+    )
+    .and_then(|_| TabGroupManager::get_group(&tab_group_id))
+    .ok_or_else(|| "tab group not found".to_string())
+}
+
+#[tauri::command]
+pub fn browser_bridge_navigate_tab(
+    tab_group_id: String,
+    url: String,
+    opened_by: Option<String>,
+    title: Option<String>,
+) -> Result<TabGroup, String> {
+    TabGroupManager::ensure_group(&tab_group_id);
+    TabGroupManager::navigate_active_tab(
+        &tab_group_id,
+        &url,
+        title.as_deref(),
+        parse_opened_by(opened_by.as_deref()),
+    )
+    .and_then(|_| TabGroupManager::get_group(&tab_group_id))
+    .ok_or_else(|| "navigation failed".to_string())
+}
+
+#[tauri::command]
+pub fn browser_bridge_activate_tab(tab_group_id: String, tab_id: String) -> Result<TabGroup, String> {
+    TabGroupManager::activate_tab(&tab_group_id, &tab_id)
+        .ok_or_else(|| "tab not found".to_string())
+}
+
+#[tauri::command]
+pub fn browser_bridge_close_tab(tab_group_id: String, tab_id: String) -> Result<TabGroup, String> {
+    TabGroupManager::close_tab(&tab_group_id, &tab_id)
+        .ok_or_else(|| "tab group not found".to_string())
+}
+
+#[tauri::command]
+pub fn browser_bridge_set_control(tab_group_id: String, control: String) -> Result<TabGroup, String> {
+    TabGroupManager::set_control(&tab_group_id, parse_control(&control))
+        .ok_or_else(|| "tab group not found".to_string())
+}
+
+#[tauri::command]
+pub fn browser_bridge_link_work_card(
+    tab_group_id: String,
+    work_card_id: Option<String>,
+) -> Result<TabGroup, String> {
+    TabGroupManager::link_work_card(&tab_group_id, work_card_id.as_deref())
+        .ok_or_else(|| "tab group not found".to_string())
+}
+
+#[tauri::command]
+pub async fn browser_bridge_snapshot(
+    tab_group_id: String,
+    max_chars: Option<usize>,
+) -> Result<BrowserSnapshot, String> {
+    let max_chars = max_chars.unwrap_or(4000);
+    tokio::task::spawn_blocking(move || TabGroupManager::snapshot_active_tab(&tab_group_id, max_chars))
+        .await
+        .map_err(|err| err.to_string())?
 }

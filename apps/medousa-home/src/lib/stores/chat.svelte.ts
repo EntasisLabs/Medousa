@@ -198,6 +198,41 @@ export class ChatStore {
       challengeUrl: event.browser_challenge_url ?? null,
       message: event.message || event.operator_message || "",
     };
+    const workCardId = this.workCardIdForTurn(event.turn_id);
+    if (event.browser_challenge_url) {
+      void import("$lib/utils/openInBrowser").then(({ openInBrowser }) =>
+        openInBrowser(event.browser_challenge_url!, {
+          openedBy: "agent",
+          sessionId: this.sessionId,
+          workCardId,
+          openWorkshop: true,
+        }),
+      );
+      void import("$lib/stores/browser.svelte").then(({ browser }) => {
+        void browser.setControl("awaiting_operator");
+      });
+    }
+  }
+
+  handleBrowserNavigated(event: InteractiveTurnStreamEvent) {
+    if (!settings.autoOpenWebOnAgentBrowse) return;
+    const url = event.message?.trim();
+    if (!url) return;
+    const workCardId = this.workCardIdForTurn(event.turn_id);
+    void import("$lib/utils/openInBrowser").then(({ openInBrowser }) =>
+      openInBrowser(url, {
+        openedBy: "agent",
+        sessionId: this.sessionId,
+        workCardId,
+        title: event.operator_message ?? undefined,
+      }),
+    );
+  }
+
+  workCardIdForTurn(turnId: string): string | null {
+    const turn = this.turns.get(turnId);
+    const cardId = turn?.workspaceCardId?.trim();
+    return cardId || null;
   }
 
   hasPendingBudgetApproval(requestId: string): boolean {
@@ -1425,6 +1460,11 @@ export class ChatStore {
 
     if (isBrowserChallengeStreamEvent(event)) {
       this.handleBrowserChallenge(event);
+      return;
+    }
+
+    if (event.event_type === "browser_navigated") {
+      this.handleBrowserNavigated(event);
       return;
     }
 

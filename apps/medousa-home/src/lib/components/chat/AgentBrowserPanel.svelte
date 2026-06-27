@@ -1,11 +1,8 @@
 <script lang="ts">
   import { chat } from "$lib/stores/chat.svelte";
-  import {
-    completeBrowserSession,
-    resumeBrowserHostSession,
-  } from "$lib/daemon";
-  import { isTauriMobilePlatform } from "$lib/platform";
+  import { resumeBrowserSession } from "$lib/daemon";
   import { haptic } from "$lib/haptics";
+  import { openInBrowser } from "$lib/utils/openInBrowser";
 
   interface Props {
     mobile?: boolean;
@@ -18,19 +15,21 @@
 
   const pending = $derived(chat.browserChallenge);
 
+  async function openWebVerification() {
+    if (!pending?.challengeUrl) return;
+    await openInBrowser(pending.challengeUrl, {
+      openedBy: "agent",
+      sessionId: chat.sessionId,
+      openWorkshop: true,
+    });
+  }
+
   async function continueAgent() {
     if (!pending || busy) return;
     busy = true;
     feedback = null;
     try {
-      if (isTauriMobilePlatform()) {
-        await completeBrowserSession(pending.sessionId, {
-          searchResponse: null,
-          error: null,
-        });
-      } else {
-        await resumeBrowserHostSession(pending.sessionId);
-      }
+      await resumeBrowserSession(pending.sessionId);
       chat.clearBrowserChallenge(pending.sessionId);
       feedback = "Verification submitted — agent will continue.";
       haptic("success");
@@ -54,7 +53,7 @@
       <div>
         <p class="text-xs font-medium text-primary-200">Medousa needs help with a verification</p>
         <p class="mt-0.5 text-sm text-surface-100">
-          {pending.message || "Complete the check below, then continue the agent."}
+          {pending.message || "Complete the check in the Web browser, then continue the agent."}
         </p>
         {#if pending.challengeUrl}
           <p class="workshop-faint mt-1 truncate text-xs" title={pending.challengeUrl}>
@@ -62,15 +61,16 @@
           </p>
         {/if}
       </div>
-      {#if pending.challengeUrl}
-        <iframe
-          title="Browser verification"
-          src={pending.challengeUrl}
-          class="h-64 w-full rounded-md border border-surface-700 bg-white"
-          sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
-        ></iframe>
-      {/if}
       <div class="flex flex-wrap items-center gap-2">
+        {#if pending.challengeUrl}
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-primary"
+            onclick={() => void openWebVerification()}
+          >
+            Open in Web
+          </button>
+        {/if}
         <button
           type="button"
           class="btn btn-sm variant-filled-primary"

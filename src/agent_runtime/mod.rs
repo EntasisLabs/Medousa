@@ -6,6 +6,7 @@
 /// Version label exposed in daemon `/health` and doctor diagnostics.
 pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 
+pub mod active_stream_sink;
 pub mod ambient_context;
 pub mod daemon_interactive_turn;
 pub mod turn_delivery;

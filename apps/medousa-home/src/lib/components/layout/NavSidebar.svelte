@@ -3,6 +3,7 @@
     Activity,
     BookOpen,
     Calendar,
+    Globe,
     LayoutGrid,
     MessageCircle,
     Orbit,
@@ -41,6 +42,7 @@
     { id: "chat", label: "Chat", icon: MessageCircle },
     { id: "work", label: "Work", icon: LayoutGrid },
     { id: "library", label: "Library", icon: BookOpen },
+    { id: "web", label: "Web", icon: Globe },
     { id: "context", label: "Context", icon: Orbit },
   ];
 

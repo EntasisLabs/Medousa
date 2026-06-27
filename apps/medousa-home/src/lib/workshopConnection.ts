@@ -22,14 +22,17 @@ import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import { haptic } from "$lib/haptics";
 import {
   checkDaemonHealth,
+  getDaemonUrl,
   onInteractiveEvent,
   onInteractiveError,
   onWorkspaceEvent,
   onWorkspaceError,
+  registerBrowserClient,
   startWorkspaceStream,
   stopWorkspaceStream,
   type DaemonHealth,
 } from "$lib/daemon";
+import { homeChannelSurface } from "$lib/platform";
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
 
@@ -38,7 +41,15 @@ export type WorkshopConnection = {
   refreshHealth: () => Promise<DaemonHealth | null>;
 };
 
-const MAX_STREAM_RECONNECT_DELAY_MS = 30_000;
+async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
+  if (!health.ok) return;
+  try {
+    const daemonUrl = await getDaemonUrl();
+    await registerBrowserClient(daemonUrl, homeChannelSurface());
+  } catch {
+    // Browser host registration is best-effort on connect.
+  }
+}
 
 let workshopTeardown = false;
 let workspaceReconnectAttempt = 0;
@@ -241,6 +252,8 @@ export async function resumeWorkshop(
   onHealthChange(health);
   if (!health.ok) return;
 
+  void registerBrowserHostClient(health);
+
   await Promise.all([
     chat.reconcileOnResume({ notice: false }, workspace.cards),
     chat.hydrateAskThreads(workspace.cards),
@@ -324,6 +337,7 @@ export function connectWorkshop(options: {
       if (health.ok) {
         await startWorkshopStreams();
         await workshops.restoreLastSession();
+        void registerBrowserHostClient(health);
       }
       workshops.applyThemeForActiveWorkshop();
     } catch (err) {

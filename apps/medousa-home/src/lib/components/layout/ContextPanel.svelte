@@ -11,10 +11,13 @@
     noteTitle: string | null;
     wikilinksOut: string[];
     backlinks: string[];
+    browserUrl?: string | null;
+    browserTitle?: string | null;
     cardDetail: WorkCardDetail | null;
     cardError: string | null;
     noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
+    onOpenWeb?: () => void;
     onSelectCard?: (id: string) => void;
   }
 
@@ -23,10 +26,13 @@
     noteTitle,
     wikilinksOut,
     backlinks,
+    browserUrl = null,
+    browserTitle = null,
     cardDetail,
     cardError,
     noteDiffChip,
     onOpenNote,
+    onOpenWeb,
     onSelectCard,
   }: Props = $props();
 
@@ -43,6 +49,10 @@
   );
   const titleByPath = $derived(vault.labelByPathMap);
 
+  const hasBrowserContext = $derived(
+    Boolean(browserUrl && browserUrl !== "about:blank"),
+  );
+
   const hasCardContext = $derived(
     cardDetail !== null &&
       (cardVaultPaths.length > 0 ||
@@ -57,7 +67,7 @@
   });
 </script>
 
-{#if hasCardContext || hasNoteContext}
+{#if hasCardContext || hasNoteContext || hasBrowserContext}
   <section
     class="min-w-0 shrink-0 border-b border-surface-500/45 bg-surface-800/40 px-4 py-3"
     aria-label="Context"
@@ -170,6 +180,20 @@
             </ul>
           </div>
         {/if}
+      </div>
+    {/if}
+
+    {#if hasBrowserContext && onOpenWeb}
+      <div class="mt-3 space-y-1 text-sm">
+        <p class="workshop-label">Web</p>
+        <button
+          type="button"
+          class="text-left text-xs text-primary-400 hover:underline"
+          onclick={onOpenWeb}
+          title={browserUrl ?? undefined}
+        >
+          {browserTitle || browserUrl}
+        </button>
       </div>
     {/if}
   </section>

@@ -3,7 +3,7 @@ import type { Surface } from "$lib/types/ui";
 import { shouldUseMobileShell } from "$lib/platform";
 
 const LAST_SURFACE_KEY = "medousa-home-last-surface";
-const LANDING_SURFACES: Surface[] = ["chat", "work", "library", "workshop"];
+const LANDING_SURFACES: Surface[] = ["chat", "work", "library", "web", "workshop"];
 
 const ACTIVITY_WIDTH_KEY = "medousa-home-activity-width";
 const VAULT_TREE_WIDTH_KEY = "medousa-home-vault-tree-width";
@@ -222,6 +222,7 @@ function loadYouDestination(): YouDestination {
     "hub",
     "profiles",
     "library",
+    "web",
     "context",
     "workshop",
     "automations",

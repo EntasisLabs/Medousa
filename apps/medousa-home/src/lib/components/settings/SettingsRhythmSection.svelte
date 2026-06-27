@@ -74,6 +74,22 @@
 
     <label class="settings-toggle-row">
       <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">Open Web when agent browses</span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          Switch to the Web surface when Medousa navigates or needs verification — turn off to stay on Chat
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={settings.autoOpenWebOnAgentBrowse}
+        onchange={(event) =>
+          settings.setAutoOpenWebOnAgentBrowse((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
+
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Engine details in chat</span>
         <span class="workshop-faint mt-0.5 block text-xs">
           Show orchestrator routing and tool telemetry in chat (hidden by default; never deleted)

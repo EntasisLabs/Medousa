@@ -17,10 +17,13 @@
     noteTitle: string | null;
     wikilinksOut: string[];
     backlinks: string[];
+    browserUrl?: string | null;
+    browserTitle?: string | null;
     cardDetail: WorkCardDetail | null;
     cardError: string | null;
     noteDiffChip: string | null;
     onOpenNote: (path: string) => void;
+    onOpenWeb?: () => void;
     onSelectCard?: (id: string) => void;
     onCollapse?: () => void;
   }
@@ -32,10 +35,13 @@
     noteTitle,
     wikilinksOut,
     backlinks,
+    browserUrl = null,
+    browserTitle = null,
     cardDetail,
     cardError,
     noteDiffChip,
     onOpenNote,
+    onOpenWeb,
     onSelectCard,
     onCollapse,
   }: Props = $props();
@@ -72,10 +78,13 @@
     {noteTitle}
     {wikilinksOut}
     {backlinks}
+    {browserUrl}
+    {browserTitle}
     {cardDetail}
     {cardError}
     {noteDiffChip}
     {onOpenNote}
+    {onOpenWeb}
     {onSelectCard}
   />
 
