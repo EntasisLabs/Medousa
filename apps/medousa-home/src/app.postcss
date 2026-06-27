@@ -2578,6 +2578,47 @@
     border-top: 1px solid rgb(var(--color-surface-600) / 0.45);
   }
 
+  /*
+   * Web tab: column flex — browser panel + tab bar are siblings in the shell box.
+   * Avoids main padding-bottom vs fixed tab bar (native embed host must match its parent).
+   */
+  .mobile-shell[data-mobile-tab="web"] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-shell[data-mobile-tab="web"] > main {
+    flex: 1 1 0;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+
+  .mobile-shell[data-mobile-tab="web"] .mobile-bottom-chrome {
+    position: relative;
+    flex-shrink: 0;
+    z-index: 20;
+  }
+
+  html:not([data-native-shell="ios"]) .mobile-shell[data-mobile-tab="web"] .mobile-bottom-chrome {
+    padding-bottom: 0;
+  }
+
+  [data-browser-embed-host] {
+    contain: layout style;
+  }
+
+  .mobile-browser-bottom-chrome {
+    --browser-chrome-pad-top: 0.375rem;
+    --browser-chrome-pad-bottom: 0.25rem;
+    --browser-chrome-pad-x: 0.5rem;
+    padding: var(--browser-chrome-pad-top) var(--browser-chrome-pad-x)
+      var(--browser-chrome-pad-bottom);
+  }
+
+  .mobile-browser-url-pill {
+    font-size: 0.8125rem;
+  }
+
   .mobile-chat-composer {
     @apply px-3 pt-1 pb-0.5;
     border-bottom: 1px solid rgb(var(--color-surface-600) / 0.28);

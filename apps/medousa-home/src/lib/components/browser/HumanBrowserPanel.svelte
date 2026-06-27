@@ -7,12 +7,13 @@
   import {
     humanBrowserEmbedApplyLayout,
     humanBrowserEmbedHide,
+    humanBrowserSetMobileShellActive,
     type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { isTauri } from "$lib/platform";
+  import { isTauri, shouldUseMobileShell } from "$lib/platform";
   import { layoutDesktopRails } from "$lib/utils/desktopRails";
 
   interface Props {
@@ -24,9 +25,13 @@
 
   let urlBarFocusNonce = $state(0);
   let saving = $state(false);
+  let embedGeneration = 0;
 
   async function presentEmbed() {
-    if (!isTauri() || !visible) return;
+    if (!isTauri() || !visible || layout.isMobile || shouldUseMobileShell()) return;
+    const gen = ++embedGeneration;
+    await humanBrowserSetMobileShellActive(false);
+    if (gen !== embedGeneration) return;
     const rails = layoutDesktopRails({
       viewportWidth: layout.viewportWidth,
       activityCollapsed: layout.activityCollapsed,
@@ -39,16 +44,18 @@
       activityCollapsed: layout.activityCollapsed,
       workRailVisible,
     });
+    if (gen !== embedGeneration) return;
   }
 
   $effect(() => {
-    if (!isTauri() || !visible) return;
+    if (!isTauri() || !visible || layout.isMobile) return;
     layout.activityWidth;
     layout.activityCollapsed;
     layout.viewportWidth;
     workRailVisible;
     void presentEmbed();
     return () => {
+      if (shouldUseMobileShell()) return;
       void humanBrowserEmbedHide();
     };
   });
@@ -97,8 +104,14 @@
     };
     window.addEventListener("keydown", onKeydown);
 
+    const onResize = () => {
+      void presentEmbed();
+    };
+    window.addEventListener("resize", onResize);
+
     return () => {
       window.removeEventListener("keydown", onKeydown);
+      window.removeEventListener("resize", onResize);
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
   });

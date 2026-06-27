@@ -3,9 +3,11 @@
 
   interface Props {
     urlBarFocusNonce?: number;
+    /** Safari-style pill bar for mobile Web tab. */
+    mobile?: boolean;
   }
 
-  let { urlBarFocusNonce = 0 }: Props = $props();
+  let { urlBarFocusNonce = 0, mobile = false }: Props = $props();
 
   let inputEl = $state<HTMLInputElement | null>(null);
 
@@ -27,12 +29,16 @@
   <input
     bind:this={inputEl}
     type="text"
-    class="input min-w-0 flex-1 text-sm"
-    placeholder="Search or enter URL"
+    class="input min-w-0 flex-1 text-sm {mobile
+      ? 'mobile-browser-url-pill rounded-full border-surface-700 bg-surface-800/90 py-1.5 text-center'
+      : ''}"
+    placeholder={mobile ? "Search or enter URL" : "Search or enter URL"}
     bind:value={humanBrowser.urlDraft}
     spellcheck="false"
     autocomplete="off"
     aria-label="Address bar"
   />
-  <button type="submit" class="btn btn-sm variant-filled-primary shrink-0">Go</button>
+  {#if !mobile}
+    <button type="submit" class="btn btn-sm variant-filled-primary shrink-0">Go</button>
+  {/if}
 </form>

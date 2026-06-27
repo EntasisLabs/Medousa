@@ -26,6 +26,8 @@ static EMBED_READY: AtomicBool = AtomicBool::new(false);
 static EMBED_VISIBLE: AtomicBool = AtomicBool::new(false);
 /// When true the embedded webview was created with a mobile Safari user agent.
 static EMBED_MOBILE_UA: AtomicBool = AtomicBool::new(false);
+/// Set by the frontend when the mobile shell owns embed layout (blocks workshop resize reapply).
+static MOBILE_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LAST_EMBED_PLACEMENT: Mutex<Option<EmbedPlacement>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Copy)]
@@ -35,11 +37,23 @@ enum EmbedPlacement {
     Freeform(EmbedBounds),
 }
 
-/// Mobile Web tab toolbar — must match `h-[52px]` on BrowserPanel toolbar row.
-const MOBILE_WEB_CHROME_HEIGHT: f64 = 52.0;
+/// Fallback mobile browser chrome when DOM bounds are unavailable (prefer `content_bounds`).
+const MOBILE_BROWSER_CHROME_FALLBACK: f64 = 52.0;
 
 /// Mobile Safari UA for responsive sites when the mobile shell is active (Tauri desktop resize).
 const MOBILE_SAFARI_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+
+/// Fix mobile UA viewport / safe-area so page content fills the native embed frame (mirrors iOS insets plugin).
+const MOBILE_EMBED_FIX_JS: &str = r#"(function(){try{var d=document,h=d.head||d.documentElement,m=d.querySelector('meta[name="viewport"]');if(!m){m=d.createElement('meta');m.name='viewport';h.appendChild(m)}m.content='width=device-width,initial-scale=1,viewport-fit=cover';var s=d.getElementById('medousa-mobile-embed-fix');if(!s){s=d.createElement('style');s.id='medousa-mobile-embed-fix';s.textContent='html,body{min-height:100%;height:100%;margin:0;padding:0}body{padding-bottom:env(safe-area-inset-bottom,0)!important}';h.appendChild(s)}}catch(e){}})();"#;
+
+fn inject_mobile_embed_fix(app: &AppHandle) {
+    if !EMBED_MOBILE_UA.load(Ordering::SeqCst) {
+        return;
+    }
+    if let Some(content) = embedded_content_webview(app) {
+        let _ = content.eval(MOBILE_EMBED_FIX_JS);
+    }
+}
 /// Default bottom tab bar — matches `--mobile-bottom-chrome-height` fallback (5.5rem).
 const MOBILE_BOTTOM_CHROME_DEFAULT: f64 = 88.0;
 
@@ -166,13 +180,16 @@ fn content_builder(app: &AppHandle, label: &'static str, mobile_ua: bool) -> Web
             emit_navigated(&app_nav, &href);
             true
         })
-        .on_page_load(move |_, payload| {
+        .on_page_load(move |webview, payload| {
             use tauri::webview::PageLoadEvent;
             if payload.event() != PageLoadEvent::Finished {
                 return;
             }
             let href = payload.url().as_str().to_string();
             emit_navigated(&app_load, &href);
+            if mobile_ua {
+                let _ = webview.eval(MOBILE_EMBED_FIX_JS);
+            }
         });
     if mobile_ua {
         builder = builder.user_agent(MOBILE_SAFARI_UA);
@@ -253,7 +270,7 @@ fn ensure_embedded_desktop_profile(app: &AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Fixed Rust layout for mobile Web tab — prefers DOM-measured bounds when provided.
+/// Mobile Web tab layout — prefers DOM-measured bounds when provided (fixes webview vs window size mismatch).
 fn compute_mobile_embedded_bounds(
     window: &tauri::Window,
     params: EmbedMobileLayoutParams,
@@ -272,9 +289,9 @@ fn compute_mobile_embedded_bounds(
 
     Ok(EmbedBounds {
         x: 0.0,
-        y: MOBILE_WEB_CHROME_HEIGHT,
+        y: 0.0,
         width: win_w.max(8.0),
-        height: (win_h - MOBILE_WEB_CHROME_HEIGHT - bottom).max(8.0),
+        height: (win_h - MOBILE_BROWSER_CHROME_FALLBACK - bottom).max(8.0),
     })
 }
 
@@ -296,6 +313,9 @@ fn apply_embedded_bounds(app: &AppHandle, bounds: EmbedBounds) -> Result<(), Str
 }
 
 fn apply_embedded_layout(app: &AppHandle, params: EmbedLayoutParams) -> Result<(), String> {
+    if MOBILE_SHELL_ACTIVE.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     ensure_embedded_desktop_profile(app)?;
     ensure_embedded_content(app)?;
     let window = workshop_window(app)?;
@@ -315,6 +335,7 @@ fn apply_embedded_mobile_layout(
     app: &AppHandle,
     params: EmbedMobileLayoutParams,
 ) -> Result<bool, String> {
+    MOBILE_SHELL_ACTIVE.store(true, Ordering::SeqCst);
     let recreated = ensure_embedded_mobile_profile(app)?;
     ensure_embedded_content(app)?;
     let window = workshop_window(app)?;
@@ -327,6 +348,7 @@ fn apply_embedded_mobile_layout(
     if let Some(content) = embedded_content_webview(app) {
         content.show().map_err(|err| err.to_string())?;
     }
+    inject_mobile_embed_fix(app);
     Ok(recreated)
 }
 
@@ -439,14 +461,55 @@ pub fn on_main_window_resized(app: &AppHandle) {
     if !EMBED_VISIBLE.load(Ordering::SeqCst) {
         return;
     }
-    // Mobile uses DOM-measured bounds from the frontend; skip stale Rust reapply.
-    if matches!(
-        LAST_EMBED_PLACEMENT.lock().ok().and_then(|guard| *guard),
-        Some(EmbedPlacement::Mobile(_))
-    ) {
+    // Mobile shell uses DOM-measured bounds from the frontend — never reapply workshop layout.
+    if MOBILE_SHELL_ACTIVE.load(Ordering::SeqCst) {
         return;
     }
     let _ = reapply_embedded_placement(app);
+}
+
+#[tauri::command]
+pub fn human_browser_set_mobile_shell_active(active: bool) {
+    MOBILE_SHELL_ACTIVE.store(active, Ordering::SeqCst);
+    if !active {
+        // Desktop takeover — drop stale mobile placement so workshop resize reapply works.
+        if let Ok(mut last) = LAST_EMBED_PLACEMENT.lock() {
+            if matches!(*last, Some(EmbedPlacement::Mobile(_))) {
+                *last = None;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedBoundsReadback {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub window_width: f64,
+    pub window_height: f64,
+}
+
+#[tauri::command]
+pub fn human_browser_embed_read_bounds(app: AppHandle) -> Result<EmbedBoundsReadback, String> {
+    let window = workshop_window(&app)?;
+    let (win_w, win_h) = window_inner_logical(&window)?;
+    let content = embedded_content_webview(&app)
+        .ok_or_else(|| "embedded content webview missing".to_string())?;
+    let scale = window.scale_factor().map_err(|err| err.to_string())?;
+    let actual = content.bounds().map_err(|err| err.to_string())?;
+    let pos = actual.position.to_logical::<f64>(scale);
+    let size = actual.size.to_logical::<f64>(scale);
+    Ok(EmbedBoundsReadback {
+        x: pos.x,
+        y: pos.y,
+        width: size.width,
+        height: size.height,
+        window_width: win_w,
+        window_height: win_h,
+    })
 }
 
 #[tauri::command]

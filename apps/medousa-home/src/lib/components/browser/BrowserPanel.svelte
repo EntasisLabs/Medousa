@@ -1,8 +1,6 @@
 <script lang="ts">
   /**
-   * Mobile Web tab browser surface.
-   * Shares `humanBrowser` with desktop; native WKWebView on Tauri desktop
-   * (DOM-measured layout), iframe fallback on iOS/Android.
+   * Mobile Web tab — embed height = panel height − chrome block + chrome padding-top.
    */
   import { onMount, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
@@ -13,15 +11,154 @@
   import {
     humanBrowserEmbedApplyMobileLayout,
     humanBrowserEmbedHide,
+    humanBrowserEmbedReadBounds,
+    humanBrowserEmbedShow,
+    humanBrowserSetMobileShellActive,
     type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import {
     readMobileBottomChromeHeight,
-    measureMobileBrowserSurfaceBounds,
-    logMobileBrowserLayoutDebug,
+    measureEmbedHostBounds,
+    measureMobileBrowserEmbedBounds,
+    computeMobileBrowserEmbedMetrics,
+    isMobileBottomChromeMeasured,
   } from "$lib/utils/mobileBrowserLayout";
+
+
+  async function waitForLayoutFrame() {
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  let embedChain: Promise<void> = Promise.resolve();
+  let embedGeneration = 0;
+
+  function isWorkshopReadback(readback: { y: number } | null): boolean {
+    return readback != null && readback.y >= 100;
+  }
+
+  function embedTargetBottomPx(): number | null {
+    if (!panelEl) return null;
+    const metrics = computeMobileBrowserEmbedMetrics(panelEl, bottomChromeEl);
+    return metrics ? metrics.bounds.y + metrics.bounds.height : null;
+  }
+
+  async function waitForEmbedBounds(
+    hostEl: HTMLElement | null,
+    panel: HTMLElement | null,
+    chrome: HTMLElement | null,
+    maxAttempts = 24,
+  ): Promise<ReturnType<typeof measureMobileBrowserEmbedBounds>> {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (!panel || !isMobileBottomChromeMeasured()) {
+        await waitForLayoutFrame();
+        continue;
+      }
+      if (useNative) {
+        const chromeReady =
+          chrome instanceof HTMLElement &&
+          chrome.getBoundingClientRect().height >= 8;
+        if (!chromeReady) {
+          await waitForLayoutFrame();
+          continue;
+        }
+      }
+      const bounds = useNative
+        ? measureMobileBrowserEmbedBounds(panel, chrome)
+        : measureEmbedHostBounds(hostEl);
+      if (bounds) return bounds;
+      await waitForLayoutFrame();
+    }
+    return null;
+  }
+
+  async function applyEmbedOnce(): Promise<void> {
+    if (!useNative || !visible) return;
+    const gen = ++embedGeneration;
+
+    await waitForLayoutFrame();
+
+    let contentBounds = await waitForEmbedBounds(
+      embedHostEl,
+      panelEl,
+      bottomChromeEl,
+    );
+    if (!contentBounds) {
+      return;
+    }
+    if (gen !== embedGeneration) return;
+
+    await humanBrowserSetMobileShellActive(true);
+    if (gen !== embedGeneration) return;
+
+    let recreated = await humanBrowserEmbedApplyMobileLayout({
+      bottomChromeHeight: readMobileBottomChromeHeight(),
+      contentBounds,
+    });
+    await humanBrowserEmbedShow();
+    if (gen !== embedGeneration) return;
+
+    let readback = await humanBrowserEmbedReadBounds().catch(() => null);
+    const targetBottom = embedTargetBottomPx();
+    let gap =
+      readback && targetBottom != null
+        ? targetBottom - (readback.y + readback.height)
+        : null;
+
+    const hostMismatch =
+      panelEl &&
+      readback &&
+      contentBounds &&
+      (Math.abs(readback.y - contentBounds.y) > 2 ||
+        Math.abs(readback.height - contentBounds.height) > 2);
+    const workshopStomp = isWorkshopReadback(readback);
+
+    if (gap != null && (gap > 2 || workshopStomp || hostMismatch)) {
+      await waitForLayoutFrame();
+      if (gen !== embedGeneration) return;
+      contentBounds = await waitForEmbedBounds(
+        embedHostEl,
+        panelEl,
+        bottomChromeEl,
+      );
+      if (contentBounds) {
+        await humanBrowserSetMobileShellActive(true);
+        recreated = await humanBrowserEmbedApplyMobileLayout({
+          bottomChromeHeight: readMobileBottomChromeHeight(),
+          contentBounds,
+        });
+        await humanBrowserEmbedShow();
+        readback = await humanBrowserEmbedReadBounds().catch(() => null);
+        gap =
+          readback && embedTargetBottomPx() != null
+            ? embedTargetBottomPx()! - (readback.y + readback.height)
+            : null;
+      }
+    }
+
+    const url = humanBrowser.activeUrl;
+    if (gen !== embedGeneration) return;
+    if (recreated && url && url !== "about:blank") {
+      await humanBrowser.navigate(url);
+    }
+  }
+
+  let embedRaf: number | null = null;
+
+  function scheduleEmbed() {
+    if (embedRaf != null) cancelAnimationFrame(embedRaf);
+    embedRaf = requestAnimationFrame(() => {
+      embedRaf = null;
+      embedChain = embedChain.then(() => applyEmbedOnce()).catch(() => {});
+    });
+  }
+
+  async function presentEmbed() {
+    scheduleEmbed();
+  }
 
   interface Props {
     visible?: boolean;
@@ -37,29 +174,10 @@
     goForward: () => Promise<void>;
   } | null>(null);
 
-  let surfaceEl = $state<HTMLElement | null>(null);
+  let panelEl = $state<HTMLElement | null>(null);
+  let embedHostEl = $state<HTMLElement | null>(null);
+  let bottomChromeEl = $state<HTMLElement | null>(null);
   let resizeObserver: ResizeObserver | null = null;
-
-  async function presentEmbed() {
-    if (!useNative || !visible) return;
-
-    await tick();
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
-    const contentBounds = measureMobileBrowserSurfaceBounds();
-    const recreated = await humanBrowserEmbedApplyMobileLayout({
-      bottomChromeHeight: readMobileBottomChromeHeight(),
-      contentBounds,
-    });
-
-    logMobileBrowserLayoutDebug(contentBounds);
-
-    const url = humanBrowser.activeUrl;
-    if (recreated && url && url !== "about:blank") {
-      await humanBrowser.navigate(url);
-    }
-  }
 
   $effect(() => {
     if (!useNative || !visible) return;
@@ -75,13 +193,17 @@
   });
 
   $effect(() => {
-    if (!useNative || !visible || !surfaceEl) return;
+    if (!useNative || !visible || !panelEl) return;
 
     resizeObserver?.disconnect();
     resizeObserver = new ResizeObserver(() => {
-      void presentEmbed();
+      scheduleEmbed();
     });
-    resizeObserver.observe(surfaceEl);
+    resizeObserver.observe(panelEl);
+    const bottomChrome = document.querySelector("[data-browser-bottom-chrome]");
+    if (bottomChrome instanceof HTMLElement) {
+      resizeObserver.observe(bottomChrome);
+    }
 
     return () => {
       resizeObserver?.disconnect();
@@ -90,6 +212,8 @@
   });
 
   onMount(() => {
+    void humanBrowserSetMobileShellActive(true);
+
     const unlisteners: Promise<() => void>[] = [];
     unlisteners.push(
       listen<HumanBrowserNavigatedPayload>("human-browser-navigated", (event) => {
@@ -106,6 +230,7 @@
 
     return () => {
       if (useNative) window.removeEventListener("resize", onResize);
+      if (embedRaf != null) cancelAnimationFrame(embedRaf);
       resizeObserver?.disconnect();
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
@@ -121,46 +246,17 @@
 </script>
 
 {#if visible}
-  <div class="flex h-full min-h-0 flex-col bg-surface-950">
-    <!-- Fixed toolbar height — must match MOBILE_WEB_CHROME_HEIGHT in human_browser.rs -->
+  <div
+    bind:this={panelEl}
+    data-browser-panel
+    class="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface-950"
+  >
     <div
-      class="flex h-[52px] shrink-0 items-center gap-2 overflow-hidden border-b border-surface-800 px-3"
-    >
-      <div class="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Back"
-          disabled={!humanBrowser.canGoBack}
-          onclick={() => void humanBrowser.goBack()}
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Forward"
-          disabled={!humanBrowser.canGoForward}
-          onclick={() => void humanBrowser.goForward()}
-        >
-          <ArrowRight size={16} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Reload"
-          onclick={() => void reloadView()}
-        >
-          <RefreshCw size={16} />
-        </button>
-      </div>
-      <HumanBrowserUrlBar />
-    </div>
-
-    <div
-      bind:this={surfaceEl}
-      data-browser-surface
-      class="relative min-h-0 flex-1 overflow-hidden bg-surface-950"
+      bind:this={embedHostEl}
+      data-browser-embed-host
+      class="{useNative
+        ? 'absolute inset-0 overflow-hidden bg-transparent'
+        : 'relative min-h-0 flex-1 overflow-hidden bg-surface-950'}"
     >
       {#if useNative}
         {#if humanBrowser.activeUrl === "about:blank"}
@@ -168,7 +264,7 @@
             class="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-surface-900 text-surface-300"
           >
             <Globe size={40} strokeWidth={1.25} />
-            <p class="text-sm">Enter a URL above to start browsing.</p>
+            <p class="text-sm">Enter a URL below to start browsing.</p>
           </div>
         {/if}
       {:else if humanBrowser.activeUrl && humanBrowser.activeUrl !== "about:blank"}
@@ -182,12 +278,50 @@
           class="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-surface-900 text-surface-300"
         >
           <Globe size={40} strokeWidth={1.25} />
-          <p class="text-sm">Enter a URL above to start browsing.</p>
+          <p class="text-sm">Enter a URL below to start browsing.</p>
         </div>
       {/if}
       {#if humanBrowser.loading}
         <div class="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary-500/80"></div>
       {/if}
+    </div>
+
+    <div
+      bind:this={bottomChromeEl}
+      data-browser-bottom-chrome
+      class="mobile-browser-bottom-chrome {useNative
+        ? 'absolute inset-x-0 bottom-0 z-20 border-t-0'
+        : 'shrink-0 border-t border-surface-800/80'} bg-surface-950/95 backdrop-blur-md"
+    >
+      <div data-browser-controls class="flex items-center gap-1">
+        <button
+          type="button"
+          class="btn btn-icon btn-sm shrink-0"
+          aria-label="Back"
+          disabled={!humanBrowser.canGoBack}
+          onclick={() => void humanBrowser.goBack()}
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <button
+          type="button"
+          class="btn btn-icon btn-sm shrink-0"
+          aria-label="Forward"
+          disabled={!humanBrowser.canGoForward}
+          onclick={() => void humanBrowser.goForward()}
+        >
+          <ArrowRight size={18} />
+        </button>
+        <HumanBrowserUrlBar mobile />
+        <button
+          type="button"
+          class="btn btn-icon btn-sm shrink-0"
+          aria-label="Reload"
+          onclick={() => void reloadView()}
+        >
+          <RefreshCw size={18} />
+        </button>
+      </div>
     </div>
   </div>
 {/if}

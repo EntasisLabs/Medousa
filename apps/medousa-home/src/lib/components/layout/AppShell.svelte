@@ -16,8 +16,9 @@
   import { wizard } from "$lib/stores/wizard.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
-  import { applyNativeMobileShellLayout, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
+  import { applyNativeMobileShellLayout, isTauri, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
   import { handoffBrowserShell } from "$lib/utils/browserShellHandoff";
+  import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
 
   let commandPaletteOpen = $state(false);
 
@@ -32,8 +33,12 @@
 
   onMount(() => {
     void wizard.bootstrap();
+    const stopViewport = layout.attachViewportTracking();
+    if (isTauri()) {
+      void humanBrowserSetMobileShellActive(layout.isMobile);
+    }
     const stopNativeLayout = applyNativeMobileShellLayout();
-    const stopViewport = isTauriMobilePlatform()
+    const stopMobileViewport = isTauriMobilePlatform()
       ? () => {
           layout.setMobile(true);
         }
@@ -69,6 +74,7 @@
     return () => {
       stopNativeLayout();
       stopViewport();
+      stopMobileViewport();
       stopNative();
       window.removeEventListener("keydown", onKeydown);
     };

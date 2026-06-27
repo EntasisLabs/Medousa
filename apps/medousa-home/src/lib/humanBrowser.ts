@@ -38,6 +38,13 @@ export async function humanBrowserEmbedApplyMobileLayout(
   return invoke("human_browser_embed_apply_mobile_layout", { params });
 }
 
+export async function humanBrowserEmbedReadBounds(): Promise<HumanBrowserEmbedBounds & {
+  windowWidth: number;
+  windowHeight: number;
+}> {
+  return invoke("human_browser_embed_read_bounds");
+}
+
 export async function humanBrowserNavigate(url: string): Promise<void> {
   return invoke("human_browser_navigate", { url });
 }
@@ -60,6 +67,10 @@ export async function humanBrowserEmbedShow(): Promise<void> {
 
 export async function humanBrowserEmbedHide(): Promise<void> {
   return invoke("human_browser_embed_hide");
+}
+
+export async function humanBrowserSetMobileShellActive(active: boolean): Promise<void> {
+  return invoke("human_browser_set_mobile_shell_active", { active });
 }
 
 export interface HumanBrowserNavigatedPayload {
