@@ -190,6 +190,7 @@ pub fn run() {
             human_browser::human_browser_embed_hide,
             human_browser::human_browser_embed_read_bounds,
             human_browser::human_browser_set_mobile_shell_active,
+            human_browser::human_browser_report_title,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,

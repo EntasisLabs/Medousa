@@ -4,8 +4,11 @@
    */
   import { onMount, tick } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Globe, RefreshCw, Layers } from "@lucide/svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
+  import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
+  import BrowserTabSheet from "$lib/components/browser/BrowserTabSheet.svelte";
+  import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import BrowserWebView from "$lib/components/browser/BrowserWebView.svelte";
   import { canUseNativeBrowserWebview } from "$lib/browserWebview";
   import {
@@ -243,6 +246,29 @@
     }
     await webView?.reload();
   }
+
+  let tabsOpen = $state(false);
+  let tabsAnchorRect = $state<DOMRect | null>(null);
+  let tabsAnchorEl = $state<HTMLButtonElement | null>(null);
+  let toastMessage = $state<string | null>(null);
+  let toastActionLabel = $state<string | undefined>(undefined);
+  let toastAction = $state<(() => void) | undefined>(undefined);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showMobileToast(message: string, actionLabel?: string, onAction?: () => void) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastMessage = message;
+    toastActionLabel = actionLabel;
+    toastAction = onAction;
+    toastTimer = setTimeout(dismissMobileToast, 4000);
+  }
+
+  function dismissMobileToast() {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastMessage = null;
+    toastActionLabel = undefined;
+    toastAction = undefined;
+  }
 </script>
 
 {#if visible}
@@ -293,7 +319,25 @@
         ? 'absolute inset-x-0 bottom-0 z-20 border-t-0'
         : 'shrink-0 border-t border-surface-800/80'} bg-surface-950/95 backdrop-blur-md"
     >
-      <div data-browser-controls class="flex items-center gap-1">
+      <div data-browser-controls class="flex items-center gap-1 overflow-x-auto">
+        <button
+          bind:this={tabsAnchorEl}
+          type="button"
+          class="btn btn-icon btn-sm shrink-0"
+          aria-label="Tabs"
+          title="Tabs"
+          data-browser-popover-trigger
+          aria-expanded={tabsOpen}
+          onclick={(event) => {
+            event.stopPropagation();
+            if (!tabsOpen) {
+              tabsAnchorRect = tabsAnchorEl?.getBoundingClientRect() ?? null;
+            }
+            tabsOpen = !tabsOpen;
+          }}
+        >
+          <Layers size={18} />
+        </button>
         <button
           type="button"
           class="btn btn-icon btn-sm shrink-0"
@@ -313,6 +357,11 @@
           <ArrowRight size={18} />
         </button>
         <HumanBrowserUrlBar mobile />
+        <BrowserChromeActions
+          mobile
+          onMobileToast={(message, actionLabel, onAction) =>
+            showMobileToast(message, actionLabel, onAction)}
+        />
         <button
           type="button"
           class="btn btn-icon btn-sm shrink-0"
@@ -323,5 +372,18 @@
         </button>
       </div>
     </div>
+
+    <BrowserTabSheet
+      open={tabsOpen}
+      anchorRect={tabsAnchorRect}
+      mobile
+      onClose={() => (tabsOpen = false)}
+    />
+    <MobileToast
+      message={toastMessage}
+      actionLabel={toastActionLabel}
+      onAction={toastAction}
+      onDismiss={dismissMobileToast}
+    />
   </div>
 {/if}

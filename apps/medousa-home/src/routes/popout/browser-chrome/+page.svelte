@@ -1,17 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { ArrowLeft, ArrowRight, BookmarkPlus, RefreshCw, X } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, RefreshCw, X } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
+  import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { settings } from "$lib/stores/settings.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
   import { hideBrowser, isTauri, setBrowserWindowTitle } from "$lib/window";
   import type { HumanBrowserNavigatedPayload } from "$lib/humanBrowser";
 
   let urlBarFocusNonce = $state(0);
-  let saving = $state(false);
 
   $effect(() => {
     const title = humanBrowser.scopeLabel;
@@ -73,27 +72,10 @@
   async function handleClose() {
     if (isTauri()) await hideBrowser();
   }
-
-  async function saveToVault() {
-    const url = humanBrowser.activeUrl;
-    if (!url || url === "about:blank" || saving) return;
-    saving = true;
-    try {
-      const title = humanBrowser.activeTab?.title?.trim() || url;
-      const content = `# ${title}\n\nSource: ${url}\n`;
-      await vault.createNote({
-        spaceId: vault.activeSpace?.id ?? "other",
-        title,
-        content,
-      });
-    } finally {
-      saving = false;
-    }
-  }
 </script>
 
 <!-- Fixed-height chrome strip — height must stay in sync with CHROME_HEIGHT_LOGICAL in human_browser.rs -->
-<div class="flex h-[132px] w-full flex-col overflow-hidden bg-surface-950 text-surface-50">
+<div class="human-browser-chrome relative z-50 flex h-[132px] w-full flex-col overflow-hidden bg-surface-950 text-surface-50">
   <HumanBrowserTabBar />
 
   <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
@@ -126,16 +108,7 @@
       </button>
     </div>
     <HumanBrowserUrlBar {urlBarFocusNonce} />
-    <button
-      type="button"
-      class="btn btn-sm variant-soft-surface shrink-0"
-      disabled={saving || humanBrowser.activeUrl === "about:blank"}
-      onclick={() => void saveToVault()}
-      title="Save page to Library"
-    >
-      <BookmarkPlus size={14} class="mr-1 inline" />
-      Save
-    </button>
+    <BrowserChromeActions />
     {#if isTauri()}
       <button
         type="button"

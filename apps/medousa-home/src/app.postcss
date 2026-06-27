@@ -2619,6 +2619,99 @@
     font-size: 0.8125rem;
   }
 
+  .human-browser-chrome {
+    position: relative;
+    z-index: 50;
+    isolation: isolate;
+    background: rgb(var(--color-surface-950));
+  }
+
+  .human-browser-chrome-overlay {
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--color-surface-950) / 0.98) 0%,
+      rgb(var(--color-surface-950) / 0.94) 72%,
+      rgb(var(--color-surface-950) / 0.55) 100%
+    );
+    backdrop-filter: blur(16px) saturate(1.1);
+    -webkit-backdrop-filter: blur(16px) saturate(1.1);
+    box-shadow: 0 1px 0 rgb(var(--color-surface-700) / 0.35);
+  }
+
+  .browser-popover-backdrop {
+    background: rgb(var(--color-surface-950) / 0.35);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .browser-popover {
+    pointer-events: auto;
+    border: 1px solid rgb(var(--color-surface-600) / 0.45);
+    background: rgb(var(--color-surface-900) / 0.97);
+    backdrop-filter: blur(20px) saturate(1.15);
+    -webkit-backdrop-filter: blur(20px) saturate(1.15);
+    box-shadow:
+      0 16px 40px rgb(0 0 0 / 0.35),
+      0 0 0 1px rgb(var(--color-surface-700) / 0.2);
+    animation: browser-popover-in 160ms ease-out;
+  }
+
+  .browser-popover-anchor {
+    border-radius: 1rem;
+  }
+
+  .browser-popover-panel {
+    border-radius: 1.125rem;
+  }
+
+  .browser-popover-header {
+    @apply flex shrink-0 items-center justify-between gap-2 border-b border-surface-700/50 px-3 py-2.5;
+  }
+
+  .browser-popover-body {
+    @apply py-1;
+  }
+
+  .browser-popover-section-label {
+    @apply px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-surface-500;
+  }
+
+  .browser-popover-row {
+    @apply flex w-full items-center gap-2 px-3 py-2.5 text-left transition hover:bg-surface-800/70;
+  }
+
+  .browser-popover-row-group {
+    @apply flex items-center gap-1 px-1 hover:bg-surface-800/70;
+  }
+
+  @keyframes browser-popover-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .browser-popover-panel {
+    animation-name: browser-popover-panel-in;
+  }
+
+  @keyframes browser-popover-panel-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .browser-saved-menu {
+    pointer-events: auto;
+  }
+
   .mobile-chat-composer {
     @apply px-3 pt-1 pb-0.5;
     border-bottom: 1px solid rgb(var(--color-surface-600) / 0.28);

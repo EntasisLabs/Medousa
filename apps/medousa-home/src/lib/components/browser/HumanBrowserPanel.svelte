@@ -1,18 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { ArrowLeft, ArrowRight, BookmarkPlus, Globe, RefreshCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
+  import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import {
     humanBrowserEmbedApplyLayout,
     humanBrowserEmbedHide,
+    humanBrowserEmbedShow,
     humanBrowserSetMobileShellActive,
     type HumanBrowserNavigatedPayload,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
-  import { vault } from "$lib/stores/vault.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
   import { layoutDesktopRails } from "$lib/utils/desktopRails";
 
@@ -24,7 +25,6 @@
   let { visible = true, workRailVisible = false }: Props = $props();
 
   let urlBarFocusNonce = $state(0);
-  let saving = $state(false);
   let embedGeneration = 0;
 
   async function presentEmbed() {
@@ -115,86 +115,64 @@
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
   });
-
-  async function saveToVault() {
-    const url = humanBrowser.activeUrl;
-    if (!url || url === "about:blank" || saving) return;
-    saving = true;
-    try {
-      const title = humanBrowser.activeTab?.title?.trim() || url;
-      const content = `# ${title}\n\nSource: ${url}\n`;
-      await vault.createNote({
-        spaceId: vault.activeSpace?.id ?? "other",
-        title,
-        content,
-      });
-    } finally {
-      saving = false;
-    }
-  }
 </script>
 
-<div class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50">
-  <!-- Fixed-height chrome — must stay in sync with CHROME_HEIGHT_LOGICAL in human_browser.rs -->
-  <div class="flex h-[132px] w-full shrink-0 flex-col overflow-hidden">
-    <HumanBrowserTabBar />
-
-    <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
-      <div class="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Back"
-          disabled={!humanBrowser.canGoBack}
-          onclick={() => void humanBrowser.goBack()}
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Forward"
-          disabled={!humanBrowser.canGoForward}
-          onclick={() => void humanBrowser.goForward()}
-        >
-          <ArrowRight size={16} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Reload"
-          onclick={() => void humanBrowser.reload()}
-        >
-          <RefreshCw size={16} />
-        </button>
-      </div>
-      <HumanBrowserUrlBar {urlBarFocusNonce} />
-      <button
-        type="button"
-        class="btn btn-sm variant-soft-surface shrink-0"
-        disabled={saving || humanBrowser.activeUrl === "about:blank"}
-        onclick={() => void saveToVault()}
-        title="Save page to Library"
-      >
-        <BookmarkPlus size={14} class="mr-1 inline" />
-        Save
-      </button>
-    </div>
-
-    {#if humanBrowser.loading}
-      <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
-    {/if}
-  </div>
-
-  <!-- Placeholder beneath the native child webview (Rust-positioned, not DOM-synced). -->
-  <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-900">
+<!-- Native webview fills panel; chrome floats on top (Safari-style). -->
+<div class="relative h-full min-h-0 bg-surface-950 text-surface-50" data-browser-panel>
+  <div class="absolute inset-0 overflow-hidden bg-surface-900" data-browser-embed-host>
     {#if humanBrowser.activeUrl === "about:blank"}
       <div
-        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-surface-400"
+        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 pt-28 text-surface-400"
       >
         <Globe size={40} strokeWidth={1.25} class="opacity-40" />
         <p class="text-sm">Enter a URL above or open a link from Chat</p>
       </div>
     {/if}
+    {#if humanBrowser.loading}
+      <div class="pointer-events-none absolute inset-x-0 top-28 h-0.5 bg-primary-500/80"></div>
+    {/if}
+  </div>
+
+  <div class="human-browser-chrome-overlay pointer-events-none absolute inset-x-0 top-0 z-50">
+    <div class="pointer-events-auto">
+      <HumanBrowserTabBar />
+
+      <div class="flex shrink-0 items-center gap-2 border-b border-surface-800/80 px-2 py-1.5">
+        <div class="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Back"
+            disabled={!humanBrowser.canGoBack}
+            onclick={() => void humanBrowser.goBack()}
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Forward"
+            disabled={!humanBrowser.canGoForward}
+            onclick={() => void humanBrowser.goForward()}
+          >
+            <ArrowRight size={16} />
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Reload"
+            onclick={() => void humanBrowser.reload()}
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
+        <HumanBrowserUrlBar {urlBarFocusNonce} />
+        <BrowserChromeActions />
+      </div>
+
+      {#if humanBrowser.loading}
+        <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
+      {/if}
+    </div>
   </div>
 </div>

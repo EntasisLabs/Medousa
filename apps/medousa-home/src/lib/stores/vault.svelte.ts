@@ -896,6 +896,8 @@ export class VaultStore {
     content?: string;
     path?: string;
     templateId?: VaultTemplateId;
+    /** When false, refresh the index but do not open the note (browser save). */
+    open?: boolean;
   }) {
     this.saving = true;
     this.error = null;
@@ -924,7 +926,9 @@ export class VaultStore {
         );
       const response = await createVaultNote(path, content);
       await this.refreshNotes();
-      await this.openNote(response.note.path);
+      if (options.open !== false) {
+        await this.openNote(response.note.path);
+      }
       return response.note.path;
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);

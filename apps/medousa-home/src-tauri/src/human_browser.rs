@@ -163,12 +163,25 @@ fn window_inner_logical(window: &tauri::Window) -> Result<(f64, f64), String> {
     Ok((inner.width, inner.height))
 }
 
-fn emit_navigated(app: &AppHandle, url: &str) {
+fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>) {
     let payload = HumanBrowserNavigatedPayload {
         url: url.to_string(),
-        title: None,
+        title,
     };
     let _ = app.emit("human-browser-navigated", payload);
+}
+
+fn probe_page_title(webview: &tauri::Webview, _app: &AppHandle, url: &str) {
+    let url_json = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".to_string());
+    let script = [
+        "(function(){try{var u=",
+        &url_json,
+        ";var t=(document.title||'').trim();if(!t)return;var i=window.__TAURI_INTERNALS__||window.__TAURI__;",
+        "if(!i||!i.invoke)return;i.invoke('human_browser_report_title',{url:u,title:t});",
+        "}catch(e){}})();",
+    ]
+    .concat();
+    let _ = webview.eval(&script);
 }
 
 fn content_builder(app: &AppHandle, label: &'static str, mobile_ua: bool) -> WebviewBuilder<tauri::Wry> {
@@ -177,7 +190,7 @@ fn content_builder(app: &AppHandle, label: &'static str, mobile_ua: bool) -> Web
     let mut builder = WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
         .on_navigation(move |nav_url| {
             let href = nav_url.as_str().to_string();
-            emit_navigated(&app_nav, &href);
+            emit_navigated(&app_nav, &href, None);
             true
         })
         .on_page_load(move |webview, payload| {
@@ -186,7 +199,8 @@ fn content_builder(app: &AppHandle, label: &'static str, mobile_ua: bool) -> Web
                 return;
             }
             let href = payload.url().as_str().to_string();
-            emit_navigated(&app_load, &href);
+            emit_navigated(&app_load, &href, None);
+            probe_page_title(&webview, &app_load, &href);
             if mobile_ua {
                 let _ = webview.eval(MOBILE_EMBED_FIX_JS);
             }
@@ -228,9 +242,9 @@ fn compute_embedded_bounds(
 
     Ok(EmbedBounds {
         x: NAV_RAIL_WIDTH,
-        y: CHROME_HEIGHT_LOGICAL,
+        y: 0.0,
         width: (win_w - NAV_RAIL_WIDTH - activity_w).max(8.0),
-        height: (win_h - CHROME_HEIGHT_LOGICAL - bottom_chrome).max(8.0),
+        height: (win_h - bottom_chrome).max(8.0),
     })
 }
 
@@ -629,7 +643,7 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
                 )
                 .map_err(|err| err.to_string())?;
         }
-        emit_navigated(&app, "about:blank");
+        emit_navigated(&app, "about:blank", None);
         return Ok(());
     }
     let external = parse_external_url(trimmed)?;
@@ -638,7 +652,7 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
     content
         .navigate(external)
         .map_err(|err| err.to_string())?;
-    emit_navigated(&app, trimmed);
+    emit_navigated(&app, trimmed, None);
     Ok(())
 }
 
@@ -667,4 +681,14 @@ pub async fn human_browser_go_forward(app: AppHandle) -> Result<(), String> {
     content
         .eval("window.history.forward()")
         .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn human_browser_report_title(app: AppHandle, url: String, title: String) -> Result<(), String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    emit_navigated(&app, url.trim(), Some(trimmed.to_string()));
+    Ok(())
 }
