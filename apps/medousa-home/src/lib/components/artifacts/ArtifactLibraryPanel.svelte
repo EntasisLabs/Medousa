@@ -13,6 +13,8 @@
 
   let { onOpenChat }: Props = $props();
 
+  let panelOpen = $state(false);
+
   onMount(() => {
     void artifacts.refresh();
   });
@@ -22,7 +24,7 @@
   }
 </script>
 
-<section class="flex h-full min-w-0 flex-1 flex-col">
+<section class="flex h-full min-h-0 min-w-0 flex-1">
   {#if artifacts.error}
     <p class="mx-3 mt-3 rounded-container-token border border-error-500/30 bg-error-500/10 px-3 py-2 text-xs text-error-300">
       {artifacts.error}
@@ -52,7 +54,10 @@
           artifacts={artifacts.filteredArtifacts}
           selectedArtifactId={artifacts.selectedArtifactId}
           sessionTitle={(sessionId) => artifacts.sessionTitle(sessionId)}
-          onSelect={(artifactId) => artifacts.selectArtifact(artifactId)}
+          onSelect={(artifactId) => {
+            artifacts.selectArtifact(artifactId);
+            panelOpen = true;
+          }}
         />
       {/if}
     </aside>
@@ -63,6 +68,7 @@
     sessionTitle={artifacts.selectedArtifact
       ? artifacts.sessionTitle(artifacts.selectedArtifact.session_id)
       : ""}
+    bind:panelOpen
     {onOpenChat}
     onOpenSession={openSession}
   />

@@ -5208,6 +5208,28 @@
     color: rgb(var(--color-surface-100));
   }
 
+  .artifact-chrome-title-wrap {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .artifact-chrome-status {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.625rem;
+    font-weight: 500;
+    color: rgb(var(--color-primary-300));
+  }
+
+  html:not(.dark) .artifact-chrome-status {
+    color: rgb(var(--color-primary-700));
+  }
+
   html:not(.dark) .artifact-chrome-title {
     color: rgb(var(--color-surface-900));
   }

@@ -63,6 +63,8 @@
           title={artifact.label}
           onClose={handleClose}
           leadingClose={layout.isMobile}
+          sessionId={sessionId}
+          artifactId={artifact.artifactId}
         >
           <ArtifactEmbed
             {sessionId}

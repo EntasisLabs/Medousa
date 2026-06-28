@@ -1,5 +1,6 @@
 <script lang="ts">
   import ArtifactEmbed from "$lib/components/chat/ArtifactEmbed.svelte";
+  import ArtifactExportMenu from "$lib/components/chat/ArtifactExportMenu.svelte";
   import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
   import ArtifactPanel from "$lib/components/chat/ArtifactPanel.svelte";
   import type { ArtifactSummary } from "$lib/types/artifact";
@@ -9,21 +10,38 @@
   interface Props {
     artifact: ArtifactSummary | null;
     sessionTitle: string;
+    panelOpen?: boolean;
     onOpenChat: () => void;
     onOpenSession: (sessionId: string) => void;
   }
 
-  let { artifact, sessionTitle, onOpenChat, onOpenSession }: Props = $props();
-
-  let panelOpen = $state(false);
+  let {
+    artifact,
+    sessionTitle,
+    panelOpen = $bindable(false),
+    onOpenChat,
+    onOpenSession,
+  }: Props = $props();
   let fullscreenOpen = $state(false);
+  let exportStatus = $state<string | null>(null);
+  let exportStatusTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function handleExportStatus(message: string | null) {
+    if (exportStatusTimer) clearTimeout(exportStatusTimer);
+    exportStatus = message;
+    if (message) {
+      exportStatusTimer = setTimeout(() => {
+        exportStatus = null;
+      }, 3200);
+    }
+  }
 
   const uiArtifact = $derived.by(() =>
     artifact ? artifactSummaryToUi(artifact) : null,
   );
 </script>
 
-<div class="artifact-library-preview flex h-full min-h-0 flex-col">
+<div class="artifact-library-preview flex h-full min-h-0 min-w-0 flex-1 flex-col">
   {#if !artifact || !uiArtifact}
     <div class="flex flex-1 items-center justify-center p-6 text-sm text-surface-500">
       Select a presentation to preview.
@@ -32,9 +50,22 @@
     <header class="artifact-library-preview-header">
       <div class="min-w-0">
         <h2 class="truncate text-sm font-semibold text-surface-100">{artifact.label}</h2>
-        <p class="truncate text-xs text-surface-500">{sessionTitle}</p>
+        <p class="truncate text-xs text-surface-500">
+          {#if exportStatus}
+            <span class="text-primary-300">{exportStatus}</span>
+          {:else}
+            {sessionTitle}
+          {/if}
+        </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        <ArtifactExportMenu
+          sessionId={artifact.session_id}
+          artifactId={artifact.artifact_id}
+          label={artifact.label}
+          compact={true}
+          onStatus={handleExportStatus}
+        />
         <button
           type="button"
           class="artifact-library-action"

@@ -1446,6 +1446,8 @@ pub struct ArtifactFetchResponse {
     pub presentation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_px: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

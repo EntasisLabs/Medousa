@@ -64,6 +64,10 @@ const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
+/** Terminal answers shorter than this appear instantly. */
+const CONTENT_REVEAL_MIN_CHARS = 80;
+const CONTENT_REVEAL_CHUNK_CHARS = 14;
+const CONTENT_REVEAL_INTERVAL_MS = 16;
 
 interface WorkerLink {
   workId: string;
@@ -129,6 +133,8 @@ export class ChatStore {
    * applied, so a mid-turn reconnect can never duplicate a bubble.
    */
   private lastSeqByTurn = new Map<string, number>();
+  /** Progressive reveal when terminal final_text lands on an empty bubble. */
+  private contentRevealTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** True while the composer must wait — Tier 2c: always open. */
@@ -1856,6 +1862,59 @@ export class ChatStore {
         (isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope) && terminal
           ? event.final_text!
           : resolveTurnContent(current.content, event.final_text, terminal);
+
+      const shouldReveal =
+        event.terminal &&
+        terminal &&
+        !current.content.trim() &&
+        content.trim().length >= CONTENT_REVEAL_MIN_CHARS &&
+        !(isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope);
+
+      if (shouldReveal) {
+        let reasoning = current.reasoning ?? "";
+        if (event.reasoning_delta) {
+          reasoning += event.reasoning_delta;
+        }
+
+        const tools = [...(current.tools ?? [])];
+        for (const name of event.tool_names ?? []) {
+          if (!tools.includes(name)) tools.push(name);
+        }
+
+        const next: ChatMessage = {
+          ...current,
+          content: "",
+          phase: null,
+          statusLine: null,
+          tools: tools.length > 0 ? tools : current.tools,
+          reasoning: reasoning || current.reasoning,
+          streaming: false,
+        };
+        this.messages = [
+          ...this.messages.slice(0, idx),
+          next,
+          ...this.messages.slice(idx + 1),
+        ];
+
+        if (isWorkerHandoffStreamEvent(event)) {
+          this.releaseComposerHandoff(messageId, "worker_ack", event);
+          this.scheduleSessionsRefresh();
+          return;
+        }
+
+        if (isBudgetApprovalStreamEvent(event)) {
+          this.releaseComposerHandoff(messageId, "budget_approval", event);
+          return;
+        }
+
+        this.finishAskLaneTurn(event.turn_id);
+        if (this.shouldSettleTurnFromStream(event.turn_id)) {
+          this.settleTurn(event.turn_id);
+          this.scheduleSessionsRefresh();
+        }
+        this.revealContent(messageId, content);
+        return;
+      }
     }
 
     let reasoning = current.reasoning ?? "";
@@ -2068,6 +2127,7 @@ export class ChatStore {
   }
 
   finishMessage(messageId: string) {
+    this.cancelContentReveal(messageId);
     const idx = this.messages.findIndex((m) => m.id === messageId);
     if (idx >= 0) {
       const next = {
@@ -2094,6 +2154,49 @@ export class ChatStore {
     }
   }
 
+  private cancelContentReveal(messageId: string) {
+    const timer = this.contentRevealTimers.get(messageId);
+    if (timer) {
+      clearTimeout(timer);
+      this.contentRevealTimers.delete(messageId);
+    }
+  }
+
+  private patchMessageContent(messageId: string, content: string) {
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0) return;
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      { ...this.messages[idx], content },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
+  /**
+   * Typewriter-style reveal when the answer arrives as one terminal blob
+   * (common after scratch_reset cleared the live draft).
+   */
+  private revealContent(
+    messageId: string,
+    fullText: string,
+    onComplete?: () => void,
+  ) {
+    this.cancelContentReveal(messageId);
+    let pos = 0;
+    const step = () => {
+      pos = Math.min(fullText.length, pos + CONTENT_REVEAL_CHUNK_CHARS);
+      this.patchMessageContent(messageId, fullText.slice(0, pos));
+      if (pos < fullText.length) {
+        const timer = setTimeout(step, CONTENT_REVEAL_INTERVAL_MS);
+        this.contentRevealTimers.set(messageId, timer);
+        return;
+      }
+      this.contentRevealTimers.delete(messageId);
+      onComplete?.();
+    };
+    step();
+  }
+
   setError(message: string) {
     this.streamError = friendlyUserError(message);
     if (this.assistantId) {
@@ -2103,9 +2206,16 @@ export class ChatStore {
 
   /** SSE / stream transport failure — evict stale owners so reattach can succeed. */
   noteStreamFailure(message: string, options?: { recoverable?: boolean }) {
-    this.streamError = friendlyUserError(message);
+    const recoverable = options?.recoverable !== false;
     this.evictStreamOwners();
-    if (options?.recoverable !== false) {
+
+    // Post-terminal SSE close is normal — don't alarm the user when nothing is live.
+    if (recoverable && !this.hasLiveInteractiveTurn()) {
+      return;
+    }
+
+    this.streamError = friendlyUserError(message);
+    if (recoverable) {
       return;
     }
     if (this.assistantId) {

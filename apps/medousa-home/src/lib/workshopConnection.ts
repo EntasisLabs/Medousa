@@ -126,7 +126,7 @@ async function recoverInteractiveStreams(): Promise<void> {
   const attached = await chat.tryReattachActiveTurn(workspace.cards);
   if (!attached && needsStream) {
     chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
-  } else if (attached) {
+  } else if (attached || !needsStream) {
     chat.streamError = null;
   }
 }

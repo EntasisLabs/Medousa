@@ -71,6 +71,8 @@
           onClose={handleClose}
           onExpand={onExpand ? handleExpand : undefined}
           leadingClose={layout.isMobile}
+          sessionId={sessionId}
+          artifactId={artifact.artifactId}
         >
           <ArtifactEmbed
             {sessionId}
