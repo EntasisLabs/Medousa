@@ -210,7 +210,7 @@ pub use surreal_config::{
     resolve_daemon_launch_backend, resolve_surreal_connection_settings, sync_profile_daemon_backend,
 };
 pub use ingest_stream::{build_ingest_stream_url, consume_ingest_stream, render_stream_body};
-pub use workshop_env::apply_workshop_llm_env;
+pub use workshop_env::{apply_workshop_llm_env, load_dotenv_overlay};
 pub use adapter_ingest::{
     AdapterDeliveryOutcome, default_delivery_timeout, fetch_job_result, format_ingest_ack,
     should_send_immediate_ingest_reply, wait_for_ask_delivery, ADAPTER_COMMAND_HINT,

@@ -1,6 +1,51 @@
+use std::path::PathBuf;
+
 use crate::session::{load_tui_defaults, load_provider_api_key};
 use crate::tui::settings::parse_env_overrides;
 use crate::resolve_llm_provider;
+
+/// Load a `.env` overlay (timezone, grapheme module timeouts, feature toggles,
+/// etc.) via stasis' dotenv loader.
+///
+/// Values are merged into the process environment **without overriding** keys
+/// that are already set — so the native config flow (workshop `env_overrides`,
+/// product config, and anything injected by the parent process) always wins.
+/// Call this once, as early as possible, before the native env application
+/// steps and before any runtime construction.
+///
+/// Resolution order (first existing file wins):
+/// 1. `STASIS_ENV_FILE` (explicit path override)
+/// 2. `{MEDOUSA_CONFIG_DIR}/.env`
+/// 3. `{MEDOUSA_DATA_DIR}/.env`
+/// 4. `./.env` (current working directory)
+///
+/// Returns the path that was loaded, if any.
+pub fn load_dotenv_overlay() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(explicit) = std::env::var("STASIS_ENV_FILE") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            candidates.push(PathBuf::from(trimmed));
+        }
+    }
+    candidates.push(crate::paths::medousa_config_dir().join(".env"));
+    candidates.push(crate::paths::medousa_data_dir().join(".env"));
+    candidates.push(PathBuf::from(".env"));
+
+    for path in candidates {
+        if !path.is_file() {
+            continue;
+        }
+        match stasis::config_prelude::load_dotenv_from(&path) {
+            Ok(()) => return Some(path),
+            Err(err) => {
+                eprintln!("medousa: failed to load env file {}: {err}", path.display());
+            }
+        }
+    }
+    None
+}
 
 /// Apply workshop LLM credentials to the current process (daemon / runtime).
 ///

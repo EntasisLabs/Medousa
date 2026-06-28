@@ -100,6 +100,12 @@ async fn main() -> Result<()> {
     let backend_name = find_arg_value(&args, "--backend")
         .unwrap_or("in-memory")
         .to_string();
+    // Load an optional `.env` overlay before any native env application so the
+    // file can supply stasis/grapheme settings (timezone, module timeouts,
+    // feature toggles) without overriding values the native config flow sets.
+    if let Some(path) = medousa::load_dotenv_overlay() {
+        eprintln!("medousa-daemon: loaded env overlay from {}", path.display());
+    }
     apply_daemon_env(&load_product_config());
     medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     medousa::apply_workshop_llm_env();
