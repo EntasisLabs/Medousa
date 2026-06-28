@@ -28,6 +28,7 @@
     computeMobileBrowserEmbedMetrics,
     isMobileBottomChromeMeasured,
   } from "$lib/utils/mobileBrowserLayout";
+  import { isMobileBrowserUrlFocused } from "$lib/utils/mobileKeyboardViewport";
 
 
   async function waitForLayoutFrame() {
@@ -152,11 +153,64 @@
   let embedRaf: number | null = null;
 
   function scheduleEmbed() {
+    // While the URL bar is focused the keyboard is up and the chrome floats;
+    // re-showing/re-measuring here would cover the floating bar and snapshot a
+    // half-open viewport. The blur handler re-applies deterministically once
+    // focus clears, so this guard never swallows a post-navigate refresh.
+    if (useNative && isMobileBrowserUrlFocused()) return;
     if (embedRaf != null) cancelAnimationFrame(embedRaf);
     embedRaf = requestAnimationFrame(() => {
       embedRaf = null;
       embedChain = embedChain.then(() => applyEmbedOnce()).catch(() => {});
     });
+  }
+
+  /**
+   * Resolve once the on-screen keyboard has finished animating. We listen for
+   * visualViewport changes to stop firing (debounced) rather than polling a
+   * fixed number of frames, so re-layout always happens against the settled
+   * viewport instead of a half-open keyboard.
+   */
+  function waitForKeyboardSettled(timeoutMs = 1200): Promise<void> {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) {
+      return new Promise<void>((resolve) => setTimeout(resolve, 120));
+    }
+    return new Promise<void>((resolve) => {
+      const start = Date.now();
+      let settleTimer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = () => {
+        vv.removeEventListener("resize", onChange);
+        vv.removeEventListener("scroll", onChange);
+        if (settleTimer) clearTimeout(settleTimer);
+      };
+      const finish = () => {
+        cleanup();
+        resolve();
+      };
+      const onChange = () => {
+        if (settleTimer) clearTimeout(settleTimer);
+        if (Date.now() - start > timeoutMs) {
+          finish();
+          return;
+        }
+        settleTimer = setTimeout(finish, 120);
+      };
+      vv.addEventListener("resize", onChange);
+      vv.addEventListener("scroll", onChange);
+      // If the keyboard is already gone no events fire, so settle quickly.
+      settleTimer = setTimeout(finish, 180);
+    });
+  }
+
+  async function refreshEmbedAfterUrlBlur() {
+    if (!useNative || !visible) return;
+    await waitForKeyboardSettled();
+    await waitForLayoutFrame();
+    // Force the overlay back on regardless of any transient focus state, then
+    // re-measure against the settled (chrome-at-rest) layout.
+    await humanBrowserEmbedShow().catch(() => {});
+    scheduleEmbed();
   }
 
   async function presentEmbed() {
@@ -203,9 +257,12 @@
       scheduleEmbed();
     });
     resizeObserver.observe(panelEl);
-    const bottomChrome = document.querySelector("[data-browser-bottom-chrome]");
-    if (bottomChrome instanceof HTMLElement) {
-      resizeObserver.observe(bottomChrome);
+    if (bottomChromeEl instanceof HTMLElement) {
+      resizeObserver.observe(bottomChromeEl);
+    }
+    const tabBar = document.querySelector(".mobile-bottom-chrome");
+    if (tabBar instanceof HTMLElement) {
+      resizeObserver.observe(tabBar);
     }
 
     return () => {
@@ -220,12 +277,24 @@
     const onResize = () => {
       void presentEmbed();
     };
+    const onUrlFocus = () => {
+      void humanBrowserEmbedHide();
+    };
+    const onUrlBlur = () => {
+      refreshEmbedAfterUrlBlur();
+    };
     if (useNative) {
       window.addEventListener("resize", onResize);
+      window.addEventListener("medousa-browser-url-focus", onUrlFocus);
+      window.addEventListener("medousa-browser-url-blur", onUrlBlur);
     }
 
     return () => {
-      if (useNative) window.removeEventListener("resize", onResize);
+      if (useNative) {
+        window.removeEventListener("resize", onResize);
+        window.removeEventListener("medousa-browser-url-focus", onUrlFocus);
+        window.removeEventListener("medousa-browser-url-blur", onUrlBlur);
+      }
       if (embedRaf != null) cancelAnimationFrame(embedRaf);
       resizeObserver?.disconnect();
     };
@@ -308,7 +377,7 @@
       bind:this={bottomChromeEl}
       data-browser-bottom-chrome
       class="mobile-browser-bottom-chrome {useNative
-        ? 'absolute inset-x-0 bottom-0 z-20 border-t-0'
+        ? 'inset-x-0 border-t-0'
         : 'shrink-0 border-t border-surface-800/80'} bg-surface-950/95 backdrop-blur-md"
     >
       <BrowserCaptchaBanner compact={true} />

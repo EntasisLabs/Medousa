@@ -24,7 +24,9 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
     attachMobileKeyboardViewport,
+    setMobileBrowserUrlFocus,
     setMobileComposerFocus,
+    isMobileBrowserUrlFocused,
   } from "$lib/utils/mobileKeyboardViewport";
   import {
     connectWorkshop,
@@ -54,6 +56,9 @@
   $effect(() => {
     if (layout.mobileTab !== "chat") {
       setMobileComposerFocus(false);
+    }
+    if (layout.mobileTab !== "web") {
+      setMobileBrowserUrlFocus(false);
     }
   });
 

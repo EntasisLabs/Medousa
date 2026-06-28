@@ -4,8 +4,7 @@
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
   import WorkHubTrays from "$lib/components/work/WorkHubTrays.svelte";
-  import EmptyState from "$lib/components/ui/EmptyState.svelte";
-  import { Bell, BookOpen, Calendar, FileText, Plus } from "@lucide/svelte";
+  import { ArrowUp, Bell, BookOpen, Calendar, FileText } from "@lucide/svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { haptic } from "$lib/haptics";
   import { recurring } from "$lib/stores/recurring.svelte";
@@ -15,11 +14,10 @@
   import { layout } from "$lib/stores/layout.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { retryWorkspaceCard } from "$lib/daemon";
-  import { buildPulsePresentation, motionColumnCounts } from "$lib/utils/mobilePulse";
+  import { buildMotionSummary, motionColumnCounts } from "$lib/utils/mobilePulse";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import { dailyNotePath } from "$lib/utils/vaultTemplates";
   import {
-    journalDailyHeroTitle,
     resolveJournalDailyHeroPath,
     resolveLastEditedNote,
   } from "$lib/utils/vaultNoteBridge";
@@ -46,7 +44,6 @@
 
   const blocked = $derived(workspace.needsAttentionCount());
   const inMotion = $derived(workspace.inMotionCount());
-  const primaryCard = $derived(workspace.primaryInMotionCard());
   const nextSchedule = $derived(recurring.soonestEnabled());
   const journalDailyPath = $derived(resolveJournalDailyHeroPath(vault.notes));
   const todayDailyPath = $derived(dailyNotePath());
@@ -55,17 +52,42 @@
   const partition = $derived(partitionWorkHub(workspace.cards));
   const living = $derived(partition.living);
 
-  const motionStatusLine = $derived.by(() => {
-    if (living.length > 0) {
-      return living.length === 1
-        ? "1 in motion · pull to refresh"
-        : `${living.length} in motion · pull to refresh`;
-    }
-    if (partition.stuck.length > 0) {
-      return `${partition.stuck.length} stuck · pull to refresh`;
-    }
-    return "All clear · pull to refresh";
+  // Work only earns space on Home when there is something live, waiting, or stuck.
+  const hasMotion = $derived(
+    living.length > 0 || blocked > 0 || partition.stuck.length > 0,
+  );
+
+  const isOffline = $derived(health !== null && !health.ok);
+  const isConnecting = $derived(health === null);
+
+  const motionSummary = $derived(
+    buildMotionSummary(motionColumnCounts(workspace.cards)),
+  );
+
+  const greeting = $derived.by(() => {
+    const hour = new Date().getHours();
+    if (hour < 5) return "Late night";
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
   });
+
+  // One calm line instead of a competing hero + status pill + banner.
+  const statusLine = $derived.by(() => {
+    if (isOffline) return "Not connected";
+    if (isConnecting) return "Connecting…";
+    if (blocked > 0) {
+      return blocked === 1 ? "1 thing needs you" : `${blocked} things need you`;
+    }
+    if (living.length > 0) {
+      return motionSummary ?? `${inMotion} in motion`;
+    }
+    return "All clear";
+  });
+
+  const statusDotClass = $derived(
+    health?.ok ? "bg-success-400" : health ? "bg-warning-400" : "bg-surface-500",
+  );
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let inMotionEl: HTMLElement | undefined = $state();
@@ -112,20 +134,6 @@
       : `${automationCounts.enabled}/${automationCounts.total} active`,
   );
 
-  const pulse = $derived(
-    buildPulsePresentation({
-      healthOk: health === null ? null : health.ok,
-      blocked,
-      inMotion,
-      primaryCard,
-      motionCounts: motionColumnCounts(workspace.cards),
-      journalDailyPath,
-      journalDailyTitle: journalDailyPath
-        ? journalDailyHeroTitle(journalDailyPath, vault.notes, vault.labelByPath())
-        : null,
-    }),
-  );
-
   $effect(() => {
     void workspace.prefetchCardDetails();
   });
@@ -134,24 +142,17 @@
     inMotionEl?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function runHeroAction() {
-    switch (pulse.action.kind) {
-      case "card":
-        void onSelectCard(pulse.action.cardId);
-        break;
-      case "note":
-        void onOpenNote(pulse.action.path);
-        break;
-      case "work":
-        scrollToInMotion();
-        break;
-      case "chat":
-        onOpenChat();
-        break;
-      case "settings":
-        onOpenSettings();
-        break;
+  function openAsk() {
+    haptic("light");
+    layout.openAskSheet();
+  }
+
+  function onStatusTap() {
+    if (isOffline) {
+      onOpenSettings();
+      return;
     }
+    if (hasMotion) scrollToInMotion();
   }
 
   async function openDailyNote() {
@@ -206,13 +207,6 @@
       }
     }
     pullY = 0;
-  }
-
-  function showCancelToast(cardId: string, message: string) {
-    if (toastTimer) clearTimeout(toastTimer);
-    toastCardId = cardId;
-    toastMessage = message || "Canceled";
-    toastTimer = setTimeout(dismissToast, 5000);
   }
 
   function dismissToast() {
@@ -274,22 +268,8 @@
       </div>
     {/if}
 
-    <div class="mobile-pulse px-5 pb-4 pt-3">
-      <div class="flex items-center gap-3">
-        <button
-          type="button"
-          class="mobile-pulse-status min-w-0 flex-1 text-left"
-          onclick={() =>
-            pulse.mood === "offline" ? onOpenSettings() : scrollToInMotion()}
-        >
-          <span
-            class="mobile-alive-dot {pulse.alive && inMotion > 0
-              ? 'mobile-alive-dot-active'
-              : ''} {health?.ok ? 'bg-success-400' : health ? 'bg-warning-400' : 'bg-surface-500'}"
-            aria-hidden="true"
-          ></span>
-          <span class="truncate text-xs text-surface-300">{pulse.statusLine}</span>
-        </button>
+    <div class="px-5 pb-4 pt-3">
+      <div class="flex items-center justify-end gap-2">
         <WorkshopSwitcherCompact />
         <ProfileSwitcherCompact />
         <button
@@ -302,69 +282,64 @@
         </button>
       </div>
 
-      <div class="mt-8">
-        <p class="mobile-pulse-eyebrow">{pulse.eyebrow}</p>
-        <h1 class="mobile-pulse-headline mt-3">{pulse.headline}</h1>
-        {#if pulse.subline}
-          <p class="mobile-pulse-subline mt-3">{pulse.subline}</p>
-        {/if}
+      <h1 class="mobile-home-greeting mt-6">{greeting}</h1>
 
+      <button
+        type="button"
+        class="mobile-home-ask mt-4"
+        aria-label="Ask Medousa"
+        onclick={openAsk}
+      >
+        <span class="mobile-home-ask-placeholder">Ask Medousa anything…</span>
+        <span class="mobile-home-ask-send" aria-hidden="true">
+          <ArrowUp size={18} strokeWidth={2.25} />
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="mobile-home-statusline"
+        onclick={onStatusTap}
+      >
+        <span
+          class="mobile-alive-dot {living.length > 0
+            ? 'mobile-alive-dot-active'
+            : ''} {statusDotClass}"
+          aria-hidden="true"
+        ></span>
+        <span class="truncate">{statusLine}</span>
+      </button>
+
+      <div class="mobile-home-cards mt-5">
+        <button type="button" class="mobile-home-card" onclick={() => void openDailyNote()}>
+          <BookOpen size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
+          <span class="mobile-home-card-label">Daily note</span>
+          <span class="mobile-home-card-hint">{dailyShortcutHint}</span>
+        </button>
         <button
           type="button"
-          class="btn mobile-pulse-cta mt-6 w-full variant-filled-primary"
-          onclick={runHeroAction}
+          class="mobile-home-card"
+          disabled={!lastEditedNote}
+          onclick={() => void openLastEditedNote()}
         >
-          {pulse.actionLabel}
+          <FileText size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
+          <span class="mobile-home-card-label">{lastEditedTitle}</span>
+          <span class="mobile-home-card-hint">{lastEditedHint}</span>
         </button>
-
-        <div class="mobile-home-cards mt-5">
-          <button type="button" class="mobile-home-card" onclick={() => void openDailyNote()}>
-            <BookOpen size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-            <span class="mobile-home-card-label">Daily note</span>
-            <span class="mobile-home-card-hint">{dailyShortcutHint}</span>
-          </button>
-          <button
-            type="button"
-            class="mobile-home-card"
-            disabled={!lastEditedNote}
-            onclick={() => void openLastEditedNote()}
-          >
-            <FileText size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-            <span class="mobile-home-card-label">{lastEditedTitle}</span>
-            <span class="mobile-home-card-hint">{lastEditedHint}</span>
-          </button>
-          <button type="button" class="mobile-home-card" onclick={openAutomations}>
-            <Calendar size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
-            <span class="mobile-home-card-label">Automations</span>
-            <span class="mobile-home-card-hint">{automationsHint}</span>
-          </button>
-        </div>
-
-        {#if blocked > 0 && pulse.mood !== "waiting"}
-          <button
-            type="button"
-            class="mt-4 w-full rounded-2xl border border-warning-500/30 bg-warning-500/8 px-4 py-3.5 text-left"
-            onclick={scrollToInMotion}
-          >
-            <p class="text-sm font-medium text-warning-200">
-              {blocked === 1 ? "1 needs you" : `${blocked} need you`}
-            </p>
-          </button>
-        {/if}
+        <button type="button" class="mobile-home-card" onclick={openAutomations}>
+          <Calendar size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
+          <span class="mobile-home-card-label">Automations</span>
+          <span class="mobile-home-card-hint">{automationsHint}</span>
+        </button>
       </div>
     </div>
 
-    <div bind:this={inMotionEl} id="home-in-motion" class="border-t border-surface-500/25 px-4 pb-8">
-      <p class="mobile-work-status py-3 text-center text-xs text-surface-400">
-        {refreshing ? "Refreshing…" : motionStatusLine}
-      </p>
-
-      {#if living.length === 0}
-        <EmptyState
-          title="Nothing in motion"
-          description="Tap + to ask Medousa something new."
-        />
-      {:else}
+    {#if hasMotion}
+      <div
+        bind:this={inMotionEl}
+        id="home-in-motion"
+        class="border-t border-surface-500/25 px-4 pb-8 pt-5"
+      >
         <div class="work-hub-grid pb-2">
           {#each living as card (card.id)}
             <WorkManifestCard
@@ -376,32 +351,20 @@
             />
           {/each}
         </div>
-      {/if}
 
-      <WorkHubTrays onSelectCard={onSelectCard} />
+        <WorkHubTrays onSelectCard={onSelectCard} />
 
-      <footer class="mt-6 space-y-2">
-        {#if pulse.motionSummary && pulse.mood !== "quiet"}
-          <p class="mobile-pulse-whisper text-center">{pulse.motionSummary}</p>
-        {/if}
         {#if nextSchedule}
-          <p class="mobile-pulse-whisper text-center">
-            Next · {recurring.labelFor(nextSchedule)} ·
-            {recurring.formatNextRun(nextSchedule.next_run_at_utc)}
-          </p>
+          <footer class="mt-6">
+            <p class="mobile-pulse-whisper text-center">
+              Next · {recurring.labelFor(nextSchedule)} ·
+              {recurring.formatNextRun(nextSchedule.next_run_at_utc)}
+            </p>
+          </footer>
         {/if}
-      </footer>
-    </div>
+      </div>
+    {/if}
   </div>
-
-  <button
-    type="button"
-    class="mobile-home-fab"
-    aria-label="New ask"
-    onclick={() => layout.openAskSheet()}
-  >
-    <Plus size={24} strokeWidth={2} />
-  </button>
 
   <MobileToast
     message={toastMessage}

@@ -44,7 +44,18 @@
   );
 
   onMount(() => {
-    void vault.refreshNotes();
+    void (async () => {
+      await vault.refreshNotes();
+      // After a cold start / background eviction only `selectedPath` is
+      // restored from localStorage; the note body lives in ephemeral state and
+      // must be re-fetched, otherwise the reader renders blank.
+      if (vault.selectedPath && !vault.content) {
+        await vault.openNote(vault.selectedPath);
+        if (layout.libraryView === "reader") {
+          vault.enterPreviewMode();
+        }
+      }
+    })();
   });
 
   $effect(() => {

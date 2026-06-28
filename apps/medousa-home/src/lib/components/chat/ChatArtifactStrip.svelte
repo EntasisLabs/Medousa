@@ -1,3 +1,39 @@
+<script module lang="ts">
+  const AUTO_OPENED_KEY = "medousa-home-artifact-autoopened";
+  const AUTO_OPENED_CAP = 300;
+
+  function loadAutoOpened(): Set<string> {
+    if (typeof localStorage === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem(AUTO_OPENED_KEY);
+      if (!raw) return new Set();
+      const parsed: unknown = JSON.parse(raw);
+      return new Set(Array.isArray(parsed) ? (parsed as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  // Shared across every strip instance and across remounts. A presentation
+  // should auto-open only once — when it first streams in — not every time the
+  // Chat tab is reopened (which remounts the whole chat UI).
+  const autoOpenedArtifactIds = loadAutoOpened();
+
+  function rememberAutoOpened(id: string): void {
+    autoOpenedArtifactIds.add(id);
+    if (typeof localStorage === "undefined") return;
+    try {
+      let ids = [...autoOpenedArtifactIds];
+      if (ids.length > AUTO_OPENED_CAP) {
+        ids = ids.slice(ids.length - AUTO_OPENED_CAP);
+      }
+      localStorage.setItem(AUTO_OPENED_KEY, JSON.stringify(ids));
+    } catch {
+      // ignore storage quota / serialization issues
+    }
+  }
+</script>
+
 <script lang="ts">
   import ArtifactEmbed from "$lib/components/chat/ArtifactEmbed.svelte";
   import ArtifactFullscreen from "$lib/components/chat/ArtifactFullscreen.svelte";
@@ -16,17 +52,16 @@
 
   let panelArtifact = $state<UiArtifact | null>(null);
   let fullscreenArtifact = $state<UiArtifact | null>(null);
-  let autoOpened = $state<Set<string>>(new Set());
 
   $effect(() => {
     for (const artifact of artifacts) {
-      if (autoOpened.has(artifact.artifactId)) continue;
+      if (autoOpenedArtifactIds.has(artifact.artifactId)) continue;
       if (artifact.presentation === "panel") {
         panelArtifact = artifact;
-        autoOpened = new Set(autoOpened).add(artifact.artifactId);
+        rememberAutoOpened(artifact.artifactId);
       } else if (artifact.presentation === "fullscreen") {
         fullscreenArtifact = artifact;
-        autoOpened = new Set(autoOpened).add(artifact.artifactId);
+        rememberAutoOpened(artifact.artifactId);
       }
     }
   });

@@ -41,6 +41,7 @@ export function attachMobileKeyboardViewport(
     window.removeEventListener("resize", update);
     root.style.removeProperty("--mobile-keyboard-inset");
     root.dataset.mobileComposerActive = "false";
+    root.dataset.mobileBrowserUrlActive = "false";
   };
 }
 

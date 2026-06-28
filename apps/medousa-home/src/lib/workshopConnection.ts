@@ -259,6 +259,11 @@ export async function resumeWorkshop(
     chat.hydrateAskThreads(workspace.cards),
     workspace.reconcileCardsFromSnapshot(),
     userProfiles.syncOnResume(health),
+    // If the WebView was evicted while backgrounded, the open note's path
+    // survives but its body does not. Re-fetch so the reader is not blank.
+    vault.selectedPath && !vault.content
+      ? vault.reloadFromServer()
+      : Promise.resolve(),
   ]);
 
   try {

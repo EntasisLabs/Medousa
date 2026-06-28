@@ -91,8 +91,36 @@ export type MobileBrowserEmbedMetrics = {
 };
 
 /**
+ * Native embed slot — panel top through browser chrome top (viewport coords for UIKit).
+ */
+export function measureNativeBrowserEmbedBounds(
+  panel: HTMLElement | null | undefined,
+  bottomChromeEl?: HTMLElement | null,
+): MobileBrowserBounds | null {
+  if (!panel) return null;
+  const panelR = panel.getBoundingClientRect();
+  if (panelR.width < 8 || panelR.height < 8) return null;
+
+  const bottomEl =
+    bottomChromeEl ??
+    (document.querySelector("[data-browser-bottom-chrome]") as HTMLElement | null);
+  const chromeR = rect(bottomEl);
+  if (!chromeR || chromeR.height < 1) return null;
+
+  const height = Math.max(8, Math.round(chromeR.top - panelR.top));
+  if (height < 8) return null;
+
+  return {
+    x: Math.round(panelR.left),
+    y: Math.round(panelR.top),
+    width: Math.max(8, Math.round(panelR.width)),
+    height,
+  };
+}
+
+/**
  * Native embed height = panel height − browser chrome block + chrome padding-top.
- * All values from getBoundingClientRect / getComputedStyle (no fudge factors).
+ * Prefer {@link measureNativeBrowserEmbedBounds} for UIKit overlay placement.
  */
 export function computeMobileBrowserEmbedMetrics(
   panel: HTMLElement | null | undefined,
@@ -101,6 +129,9 @@ export function computeMobileBrowserEmbedMetrics(
   if (!panel) return null;
   const panelR = panel.getBoundingClientRect();
   if (panelR.width < 8 || panelR.height < 8) return null;
+
+  const bounds = measureNativeBrowserEmbedBounds(panel, bottomChromeEl);
+  if (!bounds) return null;
 
   const bottomEl =
     bottomChromeEl ??
@@ -119,39 +150,25 @@ export function computeMobileBrowserEmbedMetrics(
   const tabEl = document.querySelector(".mobile-bottom-chrome") as HTMLElement | null;
   const tabR = rect(tabEl);
 
-  const embedHeight = panelR.height - chromeBlockHeight + padTop;
-  let embedBottom = panelR.top + embedHeight;
-  if (tabR) {
-    embedBottom = Math.min(embedBottom, tabR.top);
-  }
-
-  const height = embedBottom - panelR.top;
-  if (height < 8) return null;
-
   const viewportBottom =
     window.visualViewport?.height != null
       ? window.visualViewport.height + (window.visualViewport.offsetTop ?? 0)
       : window.innerHeight;
 
-  const controlRowTop = controlRowR?.top ?? null;
+  const embedBottom = bounds.y + bounds.height;
 
   return {
-    bounds: {
-      x: panelR.left,
-      y: panelR.top,
-      width: panelR.width,
-      height,
-    },
+    bounds,
     chromeTop: bottomR?.top ?? null,
     chromeBlockHeight: chromeBlockHeight || null,
     chromePaddingTop: padTop,
     chromePaddingBottom: padBottom,
-    controlRowTop,
+    controlRowTop: controlRowR?.top ?? null,
     controlRowBottom: controlRowR?.bottom ?? null,
     tabBarTop: tabR?.top ?? null,
     tabBarBottom: tabR?.bottom ?? null,
     chromeBottom: bottomR?.bottom ?? null,
-    embedHeightFormula: "panelHeight - chromeBlock + paddingTop",
+    embedHeightFormula: "chromeTop - panelTop",
     underlapPx: bottomR ? embedBottom - bottomR.top : null,
     gapChromeBottomToTab:
       bottomR && tabR ? tabR.top - bottomR.bottom : null,
@@ -165,5 +182,5 @@ export function measureMobileBrowserEmbedBounds(
   panel: HTMLElement | null | undefined,
   bottomChromeEl?: HTMLElement | null,
 ): MobileBrowserBounds | null {
-  return computeMobileBrowserEmbedMetrics(panel, bottomChromeEl)?.bounds ?? null;
+  return measureNativeBrowserEmbedBounds(panel, bottomChromeEl);
 }
