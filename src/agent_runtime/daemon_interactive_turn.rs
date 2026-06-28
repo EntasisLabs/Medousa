@@ -277,7 +277,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             return;
         }
 
-        let (body, stream_authoritative) = self.canonical_terminal_body(&text);
+        let (body, _stream_authoritative) = self.canonical_terminal_body(&text);
 
         let assistant_turn = self
             .parts
@@ -297,16 +297,13 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                 )
             });
 
-        let final_event = if stream_authoritative {
-            interactive_turn_runtime::final_stream_event_terminal_commit(
-                &self.turn_id,
-                None,
-                tool_names,
-                true,
-            )
-        } else {
-            interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names)
-        };
+        // Always carry the canonical body in the terminal commit. The client prefers
+        // its streamed content when present (resolveTurnContent) and only falls back to
+        // final_text when the local bubble is empty — e.g. after a scratch_reset cleared
+        // the draft — so a turn that finished mid-reloop self-heals instead of going blank
+        // until the user navigates away and back.
+        let final_event =
+            interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names);
         self.publish_tracked(final_event).await;
         self.spawn_persist_turn(assistant_turn);
         self.sync_ask_job_succeeded(body).await;

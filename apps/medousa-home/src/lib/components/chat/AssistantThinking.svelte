@@ -28,7 +28,7 @@
   const liveHook = $derived(thinkingHook(trimmed));
 </script>
 
-{#if trimmed && streaming}
+{#if trimmed}
   <details
     class="thinking-trace group/thinking mb-2 overflow-hidden rounded-lg border transition-[border-color,background,box-shadow] duration-200 {done
       ? 'border-surface-700/25 bg-surface-900/15'

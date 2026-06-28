@@ -992,9 +992,13 @@ async fn apply_fsm_continue_loop(
         loop_awareness.record_user_response(text);
     }
     // Interim prose: surface the short note to the principal as a non-terminal
-    // progress line so they SEE it, but never append it to `tool_lane.messages`
-    // (that would feed the model its own words and invite self-dialogue). The
-    // turn-control nudge below steers it to a tool / cognition_turn_finish.
+    // progress line so they SEE it, AND append it to `tool_lane.messages` so the
+    // model retains continuity into the next round. Previously this prose was dropped
+    // (to avoid self-dialogue), but combined with the scratch_reset that wipes the
+    // draft it gave the model "amnesia" — it would forget what it just did and redo
+    // finished work. Preserving the note keeps memory intact; the turn-control nudge
+    // below still steers it to a tool / cognition_turn_finish, and the bounded
+    // interim_continue_cap prevents the loop from spinning.
     if continue_reason == ContinueReason::InterimProse && !text.trim().is_empty() {
         if let Some(gate) = completion_gate.as_ref() {
             if let Some(sink) = gate.sink.as_ref() {
@@ -1006,6 +1010,10 @@ async fn apply_fsm_continue_loop(
                 .await;
             }
         }
+        turn_ctx
+            .tool_lane
+            .messages
+            .push(ChatMessage::assistant(text.trim().to_string()));
     }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
