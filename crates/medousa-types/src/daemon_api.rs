@@ -1340,6 +1340,12 @@ pub struct TurnTicketRecord {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InteractiveTurnStreamEvent {
     pub turn_id: String,
+    /// Monotonic per-turn sequence number, stamped server-side by
+    /// `TurnEventChannel::publish`. Enables exactly-once replay/dedup on
+    /// reconnect. `#[serde(default)]` keeps the Python SDK and any older
+    /// payloads (which never carried `seq`) wire-compatible.
+    #[serde(default)]
+    pub seq: u64,
     pub event_type: String,
     pub phase: String,
     pub message: String,

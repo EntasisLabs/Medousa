@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Result as AnyhowResult;
 use async_trait::async_trait;
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query as AxumQuery, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
@@ -24,6 +24,7 @@ use crate::agent_runtime::stream_sink::AgentStreamSink;
 use crate::channel_delivery;
 use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use crate::daemon::turn_event_channel::TurnEventChannel;
 use crate::daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, IngestRequest, IngestResponse,
     InteractiveTurnStreamEvent, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
@@ -38,22 +39,54 @@ fn internal_error(err: impl std::fmt::Display) -> (StatusCode, String) {
     )
 }
 
+/// `?since=<seq>` query param shared by the interactive-turn and ingest SSE
+/// routes. A reconnecting client passes the last seq it rendered so the server
+/// replays exactly the events it missed.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct StreamSinceQuery {
+    #[serde(default)]
+    pub since: Option<u64>,
+}
+
 pub async fn ingest_stream(
     State(state): State<AppState>,
     AxumPath(stream_id): AxumPath<String>,
+    AxumQuery(query): AxumQuery<StreamSinceQuery>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
     let registry = state.interactive_turn_streams.clone();
-    stream_events_from_registry(&registry, &stream_id, "ingest stream").await
+    stream_events_from_registry(&registry, &stream_id, "ingest stream", query.since).await
+}
+
+/// State carried through the SSE unfold: the channel (for replay/drain), the
+/// live broadcast receiver, a pending queue (initial replay + lag/close
+/// recovery), the highest seq emitted so far, and whether the final drain ran.
+struct SseUnfoldState {
+    channel: Arc<TurnEventChannel>,
+    receiver: broadcast::Receiver<InteractiveTurnStreamEvent>,
+    pending: std::collections::VecDeque<InteractiveTurnStreamEvent>,
+    last_seq: u64,
+    drained: bool,
+}
+
+fn sse_event_from_payload(payload: InteractiveTurnStreamEvent) -> Event {
+    let event_type = payload.event_type.clone();
+    match Event::default().event(event_type).json_data(payload) {
+        Ok(value) => value,
+        Err(err) => Event::default()
+            .event("error")
+            .data(format!("stream serialization error: {err}")),
+    }
 }
 
 pub async fn stream_events_from_registry(
-    registry: &Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
+    registry: &Arc<RwLock<HashMap<String, Arc<TurnEventChannel>>>>,
     stream_id: &str,
     label: &str,
+    since: Option<u64>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
-    let sender = {
+    let channel = {
         let guard = registry.read().await;
         guard.get(stream_id).cloned()
     }
@@ -64,27 +97,62 @@ pub async fn stream_events_from_registry(
         )
     })?;
 
-    let stream = stream::unfold(sender.subscribe(), |mut receiver| async move {
-        match receiver.recv().await {
-            Ok(payload) => {
-                let event = match Event::default()
-                    .event(payload.event_type.clone())
-                    .json_data(payload)
-                {
-                    Ok(value) => value,
-                    Err(err) => Event::default()
-                        .event("error")
-                        .data(format!("stream serialization error: {err}")),
-                };
-                Some((Ok::<Event, Infallible>(event), receiver))
+    // Subscribe BEFORE snapshotting so no event can slip between the snapshot
+    // and the live subscription. Any event in both is deduped by seq below.
+    let receiver = channel.subscribe();
+    let since = since.unwrap_or(0);
+    let pending: std::collections::VecDeque<InteractiveTurnStreamEvent> =
+        channel.snapshot_since(since).into_iter().collect();
+
+    let initial = SseUnfoldState {
+        channel,
+        receiver,
+        pending,
+        last_seq: since,
+        drained: false,
+    };
+
+    let stream = stream::unfold(initial, |mut state| async move {
+        loop {
+            // 1) Flush any buffered/replayed events first (exactly-once by seq).
+            if let Some(payload) = state.pending.pop_front() {
+                if payload.seq != 0 && payload.seq <= state.last_seq {
+                    continue;
+                }
+                state.last_seq = state.last_seq.max(payload.seq);
+                return Some((Ok::<Event, Infallible>(sse_event_from_payload(payload)), state));
             }
-            Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                let event = Event::default()
-                    .event("status")
-                    .data(format!("stream lag detected; skipped {} event(s)", skipped));
-                Some((Ok::<Event, Infallible>(event), receiver))
+            if state.drained {
+                return None;
             }
-            Err(broadcast::error::RecvError::Closed) => None,
+
+            // 2) Otherwise pull the next live event.
+            match state.receiver.recv().await {
+                Ok(payload) => {
+                    // Skip anything already covered by the replay snapshot / prior emits.
+                    if payload.seq != 0 && payload.seq <= state.last_seq {
+                        continue;
+                    }
+                    state.last_seq = state.last_seq.max(payload.seq);
+                    return Some((Ok::<Event, Infallible>(sse_event_from_payload(payload)), state));
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    // We fell behind the live ring; recover the gap from the
+                    // replay buffer rather than dropping events outright.
+                    let recovered = state.channel.snapshot_since(state.last_seq);
+                    state.pending.extend(recovered);
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    // Senders gone: drain any buffered tail (e.g. the terminal
+                    // event) so a client reconnecting right at the end still
+                    // sees it, then finish.
+                    let remaining = state.channel.snapshot_since(state.last_seq);
+                    state.pending.extend(remaining);
+                    state.drained = true;
+                    continue;
+                }
+            }
         }
     });
 
@@ -95,11 +163,11 @@ pub async fn stream_events_from_registry(
 }
 
 pub fn publish_interactive_turn_event(
-    stream_tx: &broadcast::Sender<InteractiveTurnStreamEvent>,
+    channel: &TurnEventChannel,
     event: AnyhowResult<InteractiveTurnStreamEvent>,
 ) {
     if let Ok(payload) = event {
-        let _ = stream_tx.send(payload);
+        channel.publish(payload);
     }
 }
 
@@ -917,8 +985,7 @@ async fn spawn_continuation_agent_turn(
         record_job_delivery_pending(state, &job_id).await;
 
         let stream_id = format!("continue-{}", Uuid::new_v4().simple());
-        let (stream_tx, _stream_rx) =
-            broadcast::channel::<InteractiveTurnStreamEvent>(64);
+        let stream_tx = TurnEventChannel::new(64);
 
         let sink: Arc<dyn AgentStreamSink> = Arc::new(IngestAgentStreamSink {
             stream_id: stream_id.clone(),
@@ -1198,7 +1265,7 @@ struct IngestAgentStreamSink {
     stream_id: String,
     session_id: String,
     job_id: String,
-    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    stream_tx: Arc<TurnEventChannel>,
     delivery_target: channel_delivery::ChannelDeliveryTarget,
     dispatch_client: reqwest::Client,
     delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
@@ -1656,7 +1723,7 @@ async fn start_ingest_ask_stream(
     );
 
     let stream_id = format!("ingest-{}", Uuid::new_v4().simple());
-    let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
+    let stream_tx = TurnEventChannel::new(512);
     {
         let mut guard = state.interactive_turn_streams.write().await;
         guard.insert(stream_id.clone(), stream_tx.clone());
@@ -1780,6 +1847,10 @@ async fn start_ingest_ask_stream(
             .await
             .remove(&mapping_key_for_cleanup);
 
+        // Mark the channel closed but keep it (and its replay buffer) in the
+        // registry for a grace window so a client reconnecting right at the end
+        // can still replay the terminal event with `?since=`.
+        stream_tx.mark_closed();
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut guard = stream_registry.write().await;
         guard.remove(&stream_id_for_cleanup);

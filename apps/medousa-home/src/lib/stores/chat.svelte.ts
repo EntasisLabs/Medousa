@@ -123,6 +123,12 @@ export class ChatStore {
   private sessionsRefreshInFlight: Promise<void> | null = null;
   /** Turn ids with an active local SSE listener (subset of `turns`). */
   private streamOwners = new Map<string, StreamOwner>();
+  /**
+   * Highest stream `seq` rendered per turn. Drives exactly-once replay: we
+   * reattach with `?since=lastSeq` and drop any event whose seq we've already
+   * applied, so a mid-turn reconnect can never duplicate a bubble.
+   */
+  private lastSeqByTurn = new Map<string, number>();
   private draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** True while the composer must wait — Tier 2c: always open. */
@@ -721,6 +727,17 @@ export class ChatStore {
     this.streamOwners.set(turnId, { turnId, sessionId, streamUrl });
   }
 
+  /**
+   * Append `?since=<lastSeq>` so a reattach replays only the events we missed.
+   * Fresh starts (lastSeq 0) are returned unchanged.
+   */
+  private streamUrlWithSince(streamUrl: string, turnId: string): string {
+    const lastSeq = this.lastSeqByTurn.get(turnId) ?? 0;
+    if (lastSeq <= 0) return streamUrl;
+    const separator = streamUrl.includes("?") ? "&" : "?";
+    return `${streamUrl}${separator}since=${lastSeq}`;
+  }
+
   private async detachStreamOwner(turnId: string) {
     if (!this.streamOwners.delete(turnId)) return;
     try {
@@ -763,11 +780,12 @@ export class ChatStore {
       return false;
     }
 
-    const existing = this.streamOwners.get(record.turn_id);
-    if (existing?.streamUrl === record.stream_url) {
-      return false;
-    }
-    if (existing) {
+    // Always restart on reattach instead of bailing when the URL is unchanged.
+    // The Rust slot (`add_interactive_stream_slot`) cancels the prior task and
+    // seq-dedup makes the replayed events idempotent, so a restart is safe. The
+    // old early-return left a dead owner after an intentional cancel — which is
+    // exactly what surfaced as "Lost connection mid-turn".
+    if (this.streamOwners.has(record.turn_id)) {
       await this.detachStreamOwner(record.turn_id);
     }
 
@@ -808,7 +826,9 @@ export class ChatStore {
       this.backgroundActivity = Math.max(this.backgroundActivity, 1);
     }
 
-    await startInteractiveStream(record.stream_url);
+    await startInteractiveStream(
+      this.streamUrlWithSince(record.stream_url, record.turn_id),
+    );
     this.markStreamOwner(record.turn_id, record.session_id, record.stream_url);
     return true;
   }
@@ -1393,6 +1413,7 @@ export class ChatStore {
     const next = new Map(this.turns);
     next.delete(turnId);
     this.turns = next;
+    this.lastSeqByTurn.delete(turnId);
     void this.detachStreamOwner(turnId);
   }
 
@@ -1473,6 +1494,16 @@ export class ChatStore {
 
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
     if (!this.isRelevantStreamEvent(event)) return;
+
+    // Exactly-once: drop anything at or below the highest seq we've applied for
+    // this turn (covers replay-on-reattach + buffer/live overlap). seq===0 means
+    // a legacy/unsequenced payload — always let those through.
+    const seq = event.seq ?? 0;
+    if (seq > 0) {
+      const lastSeq = this.lastSeqByTurn.get(event.turn_id) ?? 0;
+      if (seq <= lastSeq) return;
+      this.lastSeqByTurn.set(event.turn_id, seq);
+    }
 
     if (event.event_type === "error") {
       this.handleTurnError(event);
@@ -1760,11 +1791,11 @@ export class ChatStore {
         event.final_text?.trim() ||
         event.message?.trim() ||
         current.content;
-      const prior = current.content.trim();
-      const merged =
-        prior && checkpointBody && prior !== checkpointBody
-          ? `${prior}\n\n${checkpointBody}`
-          : resolveTurnContent(current.content, checkpointBody, true);
+      // Streamed tokens are canonical (Phase 7A). The old `prior + "\n\n" + body`
+      // concatenation doubled text whenever the checkpoint's `final_text` echoed
+      // what we'd already streamed via content_delta. Defer to resolveTurnContent
+      // so the streamed body wins; only an empty draft falls back to the body.
+      const merged = resolveTurnContent(current.content, checkpointBody, true);
       const next: ChatMessage = {
         ...current,
         content: merged,

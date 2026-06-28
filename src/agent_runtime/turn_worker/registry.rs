@@ -237,7 +237,7 @@ mod tests {
         use std::sync::Arc;
         use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
 
-        let inner = Arc::new(InMemoryToolRegistry::new());
+        let inner = Arc::new(InMemoryToolRegistry::default());
         let registry = SessionBootstrapToolRegistry::host(
             inner,
             "sess-1",

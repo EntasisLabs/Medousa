@@ -529,6 +529,8 @@ fn build_event_messages(
 
     Ok(InteractiveTurnStreamEvent {
         turn_id,
+        // Stamped centrally by `TurnEventChannel::publish`; left 0 at construction.
+        seq: 0,
         event_type: event_type.to_string(),
         phase: phase.to_string(),
         message: legacy_stream_message(&messages),

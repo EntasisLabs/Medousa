@@ -1,5 +1,10 @@
 import type { ChatMessage } from "$lib/types/chat";
 
+/** Collapse runs of whitespace so trivial formatting drift doesn't defeat dedup. */
+function normalizeForCompare(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 /** Keep first occurrence — Svelte keyed `{#each}` throws on duplicate message ids. */
 export function dedupeMessagesById(messages: ChatMessage[]): ChatMessage[] {
   const seen = new Set<string>();
@@ -29,19 +34,24 @@ export function mergeTranscript(
     if (message.turnId && localTurnIds.has(message.turnId)) {
       continue;
     }
+    // Daemon history rows carry no turnId, so fall back to a whitespace-normalized
+    // content compare. Exact `.trim()` matching let a streamed bubble and its
+    // persisted twin diverge on minor markdown/whitespace and surface as a dup.
     if (message.role === "user") {
+      const normalized = normalizeForCompare(message.content);
       const duplicateUser = merged.some(
         (existing) =>
           existing.role === "user" &&
-          existing.content.trim() === message.content.trim(),
+          normalizeForCompare(existing.content) === normalized,
       );
       if (duplicateUser) continue;
     }
     if (!message.turnId && message.role === "assistant" && message.content.trim()) {
+      const normalized = normalizeForCompare(message.content);
       const duplicate = merged.some(
         (existing) =>
           existing.role === "assistant" &&
-          existing.content.trim() === message.content.trim(),
+          normalizeForCompare(existing.content) === normalized,
       );
       if (duplicate) continue;
     }

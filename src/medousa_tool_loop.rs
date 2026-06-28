@@ -46,6 +46,11 @@ use crate::turn_control_tools::{
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 
+/// Per-turn budget for bounded interim auto-continues (short non-tool notes).
+/// Kept low: the `TurnLoopDiscipline` stuck guard and `max_tool_rounds` fuse are
+/// the hard safety net; this just keeps a brief "let me check" from ending the turn.
+const INTERIM_CONTINUE_CAP: usize = 2;
+
 #[derive(Clone)]
 pub struct MedousaToolLoopPipeline {
     prompt_pipeline: PromptExecutionPipeline,
@@ -214,6 +219,11 @@ impl MedousaToolLoopPipeline {
         let mut discipline =
             TurnLoopDiscipline::with_max_text_only_stuck_continues(max_text_only_stuck);
         let mut loop_awareness = TurnLoopAwareness::default();
+        // Per-turn budget for bounded interim auto-continues (short non-tool notes
+        // that should not end the turn). Capped low; the stuck discipline +
+        // max_tool_rounds fuse below are the hard safety net.
+        let interim_continue_cap = INTERIM_CONTINUE_CAP;
+        let mut interim_continues_used = 0usize;
 
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {
@@ -309,6 +319,8 @@ impl MedousaToolLoopPipeline {
                                 pending_final_answer,
                                 rounds_executed,
                                 max_tool_rounds: effective_max_tool_rounds,
+                                interim_continues_used,
+                                interim_continue_cap,
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
@@ -318,6 +330,8 @@ impl MedousaToolLoopPipeline {
                                 max_tool_rounds: effective_max_tool_rounds,
                                 invocations: &invocations,
                                 workshop_lane,
+                                interim_continues_used,
+                                interim_continue_cap,
                             })
                         };
 
@@ -360,6 +374,9 @@ impl MedousaToolLoopPipeline {
                                 control_message,
                                 missing_tools,
                             } => {
+                                if reason == ContinueReason::InterimProse {
+                                    interim_continues_used += 1;
+                                }
                                 if let Some(response) = apply_fsm_continue_loop(
                                     &text,
                                     reason,
@@ -974,6 +991,22 @@ async fn apply_fsm_continue_loop(
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
     }
+    // Interim prose: surface the short note to the principal as a non-terminal
+    // progress line so they SEE it, but never append it to `tool_lane.messages`
+    // (that would feed the model its own words and invite self-dialogue). The
+    // turn-control nudge below steers it to a tool / cognition_turn_finish.
+    if continue_reason == ContinueReason::InterimProse && !text.trim().is_empty() {
+        if let Some(gate) = completion_gate.as_ref() {
+            if let Some(sink) = gate.sink.as_ref() {
+                sink.agent_turn_progress(
+                    gate.stream_turn_id,
+                    text.trim().to_string(),
+                    ledger_tool_names(invocations),
+                )
+                .await;
+            }
+        }
+    }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
         &loop_awareness.wrap_control_body(tool_rounds_remaining, control_message),
@@ -1168,6 +1201,8 @@ mod tests {
             max_tool_rounds: 10,
             invocations: &invocations,
             workshop_lane: false,
+            interim_continues_used: 0,
+            interim_continue_cap: 2,
         });
         assert!(matches!(
             action,
@@ -1229,6 +1264,8 @@ mod tests {
             pending_final_answer: false,
             rounds_executed: 10,
             max_tool_rounds: 10,
+            interim_continues_used: 0,
+            interim_continue_cap: 2,
         });
         assert!(matches!(
             action,

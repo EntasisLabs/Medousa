@@ -97,6 +97,8 @@ export interface TurnTicketState {
 
 export interface InteractiveTurnStreamEvent {
   turn_id: string;
+  /** Monotonic per-turn sequence stamped server-side; enables exactly-once replay/dedup. */
+  seq?: number;
   event_type: string;
   phase: string;
   message: string;

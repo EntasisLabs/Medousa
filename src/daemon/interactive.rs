@@ -7,7 +7,6 @@ use axum::http::StatusCode;
 use axum::Json;
 use chrono::Utc;
 use serde::Deserialize;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use std::convert::Infallible;
@@ -17,7 +16,7 @@ use futures_util::stream::Stream;
 use crate::channel_delivery;
 use crate::daemon::ingest::{publish_interactive_turn_event, record_job_delivery_pending, resolve_api_model_routing, resolve_session_runtime_config, stream_events_from_registry};
 use crate::daemon_api::{
-    CreateTurnTicketRequest, InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    CreateTurnTicketRequest, InteractiveTurnRequest, InteractiveTurnResponse,
     SessionActiveTurnsResponse, SessionDeleteQuery, SessionDeleteResponse, TurnTicketRecord, TurnTicketResponse,
 };
 
@@ -79,7 +78,7 @@ pub async fn spawn_turn_ticket(
         return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
     }
 
-    let (stream_tx, _stream_rx) = broadcast::channel::<InteractiveTurnStreamEvent>(512);
+    let stream_tx = crate::daemon::turn_event_channel::TurnEventChannel::new(512);
     {
         let mut guard = state.interactive_turn_streams.write().await;
         guard.insert(turn_id.clone(), stream_tx.clone());
@@ -193,6 +192,7 @@ pub async fn spawn_turn_ticket(
     };
 
     let turn_id_for_task = turn_id.clone();
+    let stream_tx_for_close = stream_tx.clone();
     tokio::spawn(async move {
         // Brief guard so the client's SSE subscribe wins the race against the first
         // (cosmetic) status event; answer tokens arrive far later regardless.
@@ -209,6 +209,9 @@ pub async fn spawn_turn_ticket(
         )
         .await;
 
+        // Keep the channel + replay buffer registered through the grace window,
+        // but mark it closed so a late reconnect still replays the terminal event.
+        stream_tx_for_close.mark_closed();
         crate::turn_ticket::clear_turn_after_run(&turn_tickets, &turn_id_for_task).await;
         if let Some(job_id) = ask_job_id_for_notify.as_deref() {
             crate::workspace::notify_workspace_event(
@@ -490,8 +493,9 @@ pub async fn cancel_active_session_turn(
 pub async fn interactive_turn_stream(
     State(state): State<AppState>,
     AxumPath(turn_id): AxumPath<String>,
+    Query(query): Query<crate::daemon::ingest::StreamSinceQuery>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
     let registry = state.interactive_turn_streams.clone();
-    stream_events_from_registry(&registry, &turn_id, "interactive turn").await
+    stream_events_from_registry(&registry, &turn_id, "interactive turn", query.since).await
 }

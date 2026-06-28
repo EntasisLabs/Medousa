@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use stasis::application::use_cases::identity_memory_service::IdentityMemoryService;
 use stasis::prelude::RuntimeComposition;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::RwLock;
 
 use crate::browser_handlers::ClientRegistry;
 use crate::MedousaPlatformRuntime;
@@ -13,7 +13,6 @@ use crate::daemon::heartbeat::{
     HeartbeatDeliveryMetrics, HeartbeatDeliveryPolicy, HeartbeatNotifyConfig, TickReport,
 };
 use crate::engine_context::HeartbeatLanePolicy;
-use crate::daemon_api::InteractiveTurnStreamEvent;
 use crate::session_mapping;
 use crate::turn_ticket::TurnTicketRegistry;
 use crate::user_profiles::UserProfileRegistry;
@@ -40,7 +39,7 @@ pub struct AppState {
     pub platform: Arc<MedousaPlatformRuntime>,
     pub daemon_base_url: String,
     pub interactive_turn_streams:
-        Arc<RwLock<HashMap<String, broadcast::Sender<InteractiveTurnStreamEvent>>>>,
+        Arc<RwLock<HashMap<String, Arc<crate::daemon::turn_event_channel::TurnEventChannel>>>>,
     pub active_ingest_jobs: Arc<RwLock<HashMap<String, session_mapping::ActiveIngestJob>>>,
     pub channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
     pub job_delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,

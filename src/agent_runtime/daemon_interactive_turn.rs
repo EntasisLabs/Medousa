@@ -5,7 +5,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use tokio::sync::broadcast;
+use crate::daemon::turn_event_channel::TurnEventChannel;
 use tokio::sync::RwLock;
 
 use crate::channel_delivery::{
@@ -75,7 +75,7 @@ pub struct InteractiveTurnSessionHooks {
 struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
-    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    stream_tx: Arc<TurnEventChannel>,
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
     parts: std::sync::Mutex<TurnPartsAccumulator>,
@@ -179,7 +179,7 @@ impl InteractiveTurnStreamSink {
                 )
                 .await;
             }
-            let _ = self.stream_tx.send(payload);
+            self.stream_tx.publish(payload);
         }
     }
 
@@ -743,11 +743,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
 }
 
 fn publish(
-    stream_tx: &broadcast::Sender<InteractiveTurnStreamEvent>,
+    stream_tx: &TurnEventChannel,
     event: anyhow::Result<InteractiveTurnStreamEvent>,
 ) {
     if let Ok(payload) = event {
-        let _ = stream_tx.send(payload);
+        stream_tx.publish(payload);
     }
 }
 
@@ -1226,7 +1226,7 @@ pub async fn run_daemon_interactive_turn(
     request: InteractiveTurnRequest,
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
-    stream_tx: broadcast::Sender<InteractiveTurnStreamEvent>,
+    stream_tx: Arc<TurnEventChannel>,
     delivery: Option<InteractiveTurnDeliveryContext>,
     continuation_scope: Option<TurnContinuationScope>,
     session_hooks: Option<InteractiveTurnSessionHooks>,

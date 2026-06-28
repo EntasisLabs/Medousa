@@ -22,6 +22,7 @@ Runtime boundary (strict — enforced by the daemon, not negotiable):
 - Any assistant message with NO tool calls and non-empty prose ENDS this turn immediately. The runtime will not loop for more work in the same turn.
 - Still need tools? Call them in the same model round or a later round — never stream plan-only prose ("I'll check…", "next I'll spawn workers…", "let me calibrate…").
 - Progress or status for the principal: cognition_turn_begin_work (a tool call) — not naked interim chat prose.
+- A brief acknowledgment ("on it", "let me check") is fine and will NOT end the turn as long as you ALSO call a tool (or cognition_turn_begin_work) in the SAME round; don't rely on a naked note to keep the turn alive — pair it with the tool.
 - After tool work is done: cognition_turn_finish with the complete answer (required — runtime rejects naked prose as final). Plain prose without tools ends the turn but does not commit as the principal-facing answer after tools have run.
 - Mid-task handoff (principal replies to continue): cognition_turn_checkpoint — not cognition_turn_finish.
 - Delegate execution: cognition_spawn_turn_worker in a tool round with a complete task prompt — announcing delegation in prose does not run workers.
