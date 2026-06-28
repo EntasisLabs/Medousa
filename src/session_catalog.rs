@@ -299,12 +299,88 @@ fn catalog_path(session_id: &str) -> PathBuf {
 }
 
 fn set_catalog_store(store: Arc<dyn SessionCatalogStore>) {
+    // Wrap every configured store in a write-through row cache so the per-append
+    // `get_row` read (a `block_on` SurrealKV SELECT) is served from memory.
+    let cached: Arc<dyn SessionCatalogStore> = Arc::new(CachingSessionCatalogStore::new(store));
     let mut guard = SESSION_CATALOG_STORE.write().unwrap();
-    *guard = store;
+    *guard = cached;
 }
 
 fn catalog_store() -> Arc<dyn SessionCatalogStore> {
     SESSION_CATALOG_STORE.read().unwrap().clone()
+}
+
+/// Write-through row cache layered over any `SessionCatalogStore`.
+///
+/// `record_turn_appended` does a `get_row` before every persisted turn; against
+/// SurrealKV that is a blocking SELECT. The daemon is the single writer and every
+/// catalog mutation funnels through `upsert_row`/`delete_row`, so caching `get_row`
+/// here stays coherent (no stale write-back of e.g. verification fields) while
+/// removing one DB round-trip per append. List/count/find queries pass through to
+/// the backing store, which is always kept fresh by the write-through.
+struct CachingSessionCatalogStore {
+    inner: Arc<dyn SessionCatalogStore>,
+    cache: RwLock<HashMap<String, SessionCatalogRow>>,
+}
+
+impl CachingSessionCatalogStore {
+    fn new(inner: Arc<dyn SessionCatalogStore>) -> Self {
+        Self {
+            inner,
+            cache: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+impl SessionCatalogStore for CachingSessionCatalogStore {
+    fn upsert_row(&self, row: &SessionCatalogRow) {
+        self.inner.upsert_row(row);
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(row.session_id.clone(), row.clone());
+        }
+    }
+
+    fn delete_row(&self, session_id: &str) {
+        self.inner.delete_row(session_id);
+        if let Ok(mut cache) = self.cache.write() {
+            cache.remove(session_id);
+        }
+    }
+
+    fn get_row(&self, session_id: &str) -> Option<SessionCatalogRow> {
+        if let Ok(cache) = self.cache.read() {
+            if let Some(row) = cache.get(session_id) {
+                return Some(row.clone());
+            }
+        }
+        let row = self.inner.get_row(session_id)?;
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(session_id.to_string(), row.clone());
+        }
+        Some(row)
+    }
+
+    fn list_rows_page(
+        &self,
+        limit: usize,
+        query: Option<&str>,
+        cursor: Option<&SessionListCursor>,
+    ) -> Vec<SessionCatalogRow> {
+        self.inner.list_rows_page(limit, query, cursor)
+    }
+
+    fn row_count(&self) -> usize {
+        self.inner.row_count()
+    }
+
+    fn find_session_ids_by_prefix(&self, prefix: &str, max: usize) -> Vec<String> {
+        self.inner.find_session_ids_by_prefix(prefix, max)
+    }
+
+    fn find_session_ids_by_display_name_lower(&self, lower: &str, max: usize) -> Vec<String> {
+        self.inner
+            .find_session_ids_by_display_name_lower(lower, max)
+    }
 }
 
 struct FileSessionCatalogStore;

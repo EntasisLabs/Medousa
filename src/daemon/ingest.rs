@@ -1736,7 +1736,9 @@ async fn start_ingest_ask_stream(
             .and_then(|surface| surface.channel_surface.clone()),
     };
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(120)).await;
+        // Brief guard so the client's SSE subscribe wins the race against the first
+        // (cosmetic) status event; answer tokens arrive far later regardless.
+        tokio::time::sleep(Duration::from_millis(25)).await;
 
         publish_interactive_turn_event(
             &stream_tx,

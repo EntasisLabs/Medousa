@@ -106,6 +106,19 @@ async fn main() -> Result<()> {
     if let Some(path) = medousa::load_dotenv_overlay() {
         eprintln!("medousa-daemon: loaded env overlay from {}", path.display());
     }
+    // Default local SurrealKV to grouped fsync (~200ms) instead of fsync-per-commit so
+    // chat-turn writes don't stall on disk. Gated strictly to the surrealkv backend:
+    // SurrealDB's in-memory engine errors if `sync` is set without a persist path.
+    // An explicit value from the environment or `.env` overlay (incl. `every`) wins.
+    {
+        let lowered = backend_name.to_ascii_lowercase();
+        let is_surrealkv = lowered == "surreal-kv" || lowered.starts_with("surreal-kv:");
+        if is_surrealkv && std::env::var_os("SURREAL_DATASTORE_SYNC_DATA").is_none() {
+            // SAFETY: set before any DB connect (and before extra threads read it).
+            unsafe { std::env::set_var("SURREAL_DATASTORE_SYNC_DATA", "200ms") };
+            eprintln!("medousa-daemon: SurrealKV sync mode defaulted to 200ms (grouped fsync)");
+        }
+    }
     apply_daemon_env(&load_product_config());
     medousa::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     medousa::apply_workshop_llm_env();

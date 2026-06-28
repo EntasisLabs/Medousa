@@ -114,6 +114,20 @@ impl InteractiveTurnStreamSink {
             .and_then(|mut slot| slot.take())
     }
 
+    /// Persist a finalized transcript turn off the hot path.
+    ///
+    /// Terminal sink methods publish the SSE event first and then call this so the
+    /// client never waits on the (potentially fsync-bound) SurrealKV write. Spawning
+    /// onto a runtime worker thread keeps the `block_in_place` inside the sync session
+    /// store valid; with grouped fsync these commits coalesce in the background.
+    fn spawn_persist_turn(&self, turn: crate::session::ConversationTurn) {
+        let session_id = self.session_id.clone();
+        let scratch = self.take_pending_scratch();
+        tokio::spawn(async move {
+            append_turn_with_scratch(&session_id, &turn, scratch.as_ref());
+        });
+    }
+
     /// Prefer streamed tokens for persist + terminal commit when the client already saw them.
     fn canonical_terminal_body(&self, fallback: &str) -> (String, bool) {
         let streamed = self.streamed_markdown();
@@ -244,11 +258,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .lock()
             .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
-        append_turn_with_scratch(
-            &self.session_id,
-            &assistant_turn,
-            self.take_pending_scratch().as_ref(),
-        );
 
         self.publish_tracked(
             interactive_turn_runtime::worker_ack_stream_event_with_tools(
@@ -259,6 +268,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             ),
         )
         .await;
+        self.spawn_persist_turn(assistant_turn);
         self.sync_ask_job_interim(text).await;
     }
 
@@ -286,11 +296,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     }],
                 )
             });
-        append_turn_with_scratch(
-            &self.session_id,
-            &assistant_turn,
-            self.take_pending_scratch().as_ref(),
-        );
 
         let final_event = if stream_authoritative {
             interactive_turn_runtime::final_stream_event_terminal_commit(
@@ -303,6 +308,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names)
         };
         self.publish_tracked(final_event).await;
+        self.spawn_persist_turn(assistant_turn);
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -338,11 +344,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     }],
                 )
             });
-        append_turn_with_scratch(
-            &self.session_id,
-            &assistant_turn,
-            self.take_pending_scratch().as_ref(),
-        );
 
         let checkpoint_event = if stream_authoritative {
             interactive_turn_runtime::turn_checkpoint_stream_event(
@@ -358,6 +359,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             )
         };
         self.publish_tracked(checkpoint_event).await;
+        self.spawn_persist_turn(assistant_turn);
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -393,11 +395,6 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     }],
                 )
             });
-        append_turn_with_scratch(
-            &self.session_id,
-            &assistant_turn,
-            self.take_pending_scratch().as_ref(),
-        );
 
         let needs_input_event = if stream_authoritative {
             interactive_turn_runtime::needs_input_stream_event_with_tools(
@@ -413,6 +410,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             )
         };
         self.publish_tracked(needs_input_event).await;
+        self.spawn_persist_turn(assistant_turn);
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -914,8 +912,14 @@ async fn run_agent_turn_inner(
     let mut conversation = load_history(&session_id);
     if request.persist_user_turn {
         let user_turn = user_conversation_turn_with_media(prompt.clone(), &request.media_refs);
-        append_turn(&session_id, &user_turn);
-        conversation.push(user_turn);
+        // The in-memory transcript already carries this turn for the rest of the run;
+        // persist off the hot path so the user message write (and its catalog cascade)
+        // doesn't block prompt prep / first token on a SurrealKV fsync.
+        conversation.push(user_turn.clone());
+        let persist_session_id = session_id.clone();
+        tokio::spawn(async move {
+            append_turn(&persist_session_id, &user_turn);
+        });
     }
 
     let manuscript_id = request

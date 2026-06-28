@@ -194,7 +194,9 @@ pub async fn spawn_turn_ticket(
 
     let turn_id_for_task = turn_id.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(120)).await;
+        // Brief guard so the client's SSE subscribe wins the race against the first
+        // (cosmetic) status event; answer tokens arrive far later regardless.
+        tokio::time::sleep(Duration::from_millis(25)).await;
         crate::agent_runtime::run_daemon_interactive_turn(
             &turn_id_for_task,
             interactive_request,

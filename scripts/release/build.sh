@@ -148,12 +148,13 @@ WA_RELEASE="$(medousa_whatsapp_cargo_release_dir "${TARGET}")"
 
 medousa_log "phase 1/2: staging release binaries → ${BIN_DIR}"
 for bin in "${MEDOUSA_BINARIES[@]}"; do
-  src=""
-  if [[ "${bin}" == "medousa_whatsapp" ]]; then
-    src="$(medousa_find_release_binary "${bin}" "${TARGET}" || true)"
-  else
-    src="$(medousa_find_release_binary "${bin}" "${TARGET}" || true)"
+  # medousa_local (offline brain, mistralrs) is NOT part of the phase-1 cargo build;
+  # it is built and staged separately in phase 2 below. Skip it here so a clean
+  # target dir doesn't trip "expected binary missing: medousa_local".
+  if [[ "${bin}" == "medousa_local" ]]; then
+    continue
   fi
+  src="$(medousa_find_release_binary "${bin}" "${TARGET}" || true)"
   if [[ -z "${src}" || ! -f "${src}" ]]; then
     echo "error: expected binary missing: ${bin} (searched under ${MAIN_RELEASE} and ${WA_RELEASE})" >&2
     exit 1
