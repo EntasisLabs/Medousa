@@ -1,15 +1,16 @@
-//! Bridges Tauri workshop routing (LAN / Iroh) to `medousa-sdk`.
+//! Bridges Tauri workshop routing (LAN / Iroh) to `medousa-sdk` via `medousa-sdk-iroh`.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use medousa_sdk::{MedousaClient, SdkError, Transport};
+use medousa_sdk_iroh::{WorkshopTransport, WorkshopTransportConfig};
 use tauri::State;
 
 use crate::daemon::DaemonState;
 use crate::pairing_client::WorkshopTransportConfig;
-use crate::workshop_transport;
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use crate::daemon::iroh_hook::TauriIrohHook;
 
 pub fn sdk_error(err: SdkError) -> String {
     err.to_string()
@@ -17,142 +18,25 @@ pub fn sdk_error(err: SdkError) -> String {
 
 pub fn transport_config(state: &State<DaemonState>) -> WorkshopTransportConfig {
     let base = state.daemon_url.lock().expect("daemon url lock").clone();
-    workshop_transport::config_from_lan_base(&base)
+    crate::workshop_transport::config_from_lan_base(&base)
 }
 
-#[derive(Clone)]
-struct TauriWorkshopTransport {
-    config: WorkshopTransportConfig,
-}
-
-impl TauriWorkshopTransport {
-    fn new(config: WorkshopTransportConfig) -> Self {
-        Self { config }
+fn build_sdk_transport(config: &WorkshopTransportConfig) -> Arc<dyn Transport> {
+    let sdk_config = WorkshopTransportConfig::from_workshop_parts(
+        config.lan_base.clone(),
+        config.session_token.clone(),
+        config.iroh_ticket.clone(),
+    );
+    let mut transport = WorkshopTransport::new(sdk_config);
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if let Some(ticket) = config.iroh_ticket.as_deref() {
+        transport = transport.with_iroh_hook(Arc::new(TauriIrohHook::new(ticket)));
     }
-}
-
-impl Transport for TauriWorkshopTransport {
-    fn get_json<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let config = self.config.clone();
-        let path = path.to_string();
-        Box::pin(async move {
-            workshop_transport::workshop_get_json::<serde_json::Value>(&config, &path)
-                .await
-                .map_err(SdkError::Http)
-        })
-    }
-
-    fn post_json<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-        body: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let config = self.config.clone();
-        let path = path.to_string();
-        Box::pin(async move {
-            workshop_transport::workshop_post_json::<serde_json::Value, _>(&config, &path, &body)
-                .await
-                .map_err(SdkError::Http)
-        })
-    }
-
-    fn delete_json<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let config = self.config.clone();
-        let path = path.to_string();
-        Box::pin(async move {
-            workshop_transport::workshop_delete_json::<serde_json::Value>(&config, &path)
-                .await
-                .map_err(SdkError::Http)
-        })
-    }
-
-    fn put_json<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-        body: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let config = self.config.clone();
-        let path = path.to_string();
-        Box::pin(async move {
-            workshop_transport::workshop_put_json::<serde_json::Value, _>(&config, &path, &body)
-                .await
-                .map_err(SdkError::Http)
-        })
-    }
-
-    fn patch_json<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-        body: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let config = self.config.clone();
-        let path = path.to_string();
-        Box::pin(async move {
-            workshop_transport::workshop_patch_json::<serde_json::Value, _>(&config, &path, &body)
-                .await
-                .map_err(SdkError::Http)
-        })
-    }
-
-    fn post_empty_json<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let config = self.config.clone();
-        let path = path.to_string();
-        Box::pin(async move {
-            workshop_transport::workshop_post_empty_json::<serde_json::Value>(&config, &path)
-                .await
-                .map_err(SdkError::Http)
-        })
-    }
-
-    fn put_text<'a>(
-        &'a self,
-        _base_url: &'a str,
-        path: &'a str,
-        _body: String,
-        _extra_headers: Vec<(&'static str, String)>,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, SdkError>> + Send + 'a>> {
-        let _path = path.to_string();
-        Box::pin(async move {
-            Err(SdkError::Transport(
-                "put_text via Tauri bridge is not implemented".to_string(),
-            ))
-        })
-    }
-
-    fn stream_sse<'a>(
-        &'a self,
-        _base_url: &'a str,
-        _path: String,
-    ) -> Pin<
-        Box<
-            dyn futures_util::Stream<Item = Result<bytes::Bytes, SdkError>> + Send + 'a,
-        >,
-    > {
-        Box::pin(futures_util::stream::once(async {
-            Err(SdkError::Transport(
-                "SSE via Tauri bridge".to_string(),
-            ))
-        }))
-    }
+    Arc::new(transport)
 }
 
 pub fn client(state: &State<DaemonState>) -> MedousaClient {
     let base_url = state.daemon_url.lock().expect("daemon url lock").clone();
     let config = transport_config(state);
-    MedousaClient::with_transport(Arc::new(TauriWorkshopTransport::new(config)), base_url)
+    MedousaClient::with_transport(build_sdk_transport(&config), base_url)
 }

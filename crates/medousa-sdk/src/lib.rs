@@ -16,6 +16,10 @@ mod http;
 #[cfg(feature = "async")]
 mod interactive;
 #[cfg(feature = "async")]
+pub mod reconnect;
+#[cfg(all(feature = "async", feature = "sse"))]
+pub mod reconnecting_stream;
+#[cfg(feature = "async")]
 mod jobs;
 #[cfg(feature = "async")]
 mod mcp_gateway;
@@ -39,6 +43,14 @@ pub mod blocking;
 pub use client::MedousaClient;
 pub use error::SdkError;
 pub use transport::{HttpTransport, Transport, path_with_query};
+
+#[cfg(feature = "async")]
+pub use reconnect::{
+    BackoffPolicy, CircuitBreaker, CircuitBreakerConfig, CircuitState, OverlapGuard,
+    OverlapPermit, ReconnectPolicy, stream_path_with_since,
+};
+#[cfg(all(feature = "async", feature = "sse"))]
+pub use reconnecting_stream::{apply_stream_seq, ReconnectingInteractiveStream};
 
 #[cfg(feature = "blocking")]
 pub use blocking::BlockingMedousaClient;
