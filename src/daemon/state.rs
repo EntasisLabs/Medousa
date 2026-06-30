@@ -13,6 +13,7 @@ use crate::daemon::heartbeat::{
     HeartbeatDeliveryMetrics, HeartbeatDeliveryPolicy, HeartbeatNotifyConfig, TickReport,
 };
 use crate::engine_context::HeartbeatLanePolicy;
+use crate::daemon::turn_stream_registry::TurnStreamRegistry;
 use crate::session_mapping;
 use crate::turn_ticket::TurnTicketRegistry;
 use crate::user_profiles::UserProfileRegistry;
@@ -38,8 +39,7 @@ impl AgentTurnJobRecord {
 pub struct AppState {
     pub platform: Arc<MedousaPlatformRuntime>,
     pub daemon_base_url: String,
-    pub interactive_turn_streams:
-        Arc<RwLock<HashMap<String, Arc<crate::daemon::turn_event_channel::TurnEventChannel>>>>,
+    pub interactive_turn_streams: TurnStreamRegistry,
     pub active_ingest_jobs: Arc<RwLock<HashMap<String, session_mapping::ActiveIngestJob>>>,
     pub channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
     pub job_delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,

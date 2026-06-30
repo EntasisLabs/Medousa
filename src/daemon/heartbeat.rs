@@ -84,6 +84,8 @@ pub struct HeartbeatDeliveryMetrics {
     pub dispatched_notifications: u64,
     pub suppressed_quiet_hours: u64,
     pub suppressed_min_interval: u64,
+    pub suppressed_static_dead_letter: u64,
+    pub last_dead_letter_jobs: usize,
     pub last_notify_decision_at_utc: Option<DateTime<Utc>>,
     pub last_dispatched_at_utc: Option<DateTime<Utc>>,
 }
@@ -94,6 +96,7 @@ pub enum HeartbeatDispatchDecision {
     Dispatch,
     SuppressedQuietHours,
     SuppressedMinInterval,
+    SuppressedStaticDeadLetter,
 }
 
 #[derive(Debug, Serialize)]
@@ -156,10 +159,12 @@ pub async fn run_scheduler_loop(
     side_effects: Arc<dyn SchedulerTickSideEffects>,
 ) {
     loop {
+        let prior_dead_letter = ctx.heartbeat_metrics.read().await.last_dead_letter_jobs;
         match tick_runtime(
             ctx.platform.composition(),
             &worker_id,
             ctx.heartbeat_policy,
+            Some(prior_dead_letter),
         )
         .await
         {
@@ -167,12 +172,31 @@ pub async fn run_scheduler_loop(
                 let now_utc = Utc::now();
                 *ctx.last_tick_at.write().await = Some(now_utc);
                 *ctx.last_heartbeat_report.write().await = Some(report.clone());
+
+                if let Ok(cap_report) =
+                    crate::observability::enforce_dead_letter_cap(ctx.platform.composition()).await
+                {
+                    if cap_report.pruned > 0 {
+                        tracing::warn!(
+                            dead_letter_before = cap_report.before,
+                            dead_letter_after = cap_report.after,
+                            pruned = cap_report.pruned,
+                            cap = cap_report.cap,
+                            "dead-letter cap enforced"
+                        );
+                    }
+                }
+
                 if report.materialized > 0
                     || report.processed_job.is_some()
                     || report.published > 0
                     || report.heartbeat_action == HeartbeatAction::Notify
                 {
-                    eprintln!("{}", format_tick_report("medousa-daemon tick", &report));
+                    tracing::info!("{}", format_tick_report("medousa-daemon tick", &report));
+                } else if report.heartbeat_reason.starts_with("dead_letter_static") {
+                    crate::observability::rate_limited_debug("heartbeat.dead_letter_static", || {
+                        format_tick_report("medousa-daemon tick", &report)
+                    });
                 }
 
                 if let Some(ref job_id) = report.processed_job {
@@ -181,6 +205,10 @@ pub async fn run_scheduler_loop(
 
                 let dispatch_decision = {
                     let mut metrics = ctx.heartbeat_metrics.write().await;
+                    if report.heartbeat_reason.starts_with("dead_letter_static") {
+                        metrics.suppressed_static_dead_letter =
+                            metrics.suppressed_static_dead_letter.saturating_add(1);
+                    }
                     decide_heartbeat_dispatch(
                         &report,
                         now_utc,
@@ -215,18 +243,25 @@ pub async fn run_scheduler_loop(
                     )
                     .await;
                 } else if report.heartbeat_action == HeartbeatAction::Notify {
-                    eprintln!(
-                        "medousa-daemon heartbeat notify suppressed decision={} significance={:.2} reason={}",
-                        heartbeat_dispatch_decision_label(dispatch_decision),
-                        report.heartbeat_significance,
-                        report.heartbeat_reason,
+                    crate::observability::rate_limited_debug(
+                        "heartbeat.notify_suppressed",
+                        || {
+                            format!(
+                                "medousa-daemon heartbeat notify suppressed decision={} significance={:.2} reason={}",
+                                heartbeat_dispatch_decision_label(dispatch_decision),
+                                report.heartbeat_significance,
+                                report.heartbeat_reason,
+                            )
+                        },
                     );
                 }
 
                 side_effects.run_retention_if_due(now_utc).await;
             }
             Err(err) => {
-                eprintln!("medousa-daemon scheduler tick error: {err}");
+                crate::observability::rate_limited_error("scheduler.tick_error", || {
+                    format!("medousa-daemon scheduler tick error: {err}")
+                });
             }
         }
 
@@ -245,6 +280,7 @@ pub async fn tick_runtime(
     runtime: &RuntimeComposition,
     worker_id: &str,
     heartbeat_policy: HeartbeatLanePolicy,
+    prior_dead_letter_jobs: Option<usize>,
 ) -> Result<TickReport> {
     let sdk = RuntimeSdk::new(runtime.clone());
     let lane = EngineExecutionLane::Scheduled;
@@ -266,6 +302,7 @@ pub async fn tick_runtime(
             pending_outbox_events: snapshot.pending_outbox_events,
         },
         heartbeat_policy,
+        prior_dead_letter_jobs,
     );
 
     Ok(TickReport {
@@ -345,6 +382,7 @@ async fn compute_heartbeat_snapshot_report(
             pending_outbox_events: snapshot.pending_outbox_events,
         },
         heartbeat_policy,
+        None,
     );
 
     Ok(TickReport {
@@ -407,11 +445,13 @@ pub fn decide_heartbeat_dispatch(
     metrics.tick_evaluations = metrics.tick_evaluations.saturating_add(1);
 
     if report.heartbeat_action != HeartbeatAction::Notify {
+        metrics.last_dead_letter_jobs = report.dead_letter_jobs;
         return HeartbeatDispatchDecision::NotRequired;
     }
 
     metrics.notify_decisions = metrics.notify_decisions.saturating_add(1);
     metrics.last_notify_decision_at_utc = Some(now_utc);
+    metrics.last_dead_letter_jobs = report.dead_letter_jobs;
 
     if let Some(window) = delivery_policy.quiet_hours {
         if window.contains_utc_hour(now_utc.hour() as u8) {
@@ -443,6 +483,7 @@ pub fn heartbeat_dispatch_decision_label(decision: HeartbeatDispatchDecision) ->
         HeartbeatDispatchDecision::Dispatch => "dispatch",
         HeartbeatDispatchDecision::SuppressedQuietHours => "suppressed_quiet_hours",
         HeartbeatDispatchDecision::SuppressedMinInterval => "suppressed_min_interval",
+        HeartbeatDispatchDecision::SuppressedStaticDeadLetter => "suppressed_static_dead_letter",
     }
 }
 
@@ -699,7 +740,7 @@ pub async fn dispatch_heartbeat_notifications(
         report.lane,
         LaneSafetyActionClass::HeartbeatNotificationDispatch,
     ) {
-        eprintln!("medousa-daemon heartbeat dispatch blocked: {reason}");
+        tracing::warn!(reason = %reason, "heartbeat dispatch blocked");
         return;
     }
 
@@ -722,16 +763,17 @@ pub async fn dispatch_heartbeat_notifications(
 
     if let Some(path) = notify.jsonl_path.as_deref() {
         if let Err(err) = append_heartbeat_jsonl(path, &notification).await {
-            eprintln!(
-                "medousa-daemon heartbeat sink jsonl error path={} err={err}",
-                path.display()
+            tracing::warn!(
+                path = %path.display(),
+                error = %err,
+                "heartbeat jsonl sink error"
             );
         }
     }
 
     if let (Some(url), Some(client)) = (notify.webhook_url.as_deref(), webhook_client) {
         if let Err(err) = post_heartbeat_webhook(client, url, &notification).await {
-            eprintln!("medousa-daemon heartbeat sink webhook error url={url} err={err}");
+            tracing::warn!(url = %url, error = %err, "heartbeat webhook sink error");
         }
     }
 
@@ -746,6 +788,8 @@ pub async fn dispatch_heartbeat_notifications(
 }
 
 async fn append_heartbeat_jsonl(path: &Path, notification: &HeartbeatNotification) -> Result<()> {
+    let _ = crate::observability::rotate_if_oversized(path, crate::observability::RotateConfig::from_env());
+
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await.with_context(|| {
             format!(

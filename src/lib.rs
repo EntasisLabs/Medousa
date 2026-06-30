@@ -1,6 +1,10 @@
+pub mod engine_adapters;
+pub mod engine_recovery;
+pub mod sse_turn_projection;
 pub mod adapter_ingest;
 pub mod agent_runtime;
 pub mod channel_delivery;
+pub mod comms;
 pub mod recurring_delivery;
 pub mod recurring_agent_turn;
 pub mod recurring_handlers;
@@ -45,6 +49,7 @@ pub mod mcp_gateway;
 pub mod openshell_handoff;
 pub mod openshell_sandbox_run;
 pub mod openshell_tools;
+pub mod observability;
 pub mod ui_present_tools;
 pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
@@ -219,6 +224,13 @@ pub use adapter_ingest::{
 pub use agent_runtime::{
     AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime,
     build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
+};
+pub use medousa_engine::{
+    self, AgentStreamSink, ChannelToolSink, EngineTurnHandle, Principal, PrincipalKind,
+    RecoveredTurn, SequencedTurnEvent, SharedAgentStreamSink, StoreError, ToolSinkEvent,
+    ToolSinkPort, TurnEnvelope, TurnEvent, TurnEventLog, TurnLifecyclePorts, TurnRunOutcome,
+    TurnStorePort, TurnStreamRegistryPort, TurnSurface, TurnTicketPort, UpsertOutcome,
+    configure_log_root, default_log_root, project_turn_to_history, recover_uncommitted, run_turn,
 };
 pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
 pub use mcp_gateway::{
@@ -599,10 +611,10 @@ pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
         let lock_path = PathBuf::from(path).join("LOCK");
         if lock_path.exists() {
             if let Err(err) = std::fs::remove_file(&lock_path) {
-                eprintln!(
-                    "warning: failed to remove SurrealKV lock file during shutdown {}: {}",
-                    lock_path.display(),
-                    err
+                tracing::warn!(
+                    path = %lock_path.display(),
+                    error = %err,
+                    "failed to remove SurrealKV lock file during shutdown"
                 );
             }
         }

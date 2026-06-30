@@ -8,6 +8,7 @@ members = [
     ".",
     "crates/medousa-types",
     "crates/medousa-types-schema",
+    "crates/medousa-engine",
     "crates/medousa-sdk",
     "crates/medousa-sdk-iroh",
     "crates/medousa-local-engine",
@@ -55,6 +56,7 @@ path = "src/bin/medousa_mcp_gateway.rs"
 
 [dependencies]
 medousa-types = { path = "crates/medousa-types" }
+medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
@@ -110,9 +112,22 @@ pdf-extract = "0.7"
 iroh = { version = "1.0", optional = true }
 iroh-tickets = { version = "1.0", optional = true }
 httparse = { version = "1", optional = true }
+tower = { version = "0.5", features = ["util", "limit"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-opentelemetry = { version = "0.28", optional = true }
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic"], optional = true }
 
 [features]
 default = []
+otel-export = [
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+]
 embedded-inference = ["dep:medousa-local-engine"]
 embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal"]
 embedded-inference-cuda = ["embedded-inference", "medousa-local-engine/cuda"]
@@ -121,7 +136,6 @@ iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse"]
 [dev-dependencies]
 surrealdb-types = { version = "3" }
 surrealdb = { version = "3", default-features = false, features = ["kv-mem"] }
-tower = { version = "0.5", features = ["util"] }
 
 [patch.crates-io]
 grapheme-runtime = { path = "vendor/grapheme-runtime" }

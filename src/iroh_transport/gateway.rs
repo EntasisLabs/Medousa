@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
@@ -7,11 +8,23 @@ use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
 use iroh::{Endpoint, SecretKey, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
+use tokio::sync::Semaphore;
 
 use super::ALPN;
 
 const MAX_REQUEST_BYTES: usize = 256 * 1024;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+/// Upper bound on concurrently-proxied bi-streams per gateway. The accept loop
+/// blocks on a permit before spawning, so a misbehaving/looping client can no
+/// longer spawn unbounded proxy tasks (and exhaust upstream sockets/FDs).
+const MAX_CONCURRENT_PROXY_STREAMS: usize = 256;
+/// Connect timeout for the shared upstream client.
+const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Total timeout for a buffered (non-SSE) upstream request.
+const UPSTREAM_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// Idle timeout between SSE chunks. A stalled upstream stream is dropped instead
+/// of pinning the proxy task and its sockets forever.
+const SSE_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// Snapshot of a live workshop Iroh endpoint for QR v2 and `/pair/iroh-ticket`.
 #[derive(Debug, Clone)]
@@ -39,6 +52,11 @@ impl WorkshopGateway {
 #[derive(Debug, Clone)]
 struct HttpProxy {
     upstream: Arc<String>,
+    /// Shared pooled client — built once, reused for every proxied request so we
+    /// no longer construct (and leak) a `reqwest::Client` per request.
+    client: Arc<reqwest::Client>,
+    /// Bounds the number of concurrently-spawned proxy tasks.
+    accept_limit: Arc<Semaphore>,
 }
 
 impl ProtocolHandler for HttpProxy {
@@ -48,14 +66,37 @@ impl ProtocolHandler for HttpProxy {
                 .accept_bi()
                 .await
                 .map_err(AcceptError::from_err)?;
+            // Bounded accept: acquire a permit before spawning. When the gateway
+            // is saturated this awaits (backpressure) instead of spawning an
+            // unbounded number of proxy tasks.
+            let permit = match Arc::clone(&self.accept_limit).acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => break, // semaphore closed -> gateway shutting down
+            };
             let upstream = Arc::clone(&self.upstream);
+            let client = Arc::clone(&self.client);
             tokio::spawn(async move {
-                if let Err(err) = proxy_stream(&upstream, &mut send, &mut recv).await {
-                    eprintln!("medousa-iroh: proxy stream failed: {err:#}");
+                let _permit = permit; // released when the task ends
+                let _span = tracing::info_span!("gateway.proxy_stream", upstream = %upstream).entered();
+                if let Err(err) = proxy_stream(&client, &upstream, &mut send, &mut recv).await {
+                    crate::observability::rate_limited_warn("gateway.proxy_stream", || {
+                        format!("medousa-iroh: proxy stream failed: {err:#}")
+                    });
                 }
             });
         }
+        Ok(())
     }
+}
+
+/// Build the shared pooled upstream client used by every proxied request.
+fn build_upstream_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(UPSTREAM_CONNECT_TIMEOUT)
+        .pool_max_idle_per_host(8)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .build()
+        .context("build upstream HTTP client")
 }
 
 /// Bind an ephemeral Iroh endpoint + HTTP proxy router.
@@ -83,6 +124,8 @@ pub async fn spawn_workshop_gateway_with_secret(
     };
     let proxy = HttpProxy {
         upstream: Arc::new(upstream),
+        client: Arc::new(build_upstream_client()?),
+        accept_limit: Arc::new(Semaphore::new(MAX_CONCURRENT_PROXY_STREAMS)),
     };
     let router = Router::builder(endpoint)
         .accept(ALPN, proxy)
@@ -99,12 +142,13 @@ pub fn workshop_ticket_from_router(router: &Router) -> Result<IrohWorkshopInfo> 
 }
 
 async fn proxy_stream(
+    client: &reqwest::Client,
     upstream: &str,
     send: &mut iroh::endpoint::SendStream,
     recv: &mut iroh::endpoint::RecvStream,
 ) -> Result<()> {
     let raw = read_http_request(recv).await?;
-    forward_request_stream(upstream, &raw, send).await
+    forward_request_stream(client, upstream, &raw, send).await
 }
 
 async fn read_http_request(recv: &mut iroh::endpoint::RecvStream) -> Result<Vec<u8>> {
@@ -158,6 +202,7 @@ fn request_complete(raw: &[u8]) -> Result<bool> {
 }
 
 async fn forward_request_stream(
+    client: &reqwest::Client,
     upstream: &str,
     raw: &[u8],
     send: &mut iroh::endpoint::SendStream,
@@ -182,10 +227,6 @@ async fn forward_request_stream(
     };
 
     let url = format!("{upstream}{path}");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
-        .build()
-        .context("build upstream HTTP client")?;
     let mut builder = client.request(method.parse().context("invalid method")?, &url);
     for (name, value) in &headers {
         if name.eq_ignore_ascii_case("host")
@@ -200,7 +241,10 @@ async fn forward_request_stream(
         builder = builder.body(body.to_vec());
     }
 
-    let response = builder.send().await.context("upstream HTTP request")?;
+    let response = tokio::time::timeout(UPSTREAM_REQUEST_TIMEOUT, builder.send())
+        .await
+        .context("upstream HTTP request timed out")?
+        .context("upstream HTTP request")?;
     let status = response.status();
     let response_headers = response.headers().clone();
     let is_event_stream = response_headers
@@ -228,14 +272,22 @@ async fn forward_request_stream(
             .await
             .context("write HTTP response headers")?;
         let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
+        loop {
+            // Idle timeout: a stalled upstream SSE stream is dropped instead of
+            // pinning this proxy task (and its sockets) indefinitely.
+            let next = tokio::time::timeout(SSE_IDLE_TIMEOUT, stream.next())
+                .await
+                .context("SSE idle timeout")?;
+            let Some(chunk) = next else {
+                break;
+            };
             let chunk = chunk.context("read upstream SSE chunk")?;
             send.write_all(&chunk).await.context("write SSE chunk")?;
         }
     } else {
-        let response_body = response
-            .bytes()
+        let response_body = tokio::time::timeout(UPSTREAM_REQUEST_TIMEOUT, response.bytes())
             .await
+            .context("read upstream response body timed out")?
             .context("read upstream response body")?;
         if response_body.len() > MAX_RESPONSE_BYTES {
             bail!("upstream response exceeds {MAX_RESPONSE_BYTES} bytes");

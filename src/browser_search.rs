@@ -8,7 +8,8 @@ use tokio::sync::RwLock;
 
 use medousa_browser_lite::{search_ddg_html_cached_async, SearchResponse};
 
-use crate::agent_runtime::active_stream_sink::active_stream_sink;
+use medousa_engine::{ToolSinkEvent, ToolSinkPort};
+
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::browser_host_client::{browser_host_healthy, browser_host_search};
 use crate::browser_sessions::{
@@ -22,6 +23,81 @@ use crate::turn_continuation::TurnContinuationScope;
 const CLIENT_WAIT_SECS: u64 = 120;
 const CLIENT_POLL_MS: u64 = 500;
 const CHALLENGE_WAIT_SECS: u64 = 180;
+
+enum BrowserToolDelivery {
+    Stream(SharedAgentStreamSink),
+    Port(std::sync::Arc<dyn ToolSinkPort + Send + Sync>),
+}
+
+async fn resolve_browser_tool_delivery(
+    sink: &Option<SharedAgentStreamSink>,
+) -> Option<BrowserToolDelivery> {
+    if let Some(sink) = sink.clone() {
+        return Some(BrowserToolDelivery::Stream(sink));
+    }
+    crate::engine_adapters::active_tool_sink()
+        .await
+        .map(BrowserToolDelivery::Port)
+}
+
+async fn emit_browser_navigated(
+    delivery: Option<&BrowserToolDelivery>,
+    turn_correlation_id: &str,
+    url: String,
+    title: Option<String>,
+    opened_by_agent: bool,
+) {
+    let Some(delivery) = delivery else {
+        return;
+    };
+    match delivery {
+        BrowserToolDelivery::Stream(sink) => {
+            sink.browser_navigated(turn_correlation_id, url, title, opened_by_agent)
+                .await;
+        }
+        BrowserToolDelivery::Port(port) => {
+            port.emit(ToolSinkEvent::BrowserNavigated {
+                turn_correlation_id: turn_correlation_id.to_string(),
+                url,
+                title,
+                opened_by_agent,
+            })
+            .await;
+        }
+    }
+}
+
+async fn emit_browser_challenge(
+    delivery: Option<&BrowserToolDelivery>,
+    turn_correlation_id: &str,
+    session_id: String,
+    challenge_url: String,
+    reason: String,
+) {
+    let Some(delivery) = delivery else {
+        return;
+    };
+    match delivery {
+        BrowserToolDelivery::Stream(sink) => {
+            sink.browser_challenge_required(
+                turn_correlation_id,
+                session_id,
+                challenge_url,
+                reason,
+            )
+            .await;
+        }
+        BrowserToolDelivery::Port(port) => {
+            port.emit(ToolSinkEvent::BrowserChallenge {
+                turn_correlation_id: turn_correlation_id.to_string(),
+                session_id,
+                challenge_url,
+                reason,
+            })
+            .await;
+        }
+    }
+}
 
 pub fn is_discovery_binding(reference: &str) -> bool {
     matches!(reference, "web.providers" | "web.capabilities")
@@ -96,7 +172,7 @@ pub async fn run_browser_backed_search(
     chat_session_id: &str,
     sink: Option<SharedAgentStreamSink>,
 ) -> Result<SearchResponse, String> {
-    let sink = sink.or(active_stream_sink().await);
+    let delivery = resolve_browser_tool_delivery(&sink).await;
     let (enabled, channel) = resolve_browser_host_enabled(turn_scope).await;
     if !enabled {
         return search_ddg_html_cached_async(query, max_results).await;
@@ -125,23 +201,22 @@ pub async fn run_browser_backed_search(
             turn_correlation_id,
             chat_session_id,
             &response,
-            sink,
+            delivery.as_ref(),
         )
         .await;
     }
-    if let Some(sink) = sink.as_ref() {
-        let search_url = format!(
-            "https://html.duckduckgo.com/html/?q={}",
-            urlencoding(query)
-        );
-        sink.browser_navigated(
-            turn_correlation_id,
-            search_url,
-            Some(format!("Search: {query}")),
-            true,
-        )
-        .await;
-    }
+    let search_url = format!(
+        "https://html.duckduckgo.com/html/?q={}",
+        urlencoding(query)
+    );
+    emit_browser_navigated(
+        delivery.as_ref(),
+        turn_correlation_id,
+        search_url,
+        Some(format!("Search: {query}")),
+        true,
+    )
+    .await;
     Ok(response)
 }
 
@@ -151,7 +226,7 @@ async fn wait_for_challenge_resolution(
     turn_correlation_id: &str,
     chat_session_id: &str,
     initial: &SearchResponse,
-    sink: Option<SharedAgentStreamSink>,
+    delivery: Option<&BrowserToolDelivery>,
 ) -> Result<SearchResponse, String> {
     let challenge_url = format!(
         "https://html.duckduckgo.com/html/?q={}",
@@ -171,22 +246,22 @@ async fn wait_for_challenge_resolution(
     });
     let _ = mark_browser_challenge(&session.session_id, challenge_url.clone(), reason.clone());
 
-    if let Some(sink) = sink {
-        sink.browser_challenge_required(
-            turn_correlation_id,
-            session.session_id.clone(),
-            challenge_url.clone(),
-            reason.clone(),
-        )
-        .await;
-        sink.browser_navigated(
-            turn_correlation_id,
-            challenge_url.clone(),
-            Some(format!("Search: {query}")),
-            true,
-        )
-        .await;
-    }
+    emit_browser_challenge(
+        delivery,
+        turn_correlation_id,
+        session.session_id.clone(),
+        challenge_url.clone(),
+        reason.clone(),
+    )
+    .await;
+    emit_browser_navigated(
+        delivery,
+        turn_correlation_id,
+        challenge_url.clone(),
+        Some(format!("Search: {query}")),
+        true,
+    )
+    .await;
 
     let deadline = Duration::from_secs(CHALLENGE_WAIT_SECS);
     let started = std::time::Instant::now();
@@ -226,27 +301,29 @@ async fn run_client_executed_search(
         client_executed: true,
     });
 
+    let delivery = resolve_browser_tool_delivery(&sink).await;
+
     let navigate_url = format!(
         "https://html.duckduckgo.com/html/?q={}",
         urlencoding(query)
     );
 
-    if let Some(sink) = sink {
-        sink.browser_challenge_required(
-            turn_correlation_id,
-            session.session_id.clone(),
-            navigate_url.clone(),
-            "client_search".to_string(),
-        )
-        .await;
-        sink.browser_navigated(
-            turn_correlation_id,
-            navigate_url.clone(),
-            Some(format!("Search: {query}")),
-            true,
-        )
-        .await;
-    }
+    emit_browser_challenge(
+        delivery.as_ref(),
+        turn_correlation_id,
+        session.session_id.clone(),
+        navigate_url.clone(),
+        "client_search".to_string(),
+    )
+    .await;
+    emit_browser_navigated(
+        delivery.as_ref(),
+        turn_correlation_id,
+        navigate_url.clone(),
+        Some(format!("Search: {query}")),
+        true,
+    )
+    .await;
 
     let deadline = Duration::from_secs(CLIENT_WAIT_SECS);
     let started = std::time::Instant::now();
@@ -278,12 +355,16 @@ pub async fn handle_search_challenge(
     sink: Option<SharedAgentStreamSink>,
     turn_correlation_id: &str,
 ) -> Value {
-    let sink = sink.or(active_stream_sink().await);
+    let delivery = resolve_browser_tool_delivery(&sink).await;
     let _ = mark_browser_challenge(session_id, url.clone(), reason.clone());
-    if let Some(sink) = sink {
-        sink.browser_challenge_required(turn_correlation_id, session_id.to_string(), url, reason)
-            .await;
-    }
+    emit_browser_challenge(
+        delivery.as_ref(),
+        turn_correlation_id,
+        session_id.to_string(),
+        url,
+        reason,
+    )
+    .await;
     json!({
         "status": "challenge_required",
         "session_id": session_id,

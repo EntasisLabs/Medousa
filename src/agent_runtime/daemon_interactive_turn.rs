@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use crate::daemon::turn_event_channel::TurnEventChannel;
 use tokio::sync::RwLock;
+use tracing::Instrument;
 
 use crate::channel_delivery::{
     ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState,
@@ -76,6 +77,7 @@ struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
     stream_tx: Arc<TurnEventChannel>,
+    event_log: Arc<medousa_engine::TurnEventLog>,
     delivery: Option<InteractiveTurnDeliveryContext>,
     session_hooks: InteractiveTurnSessionHooks,
     parts: std::sync::Mutex<TurnPartsAccumulator>,
@@ -127,6 +129,26 @@ impl InteractiveTurnStreamSink {
         crate::session_writer::persist_turn(&self.session_id, turn, scratch);
     }
 
+    /// Commit a finalized terminal/handoff body **through the durable event-log
+    /// spine projection**: the body is first lifted into the typed
+    /// [`TurnEvent`](super::turn_event::TurnEvent) vocabulary and then folded back
+    /// into the persisted `ConversationTurn` via
+    /// [`project_turn_to_history`](super::turn_event_log::project_turn_to_history)
+    /// — the same fold SSE/history read off — so persistence is a projection of
+    /// the spine rather than an ad-hoc re-derivation. This is byte-identical to
+    /// the legacy direct persist (locked by the `fold_byte_matches_legacy_*`
+    /// tests); the `unwrap_or` keeps an exact fallback should the projection ever
+    /// decline a body.
+    fn persist_via_spine(
+        &self,
+        assistant_turn: crate::session::ConversationTurn,
+        event: super::turn_event::TurnEvent,
+    ) {
+        let projected =
+            super::turn_event_log::project_turn_to_history(&event).unwrap_or(assistant_turn);
+        self.spawn_persist_turn(projected);
+    }
+
     /// Prefer streamed tokens for persist + terminal commit when the client already saw them.
     fn canonical_terminal_body(&self, fallback: &str) -> (String, bool) {
         let streamed = self.streamed_markdown();
@@ -149,13 +171,11 @@ impl InteractiveTurnStreamSink {
             return false;
         }
 
-        publish(
-            &self.stream_tx,
-            interactive_turn_runtime::error_stream_event_from_failure(
-                &self.turn_id,
-                &crate::turn_failure::TurnFailure::cancelled(),
-            ),
-        );
+        self.publish_tracked(interactive_turn_runtime::error_stream_event_from_failure(
+            &self.turn_id,
+            &crate::turn_failure::TurnFailure::cancelled(),
+        ))
+        .await;
 
         if let Some(delivery) = &self.delivery {
             delivery
@@ -167,7 +187,15 @@ impl InteractiveTurnStreamSink {
     }
 
     async fn publish_tracked(&self, event: anyhow::Result<InteractiveTurnStreamEvent>) {
-        if let Ok(payload) = event {
+        self.publish_tracked_with_journal(event, None).await;
+    }
+
+    async fn publish_tracked_with_journal(
+        &self,
+        event: anyhow::Result<InteractiveTurnStreamEvent>,
+        journal_override: Option<super::turn_event::TurnEvent>,
+    ) {
+        if let Ok(mut payload) = event {
             if let Some(registry) = &self.session_hooks.turn_ticket_registry {
                 session_active_turn::note_stream_event(
                     registry,
@@ -178,6 +206,12 @@ impl InteractiveTurnStreamSink {
                 )
                 .await;
             }
+            let journal = crate::sse_turn_projection::journal_turn_event_for_stream(
+                &payload,
+                journal_override,
+            );
+            let sequenced = self.event_log.append(journal);
+            payload.seq = sequenced.seq();
             self.stream_tx.publish(payload);
         }
     }
@@ -258,16 +292,16 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
             .unwrap_or_else(|_| user_conversation_turn(text.clone()));
 
-        self.publish_tracked(
-            interactive_turn_runtime::worker_ack_stream_event_with_tools(
-                &self.turn_id,
-                &text,
-                tool_names,
-                work_id.as_deref(),
-            ),
-        )
-        .await;
-        self.spawn_persist_turn(assistant_turn);
+        let wire = interactive_turn_runtime::worker_ack_stream_event_with_tools(
+            &self.turn_id,
+            &text,
+            tool_names.clone(),
+            work_id.as_deref(),
+        );
+        let event = super::turn_event::TurnEvent::worker_ack_from_turn(&assistant_turn, work_id);
+        self.publish_tracked_with_journal(wire, Some(event.clone()))
+            .await;
+        self.persist_via_spine(assistant_turn, event);
         self.sync_ask_job_interim(text).await;
     }
 
@@ -302,9 +336,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         // the draft — so a turn that finished mid-reloop self-heals instead of going blank
         // until the user navigates away and back.
         let final_event =
-            interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names);
-        self.publish_tracked(final_event).await;
-        self.spawn_persist_turn(assistant_turn);
+            interactive_turn_runtime::final_stream_event_with_tools(&self.turn_id, &body, tool_names.clone());
+        let event = super::turn_event::TurnEvent::final_response_from_turn(&assistant_turn);
+        self.publish_tracked_with_journal(final_event, Some(event.clone()))
+            .await;
+        self.persist_via_spine(assistant_turn, event);
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -345,17 +381,19 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             interactive_turn_runtime::turn_checkpoint_stream_event(
                 &self.turn_id,
                 "",
-                tool_names,
+                tool_names.clone(),
             )
         } else {
             interactive_turn_runtime::turn_checkpoint_stream_event(
                 &self.turn_id,
                 &body,
-                tool_names,
+                tool_names.clone(),
             )
         };
-        self.publish_tracked(checkpoint_event).await;
-        self.spawn_persist_turn(assistant_turn);
+        let event = super::turn_event::TurnEvent::checkpoint_from_turn(&assistant_turn);
+        self.publish_tracked_with_journal(checkpoint_event, Some(event.clone()))
+            .await;
+        self.persist_via_spine(assistant_turn, event);
         self.sync_ask_job_succeeded(body).await;
 
         if let Some(delivery) = &self.delivery {
@@ -396,17 +434,19 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
             interactive_turn_runtime::needs_input_stream_event_with_tools(
                 &self.turn_id,
                 "",
-                tool_names,
+                tool_names.clone(),
             )
         } else {
             interactive_turn_runtime::needs_input_stream_event_with_tools(
                 &self.turn_id,
                 &body,
-                tool_names,
+                tool_names.clone(),
             )
         };
-        self.publish_tracked(needs_input_event).await;
-        self.spawn_persist_turn(assistant_turn);
+        let event = super::turn_event::TurnEvent::needs_input_from_turn(&assistant_turn);
+        self.publish_tracked_with_journal(needs_input_event, Some(event.clone()))
+            .await;
+        self.persist_via_spine(assistant_turn, event);
 
         if let Some(delivery) = &self.delivery {
             delivery.mark_complete(None).await;
@@ -448,9 +488,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         }
     }
 
-    async fn stage_persist_scratch(&self, scratch: TurnScratchpad) {
-        if let Ok(mut slot) = self.pending_slice_scratch.lock() {
-            *slot = Some(scratch);
+    async fn stage_persist_scratch(&self, scratch: serde_json::Value) {
+        if let Ok(scratch) = serde_json::from_value::<TurnScratchpad>(scratch) {
+            if let Ok(mut slot) = self.pending_slice_scratch.lock() {
+                *slot = Some(scratch);
+            }
         }
     }
 
@@ -738,13 +780,68 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 }
 
-fn publish(
-    stream_tx: &TurnEventChannel,
+fn publish_to_stream(
+    stream: &crate::daemon::turn_stream_registry::TurnStreamEntry,
     event: anyhow::Result<InteractiveTurnStreamEvent>,
 ) {
-    if let Ok(payload) = event {
-        stream_tx.publish(payload);
+    crate::daemon::ingest::publish_interactive_turn_event(stream, event);
+}
+
+/// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
+pub async fn run_daemon_interactive_turn(
+    turn_id: &str,
+    request: InteractiveTurnRequest,
+    backend: &str,
+    agent_rt: &super::runtime::MedousaAgentRuntime,
+    stream: crate::daemon::turn_stream_registry::TurnStreamEntry,
+    delivery: Option<InteractiveTurnDeliveryContext>,
+    continuation_scope: Option<TurnContinuationScope>,
+    session_hooks: Option<InteractiveTurnSessionHooks>,
+) {
+    use super::turn_event::{Principal, TurnEnvelope};
+
+    let correlation_id = continuation_scope
+        .as_ref()
+        .map(|scope| scope.turn_correlation_id.clone())
+        .unwrap_or_else(|| turn_id.to_string());
+    let envelope =
+        TurnEnvelope::new(turn_id, Principal::operator()).with_correlation_id(correlation_id);
+
+    async {
+        publish_to_stream(
+            &stream,
+            interactive_turn_runtime::status_stream_event(
+                turn_id,
+                "accepted",
+                "interactive turn accepted; agent runtime started",
+            ),
+        );
+
+        let session_id = request.session_id.trim().to_string();
+        let sink: SharedAgentStreamSink = Arc::new(InteractiveTurnStreamSink {
+            turn_id: turn_id.to_string(),
+            session_id,
+            stream_tx: stream.channel.clone(),
+            event_log: stream.log.clone(),
+            delivery,
+            session_hooks: session_hooks.unwrap_or_default(),
+            parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
+            streamed_markdown: std::sync::Mutex::new(String::new()),
+            pending_slice_scratch: std::sync::Mutex::new(None),
+        });
+
+        run_agent_turn(
+            turn_id,
+            request,
+            backend,
+            agent_rt,
+            sink,
+            continuation_scope,
+        )
+        .await;
     }
+    .instrument(crate::observability::turn_span(&envelope))
+    .await;
 }
 
 /// Run a full agent turn, streaming events through the provided sink.
@@ -789,7 +886,10 @@ pub async fn run_agent_turn(
         inner: sink,
         outcome: outcome.clone(),
     });
-    super::active_stream_sink::set_active_stream_sink(Some(tracking_sink.clone())).await;
+    crate::engine_adapters::set_active_tool_sink(Some(
+        crate::engine_adapters::AgentStreamToolSinkAdapter::new(tracking_sink.clone()),
+    ))
+    .await;
 
     run_agent_turn_inner(
         _turn_id,
@@ -810,7 +910,7 @@ pub async fn run_agent_turn(
             .await;
     }
 
-    super::active_stream_sink::set_active_stream_sink(None).await;
+    crate::engine_adapters::set_active_tool_sink(None).await;
     *agent_rt.turn_scope.write().await = previous_scope;
 }
 
@@ -1211,47 +1311,4 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
     async fn reset_streamed_markdown(&self) {
         self.inner.reset_streamed_markdown().await;
     }
-}
-
-/// Run a full agent turn for `POST /v1/interactive/turn`, streaming via SSE.
-pub async fn run_daemon_interactive_turn(
-    turn_id: &str,
-    request: InteractiveTurnRequest,
-    backend: &str,
-    agent_rt: &super::runtime::MedousaAgentRuntime,
-    stream_tx: Arc<TurnEventChannel>,
-    delivery: Option<InteractiveTurnDeliveryContext>,
-    continuation_scope: Option<TurnContinuationScope>,
-    session_hooks: Option<InteractiveTurnSessionHooks>,
-) {
-    publish(
-        &stream_tx,
-        interactive_turn_runtime::status_stream_event(
-            turn_id,
-            "accepted",
-            "interactive turn accepted; agent runtime started",
-        ),
-    );
-
-    let session_id = request.session_id.trim().to_string();
-    let sink: SharedAgentStreamSink = Arc::new(InteractiveTurnStreamSink {
-        turn_id: turn_id.to_string(),
-        session_id,
-        stream_tx,
-        delivery,
-        session_hooks: session_hooks.unwrap_or_default(),
-        parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
-        streamed_markdown: std::sync::Mutex::new(String::new()),
-        pending_slice_scratch: std::sync::Mutex::new(None),
-    });
-
-    run_agent_turn(
-        turn_id,
-        request,
-        backend,
-        agent_rt,
-        sink,
-        continuation_scope,
-    )
-    .await;
 }

@@ -642,7 +642,9 @@ async fn stage_scratch_for_persist(
     scratch: &Option<TurnScratchpad>,
 ) {
     if let Some(scratch) = scratch.clone() {
-        sink.stage_persist_scratch(scratch).await;
+        if let Ok(value) = serde_json::to_value(scratch) {
+            sink.stage_persist_scratch(value).await;
+        }
     }
 }
 

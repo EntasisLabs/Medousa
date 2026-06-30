@@ -119,6 +119,12 @@ async fn writer_loop(mut rx: mpsc::Receiver<PersistJob>) {
 /// Perform the actual (blocking) store write. Runs on a runtime worker thread,
 /// so `block_in_place` inside the sync session store stays valid.
 fn commit_blocking(job: PersistJob, ordering: Ordering, success_counter: &AtomicU64) {
+    let _span = tracing::info_span!(
+        "session_writer.persist",
+        session_id = %job.session_id,
+        correlation_id = tracing::field::Empty,
+    )
+    .entered();
     let PersistJob {
         session_id,
         turn,
@@ -157,11 +163,10 @@ pub fn persist_turn(session_id: &str, turn: ConversationTurn, scratch: Option<Tu
     match sender.try_send(job) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(job)) => {
-            // Backpressure: the queue is saturated. Persist inline rather than
-            // grow unbounded detached tasks (the original FD-pressure failure).
-            eprintln!(
-                "session_writer: queue full (cap {QUEUE_CAPACITY}); persisting turn inline (session={})",
-                job.session_id
+            tracing::warn!(
+                session_id = %job.session_id,
+                queue_capacity = QUEUE_CAPACITY,
+                "session_writer queue full; persisting turn inline"
             );
             commit_blocking(
                 job,
@@ -170,9 +175,9 @@ pub fn persist_turn(session_id: &str, turn: ConversationTurn, scratch: Option<Tu
             );
         }
         Err(mpsc::error::TrySendError::Closed(job)) => {
-            eprintln!(
-                "session_writer: actor channel closed; persisting turn inline (session={})",
-                job.session_id
+            tracing::warn!(
+                session_id = %job.session_id,
+                "session_writer actor channel closed; persisting turn inline"
             );
             commit_blocking(
                 job,

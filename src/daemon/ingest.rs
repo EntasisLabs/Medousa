@@ -24,7 +24,11 @@ use crate::agent_runtime::stream_sink::AgentStreamSink;
 use crate::channel_delivery;
 use crate::daemon::heartbeat::is_missing_runtime_table_error;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
+use medousa_engine::TurnStreamRegistryPort;
+
 use crate::daemon::turn_event_channel::TurnEventChannel;
+use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistry};
+use medousa_engine::TurnEventLog;
 use crate::daemon_api::{
     DeliverPollResponse, DeliveryHealthResponse, IngestRequest, IngestResponse,
     InteractiveTurnStreamEvent, RuntimeConfigCommandRequest, RuntimeConfigCommandResponse,
@@ -58,15 +62,22 @@ pub async fn ingest_stream(
     stream_events_from_registry(&registry, &stream_id, "ingest stream", query.since).await
 }
 
-/// State carried through the SSE unfold: the channel (for replay/drain), the
-/// live broadcast receiver, a pending queue (initial replay + lag/close
-/// recovery), the highest seq emitted so far, and whether the final drain ran.
+/// State carried through the SSE unfold: live fan-out channel, durable replay log,
+/// broadcast receiver, pending replay queue, and dedupe cursor.
 struct SseUnfoldState {
     channel: Arc<TurnEventChannel>,
+    log: Arc<TurnEventLog>,
     receiver: broadcast::Receiver<InteractiveTurnStreamEvent>,
     pending: std::collections::VecDeque<InteractiveTurnStreamEvent>,
     last_seq: u64,
     drained: bool,
+}
+
+fn replay_from_log(log: &TurnEventLog, since: u64) -> std::collections::VecDeque<InteractiveTurnStreamEvent> {
+    log.snapshot_since(since)
+        .iter()
+        .map(crate::sse_turn_projection::sequenced_to_stream_event)
+        .collect()
 }
 
 fn sse_event_from_payload(payload: InteractiveTurnStreamEvent) -> Event {
@@ -80,15 +91,17 @@ fn sse_event_from_payload(payload: InteractiveTurnStreamEvent) -> Event {
 }
 
 pub async fn stream_events_from_registry(
-    registry: &Arc<RwLock<HashMap<String, Arc<TurnEventChannel>>>>,
+    registry: &TurnStreamRegistry,
     stream_id: &str,
     label: &str,
     since: Option<u64>,
 ) -> Result<Sse<impl Stream<Item = std::result::Result<Event, Infallible>> + use<>>, (StatusCode, String)>
 {
-    let channel = {
+    let (channel, log) = {
         let guard = registry.read().await;
-        guard.get(stream_id).cloned()
+        guard
+            .get(stream_id)
+            .map(|entry| (entry.channel.clone(), entry.log.clone()))
     }
     .ok_or_else(|| {
         (
@@ -101,11 +114,11 @@ pub async fn stream_events_from_registry(
     // and the live subscription. Any event in both is deduped by seq below.
     let receiver = channel.subscribe();
     let since = since.unwrap_or(0);
-    let pending: std::collections::VecDeque<InteractiveTurnStreamEvent> =
-        channel.snapshot_since(since).into_iter().collect();
+    let pending = replay_from_log(&log, since);
 
     let initial = SseUnfoldState {
         channel,
+        log,
         receiver,
         pending,
         last_seq: since,
@@ -138,17 +151,16 @@ pub async fn stream_events_from_registry(
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // We fell behind the live ring; recover the gap from the
-                    // replay buffer rather than dropping events outright.
-                    let recovered = state.channel.snapshot_since(state.last_seq);
-                    state.pending.extend(recovered);
+                    // durable spine rather than dropping events outright.
+                    state.pending.extend(replay_from_log(&state.log, state.last_seq));
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
-                    // Senders gone: drain any buffered tail (e.g. the terminal
-                    // event) so a client reconnecting right at the end still
-                    // sees it, then finish.
-                    let remaining = state.channel.snapshot_since(state.last_seq);
-                    state.pending.extend(remaining);
+                    // Senders gone: drain any buffered tail from the spine so a
+                    // client reconnecting right at the end still sees it.
+                    state
+                        .pending
+                        .extend(replay_from_log(&state.log, state.last_seq));
                     state.drained = true;
                     continue;
                 }
@@ -163,10 +175,26 @@ pub async fn stream_events_from_registry(
 }
 
 pub fn publish_interactive_turn_event(
+    entry: &TurnStreamEntry,
+    event: AnyhowResult<InteractiveTurnStreamEvent>,
+) {
+    if let Ok(mut payload) = event {
+        let journal =
+            crate::sse_turn_projection::journal_turn_event_for_stream(&payload, None);
+        let sequenced = entry.log.append(journal);
+        payload.seq = sequenced.seq();
+        entry.channel.publish(payload);
+    }
+}
+
+pub fn publish_interactive_turn_event_legacy(
     channel: &TurnEventChannel,
     event: AnyhowResult<InteractiveTurnStreamEvent>,
 ) {
-    if let Ok(payload) = event {
+    if let Ok(mut payload) = event {
+        if payload.seq == 0 {
+            payload.seq = 1;
+        }
         channel.publish(payload);
     }
 }
@@ -618,7 +646,7 @@ pub async fn deliver_outbox_webhook(
             })?;
 
             if let Some(stream_id) = target.stream_id.as_deref() {
-                if let Some(stream_tx) = state
+                if let Some(entry) = state
                     .interactive_turn_streams
                     .read()
                     .await
@@ -626,7 +654,7 @@ pub async fn deliver_outbox_webhook(
                     .cloned()
                 {
                     publish_interactive_turn_event(
-                        &stream_tx,
+                        &entry,
                         crate::interactive_turn_runtime::final_stream_event(
                             stream_id,
                             &output,
@@ -985,13 +1013,25 @@ async fn spawn_continuation_agent_turn(
         record_job_delivery_pending(state, &job_id).await;
 
         let stream_id = format!("continue-{}", Uuid::new_v4().simple());
-        let stream_tx = TurnEventChannel::new(64);
+        {
+            let port = crate::engine_adapters::turn_stream_registry_adapter(
+                state.interactive_turn_streams.clone(),
+            );
+            port.register_stream(&stream_id).await;
+        }
+        let stream_entry = state
+            .interactive_turn_streams
+            .read()
+            .await
+            .get(&stream_id)
+            .cloned()
+            .expect("continue stream registered");
 
         let sink: Arc<dyn AgentStreamSink> = Arc::new(IngestAgentStreamSink {
             stream_id: stream_id.clone(),
             session_id: record.session_id.clone(),
             job_id: job_id.clone(),
-            stream_tx,
+            stream: stream_entry,
             delivery_target: target,
             dispatch_client: state.channel_dispatch_client.clone(),
             delivery_records: state.job_delivery_records.clone(),
@@ -1265,7 +1305,7 @@ struct IngestAgentStreamSink {
     stream_id: String,
     session_id: String,
     job_id: String,
-    stream_tx: Arc<TurnEventChannel>,
+    stream: TurnStreamEntry,
     delivery_target: channel_delivery::ChannelDeliveryTarget,
     dispatch_client: reqwest::Client,
     delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
@@ -1305,7 +1345,7 @@ impl IngestAgentStreamSink {
 impl AgentStreamSink for IngestAgentStreamSink {
     async fn content_chunk(&self, _turn_id: u64, delta: String) {
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::content_delta_stream_event(&self.stream_id, &delta),
         );
     }
@@ -1315,7 +1355,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
             parts.push_reasoning_delta(&delta);
         }
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::reasoning_delta_stream_event(
                 &self.stream_id,
                 &delta,
@@ -1379,7 +1419,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
             tool_names,
             work_id.as_deref(),
         ) {
-            publish_interactive_turn_event(&self.stream_tx, Ok(event));
+            publish_interactive_turn_event(&self.stream, Ok(event));
         }
     }
 
@@ -1389,7 +1429,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         }
 
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::turn_progress_stream_event(
                 &self.stream_id,
                 &text,
@@ -1404,7 +1444,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         }
 
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::turn_progress_stream_event(
                 &self.stream_id,
                 &message,
@@ -1416,7 +1456,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
     async fn agent_needs_input(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         if self.cancelled_streams.read().await.contains(&self.stream_id) {
             publish_interactive_turn_event(
-                &self.stream_tx,
+                &self.stream,
                 crate::interactive_turn_runtime::error_stream_event(
                     &self.stream_id,
                     "ingest turn cancelled by /stop",
@@ -1472,7 +1512,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         self.channel_deliveries.write().await.remove(&self.job_id);
 
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::needs_input_stream_event_with_tools(
                 &self.stream_id,
                 &text,
@@ -1484,7 +1524,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         if self.cancelled_streams.read().await.contains(&self.stream_id) {
             publish_interactive_turn_event(
-                &self.stream_tx,
+                &self.stream,
                 crate::interactive_turn_runtime::error_stream_event(
                     &self.stream_id,
                     "ingest turn cancelled by /stop",
@@ -1536,7 +1576,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         self.channel_deliveries.write().await.remove(&self.job_id);
 
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::final_stream_event_with_tools(
                 &self.stream_id,
                 &text,
@@ -1567,7 +1607,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         self.channel_deliveries.write().await.remove(&self.job_id);
 
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::error_stream_event_from_failure(
                 &self.stream_id,
                 &failure,
@@ -1577,7 +1617,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
 
     async fn notice(&self, message: String) {
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::debug_status_stream_event(
                 &self.stream_id,
                 "orchestration",
@@ -1588,7 +1628,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
 
     async fn tool_invoked(&self, tool_name: String, input_summary: String) {
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::debug_status_stream_event(
                 &self.stream_id,
                 "tool",
@@ -1608,7 +1648,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
             parts.tool_started(&tool_run_id, &tool_name, &input_summary, tool_round);
         }
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::tool_started_stream_event(
                 &self.stream_id,
                 &tool_run_id,
@@ -1659,7 +1699,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
             );
         }
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::tool_finished_stream_event(
                 &self.stream_id,
                 &tool_run_id,
@@ -1682,7 +1722,7 @@ impl AgentStreamSink for IngestAgentStreamSink {
         _output_receipt: Option<crate::payload_receipt::ArtifactReceiptMeta>,
     ) {
         publish_interactive_turn_event(
-            &self.stream_tx,
+            &self.stream,
             crate::interactive_turn_runtime::status_stream_event(
                 &self.stream_id,
                 "tool",
@@ -1723,11 +1763,19 @@ async fn start_ingest_ask_stream(
     );
 
     let stream_id = format!("ingest-{}", Uuid::new_v4().simple());
-    let stream_tx = TurnEventChannel::new(512);
     {
-        let mut guard = state.interactive_turn_streams.write().await;
-        guard.insert(stream_id.clone(), stream_tx.clone());
+        let port = crate::engine_adapters::turn_stream_registry_adapter(
+            state.interactive_turn_streams.clone(),
+        );
+        port.register_stream(&stream_id).await;
     }
+    let stream_entry = state
+        .interactive_turn_streams
+        .read()
+        .await
+        .get(&stream_id)
+        .cloned()
+        .expect("ingest stream registered");
     let stream_url =
         crate::ingest_stream::build_ingest_stream_url(&state.daemon_base_url, &stream_id);
 
@@ -1808,7 +1856,7 @@ async fn start_ingest_ask_stream(
         tokio::time::sleep(Duration::from_millis(25)).await;
 
         publish_interactive_turn_event(
-            &stream_tx,
+            &stream_entry,
             crate::interactive_turn_runtime::status_stream_event(
                 &stream_id_for_task,
                 "accepted",
@@ -1820,7 +1868,7 @@ async fn start_ingest_ask_stream(
             stream_id: stream_id_for_task.clone(),
             session_id: session_id_owned,
             job_id: job_id_for_sink,
-            stream_tx: stream_tx.clone(),
+            stream: stream_entry.clone(),
             delivery_target,
             dispatch_client,
             delivery_records,
@@ -1850,7 +1898,7 @@ async fn start_ingest_ask_stream(
         // Mark the channel closed but keep it (and its replay buffer) in the
         // registry for a grace window so a client reconnecting right at the end
         // can still replay the terminal event with `?since=`.
-        stream_tx.mark_closed();
+        stream_entry.channel.mark_closed();
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut guard = stream_registry.write().await;
         guard.remove(&stream_id_for_cleanup);

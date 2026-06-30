@@ -19,10 +19,55 @@
 //! `run_daemon_interactive_turn` today and is large to relocate behavior-preserving
 //! in one pass); see the worker handoff notes.
 
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
+use super::ports::{TurnStreamRegistryPort, TurnTicketPort};
 use super::turn_event::{SequencedTurnEvent, TurnEvent, TurnEnvelope};
 use super::turn_event_log::TurnEventLog;
+
+/// Lifecycle ports the engine needs to orchestrate a daemon-hosted turn.
+pub struct TurnLifecyclePorts {
+    pub tickets: Arc<dyn TurnTicketPort>,
+    pub streams: Arc<dyn TurnStreamRegistryPort>,
+}
+
+/// Run the daemon turn lifecycle around an executor closure:
+/// brief subscribe grace, turn body, stream close, ticket clear, 30s replay grace.
+pub async fn run_turn<F, Fut>(ports: TurnLifecyclePorts, envelope: TurnEnvelope, turn: F) -> EngineTurnHandle
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let turn_id = envelope.turn_id.clone();
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    turn().await;
+
+    ports.streams.mark_stream_closed(&turn_id).await;
+    ports.tickets.clear_after_run(&turn_id).await;
+
+    let log = ports
+        .streams
+        .event_log(&turn_id)
+        .await
+        .unwrap_or_else(|| {
+            Arc::new(
+                TurnEventLog::open(envelope.clone())
+                    .unwrap_or_else(|_| panic!("turn log unavailable for {turn_id}")),
+            )
+        });
+    let events = log.snapshot_since(0);
+    let outcome = TurnRunOutcome::from_events(&events);
+    if outcome.is_terminal() {
+        log.mark_committed();
+    }
+
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    ports.streams.drop_stream(&turn_id).await;
+
+    EngineTurnHandle::new(envelope, log, outcome)
+}
 
 /// Terminal classification of a completed (or handed-off) turn.
 ///
@@ -122,6 +167,8 @@ mod tests {
                 TurnEvent::FinalResponse {
                     text: "done".into(),
                     tool_names: vec![],
+                    parts: vec![],
+                    committed_at: chrono::Utc::now(),
                 },
                 2,
             ),
@@ -136,6 +183,8 @@ mod tests {
                 text: "on it".into(),
                 tool_names: vec![],
                 work_id: Some("w".into()),
+                parts: vec![],
+                committed_at: chrono::Utc::now(),
             },
             1,
         )];

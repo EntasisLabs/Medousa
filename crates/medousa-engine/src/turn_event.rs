@@ -11,13 +11,21 @@
 //!   journaled into the durable per-turn event log (the spine) and folded into
 //!   SSE replay + history projections.
 //!
-//! The existing [`crate::agent_runtime::stream_sink::AgentStreamSink`] port is
+//! The existing [`crate::stream_sink::AgentStreamSink`] port is
 //! the in-tree emitter today; `TurnEvent` is the typed payload that port will
 //! carry once the conflated sink is fully split. Mapping helpers
 //! ([`TurnEvent::is_terminal`], [`TurnEvent::kind`]) keep that future projection
 //! code aligned with the live SSE `event_type` taxonomy.
 
+use chrono::{DateTime, Utc};
+use medousa_types::turn::TurnPart;
 use serde::{Deserialize, Serialize};
+
+/// Default commit timestamp for journals written before the rich-body fields
+/// existed (kept tolerant so old `turn_log` journals still deserialize).
+fn default_committed_at() -> DateTime<Utc> {
+    Utc::now()
+}
 
 /// Who/what initiated the turn. Lets a single engine serve multiple principals
 /// (operator, channel user, system scheduler, background worker) and is the
@@ -171,12 +179,28 @@ pub enum TurnEvent {
         text: String,
         #[serde(default)]
         tool_names: Vec<String>,
+        /// Finalized presentation timeline (the exact `TurnPartsAccumulator`
+        /// output the live persist path uses). Carried so the spine
+        /// [`fold_history`](crate::turn_event_log) reproduces the
+        /// persisted `ConversationTurn` byte-for-byte. Empty on legacy journals;
+        /// the fold then synthesizes a single `Text` part from `text`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<TurnPart>,
+        /// Commit timestamp stamped onto the persisted `ConversationTurn` so the
+        /// spine fold is timestamp-stable (and thus byte-identical) versus the
+        /// live `append_turn` body.
+        #[serde(default = "default_committed_at")]
+        committed_at: DateTime<Utc>,
     },
     /// Terminal: Medousa needs operator input (clarifying question / pivot).
     NeedsInput {
         text: String,
         #[serde(default)]
         tool_names: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<TurnPart>,
+        #[serde(default = "default_committed_at")]
+        committed_at: DateTime<Utc>,
     },
     /// Terminal (handoff): substantive mid-task update; the turn ends but the
     /// conversation continues on the principal's reply.
@@ -184,6 +208,10 @@ pub enum TurnEvent {
         text: String,
         #[serde(default)]
         tool_names: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<TurnPart>,
+        #[serde(default = "default_committed_at")]
+        committed_at: DateTime<Utc>,
     },
     /// Non-terminal delivery: host acknowledgement while a background worker runs.
     WorkerAck {
@@ -192,6 +220,10 @@ pub enum TurnEvent {
         tool_names: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         work_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<TurnPart>,
+        #[serde(default = "default_committed_at")]
+        committed_at: DateTime<Utc>,
     },
     /// Turn paused awaiting operator approval to extend the tool-round budget.
     BudgetApprovalRequired {
@@ -203,6 +235,33 @@ pub enum TurnEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         progress_summary: Option<String>,
     },
+    /// Non-terminal status / debug line with phase granularity.
+    Status {
+        phase: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        operator_message: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        debug_message: Option<String>,
+    },
+    /// Browser CAPTCHA / verification handoff.
+    BrowserChallenge {
+        session_id: String,
+        challenge_url: String,
+        reason: String,
+    },
+    /// Browser navigation telemetry for rich clients.
+    BrowserNavigated {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default)]
+        opened_by_agent: bool,
+    },
+    /// Lossless wire mirror for SSE events not yet modeled as typed variants
+    /// (e.g. `artifact_presented`, `artifact_updated`). Excludes `turn_id` and
+    /// `seq`, which ride on the envelope.
+    StreamMirror(serde_json::Value),
     /// Terminal: the turn failed.
     Error { message: String },
 }
@@ -225,6 +284,10 @@ impl TurnEvent {
             TurnEvent::Checkpoint { .. } => "checkpoint",
             TurnEvent::WorkerAck { .. } => "worker_ack",
             TurnEvent::BudgetApprovalRequired { .. } => "budget_approval",
+            TurnEvent::Status { .. } => "status",
+            TurnEvent::BrowserChallenge { .. } => "browser_challenge",
+            TurnEvent::BrowserNavigated { .. } => "browser_navigated",
+            TurnEvent::StreamMirror(_) => "stream_mirror",
             TurnEvent::Error { .. } => "error",
         }
     }
@@ -253,6 +316,53 @@ impl TurnEvent {
                 | TurnEvent::Checkpoint { .. }
                 | TurnEvent::WorkerAck { .. }
         )
+    }
+}
+
+/// Constructors that lift a finalized assistant [`ConversationTurn`] (the
+/// `TurnPartsAccumulator` output) into the terminal/handoff event carrying the
+/// rich body. Centralizing this keeps the spine fold byte-identical to the live
+/// `append_turn` body: every field the persisted turn needs (text, tool_names,
+/// the ordered `parts`, and the commit `timestamp`) rides on the event.
+impl TurnEvent {
+    pub fn final_response_from_turn(turn: &medousa_types::session::ConversationTurn) -> Self {
+        TurnEvent::FinalResponse {
+            text: turn.content.clone(),
+            tool_names: turn.tool_names.clone(),
+            parts: turn.parts.clone().unwrap_or_default(),
+            committed_at: turn.timestamp,
+        }
+    }
+
+    pub fn needs_input_from_turn(turn: &medousa_types::session::ConversationTurn) -> Self {
+        TurnEvent::NeedsInput {
+            text: turn.content.clone(),
+            tool_names: turn.tool_names.clone(),
+            parts: turn.parts.clone().unwrap_or_default(),
+            committed_at: turn.timestamp,
+        }
+    }
+
+    pub fn checkpoint_from_turn(turn: &medousa_types::session::ConversationTurn) -> Self {
+        TurnEvent::Checkpoint {
+            text: turn.content.clone(),
+            tool_names: turn.tool_names.clone(),
+            parts: turn.parts.clone().unwrap_or_default(),
+            committed_at: turn.timestamp,
+        }
+    }
+
+    pub fn worker_ack_from_turn(
+        turn: &medousa_types::session::ConversationTurn,
+        work_id: Option<String>,
+    ) -> Self {
+        TurnEvent::WorkerAck {
+            text: turn.content.clone(),
+            tool_names: turn.tool_names.clone(),
+            work_id,
+            parts: turn.parts.clone().unwrap_or_default(),
+            committed_at: turn.timestamp,
+        }
     }
 }
 
@@ -288,24 +398,32 @@ mod tests {
     fn terminality_matches_stream_event_taxonomy() {
         assert!(TurnEvent::FinalResponse {
             text: "x".into(),
-            tool_names: vec![]
+            tool_names: vec![],
+            parts: vec![],
+            committed_at: Utc::now(),
         }
         .is_terminal());
         assert!(TurnEvent::Checkpoint {
             text: "x".into(),
-            tool_names: vec![]
+            tool_names: vec![],
+            parts: vec![],
+            committed_at: Utc::now(),
         }
         .is_terminal());
         assert!(TurnEvent::NeedsInput {
             text: "x".into(),
-            tool_names: vec![]
+            tool_names: vec![],
+            parts: vec![],
+            committed_at: Utc::now(),
         }
         .is_terminal());
         // Handoffs are non-terminal.
         assert!(!TurnEvent::WorkerAck {
             text: "on it".into(),
             tool_names: vec![],
-            work_id: Some("w1".into())
+            work_id: Some("w1".into()),
+            parts: vec![],
+            committed_at: Utc::now(),
         }
         .is_terminal());
         assert!(!TurnEvent::Progress {
@@ -324,6 +442,10 @@ mod tests {
             event: TurnEvent::FinalResponse {
                 text: "the answer".into(),
                 tool_names: vec!["data_probe".into()],
+                parts: vec![TurnPart::Text {
+                    markdown: "the answer".into(),
+                }],
+                committed_at: Utc::now(),
             },
         };
         let json = serde_json::to_string(&original).unwrap();

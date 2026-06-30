@@ -224,6 +224,7 @@ pub struct HeartbeatDecision {
 pub fn evaluate_heartbeat_significance(
     signals: &HeartbeatSignals,
     policy: HeartbeatLanePolicy,
+    prior_dead_letter_jobs: Option<usize>,
 ) -> HeartbeatDecision {
     let dead_letter_score = (signals.dead_letter_jobs as f32 / 3.0).clamp(0.0, 1.0);
     let failed_score = (signals.failed_jobs as f32 / 8.0).clamp(0.0, 1.0);
@@ -246,13 +247,29 @@ pub fn evaluate_heartbeat_significance(
     .clamp(0.0, 1.0);
 
     if signals.dead_letter_jobs > 0 {
-        return HeartbeatDecision {
-            action: HeartbeatAction::Notify,
-            significance,
-            reason: format!(
+        let increased = prior_dead_letter_jobs
+            .map(|prior| signals.dead_letter_jobs > prior)
+            .unwrap_or(true);
+        let action = if increased {
+            HeartbeatAction::Notify
+        } else {
+            HeartbeatAction::Noop
+        };
+        let reason = if increased {
+            format!(
                 "dead_letter_detected dead_letter_jobs={}",
                 signals.dead_letter_jobs
-            ),
+            )
+        } else {
+            format!(
+                "dead_letter_static dead_letter_jobs={}",
+                signals.dead_letter_jobs
+            )
+        };
+        return HeartbeatDecision {
+            action,
+            significance,
+            reason,
         };
     }
 
@@ -422,6 +439,7 @@ mod tests {
         let decision = evaluate_heartbeat_significance(
             &HeartbeatSignals::default(),
             default_heartbeat_lane_policy(),
+            None,
         );
 
         assert_eq!(decision.action, HeartbeatAction::Noop);
@@ -429,13 +447,29 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_notifies_on_dead_letter_pressure() {
+    fn heartbeat_static_dead_letter_does_not_renotify() {
         let decision = evaluate_heartbeat_significance(
             &HeartbeatSignals {
-                dead_letter_jobs: 1,
+                dead_letter_jobs: 5,
                 ..HeartbeatSignals::default()
             },
             default_heartbeat_lane_policy(),
+            Some(5),
+        );
+
+        assert_eq!(decision.action, HeartbeatAction::Noop);
+        assert!(decision.reason.contains("dead_letter_static"));
+    }
+
+    #[test]
+    fn heartbeat_notifies_on_dead_letter_increase() {
+        let decision = evaluate_heartbeat_significance(
+            &HeartbeatSignals {
+                dead_letter_jobs: 6,
+                ..HeartbeatSignals::default()
+            },
+            default_heartbeat_lane_policy(),
+            Some(5),
         );
 
         assert_eq!(decision.action, HeartbeatAction::Notify);
