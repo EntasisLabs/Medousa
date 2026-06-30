@@ -948,7 +948,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -6390,9 +6390,9 @@ dependencies = [
 
 [[package]]
 name = "locus-core-rs"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99a2156339821c4acf6eb4d8f560429327086e247473f55b79fd344a86011020"
+checksum = "321692dc13d3dceb7c6e31ef3f5e4df4afb642e6cc85887b03612638a0b21e4c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6408,9 +6408,9 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5adc07e4a040039f11af61da460d2d374f440f8e109049a0c398343a06d1ff96"
+checksum = "354258f97de49d6e9406a666b21eea2154062e9b2b2c8189d677c328deb4a67b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12316,9 +12316,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df0b6ef75e23969c842851731c6c1813093ce3bfc48b09feff593888b6b80e51"
+checksum = "45ba407c191e4e7a1a7da910ac23d0265ae7eae61042907bcc0c5adc0cabab9d"
 dependencies = [
  "anyhow",
  "askama",
@@ -13527,7 +13527,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

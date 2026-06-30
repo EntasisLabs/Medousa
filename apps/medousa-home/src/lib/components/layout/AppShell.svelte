@@ -2,15 +2,14 @@
   import { onMount } from "svelte";
   import WorkshopShell from "$lib/components/layout/WorkshopShell.svelte";
   import MobileShell from "$lib/components/mobile/MobileShell.svelte";
-  import CommandPalette from "$lib/components/layout/CommandPalette.svelte";
+  import CommandSpotlight from "$lib/components/layout/CommandSpotlight.svelte";
   import WizardContainer from "$lib/components/wizard/WizardContainer.svelte";
   import VaultGarageImportWizard from "$lib/components/vault/VaultGarageImportWizard.svelte";
   import VaultContextMenu from "$lib/components/vault/VaultContextMenu.svelte";
-  import VaultQuickSwitcher from "$lib/components/vault/VaultQuickSwitcher.svelte";
   import VaultNoteWorkshop from "$lib/components/vault/VaultNoteWorkshop.svelte";
   import MobileBrowserWorkshop from "$lib/components/mobile/MobileBrowserWorkshop.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
-  import { vaultQuickSwitcher } from "$lib/stores/vaultQuickSwitcher.svelte";
+  import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -22,13 +21,17 @@
   import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
   import BrowserWorkshop from "$lib/components/browser/BrowserWorkshop.svelte";
 
-  let commandPaletteOpen = $state(false);
-
   $effect(() => {
     void chat.sessionId;
     void chat.draft;
     chat.scheduleDraftPersist();
   });
+
+  function focusChatComposer() {
+    layout.navigateDesktop("chat", { bump: true });
+    void chat.ensureSessionHydrated();
+    window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+  }
 
   async function openWorkCard(cardId: string) {
     if (layout.isMobile) {
@@ -40,6 +43,11 @@
   }
 
   onMount(() => {
+    commandSpotlight.closeSpotlight();
+    document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
+      node.closest(".body-portal-host")?.remove() ?? node.remove();
+    });
+
     void wizard.bootstrap();
     const stopViewport = layout.attachViewportTracking();
     if (isTauri()) {
@@ -61,9 +69,11 @@
     const stopAgentBrowserCoord = attachAgentBrowserCoord();
 
     const onKeydown = (event: KeyboardEvent) => {
+      if (layout.isMobile) return;
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        commandPaletteOpen = !commandPaletteOpen;
+        commandSpotlight.toggleSpotlight();
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
@@ -75,7 +85,7 @@
             target.isContentEditable);
         if (typing) return;
         event.preventDefault();
-        vaultQuickSwitcher.toggle();
+        commandSpotlight.openNotes();
       }
     };
     window.addEventListener("keydown", onKeydown);
@@ -100,25 +110,13 @@
 {:else if layout.isMobile}
   <MobileShell />
 {:else}
-  <WorkshopShell />
+  <WorkshopShell onOpenSpotlight={() => commandSpotlight.openSpotlight()} />
 {/if}
 
-<CommandPalette
-  open={commandPaletteOpen}
-  onClose={() => (commandPaletteOpen = false)}
-  onOpenWork={() => {
-    workspace.workView = "kanban";
-    const blocked = workspace.cards.find((card) => card.column === "blocked");
-    if (blocked) void workspace.selectCard(blocked.id);
-  }}
-/>
+<CommandSpotlight onFocusChat={focusChatComposer} />
 
 <VaultGarageImportWizard />
 <VaultContextMenu />
-<VaultQuickSwitcher
-  open={vaultQuickSwitcher.open}
-  onClose={() => vaultQuickSwitcher.closeSwitcher()}
-/>
 {#if !layout.isMobile}
   <VaultNoteWorkshop
     onOpenFullChat={() => {

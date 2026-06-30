@@ -39,6 +39,12 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
 
+  interface Props {
+    onOpenSpotlight?: () => void;
+  }
+
+  let { onOpenSpotlight }: Props = $props();
+
   let daemonHealth = $state<DaemonHealth | null>(null);
 
   const activeSurface = $derived(layout.desktopSurface);
@@ -266,6 +272,7 @@
         lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
         onOpenRuntime={() => navigateToSurface("runtime")}
         onOpenCron={() => navigateToSurface("automations")}
+        onOpenSpotlight={onOpenSpotlight}
       />
 
       {#if workspace.inMotionCount() > 0 && activeSurface !== "work"}
