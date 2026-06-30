@@ -95,7 +95,7 @@ resolve_inference_feature() {
 }
 
 mkdir -p "${BINARIES_DIR}"
-TARGET_DIR="${CARGO_TARGET_DIR:-${MEDOUSA_ROOT}/target}"
+TARGET_DIR="${CARGO_TARGET_DIR:-${MEDOUSA_CARGO_TARGET_DIR:-${MEDOUSA_ROOT}/../.cache/cargo-target}}"
 
 find_release_binary() {
   local bin="$1"

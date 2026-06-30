@@ -1,6 +1,7 @@
 /target
 /dist
 /node_modules
+../.cache/
 package-lock.json
 !apps/medousa-home/package-lock.json
 !apps/medousa-installer/package-lock.json

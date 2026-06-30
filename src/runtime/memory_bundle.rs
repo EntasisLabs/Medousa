@@ -108,12 +108,17 @@ impl MemoryAdapterBundle {
         })
         .await?;
         if skip_locus {
-            eprintln!(
-                "medousa-daemon: skipping Locus initialize_async (graph tables already present — avoids temporal_node/calibration backfill scan; set MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 to override)"
-            );
+            let message = "skipping Locus initialize_async (graph tables already present — avoids temporal_node/calibration backfill scan; set MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 to override)";
+            eprintln!("medousa-daemon: {message}");
+            tracing::info!("{message}");
         } else {
+            let force = parse_env_flag("MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON") == Some(true);
             eprintln!(
                 "medousa-daemon: initializing Locus graph schema (can be slow on large remote DBs)…"
+            );
+            tracing::info!(
+                force_locus_init = force,
+                "initializing Locus graph schema on Surreal backend"
             );
             let node_initializer: Arc<dyn NodeStoreInitializer> = node_store.clone();
             timeout(LOCUS_INIT_TIMEOUT, node_initializer.initialize_async())
@@ -126,6 +131,7 @@ impl MemoryAdapterBundle {
                 })?
                 .map_err(|err| anyhow::anyhow!("failed to initialize surreal locus schema: {err}"))?;
             eprintln!("medousa-daemon: Locus graph schema ready");
+            tracing::info!("Locus graph schema ready");
         }
 
         let index_initializer: Arc<dyn SemanticIndexStoreInitializer> = semantic_index.clone();
@@ -144,12 +150,12 @@ impl MemoryAdapterBundle {
             identity_memory::build_seeded_medousa_identity_store_for_db(db),
         )
         .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "identity memory init timed out after {}s — see last `surreal step` / `identity upsert` line for the wedged query",
-                IDENTITY_INIT_TIMEOUT.as_secs()
-            )
-        })?
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "identity memory init timed out after {}s at startup step `identity baseline probe` (increase MEDOUSA_SURREAL_STEP_TIMEOUT_SECS if remote Surreal is slow)",
+                        IDENTITY_INIT_TIMEOUT.as_secs()
+                    )
+                })?
         .context("failed to build seeded identity memory store for surreal runtime")?;
         eprintln!("medousa-daemon: identity memory ready");
 

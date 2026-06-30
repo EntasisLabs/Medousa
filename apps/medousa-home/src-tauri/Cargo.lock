@@ -6738,6 +6738,7 @@ dependencies = [
  "locus-core-rs",
  "mdns-sd",
  "medousa-browser-lite",
+ "medousa-engine",
  "medousa-host",
  "medousa-sdk",
  "medousa-types",
@@ -6763,6 +6764,9 @@ dependencies = [
  "teloxide",
  "tokio",
  "toml 0.8.2",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
  "urlencoding",
  "uuid",
 ]
@@ -6794,6 +6798,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-engine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "medousa-home"
 version = "0.1.0"
 dependencies = [
@@ -6812,6 +6829,7 @@ dependencies = [
  "medousa-browser-lite",
  "medousa-host",
  "medousa-sdk",
+ "medousa-sdk-iroh",
  "medousa-types",
  "objc2",
  "objc2-core-foundation",
@@ -6861,6 +6879,19 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "urlencoding",
+]
+
+[[package]]
+name = "medousa-sdk-iroh"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "medousa-sdk",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

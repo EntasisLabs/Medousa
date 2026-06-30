@@ -149,6 +149,7 @@ File: `~/.config/medousa/capabilities.toml` — bindings for grapheme ops and MC
 |----------|---------|
 | `MEDOUSA_SKIP_LOCUS_INIT_ON_DAEMON` | Skip Locus schema init (large DB) |
 | `MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON` | Force init even if tables exist |
+| `MEDOUSA_SURREAL_STEP_TIMEOUT_SECS` | Per-step Surreal startup timeout (default 30) |
 | `LOCUS_MCP_PARSE_PROFILE` | Locus MCP parse profile |
 
 ---

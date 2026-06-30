@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use medousa_sdk::{MedousaClient, SdkError, Transport};
-use medousa_sdk_iroh::{WorkshopTransport, WorkshopTransportConfig};
+use medousa_sdk_iroh::{WorkshopTransport, WorkshopTransportConfig as IrohTransportConfig};
 use tauri::State;
 
 use crate::daemon::DaemonState;
@@ -22,7 +22,7 @@ pub fn transport_config(state: &State<DaemonState>) -> WorkshopTransportConfig {
 }
 
 fn build_sdk_transport(config: &WorkshopTransportConfig) -> Arc<dyn Transport> {
-    let sdk_config = WorkshopTransportConfig::from_workshop_parts(
+    let sdk_config = IrohTransportConfig::from_workshop_parts(
         config.lan_base.clone(),
         config.session_token.clone(),
         config.iroh_ticket.clone(),

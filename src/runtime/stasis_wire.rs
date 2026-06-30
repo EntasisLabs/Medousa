@@ -494,17 +494,13 @@ async fn wire_existing_daemon_composition(
                 .await
                 .context("register openshell sandbox run handler")?;
             eprintln!("medousa-daemon: seeding internal outbox delivery endpoint…");
-            timed_step("delivery outbox seed", || async {
-                channel_delivery::seed_internal_outbox_endpoint_for_runtime(
-                    &composition,
-                    None,
-                    config.deliver_webhook_url,
-                )
-                .await
-                .map_err(|err| anyhow::anyhow!("{err}"))
-            })
+            channel_delivery::seed_internal_outbox_endpoint_for_runtime(
+                &composition,
+                None,
+                config.deliver_webhook_url,
+            )
             .await
-            .context("failed to seed internal outbox delivery endpoint")?;
+            .context("delivery endpoint bootstrap failed")?;
             eprintln!("medousa-daemon: delivery wiring complete");
             Ok(composition)
         }

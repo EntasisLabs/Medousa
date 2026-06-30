@@ -389,6 +389,7 @@ pub fn journal_turn_event_for_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::daemon_api::StreamUiArtifact;
     use medousa_engine::{Principal, TurnEnvelope};
 
     #[test]
