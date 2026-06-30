@@ -14,7 +14,7 @@ use crate::channel_delivery::{
 use crate::daemon_api::{InteractiveTurnRequest, InteractiveTurnStreamEvent};
 use crate::interactive_turn_runtime;
 use crate::payload_receipt::ArtifactReceiptMeta;
-use crate::session::{append_turn, append_turn_with_scratch, load_history};
+use crate::session::load_history;
 use crate::session_active_turn::{self, TurnTicketRegistry};
 use crate::media_store::{merge_media_refs_into_prompt, validate_media_refs};
 use crate::media_vision;
@@ -116,16 +116,15 @@ impl InteractiveTurnStreamSink {
 
     /// Persist a finalized transcript turn off the hot path.
     ///
-    /// Terminal sink methods publish the SSE event first and then call this so the
-    /// client never waits on the (potentially fsync-bound) SurrealKV write. Spawning
-    /// onto a runtime worker thread keeps the `block_in_place` inside the sync session
-    /// store valid; with grouped fsync these commits coalesce in the background.
+    /// Terminal sink methods publish the SSE event first and then hand the turn
+    /// to the single persistence writer actor (Phase 1d) so the client never
+    /// waits on the (potentially fsync-bound) SurrealKV write. The actor batches
+    /// commits and applies backpressure instead of the old per-turn
+    /// `tokio::spawn` fire-and-forget, which piled up unbounded under FD pressure
+    /// and dropped turns. The write is never silently dropped.
     fn spawn_persist_turn(&self, turn: crate::session::ConversationTurn) {
-        let session_id = self.session_id.clone();
         let scratch = self.take_pending_scratch();
-        tokio::spawn(async move {
-            append_turn_with_scratch(&session_id, &turn, scratch.as_ref());
-        });
+        crate::session_writer::persist_turn(&self.session_id, turn, scratch);
     }
 
     /// Prefer streamed tokens for persist + terminal commit when the client already saw them.
@@ -913,10 +912,7 @@ async fn run_agent_turn_inner(
         // persist off the hot path so the user message write (and its catalog cascade)
         // doesn't block prompt prep / first token on a SurrealKV fsync.
         conversation.push(user_turn.clone());
-        let persist_session_id = session_id.clone();
-        tokio::spawn(async move {
-            append_turn(&persist_session_id, &user_turn);
-        });
+        crate::session_writer::persist_turn(&session_id, user_turn, None);
     }
 
     let manuscript_id = request

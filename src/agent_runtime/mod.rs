@@ -9,6 +9,9 @@ pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 pub mod active_stream_sink;
 pub mod ambient_context;
 pub mod daemon_interactive_turn;
+pub mod engine;
+#[cfg(test)]
+mod golden_turn;
 pub mod turn_delivery;
 pub mod heartbeat_turn;
 pub mod continuation;
@@ -23,6 +26,8 @@ pub mod turn_budget;
 pub mod turn_completion;
 pub mod turn_completion_fsm;
 pub mod turn_context;
+pub mod turn_event;
+pub mod turn_event_log;
 pub mod turn_ledger;
 pub mod turn_loop_settings;
 pub mod turn_orchestrator;
@@ -79,6 +84,11 @@ pub use runtime::{
 };
 pub use settings::{default_daemon_runtime_settings, runtime_settings_for_interactive_turn};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
+pub use turn_event::{
+    Principal, PrincipalKind, SequencedTurnEvent, TurnEnvelope, TurnEvent, TurnSurface,
+};
+pub use turn_event_log::{recover_uncommitted, RecoveredTurn, TurnEventLog};
+pub use engine::{EngineTurnHandle, TurnRunOutcome};
 pub use system_prompt::{DEFAULT_SYSTEM_PROMPT, LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT};
 pub use turn_budget::{
     TurnBudget, TurnOrchestrationState, emit_budget_deny, emit_orchestration_summary,

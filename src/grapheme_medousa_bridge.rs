@@ -129,17 +129,22 @@ impl MedousaWorkflowEngine {
         }
     }
 
-    fn build_engine(
-        guardrails: &GraphemeWorkflowGuardrails,
-        initial_state_current: Option<Value>,
-    ) -> GraphemeEngine {
-        let mut builder = configure_grapheme_engine_builder(GraphemeEngine::builder())
+    fn build_engine(guardrails: &GraphemeWorkflowGuardrails) -> GraphemeEngine {
+        configure_grapheme_engine_builder(GraphemeEngine::builder())
             .with_max_steps(guardrails.max_steps)
-            .with_max_call_depth(guardrails.max_call_depth);
-        if let Some(state) = initial_state_current {
-            builder = builder.with_initial_state_current(state);
-        }
-        builder.build()
+            .with_max_call_depth(guardrails.max_call_depth)
+            .build()
+    }
+
+    /// Reuse a single process-global `GraphemeEngine` instead of rebuilding one
+    /// (host-module registration, hotload store, capability interceptor) on every
+    /// execution. The per-call `state.current` seed is applied at execution time
+    /// via `execute_source_with_initial_state`, so caching the engine does not
+    /// change execution behavior. Guardrails are process-constant
+    /// (`GraphemeWorkflowGuardrails::default`), so the first initializer wins.
+    fn shared_engine(guardrails: &GraphemeWorkflowGuardrails) -> &'static GraphemeEngine {
+        static WORKFLOW_ENGINE: OnceLock<GraphemeEngine> = OnceLock::new();
+        WORKFLOW_ENGINE.get_or_init(|| Self::build_engine(guardrails))
     }
 
     fn validate_source(&self, source: &str) -> StasisResult<()> {
@@ -227,12 +232,8 @@ impl WorkflowEngine for MedousaWorkflowEngine {
         let state_current_owned = state_current.cloned();
         let guardrails_clone = guardrails.clone();
         let handle = tokio::task::spawn_blocking(move || {
-            let engine = if let Some(initial_state_current) = state_current_owned {
-                Self::build_engine(&guardrails_clone, Some(initial_state_current))
-            } else {
-                Self::build_engine(&guardrails_clone, None)
-            };
-            engine.execute_source(&source_owned)
+            let engine = Self::shared_engine(&guardrails_clone);
+            engine.execute_source_with_initial_state(&source_owned, state_current_owned)
         });
 
         let result = tokio::time::timeout(timeout, handle)

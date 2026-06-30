@@ -112,6 +112,7 @@ pub mod turn_ticket;
 pub mod service_launch;
 pub mod session_mapping;
 pub mod session_store;
+pub mod session_writer;
 pub mod session_lifecycle;
 pub mod session_retention;
 pub mod locus_semantic_tags;
