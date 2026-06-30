@@ -2,15 +2,23 @@
   import {
     BookmarkPlus,
     ChevronDown,
+    Copy,
     Ellipsis,
+    ExternalLink,
     RefreshCw,
+    RotateCcw,
+    Search,
     Star,
+    Undo2,
   } from "@lucide/svelte";
   import BrowserPopover from "$lib/components/browser/BrowserPopover.svelte";
   import BrowserSavedSheet from "$lib/components/browser/BrowserSavedSheet.svelte";
+  import { browser } from "$lib/stores/browser.svelte";
   import { browserBookmarks } from "$lib/stores/browserBookmarks.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { normalizeBrowserUrl } from "$lib/utils/browserUrl";
+  import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
+  import { toast } from "$lib/stores/toast.svelte";
   import {
     openSavedVaultNote,
     savePageToLibrary,
@@ -32,7 +40,9 @@
   let savedOpen = $state(false);
   let menuOpen = $state(false);
   let menuAnchorEl = $state<HTMLButtonElement | null>(null);
+  let savedAnchorEl = $state<HTMLButtonElement | null>(null);
   let menuAnchorRect = $state<DOMRect | null>(null);
+  let savedAnchorRect = $state<DOMRect | null>(null);
 
   const pageUrl = $derived(humanBrowser.activeUrl);
   const pageTitle = $derived(humanBrowser.activeTab?.title ?? "");
@@ -44,6 +54,9 @@
       (entry) => normalizeBrowserUrl(entry.url) === norm,
     );
   });
+  const showHandBack = $derived(
+    browser.control === "user" && Boolean(browser.scopedSessionId),
+  );
 
   function refreshMenuAnchor() {
     menuAnchorRect = menuAnchorEl?.getBoundingClientRect() ?? null;
@@ -110,7 +123,7 @@
   function handleSavedToggle(event: MouseEvent) {
     event.stopPropagation();
     if (!savedOpen) {
-      refreshMenuAnchor();
+      savedAnchorRect = savedAnchorEl?.getBoundingClientRect() ?? null;
     }
     savedOpen = !savedOpen;
     menuOpen = false;
@@ -118,13 +131,45 @@
 
   function openSavedFromMenu() {
     closeMenu();
-    refreshMenuAnchor();
+    savedAnchorRect = menuAnchorEl?.getBoundingClientRect() ?? null;
     savedOpen = true;
   }
 
   async function handleReloadFromMenu() {
     closeMenu();
     await onReload?.();
+  }
+
+  async function handleCopyUrl() {
+    if (!canAct) return;
+    const ok = await copyBrowserUrl(pageUrl);
+    closeMenu();
+    if (mobile && onMobileToast) {
+      onMobileToast(ok ? "Link copied" : "Could not copy link");
+    } else if (ok) {
+      toast.show("Link copied");
+    }
+  }
+
+  async function handleOpenExternal() {
+    if (!canAct) return;
+    closeMenu();
+    await openUrlInDefaultBrowser(pageUrl);
+  }
+
+  function handleFindInPage() {
+    closeMenu();
+    humanBrowser.openFindBar();
+  }
+
+  async function handleReopenTab() {
+    closeMenu();
+    await humanBrowser.reopenClosedTab();
+  }
+
+  function handleHandBack() {
+    closeMenu();
+    browser.handBackToAgent();
   }
 
   function closeSaved() {
@@ -159,6 +204,38 @@
     hideNativeEmbed={true}
     backdrop={true}
   >
+    <button
+      type="button"
+      class="browser-popover-row disabled:opacity-40"
+      disabled={!canAct}
+      onclick={() => void handleCopyUrl()}
+    >
+      <Copy size={16} class="shrink-0 text-surface-400" />
+      <span class="text-sm text-surface-50">Copy link</span>
+    </button>
+    <button
+      type="button"
+      class="browser-popover-row disabled:opacity-40"
+      disabled={!canAct}
+      onclick={() => void handleOpenExternal()}
+    >
+      <ExternalLink size={16} class="shrink-0 text-surface-400" />
+      <span class="text-sm text-surface-50">Open in browser</span>
+    </button>
+    <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
+      <Search size={16} class="shrink-0 text-surface-400" />
+      <span class="text-sm text-surface-50">Find in page</span>
+    </button>
+    <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
+      <RotateCcw size={16} class="shrink-0 text-surface-400" />
+      <span class="text-sm text-surface-50">Reopen closed tab</span>
+    </button>
+    {#if showHandBack}
+      <button type="button" class="browser-popover-row" onclick={handleHandBack}>
+        <Undo2 size={16} class="shrink-0 text-surface-400" />
+        <span class="text-sm text-surface-50">Hand back to Medousa</span>
+      </button>
+    {/if}
     <button
       type="button"
       class="browser-popover-row disabled:opacity-40"
@@ -233,6 +310,63 @@
       bind:this={menuAnchorEl}
       type="button"
       class="btn btn-icon btn-sm"
+      aria-label="More actions"
+      title="More actions"
+      onclick={toggleMenu}
+    >
+      <Ellipsis size={16} />
+    </button>
+
+    <BrowserPopover
+      open={menuOpen}
+      onClose={closeMenu}
+      anchorRect={menuAnchorRect}
+      placement="below"
+      title="Page actions"
+      ariaLabel="Browser page actions"
+      width={260}
+      maxHeight={360}
+      hideNativeEmbed={true}
+      backdrop={true}
+    >
+      <button
+        type="button"
+        class="browser-popover-row disabled:opacity-40"
+        disabled={!canAct}
+        onclick={() => void handleCopyUrl()}
+      >
+        <Copy size={16} class="shrink-0 text-surface-400" />
+        <span class="text-sm text-surface-50">Copy link</span>
+      </button>
+      <button
+        type="button"
+        class="browser-popover-row disabled:opacity-40"
+        disabled={!canAct}
+        onclick={() => void handleOpenExternal()}
+      >
+        <ExternalLink size={16} class="shrink-0 text-surface-400" />
+        <span class="text-sm text-surface-50">Open in default browser</span>
+      </button>
+      <button type="button" class="browser-popover-row" onclick={handleFindInPage}>
+        <Search size={16} class="shrink-0 text-surface-400" />
+        <span class="text-sm text-surface-50">Find in page</span>
+      </button>
+      <button type="button" class="browser-popover-row" onclick={() => void handleReopenTab()}>
+        <RotateCcw size={16} class="shrink-0 text-surface-400" />
+        <span class="text-sm text-surface-50">Reopen closed tab</span>
+      </button>
+      {#if showHandBack}
+        <button type="button" class="browser-popover-row" onclick={handleHandBack}>
+          <Undo2 size={16} class="shrink-0 text-surface-400" />
+          <span class="text-sm text-surface-50">Hand back to Medousa</span>
+        </button>
+      {/if}
+    </BrowserPopover>
+
+    <button
+      bind:this={savedAnchorEl}
+      type="button"
+      class="btn btn-icon btn-sm"
       aria-label="Bookmarks"
       title="Bookmarks"
       data-browser-popover-trigger
@@ -246,7 +380,7 @@
     <BrowserSavedSheet
       open={savedOpen}
       onClose={closeSaved}
-      anchorRect={menuAnchorRect}
+      anchorRect={savedAnchorRect}
       placement="panel"
     />
   </div>

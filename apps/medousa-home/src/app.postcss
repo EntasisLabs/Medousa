@@ -2688,6 +2688,135 @@
     box-shadow: 0 1px 0 rgb(var(--color-surface-700) / 0.35);
   }
 
+  .browser-loading-bar {
+    @apply pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5;
+    background: rgb(var(--color-primary-500) / 0.85);
+    animation: browser-loading-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes browser-loading-pulse {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .browser-find-bar {
+    @apply flex shrink-0 items-center gap-1 border-b border-surface-700/50 px-2 py-1;
+    background: rgb(var(--color-surface-950) / 0.98);
+  }
+
+  .browser-find-input {
+    @apply min-w-0 flex-1 border-0 bg-transparent text-sm text-surface-100 outline-none ring-0;
+  }
+
+  .browser-find-status {
+    @apply shrink-0 text-xs text-surface-400;
+  }
+
+  .browser-start-page-host {
+    @apply absolute inset-0 z-10 overflow-hidden bg-surface-900;
+  }
+
+  .browser-start-page {
+    @apply flex h-full min-h-0 items-center justify-center overflow-y-auto bg-surface-900 px-6 py-10;
+  }
+
+  .browser-start-page-inner {
+    @apply w-full max-w-[480px];
+  }
+
+  .browser-start-section {
+    @apply mb-8 last:mb-0;
+  }
+
+  .browser-start-section-label {
+    @apply mb-3 text-xs font-medium text-surface-400;
+  }
+
+  .browser-start-recents {
+    @apply flex flex-col gap-0.5;
+  }
+
+  .browser-start-recent-row {
+    @apply flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition hover:bg-surface-800/60;
+  }
+
+  .browser-start-favicon {
+    @apply h-7 w-7 shrink-0 rounded-md bg-surface-800 object-cover;
+  }
+
+  .browser-start-recent-title {
+    @apply block truncate text-sm font-medium text-surface-100;
+  }
+
+  .browser-start-recent-host {
+    @apply block truncate text-xs text-surface-500;
+  }
+
+  .browser-start-saved-grid {
+    @apply grid grid-cols-4 gap-3 sm:grid-cols-4;
+  }
+
+  .browser-start-saved-tile {
+    @apply flex flex-col items-center gap-1.5 rounded-xl p-2 transition hover:bg-surface-800/60;
+  }
+
+  .browser-start-saved-icon {
+    @apply h-8 w-8 rounded-lg bg-surface-800 object-cover;
+  }
+
+  .browser-start-saved-label {
+    @apply max-w-full truncate text-[11px] text-surface-400;
+  }
+
+  .browser-agent-banner {
+    @apply flex shrink-0 items-center justify-between gap-2 border-b border-surface-800 bg-surface-900/80 px-3 py-1.5;
+  }
+
+  .browser-agent-banner-label {
+    @apply flex items-center gap-2 text-xs text-surface-200;
+  }
+
+  .browser-agent-banner-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full bg-primary-400;
+  }
+
+  .browser-url-bar {
+    @apply min-w-0 flex-1;
+  }
+
+  .browser-url-bar-input {
+    @apply border border-surface-700/60 bg-surface-900/80 px-3 py-1.5 text-surface-100 shadow-none;
+  }
+
+  .browser-url-bar-input:focus {
+    @apply border-surface-600 ring-1 ring-surface-600/40;
+  }
+
+  .browser-tab-bar {
+    @apply shrink-0;
+  }
+
+  .browser-tab {
+    @apply rounded-t-md border-b-2 border-transparent bg-surface-900/40;
+  }
+
+  .browser-tab-active {
+    @apply border-b-primary-500 bg-surface-900;
+  }
+
+  .browser-tab-favicon {
+    @apply h-5 w-5 shrink-0 rounded-sm object-cover;
+  }
+
+  .browser-tab-favicon-fallback {
+    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-surface-700 text-[10px] font-semibold uppercase text-surface-200;
+  }
+
   .browser-popover-backdrop {
     background: rgb(var(--color-surface-950) / 0.35);
     backdrop-filter: blur(4px);

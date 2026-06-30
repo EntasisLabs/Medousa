@@ -126,7 +126,31 @@ pub struct HumanBrowserNavigatedPayload {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favicon: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanBrowserNavStatePayload {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HumanBrowserLoadingPayload {
+    loading: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindInPageResult {
+    pub found: bool,
+}
+
+static NAV_STATE_TX: Mutex<Option<oneshot::Sender<HumanBrowserNavStatePayload>>> = Mutex::new(None);
+static FIND_TX: Mutex<Option<oneshot::Sender<FindInPageResult>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -220,7 +244,24 @@ fn window_inner_logical(window: &tauri::Window) -> Result<(f64, f64), String> {
     Ok((inner.width, inner.height))
 }
 
-fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>) {
+fn emit_loading(app: &AppHandle, loading: bool) {
+    let _ = app.emit(
+        "human-browser-loading",
+        HumanBrowserLoadingPayload { loading },
+    );
+}
+
+fn emit_nav_state(app: &AppHandle, can_go_back: bool, can_go_forward: bool) {
+    let _ = app.emit(
+        "human-browser-nav-state",
+        HumanBrowserNavStatePayload {
+            can_go_back,
+            can_go_forward,
+        },
+    );
+}
+
+fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>, favicon: Option<String>) {
     {
         let mut guard = active_url_lock().lock().expect("last active url");
         *guard = url.to_string();
@@ -228,21 +269,25 @@ fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>) {
     let payload = HumanBrowserNavigatedPayload {
         url: url.to_string(),
         title,
+        favicon,
     };
     let _ = app.emit("human-browser-navigated", payload);
 }
 
-fn probe_page_title(webview: &tauri::Webview, _app: &AppHandle, url: &str) {
+fn probe_page_metadata(webview: &tauri::Webview, app: &AppHandle, url: &str) {
     let url_json = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".to_string());
     let script = [
         "(function(){try{var u=",
         &url_json,
-        ";var t=(document.title||'').trim();if(!t)return;var i=window.__TAURI_INTERNALS__||window.__TAURI__;",
-        "if(!i||!i.invoke)return;i.invoke('human_browser_report_title',{url:u,title:t});",
+        ";var t=(document.title||'').trim();var fav=null;try{var link=document.querySelector('link[rel~=\"icon\"]');if(link&&link.href)fav=link.href;}catch(e){}var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;",
+        "if(t)i.invoke('human_browser_report_title',{url:u,title:t});",
+        "if(fav)i.invoke('human_browser_report_favicon',{url:u,favicon:fav});",
+        "i.invoke('human_browser_report_nav_state',{canGoBack:window.history.length>1,canGoForward:false});",
         "}catch(e){}})();",
     ]
     .concat();
     let _ = webview.eval(&script);
+    let _ = app;
 }
 
 fn content_builder(app: &AppHandle, label: &'static str, mobile_ua: bool) -> WebviewBuilder<tauri::Wry> {
@@ -251,19 +296,23 @@ fn content_builder(app: &AppHandle, label: &'static str, mobile_ua: bool) -> Web
     let mut builder = WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
         .on_navigation(move |nav_url| {
             let href = nav_url.as_str().to_string();
-            emit_navigated(&app_nav, &href, None);
+            emit_loading(&app_nav, true);
+            emit_navigated(&app_nav, &href, None, None);
             true
         })
         .on_page_load(move |webview, payload| {
             use tauri::webview::PageLoadEvent;
-            if payload.event() != PageLoadEvent::Finished {
-                return;
-            }
-            let href = payload.url().as_str().to_string();
-            emit_navigated(&app_load, &href, None);
-            probe_page_title(&webview, &app_load, &href);
-            if mobile_ua {
-                let _ = webview.eval(MOBILE_EMBED_FIX_JS);
+            match payload.event() {
+                PageLoadEvent::Started => emit_loading(&app_load, true),
+                PageLoadEvent::Finished => {
+                    emit_loading(&app_load, false);
+                    let href = payload.url().as_str().to_string();
+                    emit_navigated(&app_load, &href, None, None);
+                    probe_page_metadata(&webview, &app_load, &href);
+                    if mobile_ua {
+                        let _ = webview.eval(MOBILE_EMBED_FIX_JS);
+                    }
+                }
             }
         });
     if mobile_ua {
@@ -704,7 +753,7 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
                 )
                 .map_err(|err| err.to_string())?;
         }
-        emit_navigated(&app, "about:blank", None);
+        emit_navigated(&app, "about:blank", None, None);
         return Ok(());
     }
     let external = parse_external_url(trimmed)?;
@@ -713,7 +762,8 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
     content
         .navigate(external)
         .map_err(|err| err.to_string())?;
-    emit_navigated(&app, trimmed, None);
+    emit_loading(&app, true);
+    emit_navigated(&app, trimmed, None, None);
     Ok(())
 }
 
@@ -750,7 +800,7 @@ pub fn human_browser_report_title(app: AppHandle, url: String, title: String) ->
     if trimmed.is_empty() {
         return Ok(());
     }
-    emit_navigated(&app, url.trim(), Some(trimmed.to_string()));
+    emit_navigated(&app, url.trim(), Some(trimmed.to_string()), None);
     Ok(())
 }
 
@@ -837,4 +887,88 @@ pub async fn snapshot_markdown_for_url(
     }
     let report = capture_html(app).await?;
     Ok(markdown_from_html(&report.html, &report.url, max_chars))
+}
+
+#[tauri::command]
+pub fn human_browser_report_nav_state(payload: HumanBrowserNavStatePayload) -> Result<(), String> {
+    if let Some(tx) = NAV_STATE_TX.lock().expect("nav state").take() {
+        let _ = tx.send(payload.clone());
+    }
+    if let Some(app) = app_handle() {
+        emit_nav_state(&app, payload.can_go_back, payload.can_go_forward);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_favicon(url: String, favicon: String) -> Result<(), String> {
+    let trimmed = favicon.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if let Some(app) = app_handle() {
+        emit_navigated(&app, url.trim(), None, Some(trimmed.to_string()));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_find_result(found: bool) -> Result<(), String> {
+    if let Some(tx) = FIND_TX.lock().expect("find").take() {
+        let _ = tx.send(FindInPageResult { found });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_stop(app: AppHandle) -> Result<(), String> {
+    let content =
+        embedded_content_webview(&app).ok_or_else(|| "embedded browser content not ready".to_string())?;
+    emit_loading(&app, false);
+    content
+        .eval("try{window.stop();}catch(e){}")
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn human_browser_query_nav_state(app: AppHandle) -> Result<HumanBrowserNavStatePayload, String> {
+    let content =
+        embedded_content_webview(&app).ok_or_else(|| "embedded browser content not ready".to_string())?;
+    let (tx, rx) = oneshot::channel();
+    *NAV_STATE_TX.lock().expect("nav state") = Some(tx);
+    content
+        .eval(
+            r#"(function(){try{var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;i.invoke('human_browser_report_nav_state',{canGoBack:window.history.length>1,canGoForward:false});}catch(e){}})();"#,
+        )
+        .map_err(|err| err.to_string())?;
+    tokio::time::timeout(Duration::from_secs(2), rx)
+        .await
+        .map_err(|_| "navigation state query timed out".to_string())?
+        .map_err(|_| "navigation state channel closed".to_string())
+}
+
+#[tauri::command]
+pub async fn human_browser_find_in_page(
+    app: AppHandle,
+    query: String,
+    forward: Option<bool>,
+) -> Result<FindInPageResult, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(FindInPageResult { found: false });
+    }
+    let content =
+        embedded_content_webview(&app).ok_or_else(|| "embedded browser content not ready".to_string())?;
+    let (tx, rx) = oneshot::channel();
+    *FIND_TX.lock().expect("find") = Some(tx);
+    let forward_lit = if forward.unwrap_or(true) { "true" } else { "false" };
+    let query_json = serde_json::to_string(trimmed).map_err(|err| err.to_string())?;
+    let script = format!(
+        r#"(function(){{try{{var q={query_json};var i=window.__TAURI_INTERNALS__||window.__TAURI__;if(!i||!i.invoke)return;var found=window.find(q,false,{forward_lit},true,false,true,false);i.invoke('human_browser_report_find_result',{{found:!!found}});}}catch(e){{}}}})();"#
+    );
+    content.eval(&script).map_err(|err| err.to_string())?;
+    tokio::time::timeout(Duration::from_secs(2), rx)
+        .await
+        .map_err(|_| "find in page timed out".to_string())?
+        .map_err(|_| "find in page channel closed".to_string())
 }

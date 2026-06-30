@@ -9,6 +9,8 @@ import {
   sendStageRouteCommand,
 } from "$lib/daemon";
 import { homeChannelSurface } from "$lib/platform";
+import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { createTurnTicket } from "$lib/daemon";
@@ -43,6 +45,112 @@ export function buildGoCommands(): WorkshopCommand[] {
       ctx.callbacks.close();
     },
   }));
+}
+
+export function buildBrowserCommands(): WorkshopCommand[] {
+  return [
+    {
+      id: "browser-find-in-page",
+      section: "open",
+      label: "Find in page",
+      subtitle: "Search text on the current page",
+      keywords: "browser find search page web",
+      run: (ctx) => {
+        ctx.navigate("web");
+        humanBrowser.openFindBar();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-open-external",
+      section: "open",
+      label: "Open current tab in default browser",
+      subtitle: humanBrowser.activeUrl && humanBrowser.activeUrl !== "about:blank"
+        ? humanBrowser.activeUrl
+        : "No page loaded",
+      keywords: "browser safari chrome external open tab link",
+      run: async (ctx) => {
+        const url = humanBrowser.activeUrl;
+        if (!url || url === "about:blank") {
+          ctx.error("No page to open.");
+          return;
+        }
+        ctx.navigate("web");
+        const ok = await openUrlInDefaultBrowser(url);
+        if (!ok) {
+          ctx.error("Could not open in default browser.");
+          return;
+        }
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-open-clipboard",
+      section: "open",
+      label: "Open in browser",
+      subtitle: "Navigate to a URL from the clipboard",
+      keywords: "browser url clipboard link open web navigate",
+      prompt: {
+        placeholder: "Paste URL or search query",
+        submitLabel: "Open",
+      },
+      run: async (ctx, args) => {
+        let input = args?.trim();
+        if (!input) {
+          try {
+            input = (await navigator.clipboard.readText()).trim();
+          } catch {
+            // Clipboard unavailable — user can paste in the prompt.
+          }
+        }
+        if (!input) {
+          ctx.error("Enter a URL or search query.");
+          return;
+        }
+        ctx.navigate("web");
+        await humanBrowser.navigate(input);
+        ctx.callbacks.close();
+        ctx.notice("Opened in browser.");
+      },
+    },
+    {
+      id: "browser-reopen-closed-tab",
+      section: "open",
+      label: "Reopen closed tab",
+      subtitle: "Restore the last closed browser tab",
+      keywords: "browser tab reopen closed undo web",
+      run: async (ctx) => {
+        ctx.navigate("web");
+        if (humanBrowser.closedTabs.length === 0) {
+          ctx.error("No closed tab to reopen.");
+          return;
+        }
+        await humanBrowser.reopenClosedTab();
+        ctx.callbacks.close();
+      },
+    },
+    {
+      id: "browser-copy-url",
+      section: "open",
+      label: "Copy browser link",
+      subtitle: "Copy the current tab URL",
+      keywords: "browser copy url link clipboard web",
+      run: async (ctx) => {
+        const url = humanBrowser.activeUrl;
+        if (!url || url === "about:blank") {
+          ctx.error("No page to copy.");
+          return;
+        }
+        const ok = await copyBrowserUrl(url);
+        if (!ok) {
+          ctx.error("Could not copy link.");
+          return;
+        }
+        ctx.notice("Link copied.");
+        ctx.callbacks.close();
+      },
+    },
+  ];
 }
 
 export function buildAskCommands(): WorkshopCommand[] {

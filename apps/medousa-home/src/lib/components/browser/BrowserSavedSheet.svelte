@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { ExternalLink, FileText, Star } from "@lucide/svelte";
+  import { ExternalLink, FileText, History, Star } from "@lucide/svelte";
   import BrowserPopover from "$lib/components/browser/BrowserPopover.svelte";
+  import { browserHistory } from "$lib/stores/browserHistory.svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import type { BrowserBookmark } from "$lib/stores/browserBookmarks.svelte";
@@ -34,6 +35,8 @@
   const resolvedPlacement = $derived<PopoverPlacement>(
     mobile ? "above" : placement,
   );
+
+  const historyEntries = $derived(browserHistory.recent(8));
 
   $effect(() => {
     if (!open) return;
@@ -78,11 +81,29 @@
 >
   {#if loading}
     <p class="px-3 py-4 text-sm text-surface-400">Loading…</p>
-  {:else if quick.length === 0 && library.length === 0}
+  {:else if quick.length === 0 && library.length === 0 && historyEntries.length === 0}
     <p class="px-4 py-6 text-center text-sm text-surface-400">
       Star pages or save to Library to see them here.
     </p>
   {:else}
+    {#if historyEntries.length > 0}
+      <p class="browser-popover-section-label">History</p>
+      {#each historyEntries as entry (entry.url + entry.visitedAt)}
+        <button
+          type="button"
+          class="browser-popover-row"
+          onclick={() => navigate(entry.url)}
+        >
+          <History size={15} class="shrink-0 text-surface-400" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm text-surface-50">{entry.title || entry.url}</span>
+            <span class="block truncate text-[11px] text-surface-400">{entry.url}</span>
+          </span>
+          <ExternalLink size={12} class="shrink-0 text-surface-500" />
+        </button>
+      {/each}
+    {/if}
+
     {#if quick.length > 0}
       <p class="browser-popover-section-label">Quick bookmarks</p>
       {#each quick as entry (entry.url)}

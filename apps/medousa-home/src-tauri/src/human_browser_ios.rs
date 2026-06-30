@@ -116,6 +116,27 @@ struct HumanBrowserNavigatedPayload {
     url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    favicon: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanBrowserNavStatePayload {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HumanBrowserLoadingPayload {
+    loading: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindInPageResult {
+    pub found: bool,
 }
 
 pub fn init_app_handle(app: AppHandle) {
@@ -291,15 +312,46 @@ fn apply_bounds(mtm: MainThreadMarker, bounds: EmbedBounds) -> Result<(), String
     Ok(())
 }
 
-fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>) {
+fn emit_loading(app: &AppHandle, loading: bool) {
+    let _ = app.emit(
+        "human-browser-loading",
+        HumanBrowserLoadingPayload { loading },
+    );
+}
+
+fn emit_nav_state(app: &AppHandle, can_go_back: bool, can_go_forward: bool) {
+    let _ = app.emit(
+        "human-browser-nav-state",
+        HumanBrowserNavStatePayload {
+            can_go_back,
+            can_go_forward,
+        },
+    );
+}
+
+fn emit_navigated(
+    app: &AppHandle,
+    url: &str,
+    title: Option<String>,
+    favicon: Option<String>,
+) {
     if let Ok(mut guard) = active_url_lock().lock() {
         *guard = url.to_string();
     }
     let payload = HumanBrowserNavigatedPayload {
         url: url.to_string(),
         title,
+        favicon,
     };
     let _ = app.emit("human-browser-navigated", payload);
+}
+
+fn read_nav_state(webview: &AnyObject) -> (bool, bool) {
+    unsafe {
+        let can_back: Bool = msg_send![webview, canGoBack];
+        let can_forward: Bool = msg_send![webview, canGoForward];
+        (can_back.as_bool(), can_forward.as_bool())
+    }
 }
 
 fn read_page_title(webview: &AnyObject) -> Option<String> {
@@ -319,6 +371,7 @@ fn read_page_url(webview: &AnyObject) -> String {
 }
 
 fn schedule_navigated_poll(app: AppHandle) {
+    emit_loading(&app, true);
     tauri::async_runtime::spawn(async move {
         for _ in 0..40 {
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -334,15 +387,19 @@ fn schedule_navigated_poll(app: AppHandle) {
                 }
                 let url = read_page_url(&webview);
                 let title = read_page_title(&webview);
-                Ok(Some((url, title)))
+                let nav = read_nav_state(&webview);
+                Ok(Some((url, title, nav)))
             });
-            if let Ok(Some((url, title))) = result {
+            if let Ok(Some((url, title, nav))) = result {
+                emit_loading(&app_clone, false);
+                emit_nav_state(&app_clone, nav.0, nav.1);
                 if !url.is_empty() && url != "about:blank" {
-                    emit_navigated(&app_clone, &url, title);
+                    emit_navigated(&app_clone, &url, title, None);
                 }
                 break;
             }
         }
+        emit_loading(&app, false);
     });
 }
 
@@ -596,7 +653,81 @@ pub fn human_browser_set_mobile_shell_active(active: bool) {
 
 #[tauri::command]
 pub fn human_browser_report_title(app: AppHandle, url: String, title: String) -> Result<(), String> {
-    emit_navigated(&app, url.trim(), Some(title.trim().to_string()));
+    emit_navigated(&app, url.trim(), Some(title.trim().to_string()), None);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_favicon(url: String, favicon: String) -> Result<(), String> {
+    let trimmed = favicon.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if let Some(app) = APP_HANDLE.get() {
+        emit_navigated(app, url.trim(), None, Some(trimmed.to_string()));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_nav_state(payload: HumanBrowserNavStatePayload) -> Result<(), String> {
+    if let Some(app) = APP_HANDLE.get() {
+        emit_nav_state(app, payload.can_go_back, payload.can_go_forward);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_stop(app: AppHandle) -> Result<(), String> {
+    run_on_main(|mtm| {
+        let webview = ensure_overlay_webview(mtm)?;
+        unsafe {
+            let _: () = msg_send![&*webview, stopLoading];
+        }
+        Ok(())
+    })?;
+    emit_loading(&app, false);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_query_nav_state(_app: AppHandle) -> Result<HumanBrowserNavStatePayload, String> {
+    run_on_main(|mtm| {
+        let webview = ensure_overlay_webview(mtm)?;
+        let (can_go_back, can_go_forward) = read_nav_state(&webview);
+        Ok(HumanBrowserNavStatePayload {
+            can_go_back,
+            can_go_forward,
+        })
+    })
+}
+
+#[tauri::command]
+pub async fn human_browser_find_in_page(
+    _app: AppHandle,
+    query: String,
+    forward: Option<bool>,
+) -> Result<FindInPageResult, String> {
+    let trimmed = query.trim().to_string();
+    if trimmed.is_empty() {
+        return Ok(FindInPageResult { found: false });
+    }
+    let forward = forward.unwrap_or(true);
+    let query_json = serde_json::to_string(&trimmed).map_err(|err| err.to_string())?;
+    let backwards = if forward { "false" } else { "true" };
+    let script = format!(
+        "(function(){{try{{return window.find({query_json},false,{backwards},true,false,true,false)?'true':'false';}}catch(e){{return 'false';}}}})();"
+    );
+    run_on_main(move |mtm| {
+        let raw = eval_js_sync(mtm, &script)?;
+        Ok(FindInPageResult {
+            found: raw.trim() == "true",
+        })
+    })
+}
+
+#[tauri::command]
+pub fn human_browser_report_find_result(_found: bool) -> Result<(), String> {
     Ok(())
 }
 

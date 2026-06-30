@@ -166,3 +166,53 @@ pub async fn human_browser_snapshot_search(
 ) -> Result<SearchResponse, String> {
     Err("native browser snapshot unavailable on mobile".to_string())
 }
+
+#[tauri::command]
+pub async fn human_browser_stop(_app: AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_query_nav_state(_app: AppHandle) -> Result<HumanBrowserNavStatePayload, String> {
+    Ok(HumanBrowserNavStatePayload {
+        can_go_back: false,
+        can_go_forward: false,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanBrowserNavStatePayload {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindInPageResult {
+    pub found: bool,
+}
+
+#[tauri::command]
+pub fn human_browser_report_nav_state(_payload: HumanBrowserNavStatePayload) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_favicon(_url: String, _favicon: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_find_in_page(
+    _app: AppHandle,
+    _query: String,
+    _forward: Option<bool>,
+) -> Result<FindInPageResult, String> {
+    Ok(FindInPageResult { found: false })
+}
+
+#[tauri::command]
+pub fn human_browser_report_find_result(_found: bool) -> Result<(), String> {
+    Ok(())
+}

@@ -1,4 +1,6 @@
 import { chat } from "$lib/stores/chat.svelte";
+import { browserHistory } from "$lib/stores/browserHistory.svelte";
+import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { vault } from "$lib/stores/vault.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
 import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
@@ -117,4 +119,27 @@ export function buildWorkCardOpenCommands(
 
 export function buildRecentSessionCommands(ctx: WorkshopCommandContext): WorkshopCommand[] {
   return buildSessionOpenCommands(ctx, "", 3);
+}
+
+export function buildBrowserHistoryCommands(
+  query: string,
+  limit = 8,
+): WorkshopCommand[] {
+  const trimmed = query.trim().toLowerCase();
+  const entries = trimmed
+    ? browserHistory.search(query, limit)
+    : browserHistory.recent(limit);
+
+  return entries.map((entry) => ({
+    id: `browser-history:${entry.url}:${entry.visitedAt}`,
+    section: "open" as const,
+    label: entry.title || entry.url,
+    subtitle: entry.url,
+    keywords: `browser history web ${entry.title} ${entry.url}`,
+    run: async (ctx) => {
+      ctx.navigate("web");
+      await humanBrowser.navigate(entry.url);
+      ctx.callbacks.close();
+    },
+  }));
 }

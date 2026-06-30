@@ -1,12 +1,14 @@
 import {
   buildAdvancedCommands,
   buildAskCommands,
+  buildBrowserCommands,
   buildGoCommands,
   buildTuneCommands,
 } from "./registry";
 import { buildSuggestedCommands, buildBudgetListCommand } from "./contextCommands";
 import {
   buildNoteOpenCommands,
+  buildBrowserHistoryCommands,
   buildSessionOpenCommands,
   buildWorkCardOpenCommands,
   buildRecentSessionCommands,
@@ -64,6 +66,7 @@ export function collectWorkshopCommands(
     ...buildGoCommands(),
     ...buildAskCommands(),
     ...buildTuneCommands(),
+    ...buildBrowserCommands(),
   ];
 
   if (showAdvanced || rawQuery.length > 0) {
@@ -74,6 +77,7 @@ export function collectWorkshopCommands(
     ...buildNoteOpenCommands(ctx, rawQuery),
     ...buildSessionOpenCommands(ctx, rawQuery),
     ...buildWorkCardOpenCommands(ctx, rawQuery),
+    ...buildBrowserHistoryCommands(rawQuery),
   ];
 
   let pool: WorkshopCommand[];
@@ -86,7 +90,7 @@ export function collectWorkshopCommands(
   } else if (!rawQuery && suggested.some((c) => !c.id.startsWith("open-session:"))) {
     pool = [...staticPool, ...buildNoteOpenCommands(ctx, "").slice(0, 8)];
   } else if (!rawQuery) {
-    pool = [...buildGoCommands(), ...buildRecentSessionCommands(ctx), ...buildAskCommands().slice(0, 2)];
+    pool = [...buildGoCommands(), ...buildRecentSessionCommands(ctx), ...buildAskCommands().slice(0, 2), ...buildBrowserHistoryCommands("")];
   } else {
     pool = [...staticPool, ...searchPool];
   }

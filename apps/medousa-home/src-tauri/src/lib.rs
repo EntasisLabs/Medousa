@@ -175,6 +175,8 @@ pub fn run() {
             mcp_gateway::mcp_gateway_set_server_enabled,
             mcp_gateway::mcp_gateway_apply_server,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            browser_host::browser_host_search,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_status,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_restart,
@@ -200,6 +202,8 @@ pub fn run() {
             browser_host::browser_bridge_link_work_card,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_snapshot,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            browser_host_mobile::browser_host_search,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             browser_host_mobile::browser_host_register_client,
             #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -240,6 +244,18 @@ pub fn run() {
             human_browser::human_browser_snapshot_markdown,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_search,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_stop,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_query_nav_state,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_nav_state,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_favicon,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_find_in_page,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_find_result,
             #[cfg(target_os = "android")]
             human_browser_mobile::human_browser_navigate,
             #[cfg(target_os = "android")]
@@ -272,6 +288,18 @@ pub fn run() {
             human_browser_mobile::human_browser_snapshot_markdown,
             #[cfg(target_os = "android")]
             human_browser_mobile::human_browser_snapshot_search,
+            #[cfg(target_os = "android")]
+            human_browser_mobile::human_browser_stop,
+            #[cfg(target_os = "android")]
+            human_browser_mobile::human_browser_query_nav_state,
+            #[cfg(target_os = "android")]
+            human_browser_mobile::human_browser_report_nav_state,
+            #[cfg(target_os = "android")]
+            human_browser_mobile::human_browser_report_favicon,
+            #[cfg(target_os = "android")]
+            human_browser_mobile::human_browser_find_in_page,
+            #[cfg(target_os = "android")]
+            human_browser_mobile::human_browser_report_find_result,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_navigate,
             #[cfg(target_os = "ios")]
@@ -304,6 +332,18 @@ pub fn run() {
             human_browser_ios::human_browser_snapshot_markdown,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_snapshot_search,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_stop,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_query_nav_state,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_report_nav_state,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_report_favicon,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_find_in_page,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_report_find_result,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,

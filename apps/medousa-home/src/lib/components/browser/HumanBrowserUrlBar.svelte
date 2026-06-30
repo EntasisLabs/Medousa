@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { browserHistory } from "$lib/stores/browserHistory.svelte";
   import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
 
   interface Props {
@@ -14,6 +15,9 @@
   let inputEl = $state<HTMLInputElement | null>(null);
   let blurTimer: ReturnType<typeof setTimeout> | undefined;
   let hasMounted = false;
+
+  const suggestions = $derived(browserHistory.search(humanBrowser.urlDraft, 6));
+  const listId = "browser-url-suggestions";
 
   $effect(() => {
     // Track explicit focus requests (desktop bumps the nonce).
@@ -66,7 +70,7 @@
 <form
   class="{mobile
     ? 'mobile-browser-url-dock'
-    : 'flex min-w-0 flex-1 items-center gap-2'}"
+    : 'browser-url-bar flex min-w-0 flex-1 items-center'}"
   onsubmit={handleSubmit}
 >
   <input
@@ -75,16 +79,21 @@
     enterkeyhint="go"
     class="input min-w-0 flex-1 text-sm {mobile
       ? 'mobile-browser-url-pill rounded-full text-left'
-      : ''}"
-    placeholder={mobile ? "Search or enter URL" : "Search or enter URL"}
+      : 'browser-url-bar-input rounded-full'}"
+    placeholder="Search or enter URL"
     bind:value={humanBrowser.urlDraft}
     spellcheck="false"
     autocomplete="off"
     aria-label="Address bar"
+    list={suggestions.length > 0 ? listId : undefined}
     onfocus={handleFocus}
     onblur={handleBlur}
   />
-  {#if !mobile}
-    <button type="submit" class="btn btn-sm variant-filled-primary shrink-0">Go</button>
+  {#if suggestions.length > 0}
+    <datalist id={listId}>
+      {#each suggestions as entry (entry.url + entry.visitedAt)}
+        <option value={entry.url}>{entry.title}</option>
+      {/each}
+    </datalist>
   {/if}
 </form>

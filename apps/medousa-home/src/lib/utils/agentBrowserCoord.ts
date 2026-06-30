@@ -2,7 +2,11 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "$lib/platform";
-import type { HumanBrowserNavigatedPayload } from "$lib/humanBrowser";
+import type {
+  HumanBrowserLoadingPayload,
+  HumanBrowserNavigatedPayload,
+  HumanBrowserNavStatePayload,
+} from "$lib/humanBrowser";
 import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
 import { browser } from "$lib/stores/browser.svelte";
 import { browserContext } from "$lib/stores/browserContext.svelte";
@@ -17,7 +21,7 @@ export function markAgentNavigation() {
 export function attachAgentBrowserCoord(): () => void {
   if (!isTauri()) return () => {};
 
-  const unlisten = listen<HumanBrowserNavigatedPayload>("human-browser-navigated", (event) => {
+  const unlistenNav = listen<HumanBrowserNavigatedPayload>("human-browser-navigated", (event) => {
     humanBrowser.syncFromNative(event.payload);
     browserContext.applyPayload(event.payload);
     void browser.syncFromNative(event.payload.url);
@@ -31,7 +35,26 @@ export function attachAgentBrowserCoord(): () => void {
     }
   });
 
+  const unlistenLoading = listen<HumanBrowserLoadingPayload>(
+    "human-browser-loading",
+    (event) => {
+      humanBrowser.setLoading(event.payload.loading);
+    },
+  );
+
+  const unlistenNavState = listen<HumanBrowserNavStatePayload>(
+    "human-browser-nav-state",
+    (event) => {
+      humanBrowser.setNativeNavState(
+        event.payload.canGoBack,
+        event.payload.canGoForward,
+      );
+    },
+  );
+
   return () => {
-    void unlisten.then((fn) => fn());
+    void unlistenNav.then((fn) => fn());
+    void unlistenLoading.then((fn) => fn());
+    void unlistenNavState.then((fn) => fn());
   };
 }

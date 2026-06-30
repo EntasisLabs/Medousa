@@ -3,11 +3,13 @@
    * Mobile Web tab — embed height = panel height − chrome block + chrome padding-top.
    */
   import { onMount, tick } from "svelte";
-  import { ArrowLeft, ArrowRight, Globe, Layers } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Layers, RefreshCw, Square } from "@lucide/svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
+  import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
+  import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import BrowserTabSheet from "$lib/components/browser/BrowserTabSheet.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import BrowserWebView from "$lib/components/browser/BrowserWebView.svelte";
@@ -81,6 +83,10 @@
 
   async function applyEmbedOnce(): Promise<void> {
     if (!useNative || !visible) return;
+    if (humanBrowser.showStartPage) {
+      await humanBrowserEmbedHide();
+      return;
+    }
     const gen = ++embedGeneration;
 
     await waitForLayoutFrame();
@@ -207,6 +213,10 @@
     if (!useNative || !visible) return;
     await waitForKeyboardSettled();
     await waitForLayoutFrame();
+    if (humanBrowser.showStartPage) {
+      await humanBrowserEmbedHide().catch(() => {});
+      return;
+    }
     // Force the overlay back on regardless of any transient focus state, then
     // re-measure against the settled (chrome-at-rest) layout.
     await humanBrowserEmbedShow().catch(() => {});
@@ -245,6 +255,7 @@
 
   $effect(() => {
     if (!useNative || !visible) return;
+    humanBrowser.showStartPage;
     layout.viewportWidth;
     void presentEmbed();
   });
@@ -346,12 +357,9 @@
         : 'relative min-h-0 flex-1 overflow-hidden bg-surface-950'}"
     >
       {#if useNative}
-        {#if humanBrowser.activeUrl === "about:blank"}
-          <div
-            class="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-surface-900 text-surface-300"
-          >
-            <Globe size={40} strokeWidth={1.25} />
-            <p class="text-sm">Enter a URL below to start browsing.</p>
+        {#if humanBrowser.showStartPage}
+          <div class="browser-start-page-host">
+            <BrowserStartPage />
           </div>
         {/if}
       {:else if humanBrowser.activeUrl && humanBrowser.activeUrl !== "about:blank"}
@@ -360,16 +368,13 @@
           {visible}
           url={humanBrowser.activeUrl}
         />
-      {:else}
-        <div
-          class="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-surface-900 text-surface-300"
-        >
-          <Globe size={40} strokeWidth={1.25} />
-          <p class="text-sm">Enter a URL below to start browsing.</p>
+      {:else if humanBrowser.showStartPage}
+        <div class="browser-start-page-host">
+          <BrowserStartPage />
         </div>
       {/if}
       {#if humanBrowser.loading}
-        <div class="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary-500/80"></div>
+        <div class="browser-loading-bar"></div>
       {/if}
     </div>
 
@@ -381,9 +386,8 @@
         : 'shrink-0 border-t border-surface-800/80'} bg-surface-950/95 backdrop-blur-md"
     >
       <BrowserCaptchaBanner compact={true} />
-      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-surface-800/80 px-2 py-1">
-        <BrowserControlHandoff compact={true} />
-      </div>
+      <BrowserControlHandoff />
+      <BrowserFindBar />
       <div data-browser-controls class="flex items-center gap-1 overflow-x-auto">
         <button
           bind:this={tabsAnchorEl}
@@ -421,6 +425,25 @@
         >
           <ArrowRight size={18} />
         </button>
+        {#if humanBrowser.loading}
+          <button
+            type="button"
+            class="btn btn-icon btn-sm shrink-0"
+            aria-label="Stop loading"
+            onclick={() => void humanBrowser.stop()}
+          >
+            <Square size={14} fill="currentColor" />
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn-icon btn-sm shrink-0"
+            aria-label="Reload"
+            onclick={() => void reloadView()}
+          >
+            <RefreshCw size={18} />
+          </button>
+        {/if}
         <div class="flex min-w-0 flex-1 items-center gap-1">
           <HumanBrowserUrlBar mobile />
           <BrowserChromeActions

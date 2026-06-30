@@ -1,28 +1,35 @@
 /** Local-only browser state for the human-first desktop browser window. */
 
 import {
+  humanBrowserFindInPage,
   humanBrowserGoBack,
   humanBrowserGoForward,
   humanBrowserNavigate,
+  humanBrowserQueryNavState,
   humanBrowserReload,
+  humanBrowserStop,
   type HumanBrowserNavigatedPayload,
 } from "$lib/humanBrowser";
+import { browserHistory } from "$lib/stores/browserHistory.svelte";
 import { browserPageLabel } from "$lib/utils/browserUrl";
+import { resolveBrowserDestination } from "$lib/utils/resolveBrowserDestination";
 
 export type HumanBrowserTab = {
   id: string;
   url: string;
   title: string;
+  favicon?: string | null;
   active: boolean;
   historyBack: string[];
   historyForward: string[];
 };
 
 const SESSION_KEY = "medousa-browser-session";
-const MAX_TABS = 8;
+const MAX_TABS = 12;
+const MAX_CLOSED_TABS = 5;
 
-function tabLabelFromUrl(url: string): string {
-  return browserPageLabel(url);
+function tabLabelFromUrl(url: string, title?: string | null): string {
+  return browserPageLabel(url, title);
 }
 
 function newTab(url = "about:blank", active = true): HumanBrowserTab {
@@ -30,6 +37,7 @@ function newTab(url = "about:blank", active = true): HumanBrowserTab {
     id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     url,
     title: tabLabelFromUrl(url),
+    favicon: null,
     active,
     historyBack: [],
     historyForward: [],
@@ -66,6 +74,7 @@ function loadSession(): HumanBrowserTab[] | null {
         id: tab.id,
         url: tab.url,
         title: tab.title?.trim() || tabLabelFromUrl(tab.url),
+        favicon: tab.favicon ?? null,
         active: tab.id === parsed.activeTabId,
         historyBack: Array.isArray(tab.historyBack) ? tab.historyBack.filter(isValidUrl) : [],
         historyForward: Array.isArray(tab.historyForward)
@@ -106,11 +115,20 @@ export class HumanBrowserStore {
   tabs = $state<HumanBrowserTab[]>(loadSession() ?? [newTab()]);
   urlDraft = $state("");
   loading = $state(false);
+  nativeCanGoBack = $state(false);
+  nativeCanGoForward = $state(false);
+  findOpen = $state(false);
+  closedTabs = $state<HumanBrowserTab[]>([]);
 
   activeTab = $derived(this.tabs.find((tab) => tab.active) ?? this.tabs[0] ?? null);
   activeUrl = $derived(this.activeTab?.url ?? "about:blank");
-  canGoBack = $derived((this.activeTab?.historyBack.length ?? 0) > 0);
-  canGoForward = $derived((this.activeTab?.historyForward.length ?? 0) > 0);
+  showStartPage = $derived(this.activeUrl === "about:blank");
+  canGoBack = $derived(
+    (this.activeTab?.historyBack.length ?? 0) > 0 || this.nativeCanGoBack,
+  );
+  canGoForward = $derived(
+    (this.activeTab?.historyForward.length ?? 0) > 0 || this.nativeCanGoForward,
+  );
 
   scopeLabel = $derived.by(() => {
     const tab = this.activeTab;
@@ -127,6 +145,24 @@ export class HumanBrowserStore {
     schedulePersist(this.tabs);
   }
 
+  setLoading(loading: boolean) {
+    this.loading = loading;
+  }
+
+  setNativeNavState(canGoBack: boolean, canGoForward: boolean) {
+    this.nativeCanGoBack = canGoBack;
+    this.nativeCanGoForward = canGoForward;
+  }
+
+  async refreshNativeNavState() {
+    try {
+      const state = await humanBrowserQueryNavState();
+      this.setNativeNavState(state.canGoBack, state.canGoForward);
+    } catch {
+      // iframe / stub platforms
+    }
+  }
+
   private updateActiveTab(
     updater: (tab: HumanBrowserTab) => HumanBrowserTab,
   ): HumanBrowserTab | null {
@@ -137,17 +173,27 @@ export class HumanBrowserStore {
     return nextTab;
   }
 
-  private setActiveTabLocal(url: string, title?: string) {
+  private setActiveTabLocal(url: string, title?: string, favicon?: string | null) {
     const label = title?.trim() || tabLabelFromUrl(url);
     const activeIdx = this.tabs.findIndex((tab) => tab.active);
     if (activeIdx >= 0) {
       this.tabs = this.tabs.map((tab, idx) =>
-        idx === activeIdx ? { ...tab, url, title: label } : tab,
+        idx === activeIdx
+          ? {
+              ...tab,
+              url,
+              title: label,
+              favicon: favicon ?? tab.favicon ?? null,
+            }
+          : tab,
       );
     } else {
       this.tabs = [newTab(url)];
     }
     this.urlDraft = url === "about:blank" ? "" : url;
+    if (url !== "about:blank") {
+      browserHistory.record(url, label);
+    }
     this.persist();
   }
 
@@ -156,13 +202,15 @@ export class HumanBrowserStore {
     if (!trimmed) return;
 
     const title = payload.title?.trim();
+    const favicon = payload.favicon?.trim() || null;
     const sameUrl = trimmed === this.activeUrl;
 
-    if (sameUrl && title) {
-      this.setActiveTabLocal(trimmed, title);
+    if (sameUrl) {
+      this.setActiveTabLocal(trimmed, title, favicon);
+      void this.refreshNativeNavState();
       return;
     }
-    if (sameUrl) return;
+    if (sameUrl && !title && !favicon) return;
 
     const previous = this.activeUrl;
     if (previous && previous !== "about:blank" && previous !== trimmed) {
@@ -173,13 +221,21 @@ export class HumanBrowserStore {
       }));
     }
 
-    this.setActiveTabLocal(trimmed, title ?? undefined);
+    this.setActiveTabLocal(trimmed, title, favicon);
+    void this.refreshNativeNavState();
   }
 
-  async navigate(url: string, options?: { skipHistory?: boolean }) {
-    const trimmed = url.trim();
+  async navigate(input: string, options?: { skipHistory?: boolean }) {
+    const trimmed = input.trim();
     if (!trimmed) return;
-    const normalized = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+
+    let normalized: string;
+    try {
+      normalized = await resolveBrowserDestination(trimmed);
+    } catch {
+      return;
+    }
+
     const previous = this.activeUrl;
 
     if (
@@ -201,11 +257,12 @@ export class HumanBrowserStore {
       await humanBrowserNavigate(normalized);
       this.setActiveTabLocal(normalized);
     } finally {
-      this.loading = false;
+      // loading cleared by human-browser-loading event when native webview finishes
     }
   }
 
   async openTab(url = "about:blank") {
+    if (this.tabs.length >= MAX_TABS) return;
     const next = this.tabs.map((tab) => ({ ...tab, active: false }));
     const tab = newTab(url, true);
     next.push(tab);
@@ -215,6 +272,7 @@ export class HumanBrowserStore {
     if (url !== "about:blank") {
       await this.navigate(url, { skipHistory: true });
     } else {
+      this.loading = false;
       await humanBrowserNavigate("about:blank");
     }
   }
@@ -225,12 +283,17 @@ export class HumanBrowserStore {
     this.tabs = this.tabs.map((tab) => ({ ...tab, active: tab.id === tabId }));
     this.urlDraft = target.url === "about:blank" ? "" : target.url;
     this.persist();
+    this.loading = true;
     await humanBrowserNavigate(target.url);
+    void this.refreshNativeNavState();
   }
 
   async closeTab(tabId: string) {
     const closing = this.tabs.find((tab) => tab.id === tabId);
     const wasActive = closing?.active ?? false;
+    if (closing) {
+      this.closedTabs = [closing, ...this.closedTabs].slice(0, MAX_CLOSED_TABS);
+    }
     let remaining = this.tabs.filter((tab) => tab.id !== tabId);
     if (remaining.length === 0) {
       remaining = [newTab()];
@@ -245,48 +308,90 @@ export class HumanBrowserStore {
     const active = this.activeTab;
     if (active) {
       this.urlDraft = active.url === "about:blank" ? "" : active.url;
-      if (wasActive) await humanBrowserNavigate(active.url);
+      if (wasActive) {
+        this.loading = true;
+        await humanBrowserNavigate(active.url);
+      }
     }
+    void this.refreshNativeNavState();
+  }
+
+  async reopenClosedTab() {
+    const tab = this.closedTabs[0];
+    if (!tab) return;
+    this.closedTabs = this.closedTabs.slice(1);
+    if (this.tabs.length >= MAX_TABS) {
+      await this.navigate(tab.url, { skipHistory: true });
+      return;
+    }
+    const next = this.tabs.map((t) => ({ ...t, active: false }));
+    next.push({ ...tab, active: true, id: newTab(tab.url).id });
+    this.tabs = next;
+    this.urlDraft = tab.url === "about:blank" ? "" : tab.url;
+    this.persist();
+    await this.navigate(tab.url, { skipHistory: true });
   }
 
   async reload() {
+    this.loading = true;
     await humanBrowserReload();
+  }
+
+  async stop() {
+    await humanBrowserStop();
+    this.loading = false;
   }
 
   async goBack() {
     const active = this.activeTab;
     const previous = active?.historyBack.at(-1);
-    if (!previous) {
-      await humanBrowserGoBack();
+    if (previous) {
+      this.updateActiveTab((tab) => ({
+        ...tab,
+        historyBack: tab.historyBack.slice(0, -1),
+        historyForward:
+          tab.url && tab.url !== "about:blank"
+            ? [...tab.historyForward, tab.url]
+            : tab.historyForward,
+      }));
+      await this.navigate(previous, { skipHistory: true });
       return;
     }
-    this.updateActiveTab((tab) => ({
-      ...tab,
-      historyBack: tab.historyBack.slice(0, -1),
-      historyForward:
-        tab.url && tab.url !== "about:blank"
-          ? [...tab.historyForward, tab.url]
-          : tab.historyForward,
-    }));
-    await this.navigate(previous, { skipHistory: true });
+    this.loading = true;
+    await humanBrowserGoBack();
+    void this.refreshNativeNavState();
   }
 
   async goForward() {
     const active = this.activeTab;
     const next = active?.historyForward.at(-1);
-    if (!next) {
-      await humanBrowserGoForward();
+    if (next) {
+      this.updateActiveTab((tab) => ({
+        ...tab,
+        historyForward: tab.historyForward.slice(0, -1),
+        historyBack:
+          tab.url && tab.url !== "about:blank"
+            ? [...tab.historyBack, tab.url]
+            : tab.historyBack,
+      }));
+      await this.navigate(next, { skipHistory: true });
       return;
     }
-    this.updateActiveTab((tab) => ({
-      ...tab,
-      historyForward: tab.historyForward.slice(0, -1),
-      historyBack:
-        tab.url && tab.url !== "about:blank"
-          ? [...tab.historyBack, tab.url]
-          : tab.historyBack,
-    }));
-    await this.navigate(next, { skipHistory: true });
+    this.loading = true;
+    await humanBrowserGoForward();
+    void this.refreshNativeNavState();
+  }
+
+  async findInPage(query: string, forward = true) {
+    return humanBrowserFindInPage(query, forward);
+  }
+
+  openFindBar() {
+    this.findOpen = true;
+  }
+
+  closeFindBar() {
+    this.findOpen = false;
   }
 }
 

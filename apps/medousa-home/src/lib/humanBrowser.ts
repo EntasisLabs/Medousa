@@ -15,6 +15,15 @@ export interface HumanBrowserEmbedBounds {
   height: number;
 }
 
+export interface HumanBrowserNavState {
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+
+export interface FindInPageResult {
+  found: boolean;
+}
+
 export async function humanBrowserEmbedSetBounds(
   bounds: HumanBrowserEmbedBounds,
 ): Promise<void> {
@@ -61,6 +70,21 @@ export async function humanBrowserGoForward(): Promise<void> {
   return invoke("human_browser_go_forward");
 }
 
+export async function humanBrowserStop(): Promise<void> {
+  return invoke("human_browser_stop");
+}
+
+export async function humanBrowserQueryNavState(): Promise<HumanBrowserNavState> {
+  return invoke("human_browser_query_nav_state");
+}
+
+export async function humanBrowserFindInPage(
+  query: string,
+  forward = true,
+): Promise<FindInPageResult> {
+  return invoke("human_browser_find_in_page", { query, forward });
+}
+
 export async function humanBrowserEmbedShow(): Promise<void> {
   return invoke("human_browser_embed_show");
 }
@@ -103,4 +127,14 @@ export async function humanBrowserSnapshotMarkdown(
 export interface HumanBrowserNavigatedPayload {
   url: string;
   title?: string | null;
+  favicon?: string | null;
+}
+
+export interface HumanBrowserLoadingPayload {
+  loading: boolean;
+}
+
+export interface HumanBrowserNavStatePayload {
+  canGoBack: boolean;
+  canGoForward: boolean;
 }

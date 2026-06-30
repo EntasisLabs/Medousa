@@ -1,14 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Square, RefreshCw } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
+  import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
+  import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import {
     humanBrowserEmbedApplyLayout,
     humanBrowserEmbedHide,
+    humanBrowserEmbedShow,
     humanBrowserSetMobileShellActive,
   } from "$lib/humanBrowser";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
@@ -28,6 +31,10 @@
 
   async function presentEmbed() {
     if (!isTauri() || !visible || layout.isMobile || shouldUseMobileShell()) return;
+    if (humanBrowser.showStartPage) {
+      await humanBrowserEmbedHide();
+      return;
+    }
     const gen = ++embedGeneration;
     await humanBrowserSetMobileShellActive(false);
     if (gen !== embedGeneration) return;
@@ -43,11 +50,13 @@
       activityCollapsed: layout.activityCollapsed,
       workRailVisible,
     });
+    await humanBrowserEmbedShow();
     if (gen !== embedGeneration) return;
   }
 
   $effect(() => {
     if (!isTauri() || !visible || layout.isMobile) return;
+    humanBrowser.showStartPage;
     layout.activityWidth;
     layout.activityCollapsed;
     layout.viewportWidth;
@@ -61,6 +70,14 @@
 
   onMount(() => {
     const onKeydown = (event: KeyboardEvent) => {
+      if (layout.desktopSurface !== "web" && !humanBrowser.findOpen) return;
+
+      if (event.key === "Escape" && humanBrowser.loading) {
+        event.preventDefault();
+        void humanBrowser.stop();
+        return;
+      }
+
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
       const key = event.key.toLowerCase();
@@ -76,7 +93,23 @@
         urlBarFocusNonce += 1;
         return;
       }
-      if (typing) return;
+      if (key === "f") {
+        event.preventDefault();
+        humanBrowser.openFindBar();
+        return;
+      }
+      if (mod && event.shiftKey && key === "t") {
+        event.preventDefault();
+        void humanBrowser.reopenClosedTab();
+        return;
+      }
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        if (event.key === "[") void humanBrowser.goBack();
+        else void humanBrowser.goForward();
+        return;
+      }
+      if (typing && key !== "r") return;
 
       if (key === "t") {
         event.preventDefault();
@@ -109,9 +142,9 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50" data-browser-panel>
-  <!-- Chrome band — native webview is positioned below this (y=156 in Rust). Must stay 156px. -->
-  <div class="human-browser-chrome relative z-50 flex h-[156px] w-full shrink-0 flex-col">
+  <div class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col">
     <HumanBrowserTabBar />
+    <BrowserControlHandoff />
 
     <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
       <div class="flex shrink-0 items-center gap-1">
@@ -133,35 +166,42 @@
         >
           <ArrowRight size={16} />
         </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Reload"
-          onclick={() => void humanBrowser.reload()}
-        >
-          <RefreshCw size={16} />
-        </button>
+        {#if humanBrowser.loading}
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Stop loading"
+            onclick={() => void humanBrowser.stop()}
+          >
+            <Square size={14} fill="currentColor" />
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Reload"
+            onclick={() => void humanBrowser.reload()}
+          >
+            <RefreshCw size={16} />
+          </button>
+        {/if}
       </div>
       <HumanBrowserUrlBar {urlBarFocusNonce} />
-      <BrowserControlHandoff compact={true} />
       <BrowserChromeActions />
     </div>
 
+    <BrowserFindBar />
     <BrowserCaptchaBanner compact={true} />
 
     {#if humanBrowser.loading}
-      <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
+      <div class="browser-loading-bar"></div>
     {/if}
   </div>
 
-  <!-- Native embed sits in this region (Rust-positioned below chrome). -->
   <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-900" data-browser-embed-host>
-    {#if humanBrowser.activeUrl === "about:blank"}
-      <div
-        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-surface-400"
-      >
-        <Globe size={40} strokeWidth={1.25} class="opacity-40" />
-        <p class="text-sm">Enter a URL above or open a link from Chat</p>
+    {#if humanBrowser.showStartPage}
+      <div class="browser-start-page-host">
+        <BrowserStartPage />
       </div>
     {/if}
   </div>
