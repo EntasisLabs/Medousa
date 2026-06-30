@@ -344,6 +344,9 @@ pub async fn ingest_handler(
         session_mapping::IngestAction::QueryHeartbeat => {
             reply = format_ingest_heartbeat_reply(&state).await;
         }
+        session_mapping::IngestAction::QueryContextUsage => {
+            reply = format_ingest_context_usage_reply(&state, &outcome.session_id).await;
+        }
     }
 
     crate::channel_session_store::channel_session_store()
@@ -552,6 +555,19 @@ async fn format_ingest_heartbeat_reply(state: &AppState) -> String {
         )
     } else {
         format!("heartbeat status unavailable last_tick={last_tick_at_utc:?} now={now_utc}")
+    }
+}
+
+async fn format_ingest_context_usage_reply(state: &AppState, session_id: &str) -> String {
+    let report = state
+        .last_context_usage_by_session
+        .read()
+        .await
+        .get(session_id)
+        .cloned();
+    match report {
+        Some(report) => crate::agent_runtime::context_usage::format_context_usage_text(&report),
+        None => "No context usage snapshot yet — send a message first.".to_string(),
     }
 }
 

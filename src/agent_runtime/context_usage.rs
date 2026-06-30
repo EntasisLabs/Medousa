@@ -172,6 +172,44 @@ pub fn operator_summary(report: &ContextUsageReport) -> String {
     format!("Context {total}{limit} · system {system} · tools {tools}")
 }
 
+/// Fill percentage when `context_limit_tokens` is known.
+pub fn usage_fill_percent(report: &ContextUsageReport) -> Option<u32> {
+    let limit = report.context_limit_tokens?;
+    if limit == 0 {
+        return None;
+    }
+    let pct = (report.total_tokens_estimate as f64 / limit as f64) * 100.0;
+    Some(pct.round().clamp(0.0, 100.0) as u32)
+}
+
+/// Human-readable multiline breakdown for TUI, WhatsApp, Telegram, etc.
+pub fn format_context_usage_text(report: &ContextUsageReport) -> String {
+    let mut lines = Vec::new();
+    if let Some(pct) = usage_fill_percent(report) {
+        let total = format_tokens(report.total_tokens_estimate);
+        let limit = report
+            .context_limit_tokens
+            .map(format_tokens)
+            .unwrap_or_else(|| "?".to_string());
+        lines.push(format!("Context {pct}% full · ~{total} / {limit} tokens"));
+    } else {
+        lines.push(format!(
+            "Context ~{} tokens (estimator: {})",
+            format_tokens(report.total_tokens_estimate),
+            report.estimator
+        ));
+    }
+    lines.push(String::new());
+    for layer in &report.layers {
+        lines.push(format!(
+            "  {} — {}",
+            layer.label,
+            format_tokens(layer.tokens_estimate)
+        ));
+    }
+    lines.join("\n")
+}
+
 fn format_tokens(n: u32) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -214,5 +252,35 @@ mod tests {
         assert_eq!(report.tool_count, 28);
         assert!(report.layers.iter().any(|l| l.id == "system_prompt"));
         assert!(operator_summary(&report).contains("Context"));
+    }
+
+    #[test]
+    fn format_context_usage_text_includes_layers() {
+        let prior = PriorMessageBuild {
+            messages: Vec::new(),
+            hot_turns_included: 0,
+            cold_turns_summarized: 0,
+            cold_summary_chars: 0,
+            tool_slices_chars: 0,
+            script_recall_chars: 0,
+            learning_recall_chars: 0,
+            tool_hints_chars: 0,
+            total_chars: 0,
+        };
+        let report = build_context_usage_report(ContextUsageInput {
+            system_prompt_chars: 2_000,
+            user_prompt_chars: 100,
+            resolved_prompt_chars: 100,
+            prompt_for_request_chars: 100,
+            ambient_chars: 0,
+            prior_build: &prior,
+            tool_count: 5,
+            tool_schema_chars: 9_000,
+            context_limit_tokens: Some(200_000),
+        });
+        let text = format_context_usage_text(&report);
+        assert!(text.contains("System prompt"));
+        assert!(text.contains("Tool definitions"));
+        assert!(text.contains('%'));
     }
 }

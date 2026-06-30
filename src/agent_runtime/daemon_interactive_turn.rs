@@ -71,6 +71,9 @@ pub struct InteractiveTurnSessionHooks {
     pub turn_ticket_registry: Option<TurnTicketRegistry>,
     /// When set, mirror terminal/interim outcomes into ask job store + workspace cards.
     pub ask_job_id: Option<String>,
+    /// When set, store the latest turn-start context budget per session.
+    pub context_usage_by_session:
+        Option<Arc<RwLock<HashMap<String, crate::daemon_api::ContextUsageReport>>>>,
 }
 
 pub(crate) struct InteractiveTurnStreamSink {
@@ -1190,6 +1193,13 @@ async fn run_agent_turn_inner(
     let (tool_count, tool_schema_chars) =
         crate::agent_runtime::context_usage::estimate_tool_schema_chars(&agent_rt.tool_registry)
             .await;
+    let context_limit_tokens = final_route.as_ref().and_then(|route| {
+        crate::model_capability_registry::registry()
+            .resolve(&route.provider, &route.model)
+            .model
+            .and_then(|record| record.max_input_tokens)
+            .and_then(|limit| u32::try_from(limit).ok())
+    });
     let context_report = crate::agent_runtime::context_usage::build_context_usage_report(
         crate::agent_runtime::context_usage::ContextUsageInput {
             system_prompt_chars: system_prompt.chars().count(),
@@ -1200,7 +1210,7 @@ async fn run_agent_turn_inner(
             prior_build: &assembled.prior_build,
             tool_count,
             tool_schema_chars,
-            context_limit_tokens: None,
+            context_limit_tokens,
         },
     );
     let context_summary =
@@ -1218,6 +1228,13 @@ async fn run_agent_turn_inner(
         &context_summary,
     ) {
         if let Some(stream_sink) = context_telemetry {
+            if let Some(cache) = &stream_sink.session_hooks.context_usage_by_session {
+                let session_id = stream_sink.session_id.clone();
+                cache
+                    .write()
+                    .await
+                    .insert(session_id, context_report.clone());
+            }
             stream_sink.publish_tracked(Ok(event)).await;
         }
     }

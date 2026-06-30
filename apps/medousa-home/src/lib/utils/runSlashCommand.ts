@@ -71,6 +71,15 @@ export async function runSlashCommand(command: SlashCommandResult): Promise<void
       chat.historyNotice = "Budget request denied.";
       return;
     }
+    case "usage": {
+      if (!chat.contextUsage) {
+        chat.historyNotice =
+          "No context usage snapshot yet — send a message first.";
+        return;
+      }
+      chat.contextUsagePanelOpen = !chat.contextUsagePanelOpen;
+      return;
+    }
     default:
       return;
   }

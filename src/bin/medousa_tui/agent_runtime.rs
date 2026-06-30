@@ -967,6 +967,14 @@ async fn dispatch_daemon_stream_event(
                 .await
                 .map_err(|err| err.to_string())?;
         }
+        "context_usage" => {
+            if let Some(report) = payload.context_usage {
+                event_tx
+                    .send(TuiEvent::ContextUsage { report })
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+        }
         _ => {
             if !payload.message.trim().is_empty() {
                 event_tx

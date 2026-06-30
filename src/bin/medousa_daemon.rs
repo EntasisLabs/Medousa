@@ -293,6 +293,7 @@ async fn main() -> Result<()> {
         webhook_client,
         retention_config,
         last_retention_at: Arc::new(RwLock::new(None)),
+        last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
     };
 

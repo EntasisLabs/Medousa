@@ -5,6 +5,7 @@ export type SlashCommandResult =
   | { kind: "budget_list" }
   | { kind: "budget_approve"; requestId?: string }
   | { kind: "budget_deny"; requestId?: string }
+  | { kind: "usage" }
   | { kind: "help" };
 
 export function parseSlashCommand(value: string): SlashCommandResult | null {
@@ -31,6 +32,9 @@ export function parseSlashCommand(value: string): SlashCommandResult | null {
     const requestId = trimmed.slice("/budget deny".length).trim();
     return { kind: "budget_deny", requestId: requestId || undefined };
   }
+  if (trimmed === "/usage" || trimmed === "/context") {
+    return { kind: "usage" };
+  }
   return null;
 }
 
@@ -39,5 +43,6 @@ export const SLASH_COMMAND_HINTS = [
   "/budget list — pending round approvals",
   "/budget approve [id] — grant more tool rounds",
   "/budget deny [id] — stop the turn",
+  "/usage — context window / token breakdown",
   "/help — show commands",
 ];

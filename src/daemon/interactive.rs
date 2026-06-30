@@ -202,6 +202,7 @@ pub async fn spawn_turn_ticket(
         cancelled_turns: Some(cancelled_interactive_turns),
         turn_ticket_registry: Some(turn_tickets.clone()),
         ask_job_id,
+        context_usage_by_session: Some(state.last_context_usage_by_session.clone()),
     };
 
     let turn_id_for_task = turn_id.clone();

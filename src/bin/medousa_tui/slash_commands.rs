@@ -29,6 +29,7 @@ pub(crate) async fn handle_slash_command(
                 state,
                 "  /settings open provider, model, and routing".to_string(),
             );
+            push_obs(state, "  /usage    context window / token breakdown".to_string());
             push_obs(state, "  /close    quit medousa_tui".to_string());
         }
         "/new" => {
@@ -314,6 +315,25 @@ pub(crate) async fn handle_slash_command(
             let sub = parts.next().unwrap_or("report");
             let trailing_args = parts.collect::<Vec<_>>();
             return slash_command_services::handle_perf_command(sub, &trailing_args, state);
+        }
+        "/usage" => {
+            match &state.last_context_usage {
+                Some(report) => {
+                    for line in medousa::agent_runtime::context_usage::format_context_usage_text(report)
+                        .lines()
+                    {
+                        if line.is_empty() {
+                            push_obs(state, String::new());
+                        } else {
+                            push_obs(state, line.to_string());
+                        }
+                    }
+                }
+                None => push_obs(
+                    state,
+                    "No context usage snapshot yet — send a message first.".to_string(),
+                ),
+            }
         }
         "/daemon" => {
             return handle_daemon_command(&mut parts, state);

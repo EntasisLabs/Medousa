@@ -11,6 +11,7 @@ import {
 } from "$lib/daemon";
 import type {
   ChatMessage,
+  ContextUsageReport,
   InteractiveTurnStreamEvent,
   PendingBudgetApproval,
   PendingBrowserChallenge,
@@ -116,6 +117,10 @@ export class ChatStore {
   browserChallenge = $state<PendingBrowserChallenge | null>(null);
   /** Daemon turn id for the live interactive stream, if any. */
   activeTurnId = $state<string | null>(null);
+  /** Latest turn-start context budget from the daemon stream. */
+  contextUsage = $state<ContextUsageReport | null>(null);
+  /** Home/mobile context usage panel open (also toggled via /usage). */
+  contextUsagePanelOpen = $state(false);
   /** Turn-centric state keyed by daemon turn id. */
   turns = $state<Map<string, TurnTicketState>>(new Map());
   /** Turn worker cards linked to chat handoff bubbles (Tier 3). */
@@ -416,6 +421,8 @@ export class ChatStore {
     this.historyNotice = null;
     this.backgroundActivity = 0;
     this.activeTurnId = null;
+    this.contextUsage = null;
+    this.contextUsagePanelOpen = false;
     this.turns = new Map();
     this.workers = new Map();
     void this.clearStreamOwnership();
@@ -1507,6 +1514,11 @@ export class ChatStore {
 
     if (event.event_type === "error") {
       this.handleTurnError(event);
+      return;
+    }
+
+    if (event.event_type === "context_usage" && event.context_usage) {
+      this.contextUsage = event.context_usage;
       return;
     }
 
