@@ -1053,6 +1053,7 @@ async fn spawn_continuation_agent_turn(
                 agent_runtime.as_ref(),
                 sink,
                 Some(continuation_scope),
+                None,
             )
             .await;
         });
@@ -1179,6 +1180,7 @@ pub async fn spawn_daemon_api_agent_turn_with_scope(
             agent_runtime.as_ref(),
             sink,
             Some(continuation_scope),
+            None,
         )
         .await;
     });
@@ -1887,6 +1889,7 @@ async fn start_ingest_ask_stream(
             agent_runtime.as_ref(),
             sink,
             Some(continuation_scope),
+            None,
         )
         .await;
 

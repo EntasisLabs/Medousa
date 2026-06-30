@@ -3,7 +3,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::daemon_api::{
-    InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    ContextUsageReport, InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
 };
 
 pub fn start_interactive_turn_skeleton(
@@ -123,6 +123,25 @@ pub fn operator_status_stream_event(
             debug_message: None,
         },
     )
+}
+
+/// Turn-start context budget breakdown (Cursor-style telemetry).
+pub fn context_usage_stream_event(
+    turn_id: &str,
+    report: &ContextUsageReport,
+    operator_summary: &str,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event_messages(
+        turn_id,
+        "context_usage",
+        "orchestration",
+        StreamMessages {
+            operator_message: Some(operator_summary.trim().to_string()),
+            debug_message: None,
+        },
+    )?;
+    event.context_usage = Some(report.clone());
+    Ok(event)
 }
 
 /// Whether a stream status line is engine telemetry rather than operator copy.
@@ -557,6 +576,7 @@ fn build_event_messages(
         root_artifact_id: None,
         browser_session_id: None,
         browser_challenge_url: None,
+        context_usage: None,
     })
 }
 

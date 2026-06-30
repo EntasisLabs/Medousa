@@ -235,6 +235,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             self.agent.as_ref(),
             sink,
             None,
+            None,
         )
         .await;
 

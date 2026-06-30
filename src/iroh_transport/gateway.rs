@@ -9,6 +9,7 @@ use iroh::protocol::{AcceptError, ProtocolHandler, Router};
 use iroh::{Endpoint, SecretKey, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
 use tokio::sync::Semaphore;
+use tracing::Instrument;
 
 use super::ALPN;
 
@@ -75,15 +76,17 @@ impl ProtocolHandler for HttpProxy {
             };
             let upstream = Arc::clone(&self.upstream);
             let client = Arc::clone(&self.client);
-            tokio::spawn(async move {
-                let _permit = permit; // released when the task ends
-                let _span = tracing::info_span!("gateway.proxy_stream", upstream = %upstream).entered();
-                if let Err(err) = proxy_stream(&client, &upstream, &mut send, &mut recv).await {
-                    crate::observability::rate_limited_warn("gateway.proxy_stream", || {
-                        format!("medousa-iroh: proxy stream failed: {err:#}")
-                    });
+            tokio::spawn(
+                async move {
+                    let _permit = permit; // released when the task ends
+                    if let Err(err) = proxy_stream(&client, &upstream, &mut send, &mut recv).await {
+                        crate::observability::rate_limited_warn("gateway.proxy_stream", || {
+                            format!("medousa-iroh: proxy stream failed: {err:#}")
+                        });
+                    }
                 }
-            });
+                .instrument(tracing::info_span!("gateway.proxy_stream", upstream = %upstream)),
+            );
         }
         Ok(())
     }

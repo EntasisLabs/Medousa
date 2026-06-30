@@ -698,8 +698,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
         session_scratch_seed,
         current_turn_user_message,
         inference_profile_kind,
-        supports_ui_artifacts,
-        supports_browser_host,
+        supports_ui_artifacts: _,
+        supports_browser_host: _,
     } = params;
 
     let capability_required = if inference_profile_kind

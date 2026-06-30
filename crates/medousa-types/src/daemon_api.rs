@@ -1399,6 +1399,36 @@ pub struct InteractiveTurnStreamEvent {
     /// URL the client should load in Agent Browser WebView.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_challenge_url: Option<String>,
+    /// Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_usage: Option<ContextUsageReport>,
+}
+
+/// One slice of the prompt/context budget (Cursor-style context usage UI).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ContextUsageLayer {
+    /// Stable machine id, e.g. `system_prompt`, `tool_definitions`.
+    pub id: String,
+    /// Human label for UI.
+    pub label: String,
+    pub chars: u32,
+    pub tokens_estimate: u32,
+}
+
+/// Turn-start context composition sent once per interactive turn.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ContextUsageReport {
+    pub layers: Vec<ContextUsageLayer>,
+    pub total_tokens_estimate: u32,
+    pub total_chars: u32,
+    /// Model context window when known from capability registry / route.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit_tokens: Option<u32>,
+    pub tool_count: u32,
+    /// `chars / 4` — documented estimator; not tokenizer-exact.
+    pub estimator: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -360,6 +360,7 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         debug_message: None,
         browser_session_id: None,
         browser_challenge_url: None,
+        context_usage: None,
     }
 }
 
@@ -374,6 +375,7 @@ pub fn journal_turn_event_for_stream(
     if event.ui_artifact.is_some()
         || event.previous_artifact_id.is_some()
         || event.tool_artifact_refs.is_some()
+        || event.context_usage.is_some()
         || matches!(
             event.event_type.as_str(),
             "artifact_presented" | "artifact_updated"

@@ -73,7 +73,7 @@ pub struct InteractiveTurnSessionHooks {
     pub ask_job_id: Option<String>,
 }
 
-struct InteractiveTurnStreamSink {
+pub(crate) struct InteractiveTurnStreamSink {
     turn_id: String,
     session_id: String,
     stream_tx: Arc<TurnEventChannel>,
@@ -818,7 +818,7 @@ pub async fn run_daemon_interactive_turn(
         );
 
         let session_id = request.session_id.trim().to_string();
-        let sink: SharedAgentStreamSink = Arc::new(InteractiveTurnStreamSink {
+        let interactive_sink = Arc::new(InteractiveTurnStreamSink {
             turn_id: turn_id.to_string(),
             session_id,
             stream_tx: stream.channel.clone(),
@@ -829,6 +829,7 @@ pub async fn run_daemon_interactive_turn(
             streamed_markdown: std::sync::Mutex::new(String::new()),
             pending_slice_scratch: std::sync::Mutex::new(None),
         });
+        let sink: SharedAgentStreamSink = interactive_sink.clone();
 
         run_agent_turn(
             turn_id,
@@ -837,6 +838,7 @@ pub async fn run_daemon_interactive_turn(
             agent_rt,
             sink,
             continuation_scope,
+            Some(interactive_sink),
         )
         .await;
     }
@@ -846,12 +848,13 @@ pub async fn run_daemon_interactive_turn(
 
 /// Run a full agent turn, streaming events through the provided sink.
 pub async fn run_agent_turn(
-    _turn_id: &str,
+    turn_id: &str,
     request: InteractiveTurnRequest,
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
     continuation_scope: Option<TurnContinuationScope>,
+    context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
 ) {
     let previous_scope = agent_rt.turn_scope.read().await.clone();
     let turn_correlation_id = continuation_scope
@@ -866,7 +869,7 @@ pub async fn run_agent_turn(
         .as_ref()
         .and_then(|surface| surface.channel_surface.clone());
     let mut effective_scope = continuation_scope.unwrap_or_else(|| TurnContinuationScope {
-        turn_correlation_id: _turn_id.to_string(),
+        turn_correlation_id: turn_id.to_string(),
         session_id: request.session_id.clone(),
         original_prompt: request.prompt.clone(),
         delivery_target: None,
@@ -892,11 +895,12 @@ pub async fn run_agent_turn(
     .await;
 
     run_agent_turn_inner(
-        _turn_id,
+        turn_id,
         request,
         backend,
         agent_rt,
         tracking_sink,
+        context_telemetry,
     )
     .await;
 
@@ -915,11 +919,12 @@ pub async fn run_agent_turn(
 }
 
 async fn run_agent_turn_inner(
-    _turn_id: &str,
+    turn_id: &str,
     request: InteractiveTurnRequest,
     backend: &str,
     agent_rt: &super::runtime::MedousaAgentRuntime,
     sink: SharedAgentStreamSink,
+    context_telemetry: Option<Arc<InteractiveTurnStreamSink>>,
 ) {
 
     let session_id = request.session_id.trim().to_string();
@@ -1124,6 +1129,7 @@ async fn run_agent_turn_inner(
     }
 
     let resolved_prompt = truncate_text_for_budget(&prepared.resolved_prompt, MAX_REQUEST_PROMPT_CHARS);
+    let resolved_prompt_chars = resolved_prompt.chars().count();
     let assembled = turn_orchestrator::assemble_local_turn(AssembleLocalTurnParams {
         session_id: &session_id,
         settings: &settings,
@@ -1175,6 +1181,46 @@ async fn run_agent_turn_inner(
         assembled.prior_build.total_chars,
     ))
     .await;
+
+    let system_prompt = super::turn_worker::system_prompt_for_host_profile(
+        super::DEFAULT_SYSTEM_PROMPT,
+        true,
+        None,
+    );
+    let (tool_count, tool_schema_chars) =
+        crate::agent_runtime::context_usage::estimate_tool_schema_chars(&agent_rt.tool_registry)
+            .await;
+    let context_report = crate::agent_runtime::context_usage::build_context_usage_report(
+        crate::agent_runtime::context_usage::ContextUsageInput {
+            system_prompt_chars: system_prompt.chars().count(),
+            user_prompt_chars: effective_prompt.chars().count(),
+            resolved_prompt_chars,
+            prompt_for_request_chars: assembled.execution.prompt_for_request.chars().count(),
+            ambient_chars: prepared.ambient_appendix.chars().count(),
+            prior_build: &assembled.prior_build,
+            tool_count,
+            tool_schema_chars,
+            context_limit_tokens: None,
+        },
+    );
+    let context_summary =
+        crate::agent_runtime::context_usage::operator_summary(&context_report);
+    tracing::info!(
+        target: "medousa::context_usage",
+        turn_id = %turn_id,
+        total_tokens = context_report.total_tokens_estimate,
+        tool_count = context_report.tool_count,
+        "turn context budget"
+    );
+    if let Ok(event) = interactive_turn_runtime::context_usage_stream_event(
+        turn_id,
+        &context_report,
+        &context_summary,
+    ) {
+        if let Some(stream_sink) = context_telemetry {
+            stream_sink.publish_tracked(Ok(event)).await;
+        }
+    }
 
     turn_orchestrator::execute_local_turn(sink, assembled.execution).await;
 }

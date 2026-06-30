@@ -135,4 +135,22 @@ export interface InteractiveTurnStreamEvent {
   debug_message?: string | null;
   browser_session_id?: string | null;
   browser_challenge_url?: string | null;
+  /** Turn-start context budget breakdown (Cursor-style telemetry). */
+  context_usage?: ContextUsageReport | null;
+}
+
+export interface ContextUsageLayer {
+  id: string;
+  label: string;
+  chars: number;
+  tokens_estimate: number;
+}
+
+export interface ContextUsageReport {
+  layers: ContextUsageLayer[];
+  total_tokens_estimate: number;
+  total_chars: number;
+  context_limit_tokens?: number | null;
+  tool_count: number;
+  estimator: string;
 }
