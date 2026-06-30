@@ -268,6 +268,17 @@ methods:
     streaming: false
     sync: true
 
+# Client-only helpers (not HTTP routes; documented in docs/sdk/api-reference.md)
+client_helpers:
+  - accessor: interactive
+    methods:
+      - stream_turn
+      - stream_reconnecting
+      - stream_reconnecting_with_policy
+      - stream_turn_reconnecting
+    rust_module: medousa_sdk::interactive
+    python_module: medousa.interactive
+
   # runtime
   - accessor: runtime
     method: artifact_command

@@ -6,6 +6,7 @@ Short, durable decisions — not sprint plans. For build history see [../../../a
 |-----|-------|--------|
 | [adr-002-user-profiles.md](adr-002-user-profiles.md) | Switchable user profiles + Locus tenancy | Accepted |
 | [adr-003-multi-workshop-connections.md](adr-003-multi-workshop-connections.md) | Multi-workshop registry and active workshop | Accepted |
+| [adr-004-durable-turn-spine.md](adr-004-durable-turn-spine.md) | Durable turn journal + SSE `?since=` replay | Accepted |
 
 ## Template
 

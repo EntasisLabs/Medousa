@@ -67,10 +67,39 @@ Embed HTML in sandboxed iframe (`sandbox="allow-scripts"`).
 
 ## Cancel & reconnect
 
-- Cancel: `POST /v1/sessions/{session_id}/active-turn`
-- Reconnect: `GET /v1/sessions/{session_id}/active-turn` then re-open stream if still running
+**Cancel:** `POST /v1/sessions/{session_id}/active-turn` (SDK: `client.interactive().cancel(session_id)`).
 
-[connection-reliability.md](../runbooks/connection-reliability.md)
+**Reconnect after SSE drop** (before `terminal`):
+
+1. Track `event.seq` on every `InteractiveTurnStreamEvent`.
+2. Re-open the same `stream_url` with `?since=<last_seq>` — the daemon replays from its durable turn journal, then tails live.
+3. If you lost `turn_id`, poll `GET /v1/sessions/{session_id}/active-turn` first.
+
+**Rust** (recommended):
+
+```rust
+let mut events = client
+    .interactive()
+    .stream_turn_reconnecting(&InteractiveTurnRequest {
+        session_id: "my-session".into(),
+        prompt: "Hello".into(),
+        ..Default::default()
+    })
+    .await?;
+```
+
+**Python:**
+
+```python
+async with client.interactive().stream_turn_reconnecting(request) as events:
+    async for event in events:
+        if event.terminal:
+            break
+```
+
+**Raw HTTP:** append `?since=42` to the stream path; parse SSE until `terminal`.
+
+[connection-reliability.md](../runbooks/connection-reliability.md) · [SDK interactive streaming](../sdk/interactive-streaming.md)
 
 ---
 

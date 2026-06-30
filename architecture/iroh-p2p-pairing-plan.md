@@ -1,5 +1,7 @@
 # Iroh P2P pairing — phased epic
 
+> **Historical / living plan** — Transport implementation has moved to `medousa-sdk-iroh` and `daemon/sdk.rs`. For current integrator docs see [docs/README.md](../docs/README.md). Active roadmap: [ROADMAP.md](ROADMAP.md).
+>
 > **Status:** Phase 0 code landed (smoke pending) · Phase 1 QR v2 landed · Phase 2 mobile handshake wired  
 > **Date:** 2026-06-07  
 > **Supersedes:** deferred “Phase E cloud relay” transport story in [first-run-and-lan-pairing-plan.md](archive/first-run-and-lan-pairing-plan.md) (relay layer only — cloud auth remains Phase E)  

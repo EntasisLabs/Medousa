@@ -34,7 +34,9 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` (includes `stream_url`) | `interactive().start_turn` |
-| GET | `/v1/interactive/turn/{turn_id}/stream` | SSE: `InteractiveTurnStreamEvent` | use `http()` or app stream bridge |
+| GET | `/v1/interactive/turn/{turn_id}/stream` | SSE: `InteractiveTurnStreamEvent` | `interactive().stream` / `stream_reconnecting` |
+
+**Stream query:** `GET …/stream?since=<seq>` (optional `u64`, default `0`). Replays events with `seq > since` from the **durable turn journal** on disk, then tails live events. Each SSE payload includes monotonic **`seq`** per turn — clients track the last seen `seq` and reconnect with `?since=` after drops.
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
 
@@ -60,7 +62,7 @@ See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE 
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/ingest` | `IngestRequest` → `IngestResponse` | `ingest().post` |
-| GET | `/v1/ingest/{stream_id}/stream` | ingest SSE | `http().get` |
+| GET | `/v1/ingest/{stream_id}/stream` | ingest SSE (`?since=<seq>` same as interactive) | `http().get` |
 | POST | `/v1/deliver/outbox` | webhook delivery | `http().post` |
 | GET | `/v1/deliver/poll/{job_id}` | `DeliverPollResponse` | `http().get` |
 

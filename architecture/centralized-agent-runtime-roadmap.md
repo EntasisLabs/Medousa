@@ -1,7 +1,7 @@
 # Centralized Agent Runtime — Roadmap
 
-> Created: 2026-05-31  
-> **Status:** Phases 0–4 ✅ shipped (`centralized-v1`) · Phase 5 hardening open  
+> **Status:** Phases 0–4 ✅ shipped (`centralized-v1`) · Engine hardening (spine + `medousa-engine` crate) ✅ · Phase 5 parity items open  
+> **Engine crate:** [component-engine.md](component-engine.md)  
 > **Canonical runtime guide:** [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md)  
 > Related: [outbox-channel-delivery-roadmap.md](outbox-channel-delivery-roadmap.md), [centralized-ingester-roadmap.md](centralized-ingester-roadmap.md), [component-tui.md](component-tui.md)
 
@@ -139,6 +139,10 @@ Point all ingress at daemon agent turns.
 ---
 
 ### Phase 5 — Parity & hardening
+
+**Engine hardening (shipped 2026-06):** durable `TurnEventLog` spine, `medousa-engine` crate, SDK/Home reconnect helpers — [component-engine.md](component-engine.md), [adr-004](../docs/architecture/decisions/adr-004-durable-turn-spine.md).
+
+**Remaining parity items:**
 
 - [ ] Per-session stage routing + depth from ingester (`/model`, `/depth`) applied to agent turn
 - [ ] Verifier + answer_state surfaced in delivery metadata (optional channel formatting)

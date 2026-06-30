@@ -13,8 +13,10 @@ It is used when you need:
 
 ## Binary layout
 
-- **Entry:** `medousa/src/bin/medousa_daemon.rs` (~500 lines) — startup, scheduler side effects, tests.
+- **Entry:** `medousa/src/bin/medousa_daemon.rs` (~500 lines) — startup, FD/concurrency limits, tracing, scheduler side effects.
 - **Handlers:** `medousa/src/daemon/*` — see [daemon-modules.md](../docs/architecture/daemon-modules.md).
+- **Turn core:** [`medousa-engine` crate](../crates/medousa-engine/) — durable spine + `run_turn` ([component-engine.md](component-engine.md)).
+- **Supporting:** `src/comms/`, `src/observability/`, `src/engine_recovery.rs`, `src/sse_turn_projection.rs`.
 - **Local inference:** `medousa_local` + `GET /v1/local/engine/status` on daemon (probe only).
 
 ## Process Model
@@ -51,6 +53,8 @@ Optional local dashboard mount (in-memory backend):
 ## Agent Runtime
 
 At startup the daemon builds `MedousaAgentRuntime` via `build_daemon_agent_runtime()`.
+
+Interactive turns journal events to **`TurnEventLog`** (durable spine) before SSE projection. Clients reconnect with `GET …/stream?since=<seq>`. See [component-engine.md](component-engine.md) and [../docs/engine/interactive-streaming.md](../docs/engine/interactive-streaming.md).
 
 Interactive paths that use the shared turn engine:
 
@@ -94,7 +98,7 @@ For Stasis enqueue-style writes (prompt/recurring):
 
 ## Durability Model
 
-Daemon process does not maintain separate custom persistence files.
+Daemon process does not maintain separate custom persistence files for scheduler state.
 
 Durability is delegated to runtime backend stores:
 
@@ -102,6 +106,7 @@ Durability is delegated to runtime backend stores:
 - recurring definitions
 - outbox event state
 - session history (via session store)
+- **turn event journal** (`TurnEventLog` under data dir — replay + recovery)
 
 Agent turn job results are in-memory until polled (same process lifetime as daemon).
 
@@ -111,3 +116,6 @@ Agent turn job results are in-memory until polled (same process lifetime as daem
 - --interval-ms controls steady-state scheduler cadence
 - graceful shutdown is signal-driven
 - backend selection defines execution durability profile
+- `MEDOUSA_DAEMON_MAX_CONCURRENCY` caps in-flight HTTP requests (tower global limit)
+- startup raises `RLIMIT_NOFILE` when permitted (macOS default 256 is too low for many SSE clients)
+- tracing via `observability::init_tracing_from_env()` — see [configuration-reference.md](../docs/configuration-reference.md)

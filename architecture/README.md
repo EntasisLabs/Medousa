@@ -17,6 +17,7 @@ Living documentation for system shape, component boundaries, and active roadmap.
 | Doc | Purpose |
 |-----|---------|
 | [turn-runtime-and-lanes.md](turn-runtime-and-lanes.md) | **Turn loop, FSM, host/worker bus, lanes, Specialists** |
+| [component-engine.md](component-engine.md) | **Durable turn spine, `run_turn`, port traits (`medousa-engine`)** |
 | [system-overview.md](system-overview.md) | End-to-end system shape |
 | [interaction-and-state-model.md](interaction-and-state-model.md) | Who owns what state |
 | [enterprise-architecture-and-flow-guide.md](enterprise-architecture-and-flow-guide.md) | Topology, flows, accountability framing |
@@ -45,7 +46,8 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 | Doc | Topic |
 |-----|--------|
 | [identity-manuscripts-and-recall-plan.md](identity-manuscripts-and-recall-plan.md) | Specialists (YAML manuscripts), ranked digest, recall |
-| [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md) | One turn engine across surfaces (Ph 0–4 ✅) |
+| [centralized-agent-runtime-roadmap.md](centralized-agent-runtime-roadmap.md) | One turn engine across surfaces (Ph 0–4 ✅; engine hardening ✅) |
+| [component-engine.md](component-engine.md) | `medousa-engine` crate — durable spine, ports |
 | [durable-turn-worker-plan.md](durable-turn-worker-plan.md) | Durable Stasis worker jobs |
 | [worker-continuity-plan.md](worker-continuity-plan.md) | Host→worker continuity bundle (Ph A ✅) |
 | [context-lanes-and-scratchpad-plan.md](context-lanes-and-scratchpad-plan.md) | Context pools (Ph 1–2 ✅) |

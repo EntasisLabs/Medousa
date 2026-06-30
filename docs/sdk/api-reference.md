@@ -106,7 +106,12 @@ Generic JSON escape hatch when no typed wrapper exists.
 | `start_turn(request)` | `POST /v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` |
 | `stream(stream_url)` | SSE from `stream_url` | `InteractiveTurnStreamEvent` stream |
 | `stream_turn(request)` | start + SSE | combined helper |
+| `stream_reconnecting(stream_url)` | SSE with `?since=` replay | `InteractiveTurnStreamEvent` stream (client helper) |
+| `stream_reconnecting_with_policy(stream_url, policy)` | SSE with custom `ReconnectPolicy` | `InteractiveTurnStreamEvent` stream |
+| `stream_turn_reconnecting(request)` | start + reconnecting SSE | combined helper (recommended) |
 | `cancel(session_id)` | `POST /v1/sessions/{id}/active-turn` | cancel active turn |
+
+**Client helpers** (`stream_reconnecting*`, `stream_turn_reconnecting`) are not separate HTTP routes — they track `event.seq`, reconnect with `?since=<last_seq>`, and apply bounded backoff + overlap guard. See `medousa_sdk::ReconnectPolicy` and `medousa_sdk::stream_path_with_since`.
 
 Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-streaming.md](interactive-streaming.md).
 

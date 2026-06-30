@@ -226,9 +226,26 @@ Home Settings → Rhythm writes these fields to `tui_defaults.json` on Mac deskt
 | Variable | Purpose |
 |----------|---------|
 | `OPENSHELL_GATEWAY` | OpenShell gateway name |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry export |
+| `MEDOUSA_LOG` | Tracing filter (default `medousa=info,stasis=warn` when unset; takes precedence over `RUST_LOG` when set) |
+| `RUST_LOG` | Fallback tracing filter when `MEDOUSA_LOG` unset |
+| `MEDOUSA_LOG_ROTATE_MAX_BYTES` | Rotate daemon log file at this size |
+| `MEDOUSA_LOG_ROTATE_MAX_BACKUPS` | Retained rotated log files |
+| `MEDOUSA_DEAD_LETTER_CAP` | Max concurrently retained dead-letter jobs |
+| `MEDOUSA_OTEL_ENABLED` | Enable OTLP export (`true`/`1`) — requires daemon built with `otel-export` feature |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry export endpoint |
 | `OTEL_SERVICE_NAME` | Service name |
 | `STASIS_OTEL_SERVICE_NAME` | Legacy alias |
+
+---
+
+## Daemon resource limits
+
+| Variable / behavior | Purpose |
+|---------------------|---------|
+| `MEDOUSA_DAEMON_MAX_CONCURRENCY` | Global HTTP concurrency cap (tower `GlobalConcurrencyLimitLayer`) |
+| `RLIMIT_NOFILE` at startup | Daemon attempts to raise soft FD limit when OS permits (common macOS default 256 is insufficient for many SSE clients) — not env-configurable |
+
+Comms/gateway pooling and circuit breakers are internal (`src/comms/`, `src/iroh_transport/gateway.rs`) — contributor docs: [daemon-modules.md](architecture/daemon-modules.md).
 
 ---
 

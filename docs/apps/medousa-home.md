@@ -18,12 +18,18 @@ Active roadmap: [architecture/ROADMAP.md](../../architecture/ROADMAP.md).
 ## Transport stack
 
 ```
-Svelte frontend  →  Tauri invoke  →  daemon/workshop_http.rs  →  medousa-sdk MedousaClient  →  LAN / Iroh workshop_transport
+Svelte frontend
+  → Tauri invoke
+  → daemon/workshop_http.rs + daemon/sdk.rs
+  → medousa-sdk MedousaClient + medousa-sdk-iroh WorkshopTransport
+  → LAN / Iroh
 ```
 
 - Typed artifact/runtime calls use `client.runtime().artifact_*()` ([`src-tauri/src/daemon/artifact.rs`](../../apps/medousa-home/src-tauri/src/daemon/artifact.rs)).
-- JSON daemon traffic routes through [`workshop_http.rs`](../../apps/medousa-home/src-tauri/src/daemon/workshop_http.rs) (SDK transport).
-- Streaming (interactive turn SSE, workspace SSE) uses Tauri-side stream bridges because the SDK transport is JSON-only today.
+- JSON daemon traffic routes through [`workshop_http.rs`](../../apps/medousa-home/src-tauri/src/daemon/workshop_http.rs) and [`sdk.rs`](../../apps/medousa-home/src-tauri/src/daemon/sdk.rs) (`medousa-sdk-iroh` pooled transport).
+- Interactive/workspace SSE uses Tauri event bridges. Reconnect discipline: [`src/lib/stream/reconnect.ts`](../../apps/medousa-home/src/lib/stream/reconnect.ts) — bounded backoff, overlap guard, `?since=<seq>` replay aligned with Rust/Python SDK helpers.
+- `interactive_stream_start` may still fetch SSE bytes via legacy `workshop_transport` helpers internally; JSON paths use `medousa-sdk-iroh`.
+- Stream types: [`scripts/gen-ts-types.py`](../../scripts/gen-ts-types.py) → `src/lib/types/generated/daemon_api.ts`.
 
 See [SDK transports](../sdk/transports.md).
 
