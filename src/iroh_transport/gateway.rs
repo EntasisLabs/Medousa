@@ -75,6 +75,7 @@ impl ProtocolHandler for HttpProxy {
                 Err(_) => break, // semaphore closed -> gateway shutting down
             };
             let upstream = Arc::clone(&self.upstream);
+            let upstream_for_span = Arc::clone(&upstream);
             let client = Arc::clone(&self.client);
             tokio::spawn(
                 async move {
@@ -85,7 +86,10 @@ impl ProtocolHandler for HttpProxy {
                         });
                     }
                 }
-                .instrument(tracing::info_span!("gateway.proxy_stream", upstream = %upstream)),
+                .instrument(tracing::info_span!(
+                    "gateway.proxy_stream",
+                    upstream = %upstream_for_span
+                )),
             );
         }
         Ok(())
