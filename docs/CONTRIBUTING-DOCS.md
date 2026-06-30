@@ -14,7 +14,7 @@ Audience tags used throughout `docs/`:
 |-------|-------------------|--------|
 | HTTP routes, request types | [`docs/engine/http-api.md`](engine/http-api.md) | Source of truth: [`src/daemon/router.rs`](../src/daemon/router.rs) |
 | Subsystem behavior (artifacts, vault, streaming) | [`docs/engine/*.md`](engine/) | Link to `architecture/` for FSM internals |
-| SDK methods and examples | [`docs/sdk/`](sdk/) | [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml); Rust [`crates/medousa-sdk/`](../crates/medousa-sdk/); Python [`python/medousa-sdk/`](../python/medousa-sdk/) |
+| SDK methods and examples | [`docs/sdk/`](sdk/) | [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml); Rust [`crates/medousa-sdk/`](../crates/medousa-sdk/); Python [`python/medousa-sdk/`](../python/medousa-sdk/); Home stream types [`scripts/gen-ts-types.py`](../scripts/gen-ts-types.py) |
 | Task-oriented how-tos | [`docs/cookbook/`](cookbook/) | Install, channels, mobile, custom UI |
 | Env vars and ops | [`configuration-reference.md`](configuration-reference.md), [`docs/runbooks/`](runbooks/) | |
 | Turn FSM, component design, epics | [`architecture/`](../architecture/) | Living plans; **not** duplicated in `docs/engine/` |
@@ -43,7 +43,7 @@ When shipping a user-facing or integrator-facing feature:
 
 1. Add or update route rows in [`docs/engine/http-api.md`](engine/http-api.md).
 2. Add or update the subsystem guide under [`docs/engine/`](engine/) if the feature is non-trivial.
-3. Add SDK rows to [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml) and [`docs/sdk/api-reference.md`](sdk/api-reference.md) when `medousa-sdk` exposes a typed method. Run `scripts/check-sdk-contract.sh`. For new DTOs, run `cargo run -p medousa-types-schema` + `scripts/gen-python-types.py`.
+3. Add SDK rows to [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml) and [`docs/sdk/api-reference.md`](sdk/api-reference.md) when `medousa-sdk` exposes a typed method. Run `scripts/check-sdk-contract.sh`. For new DTOs, run `cargo run -p medousa-types-schema` + `scripts/gen-python-types.py` + `scripts/gen-ts-types.py` (Medousa Home generated stream types).
 4. Add a cookbook recipe if operators or integrators need a task-oriented walkthrough.
 5. Update [`docs/README.md`](README.md) index if you add a new top-level guide.
 6. Run [`scripts/verify-docs.sh`](../scripts/verify-docs.sh).

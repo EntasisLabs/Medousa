@@ -14,6 +14,8 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "tauri": "tauri",
     "icons:generate": "tauri icon app-icon.json -o src-tauri/icons --ios-color \"#0a0a0b\" && cp src-tauri/icons/128x128.png static/favicon.png",
     "tauri:ios:init": "tauri ios init",
@@ -60,6 +62,7 @@
     "svelte-check": "^4.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^3.2.6"
   }
 }

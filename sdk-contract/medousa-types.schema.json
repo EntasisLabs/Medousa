@@ -451,6 +451,12 @@
       "mime": {
         "type": "string"
       },
+      "payload_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "presentation": {
         "type": [
           "string",
@@ -1465,13 +1471,13 @@
               "null"
             ]
           },
-          "supports_ui_artifacts": {
-            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
+          "supports_browser_host": {
+            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
             "default": false,
             "type": "boolean"
           },
-          "supports_browser_host": {
-            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Home desktop/iOS set this; Telegram/TUI/ingest leave false.",
+          "supports_ui_artifacts": {
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
             "default": false,
             "type": "boolean"
           },
@@ -1541,22 +1547,22 @@
       "turn_id"
     ],
     "properties": {
-      "budget_request_id": {
-        "description": "Turn budget approval pause — card id for Home deep link / notifications.",
-        "type": [
-          "string",
-          "null"
-        ]
-      },
       "browser_challenge_url": {
-        "description": "URL the client should load in Agent Browser WebView during CAPTCHA handoff.",
+        "description": "URL the client should load in Agent Browser WebView.",
         "type": [
           "string",
           "null"
         ]
       },
       "browser_session_id": {
-        "description": "Agent Browser session id for CAPTCHA / client-executed search handoff.",
+        "description": "Agent Browser CAPTCHA / verification handoff session id.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "budget_request_id": {
+        "description": "Turn budget approval pause — card id for Home deep link / notifications.",
         "type": [
           "string",
           "null"
@@ -1628,6 +1634,13 @@
           "string",
           "null"
         ]
+      },
+      "seq": {
+        "description": "Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.",
+        "default": 0,
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
       },
       "terminal": {
         "type": "boolean"

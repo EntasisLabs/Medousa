@@ -43,6 +43,7 @@ import {
   shouldReattachTurnRecord,
   type StreamOwner,
 } from "$lib/utils/streamOwnership";
+import { applyStreamSeq, streamPathWithSince } from "$lib/stream/reconnect";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 import { settings } from "$lib/stores/settings.svelte";
@@ -739,9 +740,7 @@ export class ChatStore {
    */
   private streamUrlWithSince(streamUrl: string, turnId: string): string {
     const lastSeq = this.lastSeqByTurn.get(turnId) ?? 0;
-    if (lastSeq <= 0) return streamUrl;
-    const separator = streamUrl.includes("?") ? "&" : "?";
-    return `${streamUrl}${separator}since=${lastSeq}`;
+    return streamPathWithSince(streamUrl, lastSeq);
   }
 
   private async detachStreamOwner(turnId: string) {
@@ -1504,12 +1503,7 @@ export class ChatStore {
     // Exactly-once: drop anything at or below the highest seq we've applied for
     // this turn (covers replay-on-reattach + buffer/live overlap). seq===0 means
     // a legacy/unsequenced payload — always let those through.
-    const seq = event.seq ?? 0;
-    if (seq > 0) {
-      const lastSeq = this.lastSeqByTurn.get(event.turn_id) ?? 0;
-      if (seq <= lastSeq) return;
-      this.lastSeqByTurn.set(event.turn_id, seq);
-    }
+    if (!applyStreamSeq(this.lastSeqByTurn, event)) return;
 
     if (event.event_type === "error") {
       this.handleTurnError(event);

@@ -140,7 +140,7 @@ See [custom-chat-ui.md](../cookbook/custom-chat-ui.md).
 
 ## Tauri / workshop transport
 
-`medousa-home` routes JSON + SSE through [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) (`WorkshopTransport`): pooled LAN clients, TTL route cache, optional Iroh hook on mobile. Multipart uploads still use the legacy `workshop_transport` helpers.
+`medousa-home` routes JSON + SSE through [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) (`WorkshopTransport`). Reconnect discipline for the webview lives in [`apps/medousa-home/src/lib/stream/reconnect.ts`](../../apps/medousa-home/src/lib/stream/reconnect.ts) — bounded backoff, overlap guard, and `?since=<seq>` replay aligned with the Rust/Python SDK helpers. Multipart uploads still use the legacy `workshop_transport` helpers.
 
 ---
 

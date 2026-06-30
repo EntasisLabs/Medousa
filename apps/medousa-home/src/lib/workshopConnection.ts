@@ -17,6 +17,11 @@ import {
   notifyWorkerHandoff,
 } from "$lib/notifications";
 import { isWorkerHandoffStreamEvent, isRecoverableStreamError } from "$lib/utils/streamEvents";
+import {
+  DEFAULT_INTERACTIVE_BACKOFF,
+  DEFAULT_WORKSPACE_BACKOFF,
+  ReconnectScheduler,
+} from "$lib/stream/reconnect";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import { haptic } from "$lib/haptics";
@@ -52,38 +57,24 @@ async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
 }
 
 let workshopTeardown = false;
-let workspaceReconnectAttempt = 0;
-let workspaceReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let interactiveRecoverTimer: ReturnType<typeof setTimeout> | null = null;
+const workspaceReconnect = new ReconnectScheduler({
+  policy: DEFAULT_WORKSPACE_BACKOFF,
+});
+const interactiveReconnect = new ReconnectScheduler({
+  policy: DEFAULT_INTERACTIVE_BACKOFF,
+});
 let resumeWorkshopInFlight = false;
 let lastResumeWorkshopAt = 0;
 const RESUME_DEBOUNCE_MS = 3_000;
 
 function cancelScheduledStreamRecovery() {
-  if (workspaceReconnectTimer) {
-    clearTimeout(workspaceReconnectTimer);
-    workspaceReconnectTimer = null;
-  }
-  workspaceReconnectAttempt = 0;
-  if (interactiveRecoverTimer) {
-    clearTimeout(interactiveRecoverTimer);
-    interactiveRecoverTimer = null;
-  }
+  workspaceReconnect.cancel();
+  interactiveReconnect.cancel();
 }
 
 function scheduleWorkspaceStreamReconnect() {
-  if (workshopTeardown || workspaceReconnectTimer) return;
-
-  const delayMs = Math.min(
-    1_000 * 2 ** workspaceReconnectAttempt,
-    MAX_STREAM_RECONNECT_DELAY_MS,
-  );
-  workspaceReconnectAttempt += 1;
-
-  workspaceReconnectTimer = setTimeout(() => {
-    workspaceReconnectTimer = null;
-    void recoverWorkspaceStream();
-  }, delayMs);
+  if (workshopTeardown) return;
+  workspaceReconnect.schedule(() => recoverWorkspaceStream());
 }
 
 async function recoverWorkspaceStream(): Promise<void> {
@@ -99,7 +90,7 @@ async function recoverWorkspaceStream(): Promise<void> {
 
     await stopWorkspaceStream();
     await startWorkspaceStream(workspace.revision || undefined);
-    workspaceReconnectAttempt = 0;
+    workspaceReconnect.noteSuccess();
     void chat.tryReattachActiveTurn(workspace.cards);
   } catch {
     scheduleWorkspaceStreamReconnect();
@@ -107,12 +98,8 @@ async function recoverWorkspaceStream(): Promise<void> {
 }
 
 function scheduleInteractiveStreamRecover() {
-  if (workshopTeardown || interactiveRecoverTimer) return;
-
-  interactiveRecoverTimer = setTimeout(() => {
-    interactiveRecoverTimer = null;
-    void recoverInteractiveStreams();
-  }, 500);
+  if (workshopTeardown) return;
+  interactiveReconnect.schedule(() => recoverInteractiveStreams());
 }
 
 async function recoverInteractiveStreams(): Promise<void> {
@@ -124,6 +111,9 @@ async function recoverInteractiveStreams(): Promise<void> {
       turn.phase !== "budget_blocked",
   );
   const attached = await chat.tryReattachActiveTurn(workspace.cards);
+  if (attached) {
+    interactiveReconnect.noteSuccess();
+  }
   if (!attached && needsStream) {
     chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
   } else if (attached || !needsStream) {
@@ -358,6 +348,8 @@ export function connectWorkshop(options: {
   return () => {
     workshopTeardown = true;
     cancelScheduledStreamRecovery();
+    workspaceReconnect.teardown();
+    interactiveReconnect.teardown();
     detachForeground();
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     void (async () => {
