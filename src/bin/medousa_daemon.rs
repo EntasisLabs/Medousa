@@ -406,6 +406,9 @@ async fn main() -> Result<()> {
             "LAN pairing ready (GET /qr)"
         );
         let warm_service = pairing_service.clone();
+        medousa::home_push::register_home_push(Arc::new(medousa::home_push::HomePushService::new(
+            pairing_service.clone(),
+        )));
         tokio::spawn(async move {
             if let Err(err) = warm_service.current_qr().await {
                 tracing::warn!(error = %err, "pairing QR warm-up failed");

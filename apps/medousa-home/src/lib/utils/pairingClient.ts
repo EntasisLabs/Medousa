@@ -42,7 +42,10 @@ export async function loadPairingCredentials(): Promise<PairingCredentialsSummar
 }
 
 /** Tell the workshop we're alive — routes over LAN or Iroh when off-network. */
-export async function sendPairingHeartbeat(): Promise<void> {
+export async function sendPairingHeartbeat(options?: {
+  apnsDeviceToken?: string;
+  pushPlatform?: string;
+}): Promise<void> {
   if (!isTauri()) return;
-  await invoke("pairing_send_heartbeat");
+  await invoke("pairing_send_heartbeat", { request: options ?? null });
 }

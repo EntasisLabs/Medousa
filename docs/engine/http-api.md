@@ -273,7 +273,8 @@ See [extensions.md](extensions.md).
 | POST | `/pair/init` |
 | POST | `/pair/verify` |
 | GET | `/pair/heartbeat` |
-| DELETE | `/pair/{pairing_id}` |
+| POST | `/pair/heartbeat` |
+| DELETE | `/pair/{pairing_id}` — loopback admin, or `Authorization: Bearer` session token for that pairing |
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 

@@ -40,6 +40,40 @@
       />
     </label>
 
+    {#if mobile}
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Remote push</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Notify this phone from your Mac when work finishes or needs attention — even when the app is closed
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          checked={settings.remotePushEnabled}
+          onchange={(event) =>
+            settings.setRemotePushEnabled((event.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Live Activity</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Show Medousa working status on the Lock Screen and Dynamic Island while jobs run
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          checked={settings.liveActivityEnabled}
+          onchange={(event) =>
+            settings.setLiveActivityEnabled((event.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+    {/if}
+
     <label class="settings-toggle-row">
       <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-surface-100">Workshop guidance</span>

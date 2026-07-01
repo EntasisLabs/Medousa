@@ -13,6 +13,7 @@ mod medousa_paths;
 mod packages;
 mod pairing;
 mod pairing_client;
+mod push;
 mod workshop_registry;
 mod workshop_transport;
 mod capabilities;
@@ -33,6 +34,8 @@ mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
 mod wizard;
+#[cfg(target_os = "ios")]
+mod live_activity;
 
 use daemon::DaemonState;
 use tauri::Manager;
@@ -60,6 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_mobile_push::init())
         .manage(DaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new());
 
@@ -174,6 +178,8 @@ pub fn run() {
             pairing::pairing_complete_from_qr,
             pairing::pairing_load_credentials,
             pairing::pairing_send_heartbeat,
+            push::push_register_apns_token,
+            push::push_clear_apns_token,
             pairing::bonjour_status,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
@@ -496,6 +502,10 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::browser_window_present,
             tray::tray_update_blocked_count,
+            #[cfg(target_os = "ios")]
+            live_activity::live_activity_is_available,
+            #[cfg(target_os = "ios")]
+            live_activity::live_activity_sync,
             medousa_paths::medousa_config_paths,
             medousa_paths::connection_runbook_path,
             medousa_paths::load_tui_defaults_summary,

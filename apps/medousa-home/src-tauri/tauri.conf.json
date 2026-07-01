@@ -33,7 +33,7 @@
     "targets": "all",
     "externalBin": ["binaries/medousa_daemon"],
     "iOS": {
-      "minimumSystemVersion": "15.0",
+      "minimumSystemVersion": "16.1",
       "developmentTeam": "K5SZ28RN9P",
       "infoPlist": "Info.mobile.plist"
     },

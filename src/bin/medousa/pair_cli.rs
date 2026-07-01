@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use medousa::daemon_api::resolve_daemon_url;
+use medousa::daemon_api::{resolve_daemon_url, DEFAULT_DAEMON_URL};
 use serde_json::Value;
 
 pub fn run_pair(args: &[String]) -> Result<()> {
@@ -12,7 +12,7 @@ pub fn run_pair(args: &[String]) -> Result<()> {
     match args.first().map(String::as_str) {
         None | Some("status") | Some("list") => run_pair_status(&daemon_url),
         Some("qr") => run_pair_qr(&daemon_url, args),
-        Some("remove") => run_pair_remove(&daemon_url, args),
+        Some("remove") => run_pair_remove(&resolve_pair_remove_daemon_url(args), args),
         Some(other) => bail!(
             "unknown pair subcommand '{other}'. run 'medousa pair --help' for usage"
         ),
@@ -123,9 +123,19 @@ fn run_pair_remove(daemon_url: &str, args: &[String]) -> Result<()> {
             println!("Removed pairing {pairing_id}");
             Ok(())
         }
+        401 | 403 => bail!(
+            "DELETE /pair/{pairing_id} unauthorized — use http://127.0.0.1:7419 from this Mac, or pass the paired device's session token as Authorization: Bearer"
+        ),
         404 => bail!("pairing not found: {pairing_id}"),
         status => bail!("DELETE /pair/{pairing_id} returned {status}"),
     }
+}
+
+fn resolve_pair_remove_daemon_url(args: &[String]) -> String {
+    find_arg_value(args, "--daemon-url")
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string())
 }
 
 fn resolve_pair_daemon_url(args: &[String]) -> String {
@@ -180,6 +190,9 @@ fn print_pair_help() {
     println!("  medousa pair list [--daemon-url <url>]");
     println!("  medousa pair qr [--term] [--open] [--daemon-url <url>]");
     println!("  medousa pair remove <pairing_id> [--daemon-url <url>]");
+    println!();
+    println!("Remove defaults to {DEFAULT_DAEMON_URL} (loopback admin). Remote revoke requires");
+    println!("Authorization: Bearer <session_token> for the pairing being removed.");
 }
 
 fn has_flag(args: &[String], flag: &str) -> bool {

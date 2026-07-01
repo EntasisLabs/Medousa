@@ -177,7 +177,118 @@ npm run tauri ios dev
 
 ---
 
-## 8. Deep links on device
+## 8. Live Activity (Lock Screen / Dynamic Island)
+
+Medousa can show an **in motion** Live Activity while work is running. Requires **iOS 16.1+** and a one-time Widget Extension setup in Xcode.
+
+### Source layout (checked into git)
+
+| Path | Role |
+|------|------|
+| `src-tauri/ios-live-activity/Shared/` | `MedousaWorkAttributes` — shared by app + widget |
+| `src-tauri/ios-live-activity/App/` | ActivityKit start/update/end bridge (linked from Rust) |
+| `src-tauri/ios-live-activity/Widget/` | Lock Screen + Dynamic Island SwiftUI |
+
+### One-time setup
+
+After `npm run tauri:ios:init`:
+
+```bash
+bash scripts/ios-live-activity-setup.sh
+```
+
+Then in Xcode (`src-tauri/gen/apple/*.xcodeproj`):
+
+1. **File → New → Target → Widget Extension**
+   - Name: `MedousaWorkWidget`
+   - **Include Live Activity:** yes
+   - Include Configuration App Intent: no
+2. Replace the generated widget entry with files from `src-tauri/ios-live-activity/Widget/`
+3. Add `Shared/MedousaWorkAttributes.swift` to **both** the main app target and the widget target
+4. **Signing & Capabilities → App Groups** on both targets: `group.com.entasislabs.medousa-home`
+
+The Rust bridge compiles `App/` + `Shared/` Swift automatically during `tauri ios build` via `build.rs`.
+
+### Toggle
+
+**You → Settings → Rhythm → Live Activity** (on by default). Syncs from workspace state while the app is foregrounded.
+
+### Verify
+
+1. Connect to daemon, start a work card (`in_flight`)
+2. Background the app — Live Activity should show on Lock Screen / Dynamic Island
+3. Tap the activity — should deep-link via `medousa://work/<card-id>`
+
+---
+
+## 9. Remote push (Mac daemon → iPhone)
+
+When your phone is paired, the Mac daemon can send **APNs** notifications for work finished, blocked cards, budget approval, and worker start — even when the app is closed.
+
+### For users (no Apple Developer setup)
+
+1. Install **Medousa Home** from TestFlight or the App Store (official builds include push capability).
+2. On your Mac, run the official Medousa installer or daemon — APNs credentials are bundled for Entasis builds.
+3. Pair your phone (**You → Settings → Connection**).
+4. On iPhone: **You → Settings → Rhythm → Remote push** (on by default).
+5. Accept the iOS notification permission prompt on first launch.
+
+You do **not** need Team ID, Key ID, or `.p8` files. Those are publisher credentials, installed once on the Mac by Entasis release engineering.
+
+The app registers its APNs device token with the daemon on each pairing heartbeat (`POST /pair/heartbeat`).
+
+### For release engineering (one-time Mac setup)
+
+Create an APNs Auth Key (`.p8`) in [Apple Developer → Keys](https://developer.apple.com/account/resources/authkeys/list), then install into the daemon data directory:
+
+```bash
+cd Medousa
+./scripts/install-apns-push.sh \
+  --team-id XXXXXXXXXX \
+  --key-id YYYYYYYYYY \
+  --key-file ~/Downloads/AuthKey_YYYYYYYYYY.p8
+```
+
+This writes:
+
+```text
+~/Library/Application Support/medousa/apns/config.json
+~/Library/Application Support/medousa/apns/AuthKey_YYYYYYYYYY.p8
+```
+
+Restart the daemon. Logs show `home push: APNs configured (data dir file)` when ready.
+
+Use `--production` for App Store builds (default is sandbox for dev/TestFlight). See `config/apns/config.example.json` for the schema.
+
+Full release checklist: [mobile-push-deployment.md](../../../docs/runbooks/mobile-push-deployment.md).
+
+On macOS the install script stores the `.p8` in **Keychain** (`medousa.apns`); only metadata stays in `config.json`.
+
+**Development override** — env vars take precedence over the data-dir file:
+
+```bash
+export MEDOUSA_APNS_TEAM_ID="XXXXXXXXXX"
+export MEDOUSA_APNS_KEY_ID="YYYYYYYYYY"
+export MEDOUSA_APNS_KEY_PATH="$HOME/Downloads/AuthKey_YYYYYYYYYY.p8"
+export MEDOUSA_APNS_BUNDLE_ID="com.entasislabs.medousa-home"
+export MEDOUSA_APNS_SANDBOX=true
+```
+
+### Xcode (Push Notifications capability)
+
+Enable **Push Notifications** on the iOS app target (adds `aps-environment`). Required for device tokens in dev and release builds.
+
+### Test
+
+1. Pair phone, confirm heartbeat succeeds (connection stays green).
+2. Start work on the Mac, background or force-quit Medousa on the phone.
+3. When a card finishes or blocks, you should receive a push notification.
+
+Push payload includes `cardId`, `kind`, and `url` (`medousa://work/<id>`) for deep linking when the app opens.
+
+---
+
+## 10. Deep links on device
 
 Custom scheme: `medousa://work/<card-id>` (configured in `tauri.conf.json`).
 
@@ -189,7 +300,7 @@ medousa://work/<paste-card-id>
 
 ---
 
-## 9. App icons
+## 11. App icons
 
 Source art lives in the repo at `Medousa/assets/`:
 
@@ -222,7 +333,7 @@ After changing icons, rebuild iOS (`npm run tauri:ios:build:testflight`) — `ta
 
 ---
 
-## 10. TestFlight install (first time)
+## 12. TestFlight install (first time)
 
 TestFlight is Apple’s beta channel. You need the **paid Apple Developer Program** ($99/yr). A free Personal Team works for USB dev (`tauri ios dev`) but **not** for TestFlight.
 

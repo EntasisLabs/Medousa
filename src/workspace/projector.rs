@@ -381,6 +381,11 @@ fn apply_item_column_transition(item: &ProjectedWorkItem) {
         {
             store.append_event(event);
         }
+        crate::home_push::notify_column_transition(
+            &item.detail,
+            previous,
+            item.card.column,
+        );
         store.remember_column(card_id, item.card.column);
     }
 }

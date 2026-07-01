@@ -19,7 +19,14 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { ensureNotificationPermission } from "$lib/notifications";
+  import { settings } from "$lib/stores/settings.svelte";
+  import { registerRemotePush } from "$lib/pushRegistration";
+  import {
+    buildLiveActivityPayload,
+    syncLiveActivity,
+  } from "$lib/liveActivity";
   import { setMobileBadge } from "$lib/mobileBadge";
+  import { isTauriIos } from "$lib/platform";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
@@ -35,6 +42,8 @@
   import type { DaemonHealth } from "$lib/daemon";
   import { attachMobileTabSwipe } from "$lib/utils/mobileTabSwipe";
   import { switchMobileTab } from "$lib/mobileNavigation";
+  import { resolveJournalDailyHeroPath } from "$lib/utils/vaultNoteBridge";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
   let daemonHealth = $state<DaemonHealth | null>(null);
   let mainEl: HTMLElement | undefined = $state();
@@ -45,6 +54,28 @@
     if (isTauri()) {
       void updateTrayBlockedCount(blocked);
     }
+  });
+
+  $effect(() => {
+    if (!isTauriIos() || !settings.liveActivityEnabled) return;
+
+    const journalDailyPath = resolveJournalDailyHeroPath(vault.notes);
+    const journalDailyTitle = journalDailyPath
+      ? vaultDisplayTitle(journalDailyPath)
+      : null;
+
+    const payload = buildLiveActivityPayload({
+      health: daemonHealth,
+      cards: workspace.cards,
+      blocked: workspace.blockedCount(),
+      inMotion: workspace.inMotionCount(),
+      primaryCard: workspace.primaryInMotionCard(),
+      workshopName: workshops.activeLabel,
+      journalDailyPath,
+      journalDailyTitle,
+    });
+
+    void syncLiveActivity(payload);
   });
 
   $effect(() => {
@@ -70,6 +101,9 @@
   onMount(() => {
     void workshops.load();
     void ensureNotificationPermission();
+    if (settings.remotePushEnabled) {
+      void registerRemotePush();
+    }
     void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
     const detachWorkshop = connectWorkshop({

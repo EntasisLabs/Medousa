@@ -8,6 +8,7 @@
     "dialog:default",
     "opener:default",
     "notification:default",
+    "mobile-push:default",
     "deep-link:default"
   ]
 }

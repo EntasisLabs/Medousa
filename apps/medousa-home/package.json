@@ -22,7 +22,8 @@
     "tauri:ios:dev": "tauri ios dev",
     "tauri:ios:build": "tauri ios build",
     "tauri:ios:clean": "bash scripts/ios-clean.sh",
-    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"
+    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh",
+    "tauri:ios:live-activity": "bash scripts/ios-live-activity-setup.sh"
   },
   "license": "MIT",
   "dependencies": {
@@ -38,6 +39,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-notification": "^2.3.3",
+    "tauri-plugin-mobile-push-api": "^0.1.4",
     "@tauri-apps/plugin-opener": "^2",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.8",

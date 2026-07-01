@@ -251,10 +251,51 @@ pub fn load_workshop_transport_config(lan_base: &str) -> Option<WorkshopTranspor
     })
 }
 
-pub async fn send_pair_heartbeat(lan_base: &str) -> Result<(), String> {
+pub async fn send_pair_heartbeat(
+    lan_base: &str,
+    body: Option<&crate::pairing::PairHeartbeatInvokeRequest>,
+) -> Result<(), String> {
     let Some(config) = load_workshop_transport_config(lan_base) else {
         return Ok(());
     };
+
+    if let Some(body) = body {
+        let token = body
+            .apns_device_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(crate::push::current_apns_device_token);
+        if token.is_some() || body.push_platform.is_some() {
+            let payload = serde_json::json!({
+                "apnsDeviceToken": token,
+                "pushPlatform": body.push_platform.as_deref().unwrap_or("ios"),
+            });
+            crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+                &config,
+                "/pair/heartbeat",
+                &payload,
+            )
+            .await?;
+            return Ok(());
+        }
+    }
+
+    if let Some(token) = crate::push::current_apns_device_token() {
+        let payload = serde_json::json!({
+            "apnsDeviceToken": token,
+            "pushPlatform": "ios",
+        });
+        crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+            &config,
+            "/pair/heartbeat",
+            &payload,
+        )
+        .await?;
+        return Ok(());
+    }
+
     crate::workshop_transport::workshop_get(&config, "/pair/heartbeat").await?;
     Ok(())
 }

@@ -6,7 +6,8 @@ use axum::response::IntoResponse;
 use axum::{Json, routing::{delete, get, post}, Router};
 
 use crate::pairing::{
-    PairInitRequest, PairVerifyRequest, PairingService,
+    PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
+    RevokePairingResult,
 };
 
 #[derive(Clone)]
@@ -25,7 +26,7 @@ pub fn routes() -> Router<PairingApiState> {
         .route("/pair/code", get(get_pair_code))
         .route("/pair/init", post(pair_init))
         .route("/pair/verify", post(pair_verify))
-        .route("/pair/heartbeat", get(pair_heartbeat))
+        .route("/pair/heartbeat", get(pair_heartbeat).post(pair_heartbeat_post))
         .route("/pair/{pairing_id}", delete(revoke_pairing))
 }
 
@@ -151,10 +152,26 @@ async fn pair_heartbeat(
     State(state): State<PairingApiState>,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    let token = bearer_token(&headers);
+    run_pair_heartbeat(&state, &headers, None).await
+}
+
+async fn pair_heartbeat_post(
+    State(state): State<PairingApiState>,
+    headers: HeaderMap,
+    Json(body): Json<PairHeartbeatRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+    run_pair_heartbeat(&state, &headers, Some(body)).await
+}
+
+async fn run_pair_heartbeat(
+    state: &PairingApiState,
+    headers: &HeaderMap,
+    body: Option<PairHeartbeatRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+    let token = bearer_token(headers);
     let response = state
         .service
-        .pair_heartbeat(token)
+        .pair_heartbeat(token, body)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let status = if response.status == "ok" {
@@ -167,20 +184,21 @@ async fn pair_heartbeat(
 
 async fn revoke_pairing(
     State(state): State<PairingApiState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    state
+    let token = bearer_token(&headers);
+    match state
         .service
-        .revoke_pairing(&pairing_id)
+        .revoke_pairing(&pairing_id, token, &addr.ip().to_string())
         .await
-        .map(|removed| {
-            if removed {
-                StatusCode::NO_CONTENT
-            } else {
-                StatusCode::NOT_FOUND
-            }
-        })
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    {
+        Ok(RevokePairingResult::Removed) => Ok(StatusCode::NO_CONTENT),
+        Ok(RevokePairingResult::NotFound) => Err(StatusCode::NOT_FOUND),
+        Ok(RevokePairingResult::Unauthorized) => Err(StatusCode::UNAUTHORIZED),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
