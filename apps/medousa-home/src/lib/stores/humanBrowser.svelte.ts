@@ -1,6 +1,8 @@
-/** Local-only browser state for the human-first desktop browser window. */
+/** Local-only browser state — separate sessions for main embed vs pop-out window. */
 
 import {
+  humanBrowserActivateTab,
+  humanBrowserCloseTab,
   humanBrowserFindInPage,
   humanBrowserGoBack,
   humanBrowserGoForward,
@@ -24,7 +26,9 @@ export type HumanBrowserTab = {
   historyForward: string[];
 };
 
-const SESSION_KEY = "medousa-browser-session";
+const EMBED_SESSION_KEY = "medousa-browser-session-embed";
+const POPOUT_SESSION_KEY = "medousa-browser-session-popout";
+const LEGACY_SESSION_KEY = "medousa-browser-session";
 const MAX_TABS = 12;
 const MAX_CLOSED_TABS = 5;
 
@@ -59,10 +63,13 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-function loadSession(): HumanBrowserTab[] | null {
+function loadSession(sessionKey: string): HumanBrowserTab[] | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    let raw = localStorage.getItem(sessionKey);
+    if (!raw && sessionKey === EMBED_SESSION_KEY) {
+      raw = localStorage.getItem(LEGACY_SESSION_KEY);
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedSession;
     if (!parsed?.tabs?.length || !parsed.activeTabId) return null;
@@ -96,7 +103,7 @@ function loadSession(): HumanBrowserTab[] | null {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-function schedulePersist(tabs: HumanBrowserTab[]) {
+function schedulePersist(sessionKey: string, tabs: HumanBrowserTab[]) {
   if (typeof localStorage === "undefined") return;
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
@@ -107,12 +114,14 @@ function schedulePersist(tabs: HumanBrowserTab[]) {
       tabs: tabs.map(({ active: _active, ...tab }) => tab),
       activeTabId: active.id,
     };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    localStorage.setItem(sessionKey, JSON.stringify(payload));
   }, 200);
 }
 
 export class HumanBrowserStore {
-  tabs = $state<HumanBrowserTab[]>(loadSession() ?? [newTab()]);
+  private readonly sessionKey: string;
+
+  tabs = $state<HumanBrowserTab[]>([]);
   urlDraft = $state("");
   loading = $state(false);
   nativeCanGoBack = $state(false);
@@ -136,13 +145,15 @@ export class HumanBrowserStore {
     return tab.title?.trim() || tabLabelFromUrl(tab.url);
   });
 
-  constructor() {
+  constructor(sessionKey: string) {
+    this.sessionKey = sessionKey;
+    this.tabs = loadSession(sessionKey) ?? [newTab()];
     const active = this.activeTab;
     if (active) this.urlDraft = active.url === "about:blank" ? "" : active.url;
   }
 
   private persist() {
-    schedulePersist(this.tabs);
+    schedulePersist(this.sessionKey, this.tabs);
   }
 
   setLoading(loading: boolean) {
@@ -268,12 +279,9 @@ export class HumanBrowserStore {
     this.tabs = next;
     this.urlDraft = url === "about:blank" ? "" : url;
     this.persist();
-    if (url !== "about:blank") {
-      await this.navigate(url, { skipHistory: true });
-    } else {
-      this.loading = false;
-      await humanBrowserNavigate("about:blank");
-    }
+    this.loading = url !== "about:blank";
+    await humanBrowserActivateTab(tab.id, url);
+    if (url === "about:blank") this.loading = false;
   }
 
   async activateTab(tabId: string) {
@@ -282,8 +290,7 @@ export class HumanBrowserStore {
     this.tabs = this.tabs.map((tab) => ({ ...tab, active: tab.id === tabId }));
     this.urlDraft = target.url === "about:blank" ? "" : target.url;
     this.persist();
-    this.loading = true;
-    await humanBrowserNavigate(target.url);
+    await humanBrowserActivateTab(tabId, target.url);
     void this.refreshNativeNavState();
   }
 
@@ -293,6 +300,7 @@ export class HumanBrowserStore {
     if (closing) {
       this.closedTabs = [closing, ...this.closedTabs].slice(0, MAX_CLOSED_TABS);
     }
+    await humanBrowserCloseTab(tabId);
     let remaining = this.tabs.filter((tab) => tab.id !== tabId);
     if (remaining.length === 0) {
       remaining = [newTab()];
@@ -308,8 +316,7 @@ export class HumanBrowserStore {
     if (active) {
       this.urlDraft = active.url === "about:blank" ? "" : active.url;
       if (wasActive) {
-        this.loading = true;
-        await humanBrowserNavigate(active.url);
+        await humanBrowserActivateTab(active.id, active.url);
       }
     }
     void this.refreshNativeNavState();
@@ -398,4 +405,7 @@ export class HumanBrowserStore {
   }
 }
 
-export const humanBrowser = new HumanBrowserStore();
+export const humanBrowserEmbed = new HumanBrowserStore(EMBED_SESSION_KEY);
+export const humanBrowserPopout = new HumanBrowserStore(POPOUT_SESSION_KEY);
+/** Main shell embed — default for agent/chat integrations. */
+export const humanBrowser = humanBrowserEmbed;

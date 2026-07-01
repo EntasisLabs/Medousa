@@ -1,13 +1,10 @@
 /** Desktop human browser invoke API (no agent bridge). */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isPopoutBrowserChrome } from "$lib/stores/humanBrowserSurface";
+import type { HumanBrowserSurface } from "$lib/stores/humanBrowserSurface";
 
-function isPopoutBrowserChrome(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.location.pathname.includes("/popout/browser-chrome")
-  );
-}
+export type { HumanBrowserSurface };
 
 export interface HumanBrowserEmbedLayout {
   activityWidth: number;
@@ -69,6 +66,23 @@ export async function humanBrowserEmbedCoordProbe(
   dom?: HumanBrowserEmbedBounds | null,
 ): Promise<Record<string, unknown>> {
   return invoke("human_browser_embed_coord_probe", { dom: dom ?? null });
+}
+
+export async function humanBrowserActivateTab(
+  tabId: string,
+  url: string,
+): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_activate_tab", { tabId, url });
+  }
+  return invoke("human_browser_embed_activate_tab", { tabId, url });
+}
+
+export async function humanBrowserCloseTab(tabId: string): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_close_tab", { tabId });
+  }
+  return invoke("human_browser_embed_close_tab", { tabId });
 }
 
 export async function humanBrowserNavigate(url: string): Promise<void> {
@@ -166,13 +180,16 @@ export interface HumanBrowserNavigatedPayload {
   url: string;
   title?: string | null;
   favicon?: string | null;
+  surface?: HumanBrowserSurface;
 }
 
 export interface HumanBrowserLoadingPayload {
   loading: boolean;
+  surface?: HumanBrowserSurface;
 }
 
 export interface HumanBrowserNavStatePayload {
   canGoBack: boolean;
   canGoForward: boolean;
+  surface?: HumanBrowserSurface;
 }

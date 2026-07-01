@@ -1,6 +1,8 @@
 <script lang="ts">
   import { Plus, X } from "@lucide/svelte";
-  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+
+  const humanBrowser = $derived(humanBrowserForWindow());
   import { faviconUrlForSite, tabDisplayLabel } from "$lib/utils/browserFavicon";
 
   interface Props {

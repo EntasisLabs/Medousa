@@ -40,6 +40,7 @@
         getActive: () => visible && isTauri() && !layout.isMobile && !shouldUseMobileShell(),
         getShowStartPage: () => humanBrowser.showStartPage,
         getActiveUrl: () => humanBrowser.activeUrl,
+        getActiveTabId: () => humanBrowser.activeTab?.id ?? null,
       });
     }
 

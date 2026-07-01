@@ -15,7 +15,9 @@
   import BrowserSavedSheet from "$lib/components/browser/BrowserSavedSheet.svelte";
   import { browser } from "$lib/stores/browser.svelte";
   import { browserBookmarks } from "$lib/stores/browserBookmarks.svelte";
-  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+
+  const humanBrowser = $derived(humanBrowserForWindow());
   import { normalizeBrowserUrl } from "$lib/utils/browserUrl";
   import { copyBrowserUrl, openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import { toast } from "$lib/stores/toast.svelte";

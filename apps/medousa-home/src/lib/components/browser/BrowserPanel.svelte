@@ -97,6 +97,7 @@
         getShowStartPage: () => humanBrowser.showStartPage,
         getUrlBarFocused: () => isMobileBrowserUrlFocused(),
         getActiveUrl: () => humanBrowser.activeUrl,
+        getActiveTabId: () => humanBrowser.activeTab?.id ?? null,
         onStateChange: (state) => {
           compositorState = state;
         },

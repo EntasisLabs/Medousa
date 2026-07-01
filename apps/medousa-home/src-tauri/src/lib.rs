@@ -232,6 +232,16 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_navigate,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_embed_activate_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_embed_close_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_activate_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_close_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_new_window,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_popout_reload,

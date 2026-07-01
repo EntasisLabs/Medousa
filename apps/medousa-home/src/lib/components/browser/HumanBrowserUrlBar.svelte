@@ -1,6 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+
+  const humanBrowser = $derived(humanBrowserForWindow());
   import { browserHistory } from "$lib/stores/browserHistory.svelte";
   import { setMobileBrowserUrlFocus } from "$lib/utils/mobileKeyboardViewport";
 

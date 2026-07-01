@@ -8,7 +8,7 @@ import {
   humanBrowserEmbedReadBounds,
   humanBrowserEmbedSetBounds,
   humanBrowserEmbedShow,
-  humanBrowserNavigate,
+  humanBrowserActivateTab,
   humanBrowserSetMobileShellActive,
   type HumanBrowserEmbedBounds,
 } from "$lib/humanBrowser";
@@ -58,6 +58,8 @@ export type BrowserCompositorOptions = {
   getUrlBarFocused?: () => boolean;
   /** Mobile: re-navigate after webview recreation. */
   getActiveUrl?: () => string | null;
+  /** Active tab id for per-tab native webview swap (no reload on return). */
+  getActiveTabId?: () => string | null;
   /** Called after layout with debug info (DEV overlay). */
   onStateChange?: (state: BrowserCompositorState) => void;
 };
@@ -241,8 +243,11 @@ export function createBrowserCompositor(
       if (gen !== layoutGeneration) return;
 
       const url = options.getActiveUrl?.();
-      if (recreated && url && url !== "about:blank") {
-        await humanBrowserNavigate(url);
+      const tabId = options.getActiveTabId?.();
+      if (recreated && tabId && url && url !== "about:blank") {
+        await humanBrowserActivateTab(tabId, url);
+      } else if (recreated && tabId) {
+        await humanBrowserActivateTab(tabId, url ?? "about:blank");
       }
 
       if (recreated && options.getShowStartPage() === false) {
@@ -266,18 +271,18 @@ export function createBrowserCompositor(
       if (boundsChanged) {
         await humanBrowserEmbedSetBounds(bounds);
         lastBounds = bounds;
-        await humanBrowserEmbedShow();
-        lastVisible = true;
-      } else if (!lastVisible) {
+      }
+      if (wasHidden && gen === layoutGeneration) {
+        const url = options.getActiveUrl?.();
+        const tabId = options.getActiveTabId?.();
+        if (tabId) {
+          await humanBrowserActivateTab(tabId, url ?? "about:blank");
+        }
+      }
+      if (boundsChanged || !lastVisible) {
         lastBounds = bounds;
         await humanBrowserEmbedShow();
         lastVisible = true;
-      }
-      if (wasHidden && lastVisible && gen === layoutGeneration) {
-        const url = options.getActiveUrl?.();
-        if (url && url !== "about:blank") {
-          await humanBrowserNavigate(url);
-        }
       }
     }
     if (options.mode === "mobile") {

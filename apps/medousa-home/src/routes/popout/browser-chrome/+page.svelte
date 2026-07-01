@@ -5,27 +5,39 @@
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
-  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { humanBrowserPopout } from "$lib/stores/humanBrowser.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { hideBrowser, isTauri, setBrowserWindowTitle } from "$lib/window";
-  import type { HumanBrowserNavigatedPayload } from "$lib/humanBrowser";
+  import { attachHumanBrowserSurface } from "$lib/utils/humanBrowserListeners";
+  import { humanBrowserActivateTab } from "$lib/humanBrowser";
 
   let urlBarFocusNonce = $state(0);
 
   $effect(() => {
-    const title = humanBrowser.scopeLabel;
+    const title = humanBrowserPopout.scopeLabel;
     void setBrowserWindowTitle(title === "Web" ? "Medousa Web" : title);
   });
+
+  function syncPopoutContent() {
+    const active = humanBrowserPopout.activeTab;
+    if (!active) return;
+    void humanBrowserActivateTab(active.id, active.url);
+  }
 
   onMount(() => {
     settings.applyTheme();
 
+    const stopListeners = attachHumanBrowserSurface(humanBrowserPopout, "popout");
+    syncPopoutContent();
+
     const unlisteners: Promise<() => void>[] = [];
-    unlisteners.push(
-      listen<HumanBrowserNavigatedPayload>("human-browser-navigated", (event) => {
-        humanBrowser.syncFromNative(event.payload);
-      }),
-    );
+    if (isTauri()) {
+      unlisteners.push(
+        listen<boolean>("browser-window-visibility", (event) => {
+          if (event.payload) syncPopoutContent();
+        }),
+      );
+    }
 
     const onKeydown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -47,24 +59,25 @@
 
       if (key === "t") {
         event.preventDefault();
-        void humanBrowser.openTab();
+        void humanBrowserPopout.openTab();
         return;
       }
       if (key === "w") {
         event.preventDefault();
-        const active = humanBrowser.activeTab;
-        if (active) void humanBrowser.closeTab(active.id);
+        const tab = humanBrowserPopout.activeTab;
+        if (tab) void humanBrowserPopout.closeTab(tab.id);
         return;
       }
       if (key === "r") {
         event.preventDefault();
-        void humanBrowser.reload();
+        void humanBrowserPopout.reload();
       }
     };
     window.addEventListener("keydown", onKeydown);
 
     return () => {
       window.removeEventListener("keydown", onKeydown);
+      stopListeners();
       Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     };
   });
@@ -84,8 +97,8 @@
         type="button"
         class="btn btn-icon btn-sm"
         aria-label="Back"
-        disabled={!humanBrowser.canGoBack}
-        onclick={() => void humanBrowser.goBack()}
+        disabled={!humanBrowserPopout.canGoBack}
+        onclick={() => void humanBrowserPopout.goBack()}
       >
         <ArrowLeft size={16} />
       </button>
@@ -93,8 +106,8 @@
         type="button"
         class="btn btn-icon btn-sm"
         aria-label="Forward"
-        disabled={!humanBrowser.canGoForward}
-        onclick={() => void humanBrowser.goForward()}
+        disabled={!humanBrowserPopout.canGoForward}
+        onclick={() => void humanBrowserPopout.goForward()}
       >
         <ArrowRight size={16} />
       </button>
@@ -102,7 +115,7 @@
         type="button"
         class="btn btn-icon btn-sm"
         aria-label="Reload"
-        onclick={() => void humanBrowser.reload()}
+        onclick={() => void humanBrowserPopout.reload()}
       >
         <RefreshCw size={16} />
       </button>
@@ -122,7 +135,7 @@
     {/if}
   </div>
 
-  {#if humanBrowser.loading}
+  {#if humanBrowserPopout.loading}
     <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
   {/if}
 </div>
