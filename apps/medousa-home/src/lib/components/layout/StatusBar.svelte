@@ -77,6 +77,7 @@
     ? 'h-5 border-t border-surface-700/20 text-surface-600'
     : 'h-8'}"
   aria-label="Medousa status"
+  data-debug-label="status-bar"
 >
   <span class="workshop-status-whisper {statusTextClass}">
     <span class={statusDotClass} aria-hidden="true"></span>

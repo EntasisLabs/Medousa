@@ -2624,6 +2624,11 @@
     contain: layout style;
   }
 
+  /* Desktop native embed: transparent hole in shell webview so child WKWebView shows through. */
+  [data-browser-embed-host].pointer-events-none {
+    background: transparent !important;
+  }
+
   .mobile-browser-bottom-chrome {
     --browser-chrome-pad-top: 0.375rem;
     --browser-chrome-pad-bottom: 0.25rem;

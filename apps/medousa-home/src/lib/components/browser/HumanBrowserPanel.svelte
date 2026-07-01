@@ -9,15 +9,12 @@
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import {
-    humanBrowserEmbedApplyLayout,
-    humanBrowserEmbedHide,
-    humanBrowserEmbedShow,
-    humanBrowserSetMobileShellActive,
-  } from "$lib/humanBrowser";
+    createBrowserCompositor,
+    type BrowserCompositor,
+  } from "$lib/utils/browserCompositor";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
-  import { layoutDesktopRails } from "$lib/utils/desktopRails";
 
   interface Props {
     visible?: boolean;
@@ -27,48 +24,24 @@
   let { visible = true, workRailVisible = false }: Props = $props();
 
   let urlBarFocusNonce = $state(0);
-  let embedGeneration = 0;
+  let panelEl = $state<HTMLElement | null>(null);
+  let chromeEl = $state<HTMLElement | null>(null);
+  let embedHostEl = $state<HTMLElement | null>(null);
+  let compositor = $state<BrowserCompositor | null>(null);
 
-  async function presentEmbed() {
-    if (!isTauri() || !visible || layout.isMobile || shouldUseMobileShell()) return;
-    if (humanBrowser.showStartPage) {
-      await humanBrowserEmbedHide();
-      return;
-    }
-    const gen = ++embedGeneration;
-    await humanBrowserSetMobileShellActive(false);
-    if (gen !== embedGeneration) return;
-    const rails = layoutDesktopRails({
-      viewportWidth: layout.viewportWidth,
-      activityCollapsed: layout.activityCollapsed,
-      activityWidth: layout.activityWidth,
-      workInspectorOpen: false,
-      workInspectorWidth: layout.workInspectorWidth,
-    });
-    await humanBrowserEmbedApplyLayout({
-      activityWidth: rails.activityPaneWidth,
-      activityCollapsed: layout.activityCollapsed,
-      workRailVisible,
-    });
-    await humanBrowserEmbedShow();
-    if (gen !== embedGeneration) return;
-  }
-
-  $effect(() => {
-    if (!isTauri() || !visible || layout.isMobile) return;
-    humanBrowser.showStartPage;
-    layout.activityWidth;
-    layout.activityCollapsed;
-    layout.viewportWidth;
-    workRailVisible;
-    void presentEmbed();
-    return () => {
-      if (shouldUseMobileShell()) return;
-      void humanBrowserEmbedHide();
-    };
-  });
+  const useDesktopCompositor = $derived(
+    isTauri() && !layout.isMobile && !shouldUseMobileShell(),
+  );
 
   onMount(() => {
+    if (isTauri() && !shouldUseMobileShell()) {
+      compositor = createBrowserCompositor({
+        mode: "desktop",
+        getActive: () => visible && isTauri() && !layout.isMobile && !shouldUseMobileShell(),
+        getShowStartPage: () => humanBrowser.showStartPage,
+      });
+    }
+
     const onKeydown = (event: KeyboardEvent) => {
       if (layout.desktopSurface !== "web" && !humanBrowser.findOpen) return;
 
@@ -129,24 +102,52 @@
     };
     window.addEventListener("keydown", onKeydown);
 
-    const onResize = () => {
-      void presentEmbed();
-    };
-    window.addEventListener("resize", onResize);
-
     return () => {
       window.removeEventListener("keydown", onKeydown);
-      window.removeEventListener("resize", onResize);
+      compositor?.detach();
+      compositor = null;
     };
+  });
+
+  $effect(() => {
+    if (!useDesktopCompositor || !visible || !compositor || !embedHostEl || !chromeEl) return;
+    humanBrowser.showStartPage;
+    layout.activityWidth;
+    layout.activityCollapsed;
+    layout.viewportWidth;
+    layout.viewportHeight;
+    workRailVisible;
+    humanBrowser.findOpen;
+    compositor.attach({
+      hostEl: embedHostEl,
+      panelEl,
+      chromeEl,
+    });
   });
 </script>
 
-<div class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50" data-browser-panel>
-  <div class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col">
-    <HumanBrowserTabBar />
-    <BrowserControlHandoff />
+<div
+  bind:this={panelEl}
+  class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50"
+  data-browser-panel
+  data-debug-label="browser-panel"
+>
+  <div
+    bind:this={chromeEl}
+    class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col"
+    data-debug-label="browser-chrome"
+  >
+    <div data-debug-label="browser-tab-bar">
+      <HumanBrowserTabBar />
+    </div>
+    <div data-debug-label="browser-agent-handoff">
+      <BrowserControlHandoff />
+    </div>
 
-    <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
+    <div
+      class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5"
+      data-debug-label="browser-url-row"
+    >
       <div class="flex shrink-0 items-center gap-1">
         <button
           type="button"
@@ -198,7 +199,12 @@
     {/if}
   </div>
 
-  <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-900" data-browser-embed-host>
+  <div
+    bind:this={embedHostEl}
+    class="relative min-h-0 flex-1 overflow-hidden bg-surface-900"
+    data-browser-embed-host
+    data-debug-label="browser-embed-host"
+  >
     {#if humanBrowser.showStartPage}
       <div class="browser-start-page-host">
         <BrowserStartPage />

@@ -2,10 +2,19 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+function isPopoutBrowserChrome(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.location.pathname.includes("/popout/browser-chrome")
+  );
+}
+
 export interface HumanBrowserEmbedLayout {
   activityWidth: number;
   activityCollapsed: boolean;
   workRailVisible: boolean;
+  /** Measured chrome bottom in shell viewport (`getBoundingClientRect().bottom`). */
+  contentTop?: number;
 }
 
 export interface HumanBrowserEmbedBounds {
@@ -50,31 +59,57 @@ export async function humanBrowserEmbedApplyMobileLayout(
 export async function humanBrowserEmbedReadBounds(): Promise<HumanBrowserEmbedBounds & {
   windowWidth: number;
   windowHeight: number;
+  shellOriginX: number;
+  shellOriginY: number;
 }> {
   return invoke("human_browser_embed_read_bounds");
 }
 
+export async function humanBrowserEmbedCoordProbe(
+  dom?: HumanBrowserEmbedBounds | null,
+): Promise<Record<string, unknown>> {
+  return invoke("human_browser_embed_coord_probe", { dom: dom ?? null });
+}
+
 export async function humanBrowserNavigate(url: string): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_navigate", { url });
+  }
   return invoke("human_browser_navigate", { url });
 }
 
 export async function humanBrowserReload(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_reload");
+  }
   return invoke("human_browser_reload");
 }
 
 export async function humanBrowserGoBack(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_go_back");
+  }
   return invoke("human_browser_go_back");
 }
 
 export async function humanBrowserGoForward(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_go_forward");
+  }
   return invoke("human_browser_go_forward");
 }
 
 export async function humanBrowserStop(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_stop");
+  }
   return invoke("human_browser_stop");
 }
 
 export async function humanBrowserQueryNavState(): Promise<HumanBrowserNavState> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_query_nav_state");
+  }
   return invoke("human_browser_query_nav_state");
 }
 
@@ -82,6 +117,9 @@ export async function humanBrowserFindInPage(
   query: string,
   forward = true,
 ): Promise<FindInPageResult> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_find_in_page", { query, forward });
+  }
   return invoke("human_browser_find_in_page", { query, forward });
 }
 

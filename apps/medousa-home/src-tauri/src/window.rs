@@ -27,6 +27,7 @@ pub fn window_show_browser(app: AppHandle) -> Result<(), String> {
     human_browser::prepare_browser_window(&app)?;
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
+    human_browser::on_browser_popout_opened(&app)?;
     let _ = app.emit("browser-window-visibility", true);
     Ok(())
 }
@@ -35,6 +36,7 @@ pub fn window_show_browser(app: AppHandle) -> Result<(), String> {
 pub fn window_hide_browser(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("browser") {
         window.hide().map_err(|err| err.to_string())?;
+        human_browser::on_browser_popout_closed(&app)?;
         let _ = app.emit("browser-window-visibility", false);
     }
     Ok(())
@@ -45,7 +47,6 @@ pub fn window_focus_browser(app: AppHandle) -> Result<(), String> {
     let window = browser_window(&app)?;
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
-    let _ = app.emit("browser-window-visibility", true);
     Ok(())
 }
 
@@ -73,12 +74,13 @@ pub fn browser_window_present(app: AppHandle, options: BrowserPresentOptions) ->
     human_browser::prepare_browser_window(&app)?;
     window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())?;
+    human_browser::on_browser_popout_opened(&app)?;
     let _ = app.emit("browser-window-visibility", true);
     if let Some(url) = options.url.as_deref().filter(|u| !u.trim().is_empty()) {
         let app_clone = app.clone();
         let url = url.to_string();
         tauri::async_runtime::spawn(async move {
-            let _ = human_browser::human_browser_navigate(app_clone, url).await;
+            let _ = human_browser::human_browser_popout_navigate(app_clone, url).await;
         });
     }
     let _ = app.emit("browser-present", options);

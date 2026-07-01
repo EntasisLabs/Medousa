@@ -36,6 +36,7 @@
   import { isTauri } from "$lib/platform";
   import { updateTrayBlockedCount } from "$lib/window";
   import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
+  import ShellLayoutDebug from "$lib/components/debug/ShellLayoutDebug.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
 
@@ -46,6 +47,7 @@
   let { onOpenSpotlight }: Props = $props();
 
   let daemonHealth = $state<DaemonHealth | null>(null);
+  let shellRootEl = $state<HTMLElement | null>(null);
 
   const activeSurface = $derived(layout.desktopSurface);
 
@@ -110,8 +112,12 @@
   }
 </script>
 
-<div class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50">
-  <div class="flex min-h-0 flex-1">
+<div
+  bind:this={shellRootEl}
+  class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50"
+  data-debug-label="app-root"
+>
+  <div class="flex min-h-0 flex-1" data-debug-label="app-row">
     <NavSidebar
       active={activeSurface}
       onSelect={handleSurfaceSelect}
@@ -120,9 +126,15 @@
       activeProfileLabel={userProfiles.activeDisplayName}
     />
 
-    <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
-      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div class="workshop-main relative flex min-w-0 flex-1 flex-col" data-debug-label="workshop-main">
+      <div
+        class="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        data-debug-label="workshop-content-row"
+      >
+        <div
+          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          data-debug-label="workshop-surface-column"
+        >
         {#key layout.navigationEpoch}
           {#if activeSurface === "chat"}
             <ChatPanel
@@ -210,7 +222,10 @@
             onExpand={() => layout.setActivityCollapsed(false)}
           />
         {:else}
-          <div class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden">
+          <div
+            class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden"
+            data-debug-label="activity-rail"
+          >
           <SplitPane
             width={desktopRails.activityPaneWidth}
             side="right"
@@ -284,4 +299,6 @@
       {/if}
     </div>
   </div>
+
+  <ShellLayoutDebug rootEl={shellRootEl} />
 </div>

@@ -61,6 +61,18 @@ export function measureEmbedHostBounds(
   return { x: r.left, y: r.top, width: r.width, height: r.height };
 }
 
+/**
+ * Desktop native embed — use the embed host rect directly so native bounds match
+ * `[data-browser-embed-host]` (same box as the debug overlay).
+ */
+export function measureDesktopBrowserEmbedBounds(
+  _panel: HTMLElement,
+  _chrome: HTMLElement,
+  host: HTMLElement,
+): MobileBrowserBounds | null {
+  return measureEmbedHostBounds(host);
+}
+
 /** Full panel bounds. */
 export function measureEmbedPanelBounds(
   panel: HTMLElement | null | undefined,

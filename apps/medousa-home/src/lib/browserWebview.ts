@@ -9,9 +9,15 @@ export type BrowserWebviewBounds = {
   height: number;
 };
 
-/** Tauri desktop (including narrow viewport / mobile shell) or native iOS WKWebView overlay. */
+/** Native iOS/Android shell (iPhone/iPad/Android Tauri build). */
+export function isTauriAndroid(): boolean {
+  if (!isTauri() || typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
+}
+
+/** Tauri desktop (including narrow viewport / mobile shell) or native iOS/Android WebView overlay. */
 export function canUseNativeBrowserWebview(): boolean {
-  return isTauri() && (!isTauriMobilePlatform() || isTauriIos());
+  return isTauri() && (!isTauriMobilePlatform() || isTauriIos() || isTauriAndroid());
 }
 
 /** Plain DOM rect for native webview placement — no visualViewport offsets. */

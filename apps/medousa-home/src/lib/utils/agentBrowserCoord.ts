@@ -13,6 +13,28 @@ import { browserContext } from "$lib/stores/browserContext.svelte";
 
 let agentNavigationInFlight = false;
 
+let newWindowGate = { lastUrl: "", lastAt: 0, burst: 0 };
+
+function shouldOpenNewWindowTab(url: string): boolean {
+  const now = Date.now();
+  if (url === newWindowGate.lastUrl && now - newWindowGate.lastAt < 2500) {
+    return false;
+  }
+  if (now - newWindowGate.lastAt < 400) {
+    newWindowGate.burst += 1;
+    if (newWindowGate.burst > 2) return false;
+  } else {
+    newWindowGate.burst = 0;
+  }
+  newWindowGate.lastUrl = url;
+  newWindowGate.lastAt = now;
+  return true;
+}
+
+export interface HumanBrowserNewWindowPayload {
+  url: string;
+}
+
 /** Call before agent-initiated humanBrowser.navigate to avoid flipping control to user. */
 export function markAgentNavigation() {
   agentNavigationInFlight = true;
@@ -52,9 +74,20 @@ export function attachAgentBrowserCoord(): () => void {
     },
   );
 
+  const unlistenNewWindow = listen<HumanBrowserNewWindowPayload>(
+    "human-browser-new-window",
+    (event) => {
+      const url = event.payload.url?.trim();
+      if (!url || url === "about:blank") return;
+      if (!shouldOpenNewWindowTab(url)) return;
+      void humanBrowser.openTab(url);
+    },
+  );
+
   return () => {
     void unlistenNav.then((fn) => fn());
     void unlistenLoading.then((fn) => fn());
     void unlistenNavState.then((fn) => fn());
+    void unlistenNewWindow.then((fn) => fn());
   };
 }

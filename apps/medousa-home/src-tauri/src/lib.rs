@@ -19,12 +19,12 @@ mod capabilities;
 mod mcp_gateway;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 mod human_browser;
 #[cfg(any(target_os = "ios", target_os = "android"))]
 mod browser_host_mobile;
 #[cfg(target_os = "android")]
-mod human_browser_mobile;
+mod human_browser_android;
 #[cfg(target_os = "ios")]
 mod human_browser_ios;
 mod provider_catalog;
@@ -85,6 +85,10 @@ pub fn run() {
                 human_browser::init_app_handle(app.handle().clone());
                 browser_host::start_browser_host_background();
             }
+            #[cfg(target_os = "android")]
+            {
+                human_browser_android::init_app_handle(app.handle().clone());
+            }
             #[cfg(target_os = "ios")]
             {
                 human_browser_ios::init_app_handle(app.handle().clone());
@@ -127,6 +131,17 @@ pub fn run() {
                         let _ = window.hide();
                     }
                     _ => {}
+                }
+            }
+        });
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Resized { .. } = event {
+                    human_browser_android::on_main_window_resized(window.app_handle());
                 }
             }
         });
@@ -215,11 +230,19 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_navigate,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_navigate,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_go_back,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_go_back,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_go_forward,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_go_forward,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_apply_layout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -232,6 +255,8 @@ pub fn run() {
             human_browser::human_browser_embed_hide,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_read_bounds,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_embed_coord_probe,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -247,7 +272,11 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_stop,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_stop,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_query_nav_state,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_query_nav_state,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_nav_state,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -255,51 +284,53 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_find_in_page,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_find_in_page,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_find_result,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_navigate,
+            human_browser_android::human_browser_navigate,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_reload,
+            human_browser_android::human_browser_reload,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_go_back,
+            human_browser_android::human_browser_go_back,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_go_forward,
+            human_browser_android::human_browser_go_forward,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_apply_layout,
+            human_browser_android::human_browser_embed_apply_layout,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_apply_mobile_layout,
+            human_browser_android::human_browser_embed_apply_mobile_layout,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_set_bounds,
+            human_browser_android::human_browser_embed_set_bounds,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_show,
+            human_browser_android::human_browser_embed_show,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_hide,
+            human_browser_android::human_browser_embed_hide,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_read_bounds,
+            human_browser_android::human_browser_embed_read_bounds,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_set_mobile_shell_active,
+            human_browser_android::human_browser_set_mobile_shell_active,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_title,
+            human_browser_android::human_browser_report_title,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_snapshot,
+            human_browser_android::human_browser_report_snapshot,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_snapshot_html,
+            human_browser_android::human_browser_snapshot_html,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_snapshot_markdown,
+            human_browser_android::human_browser_snapshot_markdown,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_snapshot_search,
+            human_browser_android::human_browser_snapshot_search,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_stop,
+            human_browser_android::human_browser_stop,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_query_nav_state,
+            human_browser_android::human_browser_query_nav_state,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_nav_state,
+            human_browser_android::human_browser_report_nav_state,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_favicon,
+            human_browser_android::human_browser_report_favicon,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_find_in_page,
+            human_browser_android::human_browser_find_in_page,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_find_result,
+            human_browser_android::human_browser_report_find_result,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_navigate,
             #[cfg(target_os = "ios")]

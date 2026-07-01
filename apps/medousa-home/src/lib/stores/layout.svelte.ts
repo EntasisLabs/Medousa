@@ -48,6 +48,9 @@ export class LayoutStore {
   viewportWidth = $state(
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
+  viewportHeight = $state(
+    typeof window !== "undefined" ? window.innerHeight : 800,
+  );
   /** True when the dedicated browser window is mounted (desktop). */
   browserWindowActive = $state(false);
 
@@ -59,6 +62,7 @@ export class LayoutStore {
     if (typeof window === "undefined") return () => {};
     const update = () => {
       this.viewportWidth = window.innerWidth;
+      this.viewportHeight = window.innerHeight;
     };
     update();
     window.addEventListener("resize", update);

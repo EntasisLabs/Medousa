@@ -199,7 +199,7 @@ export class HumanBrowserStore {
 
   syncFromNative(payload: HumanBrowserNavigatedPayload) {
     const trimmed = payload.url.trim();
-    if (!trimmed) return;
+    if (!trimmed || trimmed === "about:blank") return;
 
     const title = payload.title?.trim();
     const favicon = payload.favicon?.trim() || null;
@@ -210,7 +210,6 @@ export class HumanBrowserStore {
       void this.refreshNativeNavState();
       return;
     }
-    if (sameUrl && !title && !favicon) return;
 
     const previous = this.activeUrl;
     if (previous && previous !== "about:blank" && previous !== trimmed) {

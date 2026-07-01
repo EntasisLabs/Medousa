@@ -13,6 +13,7 @@
   class="workshop-rail flex h-full w-7 shrink-0 flex-col items-center gap-2 py-3 transition hover:bg-surface-700"
   title="Expand activity"
   aria-label="Expand activity panel"
+  data-debug-label="activity-collapsed-strip"
   onclick={onExpand}
 >
   <Activity size={16} strokeWidth={1.75} class="text-surface-400" />

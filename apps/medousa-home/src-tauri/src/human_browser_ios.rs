@@ -26,7 +26,45 @@ const MOBILE_BROWSER_CHROME_FALLBACK: f64 = 52.0;
 const MOBILE_SAFARI_UA: &str =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
-const SNAPSHOT_JS: &str = r#"(function(){try{var html=document.documentElement?document.documentElement.outerHTML:"";return JSON.stringify({url:window.location.href||"",html:html});}catch(e){return null;}})();"#;
+const NEW_WINDOW_INSTALL_JS: &str = r#"(function(){if(window.__medousaNewWindowInstalled)return;window.__medousaNewWindowInstalled=true;function q(u){if(!u||u==='about:blank')return;document.documentElement.setAttribute('data-medousa-new-window',u)}var o=window.open;window.open=function(u){q(u);return null};document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[target="_blank"]');if(a&&a.href){e.preventDefault();q(a.href)}},true)})();"#;
+
+const NEW_WINDOW_POLL_JS: &str = r#"(function(){var u=document.documentElement.getAttribute('data-medousa-new-window');if(!u)return null;document.documentElement.removeAttribute('data-medousa-new-window');return u})();"#;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HumanBrowserNewWindowPayload {
+    url: String,
+}
+
+fn emit_new_window(app: &AppHandle, url: &str) {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed == "about:blank" {
+        return;
+    }
+    let _ = app.emit(
+        "human-browser-new-window",
+        HumanBrowserNewWindowPayload {
+            url: trimmed.to_string(),
+        },
+    );
+}
+
+fn poll_pending_new_window(mtm: MainThreadMarker) -> Result<Option<String>, String> {
+    let raw = eval_js_sync(mtm, NEW_WINDOW_POLL_JS)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "null" {
+        return Ok(None);
+    }
+    if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        return Ok(serde_json::from_str(&trimmed).ok());
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+fn install_new_window_hooks(mtm: MainThreadMarker) -> Result<(), String> {
+    let _ = eval_js_sync(mtm, NEW_WINDOW_INSTALL_JS)?;
+    Ok(())
+}
 
 static MOBILE_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 static EMBED_VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -297,6 +335,7 @@ fn ensure_overlay_webview(mtm: MainThreadMarker) -> Result<Retained<AnyObject>, 
         let parent_view: &UIView = &parent;
         let _: () = msg_send![parent_view, addSubview: Retained::as_ptr(&webview)];
     }
+    let _ = install_new_window_hooks(mtm);
     Ok(webview)
 }
 
@@ -396,8 +435,21 @@ fn schedule_navigated_poll(app: AppHandle) {
                 if !url.is_empty() && url != "about:blank" {
                     emit_navigated(&app_clone, &url, title, None);
                 }
+                let _ = run_on_main(|mtm| {
+                    let _ = install_new_window_hooks(mtm);
+                    if let Ok(Some(pending)) = poll_pending_new_window(mtm) {
+                        emit_new_window(&app_clone, &pending);
+                    }
+                    Ok(())
+                });
                 break;
             }
+            let _ = run_on_main(|mtm| {
+                if let Ok(Some(pending)) = poll_pending_new_window(mtm) {
+                    emit_new_window(&app_clone, &pending);
+                }
+                Ok(())
+            });
         }
         emit_loading(&app, false);
     });
