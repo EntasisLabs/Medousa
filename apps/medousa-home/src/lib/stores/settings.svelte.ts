@@ -225,17 +225,17 @@ function loadNotifications(): boolean {
 }
 
 function loadLiveActivity(): boolean {
-  if (typeof localStorage === "undefined") return true;
+  if (typeof localStorage === "undefined") return false;
   const stored = localStorage.getItem(LIVE_ACTIVITY_KEY);
-  if (stored === "0") return false;
-  return true;
+  if (stored === "1") return true;
+  return false;
 }
 
 function loadRemotePush(): boolean {
-  if (typeof localStorage === "undefined") return true;
+  if (typeof localStorage === "undefined") return false;
   const stored = localStorage.getItem(REMOTE_PUSH_KEY);
-  if (stored === "0") return false;
-  return true;
+  if (stored === "1") return true;
+  return false;
 }
 
 export { COLOR_THEME_OPTIONS };

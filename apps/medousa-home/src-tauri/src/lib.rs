@@ -49,6 +49,10 @@ use tauri::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // rustls 0.23+ requires an explicit crypto provider before any reqwest client is built.
+    // Tauri's custom-protocol handler uses reqwest during the first WKWebView load.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let mut builder = tauri::Builder::default();
 
     // UIKit otherwise shrinks WKWebView scroll content and exposes window background
@@ -326,6 +330,10 @@ pub fn run() {
             #[cfg(target_os = "android")]
             human_browser_android::human_browser_embed_read_bounds,
             #[cfg(target_os = "android")]
+            human_browser_android::human_browser_embed_activate_tab,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_embed_close_tab,
+            #[cfg(target_os = "android")]
             human_browser_android::human_browser_set_mobile_shell_active,
             #[cfg(target_os = "android")]
             human_browser_android::human_browser_report_title,
@@ -369,6 +377,10 @@ pub fn run() {
             human_browser_ios::human_browser_embed_hide,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_embed_read_bounds,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_embed_activate_tab,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_embed_close_tab,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_set_mobile_shell_active,
             #[cfg(target_os = "ios")]

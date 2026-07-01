@@ -4,7 +4,7 @@
 
 use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -12,11 +12,9 @@ use block2::{ManualBlockEncoding, RcBlock};
 use medousa_browser_lite::{markdown_from_html, search_response_from_ddg_html, SearchResponse};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
-use objc2::{msg_send, MainThreadMarker};
+use objc2::{class, msg_send, MainThreadMarker};
 use objc2_core_foundation::{CGFloat, CGRect, CGPoint, CGSize};
-use objc2_foundation::{
-    NSDate, NSDefaultRunLoopMode, NSRunLoop, NSString, NSURL, NSURLRequest,
-};
+use objc2_foundation::{NSString, NSURL, NSURLRequest};
 use objc2_ui_kit::{UIApplication, UIView, UIViewController, UIWindow};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -51,8 +49,8 @@ fn emit_new_window(app: &AppHandle, url: &str) {
     );
 }
 
-fn poll_pending_new_window(mtm: MainThreadMarker) -> Result<Option<String>, String> {
-    let raw = eval_js_sync(mtm, NEW_WINDOW_POLL_JS)?;
+fn poll_pending_new_window() -> Result<Option<String>, String> {
+    let raw = eval_js_blocking(NEW_WINDOW_POLL_JS)?;
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed == "null" {
         return Ok(None);
@@ -63,8 +61,8 @@ fn poll_pending_new_window(mtm: MainThreadMarker) -> Result<Option<String>, Stri
     Ok(Some(trimmed.to_string()))
 }
 
-fn install_new_window_hooks(mtm: MainThreadMarker) -> Result<(), String> {
-    let _ = eval_js_sync(mtm, NEW_WINDOW_INSTALL_JS)?;
+fn install_new_window_hooks() -> Result<(), String> {
+    let _ = eval_js_blocking(NEW_WINDOW_INSTALL_JS)?;
     Ok(())
 }
 
@@ -252,11 +250,92 @@ unsafe impl ManualBlockEncoding for JsEvalCompletionEncoding {
     };
 }
 
-fn pump_main_runloop(seconds: f64) {
-    let run_loop = NSRunLoop::currentRunLoop();
-    let limit = NSDate::dateWithTimeIntervalSinceNow(seconds);
+/// WKWebView passes JavaScript `null` as `NSNull`, not a NULL pointer — never cast blindly to `NSString`.
+fn js_eval_result_string(value: *mut AnyObject) -> String {
+    if value.is_null() {
+        return String::new();
+    }
     unsafe {
-        let _ = run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &limit);
+        let null_class = class!(NSNull);
+        let is_null: Bool = msg_send![value, isKindOfClass: null_class];
+        if is_null.as_bool() {
+            return String::new();
+        }
+        let Some(obj) = Retained::retain(value) else {
+            return String::new();
+        };
+        let string_class = class!(NSString);
+        let is_string: Bool = msg_send![&*obj, isKindOfClass: string_class];
+        if is_string.as_bool() {
+            let string = unsafe { Retained::cast_unchecked::<NSString>(obj) };
+            return string.to_string();
+        }
+    }
+    String::new()
+}
+
+fn eval_js_blocking(js: &str) -> Result<String, String> {
+    if MainThreadMarker::new().is_some() {
+        return Err(
+            "javascript evaluation must not run on the main thread (re-enters Tauri event loop)"
+                .to_string(),
+        );
+    }
+
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+    let js_owned = js.to_string();
+
+    APP_HANDLE
+        .get()
+        .ok_or_else(|| "app handle not initialized".to_string())?
+        .run_on_main_thread(move || {
+            let Some(mtm) = MainThreadMarker::new() else {
+                let _ = result_tx.send(Err("human browser requires main thread".to_string()));
+                return;
+            };
+
+            let webview = match ensure_overlay_webview(mtm) {
+                Ok(webview) => webview,
+                Err(err) => {
+                    let _ = result_tx.send(Err(err));
+                    return;
+                }
+            };
+
+            let js_string = NSString::from_str(&js_owned);
+            let block = RcBlock::with_encoding::<_, _, _, JsEvalCompletionEncoding>(
+                move |value: *mut AnyObject, error: *mut AnyObject| {
+                    if !error.is_null() {
+                        let _ = result_tx.send(Err("javascript evaluation failed".to_string()));
+                        return;
+                    }
+                    let _ = result_tx.send(Ok(js_eval_result_string(value)));
+                },
+            );
+
+            unsafe {
+                let _: () = msg_send![
+                    &*webview,
+                    evaluateJavaScript: &*js_string,
+                    completionHandler: &*block
+                ];
+            }
+        })
+        .map_err(|err| err.to_string())?;
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match result_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err("javascript completion channel closed".to_string());
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                if Instant::now() >= deadline {
+                    return Err("javascript evaluation timed out".to_string());
+                }
+            }
+        }
     }
 }
 
@@ -337,7 +416,9 @@ fn ensure_overlay_webview(mtm: MainThreadMarker) -> Result<Retained<AnyObject>, 
         let parent_view: &UIView = &parent;
         let _: () = msg_send![parent_view, addSubview: Retained::as_ptr(&webview)];
     }
-    let _ = install_new_window_hooks(mtm);
+    // New-window hooks are installed after the first navigation completes — calling
+    // evaluateJavaScript here would pump NSRunLoop on the main thread and re-enter
+    // Tauri's event loop (panic_cannot_unwind).
     Ok(webview)
 }
 
@@ -437,21 +518,15 @@ fn schedule_navigated_poll(app: AppHandle) {
                 if !url.is_empty() && url != "about:blank" {
                     emit_navigated(&app_clone, &url, title, None);
                 }
-                let _ = run_on_main(move |mtm| {
-                    let _ = install_new_window_hooks(mtm);
-                    if let Ok(Some(pending)) = poll_pending_new_window(mtm) {
-                        emit_new_window(&app_clone, &pending);
-                    }
-                    Ok(())
-                });
-                break;
-            }
-            let _ = run_on_main(move |mtm| {
-                if let Ok(Some(pending)) = poll_pending_new_window(mtm) {
+                let _ = install_new_window_hooks();
+                if let Ok(Some(pending)) = poll_pending_new_window() {
                     emit_new_window(&app_clone, &pending);
                 }
-                Ok(())
-            });
+                break;
+            }
+            if let Ok(Some(pending)) = poll_pending_new_window() {
+                emit_new_window(&app_clone, &pending);
+            }
         }
         emit_loading(&app, false);
     });
@@ -475,60 +550,10 @@ fn load_url(mtm: MainThreadMarker, url: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn eval_js_sync(_mtm: MainThreadMarker, js: &str) -> Result<String, String> {
-    let webview = ensure_overlay_webview(_mtm)?;
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    let js_string = NSString::from_str(js);
-
-    let block = RcBlock::with_encoding::<_, _, _, JsEvalCompletionEncoding>(
-        move |value: *mut AnyObject, error: *mut AnyObject| {
-            if !error.is_null() {
-                let _ = tx.send(Err("javascript evaluation failed".to_string()));
-                return;
-            }
-            if value.is_null() {
-                let _ = tx.send(Ok(String::new()));
-                return;
-            }
-            unsafe {
-                if let Some(obj) = Retained::retain(value) {
-                    let string = unsafe { Retained::cast_unchecked::<NSString>(obj) };
-                    let _ = tx.send(Ok(string.to_string()));
-                    return;
-                }
-            }
-            let _ = tx.send(Ok(String::new()));
-        },
-    );
-
-    unsafe {
-        let _: () = msg_send![
-            &*webview,
-            evaluateJavaScript: &*js_string,
-            completionHandler: &*block
-        ];
-    }
-
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        match rx.try_recv() {
-            Ok(result) => return result,
-            Err(TryRecvError::Disconnected) => {
-                return Err("javascript completion channel closed".to_string());
-            }
-            Err(TryRecvError::Empty) => {}
-        }
-        if Instant::now() >= deadline {
-            return Err("javascript evaluation timed out".to_string());
-        }
-        pump_main_runloop(0.05);
-    }
-}
-
 async fn capture_html_async(app: &AppHandle) -> Result<SnapshotReport, String> {
     let _ = app;
     tauri::async_runtime::spawn_blocking(move || {
-        let raw = run_on_main(|mtm| eval_js_sync(mtm, SNAPSHOT_JS))?;
+        let raw = eval_js_blocking(SNAPSHOT_JS)?;
         if raw.is_empty() {
             return Err("empty snapshot".to_string());
         }
@@ -772,11 +797,9 @@ pub async fn human_browser_find_in_page(
     let script = format!(
         "(function(){{try{{return window.find({query_json},false,{backwards},true,false,true,false)?'true':'false';}}catch(e){{return 'false';}}}})();"
     );
-    run_on_main(move |mtm| {
-        let raw = eval_js_sync(mtm, &script)?;
-        Ok(FindInPageResult {
-            found: raw.trim() == "true",
-        })
+    let raw = eval_js_blocking(&script)?;
+    Ok(FindInPageResult {
+        found: raw.trim() == "true",
     })
 }
 
@@ -826,4 +849,19 @@ pub async fn human_browser_snapshot_search(
         &query,
         max_results.unwrap_or(8),
     ))
+}
+
+/// iOS uses a single overlay WKWebView — tab ids are bookkeeping for the web UI only.
+#[tauri::command]
+pub async fn human_browser_embed_activate_tab(
+    app: AppHandle,
+    _tab_id: String,
+    url: String,
+) -> Result<(), String> {
+    human_browser_navigate(app, url).await
+}
+
+#[tauri::command]
+pub fn human_browser_embed_close_tab(_app: AppHandle, _tab_id: String) -> Result<(), String> {
+    Ok(())
 }

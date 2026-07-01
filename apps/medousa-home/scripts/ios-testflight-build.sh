@@ -23,6 +23,10 @@ npm run tauri ios build -- --export-method "$EXPORT_METHOD" --build-number "$BUI
 IPA="$(find "$ROOT/src-tauri/gen/apple/build" -name '*.ipa' -type f 2>/dev/null | head -1 || true)"
 if [[ -n "$IPA" && -f "$IPA" ]]; then
   APP="$(find "$ROOT/src-tauri/gen/apple/build" -name '*.app' -type d 2>/dev/null | head -1 || true)"
+  if [[ -n "$APP" && -f "$APP/libapp.a" ]]; then
+    echo "[error] $APP contains libapp.a — run npm run ios:prepare and rebuild (libapp must be linked, not bundled)"
+    exit 1
+  fi
   if [[ -n "$APP" && -f "$APP/Info.plist" ]]; then
     MARKETING="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Info.plist" 2>/dev/null || echo '?')"
     BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Info.plist" 2>/dev/null || echo '?')"

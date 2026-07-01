@@ -24,6 +24,7 @@ tauri-plugin-mobile-push = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread"] }
 tokio-util = "0.7"
 futures-util = "0.3"

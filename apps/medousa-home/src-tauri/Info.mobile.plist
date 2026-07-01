@@ -9,7 +9,5 @@
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Medousa records audio when you tap the voice button so your message can be transcribed in chat.</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
 </dict>
 </plist>

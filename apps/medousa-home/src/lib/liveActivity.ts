@@ -31,8 +31,8 @@ let lastPayloadKey = "";
 let syncInFlight = false;
 
 export function liveActivityEnabled(): boolean {
-  if (typeof localStorage === "undefined") return true;
-  return localStorage.getItem(LIVE_ACTIVITY_KEY) !== "0";
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(LIVE_ACTIVITY_KEY) === "1";
 }
 
 export function setLiveActivityEnabled(enabled: boolean): void {

@@ -1,7 +1,12 @@
 fn main() {
     embed_macos_dev_info_plist();
     if is_ios_build_target() {
-        compile_ios_live_activity();
+        // Live Activity native bridge is opt-in: ActivityKit without a Widget Extension
+        // can abort the process on first FFI call. Enable only when explicitly building
+        // with MEDOUSA_LIVE_ACTIVITY=1 after the extension is installed.
+        if std::env::var("MEDOUSA_LIVE_ACTIVITY").as_deref() == Ok("1") {
+            compile_ios_live_activity();
+        }
         println!("cargo:rustc-link-lib=framework=WebKit");
     }
     tauri_build::build();

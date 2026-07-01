@@ -6,6 +6,9 @@
     "externalBin": []
   },
   "app": {
+    "security": {
+      "capabilities": ["mobile"]
+    },
     "windows": [
       {
         "label": "main",

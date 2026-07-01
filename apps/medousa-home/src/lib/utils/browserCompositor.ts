@@ -245,9 +245,9 @@ export function createBrowserCompositor(
       const url = options.getActiveUrl?.();
       const tabId = options.getActiveTabId?.();
       if (recreated && tabId && url && url !== "about:blank") {
-        await humanBrowserActivateTab(tabId, url);
+        await humanBrowserActivateTab(tabId, url).catch(() => {});
       } else if (recreated && tabId) {
-        await humanBrowserActivateTab(tabId, url ?? "about:blank");
+        await humanBrowserActivateTab(tabId, url ?? "about:blank").catch(() => {});
       }
 
       if (recreated && options.getShowStartPage() === false) {

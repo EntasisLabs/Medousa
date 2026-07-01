@@ -20,7 +20,6 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { ensureNotificationPermission } from "$lib/notifications";
   import { settings } from "$lib/stores/settings.svelte";
-  import { registerRemotePush } from "$lib/pushRegistration";
   import {
     buildLiveActivityPayload,
     syncLiveActivity,
@@ -51,9 +50,15 @@
   $effect(() => {
     const blocked = workspace.blockedCount();
     void setMobileBadge(blocked);
-    if (isTauri()) {
-      void updateTrayBlockedCount(blocked);
+    if (!isTauri()) return;
+    // UIApplication may not be ready on the first frame after cold launch on device.
+    if (isTauriIos()) {
+      const timer = window.setTimeout(() => {
+        void updateTrayBlockedCount(blocked);
+      }, 500);
+      return () => window.clearTimeout(timer);
     }
+    void updateTrayBlockedCount(blocked);
   });
 
   $effect(() => {
@@ -104,14 +109,6 @@
   onMount(() => {
     void workshops.load();
     void ensureNotificationPermission();
-    // Defer APNs registration until UIKit + Tao AppDelegate are fully up (early getToken
-    // could abort the process with no useful console output).
-    let pushTimer: ReturnType<typeof setTimeout> | undefined;
-    if (settings.remotePushEnabled) {
-      pushTimer = window.setTimeout(() => {
-        void registerRemotePush();
-      }, 3_000);
-    }
     void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
     const detachWorkshop = connectWorkshop({
@@ -120,9 +117,6 @@
       },
     });
     return () => {
-      if (pushTimer !== undefined) {
-        window.clearTimeout(pushTimer);
-      }
       detachKeyboard();
       detachWorkshop();
     };

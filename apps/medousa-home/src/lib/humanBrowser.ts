@@ -1,6 +1,7 @@
 /** Desktop human browser invoke API (no agent bridge). */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauriMobilePlatform } from "$lib/platform";
 import { isPopoutBrowserChrome } from "$lib/stores/humanBrowserSurface";
 import type { HumanBrowserSurface } from "$lib/stores/humanBrowserSurface";
 
@@ -75,12 +76,20 @@ export async function humanBrowserActivateTab(
   if (isPopoutBrowserChrome()) {
     return invoke("human_browser_popout_activate_tab", { tabId, url });
   }
+  if (isTauriMobilePlatform()) {
+    const trimmed = url.trim();
+    if (!trimmed || trimmed === "about:blank") return;
+    return humanBrowserNavigate(trimmed);
+  }
   return invoke("human_browser_embed_activate_tab", { tabId, url });
 }
 
 export async function humanBrowserCloseTab(tabId: string): Promise<void> {
   if (isPopoutBrowserChrome()) {
     return invoke("human_browser_popout_close_tab", { tabId });
+  }
+  if (isTauriMobilePlatform()) {
+    return;
   }
   return invoke("human_browser_embed_close_tab", { tabId });
 }

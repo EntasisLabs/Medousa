@@ -5,8 +5,8 @@ import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 const REMOTE_PUSH_KEY = "medousa-home-remote-push";
 
 export function remotePushEnabled(): boolean {
-  if (typeof localStorage === "undefined") return true;
-  return localStorage.getItem(REMOTE_PUSH_KEY) !== "0";
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(REMOTE_PUSH_KEY) === "1";
 }
 
 export function setRemotePushEnabled(enabled: boolean): void {

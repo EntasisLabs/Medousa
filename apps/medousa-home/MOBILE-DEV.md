@@ -130,30 +130,51 @@ curl -s "http://$(ipconfig getifaddr en0):7419/health"
 
 ---
 
-## 6. Run on the iPhone
+## 6. Run on simulator vs physical iPhone
 
-USB-connect the phone (or use a simulator). From `apps/medousa-home`:
+From `apps/medousa-home`:
+
+### Simulator first (recommended for daily dev)
+
+When a phone is USB-connected, plain `tauri ios dev` **prefers the physical device**. Use the sim script or pass a simulator name explicitly:
 
 ```bash
-npm run tauri ios dev
+npm run tauri:ios:dev:sim
+# or any booted simulator by name / UDID:
+npm run tauri:ios:dev -- "iPhone 16 Pro"
+npm run tauri:ios:dev -- 59F67F16-0FF1-42CC-9122-A9CC52F27B6F
+```
+
+List simulators: `xcrun simctl list devices available | grep iPhone`
+
+Simulator uses `localhost` for the Vite dev server — no LAN / firewall setup required.
+
+### Physical iPhone
+
+USB-connect the phone (or pick it explicitly). **Unplug the phone** if you only want the simulator and Tauri keeps choosing the device.
+
+```bash
+npm run tauri:ios:dev
+# or force a specific device:
+npm run tauri:ios:dev -- --host
 ```
 
 First run opens Xcode signing if needed — pick your **Personal Team** on the app target.
 
-When the app launches:
+When the app launches on device:
 
 1. Open **You → Settings → Connection**
 2. Set daemon URL to the **Mobile / LAN clients** URL printed by `medousa start daemon --public`
 3. Confirm **Connected** / green health
 
-`tauri ios dev` runs Vite on your Mac and hot-reloads the webview on device — keep the Mac awake on the same Wi‑Fi as the phone.
+`tauri ios dev` runs Vite on your Mac and hot-reloads the webview on device — keep the Mac awake on the same Wi‑Fi as the phone. If the app opens then goes blank, open `http://<mac-lan-ip>:1420` in Safari on the phone; if that fails, re-run with `npm run tauri:ios:dev -- --host` so Vite binds to the LAN address.
 
 ### Useful variants
 
 ```bash
-npm run tauri ios dev -- --open          # open Xcode project
-npm run tauri ios dev -- --device <id>   # specific device (tauri ios dev --help)
-npm run tauri ios build                  # release IPA for TestFlight-style install
+npm run tauri:ios:dev -- --open          # open Xcode project
+npm run tauri:ios:dev -- "iPhone 16"     # specific simulator
+npm run tauri:ios:build                  # release IPA for TestFlight-style install
 ```
 
 ---

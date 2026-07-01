@@ -21,6 +21,7 @@
     "tauri:ios:init": "tauri ios init && npm run ios:prepare",
     "ios:prepare": "bash scripts/ios-prepare.sh",
     "tauri:ios:dev": "npm run ios:prepare && tauri ios dev",
+    "tauri:ios:dev:sim": "npm run ios:prepare && tauri ios dev \"iPhone 16 Pro\"",
     "tauri:ios:build": "npm run ios:prepare && tauri ios build",
     "tauri:ios:clean": "bash scripts/ios-clean.sh",
     "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"

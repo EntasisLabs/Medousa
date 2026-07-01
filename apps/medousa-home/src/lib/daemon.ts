@@ -193,6 +193,12 @@ export async function cancelActiveSessionTurn(
   });
 }
 
+/** Plain JSON clone — strips Svelte proxies before Tauri IPC serialization. */
+function invokePlain<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export async function createTurnTicket(
   request: import("$lib/types/session").CreateTurnTicketRequest,
 ): Promise<import("$lib/types/session").TurnTicketResponse> {
@@ -204,9 +210,9 @@ export async function createTurnTicket(
     model: request.model ?? null,
     responseDepthMode: request.responseDepthMode ?? null,
     reasoningEffort: request.reasoningEffort ?? null,
-    stageRouting: request.stageRouting ?? null,
+    stageRouting: invokePlain(request.stageRouting ?? null),
     channelSurface: request.channelSurface ?? null,
-    mediaRefs: request.mediaRefs ?? null,
+    mediaRefs: invokePlain(request.mediaRefs ?? null),
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
     identityUserId: request.identityUserId ?? null,
