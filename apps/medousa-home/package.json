@@ -18,12 +18,12 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "icons:generate": "tauri icon app-icon.json -o src-tauri/icons --ios-color \"#0a0a0b\" && cp src-tauri/icons/128x128.png static/favicon.png",
-    "tauri:ios:init": "tauri ios init",
-    "tauri:ios:dev": "tauri ios dev",
-    "tauri:ios:build": "tauri ios build",
+    "tauri:ios:init": "tauri ios init && npm run ios:prepare",
+    "ios:prepare": "bash scripts/ios-prepare.sh",
+    "tauri:ios:dev": "npm run ios:prepare && tauri ios dev",
+    "tauri:ios:build": "npm run ios:prepare && tauri ios build",
     "tauri:ios:clean": "bash scripts/ios-clean.sh",
-    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh",
-    "tauri:ios:live-activity": "bash scripts/ios-live-activity-setup.sh"
+    "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"
   },
   "license": "MIT",
   "dependencies": {

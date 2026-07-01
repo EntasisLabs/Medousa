@@ -1,10 +1,21 @@
 import Foundation
 
+/// Rust/Tauri invoke handlers run off the main thread; `@MainActor` types must hop to main first.
+@available(iOS 16.1, *)
+private func runOnMainActor<T>(_ work: @MainActor () -> T) -> T {
+    if Thread.isMainThread {
+        return MainActor.assumeIsolated(work)
+    }
+    return DispatchQueue.main.sync {
+        MainActor.assumeIsolated(work)
+    }
+}
+
 /// C ABI consumed by Rust on iOS. Returns a heap-allocated JSON string; caller must free via medousa_live_activity_free_string.
 @_cdecl("medousa_live_activity_is_available")
 public func medousa_live_activity_is_available() -> Bool {
     if #available(iOS 16.1, *) {
-        return MainActor.assumeIsolated {
+        return runOnMainActor {
             MedousaLiveActivityManager.shared.isAvailable()
         }
     }
@@ -17,7 +28,7 @@ public func medousa_live_activity_sync(_ json: UnsafePointer<CChar>?) -> UnsafeM
     let payload = String(cString: json)
 
     if #available(iOS 16.1, *) {
-        let result = MainActor.assumeIsolated {
+        let result = runOnMainActor {
             MedousaLiveActivityManager.shared.sync(json: payload)
         }
         return strdup(result)

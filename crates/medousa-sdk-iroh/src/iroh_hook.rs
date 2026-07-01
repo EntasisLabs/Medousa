@@ -8,7 +8,7 @@ use medousa_sdk::SdkError;
 #[cfg(feature = "sse")]
 use futures_util::Stream;
 
-/// Platform hook for HTTP over Iroh (mobile Tauri provides this via `medousa::iroh_transport`).
+/// Platform hook for HTTP over Iroh (mobile Tauri provides this via [`medousa_iroh_http`]).
 pub trait IrohHttpHook: Send + Sync {
     fn request_json<'a>(
         &'a self,

@@ -1,6 +1,6 @@
 {
   "build": {
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run ios:prepare && npm run build"
   },
   "bundle": {
     "externalBin": []

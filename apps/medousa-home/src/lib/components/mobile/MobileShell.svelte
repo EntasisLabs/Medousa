@@ -58,6 +58,9 @@
 
   $effect(() => {
     if (!isTauriIos() || !settings.liveActivityEnabled) return;
+    // Wait until workshop connection has reported health — avoids calling native
+    // ActivityKit bridge during the first UIKit/Tauri frame (was crashing on launch).
+    if (daemonHealth === null) return;
 
     const journalDailyPath = resolveJournalDailyHeroPath(vault.notes);
     const journalDailyTitle = journalDailyPath
@@ -101,8 +104,13 @@
   onMount(() => {
     void workshops.load();
     void ensureNotificationPermission();
+    // Defer APNs registration until UIKit + Tao AppDelegate are fully up (early getToken
+    // could abort the process with no useful console output).
+    let pushTimer: ReturnType<typeof setTimeout> | undefined;
     if (settings.remotePushEnabled) {
-      void registerRemotePush();
+      pushTimer = window.setTimeout(() => {
+        void registerRemotePush();
+      }, 3_000);
     }
     void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
@@ -112,6 +120,9 @@
       },
     });
     return () => {
+      if (pushTimer !== undefined) {
+        window.clearTimeout(pushTimer);
+      }
       detachKeyboard();
       detachWorkshop();
     };

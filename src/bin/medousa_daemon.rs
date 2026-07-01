@@ -308,7 +308,7 @@ async fn main() -> Result<()> {
     );
 
     medousa::workspace::init_persist_writer();
-    medousa::engine_recovery::run_startup_turn_recovery();
+    medousa::engine_recovery::run_startup_turn_recovery().await;
     medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
     if let Some(hub) = medousa::workspace::workspace_hub() {
         hub.refresh_now().await;

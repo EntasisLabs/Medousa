@@ -1,0 +1,12 @@
+[package]
+name = "medousa-iroh-http"
+version = "0.1.0"
+edition = "2024"
+description = "HTTP/1.1 over Iroh QUIC — shared client for engine and mobile"
+
+[dependencies]
+anyhow = "1"
+httparse = "1"
+iroh = "1.0"
+iroh-tickets = "1.0"
+tokio = { version = "1", features = ["sync"] }

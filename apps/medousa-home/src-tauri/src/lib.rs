@@ -69,11 +69,13 @@ pub fn run() {
 
     builder = builder
         .setup(|app| {
+            eprintln!("[medousa-home] setup start");
             if let Err(err) = workshop_registry::sync_daemon_state_from_registry(
                 &app.state::<DaemonState>(),
             ) {
                 eprintln!("workshop registry sync: {err}");
             }
+            eprintln!("[medousa-home] setup complete");
 
             #[cfg(any(windows, target_os = "linux"))]
             {

@@ -25,8 +25,9 @@ dependencies = [
  "hyper 1.9.0",
  "hyper-rustls 0.26.0",
  "hyper-util",
- "openssl",
  "parking_lot",
+ "pem",
+ "ring",
  "rustls 0.22.4",
  "rustls-pemfile 2.2.0",
  "serde",
@@ -7194,6 +7195,7 @@ dependencies = [
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-host",
+ "medousa-iroh-http",
  "medousa-local-engine",
  "medousa-sdk",
  "medousa-types",
@@ -7280,6 +7282,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-iroh-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "httparse",
+ "iroh",
+ "iroh-tickets",
+ "tokio",
+]
+
+[[package]]
 name = "medousa-local-engine"
 version = "0.1.0"
 dependencies = [
@@ -7313,6 +7326,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures-util",
+ "medousa-iroh-http",
  "medousa-sdk",
  "reqwest 0.12.28",
  "serde",

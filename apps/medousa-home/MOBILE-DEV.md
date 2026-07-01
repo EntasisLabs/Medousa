@@ -194,7 +194,7 @@ Medousa can show an **in motion** Live Activity while work is running. Requires 
 After `npm run tauri:ios:init`:
 
 ```bash
-bash scripts/ios-live-activity-setup.sh
+Live Activity native bridge + push entitlements are applied automatically by `npm run ios:prepare` (runs before `tauri:ios:dev` / `tauri:ios:build` / after `tauri:ios:init`).
 ```
 
 Then in Xcode (`src-tauri/gen/apple/*.xcodeproj`):

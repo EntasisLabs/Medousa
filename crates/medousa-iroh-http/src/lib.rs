@@ -1,12 +1,15 @@
+//! HTTP/1.1 client tunneled over Iroh (`medousa-http/1` ALPN).
+
 use std::str::FromStr;
 
-use anyhow::{Context as AnyhowContext, Result, bail};
+use anyhow::{Context, Result, bail};
 use httparse::{Response, Status, EMPTY_HEADER};
 use iroh::{Endpoint, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
 use tokio::sync::OnceCell;
 
-use super::ALPN;
+/// Application-layer protocol identifier for Medousa HTTP tunneling.
+pub const ALPN: &[u8] = b"medousa-http/1";
 
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_BODY_CHUNK: usize = 64 * 1024;
@@ -152,7 +155,10 @@ fn find_header_end(raw: &[u8]) -> Option<usize> {
     raw.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
-fn parse_response_headers(raw: &[u8], header_end: usize) -> Result<(u16, Vec<(String, String)>, usize, Vec<u8>)> {
+fn parse_response_headers(
+    raw: &[u8],
+    header_end: usize,
+) -> Result<(u16, Vec<(String, String)>, usize, Vec<u8>)> {
     let mut headers = [EMPTY_HEADER; 32];
     let mut response = Response::new(&mut headers);
     let status = response

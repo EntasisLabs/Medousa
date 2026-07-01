@@ -1,2 +1,7 @@
 [build]
 target-dir = "../../../../.cache/cargo-target"
+
+# Swift plugin build scripts (tauri-plugin-mobile-push, etc.) compile via swift-rs on the macOS host.
+# Must match tauri.conf.json minimumSystemVersion so -target and availability align.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "16.1"

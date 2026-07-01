@@ -49,7 +49,7 @@ impl IrohHttpHook for TauriIrohHook {
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
-            let mut response = medousa::iroh_transport::iroh_http_request(
+            let mut response = medousa_iroh_http::iroh_http_request(
                 &ticket,
                 &method,
                 &path,
@@ -87,7 +87,7 @@ impl IrohHttpHook for TauriIrohHook {
                     .iter()
                     .map(|(k, v)| (k.as_str(), v.as_str()))
                     .collect();
-                let response = medousa::iroh_transport::iroh_http_request(
+                let response = medousa_iroh_http::iroh_http_request(
                     &ticket,
                     "GET",
                     &path,
@@ -111,7 +111,7 @@ impl IrohHttpHook for TauriIrohHook {
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
 fn iroh_body_stream(
-    body: medousa::iroh_transport::IrohHttpBody,
+    body: medousa_iroh_http::IrohHttpBody,
 ) -> impl Stream<Item = Result<bytes::Bytes, SdkError>> {
     futures_util::stream::unfold(body, |mut body| async move {
         match body.read_chunk().await {

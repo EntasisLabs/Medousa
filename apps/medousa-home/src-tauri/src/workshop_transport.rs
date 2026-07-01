@@ -195,7 +195,7 @@ pub async fn workshop_get_bytes_stream(
 pub enum WorkshopByteStream {
     Lan(reqwest::Response),
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    Iroh(medousa::iroh_transport::IrohHttpBody),
+    Iroh(medousa_iroh_http::IrohHttpBody),
 }
 
 impl WorkshopByteStream {
@@ -498,14 +498,14 @@ async fn iroh_open_stream(
     config: &WorkshopTransportConfig,
     path: &str,
     headers: &reqwest::header::HeaderMap,
-) -> Result<medousa::iroh_transport::IrohHttpBody, String> {
+) -> Result<medousa_iroh_http::IrohHttpBody, String> {
     let ticket = config
         .iroh_ticket
         .as_deref()
         .ok_or_else(|| "missing iroh ticket".to_string())?;
     let header_pairs = iroh_header_refs(headers);
     let header_slice = iroh_header_slice(&header_pairs);
-    let response = medousa::iroh_transport::iroh_http_request(
+    let response = medousa_iroh_http::iroh_http_request(
         ticket,
         "GET",
         path,
@@ -551,7 +551,7 @@ async fn iroh_request(
         header_pairs.push(("Content-Type".to_string(), content_type.to_string()));
     }
     let header_slice = iroh_header_slice(&header_pairs);
-    let mut response = medousa::iroh_transport::iroh_http_request(
+    let mut response = medousa_iroh_http::iroh_http_request(
         ticket,
         method,
         path,

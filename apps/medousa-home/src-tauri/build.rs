@@ -1,14 +1,16 @@
 fn main() {
     embed_macos_dev_info_plist();
-    #[cfg(target_os = "ios")]
-    {
+    if is_ios_build_target() {
         compile_ios_live_activity();
         println!("cargo:rustc-link-lib=framework=WebKit");
     }
     tauri_build::build();
 }
 
-#[cfg(target_os = "ios")]
+fn is_ios_build_target() -> bool {
+    std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("ios")
+}
+
 fn compile_ios_live_activity() {
     use std::path::Path;
     use std::process::Command;

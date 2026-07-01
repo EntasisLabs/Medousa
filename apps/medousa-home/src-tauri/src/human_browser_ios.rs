@@ -30,6 +30,8 @@ const NEW_WINDOW_INSTALL_JS: &str = r#"(function(){if(window.__medousaNewWindowI
 
 const NEW_WINDOW_POLL_JS: &str = r#"(function(){var u=document.documentElement.getAttribute('data-medousa-new-window');if(!u)return null;document.documentElement.removeAttribute('data-medousa-new-window');return u})();"#;
 
+const SNAPSHOT_JS: &str = r#"(function(){try{var html=document.documentElement?document.documentElement.outerHTML:"";var url=window.location.href||"";return JSON.stringify({url:url,html:html});}catch(e){return JSON.stringify({url:"",html:""});}})();"#;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HumanBrowserNewWindowPayload {
@@ -269,9 +271,9 @@ fn wk_config_class() -> Result<&'static AnyClass, String> {
 }
 
 fn overlay_webview(parent: &UIView) -> Option<Retained<AnyObject>> {
-    parent.viewWithTag(OVERLAY_TAG).map(|view| {
+    parent.viewWithTag(OVERLAY_TAG).and_then(|view| {
         let ptr: *mut AnyObject = view.as_ref() as *const UIView as *mut AnyObject;
-        unsafe { Retained::retain(ptr).expect("overlay webview retain") }
+        unsafe { Retained::retain(ptr) }
     })
 }
 
@@ -435,7 +437,7 @@ fn schedule_navigated_poll(app: AppHandle) {
                 if !url.is_empty() && url != "about:blank" {
                     emit_navigated(&app_clone, &url, title, None);
                 }
-                let _ = run_on_main(|mtm| {
+                let _ = run_on_main(move |mtm| {
                     let _ = install_new_window_hooks(mtm);
                     if let Ok(Some(pending)) = poll_pending_new_window(mtm) {
                         emit_new_window(&app_clone, &pending);
@@ -444,7 +446,7 @@ fn schedule_navigated_poll(app: AppHandle) {
                 });
                 break;
             }
-            let _ = run_on_main(|mtm| {
+            let _ = run_on_main(move |mtm| {
                 if let Ok(Some(pending)) = poll_pending_new_window(mtm) {
                     emit_new_window(&app_clone, &pending);
                 }
@@ -557,7 +559,7 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
         if let Ok(mut guard) = active_url_lock().lock() {
             *guard = trimmed.clone();
         }
-        emit_navigated(&app, &trimmed, None);
+        emit_navigated(&app, &trimmed, None, None);
     }
     schedule_navigated_poll(app);
     Ok(())

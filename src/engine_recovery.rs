@@ -54,7 +54,7 @@ pub fn mark_recovery_ledger(session_id: &str, turn_id: &str) {
 
 /// Configure the engine journal root from the daemon data dir and replay any
 /// uncommitted terminal turns into session history (idempotent by turn id).
-pub fn run_startup_turn_recovery() {
+pub async fn run_startup_turn_recovery() {
     let root = paths::medousa_data_dir().join(TURN_LOG_DIR);
     configure_log_root(root.clone());
 
@@ -75,17 +75,9 @@ pub fn run_startup_turn_recovery() {
         let mut committed_any = false;
 
         for turn in item.history {
-            let outcome = match tokio::runtime::Handle::try_current() {
-                Ok(handle) => handle.block_on(store.upsert_turn(
-                    &session_id,
-                    &turn_id,
-                    turn,
-                )),
-                Err(_) => {
-                    let rt = tokio::runtime::Runtime::new().expect("recovery runtime");
-                    rt.block_on(store.upsert_turn(&session_id, &turn_id, turn))
-                }
-            };
+            let outcome = store
+                .upsert_turn(&session_id, &turn_id, turn)
+                .await;
             match outcome {
                 Ok(UpsertOutcome::Inserted) => {
                     committed_any = true;
@@ -137,8 +129,8 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn recovery_replays_uncommitted_journal_and_marks_committed() {
+    #[tokio::test]
+    async fn recovery_replays_uncommitted_journal_and_marks_committed() {
         let root = tmp_root();
         configure_log_root(root.clone());
         let envelope = TurnEnvelope::new("turn-recover-1", Principal::operator())
@@ -162,8 +154,9 @@ mod tests {
         let store = SessionTurnStore;
         let session_id = "session-recover".to_string();
         for turn in pending[0].history.clone() {
-            let rt = tokio::runtime::Runtime::new().expect("recovery runtime");
-            rt.block_on(store.upsert_turn(&session_id, "turn-recover-1", turn))
+            store
+                .upsert_turn(&session_id, "turn-recover-1", turn)
+                .await
                 .expect("upsert");
         }
         if let Ok(log) = TurnEventLog::open_in(&root, envelope) {

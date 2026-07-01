@@ -11,6 +11,7 @@ members = [
     "crates/medousa-engine",
     "crates/medousa-sdk",
     "crates/medousa-sdk-iroh",
+    "crates/medousa-iroh-http",
     "crates/medousa-local-engine",
     "crates/medousa-host",
     "crates/medousa-browser-lite",
@@ -102,7 +103,7 @@ base64 = "0.22"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 qrcode = "0.14"
-a2 = "0.10"
+a2 = { version = "0.10", default-features = false, features = ["ring"] }
 mdns-sd = "0.11"
 chacha20poly1305 = { version = "0.10", features = ["std"] }
 urlencoding = "2"
@@ -113,6 +114,7 @@ pdf-extract = "0.7"
 iroh = { version = "1.0", optional = true }
 iroh-tickets = { version = "1.0", optional = true }
 httparse = { version = "1", optional = true }
+medousa-iroh-http = { path = "crates/medousa-iroh-http", optional = true }
 tower = { version = "0.5", features = ["util", "limit"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -132,7 +134,7 @@ otel-export = [
 embedded-inference = ["dep:medousa-local-engine"]
 embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal"]
 embedded-inference-cuda = ["embedded-inference", "medousa-local-engine/cuda"]
-iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse"]
+iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
 
 [dev-dependencies]
 surrealdb-types = { version = "3" }
