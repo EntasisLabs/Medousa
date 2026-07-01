@@ -255,8 +255,8 @@ export class HumanBrowserStore {
     try {
       await humanBrowserNavigate(normalized);
       this.setActiveTabLocal(normalized);
-    } finally {
-      // loading cleared by human-browser-loading event when native webview finishes
+    } catch {
+      this.loading = false;
     }
   }
 
@@ -333,7 +333,11 @@ export class HumanBrowserStore {
 
   async reload() {
     this.loading = true;
-    await humanBrowserReload();
+    try {
+      await humanBrowserReload();
+    } catch {
+      this.loading = false;
+    }
   }
 
   async stop() {

@@ -262,6 +262,7 @@ export function createBrowserCompositor(
     } else {
       await humanBrowserSetMobileShellActive(false);
       if (gen !== layoutGeneration) return;
+      const wasHidden = !lastVisible;
       if (boundsChanged) {
         await humanBrowserEmbedSetBounds(bounds);
         lastBounds = bounds;
@@ -271,6 +272,12 @@ export function createBrowserCompositor(
         lastBounds = bounds;
         await humanBrowserEmbedShow();
         lastVisible = true;
+      }
+      if (wasHidden && lastVisible && gen === layoutGeneration) {
+        const url = options.getActiveUrl?.();
+        if (url && url !== "about:blank") {
+          await humanBrowserNavigate(url);
+        }
       }
     }
     if (options.mode === "mobile") {

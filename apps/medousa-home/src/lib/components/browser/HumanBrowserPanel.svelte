@@ -39,6 +39,7 @@
         mode: "desktop",
         getActive: () => visible && isTauri() && !layout.isMobile && !shouldUseMobileShell(),
         getShowStartPage: () => humanBrowser.showStartPage,
+        getActiveUrl: () => humanBrowser.activeUrl,
       });
     }
 

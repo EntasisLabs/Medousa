@@ -61,8 +61,8 @@ const MOBILE_SAFARI_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac
 /// Fix mobile UA viewport / safe-area so page content fills the native embed frame (mirrors iOS insets plugin).
 const MOBILE_EMBED_FIX_JS: &str = r#"(function(){try{var d=document,h=d.head||d.documentElement,m=d.querySelector('meta[name="viewport"]');if(!m){m=d.createElement('meta');m.name='viewport';h.appendChild(m)}m.content='width=device-width,initial-scale=1,viewport-fit=cover';var s=d.getElementById('medousa-mobile-embed-fix');if(!s){s=d.createElement('style');s.id='medousa-mobile-embed-fix';s.textContent='html,body{min-height:100%;height:100%;margin:0;padding:0}body{padding-bottom:env(safe-area-inset-bottom,0)!important}';h.appendChild(s)}}catch(e){}})();"#;
 
-/// Fill the native embed frame edge-to-edge on desktop; overflow hidden prevents WebKit paint bleed.
-const DESKTOP_EMBED_FILL_JS: &str = r#"(function(){try{var s=document.getElementById('medousa-desktop-embed-fill');if(!s){s=document.createElement('style');s.id='medousa-desktop-embed-fill';s.textContent='html,body{margin:0;padding:0;width:100%;height:100%;min-height:100%;background:#0c0e12;overflow:hidden}';(document.head||document.documentElement).appendChild(s)}}catch(e){}})();"#;
+/// Reset default document margins in the embedded page; clipping is handled natively (NSView clipsToBounds).
+const DESKTOP_EMBED_FILL_JS: &str = r#"(function(){try{var s=document.getElementById('medousa-desktop-embed-fill');if(!s){s=document.createElement('style');s.id='medousa-desktop-embed-fill';(document.head||document.documentElement).appendChild(s)}s.textContent='html,body{margin:0;padding:0;background:#0c0e12}';}catch(e){}})();"#;
 
 fn inject_mobile_embed_fix(app: &AppHandle) {
     if !EMBED_MOBILE_UA.load(Ordering::SeqCst) {
@@ -899,7 +899,6 @@ fn apply_embedded_bounds(app: &AppHandle, bounds: EmbedBounds) -> Result<(), Str
                 size: LogicalSize::new(width, height).into(),
             })
             .map_err(|err| err.to_string())?;
-        reset_js_scroll(&content);
         if EMBED_VISIBLE.load(Ordering::SeqCst) {
             content.show().map_err(|err| err.to_string())?;
         }
@@ -1032,6 +1031,24 @@ fn reapply_embedded_placement(app: &AppHandle) -> Result<(), String> {
         EmbedPlacement::Mobile(params) => apply_embedded_mobile_layout(app, params).map(|_| ()),
         EmbedPlacement::Freeform(bounds) => apply_embedded_dom_bounds(app, bounds),
     }
+}
+
+fn flush_pending_embed_navigation(app: &AppHandle) {
+    let url = human_browser_active_url();
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed == "about:blank" {
+        return;
+    }
+    let Some(content) = embedded_content_webview(app) else {
+        return;
+    };
+    if let Ok(current) = content.url() {
+        if urls_match_for_snapshot(current.as_ref(), trimmed) {
+            emit_loading(app, false);
+            return;
+        }
+    }
+    let _ = navigate_embedded_url(app, trimmed);
 }
 
 fn navigate_embedded_url(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -1214,6 +1231,7 @@ pub fn human_browser_embed_show(app: AppHandle) -> Result<(), String> {
             }
         }
     }
+    flush_pending_embed_navigation(&app);
     Ok(())
 }
 
@@ -1413,17 +1431,25 @@ pub fn on_browser_window_resized(app: &AppHandle) {
 
 #[tauri::command]
 pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
-    let trimmed = url.trim();
-
-    if trimmed.is_empty() || trimmed == "about:blank" {
-        if embedded_content_webview(&app).is_none() {
-            return Ok(());
-        }
-        return navigate_embedded_url(&app, trimmed);
+    let trimmed = url.trim().to_string();
+    {
+        let mut guard = active_url_lock().lock().expect("last active url");
+        *guard = trimmed.clone();
     }
 
-    ensure_embedded_content(&app)?;
-    navigate_embedded_url(&app, trimmed)
+    if trimmed.is_empty() || trimmed == "about:blank" {
+        if embedded_content_webview(&app).is_some() {
+            return navigate_embedded_url(&app, &trimmed);
+        }
+        return Ok(());
+    }
+
+    if embedded_content_webview(&app).is_none() {
+        emit_loading(&app, true);
+        return Ok(());
+    }
+
+    navigate_embedded_url(&app, &trimmed)
 }
 
 #[tauri::command]
@@ -1433,11 +1459,23 @@ pub async fn human_browser_popout_navigate(app: AppHandle, url: String) -> Resul
 
 #[tauri::command]
 pub async fn human_browser_reload(app: AppHandle) -> Result<(), String> {
-    let content = embedded_content_webview(&app)
-        .ok_or_else(|| "browser content webview not ready".to_string())?;
-    content
-        .eval("window.location.reload()")
-        .map_err(|err| err.to_string())
+    let url = human_browser_active_url();
+    let trimmed = url.trim();
+    if embedded_content_webview(&app).is_none() {
+        if !trimmed.is_empty() && trimmed != "about:blank" {
+            emit_loading(&app, true);
+        }
+        return Ok(());
+    }
+    if trimmed.is_empty() || trimmed == "about:blank" {
+        let content = embedded_content_webview(&app)
+            .ok_or_else(|| "browser content webview not ready".to_string())?;
+        content
+            .eval("window.location.reload()")
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+    navigate_embedded_url(&app, trimmed)
 }
 
 #[tauri::command]
