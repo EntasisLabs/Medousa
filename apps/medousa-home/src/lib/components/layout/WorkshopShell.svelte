@@ -132,7 +132,7 @@
         data-debug-label="workshop-content-row"
       >
         <div
-          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           data-debug-label="workshop-surface-column"
         >
         {#key layout.navigationEpoch}
@@ -208,13 +208,19 @@
                 daemonHealth = await refreshDaemonHealth();
               }}
             />
-          {:else if activeSurface === "web"}
-            <HumanBrowserPanel
-              visible={true}
-              workRailVisible={workspace.inMotionCount() > 0}
-            />
           {/if}
         {/key}
+        <div
+          class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
+          class:hidden={activeSurface !== "web"}
+          aria-hidden={activeSurface !== "web"}
+          data-debug-label="browser-surface-host"
+        >
+          <HumanBrowserPanel
+            visible={activeSurface === "web"}
+            workRailVisible={workspace.inMotionCount() > 0}
+          />
+        </div>
         </div>
 
         {#if layout.activityCollapsed || desktopRails.showActivityStrip}

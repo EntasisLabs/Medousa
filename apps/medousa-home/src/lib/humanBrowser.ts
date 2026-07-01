@@ -180,6 +180,7 @@ export interface HumanBrowserNavigatedPayload {
   url: string;
   title?: string | null;
   favicon?: string | null;
+  tabId?: string | null;
   surface?: HumanBrowserSurface;
 }
 

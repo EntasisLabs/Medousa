@@ -267,17 +267,9 @@ export function createBrowserCompositor(
     } else {
       await humanBrowserSetMobileShellActive(false);
       if (gen !== layoutGeneration) return;
-      const wasHidden = !lastVisible;
       if (boundsChanged) {
         await humanBrowserEmbedSetBounds(bounds);
         lastBounds = bounds;
-      }
-      if (wasHidden && gen === layoutGeneration) {
-        const url = options.getActiveUrl?.();
-        const tabId = options.getActiveTabId?.();
-        if (tabId) {
-          await humanBrowserActivateTab(tabId, url ?? "about:blank");
-        }
       }
       if (boundsChanged || !lastVisible) {
         lastBounds = bounds;

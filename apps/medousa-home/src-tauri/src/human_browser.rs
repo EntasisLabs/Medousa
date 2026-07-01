@@ -276,6 +276,8 @@ pub struct HumanBrowserNavigatedPayload {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub favicon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
     #[serde(default = "default_embed_surface")]
     pub surface: String,
 }
@@ -465,8 +467,10 @@ fn emit_navigated(
     url: &str,
     title: Option<String>,
     favicon: Option<String>,
+    tab_id: Option<String>,
 ) {
-    {
+    let resolved_tab_id = tab_id.or_else(|| active_tab_id(surface));
+    if resolved_tab_id.as_deref() == active_tab_id(surface).as_deref() {
         let mut guard = surface_url_lock(surface)
             .lock()
             .expect("surface active url");
@@ -476,6 +480,7 @@ fn emit_navigated(
         url: url.to_string(),
         title,
         favicon,
+        tab_id: resolved_tab_id,
         surface: surface.as_str().to_string(),
     };
     let _ = app.emit("human-browser-navigated", payload);
@@ -538,6 +543,7 @@ fn desktop_new_window_install_js(surface: BrowserSurface) -> String {
 fn content_builder(
     app: &AppHandle,
     label: String,
+    tab_id: Option<String>,
     mobile_ua: bool,
     surface: BrowserSurface,
 ) -> WebviewBuilder<tauri::Wry> {
@@ -547,6 +553,7 @@ fn content_builder(
     let surface_nav = surface;
     let surface_load = surface;
     let surface_new_window = surface;
+    let tab_id_load = tab_id;
     let new_window_js = desktop_new_window_install_js(surface);
     let mut builder = WebviewBuilder::new(label, WebviewUrl::External("about:blank".parse().unwrap()))
         .on_new_window(move |url, _features| {
@@ -574,7 +581,14 @@ fn content_builder(
                 PageLoadEvent::Finished => {
                     emit_loading(&app_load, surface_load, false);
                     let href = payload.url().as_str().to_string();
-                    emit_navigated(&app_load, surface_load, &href, None, None);
+                    emit_navigated(
+                        &app_load,
+                        surface_load,
+                        &href,
+                        None,
+                        None,
+                        tab_id_load.clone(),
+                    );
                     probe_page_metadata(&webview, &app_load, &href, surface_load);
                     if mobile_ua {
                         let _ = webview.eval(MOBILE_EMBED_FIX_JS);
@@ -1407,7 +1421,13 @@ fn create_tab_webview(
     let mobile_ua = EMBED_MOBILE_UA.load(Ordering::SeqCst);
     window
         .add_child(
-            content_builder(app, label, mobile_ua, BrowserSurface::Embed),
+            content_builder(
+                app,
+                label,
+                Some(tab_id.to_string()),
+                mobile_ua,
+                BrowserSurface::Embed,
+            ),
             LogicalPosition::new(x, y),
             LogicalSize::new(width.max(8.0), height.max(8.0)),
         )
@@ -1458,7 +1478,7 @@ fn navigate_tab_webview(
                     .map_err(|err: url::ParseError| err.to_string())?,
             )
             .map_err(|err| err.to_string())?;
-        emit_navigated(app, surface, "about:blank", None, None);
+        emit_navigated(app, surface, "about:blank", None, None, None);
         return Ok(());
     }
 
@@ -1474,7 +1494,7 @@ fn navigate_tab_webview(
     let external = parse_external_url(trimmed)?;
     content.navigate(external).map_err(|err| err.to_string())?;
     emit_loading(app, surface, true);
-    emit_navigated(app, surface, trimmed, None, None);
+    emit_navigated(app, surface, trimmed, None, None, None);
     Ok(())
 }
 
@@ -1907,6 +1927,7 @@ pub fn ensure_popout_shell(app: &AppHandle) -> Result<(), String> {
                 content_builder(
                     app,
                     BROWSER_CONTENT_LABEL.to_string(),
+                    None,
                     false,
                     BrowserSurface::Popout,
                 ),
@@ -2099,6 +2120,7 @@ pub fn human_browser_report_title(
         url.trim(),
         Some(trimmed.to_string()),
         None,
+        None,
     );
     Ok(())
 }
@@ -2221,6 +2243,7 @@ pub fn human_browser_report_favicon(
             url.trim(),
             None,
             Some(trimmed.to_string()),
+            None,
         );
     }
     Ok(())

@@ -185,23 +185,40 @@ export class HumanBrowserStore {
   }
 
   private setActiveTabLocal(url: string, title?: string, favicon?: string | null) {
-    const label = title?.trim() || tabLabelFromUrl(url);
     const activeIdx = this.tabs.findIndex((tab) => tab.active);
     if (activeIdx >= 0) {
-      this.tabs = this.tabs.map((tab, idx) =>
-        idx === activeIdx
-          ? {
-              ...tab,
-              url,
-              title: label,
-              favicon: favicon ?? tab.favicon ?? null,
-            }
-          : tab,
-      );
+      this.updateTabAt(activeIdx, url, title, favicon);
     } else {
       this.tabs = [newTab(url)];
+      this.urlDraft = url === "about:blank" ? "" : url;
+      if (url !== "about:blank") {
+        browserHistory.record(url, tabLabelFromUrl(url, title));
+      }
+      this.persist();
     }
-    this.urlDraft = url === "about:blank" ? "" : url;
+  }
+
+  private updateTabAt(
+    idx: number,
+    url: string,
+    title?: string,
+    favicon?: string | null,
+  ) {
+    const label = title?.trim() || tabLabelFromUrl(url);
+    const wasActive = this.tabs[idx]!.active;
+    this.tabs = this.tabs.map((tab, i) =>
+      i === idx
+        ? {
+            ...tab,
+            url,
+            title: label,
+            favicon: favicon ?? tab.favicon ?? null,
+          }
+        : tab,
+    );
+    if (wasActive) {
+      this.urlDraft = url === "about:blank" ? "" : url;
+    }
     if (url !== "about:blank") {
       browserHistory.record(url, label);
     }
@@ -214,6 +231,36 @@ export class HumanBrowserStore {
 
     const title = payload.title?.trim();
     const favicon = payload.favicon?.trim() || null;
+    const tabId = payload.tabId?.trim();
+
+    if (tabId) {
+      const idx = this.tabs.findIndex((tab) => tab.id === tabId);
+      if (idx < 0) return;
+      const tab = this.tabs[idx]!;
+      const sameUrl = trimmed === tab.url;
+
+      if (sameUrl) {
+        this.updateTabAt(idx, trimmed, title, favicon);
+        if (tab.active) void this.refreshNativeNavState();
+        return;
+      }
+
+      if (tab.active) {
+        const previous = tab.url;
+        if (previous && previous !== "about:blank" && previous !== trimmed) {
+          this.updateActiveTab((entry) => ({
+            ...entry,
+            historyBack: [...entry.historyBack, previous],
+            historyForward: [],
+          }));
+        }
+        void this.refreshNativeNavState();
+      }
+
+      this.updateTabAt(idx, trimmed, title, favicon);
+      return;
+    }
+
     const sameUrl = trimmed === this.activeUrl;
 
     if (sameUrl) {
