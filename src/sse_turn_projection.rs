@@ -92,6 +92,25 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
             parts: vec![],
             committed_at: event.emitted_at_utc,
         },
+        "workshop_ack" => TurnEvent::WorkerAck {
+            text: event
+                .final_text
+                .clone()
+                .unwrap_or_else(|| event.message.clone()),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+            work_id: event.work_id.clone(),
+            parts: vec![],
+            committed_at: event.emitted_at_utc,
+        },
+        "worker_synthesis" => TurnEvent::FinalResponse {
+            text: event
+                .final_text
+                .clone()
+                .unwrap_or_else(|| event.message.clone()),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+            parts: vec![],
+            committed_at: event.emitted_at_utc,
+        },
         "budget_approval" => TurnEvent::BudgetApprovalRequired {
             request_id: event
                 .budget_request_id

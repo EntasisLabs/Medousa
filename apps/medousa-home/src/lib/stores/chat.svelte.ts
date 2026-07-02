@@ -53,6 +53,8 @@ import {
   isBrowserChallengeStreamEvent,
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
+  isWorkerSynthesisStreamEvent,
+  isWorkshopHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
@@ -154,6 +156,14 @@ export class ChatStore {
       if (turn.mode !== "interactive" || turn.terminal) continue;
       if (this.isComposerOpenDuringHandoff(turn.turnId, turn.phase)) continue;
       return true;
+    }
+    return false;
+  }
+
+  hasWorkshopHandoff(): boolean {
+    for (const turn of this.turns.values()) {
+      if (turn.mode !== "interactive" || turn.terminal) continue;
+      if (turn.phase === "workshop_handoff") return true;
     }
     return false;
   }
@@ -783,6 +793,13 @@ export class ChatStore {
       }
       if (turn.phase === "worker_handoff" && turn.mode === "interactive") {
         await this.detachStreamOwner(turnId);
+        continue;
+      }
+      if (turn.phase === "workshop_handoff" && turn.mode === "interactive") {
+        const workerLink = this.workerLinkForTurn(turnId);
+        if (workerLink?.synthesisDelivered) {
+          await this.detachStreamOwner(turnId);
+        }
       }
     }
   }
@@ -1504,6 +1521,49 @@ export class ChatStore {
     }
   }
 
+  private handleWorkerSynthesisStreamEvent(event: InteractiveTurnStreamEvent) {
+    const workId = event.work_id?.trim();
+    const content = event.final_text?.trim();
+    if (!workId || !content) return;
+
+    if (!this.workers.has(workId)) {
+      const handoffMessageId = this.messageIdForTurn(event.turn_id);
+      if (handoffMessageId) {
+        this.linkWorker({
+          workId,
+          parentTurnId: event.turn_id,
+          messageId: handoffMessageId,
+          sessionId: this.resolveTurnSessionId(event.turn_id),
+        });
+        this.ensureWorkerFollowUpBubble(workId, event.turn_id, {
+          streaming: false,
+        });
+      }
+    }
+
+    const messageId = this.messageIdForTurn(event.turn_id);
+    if (messageId) {
+      this.applyStreamEventToMessage(messageId, event);
+    } else {
+      this.attachOrphanStream(event);
+    }
+
+    const link = this.workers.get(workId);
+    if (link && !link.synthesisDelivered) {
+      this.finalizeWorkerHandoffBubble(link.messageId);
+      this.markWorkerSynthesisDelivered(workId);
+    }
+
+    this.syncTurnFromEvent(event);
+    this.noteBackgroundSettled();
+    if (this.shouldSettleTurnFromStream(event.turn_id)) {
+      this.settleTurn(event.turn_id);
+      this.scheduleSessionsRefresh();
+    } else {
+      void this.detachStreamOwner(event.turn_id);
+    }
+  }
+
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
     if (!this.isRelevantStreamEvent(event)) return;
 
@@ -1519,6 +1579,11 @@ export class ChatStore {
 
     if (event.event_type === "context_usage" && event.context_usage) {
       this.contextUsage = event.context_usage;
+      return;
+    }
+
+    if (isWorkerSynthesisStreamEvent(event)) {
+      this.handleWorkerSynthesisStreamEvent(event);
       return;
     }
 
@@ -1927,6 +1992,11 @@ export class ChatStore {
           this.scheduleSessionsRefresh();
           return;
         }
+        if (isWorkshopHandoffStreamEvent(event)) {
+          this.releaseComposerHandoff(messageId, "workshop_ack", event);
+          this.scheduleSessionsRefresh();
+          return;
+        }
 
         if (isBudgetApprovalStreamEvent(event)) {
           this.releaseComposerHandoff(messageId, "budget_approval", event);
@@ -1969,6 +2039,12 @@ export class ChatStore {
 
     if (isWorkerHandoffStreamEvent(event)) {
       this.releaseComposerHandoff(messageId, "worker_ack", event);
+      this.scheduleSessionsRefresh();
+      return;
+    }
+
+    if (isWorkshopHandoffStreamEvent(event)) {
+      this.releaseComposerHandoff(messageId, "workshop_ack", event);
       this.scheduleSessionsRefresh();
       return;
     }
@@ -2053,6 +2129,11 @@ export class ChatStore {
       this.scheduleSessionsRefresh();
       return;
     }
+    if (isWorkshopHandoffStreamEvent(event)) {
+      this.releaseComposerHandoff(id, "workshop_ack", event);
+      this.scheduleSessionsRefresh();
+      return;
+    }
 
     if (isBudgetApprovalStreamEvent(event)) {
       this.releaseComposerHandoff(id, "budget_approval", event);
@@ -2071,14 +2152,16 @@ export class ChatStore {
 
   private releaseComposerHandoff(
     messageId: string,
-    phase: "worker_ack" | "budget_approval",
+    phase: "worker_ack" | "workshop_ack" | "budget_approval",
     event: InteractiveTurnStreamEvent,
   ) {
     const statusLine =
       event.message?.trim() ||
       (phase === "worker_ack"
         ? "Background worker started"
-        : "Waiting for operator approval");
+        : phase === "workshop_ack"
+          ? "Medousa is in the workshop"
+          : "Waiting for operator approval");
 
     const budgetRequestId =
       phase === "budget_approval" ? budgetRequestIdFromStreamEvent(event) : null;
@@ -2097,10 +2180,13 @@ export class ChatStore {
         {
           ...current,
           streaming: false,
-          phase: phase === "worker_ack" ? null : "budget_blocked",
-          statusLine: phase === "worker_ack" ? null : statusLine,
-          stageWhisper: phase === "worker_ack" ? ackText : current.stageWhisper,
-          content: phase === "worker_ack" ? "" : ackText,
+          phase: phase === "budget_approval" ? "budget_blocked" : null,
+          statusLine: phase === "budget_approval" ? statusLine : null,
+          stageWhisper:
+            phase === "worker_ack" || phase === "workshop_ack"
+              ? ackText
+              : current.stageWhisper,
+          content: phase === "budget_approval" ? ackText : "",
           budgetRequestId,
           requestedRounds,
         },
@@ -2113,8 +2199,13 @@ export class ChatStore {
       const next = new Map(this.turns);
       next.set(event.turn_id, {
         ...turn,
-        phase: phase === "worker_ack" ? "worker_handoff" : "budget_blocked",
-        messageId: phase === "worker_ack" ? null : messageId,
+        phase:
+          phase === "worker_ack"
+            ? "worker_handoff"
+            : phase === "workshop_ack"
+              ? "workshop_handoff"
+              : "budget_blocked",
+        messageId: phase === "budget_approval" ? messageId : null,
         workspaceCardId:
           phase === "budget_approval" && budgetRequestId
             ? budgetRequestId
@@ -2133,8 +2224,10 @@ export class ChatStore {
     }
     this.backgroundActivity += 1;
 
-    if (phase === "worker_ack") {
-      void this.detachStreamOwner(event.turn_id);
+    if (phase === "worker_ack" || phase === "workshop_ack") {
+      if (phase === "worker_ack") {
+        void this.detachStreamOwner(event.turn_id);
+      }
       this.linkWorkerFromStream(event, messageId);
       return;
     }
@@ -2264,7 +2357,7 @@ export class ChatStore {
     }
     for (const [turnId, turn] of this.turns) {
       if (turn.terminal || turn.mode === "background") continue;
-      if (turn.phase === "budget_blocked" || turn.phase === "worker_handoff") continue;
+      if (turn.phase === "budget_blocked" || turn.phase === "worker_handoff" || turn.phase === "workshop_handoff") continue;
       this.settleTurn(turnId);
     }
   }
@@ -2398,7 +2491,7 @@ export class ChatStore {
   }
 
   private isComposerOpenDuringHandoff(turnId: string, phase: string): boolean {
-    if (phase === "worker_handoff" || phase === "budget_blocked") {
+    if (phase === "worker_handoff" || phase === "workshop_handoff" || phase === "budget_blocked") {
       return true;
     }
     const workerLink = this.workerLinkForTurn(turnId);
@@ -2410,7 +2503,12 @@ export class ChatStore {
     const turnId = event.turn_id?.trim();
     if (!turnId) return false;
 
-    if (isWorkerHandoffStreamEvent(event) || isBudgetApprovalStreamEvent(event)) {
+    if (
+      isWorkerHandoffStreamEvent(event) ||
+      isWorkshopHandoffStreamEvent(event) ||
+      isWorkerSynthesisStreamEvent(event) ||
+      isBudgetApprovalStreamEvent(event)
+    ) {
       return true;
     }
     if (this.workerLinkForTurn(turnId)) return true;
@@ -2430,14 +2528,18 @@ export class ChatStore {
       workerLink != null &&
       !workerLink.synthesisDelivered &&
       !isWorkerHandoffStreamEvent(event) &&
+      !isWorkshopHandoffStreamEvent(event) &&
+      !isWorkerSynthesisStreamEvent(event) &&
       !isBudgetApprovalStreamEvent(event);
+    const preservedPhase =
+      existing.phase === "workshop_handoff" ? "workshop_handoff" : "worker_handoff";
 
     const next = new Map(this.turns);
     if (event.terminal) {
       if (existing.mode === "background") {
         next.set(event.turn_id, {
           ...existing,
-          phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
+          phase: preserveHandoff ? preservedPhase : this.phaseFromEvent(event),
           streamAttached: true,
           terminal: false,
         });
@@ -2446,7 +2548,7 @@ export class ChatStore {
       } else {
         next.set(event.turn_id, {
           ...existing,
-          phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
+          phase: preserveHandoff ? preservedPhase : this.phaseFromEvent(event),
           streamAttached: true,
           terminal: false,
         });
@@ -2477,6 +2579,7 @@ export class ChatStore {
 
   private phaseFromEvent(event: InteractiveTurnStreamEvent): string {
     if (isWorkerHandoffStreamEvent(event)) return "worker_handoff";
+    if (isWorkshopHandoffStreamEvent(event)) return "workshop_handoff";
     if (isBudgetApprovalStreamEvent(event)) return "budget_blocked";
     if (event.terminal) return "done";
     return event.phase || "streaming";

@@ -266,6 +266,45 @@ pub fn worker_ack_stream_event_with_tools(
     Ok(event)
 }
 
+pub fn workshop_ack_stream_event_with_tools(
+    turn_id: &str,
+    ack_text: &str,
+    tool_names: Vec<String>,
+    work_id: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = final_stream_event_with_tools_terminal(turn_id, ack_text, tool_names, false)?;
+    event.event_type = "workshop_ack".to_string();
+    event.phase = "workshop_ack".to_string();
+    event.message = "bound workshop started".to_string();
+    event.operator_message = Some("Medousa is in the workshop".to_string());
+    event.debug_message = None;
+    event.work_id = work_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    Ok(event)
+}
+
+/// Terminal worker synthesis delivered back to the parent interactive turn envelope.
+pub fn worker_synthesis_stream_event_with_tools(
+    turn_id: &str,
+    synthesis_text: &str,
+    tool_names: Vec<String>,
+    work_id: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event =
+        final_stream_event_with_tools_terminal(turn_id, synthesis_text, tool_names, true)?;
+    event.event_type = "worker_synthesis".to_string();
+    event.phase = "worker_synthesis".to_string();
+    event.message = "worker synthesis delivered".to_string();
+    event.operator_message = Some("Workshop finished".to_string());
+    event.work_id = work_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    Ok(event)
+}
+
 pub fn final_stream_event_with_tools_terminal(
     turn_id: &str,
     final_text: &str,

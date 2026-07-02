@@ -306,6 +306,9 @@ async fn main() -> Result<()> {
             state.last_delivery_latency_ms.clone(),
         ),
     );
+    medousa::turn_worker_notify::register_parent_turn_stream_registry(
+        state.interactive_turn_streams.clone(),
+    );
 
     medousa::workspace::init_persist_writer();
     medousa::engine_recovery::run_startup_turn_recovery().await;

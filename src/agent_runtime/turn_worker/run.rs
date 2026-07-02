@@ -45,7 +45,7 @@ use super::prompts::{
 use super::registry::{AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry};
 use crate::tool_bootstrap::{ToolSurfaceLane, handoff_implies_resolved_execution, unlock_session_domains, worker_should_unlock_vault};
 use super::store::{
-    TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
+    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
 };
 
 /// Live host-turn context used when spawning a worker from the tool loop.
@@ -291,6 +291,8 @@ impl TurnWorkerScheduler {
             manuscript_id: manuscript_id.clone(),
             branch_group_id: None,
             archived: false,
+            disposition: TurnWorkDisposition::Parallel,
+            steer_messages: Vec::new(),
             created_at: now,
             updated_at: now,
         };
@@ -367,6 +369,202 @@ impl TurnWorkerScheduler {
         }))
     }
 
+    pub async fn enter_bound_workshop(
+        &self,
+        message: &str,
+        goal: &str,
+        intent: TurnWorkerIntent,
+    ) -> stasis::prelude::Result<Value> {
+        let bus = self
+            .bus_session
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| {
+                stasis::domain::errors::StasisError::PortFailure(
+                    "cognition_turn_begin_work: no active host turn session".to_string(),
+                )
+            })?;
+
+        if self
+            .store
+            .active_bound_workshop(&bus.session_id)
+            .is_some()
+        {
+            return Ok(json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "A bound workshop is already active for this session; steer or cancel it first.",
+            }));
+        }
+
+        let runtime_ctx = self.runtime_ctx.read().await.clone().ok_or_else(|| {
+            stasis::domain::errors::StasisError::PortFailure(
+                "cognition_turn_begin_work: agent runtime context not ready (start a turn first)"
+                    .to_string(),
+            )
+        })?;
+
+        let task = goal.trim();
+        if task.is_empty() {
+            return Ok(json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "goal is required and must be non-empty",
+            }));
+        }
+
+        let user_ack = message.trim();
+        if user_ack.is_empty() {
+            return Ok(json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "message is required and must be non-empty",
+            }));
+        }
+
+        let parent_turn_correlation_id = bus.parent_turn_correlation_id.clone();
+        let delivery_target = bus.delivery_target.clone();
+        let work_id = format!("work-bound-{}", uuid::Uuid::new_v4());
+        let now = Utc::now();
+        let mut handoff = bus
+            .host_handoff_slot
+            .write()
+            .await
+            .take()
+            .unwrap_or_else(|| {
+                WorkerHandoffCapsule::from_host_context(
+                    &bus.session_id,
+                    bus.stream_turn_id,
+                    parent_turn_correlation_id.clone(),
+                    &bus.parent_user_prompt,
+                    &crate::agent_runtime::turn_context::TurnScratchpad::from_user_prompt(task),
+                    None,
+                    None,
+                    bus.host_continuity_bundle.clone(),
+                )
+            });
+        if handoff.host_continuity.is_none() {
+            handoff.host_continuity = bus.host_continuity_bundle.clone();
+        }
+        handoff.apply_spawn(intent.as_str(), task, &work_id);
+        crate::turn_slice::enrich_handoff_tool_history(
+            &mut handoff,
+            &crate::session::load_history(&bus.session_id),
+        );
+        let handoff_summary = handoff.handoff_summary();
+        let scratch_digest = handoff.scratch_digest_hash.clone();
+        let parent_corr_log = handoff
+            .parent_turn_correlation_id
+            .clone()
+            .unwrap_or_else(|| "-".to_string());
+        let continuity_summary = handoff
+            .host_continuity
+            .as_ref()
+            .map(|bundle| bundle.log_summary())
+            .unwrap_or_else(|| "none".to_string());
+        let delegation_parent_turn = handoff.parent_turn_correlation_id.clone();
+
+        let max_tool_rounds = bus.configured_max_tool_rounds.max(1);
+        let (provider, model) = resolve_worker_llm_target(
+            &bus.provider,
+            &bus.model,
+            intent,
+            None,
+            None,
+        );
+
+        let record = TurnWorkRecord {
+            work_id: work_id.clone(),
+            session_id: bus.session_id.clone(),
+            parent_turn_correlation_id,
+            parent_stream_turn_id: bus.stream_turn_id,
+            intent: intent.as_str().to_string(),
+            task_prompt: task.to_string(),
+            status: TurnWorkStatus::Pending,
+            result_text: None,
+            tool_names: Vec::new(),
+            termination_reason: None,
+            error: None,
+            user_ack: user_ack.to_string(),
+            provider,
+            model,
+            response_depth_mode: bus.response_depth_mode.clone(),
+            max_tool_rounds,
+            delivery_target,
+            parent_user_prompt: Some(bus.parent_user_prompt.clone()),
+            handoff_capsule: Some(handoff),
+            worker_scratch: None,
+            synthesis_delivered: false,
+            stasis_job_id: None,
+            thread_id: None,
+            stage_role: None,
+            model_hint: None,
+            manuscript_id: None,
+            branch_group_id: None,
+            archived: false,
+            disposition: TurnWorkDisposition::Bound,
+            steer_messages: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        };
+
+        self.store.insert(record);
+        ledger_bus_event(
+            &bus.session_id,
+            bus.stream_turn_id,
+            TurnLedgerEventKind::WorkDelegated,
+            format!(
+                "work_id={work_id} disposition=bound intent={intent} parent_turn_correlation_id={parent_corr_log} scratch_digest={scratch_digest}",
+                intent = intent.as_str(),
+            ),
+        );
+
+        record_in_process_delegation(&InProcessDelegationRecord {
+            work_id: work_id.clone(),
+            session_id: bus.session_id.clone(),
+            intent: intent.as_str().to_string(),
+            parent_turn_correlation_id: delegation_parent_turn,
+            parent_stream_turn_id: bus.stream_turn_id,
+            sequential: true,
+            continuity_summary: continuity_summary.clone(),
+            manuscript_id: None,
+            spawned_at: now,
+        });
+
+        bus.sink
+            .notice(format!(
+                "◈ workshop_entered work_id={work_id} intent={} continuity={continuity_summary}",
+                intent.as_str()
+            ))
+            .await;
+
+        let runtime = self.runtime.read().await.clone().ok_or_else(|| {
+            stasis::domain::errors::StasisError::PortFailure(
+                "cognition_turn_begin_work: stasis runtime not ready".to_string(),
+            )
+        })?;
+        crate::agent_runtime::turn_worker_job::enqueue_turn_worker_job(
+            runtime.as_ref(),
+            &work_id,
+            bus.stream_turn_id,
+        )
+        .await?;
+
+        Ok(json!({
+            "ok": true,
+            "workshop_entered": true,
+            "work_id": work_id,
+            "stasis_job_id": work_id,
+            "intent": intent.as_str(),
+            "status": "pending",
+            "user_ack": user_ack,
+            "message": user_ack,
+            "handoff_summary": handoff_summary,
+            "scratch_digest": scratch_digest,
+        }))
+    }
+
 }
 
 fn record_stage_role_for_response(stage_role: Option<&str>) -> Option<String> {
@@ -417,6 +615,7 @@ pub async fn run_worker_turn(
         .await;
 
     let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
+    let is_bound_workshop = record.disposition == TurnWorkDisposition::Bound;
     let manuscript_tools = record
         .handoff_capsule
         .as_ref()
@@ -430,16 +629,30 @@ pub async fn run_worker_turn(
     if worker_should_unlock_vault(&record.task_prompt, intent) {
         let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["vault"]);
     }
-    let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["memory"]);
+    if is_bound_workshop {
+        crate::tool_bootstrap::ensure_bound_workshop_session_tool_defaults(&record.session_id);
+    } else {
+        let _ = unlock_session_domains(&record.session_id, ToolSurfaceLane::Worker, &["memory"]);
+    }
     let session_registry = Arc::new(WorkerSessionToolRegistry::new(
         ctx.tool_registry.clone(),
         record.session_id.clone(),
     ));
-    let filtered_registry = Arc::new(SessionBootstrapToolRegistry::worker(
-        session_registry,
-        record.session_id.clone(),
-        allowlist,
-    ));
+    let filtered_registry: Arc<dyn ToolRegistry> = if is_bound_workshop {
+        Arc::new(SessionBootstrapToolRegistry::bound_workshop(
+            session_registry,
+            record.session_id.clone(),
+            allowlist,
+            true,
+            true,
+        ))
+    } else {
+        Arc::new(SessionBootstrapToolRegistry::worker(
+            session_registry,
+            record.session_id.clone(),
+            allowlist,
+        ))
+    };
     let worker_pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
         &record.provider,
         &record.model,
@@ -528,7 +741,20 @@ pub async fn run_worker_turn(
         delivery_target: record.delivery_target.clone(),
         tool_round_budget_ceiling: worker_max_rounds,
         require_operator_budget_gate: false,
+        host_scheduler_lane: false,
+        cancel_poll_work_id: Some(work_id.clone()),
+        steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
     };
+
+    if store.is_work_cancelled(&work_id) {
+        store.update(&work_id, |r| {
+            r.status = TurnWorkStatus::Cancelled;
+            r.termination_reason = Some("workshop_cancelled".to_string());
+        });
+        sink.notice(format!("◈ work_cancelled work_id={work_id}"))
+            .await;
+        return;
+    }
 
     let result = worker_pipeline
         .execute_with_stream_prior_messages_max_rounds(
@@ -543,6 +769,15 @@ pub async fn run_worker_turn(
 
     match result {
         Ok(response) => {
+            if store.is_work_cancelled(&work_id) {
+                store.update(&work_id, |r| {
+                    r.status = TurnWorkStatus::Cancelled;
+                    r.termination_reason = Some("workshop_cancelled".to_string());
+                });
+                sink.notice(format!("◈ work_cancelled work_id={work_id}"))
+                    .await;
+                return;
+            }
             let tool_names: Vec<String> = response
                 .tool_invocations
                 .iter()
@@ -779,9 +1014,17 @@ async fn deliver_synthesis_response(
     let tool_names = record.tool_names.clone();
     // Worker synthesis must commit explicit finish prose, not stale host/worker stream draft.
     sink.reset_streamed_markdown().await;
-    sink.agent_response(synthesis_turn_id, text, tool_names).await;
+    sink.agent_response(synthesis_turn_id, text.clone(), tool_names.clone())
+        .await;
+    crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(
+        record,
+        &text,
+        &tool_names,
+    )
+    .await;
     turn_worker_store().update(&record.work_id, |worker| {
         worker.synthesis_delivered = true;
+        worker.result_text = Some(text);
     });
 }
 
@@ -889,6 +1132,8 @@ mod tests {
             manuscript_id: None,
             branch_group_id: None,
             archived: false,
+            disposition: TurnWorkDisposition::Parallel,
+            steer_messages: Vec::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

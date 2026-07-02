@@ -17,6 +17,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import {
     createTurnTicket,
+    steerBoundWorkshop,
   } from "$lib/daemon";
 
   import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -267,6 +268,11 @@
 
       if (askPrompt) {
         await submitTurn(prompt || pendingMediaLabels(chat.pendingMediaRefs), askPrompt, "background");
+        return;
+      }
+
+      if (chat.hasWorkshopHandoff()) {
+        await steerBoundWorkshop(chat.sessionId, prompt);
         return;
       }
 

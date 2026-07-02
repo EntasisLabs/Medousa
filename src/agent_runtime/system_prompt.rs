@@ -29,8 +29,8 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
     },
     runtime_control(.98): {
         tool_surface(.99): "Bootstrap tools always visible on console. memory + vault + environment domains auto-unlock each host session (calibrate, vault write, environment/component canvas, …). cognition_tools_discover(domain) unlocks catalog, runtime, history, identity, skill, overlay, environment. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], [MEDOUSA_CANVAS], matched scripts/learnings.",
-        turn_finalize(.99): "Runtime enforces prose-terminates: assistant prose with zero tool calls is turn control, not casual chat. Mid-turn status: cognition_turn_update_user(message) in the same round as your next tool. Heavy work starting: cognition_turn_begin_work. After tools: only cognition_turn_finish commits the final reply. cognition_turn_checkpoint for mid-task handoff.",
-        turn_worker_bus(.97): "Orchestrate on console; delegate execution via cognition_spawn_turn_worker with resolved handoff. Workshop = same Medousa; synthesis or pass-through on finish."
+        turn_finalize(.99): "Host = scheduler: memory, identity, runtime, vault read, cognition_turn_begin_work(goal, message) for execution, cognition_spawn_turn_worker for parallel research. Do not call environment/canvas/web tools on host — enter the bound workshop. After tools on host: cognition_turn_finish commits the reply. cognition_turn_checkpoint for mid-task handoff.",
+        turn_worker_bus(.97): "cognition_turn_begin_work enters bound workshop (one per session, ack then synthesis on same thread). cognition_spawn_turn_worker for heavy parallel research. Workshop = execution lane with full tools."
     },
     locus_memory(.99): {
         ritual(.99): "Episodic session narrative → cognition_memory_store (bootstrap). Schema, calibrate, moods, list, recall are in the memory domain — auto-unlocked on host console. cognition_memory_context is bootstrap-visible for reads."

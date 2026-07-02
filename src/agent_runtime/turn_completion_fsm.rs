@@ -57,16 +57,14 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
                 .to_string()
         }
         ContinueReason::InterimProse => {
-            "Turn continues: naked status prose costs a text-only continue and can hit stuck limits. \
-             Next round: call cognition_turn_update_user(message=…) in the same round as your next tool \
-             — short retries and course-corrections belong there, not chat prose. \
-             cognition_turn_begin_work is for heavy/long-running work only. \
-             Then cognition_turn_finish once done."
+            "Turn continues: call tools for the work you described, or cognition_turn_begin_work(goal, message) \
+             to enter the bound workshop for multi-tool execution. Host scheduling prose may continue briefly; \
+             use cognition_turn_finish once the principal-facing answer is ready."
                 .to_string()
         }
         ContinueReason::ExtendedProse => {
-            "Runtime reloop: your last message was kept in history. Next round: call the tools you still \
-             need — use cognition_turn_update_user for a quick principal-visible line if helpful. \
+            "Runtime reloop: your last message was kept in history. Next round: call cognition_turn_begin_work \
+             for execution work, or the tools you still need on host (memory, vault read, runtime). \
              Check [MEDOUSA_SCRATCH] digests_recent before re-calling tools you already ran."
                 .to_string()
         }
@@ -129,6 +127,8 @@ pub struct NoToolDebtRoundContext {
     pub interim_continues_used: usize,
     /// Per-turn budget for interim auto-continues (bounded so the loop can't spin).
     pub interim_continue_cap: usize,
+    /// Host scheduler: cooperative prose; execution via bound workshop.
+    pub host_scheduler_lane: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +143,8 @@ pub struct AfterToolsRoundContext<'a> {
     pub interim_continues_used: usize,
     /// Per-turn budget for interim auto-continues (bounded so the loop can't spin).
     pub interim_continue_cap: usize,
+    /// Host scheduler: cooperative prose; execution via bound workshop.
+    pub host_scheduler_lane: bool,
 }
 
 /// Zero tool invocations this turn — any non-empty prose ends the turn.
@@ -222,6 +224,10 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         return action;
     }
 
+    if ctx.host_scheduler_lane && !draft.is_empty() && !ctx.pending_final_answer {
+        return continue_loop(ContinueReason::ExtendedProse, vec![]);
+    }
+
     TurnRoundAction::EndTurn {
         termination_reason: "prose_requires_finish",
     }
@@ -240,6 +246,7 @@ mod tests {
             max_tool_rounds: 10,
             interim_continues_used: 0,
             interim_continue_cap: 2,
+            host_scheduler_lane: false,
         }
     }
 
@@ -253,6 +260,7 @@ mod tests {
             workshop_lane: false,
             interim_continues_used: 0,
             interim_continue_cap: 2,
+            host_scheduler_lane: false,
         }
     }
 
@@ -474,17 +482,17 @@ mod tests {
     }
 
     #[test]
-    fn interim_prose_control_message_recommends_update_user() {
+    fn interim_prose_control_message_recommends_begin_work() {
         let msg = continue_control_message(ContinueReason::InterimProse, &[]);
-        assert!(msg.contains("cognition_turn_update_user"));
         assert!(msg.contains("cognition_turn_begin_work"));
+        assert!(msg.contains("cognition_turn_finish"));
     }
 
     #[test]
     fn extended_prose_control_message_mentions_reloop() {
         let msg = continue_control_message(ContinueReason::ExtendedProse, &[]);
         assert!(msg.contains("Runtime reloop"));
-        assert!(msg.contains("cognition_turn_finish"));
+        assert!(msg.contains("cognition_turn_begin_work"));
     }
 
     #[test]

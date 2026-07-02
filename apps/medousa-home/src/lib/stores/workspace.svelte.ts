@@ -186,6 +186,13 @@ export class WorkspaceStore {
       void this.syncTurnWorkerCardsToChat();
     }
     if (
+      previous === "wrapping_up" &&
+      card.column === "done" &&
+      !isAskJobId(card.id)
+    ) {
+      void this.syncTurnWorkerCardsToChat();
+    }
+    if (
       previous === "blocked" &&
       card.status_label !== "needs approval"
     ) {

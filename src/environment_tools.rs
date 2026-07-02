@@ -53,7 +53,7 @@ fn component_def_schema() -> Value {
             "label": { "type": "string" },
             "config": {
                 "type": "object",
-                "description": "Type-specific config — presentation uses { artifactId: string }"
+                "description": "Type-specific config — presentation uses { artifactId: string } where artifactId is the art:… id returned by cognition_ui_present (not the component id)"
             },
             "presentation": {
                 "type": "string",
@@ -75,7 +75,7 @@ fn component_def_schema() -> Value {
 
 pub fn register_environment_tools(
     registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
-    _turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
 ) -> StasisResult<()> {
     crate::environment_wiki_tools::register_environment_wiki_tools(registry)?;
     registry.register_tool(CognitionEnvironmentGetTool)?;
@@ -84,8 +84,8 @@ pub fn register_environment_tools(
     registry.register_tool(CognitionEnvironmentActivatePresetTool)?;
     registry.register_tool(CognitionComponentListTool)?;
     registry.register_tool(CognitionComponentGetTool)?;
-    registry.register_tool(CognitionComponentCreateTool)?;
-    registry.register_tool(CognitionComponentUpdateTool)?;
+    registry.register_tool(CognitionComponentCreateTool::new(turn_scope.clone()))?;
+    registry.register_tool(CognitionComponentUpdateTool::new(turn_scope.clone()))?;
     registry.register_tool(CognitionComponentDeleteTool)?;
     Ok(())
 }
@@ -364,7 +364,15 @@ impl StasisTool for CognitionComponentGetTool {
     }
 }
 
-struct CognitionComponentCreateTool;
+struct CognitionComponentCreateTool {
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+}
+
+impl CognitionComponentCreateTool {
+    fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+        Self { turn_scope }
+    }
+}
 
 #[async_trait]
 impl StasisTool for CognitionComponentCreateTool {
@@ -398,6 +406,11 @@ impl StasisTool for CognitionComponentCreateTool {
                 return Ok(json!({ "ok": false, "errors": [err] }));
             }
         };
+        let session_id = tool_session_id(&self.turn_scope).await;
+        if let Some(err) = validate_presentation_component_artifact(session_id.as_deref(), &component)
+        {
+            return Ok(json!({ "ok": false, "errors": [err] }));
+        }
         let mut record = environment_hub()
             .get(&profile_id)
             .await
@@ -408,7 +421,7 @@ impl StasisTool for CognitionComponentCreateTool {
                 "errors": [format!("component already exists: {}", component.id)]
             }));
         }
-        record.spec.components.push(component);
+        record.spec.components.push(component.clone());
         let errors = validate_environment_spec(&record.spec);
         if !errors.is_empty() {
             record.spec.components.pop();
@@ -418,6 +431,9 @@ impl StasisTool for CognitionComponentCreateTool {
             .put(record.spec, "agent")
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        if let Some(session_id) = session_id.as_deref() {
+            register_presentation_aliases(session_id, &component);
+        }
         Ok(json!({
             "ok": true,
             "revision": updated.revision,
@@ -426,7 +442,15 @@ impl StasisTool for CognitionComponentCreateTool {
     }
 }
 
-struct CognitionComponentUpdateTool;
+struct CognitionComponentUpdateTool {
+    turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+}
+
+impl CognitionComponentUpdateTool {
+    fn new(turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>) -> Self {
+        Self { turn_scope }
+    }
+}
 
 #[async_trait]
 impl StasisTool for CognitionComponentUpdateTool {
@@ -490,6 +514,12 @@ impl StasisTool for CognitionComponentUpdateTool {
         let mut existing = previous.clone();
         apply_component_patch(&mut existing, &patch);
         existing.updated_at = Some(Utc::now());
+        let session_id = tool_session_id(&self.turn_scope).await;
+        if let Some(err) =
+            validate_presentation_component_artifact(session_id.as_deref(), &existing)
+        {
+            return Ok(json!({ "ok": false, "errors": [err] }));
+        }
         record.spec.components[index] = existing.clone();
         let errors = validate_environment_spec(&record.spec);
         if !errors.is_empty() {
@@ -500,6 +530,9 @@ impl StasisTool for CognitionComponentUpdateTool {
             .put(record.spec, "agent")
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        if let Some(session_id) = session_id.as_deref() {
+            register_presentation_aliases(session_id, &existing);
+        }
         Ok(json!({
             "ok": true,
             "revision": updated.revision,
@@ -573,6 +606,77 @@ fn parse_component_input(input: &Value) -> Result<ComponentDef, String> {
         .cloned()
         .ok_or_else(|| "component required".to_string())?;
     serde_json::from_value(value).map_err(|err| format!("invalid component: {err}"))
+}
+
+async fn tool_session_id(
+    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+) -> Option<String> {
+    turn_scope
+        .read()
+        .await
+        .as_ref()
+        .map(|scope| scope.session_id.clone())
+        .filter(|id| !id.trim().is_empty())
+}
+
+fn presentation_artifact_id(config: &Value) -> Option<String> {
+    config
+        .get("artifactId")
+        .or_else(|| config.get("artifact_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn validate_presentation_component_artifact(
+    session_id: Option<&str>,
+    component: &ComponentDef,
+) -> Option<String> {
+    if component.component_type != ComponentType::Presentation {
+        return None;
+    }
+    let Some(artifact_ref) = presentation_artifact_id(&component.config) else {
+        return Some(
+            "presentation components require config.artifactId from cognition_ui_present"
+                .to_string(),
+        );
+    };
+    let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) else {
+        if artifact_ref.starts_with("art:") {
+            return None;
+        }
+        return Some(format!(
+            "config.artifactId '{artifact_ref}' must be a canonical art:… id from cognition_ui_present"
+        ));
+    };
+    if crate::artifact_store::presentation_artifact_exists(session_id, &artifact_ref) {
+        return None;
+    }
+    Some(format!(
+        "artifact not found for session '{session_id}': {artifact_ref}. \
+         Call cognition_ui_present first and set config.artifactId to the returned artifact_id \
+         (component id '{}' is not an artifact id).",
+        component.id
+    ))
+}
+
+fn register_presentation_aliases(session_id: &str, component: &ComponentDef) {
+    if component.component_type != ComponentType::Presentation {
+        return;
+    }
+    let Some(artifact_ref) = presentation_artifact_id(&component.config) else {
+        return;
+    };
+    let resolved = crate::artifact_store::resolve_artifact_reference(session_id, &artifact_ref);
+    if !resolved.starts_with("art:") {
+        return;
+    }
+    let _ = crate::artifact_store::register_artifact_alias(session_id, &component.id, &resolved);
+    if artifact_ref != resolved && artifact_ref != component.id {
+        let _ =
+            crate::artifact_store::register_artifact_alias(session_id, &artifact_ref, &resolved);
+    }
 }
 
 fn parse_spec_input(input: &Value) -> StasisResult<EnvironmentSpec> {
@@ -667,9 +771,29 @@ mod demo_tests {
     use medousa_types::environment_default::writing_studio_demo_spec;
     use medousa_types::environment_validate::is_valid_environment_spec;
 
+    use super::*;
+
     #[test]
     fn writing_studio_demo_spec_validates() {
         let spec = writing_studio_demo_spec("personal");
         assert!(is_valid_environment_spec(&spec));
+    }
+
+    #[test]
+    fn presentation_component_rejects_missing_artifact_id() {
+        let component = ComponentDef {
+            id: "demo".to_string(),
+            component_type: ComponentType::Presentation,
+            surface_id: "writing-studio".to_string(),
+            slot: "main".to_string(),
+            label: Some("Demo".to_string()),
+            config: json!({}),
+            presentation: Some(UiPresentation::Inline),
+            feeds: vec![],
+            updated_at: None,
+        };
+        let err = validate_presentation_component_artifact(Some("sess-1"), &component)
+            .expect("missing artifactId");
+        assert!(err.contains("artifactId"));
     }
 }

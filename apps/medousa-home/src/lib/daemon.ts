@@ -193,6 +193,13 @@ export async function cancelActiveSessionTurn(
   });
 }
 
+export async function steerBoundWorkshop(
+  sessionId: string,
+  message: string,
+): Promise<{ ok: boolean; work_id?: string; error?: string }> {
+  return invoke("session_steer_bound_workshop", { sessionId, message });
+}
+
 /** Plain JSON clone — strips Svelte proxies before Tauri IPC serialization. */
 function invokePlain<T>(value: T): T {
   if (value === null || value === undefined) return value;

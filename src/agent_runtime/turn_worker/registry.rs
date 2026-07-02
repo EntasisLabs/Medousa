@@ -11,7 +11,12 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
 use super::policy::tool_allowed;
-use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names, ensure_browser_domain_for_capable_clients, ensure_environment_domain_for_ui_clients, ensure_host_session_tool_defaults};
+use crate::tool_bootstrap::{
+    ToolSurfaceLane, effective_tool_names, ensure_bound_workshop_session_tool_defaults,
+    ensure_browser_domain_for_capable_clients, ensure_environment_domain_for_ui_clients,
+    ensure_host_session_tool_defaults, ensure_worker_browser_domain_for_capable_clients,
+    ensure_worker_environment_domain_for_ui_clients,
+};
 use crate::browser_tools::BROWSER_COGNITION_TOOLS;
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
@@ -131,6 +136,28 @@ impl SessionBootstrapToolRegistry {
             full_allowlist,
             supports_ui_artifacts: false,
             supports_browser_host: false,
+        }
+    }
+
+    /// Bound workshop lane — full execution surface including environment/canvas tools.
+    pub fn bound_workshop(
+        inner: Arc<dyn ToolRegistry>,
+        session_id: impl Into<String>,
+        full_allowlist: HashSet<String>,
+        supports_ui_artifacts: bool,
+        supports_browser_host: bool,
+    ) -> Self {
+        let session_id = session_id.into();
+        ensure_bound_workshop_session_tool_defaults(&session_id);
+        ensure_worker_environment_domain_for_ui_clients(&session_id, supports_ui_artifacts);
+        ensure_worker_browser_domain_for_capable_clients(&session_id, supports_browser_host);
+        Self {
+            inner,
+            session_id,
+            lane: ToolSurfaceLane::Worker,
+            full_allowlist,
+            supports_ui_artifacts,
+            supports_browser_host,
         }
     }
 

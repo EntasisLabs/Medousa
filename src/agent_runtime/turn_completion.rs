@@ -50,6 +50,12 @@ pub struct ToolLoopCompletionGate<'a> {
     pub tool_round_budget_ceiling: usize,
     /// When true, `cognition_turn_request_more_rounds` pauses for operator approval.
     pub require_operator_budget_gate: bool,
+    /// Host scheduler lane: cooperative prose; no prose_requires_finish after tools.
+    pub host_scheduler_lane: bool,
+    /// Poll turn-worker store each round; end loop when status is cancelled.
+    pub cancel_poll_work_id: Option<String>,
+    /// Drain steer inbox each round and inject `[MEDOUSA_WORKSHOP_STEER]`.
+    pub steer_poll_work_id: Option<String>,
 }
 
 impl ToolLoopCompletionGate<'_> {
@@ -84,6 +90,9 @@ impl ToolLoopCompletionGate<'_> {
             delivery_target: None,
             tool_round_budget_ceiling: max_tool_rounds,
             require_operator_budget_gate: false,
+            host_scheduler_lane: false,
+            cancel_poll_work_id: None,
+            steer_poll_work_id: None,
         }
     }
 }

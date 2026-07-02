@@ -140,6 +140,7 @@ async function recoverInteractiveStreams(): Promise<void> {
       !turn.terminal &&
       turn.mode === "interactive" &&
       turn.phase !== "worker_handoff" &&
+      turn.phase !== "workshop_handoff" &&
       turn.phase !== "budget_blocked",
   );
   const attached = await chat.tryReattachActiveTurn(workspace.cards);

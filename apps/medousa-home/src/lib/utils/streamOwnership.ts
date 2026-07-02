@@ -35,12 +35,12 @@ export function shouldReattachTurnRecord(
     if (record.mode !== "background") return false;
   }
 
-  if (record.mode === "interactive" && record.phase === "worker_handoff") {
+  if (record.mode === "interactive" && (record.phase === "worker_handoff" || record.phase === "workshop_handoff")) {
     return false;
   }
 
   if (ctx.localTurn?.terminal) return false;
-  if (ctx.localTurn?.phase === "worker_handoff") return false;
+  if (ctx.localTurn?.phase === "worker_handoff" || ctx.localTurn?.phase === "workshop_handoff") return false;
 
   if (!ctx.localTurn && ctx.hasAssistantMessage && !ctx.assistantStreaming) {
     return false;

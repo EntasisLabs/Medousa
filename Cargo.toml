@@ -84,6 +84,7 @@ grapheme-compiler = "0.6.1"
 grapheme-runtime = "0.6.1"
 grapheme-lsp = "0.6.1"
 stasis-rs-macros = { version = "0.1.0"}
+schemars = "0.8"
 genai = "0.6.5"
 keyring = "2.3"
 locus-core-rs = "0.4.2"

@@ -308,6 +308,36 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
         self.sync_ask_job_interim(text).await;
     }
 
+    async fn agent_workshop_ack(
+        &self,
+        _turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
+
+        let assistant_turn = self
+            .parts
+            .lock()
+            .map(|mut parts| parts.finalize_worker_ack_turn(text.clone(), tool_names.clone(), work_id.clone()))
+            .unwrap_or_else(|_| user_conversation_turn(text.clone()));
+
+        let wire = interactive_turn_runtime::workshop_ack_stream_event_with_tools(
+            &self.turn_id,
+            &text,
+            tool_names.clone(),
+            work_id.as_deref(),
+        );
+        let event = super::turn_event::TurnEvent::worker_ack_from_turn(&assistant_turn, work_id);
+        self.publish_tracked_with_journal(wire, Some(event.clone()))
+            .await;
+        self.persist_via_spine(assistant_turn, event);
+        self.sync_ask_job_interim(text).await;
+    }
+
     async fn agent_response(&self, _turn_id: u64, text: String, tool_names: Vec<String>) {
         if self.emit_cancelled_if_needed().await {
             return;
@@ -1273,6 +1303,18 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
     ) {
         self.inner
             .agent_worker_ack(turn_id, text, tool_names, work_id)
+            .await;
+    }
+
+    async fn agent_workshop_ack(
+        &self,
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        self.inner
+            .agent_workshop_ack(turn_id, text, tool_names, work_id)
             .await;
     }
 

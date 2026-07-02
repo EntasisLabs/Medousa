@@ -41,6 +41,7 @@ pub mod turn_budget_handlers;
 pub mod turn_budget_notify;
 pub mod turn_worker_notify;
 pub mod turn_control_tools;
+pub mod turn_control_stasis;
 pub mod turn_text_heuristics;
 pub mod context_pack;
 pub mod capability_catalog;

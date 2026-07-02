@@ -287,7 +287,15 @@ pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Optio
 }
 
 /// Signal tool-loop entry with a principal-facing progress line (loop continues).
-pub struct CognitionTurnBeginWorkTool;
+pub struct CognitionTurnBeginWorkTool {
+    scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+}
+
+impl CognitionTurnBeginWorkTool {
+    pub fn new(scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>) -> Self {
+        Self { scheduler }
+    }
+}
 
 #[async_trait]
 impl StasisTool for CognitionTurnBeginWorkTool {
@@ -297,28 +305,28 @@ impl StasisTool for CognitionTurnBeginWorkTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Signal that heavy or long-running tool work is starting (multi-step research, worker \
-             delegation, large vault crawl). Call before that work — not for quick status, retries, \
-             or course-corrections (use cognition_turn_update_user). Optional note= pins intent in scratch.",
+            "Enter the bound workshop for multi-tool execution (environment/canvas, components, vault writes). \
+             Provide a short principal-facing message and a concrete goal for the workshop executor. \
+             Host turn ends with the ack; synthesis delivers on the same thread when the workshop finishes.",
         )
     }
 
     fn input_schema(&self) -> Option<Value> {
         Some(json!({
             "type": "object",
-            "required": ["message"],
+            "required": ["message", "goal"],
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "Short principal-facing line before heavy tool work"
+                    "description": "Short principal-facing ack before workshop execution"
                 },
-                "note": {
+                "goal": {
                     "type": "string",
-                    "description": "Optional sticky working note in engine scratch (not shown to principal)"
+                    "description": "Focused execution task for the bound workshop (tools, surfaces, constraints)"
                 },
                 "intent": {
                     "type": "string",
-                    "description": "Optional note for logs (not shown to the principal)"
+                    "description": "Optional worker profile: general | research (default general)"
                 }
             }
         }))
@@ -328,25 +336,57 @@ impl StasisTool for CognitionTurnBeginWorkTool {
         let Some(message) = message_from_begin_work_payload(&input) else {
             return Ok(json!({
                 "ok": false,
-                "begin_work": false,
+                "workshop_entered": false,
                 "error": "message is required and must be non-empty",
             }));
         };
-        let intent = input
-            .get("intent")
+        let goal = input
+            .get("goal")
             .and_then(|value| value.as_str())
             .map(str::trim)
             .filter(|value| !value.is_empty());
-        let note = note_from_begin_work_payload(&input);
+        let Some(goal) = goal else {
+            return Ok(json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "goal is required and must be non-empty",
+            }));
+        };
+        let intent_raw = input.get("intent").and_then(|value| value.as_str());
+        let intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(
+            intent_raw.unwrap_or("general"),
+        )
+        .unwrap_or(crate::agent_runtime::turn_worker::TurnWorkerIntent::General);
 
-        Ok(json!({
-            "ok": true,
-            "begin_work": true,
-            "message": message,
-            "intent": intent,
-            "note": note,
-        }))
+        self.scheduler.enter_bound_workshop(&message, goal, intent).await
     }
+}
+
+pub fn workshop_entered_from_invocations(
+    invocations: &[ToolInvocation],
+) -> Option<(String, String)> {
+    invocations.iter().rev().find_map(|inv| {
+        if !is_begin_work_tool_name(&inv.tool_name) {
+            return None;
+        }
+        let entered = inv
+            .tool_output
+            .get("workshop_entered")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !entered {
+            return None;
+        }
+        let work_id = inv.tool_output.get("work_id")?.as_str()?.to_string();
+        let ack = inv
+            .tool_output
+            .get("user_ack")
+            .and_then(|v| v.as_str())
+            .or_else(|| inv.tool_output.get("message").and_then(|v| v.as_str()))
+            .unwrap_or("Working on that in the workshop.")
+            .to_string();
+        Some((work_id, ack))
+    })
 }
 
 /// Short principal-facing status while the turn continues (not a final answer).

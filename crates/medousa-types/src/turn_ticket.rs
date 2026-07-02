@@ -48,6 +48,7 @@ pub enum TurnTicketPhase {
     Accepted,
     Streaming,
     WorkerHandoff,
+    WorkshopHandoff,
     BudgetBlocked,
     Done,
     Error,
@@ -60,6 +61,7 @@ impl TurnTicketPhase {
             Self::Accepted => "accepted",
             Self::Streaming => "streaming",
             Self::WorkerHandoff => "worker_handoff",
+            Self::WorkshopHandoff => "workshop_handoff",
             Self::BudgetBlocked => "budget_blocked",
             Self::Done => "done",
             Self::Error => "error",
@@ -72,6 +74,9 @@ impl TurnTicketPhase {
     }
 
     pub fn composer_handoff(self) -> bool {
-        matches!(self, Self::WorkerHandoff | Self::BudgetBlocked) || self.terminal()
+        matches!(
+            self,
+            Self::WorkerHandoff | Self::WorkshopHandoff | Self::BudgetBlocked
+        ) || self.terminal()
     }
 }

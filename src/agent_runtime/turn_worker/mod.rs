@@ -35,4 +35,6 @@ pub use run::{
     system_prompt_for_host_bus,
 };
 pub use status::{append_active_workers_hint, format_active_workers_block};
-pub use store::{TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store};
+pub use store::{
+    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
+};

@@ -80,6 +80,7 @@ pub fn prompt_preview(prompt: &str) -> String {
 pub fn phase_from_stream_event(event_type: &str, terminal: bool) -> TurnTicketPhase {
     match event_type {
         "worker_ack" => TurnTicketPhase::WorkerHandoff,
+        "workshop_ack" => TurnTicketPhase::WorkshopHandoff,
         "budget_approval" => TurnTicketPhase::BudgetBlocked,
         "error" => TurnTicketPhase::Error,
         _ if terminal => TurnTicketPhase::Done,

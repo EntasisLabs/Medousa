@@ -40,8 +40,8 @@ use crate::turn_control_tools::{
     is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name,
     is_prepare_final_tool_name, is_request_more_rounds_tool_name, is_update_user_tool_name,
     request_more_rounds_from_invocations, terminal_text_for_fsm_end,
-    turn_progress_message_from_invocations,
-    COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
+    turn_progress_message_from_invocations, workshop_entered_from_invocations,
+    COGNITION_TURN_BEGIN_WORK, COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
@@ -223,6 +223,36 @@ impl MedousaToolLoopPipeline {
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
+                if let Some(gate) = completion_gate.as_ref() {
+                    if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
+                        if crate::agent_runtime::turn_worker::turn_worker_store()
+                            .is_work_cancelled(work_id)
+                        {
+                            return Ok(ToolLoopExecutionResponse {
+                                text: String::new(),
+                                metadata: shared_inputs.context_clone(),
+                                tool_name: String::new(),
+                                tool_output: Value::Null,
+                                tool_invocations: invocations,
+                                rounds_executed,
+                                termination_reason: "workshop_cancelled".to_string(),
+                            });
+                        }
+                    }
+                    if let Some(work_id) = gate.steer_poll_work_id.as_deref() {
+                        let steers = crate::agent_runtime::turn_worker::turn_worker_store()
+                            .drain_steer_messages(work_id);
+                        for steer in steers {
+                            push_turn_control_message(
+                                &mut turn_ctx.tool_lane.messages,
+                                &format!(
+                                    "[MEDOUSA_WORKSHOP_STEER]\n{}",
+                                    steer.text.trim()
+                                ),
+                            );
+                        }
+                    }
+                }
                 if rounds_executed > 1 {
                     if let Some(gate) = completion_gate.as_ref() {
                         gate.reset_scratch(streaming_enabled).await;
@@ -308,6 +338,10 @@ impl MedousaToolLoopPipeline {
                             .as_ref()
                             .map(|gate| gate.skip_avec_ritual_check)
                             .unwrap_or(false);
+                        let host_scheduler_lane = completion_gate
+                            .as_ref()
+                            .map(|gate| gate.host_scheduler_lane)
+                            .unwrap_or(false);
                         let action = if invocations.is_empty() {
                             decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
                                 draft_text: text.clone(),
@@ -316,6 +350,7 @@ impl MedousaToolLoopPipeline {
                                 max_tool_rounds: effective_max_tool_rounds,
                                 interim_continues_used,
                                 interim_continue_cap,
+                                host_scheduler_lane,
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
@@ -327,6 +362,7 @@ impl MedousaToolLoopPipeline {
                                 workshop_lane,
                                 interim_continues_used,
                                 interim_continue_cap,
+                                host_scheduler_lane,
                             })
                         };
 
@@ -832,6 +868,56 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some((work_id, ack)) =
+                    workshop_entered_from_invocations(&invocations)
+                {
+                    let intent = invocations
+                        .iter()
+                        .find(|i| is_begin_work_tool_name(&i.tool_name))
+                        .and_then(|i| i.tool_input.get("intent"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("general");
+                    turn_ctx.scratchpad.set_delegate(&work_id, intent);
+                    sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                    if let Some(gate) = completion_gate.as_ref() {
+                        let parent_corr = gate
+                            .parent_turn_correlation_id
+                            .as_deref()
+                            .unwrap_or("-");
+                        let digest = turn_ctx.scratchpad.digest_hash();
+                        persist_ledger_record(
+                            gate.session_id.as_deref(),
+                            &crate::agent_runtime::turn_ledger::TurnLedgerRecord {
+                                timestamp: chrono::Utc::now(),
+                                stream_turn_id: gate.stream_turn_id,
+                                kind: crate::agent_runtime::turn_ledger::TurnLedgerEventKind::WorkDelegated,
+                                detail: format!(
+                                    "host_turn_ended workshop_entered work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
+                                ),
+                                tools_invoked: ledger_tool_names(&invocations),
+                                missing_tools: Vec::new(),
+                                rounds_executed,
+                                scratch: Some(turn_ctx.scratchpad.clone()),
+                                active_profile_id: None,
+                            },
+                        );
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text: ack,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: "workshop_entered".to_string(),
+                    });
+                }
+
+                if let Some((work_id, ack)) =
                     crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
                         &invocations,
                     )
@@ -1221,6 +1307,7 @@ mod tests {
             workshop_lane: false,
             interim_continues_used: 0,
             interim_continue_cap: 2,
+            host_scheduler_lane: false,
         });
         assert!(matches!(
             action,
@@ -1285,6 +1372,7 @@ mod tests {
             max_tool_rounds: 10,
             interim_continues_used: 0,
             interim_continue_cap: 2,
+            host_scheduler_lane: false,
         });
         assert!(matches!(
             action,

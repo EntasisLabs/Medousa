@@ -148,6 +148,7 @@ impl StasisTool for CognitionUiPresentTool {
         });
 
         let session_id = self.resolve_session_id().await?;
+        let session_id_for_alias = session_id.clone();
         let title = title.to_string();
         let html = html.to_string();
         let presentation = presentation.to_string();
@@ -247,6 +248,11 @@ impl StasisTool for CognitionUiPresentTool {
                 .put(env_record.spec, "agent")
                 .await
                 .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            let _ = crate::artifact_store::register_artifact_alias(
+                &session_id_for_alias,
+                component_id,
+                &record.artifact_id,
+            );
             response["persisted"] = json!(true);
             response["persisted_component_id"] = json!(component_id);
             response["environment_revision"] = json!(updated.revision);

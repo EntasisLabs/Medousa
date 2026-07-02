@@ -6,6 +6,21 @@ export function isWorkerHandoffStreamEvent(
   return event.event_type === "worker_ack" || event.phase === "worker_ack";
 }
 
+export function isWorkshopHandoffStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return event.event_type === "workshop_ack" || event.phase === "workshop_ack";
+}
+
+export function isWorkerSynthesisStreamEvent(
+  event: InteractiveTurnStreamEvent,
+): boolean {
+  return (
+    event.event_type === "worker_synthesis" ||
+    event.phase === "worker_synthesis"
+  );
+}
+
 export function isBudgetApprovalStreamEvent(
   event: InteractiveTurnStreamEvent,
 ): boolean {
@@ -38,7 +53,11 @@ export function isRecoverableStreamError(message: string): boolean {
 }
 
 export function isHandoffStreamEvent(event: InteractiveTurnStreamEvent): boolean {
-  return isWorkerHandoffStreamEvent(event) || isBudgetApprovalStreamEvent(event);
+  return (
+    isWorkerHandoffStreamEvent(event) ||
+    isWorkshopHandoffStreamEvent(event) ||
+    isBudgetApprovalStreamEvent(event)
+  );
 }
 
 /** Whether a stream event should commit visible assistant body as terminal prose. */
@@ -46,6 +65,7 @@ export function isTerminalContentCommit(
   event: InteractiveTurnStreamEvent,
 ): boolean {
   if (isHandoffStreamEvent(event)) return false;
+  if (isWorkerSynthesisStreamEvent(event)) return true;
   return (
     event.terminal ||
     event.event_type === "final" ||

@@ -321,6 +321,10 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/sessions/{session_id}/active-turn",
             get(get_active_session_turn).post(cancel_active_session_turn),
         )
+        .route(
+            "/v1/sessions/{session_id}/workshop/steer",
+            post(crate::daemon::workshop_steer::steer_bound_workshop_handler),
+        )
         .route("/v1/sessions/{session_id}/turns", get(list_session_turns))
         .route("/v1/turns", post(create_turn_ticket))
         .route("/v1/turns/{turn_id}", get(get_turn_ticket))

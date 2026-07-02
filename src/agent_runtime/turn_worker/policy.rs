@@ -56,10 +56,6 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
         &[
             "cognition_turn_prepare_final",
             "cognition.turn.prepare_final",
-            "cognition_turn_begin_work",
-            "cognition.turn.begin_work",
-            "cognition_turn_update_user",
-            "cognition.turn.update_user",
             "cognition_turn_checkpoint",
             "cognition.turn.checkpoint",
             "cognition_turn_finish",
@@ -170,15 +166,17 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                     "cognition_vault_read",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_ui_present",
                 ],
             );
+            push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
         }
     }
 
     names
 }
 
-/// Tools exposed to the host (main) agent — runtime orchestrator, not Grapheme/MCP executor.
+/// Tools exposed to the host (main) agent — scheduler, not execution engine.
 pub fn host_bus_tool_names() -> HashSet<String> {
     let mut names = HashSet::new();
     let push = |names: &mut HashSet<String>, list: &[&str]| {
@@ -192,8 +190,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         &[
             "cognition_turn_begin_work",
             "cognition.turn.begin_work",
-            "cognition_turn_update_user",
-            "cognition.turn.update_user",
             "cognition_turn_checkpoint",
             "cognition.turn.checkpoint",
             "cognition_turn_finish",
@@ -212,6 +208,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_spawn_turn_worker",
             "cognition_turn_worker_status",
             "cognition_turn_worker_cancel",
+            "cognition_workshop_steer",
         ],
     );
 
@@ -225,21 +222,10 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_identity_remember",
             "cognition_manuscript_list",
             "cognition_manuscript_resolve",
-            "cognition_skill_discover",
-            "cognition_skill_propose",
-            "cognition_openshell_status",
-            "cognition_vault_list",
             "cognition_vault_read",
             "cognition_vault_search",
-            "cognition_vault_write",
-            "cognition_web_search",
-            "cognition_browser_fetch",
             "cognition_tool_history_summary",
             "cognition_tool_history_detail",
-            "cognition_grapheme_script_list",
-            "cognition_grapheme_script_search",
-            "cognition_manuscript_overlay_propose",
-            "cognition_manuscript_overlay_list",
         ],
     );
 
@@ -265,7 +251,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition.capability.search",
             "cognition_capability_resolve",
             "cognition.capability.resolve",
-            "cognition_ui_present",
         ],
     );
 
@@ -291,8 +276,6 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_runtime_workflow_plan",
         ],
     );
-
-    push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
 
     names
 }
@@ -379,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn host_orchestrator_has_memory_runtime_and_catalog_not_grapheme() {
+    fn host_scheduler_has_memory_runtime_and_catalog_not_execution() {
         let names = host_bus_tool_names();
         assert!(names.contains("cognition_memory_calibrate"));
         assert!(names.contains("cognition_identity_propose"));
@@ -389,12 +372,22 @@ mod tests {
         assert!(names.contains("cognition_spawn_turn_worker"));
         assert!(names.contains("cognition_capability_search"));
         assert!(names.contains("cognition_runtime_workflow_run"));
+        assert!(names.contains("cognition_vault_read"));
+        assert!(names.contains("cognition_workshop_steer"));
         assert!(!names.contains("cognition_grapheme_run"));
         assert!(!names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_mcp_invoke"));
         assert!(!names.contains("cognition_turn_prepare_final"));
+        assert!(!names.contains("cognition_environment_get"));
+        assert!(!names.contains("cognition_ui_present"));
         assert!(names.contains("cognition_turn_begin_work"));
         assert!(names.contains("cognition_turn_finish"));
-        assert!(names.contains("cognition_ui_present"));
+    }
+
+    #[test]
+    fn general_worker_includes_environment_tools() {
+        let names = allowed_tool_names_for_intent(TurnWorkerIntent::General);
+        assert!(names.contains("cognition_environment_get"));
+        assert!(names.contains("cognition_component_create"));
     }
 }

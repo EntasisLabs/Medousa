@@ -6,7 +6,11 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import type { ComponentDef } from "$lib/types/environment";
-  import type { ArtifactEmbedMode } from "$lib/utils/artifactPrepareHtml";
+  import {
+    presentationBare,
+    presentationEmbedMode,
+    surfaceUsesDashboardFill,
+  } from "$lib/utils/environmentPresentation";
 
   interface Props {
     surfaceId: string;
@@ -17,17 +21,12 @@
 
   const surface = $derived(environment.surfaceById(surfaceId));
   const isCustom = $derived(surface?.kind === "custom");
+  const isDashboard = $derived(surfaceUsesDashboardFill(surface?.layout));
   const headerComponents = $derived(environment.componentsForSurface(surfaceId, "header"));
   const mainComponents = $derived(environment.componentsForSurface(surfaceId, "main"));
   const fabComponents = $derived(environment.componentsForSurface(surfaceId, "fab"));
   const inlineComponents = $derived(environment.componentsForSurface(surfaceId, "inline"));
   const sidebarComponents = $derived(environment.componentsForSurface(surfaceId, "sidebar"));
-
-  function presentationMode(component: ComponentDef): ArtifactEmbedMode {
-    if (component.presentation === "panel") return "panel";
-    if (component.presentation === "fullscreen") return "fullscreen";
-    return "inline";
-  }
 
   function configString(config: Record<string, unknown>, key: string): string | null {
     const camel = config[key];
@@ -58,7 +57,11 @@
     </div>
   {/if}
 
-  <div class="environment-renderer-body" class:environment-renderer-body-custom={isCustom}>
+  <div
+    class="environment-renderer-body"
+    class:environment-renderer-body-custom={isCustom}
+    class:environment-renderer-body-dashboard={isCustom && isDashboard}
+  >
     {#if isCustom}
       {#if mainComponents.length === 0}
         <p class="environment-renderer-empty">This surface has no components yet.</p>
@@ -66,14 +69,20 @@
         {#each mainComponents as component (component.id)}
           {#if component.type === "presentation"}
             {@const artifactId = configString(component.config, "artifactId")}
+            {@const embedMode = presentationEmbedMode(surface?.layout, component)}
             {#if artifactId && chat.sessionId}
-              <PresentationFrame
-                sessionId={chat.sessionId}
-                artifactId={artifactId}
-                label={component.label ?? "Presentation"}
-                mode={presentationMode(component)}
-                bare={presentationMode(component) !== "inline"}
-              />
+              <div
+                class="environment-renderer-main-item"
+                class:environment-renderer-main-item-fill={isDashboard}
+              >
+                <PresentationFrame
+                  sessionId={chat.sessionId}
+                  artifactId={artifactId}
+                  label={component.label ?? "Presentation"}
+                  mode={embedMode}
+                  bare={presentationBare(surface?.layout, embedMode)}
+                />
+              </div>
             {/if}
           {:else if component.type === "medousa_view"}
             {@const notePath = configString(component.config, "notePath")}
@@ -156,6 +165,29 @@
     padding: 0.75rem;
     overflow: auto;
     gap: 0.75rem;
+  }
+
+  .environment-renderer-body-dashboard {
+    padding: 0;
+    overflow: hidden;
+    gap: 0;
+  }
+
+  .environment-renderer-main-item-fill {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    width: 100%;
+  }
+
+  .environment-renderer-body-dashboard :global(.presentation-frame) {
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    box-shadow: none;
   }
 
   .environment-renderer-sidebar {

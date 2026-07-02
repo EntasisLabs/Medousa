@@ -15,8 +15,9 @@ This is the canonical guide for how a Medousa turn runs: orchestration, completi
 | Term in product UI | Term in code / architecture | Meaning |
 |--------------------|----------------------------|---------|
 | **Specialist** | **Manuscript** (`IdentityManuscript` YAML) | Declared specialty: voice, tools, task template, worker defaults |
-| **Specialist bus** | **Host bus** (`MEDOUSA_TURN_HOST_BUS`) | Slim orchestrator lane — delegates heavy work to workers |
-| **Workshop** | **Worker lane** | Background tool loop after `cognition_spawn_turn_worker` |
+| **Specialist bus** | **Host scheduler** (`MEDOUSA_HOST_BUS`) | Hot lane — memory, identity, runtime, vault read, `begin_work`, spawn workers |
+| **Bound workshop** | **Bound work record** (`disposition: bound`) | Async execution after `cognition_turn_begin_work` — one per session, synthesis on same thread |
+| **Workshop** | **Worker lane** | Tool loop after `begin_work` (bound) or `cognition_spawn_turn_worker` (parallel) |
 | **Lead / Extractor / …** | **Stage role** | Entry in `StageRoutingMatrix` — picks provider/model per phase |
 
 One runtime, multiple names. Home Settings → Workshop uses **Specialists** and **Host bus charter**; Rust and older plans say **manuscript** and **host bus**.

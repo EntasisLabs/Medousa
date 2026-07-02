@@ -31,6 +31,16 @@ pub trait AgentStreamSink: Send + Sync {
     ) {
         let _ = (turn_id, text, tool_names, work_id);
     }
+    async fn agent_workshop_ack(
+        &self,
+        turn_id: u64,
+        text: String,
+        tool_names: Vec<String>,
+        work_id: Option<String>,
+    ) {
+        self.agent_worker_ack(turn_id, text, tool_names, work_id)
+            .await;
+    }
     async fn agent_error(&self, turn_id: u64, message: String);
     async fn notice(&self, message: String);
     async fn tool_invoked(&self, tool_name: String, input_summary: String);

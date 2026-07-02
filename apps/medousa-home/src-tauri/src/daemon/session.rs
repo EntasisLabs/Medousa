@@ -148,6 +148,39 @@ pub async fn session_cancel_active_turn(
     workshop_http::post_empty_json(&state, &format!("/v1/sessions/{trimmed}/active-turn")).await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkshopSteerRequest {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkshopSteerResponse {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn session_steer_bound_workshop(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    message: String,
+) -> Result<WorkshopSteerResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let body = WorkshopSteerRequest { message };
+    workshop_http::post_json(
+        &state,
+        &format!("/v1/sessions/{trimmed}/workshop/steer"),
+        &body,
+    )
+    .await
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnTicketMode {

@@ -459,6 +459,7 @@ pub fn run() {
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,
             daemon::session::session_cancel_active_turn,
+            daemon::session::session_steer_bound_workshop,
             daemon::session::turn_create,
             daemon::session::turn_list_session,
             daemon::media::media_upload,

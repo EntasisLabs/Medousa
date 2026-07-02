@@ -98,6 +98,8 @@ mod tests {
             manuscript_id: None,
             branch_group_id: None,
             archived: false,
+            disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
+            steer_messages: Vec::new(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         });

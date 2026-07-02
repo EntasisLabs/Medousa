@@ -1062,6 +1062,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     loop_max_rounds,
                 ),
                 require_operator_budget_gate: require_operator_budget_gate(),
+                host_scheduler_lane: true,
+                cancel_poll_work_id: None,
+                steer_poll_work_id: None,
             };
 
             match attempt_pipeline
@@ -1131,6 +1134,18 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 .map(|(id, _)| id);
                 stage_scratch_for_persist(&sink, &last_tool_scratch).await;
                 sink.agent_worker_ack(turn_id, final_text, tool_names, work_id)
+                    .await;
+                emit_orchestration_summary(&sink, &orchestration_state).await;
+                return;
+            }
+            if response.termination_reason == "workshop_entered" {
+                let tool_names = collect_tool_names(&combined_invocations);
+                let work_id = crate::turn_control_tools::workshop_entered_from_invocations(
+                    &combined_invocations,
+                )
+                .map(|(id, _)| id);
+                stage_scratch_for_persist(&sink, &last_tool_scratch).await;
+                sink.agent_workshop_ack(turn_id, final_text, tool_names, work_id)
                     .await;
                 emit_orchestration_summary(&sink, &orchestration_state).await;
                 return;
@@ -1243,6 +1258,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                     continuation_max_rounds,
                                 ),
                                 require_operator_budget_gate: require_operator_budget_gate(),
+                                host_scheduler_lane: true,
+                                cancel_poll_work_id: None,
+                                steer_poll_work_id: None,
                             };
                             pipeline
                                 .execute_with_stream_prior_messages_max_rounds(
@@ -1369,6 +1387,9 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 retry_rounds,
                             ),
                             require_operator_budget_gate: require_operator_budget_gate(),
+                            host_scheduler_lane: true,
+                            cancel_poll_work_id: None,
+                            steer_poll_work_id: None,
                         };
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(

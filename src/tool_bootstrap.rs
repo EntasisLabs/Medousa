@@ -322,10 +322,29 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_grapheme_script_search",
                 ],
             },
+            ToolDomainCatalogEntry {
+                domain: ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN,
+                summary: "Home environment — surfaces, chrome, persistent components, context pointers",
+                tools: ENVIRONMENT_DOMAIN_TOOLS,
+            },
+            ToolDomainCatalogEntry {
+                domain: BROWSER_HOST_AUTO_UNLOCK_DOMAIN,
+                summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
+                tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
+            },
         ]
     })
     .as_slice()
 }
+
+/// Domains unlocked when a bound workshop starts (execution lane for Home).
+pub const BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS: &[&str] = &[
+    "environment",
+    "execute",
+    "discover",
+    "vault",
+    "memory",
+];
 
 pub fn tool_one_liner(name: &str) -> &'static str {
     match name {
@@ -415,6 +434,43 @@ pub fn ensure_browser_domain_for_capable_clients(session_id: &str, supports_brow
             &[BROWSER_HOST_AUTO_UNLOCK_DOMAIN],
         );
     }
+}
+
+/// Unlock browser domain on the worker lane (bound workshop / Home execution).
+pub fn ensure_worker_browser_domain_for_capable_clients(
+    session_id: &str,
+    supports_browser_host: bool,
+) {
+    if supports_browser_host {
+        let _ = unlock_session_domains(
+            session_id,
+            ToolSurfaceLane::Worker,
+            &[BROWSER_HOST_AUTO_UNLOCK_DOMAIN],
+        );
+    }
+}
+
+/// Unlock environment/canvas domain on the worker lane when the client renders UI artifacts.
+pub fn ensure_worker_environment_domain_for_ui_clients(
+    session_id: &str,
+    supports_ui_artifacts: bool,
+) {
+    if supports_ui_artifacts {
+        let _ = unlock_session_domains(
+            session_id,
+            ToolSurfaceLane::Worker,
+            &[ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN],
+        );
+    }
+}
+
+/// Auto-unlock execution domains when entering a bound workshop on the worker lane.
+pub fn ensure_bound_workshop_session_tool_defaults(session_id: &str) {
+    let _ = unlock_session_domains(
+        session_id,
+        ToolSurfaceLane::Worker,
+        BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS,
+    );
 }
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
@@ -735,7 +791,7 @@ fn sanitize_session_filename(session_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
 
     fn surface_test_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -784,6 +840,26 @@ mod tests {
         let allow = host_bus_tool_names();
         let names = effective_tool_names("sess-ui-present", ToolSurfaceLane::Host, &allow);
         assert!(names.contains("cognition_ui_present"));
+    }
+
+    #[test]
+    fn ensure_bound_workshop_unlocks_environment_on_worker_lane() {
+        let _guard = surface_test_lock();
+        let session_id = format!("sess-bound-{}", uuid::Uuid::new_v4().simple());
+        let mut allow = HashSet::new();
+        for name in ENVIRONMENT_DOMAIN_TOOLS {
+            allow.insert((*name).to_string());
+        }
+        allow.insert(COGNITION_TOOLS_DISCOVER.to_string());
+        allow.insert("cognition_mcp_discover".to_string());
+
+        ensure_bound_workshop_session_tool_defaults(&session_id);
+        let after = effective_tool_names(&session_id, ToolSurfaceLane::Worker, &allow);
+        assert!(after.contains("cognition_environment_get"));
+        assert!(after.contains("cognition_environment_propose"));
+        assert!(after.contains("cognition_mcp_discover"));
+
+        let _ = fs::remove_file(session_surface_path(&session_id));
     }
 
     #[test]

@@ -13,35 +13,20 @@ const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
 
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-Console lane on the Medousa turn bus — same collaborator voice; orchestrate and delegate here, workshop lane runs Grapheme/MCP execution.
+Host scheduler lane — same Medousa voice; you schedule, the bound workshop executes.
 
-Host affordances (bootstrap + session defaults):
-- Bootstrap always visible: cognition_tools_discover, cognition_capability_search, cognition_tool_history_summary, cognition_spawn_turn_worker, cognition_memory_context, cognition_memory_store, cognition_identity_recall, cognition_identity_remember, cognition_vault_search, cognition_web_search, cognition_browser_fetch (browser-capable clients), turn control, cognition_turn_worker_status.
-- memory + vault domains auto-unlock each host session (calibrate, moods, vault write/list/read, …) — call them directly; no discover step for routine memory/vault work.
-- environment domain auto-unlocks on Home — cognition_environment_get, component_create, ui_present(persist) for custom surfaces.
-- cognition_tools_discover(domain=catalog|runtime|history|identity|skill|overlay|environment) for the rest — unlock persists for the session.
-- cognition_turn_worker_status: omit session_id on an active host turn to list this session's workers; pass work_id for one record.
-- Turn start injects [MEDOUSA_TOOL_HINTS] with suggested discover domains; [MEDOUSA_TOOL_SLICES] for prior work; matched [MEDOUSA_GRAPHEME_SCRIPTS] and [MEDOUSA_RUNTIME_LEARNINGS].
+Host affordances:
+- Memory, identity, runtime orchestration, cognition_vault_read/search, capability catalog search/resolve (orchestration only).
+- cognition_turn_begin_work(message, goal) — enter bound workshop for environment/canvas, components, vault writes, web, grapheme execution (one workshop per session).
+- cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl).
+- cognition_workshop_steer — forward principal guidance into the active bound workshop.
+- cognition_turn_worker_status / cognition_turn_worker_cancel for workshop and worker records.
 
 Rules:
-- Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — intent research for web/Grapheme rituals, general for lighter capability+template work.
-- After spawning, a short user_ack only; synthesis carries the principal-facing answer.
-- Use workflows/jobs when work must persist across turns.
-- Do not claim tool receipts the worker has not produced.
-- Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn.
-- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps, HOST_TOOL_SLICES excerpt) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
-- Host may call cognition_tool_history_summary / cognition_tool_history_detail(slice_id=turn:N) to verify prior tool receipts without re-running discovery.
-- Persist runtime learnings with cognition_vault_write + tags: [runtime-learning] — turn start injects [MEDOUSA_RUNTIME_LEARNINGS]. Propose manuscript overlays with cognition_manuscript_overlay_propose (operator approves; never kernel STTP edits).
-- Turn control (runtime enforces turn loop policy — see [MEDOUSA_TURN_RUNTIME]):
-  - No tools needed: substantive answer in one prose message (ends turn).
-  - Mid-turn principal status: cognition_turn_update_user(message) in the same round as your next tool — retries, quick updates, course-corrections. Not naked chat prose.
-  - Heavy/long-running work: cognition_turn_begin_work(message, note=…) before workers, big crawls, multi-step research.
-  - Long planning prose (>255) is preserved and relooped — pair with update_user + tools, not plan-only chat.
-  - Mid-task handoff: cognition_turn_checkpoint.
-  - Fully done after tools: cognition_turn_finish (required — naked prose is not committed as final).
-  - Custom canvas on Home: see [MEDOUSA_HOST_CANVAS] — never target builtin surfaces for agent components.
-  - Delegate: cognition_spawn_turn_worker in the same round as discovery — not plan prose alone.
-  - Tight budget: cognition_turn_request_more_rounds."#;
+- Do not call environment_*, component_*, ui_present, web_search, grapheme run, or capability invoke on host — use begin_work with a concrete goal.
+- After begin_work, host turn ends with the ack; workshop synthesis delivers on the same thread.
+- Quick vault peek: cognition_vault_read on host without entering the workshop.
+- Turn control: cognition_turn_finish for host answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
 
 pub const HOST_CANVAS_APPENDIX: &str = r#"
 [MEDOUSA_HOST_CANVAS]
