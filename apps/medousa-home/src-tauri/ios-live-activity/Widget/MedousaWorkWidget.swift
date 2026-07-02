@@ -2,47 +2,76 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-@available(iOS 16.1, *)
+@available(iOS 16.2, *)
 struct MedousaWorkLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MedousaWorkAttributes.self) { context in
             MedousaWorkLockScreenView(context: context)
-                .activityBackgroundTint(Color.black.opacity(0.82))
+                .activityBackgroundTint(MedousaPalette.canvas.opacity(0.94))
+                .activitySystemActionForegroundColor(MedousaPalette.ink)
                 .widgetURL(deepLink(for: context.state.primaryCardId))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Image(systemName: iconName(for: context.state.mood))
-                        .foregroundStyle(accentColor(for: context.state.mood))
+                    HStack(spacing: 8) {
+                        MedousaMark(size: 28)
+                        Image(systemName: MedousaPalette.iconName(for: context.state.mood))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(MedousaPalette.accent(for: context.state.mood))
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if context.state.blockedCount > 0 {
-                        Text("\(context.state.blockedCount)")
-                            .font(.caption.bold())
-                            .foregroundStyle(.orange)
-                    }
+                    MedousaStatusPill(label: context.state.eyebrow, mood: context.state.mood)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(context.state.headline)
-                        .font(.headline)
-                        .lineLimit(1)
+                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                        .foregroundStyle(MedousaPalette.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.motionSummary ?? context.state.eyebrow)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    if let line = MedousaLiveActivityCopy.secondaryLine(
+                        motionSummary: context.state.motionSummary,
+                        subline: context.state.subline
+                    ) {
+                        Text(line)
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(MedousaPalette.muted)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text(context.attributes.workshopName)
+                            .font(.system(.caption2, design: .rounded))
+                            .foregroundStyle(MedousaPalette.subtle)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             } compactLeading: {
-                Image(systemName: iconName(for: context.state.mood))
-                    .foregroundStyle(accentColor(for: context.state.mood))
+                ZStack {
+                    MedousaMark(size: 18)
+                    Circle()
+                        .strokeBorder(MedousaPalette.accent(for: context.state.mood), lineWidth: 1.5)
+                        .frame(width: 22, height: 22)
+                }
             } compactTrailing: {
-                Text(compactTrailing(for: context.state))
-                    .font(.caption2.bold())
-                    .foregroundStyle(.secondary)
+                if let trailing = MedousaLiveActivityCopy.compactTrailing(
+                    blockedCount: context.state.blockedCount,
+                    motionSummary: context.state.motionSummary
+                ) {
+                    Text(trailing)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            context.state.blockedCount > 0
+                                ? MedousaPalette.warning
+                                : MedousaPalette.success
+                        )
+                        .monospacedDigit()
+                }
             } minimal: {
-                Image(systemName: iconName(for: context.state.mood))
-                    .foregroundStyle(accentColor(for: context.state.mood))
+                MedousaMark(size: 16)
             }
             .widgetURL(deepLink(for: context.state.primaryCardId))
         }
@@ -52,72 +81,51 @@ struct MedousaWorkLiveActivity: Widget {
         guard let cardId, !cardId.isEmpty else { return URL(string: "medousa://work") }
         return URL(string: "medousa://work/\(cardId)")
     }
-
-    private func iconName(for mood: String) -> String {
-        switch mood {
-        case "waiting": return "exclamationmark.circle.fill"
-        case "offline": return "wifi.slash"
-        case "quiet": return "moon.fill"
-        default: return "bolt.fill"
-        }
-    }
-
-    private func accentColor(for mood: String) -> Color {
-        switch mood {
-        case "waiting": return .orange
-        case "offline": return .gray
-        case "quiet": return .secondary
-        default: return .green
-        }
-    }
-
-    private func compactTrailing(for state: MedousaWorkAttributes.ContentState) -> String {
-        if state.blockedCount > 0 { return "!" }
-        if let summary = state.motionSummary, !summary.isEmpty {
-            return String(summary.prefix(8))
-        }
-        return state.eyebrow.prefix(6).description
-    }
 }
 
-@available(iOS 16.1, *)
+@available(iOS 16.2, *)
 private struct MedousaWorkLockScreenView: View {
     let context: ActivityViewContext<MedousaWorkAttributes>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(context.attributes.workshopName)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(context.state.eyebrow)
-                    .font(.caption2.bold())
-                    .foregroundStyle(accentColor(for: context.state.mood))
-            }
-            Text(context.state.headline)
-                .font(.headline)
-                .lineLimit(2)
-            if let subline = context.state.subline, !subline.isEmpty {
-                Text(subline)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                MedousaMark(size: 20)
+                Text("Medousa")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .tracking(0.8)
+                    .foregroundStyle(MedousaPalette.muted)
                     .lineLimit(1)
-            } else if let summary = context.state.motionSummary, !summary.isEmpty {
-                Text(summary)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Spacer(minLength: 6)
+                MedousaStatusPill(label: context.state.eyebrow, mood: context.state.mood)
             }
-        }
-        .padding(.horizontal, 4)
-    }
 
-    private func accentColor(for mood: String) -> Color {
-        switch mood {
-        case "waiting": return .orange
-        case "offline": return .gray
-        default: return .green
+            MedousaLivePulseBar(mood: context.state.mood)
+                .padding(.top, 1)
+
+            Text(context.state.headline)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(MedousaPalette.ink)
+                .lineLimit(2)
+                .minimumScaleFactor(0.9)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let footer = MedousaLiveActivityCopy.footerLine(
+                workshopName: context.attributes.workshopName,
+                motionSummary: context.state.motionSummary,
+                subline: context.state.subline
+            ) {
+                Text(footer)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(MedousaPalette.subtle)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(MedousaLiveActivityCopy.lockScreenInsets)
     }
 }

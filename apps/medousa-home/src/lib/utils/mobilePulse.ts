@@ -140,7 +140,7 @@ export function buildPulsePresentation(input: {
       statusLine: motionSummary ?? "In motion",
       eyebrow: humanWorkColumn(input.primaryCard.column),
       headline: formatCardTitle(input.primaryCard),
-      subline: "Pick up where Medousa left off.",
+      subline: motionSummary ?? undefined,
       actionLabel: "Continue",
       action: { kind: "card", cardId: input.primaryCard.id },
       motionSummary,
@@ -157,7 +157,7 @@ export function buildPulsePresentation(input: {
         input.inMotion === 1
           ? "One job is running"
           : `${input.inMotion} jobs running`,
-      subline: "Nothing needs you right now.",
+      subline: motionSummary ?? undefined,
       actionLabel: "See work",
       action: { kind: "work" },
       motionSummary,

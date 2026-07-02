@@ -4,7 +4,7 @@ import WidgetKit
 @main
 struct MedousaWorkWidgetBundle: WidgetBundle {
     var body: some Widget {
-        if #available(iOS 16.1, *) {
+        if #available(iOS 16.2, *) {
             MedousaWorkLiveActivity()
         }
     }
