@@ -23,6 +23,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import {
     buildLiveActivityPayload,
+    bumpLiveActivitySync,
     syncLiveActivity,
   } from "$lib/liveActivity";
   import { setMobileBadge } from "$lib/mobileBadge";
@@ -62,18 +63,13 @@
     void updateTrayBlockedCount(blocked);
   });
 
-  $effect(() => {
-    if (!isTauriIos() || !settings.liveActivityEnabled) return;
-    // Wait until workshop connection has reported health — avoids calling native
-    // ActivityKit bridge during the first UIKit/Tauri frame (was crashing on launch).
-    if (daemonHealth === null) return;
-
+  function liveActivityPayload() {
     const journalDailyPath = resolveJournalDailyHeroPath(vault.notes);
     const journalDailyTitle = journalDailyPath
       ? vaultDisplayTitle(journalDailyPath)
       : null;
 
-    const payload = buildLiveActivityPayload({
+    return buildLiveActivityPayload({
       health: daemonHealth,
       cards: workspace.cards,
       blocked: workspace.blockedCount(),
@@ -83,8 +79,20 @@
       journalDailyPath,
       journalDailyTitle,
     });
+  }
 
-    void syncLiveActivity(payload);
+  function syncLiveActivityNow(force = false) {
+    if (!isTauriIos() || !settings.liveActivityEnabled || daemonHealth === null) return;
+    void syncLiveActivity(liveActivityPayload(), { force });
+  }
+
+  $effect(() => {
+    if (!isTauriIos() || !settings.liveActivityEnabled) return;
+    // Wait until workshop connection has reported health — avoids calling native
+    // ActivityKit bridge during the first UIKit/Tauri frame (was crashing on launch).
+    if (daemonHealth === null) return;
+
+    syncLiveActivityNow();
   });
 
   $effect(() => {
@@ -115,12 +123,19 @@
     }
     void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      bumpLiveActivitySync();
+      syncLiveActivityNow(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
         daemonHealth = health;
       },
     });
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       detachKeyboard();
       detachWorkshop();
     };

@@ -44,10 +44,20 @@ impl HomePushService {
                 );
             }
             (None, ApnsConfigSource::None) => {
-                tracing::info!(
-                    dir = %crate::pairing::apns_config_dir().display(),
-                    "home push: APNs not configured — install config for official builds or set MEDOUSA_APNS_* for dev"
-                );
+                let partial_env = std::env::var("MEDOUSA_APNS_TEAM_ID")
+                    .ok()
+                    .is_some_and(|value| !value.trim().is_empty());
+                if partial_env {
+                    tracing::info!(
+                        dir = %crate::pairing::apns_config_dir().display(),
+                        "home push: APNs not configured — MEDOUSA_APNS_TEAM_ID is set but config failed (check KEY_PATH / KEY_ID); restart daemon after fixing"
+                    );
+                } else {
+                    tracing::info!(
+                        dir = %crate::pairing::apns_config_dir().display(),
+                        "home push: APNs not configured — install config for official builds or set MEDOUSA_APNS_* for dev"
+                    );
+                }
             }
             _ => {}
         }

@@ -53,6 +53,13 @@ pub fn run() {
     // Tauri's custom-protocol handler uses reqwest during the first WKWebView load.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
+    if let Some(path) = crate::paths::load_env_overlay() {
+        eprintln!(
+            "[medousa-home] loaded env overlay from {}",
+            path.display()
+        );
+    }
+
     let mut builder = tauri::Builder::default();
 
     // UIKit otherwise shrinks WKWebView scroll content and exposes window background

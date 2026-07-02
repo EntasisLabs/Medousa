@@ -161,11 +161,12 @@ async function afterLiveActivitySync(status: LiveActivityStatus | null): Promise
 
 export async function syncLiveActivity(
   payload: LiveActivityPayload,
+  options?: { force?: boolean },
 ): Promise<LiveActivityStatus | null> {
   if (!isTauriIos() || !liveActivityEnabled()) return null;
 
   const key = payloadKey(payload);
-  if (key === lastPayloadKey || syncInFlight) return null;
+  if (!options?.force && (key === lastPayloadKey || syncInFlight)) return null;
   lastPayloadKey = key;
   syncInFlight = true;
 
@@ -193,7 +194,11 @@ export async function queryLiveActivityAvailability(): Promise<LiveActivityStatu
   }
 }
 
-/** Reset dedupe so the next sync always runs (e.g. after toggling the setting). */
+/** Force the next sync through (e.g. after app resume — reattach to existing activity). */
+export function bumpLiveActivitySync(): void {
+  lastPayloadKey = "";
+}
+
 export function resetLiveActivitySync(): void {
   lastPayloadKey = "";
   lastRegisteredPushToken = "";

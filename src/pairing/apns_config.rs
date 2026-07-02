@@ -64,8 +64,15 @@ pub fn apns_config_file_path() -> PathBuf {
 }
 
 pub fn load_apns_config() -> (Option<ApnsConfig>, ApnsConfigSource) {
-    if let Some(config) = load_from_env() {
-        return (Some(config), ApnsConfigSource::Environment);
+    match try_load_from_env() {
+        Ok(Some(config)) => return (Some(config), ApnsConfigSource::Environment),
+        Ok(None) => {}
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "APNs env vars look set but config is invalid — check MEDOUSA_APNS_* or run install-apns-push.sh"
+            );
+        }
     }
     match load_from_data_dir() {
         Ok((config, source)) => (Some(config), source),
@@ -73,20 +80,24 @@ pub fn load_apns_config() -> (Option<ApnsConfig>, ApnsConfigSource) {
     }
 }
 
-fn load_from_env() -> Option<ApnsConfig> {
-    let team_id = env_trimmed("MEDOUSA_APNS_TEAM_ID")?;
-    let key_id = env_trimmed("MEDOUSA_APNS_KEY_ID")?;
-    let key_path = env_trimmed("MEDOUSA_APNS_KEY_PATH")?;
+fn try_load_from_env() -> anyhow::Result<Option<ApnsConfig>> {
+    let team_id = match env_trimmed("MEDOUSA_APNS_TEAM_ID") {
+        Some(value) => value,
+        None => return Ok(None),
+    };
+    let key_id = env_trimmed("MEDOUSA_APNS_KEY_ID")
+        .ok_or_else(|| anyhow::anyhow!("MEDOUSA_APNS_TEAM_ID is set but MEDOUSA_APNS_KEY_ID is missing"))?;
+    let key_path = env_trimmed("MEDOUSA_APNS_KEY_PATH")
+        .ok_or_else(|| anyhow::anyhow!("MEDOUSA_APNS_TEAM_ID is set but MEDOUSA_APNS_KEY_PATH is missing"))?;
     let key_pem = fs::read_to_string(&key_path)
-        .with_context(|| format!("read APNs key at {key_path}"))
-        .ok()?;
-    Some(ApnsConfig {
+        .with_context(|| format!("read APNs key at {key_path}"))?;
+    Ok(Some(ApnsConfig {
         team_id,
         key_id,
         key_pem,
         bundle_id: env_trimmed("MEDOUSA_APNS_BUNDLE_ID").unwrap_or_else(|| DEFAULT_BUNDLE_ID.to_string()),
         sandbox: parse_sandbox_env(),
-    })
+    }))
 }
 
 fn load_from_data_dir() -> Result<(ApnsConfig, ApnsConfigSource)> {

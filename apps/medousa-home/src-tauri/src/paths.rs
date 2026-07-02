@@ -82,3 +82,56 @@ pub fn set_data_dir_redirect(target: &Path) -> std::io::Result<()> {
     std::fs::write(redirect, format!("{}\n", target.display()))?;
     Ok(())
 }
+
+/// Load `.env` from Medousa config/data dirs without overriding existing vars.
+/// Matches `medousa_daemon` overlay resolution (first existing file wins).
+pub fn load_env_overlay() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(explicit) = std::env::var("STASIS_ENV_FILE") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            candidates.push(PathBuf::from(trimmed));
+        }
+    }
+    candidates.push(medousa_config_dir().join(".env"));
+    candidates.push(medousa_data_dir().join(".env"));
+
+    for path in candidates {
+        if !path.is_file() {
+            continue;
+        }
+        if let Err(err) = apply_env_file(&path) {
+            eprintln!(
+                "[medousa-home] failed to load env file {}: {err}",
+                path.display()
+            );
+            continue;
+        }
+        return Some(path);
+    }
+    None
+}
+
+fn apply_env_file(path: &Path) -> std::io::Result<()> {
+    let raw = std::fs::read_to_string(path)?;
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() || std::env::var_os(key).is_some() {
+            continue;
+        }
+        let value = value
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        // SAFETY: called once at process startup before spawning children.
+        unsafe { std::env::set_var(key, value) };
+    }
+    Ok(())
+}

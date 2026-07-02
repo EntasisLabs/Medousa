@@ -93,11 +93,30 @@ final class MedousaLiveActivityManager {
         return encodeResult(endActivity())
     }
 
-    private func reconcileExistingActivities() {
-        guard current == nil else { return }
-        guard let activity = Activity<MedousaWorkAttributes>.activities.first else { return }
-        current = activity
-        observePushToken(for: activity)
+    /// Re-attach to a Live Activity already on the Lock Screen after process restart.
+    @discardableResult
+    private func reconcileExistingActivities() -> Activity<MedousaWorkAttributes>? {
+        let activities = Activity<MedousaWorkAttributes>.activities
+        guard !activities.isEmpty else {
+            current = nil
+            return nil
+        }
+
+        let keeper = activities.max(by: { $0.content.staleDate ?? .distantPast < $1.content.staleDate ?? .distantPast })
+            ?? activities[activities.count - 1]
+
+        if activities.count > 1 {
+            NSLog("[live-activity] reconciling %d duplicate activities", activities.count)
+            for activity in activities where activity.id != keeper.id {
+                Task {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
+        }
+
+        current = keeper
+        observePushToken(for: keeper)
+        return keeper
     }
 
     private func startOrUpdate(_ payload: SyncPayload) -> SyncResult {
@@ -110,6 +129,10 @@ final class MedousaLiveActivityManager {
             )
         }
 
+        if current == nil {
+            _ = reconcileExistingActivities()
+        }
+
         let state = MedousaWorkAttributes.ContentState(
             mood: payload.mood,
             eyebrow: payload.eyebrow,
@@ -119,16 +142,16 @@ final class MedousaLiveActivityManager {
             blockedCount: payload.blockedCount,
             primaryCardId: payload.primaryCardId
         )
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(60 * 15))
 
         if let activity = current {
             Task {
-                await activity.update(ActivityContent(state: state, staleDate: Date().addingTimeInterval(60 * 15)))
+                await activity.update(content)
             }
             return SyncResult(available: true, active: true, error: nil, pushToken: currentPushToken)
         }
 
         let attributes = MedousaWorkAttributes(workshopName: payload.workshopName)
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(60 * 15))
 
         do {
             let activity = try Activity.request(
@@ -170,14 +193,17 @@ final class MedousaLiveActivityManager {
         pushTokenTask?.cancel()
         pushTokenTask = nil
         currentPushToken = nil
+        current = nil
 
-        guard let activity = current else {
+        let activities = Activity<MedousaWorkAttributes>.activities
+        guard !activities.isEmpty else {
             return SyncResult(available: isAvailable(), active: false, error: nil, pushToken: nil)
         }
 
-        current = nil
-        Task {
-            await activity.end(nil, dismissalPolicy: .default)
+        for activity in activities {
+            Task {
+                await activity.end(nil, dismissalPolicy: .default)
+            }
         }
         return SyncResult(available: isAvailable(), active: false, error: nil, pushToken: nil)
     }

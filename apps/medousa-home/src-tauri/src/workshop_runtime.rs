@@ -174,6 +174,23 @@ fn apply_daemon_messaging_env(command: &mut Command) {
     }
 }
 
+fn apply_daemon_apns_env(command: &mut Command) {
+    const KEYS: &[&str] = &[
+        "MEDOUSA_APNS_TEAM_ID",
+        "MEDOUSA_APNS_KEY_ID",
+        "MEDOUSA_APNS_KEY_PATH",
+        "MEDOUSA_APNS_BUNDLE_ID",
+        "MEDOUSA_APNS_SANDBOX",
+    ];
+    for key in KEYS {
+        if let Ok(value) = std::env::var(key) {
+            if !value.trim().is_empty() {
+                command.env(key, value);
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 fn detach_new_session(command: &mut Command) {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -427,6 +444,7 @@ pub fn spawn_local_engine(
         data_dir.to_string_lossy().to_string(),
     );
     apply_daemon_messaging_env(&mut command);
+    apply_daemon_apns_env(&mut command);
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));
