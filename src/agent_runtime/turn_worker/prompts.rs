@@ -1,7 +1,7 @@
 //! Host / worker / synthesis system prompts (Phase 1).
 
 use crate::agent_runtime::system_prompt::{MEDOUSA_COLLABORATOR_VOICE, WORKER_STTP_POLICY};
-use crate::agent_runtime::turn_ledger::TURN_RUNTIME_BOUNDARY_APPENDIX;
+use crate::agent_runtime::turn_ledger::{TURN_RUNTIME_BOUNDARY_APPENDIX, TURN_SCRATCH_APPENDIX};
 
 use super::policy::TurnWorkerIntent;
 
@@ -18,7 +18,8 @@ Console lane on the Medousa turn bus — same collaborator voice; orchestrate an
 Host affordances (bootstrap + session defaults):
 - Bootstrap always visible: cognition_tools_discover, cognition_capability_search, cognition_tool_history_summary, cognition_spawn_turn_worker, cognition_memory_context, cognition_memory_store, cognition_identity_recall, cognition_identity_remember, cognition_vault_search, cognition_web_search, cognition_browser_fetch (browser-capable clients), turn control, cognition_turn_worker_status.
 - memory + vault domains auto-unlock each host session (calibrate, moods, vault write/list/read, …) — call them directly; no discover step for routine memory/vault work.
-- cognition_tools_discover(domain=catalog|runtime|history|identity|skill|overlay) for the rest — unlock persists for the session.
+- environment domain auto-unlocks on Home — cognition_environment_get, component_create, ui_present(persist) for custom surfaces.
+- cognition_tools_discover(domain=catalog|runtime|history|identity|skill|overlay|environment) for the rest — unlock persists for the session.
 - cognition_turn_worker_status: omit session_id on an active host turn to list this session's workers; pass work_id for one record.
 - Turn start injects [MEDOUSA_TOOL_HINTS] with suggested discover domains; [MEDOUSA_TOOL_SLICES] for prior work; matched [MEDOUSA_GRAPHEME_SCRIPTS] and [MEDOUSA_RUNTIME_LEARNINGS].
 
@@ -31,14 +32,26 @@ Rules:
 - On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps, HOST_TOOL_SLICES excerpt) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
 - Host may call cognition_tool_history_summary / cognition_tool_history_detail(slice_id=turn:N) to verify prior tool receipts without re-running discovery.
 - Persist runtime learnings with cognition_vault_write + tags: [runtime-learning] — turn start injects [MEDOUSA_RUNTIME_LEARNINGS]. Propose manuscript overlays with cognition_manuscript_overlay_propose (operator approves; never kernel STTP edits).
-- Turn control (runtime enforces prose-terminates — see [MEDOUSA_TURN_RUNTIME] in tool policy):
-  - No tools needed: answer in one prose message (ends turn).
-  - Before host tools: cognition_turn_begin_work for a progress line — not interim chat prose.
+- Turn control (runtime enforces turn loop policy — see [MEDOUSA_TURN_RUNTIME]):
+  - No tools needed: substantive answer in one prose message (ends turn).
+  - Short interim (<255 chars) may continue bounded — pair with tools or cognition_turn_begin_work.
+  - Long planning prose (>255) is preserved and relooped — call the tools you still need.
+  - Before host tools: cognition_turn_begin_work(message, note=…) for progress + sticky intent.
   - Mid-task handoff: cognition_turn_checkpoint.
   - Fully done after tools: cognition_turn_finish (required — naked prose is not committed as final).
-  - Rich HTML when the client advertises supports_ui_artifacts: cognition_ui_present with title, html, presentation (inline|panel|fullscreen) — not markdown fences.
+  - Custom canvas on Home: see [MEDOUSA_HOST_CANVAS] — never target builtin surfaces for agent components.
   - Delegate: cognition_spawn_turn_worker in the same round as discovery — not plan prose alone.
   - Tight budget: cognition_turn_request_more_rounds."#;
+
+pub const HOST_CANVAS_APPENDIX: &str = r#"
+[MEDOUSA_HOST_CANVAS]
+Canvas workflow (Home / supports_ui_artifacts):
+0) cognition_environment_wiki — STTP temporal nodes (topic=recipe or merge_spec) BEFORE hand-building propose/apply JSON.
+1) cognition_environment_get — read spec, custom surfaces, existing components.
+2) cognition_environment_propose + cognition_environment_apply — add kind=custom surface AND list it in active preset surfaces.
+3) cognition_ui_present(persist=true, surface_id=<custom>, component_id, slot) OR cognition_component_create with type=presentation and config.artifactId.
+4) Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces render agent components.
+5) cognition_component_list to verify. cognition_environment_activate_preset to switch layout presets. Operator approves agent proposals in Settings → Canvas."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -190,7 +203,7 @@ pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_
         return base.to_string();
     }
     let mut out = format!(
-        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}"
+        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{HOST_CANVAS_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n{TURN_SCRATCH_APPENDIX}"
     );
     if let Some(intent) = worker_intent {
         out.push('\n');

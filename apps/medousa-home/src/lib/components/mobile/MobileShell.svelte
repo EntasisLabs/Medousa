@@ -14,6 +14,8 @@
   import IdentityDrawer from "$lib/components/chat/IdentityDrawer.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
+  import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -47,6 +49,8 @@
   import { resolveJournalDailyHeroPath } from "$lib/utils/vaultNoteBridge";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
 
+  const mobileHomeSurfaceId = $derived(environment.mobileDefaultHome);
+  const customMobileHome = $derived(environment.isCustomSurface(mobileHomeSurfaceId));
   let daemonHealth = $state<DaemonHealth | null>(null);
   let mainEl: HTMLElement | undefined = $state();
 
@@ -186,6 +190,9 @@
   <main bind:this={mainEl} class="min-h-0 flex-1 overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}
+        {#if customMobileHome}
+          <EnvironmentRenderer surfaceId={mobileHomeSurfaceId} />
+        {:else}
         <HomePanel
           health={daemonHealth}
           onSelectCard={handleSelectCard}
@@ -194,6 +201,7 @@
           onOpenSettings={() => layout.openMore("settings")}
           onToggleActivity={() => layout.toggleActivitySheet()}
         />
+        {/if}
       {:else if layout.mobileTab === "chat"}
         <ChatPanel
           visible={true}

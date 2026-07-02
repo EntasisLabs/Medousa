@@ -36,8 +36,8 @@ impl StasisTool for CognitionToolsDiscoverTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Unlock a tool domain for this session and return its catalog. Host: memory + vault auto-unlock at session start. \
-             Other host domains: catalog, runtime, history, identity, skill, overlay. Worker domains: execute, discover, memory, \
+            "Unlock a tool domain for this session and return its catalog. Host: memory + vault auto-unlock at session start; environment auto-unlocks on UI-capable clients (Home). \
+             Other host domains: catalog, runtime, history, identity, skill, overlay, environment. Worker domains: execute, discover, memory, \
              vault, openshell, scripts. Bootstrap tools stay visible without discover.",
         )
     }
@@ -49,7 +49,7 @@ impl StasisTool for CognitionToolsDiscoverTool {
             "properties": {
                 "domain": {
                     "type": "string",
-                    "description": "Domain id — host: memory|catalog|runtime|vault|history|identity|skill|overlay; worker: execute|discover|memory|vault|openshell|scripts"
+                    "description": "Domain id — host: memory|catalog|runtime|vault|history|identity|skill|overlay|environment|browser; worker: execute|discover|memory|vault|openshell|scripts"
                 },
                 "lane": {
                     "type": "string",

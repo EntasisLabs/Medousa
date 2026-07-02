@@ -11,7 +11,7 @@ use stasis::domain::errors::StasisError;
 use stasis::prelude::Result;
 
 use super::policy::tool_allowed;
-use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names, ensure_host_session_tool_defaults, ensure_browser_domain_for_capable_clients};
+use crate::tool_bootstrap::{ToolSurfaceLane, effective_tool_names, ensure_browser_domain_for_capable_clients, ensure_environment_domain_for_ui_clients, ensure_host_session_tool_defaults};
 use crate::browser_tools::BROWSER_COGNITION_TOOLS;
 
 fn memory_tool_needs_session(tool_name: &str) -> bool {
@@ -108,6 +108,7 @@ impl SessionBootstrapToolRegistry {
         let session_id = session_id.into();
         ensure_host_session_tool_defaults(&session_id);
         ensure_browser_domain_for_capable_clients(&session_id, supports_browser_host);
+        ensure_environment_domain_for_ui_clients(&session_id, supports_ui_artifacts);
         Self {
             inner,
             session_id,

@@ -1595,14 +1595,15 @@ export class ChatStore {
   }
 
   private handleTurnError(event: InteractiveTurnStreamEvent) {
-    this.streamError = operatorStreamErrorLine(
+    const errorLine = operatorStreamErrorLine(
       event,
       settings.showEngineDetailsInChat,
     );
+    this.streamError = errorLine;
 
     const messageId = this.messageIdForTurn(event.turn_id);
     if (messageId) {
-      this.messages = this.messages.filter((message) => message.id !== messageId);
+      this.markMessageFailed(messageId, errorLine);
       if (this.assistantId === messageId) {
         this.assistantId = null;
       }
@@ -1613,6 +1614,25 @@ export class ChatStore {
     if (this.shouldSettleTurnFromStream(event.turn_id)) {
       this.settleTurn(event.turn_id);
     }
+  }
+
+  private markMessageFailed(messageId: string, errorLine: string) {
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0) return;
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        streaming: false,
+        failed: true,
+        errorLine,
+        answerState: "failed",
+        phase: null,
+        statusLine: null,
+      },
+      ...this.messages.slice(idx + 1),
+    ];
   }
 
   private messageIdForTurn(turnId: string): string | null {
@@ -2213,15 +2233,30 @@ export class ChatStore {
   /** SSE / stream transport failure — evict stale owners so reattach can succeed. */
   noteStreamFailure(message: string, options?: { recoverable?: boolean }) {
     const recoverable = options?.recoverable !== false;
+    const liveTurn = this.hasLiveInteractiveTurn();
+    const messageId =
+      this.assistantId ??
+      [...this.turns.values()].find(
+        (turn) => turn.mode === "interactive" && !turn.terminal,
+      )?.messageId ??
+      null;
+
+    if (liveTurn && messageId) {
+      this.markMessageFailed(messageId, friendlyUserError(message));
+      if (this.assistantId === messageId) {
+        this.assistantId = null;
+      }
+    }
+
     this.evictStreamOwners();
 
     // Post-terminal SSE close is normal — don't alarm the user when nothing is live.
-    if (recoverable && !this.hasLiveInteractiveTurn()) {
+    if (recoverable && !liveTurn) {
       return;
     }
 
     this.streamError = friendlyUserError(message);
-    if (recoverable) {
+    if (recoverable && liveTurn) {
       return;
     }
     if (this.assistantId) {

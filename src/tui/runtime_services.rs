@@ -246,6 +246,11 @@ pub(crate) async fn assemble_tui_runtime(
         &mut tool_registry,
         turn_scope.clone(),
     )?;
+    crate::environment_tools::register_environment_tools(&mut tool_registry, turn_scope.clone())?;
+    crate::context_pointer_tools::register_context_pointer_tools(
+        &mut tool_registry,
+        turn_scope.clone(),
+    )?;
 
     tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
     tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;

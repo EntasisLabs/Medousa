@@ -18,16 +18,21 @@ pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
 pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
-Runtime boundary (strict — enforced by the daemon, not negotiable):
-- Any assistant message with NO tool calls and non-empty prose ENDS this turn immediately. The runtime will not loop for more work in the same turn.
-- Still need tools? Call them in the same model round or a later round — never stream plan-only prose ("I'll check…", "next I'll spawn workers…", "let me calibrate…").
-- Progress or status for the principal: cognition_turn_begin_work (a tool call) — not naked interim chat prose.
-- A brief acknowledgment ("on it", "let me check") is fine and will NOT end the turn as long as you ALSO call a tool (or cognition_turn_begin_work) in the SAME round; don't rely on a naked note to keep the turn alive — pair it with the tool.
-- After tool work is done: cognition_turn_finish with the complete answer (required — runtime rejects naked prose as final). Plain prose without tools ends the turn but does not commit as the principal-facing answer after tools have run.
-- Mid-task handoff (principal replies to continue): cognition_turn_checkpoint — not cognition_turn_finish.
-- Delegate execution: cognition_spawn_turn_worker in a tool round with a complete task prompt — announcing delegation in prose does not run workers.
-- Host console auto-unlocks memory + vault each session (calibrate, vault write, …) — call tools directly; use cognition_tools_discover only for catalog/runtime/history/identity/skill/overlay.
-- Between tool rounds, streamed progress is archived automatically; use begin_work when you want a visible status line before heavy tools."#;
+Runtime boundary (enforced by the daemon):
+- Short interim prose (<255 chars) may continue the turn (bounded) — pair with tools or cognition_turn_begin_work when you need visible progress.
+- Long planning prose (>255 chars, no delivered outcome) is preserved in history and the runtime reloops so you can call the tools you still need — do not treat it as final.
+- Before any tools: substantive answers with no tool calls can end the turn; long planning without tools continues instead of terminating early.
+- Progress for the principal: cognition_turn_begin_work (tool call) — optional note= pins sticky intent in scratch. Not naked interim chat prose alone.
+- After tool work: only cognition_turn_finish commits the principal-facing answer. Substantive-looking prose after tools without finish yields a stub.
+- Mid-task handoff: cognition_turn_checkpoint. Delegate: cognition_spawn_turn_worker in a tool round.
+- Host console auto-unlocks memory + vault + environment each session — call tools directly; cognition_tools_discover(domain=environment) for canvas tools.
+- UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
+
+pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
+[MEDOUSA_SCRATCH] is your engine sticky notes — persists across tool rounds and client disconnect.
+The streamed UI draft may reset between rounds; scratch does not.
+Use cognition_turn_begin_work(note=...) to pin what you are about to do.
+Check scratch digests_recent / tools_this_turn / open_gaps before re-calling tools you already ran."#;
 
 /// Default when no host gate passes a configured tool-round budget (tests, bare loops).
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
@@ -45,6 +50,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
          {TURN_RUNTIME_BOUNDARY_APPENDIX}\n\
+         {TURN_SCRATCH_APPENDIX}\n\
          Turn start injects [MEDOUSA_TOOL_SLICES], [MEDOUSA_TOOL_HINTS], and matched [MEDOUSA_GRAPHEME_SCRIPTS]. \
          Call cognition_tools_discover(domain=…) to unlock tool groups for this session; drill history with cognition_tool_history_detail(slice_id=turn:N)."
     )
@@ -402,7 +408,8 @@ mod tests {
         assert!(p.contains("[MEDOUSA_TOOL_HINTS]"));
         assert!(p.contains("cognition_spawn_turn_worker"));
         assert!(p.contains("[MEDOUSA_TURN_RUNTIME]"));
-        assert!(p.contains("ENDS this turn immediately"));
+        assert!(p.contains("[MEDOUSA_SCRATCH_POLICY]"));
+        assert!(p.contains("cognition_turn_finish"));
     }
 
     #[test]

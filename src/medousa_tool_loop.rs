@@ -36,6 +36,7 @@ use crate::turn_budget_request::{
 };
 use crate::turn_control_tools::{
     finish_turn_from_invocations, begin_work_message_from_invocations,
+    begin_work_note_from_invocations,
     checkpoint_turn_from_invocations,
     is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name,
     is_prepare_final_tool_name,
@@ -374,7 +375,10 @@ impl MedousaToolLoopPipeline {
                                 control_message,
                                 missing_tools,
                             } => {
-                                if reason == ContinueReason::InterimProse {
+                                if matches!(
+                                    reason,
+                                    ContinueReason::InterimProse | ContinueReason::ExtendedProse
+                                ) {
                                     interim_continues_used += 1;
                                 }
                                 if let Some(response) = apply_fsm_continue_loop(
@@ -613,6 +617,9 @@ impl MedousaToolLoopPipeline {
                             .await;
                         }
                     }
+                }
+                if let Some(note) = begin_work_note_from_invocations(round_invocations) {
+                    turn_ctx.scratchpad.push_working_note(note);
                 }
 
                 if prepare_final_in_batch {
@@ -999,7 +1006,11 @@ async fn apply_fsm_continue_loop(
     // finished work. Preserving the note keeps memory intact; the turn-control nudge
     // below still steers it to a tool / cognition_turn_finish, and the bounded
     // interim_continue_cap prevents the loop from spinning.
-    if continue_reason == ContinueReason::InterimProse && !text.trim().is_empty() {
+    if matches!(
+        continue_reason,
+        ContinueReason::InterimProse | ContinueReason::ExtendedProse
+    ) && !text.trim().is_empty()
+    {
         if let Some(gate) = completion_gate.as_ref() {
             if let Some(sink) = gate.sink.as_ref() {
                 sink.agent_turn_progress(
@@ -1182,14 +1193,18 @@ mod tests {
     }
 
     #[test]
-    fn celebratory_preamble_after_tools_requires_finish() {
+    fn celebratory_preamble_after_tools_continues_extended() {
         use crate::agent_runtime::turn_completion_fsm::{
-            decide_after_tools_text_round, AfterToolsRoundContext, TurnRoundAction,
+            decide_after_tools_text_round, AfterToolsRoundContext, ContinueReason,
+            TurnRoundAction,
         };
+        use crate::turn_text_heuristics::is_extended_prose;
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let preamble = "Yesss! Let's do this — I'll pull up the current context, check what's \
                           resonating in memory, and calibrate to a focused AVEC posture. Boom — \
-                          focused preset pulled. Let me lock it in.";
+                          focused preset pulled. Let me lock it in and then call cognition_turn_finish \
+                          once the full calibration summary is ready for you to read.";
+        assert!(is_extended_prose(preamble));
         let invocations = vec![
             ToolInvocation {
                 tool_name: "cognition_memory_moods".to_string(),
@@ -1214,8 +1229,9 @@ mod tests {
         });
         assert!(matches!(
             action,
-            TurnRoundAction::EndTurn {
-                termination_reason: "prose_requires_finish"
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::ExtendedProse,
+                ..
             }
         ));
     }

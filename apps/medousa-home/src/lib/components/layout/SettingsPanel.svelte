@@ -8,6 +8,7 @@
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
+  import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -86,6 +87,8 @@
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "room"}
         <SettingsRoomSection />
+      {:else if activeSection === "canvas"}
+        <SettingsCanvasSection />
       {:else if activeSection === "rhythm"}
         <SettingsRhythmSection {mobile} />
       {:else if activeSection === "memory"}

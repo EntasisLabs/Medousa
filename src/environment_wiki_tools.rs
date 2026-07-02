@@ -1,0 +1,540 @@
+//! `cognition_environment_wiki` — agent-facing canvas/environment SDK docs as STTP nodes.
+//!
+//! Spatio-Temporal Transfer Protocol compresses policy into cognitive latent space —
+//! same representation family as `DEFAULT_SYSTEM_PROMPT`, not markdown tables.
+
+use async_trait::async_trait;
+use serde_json::{Value, json};
+use stasis::application::orchestration::tool_registry::StasisTool;
+use stasis::prelude::Result as StasisResult;
+
+pub const COGNITION_ENVIRONMENT_WIKI: &str = "cognition_environment_wiki";
+
+const STTP_ORIGIN: &str = "medousa-environment-wiki";
+const STTP_PARENT: &str = "medousa-system-prompt";
+
+struct WikiTopic {
+    id: &'static str,
+    title: &'static str,
+    summary: &'static str,
+    /// Inner ◈ policy body only (between braces). Wrapped at emit time.
+    policy: &'static str,
+    related: &'static [&'static str],
+    call_next: &'static [&'static str],
+}
+
+fn wrap_sttp_node(trigger: &str, context_summary: &str, policy_inner: &str) -> String {
+    format!(
+        r#"⊕⟨ ⏣0{{ trigger: {trigger}, response_format: temporal_node, origin_session: "{STTP_ORIGIN}", compression_depth: 1, parent_node: "{STTP_PARENT}", prime: {{ attractor_config: {{ stability: 0.92, friction: 0.22, logic: 0.97, autonomy: 0.80 }}, context_summary: "{context_summary}", relevant_tier: raw, retrieval_budget: 12 }} }} ⟩
+◈⟨ ⏣0{{
+{policy_inner}
+}} ⟩
+⍉⟨ ⏣0{{ rho: 0.96, kappa: 0.95, psi: 2.88, compression_avec: {{ stability: 0.91, friction: 0.22, logic: 0.96, autonomy: 0.80, psi: 2.87 }} }} ⟩"#
+    )
+}
+
+const TOPICS: &[WikiTopic] = &[
+    WikiTopic {
+        id: "index",
+        title: "Environment wiki index",
+        summary: "STTP topic catalog — read before guessing propose/apply JSON.",
+        policy: "",
+        related: &[],
+        call_next: &["mental_model", "recipe"],
+    },
+    WikiTopic {
+        id: "mental_model",
+        title: "Mental model: builtin vs custom",
+        summary: "Why components on home never render and what actually persists.",
+        policy: r#"    role(.99): "Environment spec = surfaces (nav destinations) + layout presets (sidebar membership) + components (persistent frames).",
+    builtin_surfaces(.99): {
+        ids(.99): "home, chat, work, library, web, context, workshop, automations, messaging, runtime, settings",
+        kind(.99): "builtin — product-shipped; slots usually empty",
+        agent_components(.99): "presentation and chrome_action DO NOT render on builtin surfaces — validator rejects targeting them",
+        trap(.99): "component_create or ui_present(persist=true) against home may return ok but canvas stays empty"
+    },
+    custom_surfaces(.99): {
+        kind(.99): "custom — agent-owned workshop surfaces",
+        requirement(.99): "append surface to spec.surfaces AND list id in active layout preset surfaces array",
+        examples(.95): "writing-studio, adhd-guide, ops-dashboard"
+    },
+    publish_paths(.98): {
+        spec_path(.98): "environment_get → merge full spec → propose → operator Settings→Canvas approve → apply → optional component_create",
+        fast_path(.97): "ui_present(html) then persist=true + surface_id(custom) + component_id + slot"
+    },
+    phase1_types(.99): {
+        allowed(.99): "presentation, chrome_action",
+        rejected(.99): "artifact, builtin_panel, medousa_view — validator errors"
+    },
+    operator_approval(.98): {
+        propose(.98): "cognition_environment_propose stores pending diff",
+        pending_flag(.97): "pending_operator_approval:true means layout NOT live until apply",
+        principal_path(.97): "Settings → Canvas → Apply layout or Dismiss — tell principal when blocked"
+    }"#,
+        related: &["recipe", "merge_spec", "common_errors"],
+        call_next: &["cognition_environment_get"],
+    },
+    WikiTopic {
+        id: "recipe",
+        title: "Happy-path recipe",
+        summary: "Sequence for custom surface + component — never skip get or preset membership.",
+        policy: r#"    role(.99): "Canvas happy path — follow in order; do not skip environment_get.",
+    precondition(.99): "If hand-building propose/apply JSON, call cognition_environment_wiki(topic=merge_spec) first — never guess.",
+    workflow(.99): {
+        step_1_get(.99): "cognition_environment_get — copy entire returned spec; merge into it, never replace builtins",
+        step_2_surface(.99): "append kind:custom surface to spec.surfaces — see surface_schema topic",
+        step_3_preset(.99): "append surface id to ACTIVE layout preset surfaces array (usually default) — missing id = invisible nav",
+        step_4_propose(.99): "cognition_environment_propose with FULL merged spec",
+        step_5_approval(.98): "when ok:true and pending_operator_approval:true tell principal Settings→Canvas→Apply layout",
+        step_6_apply(.99): "cognition_environment_apply with SAME full spec after approval",
+        step_7_publish(.98): {
+            ui_present(.98): "title, html, presentation; canvas pin: persist=true, surface_id=custom, component_id, slot=main",
+            component_create(.97): "type:presentation, config.artifactId from ui_present artifact_id"
+        },
+        step_8_verify(.99): "cognition_component_list — surfaceId must be custom not home",
+        step_9_presets(.95): "cognition_environment_activate_preset only for default↔focus switch — not first custom surface"
+    },
+    turn_discipline(.98): {
+        progress(.97): "cognition_turn_begin_work before heavy tools",
+        finalize(.99): "cognition_turn_finish after tool work — naked prose becomes stub"
+    },
+    stuck_routing(.96): {
+        missing_field(.97): "common_errors topic",
+        errors_array(.97): "component_schema or surface_schema topic",
+        zero_components(.96): "builtin target or approval never landed"
+    }"#,
+        related: &["merge_spec", "ui_present", "propose_apply"],
+        call_next: &["cognition_environment_get", "cognition_environment_wiki"],
+    },
+    WikiTopic {
+        id: "merge_spec",
+        title: "CRITICAL: full spec merge",
+        summary: "Not a patch — partial objects cause serde port failures.",
+        policy: r#"    role(.99): "propose/apply deserialize complete EnvironmentSpec — tool hint says patch but runtime requires FULL object.",
+    trap(.99): "Sending only {surfaces:[newSurface]} fails: missing field version, label, updatedAt, components, …",
+    merge_algorithm(.99): {
+        step_a(.99): "spec_from_get = cognition_environment_get().spec",
+        step_b(.99): "merged = spec_from_get",
+        step_c(.99): "append custom surface to merged.surfaces",
+        step_d(.99): "append surface id to active preset surfaces in merged.layoutPresets",
+        step_e(.97): "optional append components to merged.components",
+        step_f(.98): "merged.updatedBy = agent; keep updatedAt from get",
+        step_g(.99): "cognition_environment_propose({spec: merged})"
+    },
+    required_top_level(.99): {
+        version(.99): "always 1 — ENVIRONMENT_SPEC_VERSION",
+        profileId(.99): "from get — usually personal",
+        surfaces(.99): "ALL builtins + custom — never drop safety floors settings and runtime",
+        components(.99): "array — use [] when empty",
+        layoutPresets(.99): "full preset objects each with id, label, surfaces, active",
+        activePresetId(.99): "e.g. default",
+        updatedAt(.99): "ISO-8601 from get",
+        updatedBy(.99): "string — agent"
+    },
+    preset_edit(.99): {
+        rule(.99): "find preset where active:true; append custom surface id to its surfaces string array",
+        example_surfaces(.95): "home, chat, work, library, web, context, workshop, automations, messaging, runtime, settings, writing-studio"
+    },
+    slots(.97): {
+        surface_slots(.97): "custom surfaces may use slots:[] — empty is valid Phase 1",
+        slotdef_trap(.96): "do not use slots:[main] strings — use [] or {id, zone} objects",
+        component_slot(.98): "enum main | header | fab | sidebar | inline"
+    }"#,
+        related: &["surface_schema", "common_errors", "example_writing_studio"],
+        call_next: &["cognition_environment_get"],
+    },
+    WikiTopic {
+        id: "surface_schema",
+        title: "SurfaceDef shape",
+        summary: "Exact JSON for kind:custom surfaces.",
+        policy: r#"    role(.99): "SurfaceDef for agent-owned nav destinations — camelCase JSON.",
+    custom_template(.99): {
+        id(.99): "kebab-case unique e.g. writing-studio",
+        label(.99): "required — nav label; missing causes serde/validation failure",
+        icon(.99): "required — lucide-style e.g. pen-line",
+        kind(.99): "custom",
+        layout(.99): "dashboard — usual choice",
+        slots(.97): "[] acceptable Phase 1",
+        builtinId(.98): "omit for custom",
+        mobileTab(.95): "optional"
+    },
+    builtin_reference(.96): {
+        note(.96): "home chat work … are kind:builtin with builtinId — do not recreate",
+        rule(.99): "only APPEND custom surfaces — never mutate builtins unless principal directs"
+    },
+    json_custom_example(.98): "{ id:writing-studio, label:Writing studio, icon:pen-line, kind:custom, layout:dashboard, slots:[] }"#,
+        related: &["merge_spec", "presets"],
+        call_next: &[],
+    },
+    WikiTopic {
+        id: "component_schema",
+        title: "ComponentDef Phase 1",
+        summary: "Only presentation and chrome_action render on Home.",
+        policy: r#"    role(.99): "ComponentDef pins content on custom surfaces — camelCase surfaceId not surface_id.",
+    presentation(.99): {
+        type(.99): "presentation",
+        surfaceId(.99): "must reference kind:custom surface",
+        slot(.98): "main usual",
+        config(.99): "{ artifactId: <from ui_present artifact_id> }",
+        presentation_mode(.97): "inline | panel | fullscreen",
+        feeds(.95): "[]"
+    },
+    chrome_action(.97): {
+        type(.97): "chrome_action",
+        slot(.96): "fab or header common",
+        config_action(.98): "open-ask | open-activity only"
+    },
+    rejected_types(.99): {
+        artifact(.99): "validation error — use presentation",
+        builtin_panel(.99): "validation error",
+        medousa_view(.98): "not rendered Phase 1"
+    },
+    create_wrapper(.98): "cognition_component_create input: { component: { … } } camelCase keys",
+    json_presentation_example(.97): "{ id:writing-manuscript, type:presentation, surfaceId:writing-studio, slot:main, label:Manuscript, config:{artifactId:art-…}, presentation:inline, feeds:[] }"#,
+        related: &["ui_present", "common_errors"],
+        call_next: &["cognition_component_list"],
+    },
+    WikiTopic {
+        id: "propose_apply",
+        title: "propose vs apply vs operator",
+        summary: "When layout goes live and what each tool does.",
+        policy: r#"    role(.99): "Environment mutation lifecycle on Home canvas.",
+    environment_get(.99): {
+        mode(.99): "read-only",
+        returns(.99): "revision + spec",
+        rule(.99): "always first call every canvas session"
+    },
+    environment_propose(.99): {
+        input(.99): "{ spec: <full EnvironmentSpec> }",
+        validates(.99): "errors[] on failure",
+        side_effect(.98): "stores pending proposal for operator",
+        live(.99): "does NOT change Home render until apply",
+        flag(.97): "pending_operator_approval:true when valid"
+    },
+    operator_ui(.98): {
+        path(.98): "Settings → Canvas",
+        apply(.97): "same as pending apply HTTP",
+        dismiss(.96): "clears pending",
+        tell_principal(.97): "explicitly when waiting on approval"
+    },
+    environment_apply(.99): {
+        input(.99): "same full merged spec as propose",
+        effect(.99): "writes daemon store, clears pending, Home syncs via SSE"
+    },
+    activate_preset(.96): {
+        input(.96): "{ presetId: default | focus | … }",
+        scope(.96): "switches nav/chrome only — does not create surfaces"
+    },
+    anti_pattern(.99): "spam propose with incomplete JSON — read merge_spec once instead"#,
+        related: &["merge_spec", "recipe"],
+        call_next: &["cognition_environment_get"],
+    },
+    WikiTopic {
+        id: "ui_present",
+        title: "ui_present + persist",
+        summary: "Publish HTML in chat; pin to custom surface.",
+        policy: r#"    role(.99): "cognition_ui_present — HTML artifacts on supports_ui_artifacts clients (Home yes).",
+    chat_only(.98): {
+        required(.99): "title, html, presentation",
+        returns(.98): "artifact_id — save for component_create or persist"
+    },
+    canvas_pin(.99): {
+        persist(.99): "true",
+        surface_id(.99): "custom surface id already in applied spec — NEVER home",
+        component_id(.99): "kebab-case component id",
+        slot(.97): "main default"
+    },
+    requirements(.98): {
+        client(.98): "supports_ui_artifacts must be true",
+        surface_exists(.99): "custom surface must be applied before persist"
+    },
+    revise(.97): "cognition_artifact_write with existing artifact_id — not repeat ui_present for same content",
+    html_discipline(.95): {
+        inline(.95): "compact card; optional height px cap",
+        panel_fullscreen(.94): "transparent outer background; ~900px content — avoid full-page #000 body"
+    }"#,
+        related: &["component_schema", "recipe"],
+        call_next: &["cognition_ui_present"],
+    },
+    WikiTopic {
+        id: "presets",
+        title: "Layout presets",
+        summary: "default vs focus — preset membership required for nav visibility.",
+        policy: r#"    role(.98): "layoutPresets control which surface ids appear in nav and shell chrome.",
+    builtin_presets(.97): {
+        default(.97): "full nav — home chat work library web context workshop automations messaging runtime settings — usually active",
+        focus(.96): "reduced — chat work library settings runtime"
+    },
+    add_surface(.99): {
+        rule(.99): "only ACTIVE preset must include your custom surface id",
+        activePresetId(.98): "when default edit default preset surfaces array"
+    },
+    switch_preset(.95): "cognition_environment_activate_preset — custom surface hidden unless listed in that preset too",
+    shell_chrome_advanced(.94): "shellChrome.mobile.defaultHome may point at custom surface — see example_writing_studio"#,
+        related: &["merge_spec", "example_writing_studio"],
+        call_next: &["cognition_environment_get"],
+    },
+    WikiTopic {
+        id: "common_errors",
+        title: "Failure atlas",
+        summary: "Serde port failures and validation errors already observed in dogfood.",
+        policy: r#"    role(.99): "Map error text → fix — one structural fix per retry.",
+    port_missing_label(.99): "partial layoutPresets or SurfaceDef — merge from environment_get; every preset needs id label surfaces active",
+    port_missing_version(.99): "top-level spec.version required — use 1 from get",
+    port_missing_zone(.98): "surface slots:[main] invalid — use slots:[] or SlotDef {id, zone}",
+    port_missing_components(.99): "include components:[] even when empty",
+    port_missing_updated(.98): "copy updatedAt from get; set updatedBy agent",
+    validation_preset(.98): "surface exists but not in nav — add id to active preset surfaces",
+    validation_builtin_target(.99): "presentation on home — create custom surface first",
+    validation_type(.99): "artifact type rejected — use presentation",
+    success_empty_canvas(.97): {
+        cause_1(.97): "propose never applied — operator approval pending",
+        cause_2(.97): "component on builtin surface",
+        cause_3(.96): "environment reset — environment_get shows 0 components"
+    },
+    retry_discipline(.98): "read errors[] or port message → fix ONE issue → re-propose; never random field spam"#,
+        related: &["merge_spec", "recipe"],
+        call_next: &["cognition_environment_wiki", "cognition_environment_get"],
+    },
+    WikiTopic {
+        id: "example_writing_studio",
+        title: "Worked example: writing-studio",
+        summary: "Validated fragments to merge into environment_get spec.",
+        policy: r#"    role(.98): "Copy-merge validated bundle — passes validate_environment_spec in daemon tests.",
+    merge_steps(.99): {
+        step_1(.99): "cognition_environment_get → take full spec",
+        step_2(.99): "append surface below to spec.surfaces",
+        step_3(.99): "append writing-studio to active preset surfaces",
+        step_4(.97): "optional append components after real artifact_id",
+        step_5(.98): "propose → approval → apply"
+    },
+    surface_fragment(.99): "{ id:writing-studio, label:Writing studio, icon:pen-line, kind:custom, layout:dashboard, slots:[] }",
+    component_manuscript(.97): "{ id:writing-manuscript, type:presentation, surfaceId:writing-studio, slot:main, label:Manuscript, config:{artifactId:<ui_present>}, presentation:inline, feeds:[] }",
+    component_fab(.96): "{ id:writing-ask-fab, type:chrome_action, surfaceId:writing-studio, slot:fab, label:Ask, config:{action:open-ask}, feeds:[] }",
+    shell_chrome_optional(.94): "{ mobile: { defaultHome:writing-studio, askEntry:fab, tabBar:full } }"#,
+        related: &["merge_spec", "component_schema", "surface_schema"],
+        call_next: &["cognition_environment_get", "cognition_environment_propose"],
+    },
+    WikiTopic {
+        id: "tool_map",
+        title: "Tool routing",
+        summary: "Which cognition tool for which goal.",
+        policy: r#"    role(.97): "Environment domain tool router — avoid wrong layer.",
+    routes(.99): {
+        read_layout(.99): "cognition_environment_get",
+        stuck_policy(.99): "cognition_environment_wiki",
+        validate_layout(.99): "cognition_environment_propose",
+        go_live(.99): "cognition_environment_apply",
+        switch_nav(.96): "cognition_environment_activate_preset",
+        list_components(.98): "cognition_component_list",
+        add_component(.97): "cognition_component_create",
+        publish_html(.98): "cognition_ui_present",
+        edit_html(.97): "cognition_artifact_write",
+        context_pointer(.95): "cognition_context_follow_pointer"
+    },
+    domain_unlock(.96): "environment domain auto-unlocks on Home; missing tools → client lacks supports_ui_artifacts"#,
+        related: &["recipe", "index"],
+        call_next: &[],
+    },
+];
+
+fn normalize_topic(raw: &str) -> String {
+    raw.trim()
+        .to_ascii_lowercase()
+        .replace('_', "-")
+        .replace(' ', "-")
+}
+
+fn resolve_topic(requested: Option<&str>) -> Option<&'static WikiTopic> {
+    let Some(raw) = requested else {
+        return TOPICS.first();
+    };
+    let key = normalize_topic(raw);
+    if key.is_empty() || key == "index" || key == "topics" || key == "list" {
+        return TOPICS.first();
+    }
+    TOPICS.iter().find(|topic| {
+        topic.id == key
+            || topic.id.replace('_', "-") == key
+            || topic.title.to_ascii_lowercase().contains(&key)
+    })
+}
+
+fn index_sttp_node() -> String {
+    let topic_lines: Vec<String> = TOPICS
+        .iter()
+        .skip(1)
+        .map(|t| format!("        {}(.98): \"{}\"", t.id, t.summary))
+        .collect();
+    let policy = format!(
+        r#"    role(.99): "Environment/canvas SDK STTP index — call cognition_environment_wiki(topic=<id>) before guessing propose/apply JSON.",
+    format(.99): "sttp temporal_node — read as policy memory not markdown docs",
+    discipline(.99): "Never hand-build EnvironmentSpec without merge_spec topic",
+    topics(.99): {{
+{topics}
+    }},
+    priority_reading(.98): {{
+        first_time(.99): "mental_model then recipe",
+        serde_failures(.99): "merge_spec then common_errors",
+        empty_canvas(.98): "mental_model then propose_apply"
+    }}"#,
+        topics = topic_lines.join(",\n")
+    );
+    wrap_sttp_node(
+        "environment_wiki_index",
+        "STTP index for environment/canvas SDK — topic catalog for agent workshop.",
+        &policy,
+    )
+}
+
+fn topic_sttp_node(topic: &'static WikiTopic) -> String {
+    if topic.id == "index" {
+        return index_sttp_node();
+    }
+    let trigger = format!("environment_wiki_{}", topic.id);
+    wrap_sttp_node(&trigger, topic.summary, topic.policy)
+}
+
+fn topic_to_json(topic: &'static WikiTopic) -> Value {
+    let sttp_node = topic_sttp_node(topic);
+    json!({
+        "ok": true,
+        "format": "sttp",
+        "topic": topic.id,
+        "title": topic.title,
+        "summary": topic.summary,
+        "sttp_node": sttp_node,
+        "content": sttp_node,
+        "related_topics": topic.related,
+        "suggested_next_tools": topic.call_next,
+        "all_topics": TOPICS.iter().skip(1).map(|t| json!({
+            "id": t.id,
+            "summary": t.summary,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+struct CognitionEnvironmentWikiTool;
+
+#[async_trait]
+impl StasisTool for CognitionEnvironmentWikiTool {
+    fn name(&self) -> &'static str {
+        COGNITION_ENVIRONMENT_WIKI
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present. \
+             Returns response_format=sttp (same family as system prompt). \
+             Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. \
+             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, common_errors, example_writing_studio, tool_map.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "STTP wiki topic id. Omit for index node.",
+                    "enum": [
+                        "index",
+                        "mental_model",
+                        "recipe",
+                        "merge_spec",
+                        "surface_schema",
+                        "component_schema",
+                        "propose_apply",
+                        "ui_present",
+                        "presets",
+                        "common_errors",
+                        "example_writing_studio",
+                        "tool_map"
+                    ]
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let requested = input.get("topic").and_then(Value::as_str);
+        if let Some(topic) = resolve_topic(requested) {
+            return Ok(topic_to_json(topic));
+        }
+        let key = requested.unwrap_or("(empty)");
+        Ok(json!({
+            "ok": false,
+            "format": "sttp",
+            "error": format!("unknown topic '{key}'"),
+            "hint": "Omit topic for index STTP node, or use a topic id from all_topics",
+            "all_topics": TOPICS.iter().skip(1).map(|t| t.id).collect::<Vec<_>>(),
+        }))
+    }
+}
+
+pub fn register_environment_wiki_tools(
+    registry: &mut stasis::application::orchestration::tool_registry::InMemoryToolRegistry,
+) -> StasisResult<()> {
+    registry.register_tool(CognitionEnvironmentWikiTool)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wiki_index_is_sttp() {
+        let topic = resolve_topic(None).expect("index");
+        assert_eq!(topic.id, "index");
+        let node = index_sttp_node();
+        assert!(node.contains("⊕⟨"));
+        assert!(node.contains("◈⟨"));
+        assert!(node.contains("⍉⟨"));
+        assert!(node.contains("merge_spec"));
+        assert!(node.contains("temporal_node"));
+    }
+
+    #[test]
+    fn wiki_resolves_aliases() {
+        let topic = resolve_topic(Some("merge-spec")).expect("merge_spec");
+        assert_eq!(topic.id, "merge_spec");
+    }
+
+    #[test]
+    fn wiki_topic_wraps_sttp_envelope() {
+        let topic = resolve_topic(Some("recipe")).expect("recipe");
+        let node = topic_sttp_node(topic);
+        assert!(node.contains("environment_wiki_recipe"));
+        assert!(node.contains("step_1_get(.99)"));
+        assert!(node.contains("cognition_environment_get"));
+    }
+
+    #[tokio::test]
+    async fn wiki_invoke_returns_sttp_recipe() {
+        let tool = CognitionEnvironmentWikiTool;
+        let out = tool
+            .invoke(json!({ "topic": "recipe" }))
+            .await
+            .expect("invoke");
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["format"], "sttp");
+        assert_eq!(out["topic"], "recipe");
+        let sttp = out["sttp_node"].as_str().expect("sttp_node");
+        assert!(sttp.contains("◈⟨"));
+        assert!(sttp.contains("cognition_environment_get"));
+    }
+
+    #[tokio::test]
+    async fn wiki_unknown_topic_lists_ids() {
+        let tool = CognitionEnvironmentWikiTool;
+        let out = tool
+            .invoke(json!({ "topic": "nope" }))
+            .await
+            .expect("invoke");
+        assert_eq!(out["ok"], false);
+        assert_eq!(out["format"], "sttp");
+        assert!(out["all_topics"].as_array().unwrap().len() > 5);
+    }
+}

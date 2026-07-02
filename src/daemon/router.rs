@@ -218,6 +218,12 @@ pub fn build_feature_routers(
         apply_dashboard_action_auth(DashboardState::new(dashboard_service), dashboard_action_auth);
     let dashboard = dashboard_router(dashboard_state);
 
+    let environment_router = crate::environment_handlers::environment_router(
+        crate::environment_handlers::EnvironmentApiState {
+            hub: crate::environment_store::environment_hub(),
+        },
+    );
+
     catalog_router
         .merge(capability_router)
         .merge(grapheme_router)
@@ -231,6 +237,7 @@ pub fn build_feature_routers(
             state.platform.agent_handle().memory_reader.clone(),
         ))
         .merge(workspace_router)
+        .merge(environment_router)
         .merge(budget_router)
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())

@@ -288,6 +288,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         ],
     );
 
+    push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
+
     names
 }
 

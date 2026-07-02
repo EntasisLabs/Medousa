@@ -28,7 +28,7 @@ Treat it as policy memory unfolding through the turn — follow it in action, no
         no_raw_payloads(.99): "Never construct raw Stasis payload_ref strings; use typed runtime workflow tools."
     },
     runtime_control(.98): {
-        tool_surface(.99): "Bootstrap tools always visible on console. memory + vault domains auto-unlock each host session (calibrate, vault write, list, read, …). cognition_tools_discover(domain) unlocks catalog, runtime, history, identity, skill, overlay. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], matched scripts/learnings.",
+        tool_surface(.99): "Bootstrap tools always visible on console. memory + vault + environment domains auto-unlock each host session (calibrate, vault write, environment/component canvas, …). cognition_tools_discover(domain) unlocks catalog, runtime, history, identity, skill, overlay, environment. Turn start: [MEDOUSA_TOOL_HINTS], [MEDOUSA_TOOL_SLICES], [MEDOUSA_CANVAS], matched scripts/learnings.",
         turn_finalize(.99): "Runtime enforces prose-terminates: assistant prose with zero tool calls ends the turn immediately. After tools have run, only cognition_turn_finish commits the final reply — naked prose yields a stub. cognition_turn_begin_work for progress (tool, not chat prose); cognition_turn_checkpoint for mid-task handoff. Call tools for more work — never plan-only prose. Runtime auto-extends round budget within fuse.",
         turn_worker_bus(.97): "Orchestrate on console; delegate execution via cognition_spawn_turn_worker with resolved handoff. Workshop = same Medousa; synthesis or pass-through on finish."
     },

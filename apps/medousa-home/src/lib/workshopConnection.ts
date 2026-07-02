@@ -28,15 +28,25 @@ import { haptic } from "$lib/haptics";
 import {
   checkDaemonHealth,
   getDaemonUrl,
+  onEnvironmentError,
+  onEnvironmentEvent,
   onInteractiveEvent,
   onInteractiveError,
   onWorkspaceEvent,
   onWorkspaceError,
   registerBrowserClient,
+  startEnvironmentStream,
+  stopEnvironmentStream,
   startWorkspaceStream,
   stopWorkspaceStream,
   type DaemonHealth,
 } from "$lib/daemon";
+import {
+  environment,
+  startEnvironmentSync,
+  stopEnvironmentSync,
+} from "$lib/stores/environment.svelte";
+import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
@@ -70,6 +80,28 @@ const RESUME_DEBOUNCE_MS = 3_000;
 function cancelScheduledStreamRecovery() {
   workspaceReconnect.cancel();
   interactiveReconnect.cancel();
+}
+
+function scheduleEnvironmentStreamReconnect() {
+  if (workshopTeardown) return;
+  workspaceReconnect.schedule(() => recoverEnvironmentStream());
+}
+
+async function recoverEnvironmentStream(): Promise<void> {
+  if (workshopTeardown) return;
+  try {
+    const health = await checkDaemonHealth();
+    connection.setHealth(health);
+    if (!health.ok) {
+      scheduleEnvironmentStreamReconnect();
+      return;
+    }
+    await stopEnvironmentSync();
+    await environment.load();
+    await startEnvironmentSync();
+  } catch {
+    scheduleEnvironmentStreamReconnect();
+  }
 }
 
 function scheduleWorkspaceStreamReconnect() {
@@ -124,11 +156,24 @@ async function recoverInteractiveStreams(): Promise<void> {
 /** Restart SSE pipes without a full settings/runtime reload. */
 async function restartWorkshopStreamsLite(): Promise<void> {
   await stopWorkspaceStream();
+  await stopEnvironmentSync();
   await startWorkspaceStream(workspace.revision || undefined);
+  await startEnvironmentSync();
   void chat.tryReattachActiveTurn(workspace.cards);
 }
 
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
+  unlisteners.push(
+    onEnvironmentEvent<EnvironmentStreamEvent>((event) => {
+      environment.applyEvent(event);
+    }),
+  );
+  unlisteners.push(
+    onEnvironmentError((message) => {
+      environment.setError(message);
+      scheduleEnvironmentStreamReconnect();
+    }),
+  );
   unlisteners.push(
     onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
       workspace.applyEvent(event);
@@ -192,7 +237,10 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
 async function startWorkshopStreams(): Promise<void> {
   cancelScheduledStreamRecovery();
   await stopWorkspaceStream();
+  await stopEnvironmentSync();
+  await environment.load();
   await startWorkspaceStream(workspace.revision || undefined);
+  await startEnvironmentSync();
   void automations.refresh();
   await Promise.all([
     chat.refreshSessions({ force: true }),
@@ -297,6 +345,7 @@ export async function reconnectWorkshop(
     runtime.resetWorkshopRuntime();
     workshopDefaults.resetForReconnect();
     userProfiles.resetForReconnect();
+    environment.resetForReconnect();
     vault.resetForWorkshopSwitch();
     await workshopDefaults.load(true);
     if (workshopDefaults.loaded) {
@@ -360,6 +409,7 @@ export function connectWorkshop(options: {
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     void (async () => {
       await stopWorkspaceStream();
+      await stopEnvironmentSync();
       await chat.stopOwnedInteractiveStreams();
     })();
   };

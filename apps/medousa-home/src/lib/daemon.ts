@@ -294,6 +294,67 @@ export async function stopWorkspaceStream(): Promise<void> {
   return invoke("workspace_stream_stop");
 }
 
+export async function getEnvironmentSpec(
+  profileId?: string,
+): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {
+  return invoke("environment_get_spec", { profileId });
+}
+
+export async function putEnvironmentSpec(
+  request: import("$lib/types/environment").EnvironmentSpecPutRequest,
+): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {
+  return invoke("environment_put_spec", { request });
+}
+
+export async function getEnvironmentPending(
+  profileId?: string,
+): Promise<import("$lib/types/environment").EnvironmentPendingResponse> {
+  return invoke("environment_get_pending", { profileId });
+}
+
+export async function applyEnvironmentPending(
+  profileId?: string,
+): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {
+  return invoke("environment_apply_pending", { profileId });
+}
+
+export async function dismissEnvironmentPending(
+  profileId?: string,
+): Promise<void> {
+  return invoke("environment_dismiss_pending", { profileId });
+}
+
+export async function startEnvironmentStream(
+  sinceRevision?: number,
+  profileId?: string,
+): Promise<void> {
+  return invoke("environment_stream_start", { sinceRevision, profileId });
+}
+
+export async function stopEnvironmentStream(): Promise<void> {
+  return invoke("environment_stream_stop");
+}
+
+export function onEnvironmentEvent<T>(
+  handler: (payload: T) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("environment://event", (event) => {
+    try {
+      handler(JSON.parse(event.payload) as T);
+    } catch {
+      // Ignore malformed SSE payloads.
+    }
+  });
+}
+
+export function onEnvironmentError(
+  handler: (message: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ message: string }>("environment://error", (event) => {
+    handler(event.payload.message);
+  });
+}
+
 export interface InteractiveTurnOptions {
   provider?: string;
   model?: string;

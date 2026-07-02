@@ -4,6 +4,9 @@
 
 pub mod capability;
 pub mod daemon_api;
+pub mod environment;
+pub mod environment_default;
+pub mod environment_validate;
 pub mod grapheme_extras;
 pub mod inference;
 pub mod local;
@@ -20,6 +23,7 @@ pub mod workflow_plan;
 
 pub use capability::*;
 pub use daemon_api::*;
+pub use environment::*;
 pub use grapheme_extras::*;
 pub use local::*;
 pub use mcp_gateway::*;

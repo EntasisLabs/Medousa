@@ -53,6 +53,7 @@ use super::turn_worker::{
 };
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
+use super::turn_context::scratch_seed_for_tool_loop;
 use super::turn_services::{
     self, IntentContextLimits, PriorMessageBuild, PriorMessageLimits, SelectedTurnPipeline,
     TurnActivationDecision,
@@ -204,8 +205,13 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
             channel_policy: Some(&channel_policy),
         },
     );
-    let ambient_appendix = ambient_block.appendix.clone();
-    resolved_prompt = format!("{resolved_prompt}\n\n{}", ambient_block.appendix);
+    let environment_extras = super::ambient_context::build_environment_ambient_extras(params.session_id).await;
+    let ambient_appendix = if environment_extras.is_empty() {
+        ambient_block.appendix.clone()
+    } else {
+        format!("{}\n\n{environment_extras}", ambient_block.appendix)
+    };
+    resolved_prompt = format!("{resolved_prompt}\n\n{ambient_appendix}");
 
     let handoff_model_avec = super::vibe_signature::default_handoff_model_avec();
     let handoff_vibe_signature = super::vibe_signature::derive_vibe_signature(
@@ -584,6 +590,14 @@ async fn deliver_turn_failure(
 ) {
     let failure = crate::turn_failure::TurnFailure::from_debug(runtime_error);
     orchestration_state.final_mode = "turn_failed".to_string();
+    tracing::info!(
+        target: "medousa::turn",
+        turn_id,
+        category = failure.category_label(),
+        retryable = failure.retryable,
+        final_mode = %orchestration_state.final_mode,
+        "turn_failed"
+    );
     sink.notice(format!(
         "◈ turn_failed category={} retryable={}",
         failure.category_label(),
@@ -1022,6 +1036,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
 
         let mut same_target_retries = 0u8;
         loop {
+            let initial_worker_scratch =
+                scratch_seed_for_tool_loop(&session_scratch_seed, last_tool_scratch.as_ref());
             let mut completion_gate = ToolLoopCompletionGate {
                 stream_turn_id: turn_id,
                 session_id: ledger_session_id.clone(),
@@ -1033,7 +1049,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                 scratch_out: Some(&mut last_tool_scratch),
                 host_handoff_slot: Some(host_handoff_slot.clone()),
                 parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                initial_worker_scratch: Some(session_scratch_seed.clone()),
+                initial_worker_scratch: Some(initial_worker_scratch),
                 handoff_parent_user_prompt: Some(original_prompt.clone()),
                 handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                 handoff_model_avec: Some(handoff_model_avec),
@@ -1198,6 +1214,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 .max_tool_rounds
                                 .min(turn_loop_settings.continuation_max_tool_rounds)
                                 .max(1);
+                            let initial_worker_scratch = scratch_seed_for_tool_loop(
+                                &session_scratch_seed,
+                                last_tool_scratch.as_ref(),
+                            );
                             let mut continuation_gate = ToolLoopCompletionGate {
                                 stream_turn_id: turn_id,
                                 session_id: ledger_session_id.clone(),
@@ -1210,7 +1230,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                                 scratch_out: Some(&mut last_tool_scratch),
                                 host_handoff_slot: Some(host_handoff_slot.clone()),
                                 parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                                initial_worker_scratch: Some(session_scratch_seed.clone()),
+                                initial_worker_scratch: Some(initial_worker_scratch),
                                 handoff_parent_user_prompt: Some(original_prompt.clone()),
                                 handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                                 handoff_model_avec: Some(handoff_model_avec),
@@ -1320,6 +1340,10 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                     orchestration_state.final_mode = "tool_loop_retry".to_string();
 
                     let retry_result = {
+                        let initial_worker_scratch = scratch_seed_for_tool_loop(
+                            &session_scratch_seed,
+                            last_tool_scratch.as_ref(),
+                        );
                         let mut retry_gate = ToolLoopCompletionGate {
                             stream_turn_id: turn_id,
                             session_id: ledger_session_id.clone(),
@@ -1332,7 +1356,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
                             scratch_out: Some(&mut last_tool_scratch),
                             host_handoff_slot: Some(host_handoff_slot.clone()),
                             parent_turn_correlation_id: parent_turn_correlation_id.clone(),
-                            initial_worker_scratch: Some(session_scratch_seed.clone()),
+                            initial_worker_scratch: Some(initial_worker_scratch),
                             handoff_parent_user_prompt: Some(original_prompt.clone()),
                             handoff_vibe_signature: Some(handoff_vibe_signature.clone()),
                             handoff_model_avec: Some(handoff_model_avec),

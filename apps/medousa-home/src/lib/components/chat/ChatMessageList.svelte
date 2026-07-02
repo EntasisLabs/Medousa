@@ -94,6 +94,9 @@
         </p>
       {/if}
 
+      {#if message.failed && message.errorLine}
+        <p class="chat-turn-error" role="alert">{message.errorLine}</p>
+      {/if}
       {#if message.content?.trim()}
         <div class="chat-voice">
           <MarkdownContent content={message.content} openLinksInWeb={true} />
@@ -145,3 +148,15 @@
   </article>
   {/if}
 {/each}
+
+<style>
+  .chat-turn-error {
+    margin: 0 0 0.5rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--color-error-500) 45%, transparent);
+    background: color-mix(in srgb, var(--color-error-500) 10%, transparent);
+    font-size: 0.75rem;
+    color: rgb(var(--color-error-300));
+  }
+</style>

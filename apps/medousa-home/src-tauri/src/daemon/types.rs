@@ -10,7 +10,8 @@ pub use medousa_types::turn::*;
 pub use medousa_types::tool_history::*;
 pub use medousa_types::workflow_plan::*;
 
-pub use medousa_types::WorkflowStepSpec as WorkflowStepSpecDto;
+pub use medousa_types::environment::*;
+pub use medousa_types::workflow::WorkflowStepSpec as WorkflowStepSpecDto;
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;

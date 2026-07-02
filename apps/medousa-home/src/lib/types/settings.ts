@@ -1,5 +1,6 @@
 export type SettingsSectionId =
   | "room"
+  | "canvas"
   | "rhythm"
   | "memory"
   | "models"
@@ -14,6 +15,7 @@ export const SETTINGS_SECTIONS: {
   hint: string;
 }[] = [
   { id: "room", label: "Room", hint: "Theme & atmosphere" },
+  { id: "canvas", label: "Canvas", hint: "Layout presets & agent proposals" },
   { id: "rhythm", label: "Rhythm", hint: "How she interrupts you" },
   { id: "memory", label: "Memory", hint: "How long chats stay vivid" },
   { id: "models", label: "Models", hint: "Chat & dictation" },

@@ -97,6 +97,34 @@ pub fn begin_work_message_from_invocations(invocations: &[ToolInvocation]) -> Op
     None
 }
 
+fn note_from_begin_work_payload(payload: &Value) -> Option<String> {
+    payload
+        .get("note")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// Extract the latest successful begin-work sticky note from a tool batch.
+pub fn begin_work_note_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    for inv in invocations.iter().rev() {
+        if !is_begin_work_tool_name(&inv.tool_name) {
+            continue;
+        }
+        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
+            continue;
+        }
+        if let Some(note) = note_from_begin_work_payload(&inv.tool_input) {
+            return Some(note);
+        }
+        if let Some(note) = note_from_begin_work_payload(&inv.tool_output) {
+            return Some(note);
+        }
+    }
+    None
+}
+
 fn message_from_begin_work_payload(payload: &Value) -> Option<String> {
     payload
         .get("message")
@@ -235,6 +263,10 @@ impl StasisTool for CognitionTurnBeginWorkTool {
                     "type": "string",
                     "description": "Short principal-facing progress line while tools run"
                 },
+                "note": {
+                    "type": "string",
+                    "description": "Optional sticky working note for engine scratch (not shown to principal)"
+                },
                 "intent": {
                     "type": "string",
                     "description": "Optional note for logs (not shown to the principal)"
@@ -256,12 +288,14 @@ impl StasisTool for CognitionTurnBeginWorkTool {
             .and_then(|value| value.as_str())
             .map(str::trim)
             .filter(|value| !value.is_empty());
+        let note = note_from_begin_work_payload(&input);
 
         Ok(json!({
             "ok": true,
             "begin_work": true,
             "message": message,
             "intent": intent,
+            "note": note,
         }))
     }
 }

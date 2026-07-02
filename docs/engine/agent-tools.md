@@ -27,6 +27,7 @@ See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search
 
 - **documents** — vault + artifact list/read/grep/write
 - **presentation** — artifact presentation tools
+- **environment** — environment spec + component canvas ([environment-canvas.md](./environment-canvas.md))
 - **browser** — `cognition_browser_fetch` (auto-unlocked on browser-capable clients)
 - Standard rings: bootstrap, MCP, finish, etc.
 

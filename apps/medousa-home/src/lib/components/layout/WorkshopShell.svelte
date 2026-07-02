@@ -3,7 +3,8 @@
   import NavSidebar from "$lib/components/layout/NavSidebar.svelte";
   import { connectWorkshop, refreshDaemonHealth } from "$lib/workshopConnection";
   import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
-  import type { Surface } from "$lib/types/ui";
+  import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
   import WorkRail from "$lib/components/layout/WorkRail.svelte";
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
@@ -82,7 +83,7 @@
     }),
   );
 
-  function navigateToSurface(surface: Surface) {
+  function navigateToSurface(surface: string) {
     layout.navigateDesktop(surface, { bump: true });
     if (surface === "work") {
       void workspace.prefetchCardDetails();
@@ -93,11 +94,11 @@
     }
   }
 
-  function goToSurface(surface: Surface) {
+  function goToSurface(surface: string) {
     navigateToSurface(surface);
   }
 
-  function handleSurfaceSelect(surface: Surface) {
+  function handleSurfaceSelect(surface: string) {
     navigateToSurface(surface);
   }
 
@@ -136,6 +137,8 @@
           data-debug-label="workshop-surface-column"
         >
         {#key layout.navigationEpoch}
+          <EnvironmentRenderer surfaceId={activeSurface}>
+            {#snippet builtin()}
           {#if activeSurface === "chat"}
             <ChatPanel
               visible={true}
@@ -209,6 +212,8 @@
               }}
             />
           {/if}
+            {/snippet}
+          </EnvironmentRenderer>
         {/key}
         <div
           class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"

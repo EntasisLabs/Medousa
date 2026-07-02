@@ -151,7 +151,7 @@ export class LayoutStore {
     this.navigationEpoch += 1;
   }
 
-  navigateDesktop(surface: Surface, options?: { bump?: boolean }) {
+  navigateDesktop(surface: string, options?: { bump?: boolean }) {
     const next = surface === "home" ? "chat" : surface;
     if (next !== "chat") {
       this.setSessionDrawerOpen(false);

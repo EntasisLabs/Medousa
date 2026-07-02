@@ -1,30 +1,18 @@
 <script lang="ts">
-  import {
-    Activity,
-    BookOpen,
-    Calendar,
-    Globe,
-    LayoutGrid,
-    MessageCircle,
-    Orbit,
-    Radio,
-    Settings,
-    UserRound,
-    Zap,
-  } from "@lucide/svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
-  import type { Component } from "svelte";
-  import type { Surface } from "$lib/types/ui";
-
-  interface NavItem {
-    id: Surface;
-    label: string;
-    icon: Component;
-  }
+  import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
+  import { environmentIcon } from "$lib/utils/environmentIcons";
+  import { Settings, UserRound } from "@lucide/svelte";
+  import type { SurfaceDef } from "$lib/types/environment";
+  import {
+    SAFETY_SURFACE_RUNTIME,
+    SAFETY_SURFACE_SETTINGS,
+  } from "$lib/types/environment";
 
   interface Props {
-    active: Surface;
-    onSelect: (surface: Surface) => void;
+    active: string;
+    onSelect: (surface: string) => void;
     chatActivity?: number;
     workActivity?: number;
     activeProfileLabel?: string;
@@ -38,39 +26,39 @@
     activeProfileLabel = "Personal",
   }: Props = $props();
 
-  const lifeOrbit: NavItem[] = [
-    { id: "chat", label: "Chat", icon: MessageCircle },
-    { id: "work", label: "Work", icon: LayoutGrid },
-    { id: "library", label: "Library", icon: BookOpen },
-    { id: "web", label: "Web", icon: Globe },
-    { id: "context", label: "Context", icon: Orbit },
-  ];
+  const LIFE_IDS = new Set(["chat", "work", "library", "web", "context"]);
+  const WORKSHOP_IDS = new Set(["workshop", "automations"]);
+  const UTILITY_IDS = new Set(["messaging", SAFETY_SURFACE_RUNTIME]);
 
-  function navTitle(item: NavItem): string {
-    if (item.id === "context") return "Threads & memory";
-    return item.label;
+  function navTier(surface: SurfaceDef): "life" | "workshop" | "utility" | "hidden" {
+    if (surface.id === "home" || surface.id === SAFETY_SURFACE_SETTINGS) return "hidden";
+    if (surface.kind === "custom") return "life";
+    if (WORKSHOP_IDS.has(surface.id)) return "workshop";
+    if (UTILITY_IDS.has(surface.id)) return "utility";
+    if (LIFE_IDS.has(surface.id)) return "life";
+    return "life";
   }
 
-  const workshopNav: NavItem[] = [
-    { id: "workshop", label: "Capabilities", icon: Zap },
-    { id: "automations", label: "Automations", icon: Calendar },
-  ];
-
-  const utility: NavItem[] = [
-    { id: "messaging", label: "Messaging", icon: Radio },
-    { id: "runtime", label: "Runtime", icon: Activity },
-  ];
+  const surfaces = $derived(environment.navSurfaces());
+  const lifeOrbit = $derived(surfaces.filter((surface) => navTier(surface) === "life"));
+  const workshopNav = $derived(surfaces.filter((surface) => navTier(surface) === "workshop"));
+  const utility = $derived(surfaces.filter((surface) => navTier(surface) === "utility"));
 
   const iconProps = { size: 18, strokeWidth: 1.75 };
   const utilityIconProps = { size: 16, strokeWidth: 1.75 };
 
-  function activityFor(id: Surface): number {
+  function navTitle(surface: SurfaceDef): string {
+    if (surface.id === "context") return "Threads & memory";
+    return surface.label;
+  }
+
+  function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
     if (id === "work") return workActivity;
     return 0;
   }
 
-  function railBtnClass(id: Surface, tier: "life" | "utility"): string {
+  function railBtnClass(id: string, tier: "life" | "utility"): string {
     const isActive = active === id;
     const activeClass = isActive ? "workshop-rail-btn-active" : "";
     const tierClass =
@@ -81,18 +69,19 @@
 
 <nav class="workshop-icon-rail" aria-label="Primary navigation" data-debug-label="nav-rail">
   <WorkshopSwitcherCompact variant="rail" />
+  <EnvironmentPresetSwitcher compact />
 
   <div class="flex flex-1 flex-col gap-0.5">
-    {#each lifeOrbit as item (item.id)}
-      {@const Icon = item.icon}
-      {@const badge = activityFor(item.id)}
+    {#each lifeOrbit as surface (surface.id)}
+      {@const Icon = environmentIcon(surface.icon)}
+      {@const badge = activityFor(surface.id)}
       <button
         type="button"
-        class={railBtnClass(item.id, "life")}
-        title={navTitle(item)}
-        aria-label={badge > 0 ? `${navTitle(item)} (${badge} active)` : navTitle(item)}
-        aria-current={active === item.id ? "page" : undefined}
-        onclick={() => onSelect(item.id)}
+        class={railBtnClass(surface.id, "life")}
+        title={navTitle(surface)}
+        aria-label={badge > 0 ? `${navTitle(surface)} (${badge} active)` : navTitle(surface)}
+        aria-current={active === surface.id ? "page" : undefined}
+        onclick={() => onSelect(surface.id)}
       >
         <Icon {...iconProps} />
         {#if badge > 0}
@@ -101,37 +90,39 @@
       </button>
     {/each}
 
-    <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
+    {#if workshopNav.length > 0}
+      <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
+      {#each workshopNav as surface (surface.id)}
+        {@const Icon = environmentIcon(surface.icon)}
+        <button
+          type="button"
+          class={railBtnClass(surface.id, "life")}
+          title={surface.label}
+          aria-label={surface.label}
+          aria-current={active === surface.id ? "page" : undefined}
+          onclick={() => onSelect(surface.id)}
+        >
+          <Icon {...iconProps} />
+        </button>
+      {/each}
+    {/if}
 
-    {#each workshopNav as item (item.id)}
-      {@const Icon = item.icon}
-      <button
-        type="button"
-        class={railBtnClass(item.id, "life")}
-        title={item.label}
-        aria-label={item.label}
-        aria-current={active === item.id ? "page" : undefined}
-        onclick={() => onSelect(item.id)}
-      >
-        <Icon {...iconProps} />
-      </button>
-    {/each}
-
-    <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
-
-    {#each utility as item (item.id)}
-      {@const Icon = item.icon}
-      <button
-        type="button"
-        class={railBtnClass(item.id, "utility")}
-        title={item.label}
-        aria-label={item.label}
-        aria-current={active === item.id ? "page" : undefined}
-        onclick={() => onSelect(item.id)}
-      >
-        <Icon {...utilityIconProps} />
-      </button>
-    {/each}
+    {#if utility.length > 0}
+      <div class="workshop-rail-tier-divider" aria-hidden="true"></div>
+      {#each utility as surface (surface.id)}
+        {@const Icon = environmentIcon(surface.icon)}
+        <button
+          type="button"
+          class={railBtnClass(surface.id, "utility")}
+          title={surface.label}
+          aria-label={surface.label}
+          aria-current={active === surface.id ? "page" : undefined}
+          onclick={() => onSelect(surface.id)}
+        >
+          <Icon {...utilityIconProps} />
+        </button>
+      {/each}
+    {/if}
   </div>
 
   <button
@@ -150,13 +141,13 @@
 
   <button
     type="button"
-    class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {active === 'settings'
+    class="workshop-rail-btn workshop-rail-btn-tier-utility relative mt-2 {active === SAFETY_SURFACE_SETTINGS
       ? 'workshop-rail-btn-active'
       : ''}"
     title="Settings"
     aria-label="Settings"
-    aria-current={active === "settings" ? "page" : undefined}
-    onclick={() => onSelect("settings")}
+    aria-current={active === SAFETY_SURFACE_SETTINGS ? "page" : undefined}
+    onclick={() => onSelect(SAFETY_SURFACE_SETTINGS)}
   >
     <Settings {...utilityIconProps} />
   </button>

@@ -912,6 +912,13 @@ pub async fn run_agent_turn(
             .read()
             .await
             .unwrap_or(TurnOutcome::Error);
+        tracing::info!(
+            target: "medousa::turn",
+            turn_id = %turn_id,
+            correlation_id = %correlation_id,
+            outcome = ?final_outcome,
+            "interactive_turn_finished"
+        );
         let _ = turn_continuation_store()
             .mark_turn_finished(&correlation_id, final_outcome)
             .await;
