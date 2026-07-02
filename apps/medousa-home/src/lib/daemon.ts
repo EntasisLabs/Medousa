@@ -367,7 +367,23 @@ export async function getEngineTuiDefaults(): Promise<TuiDefaults> {
   return invoke<TuiDefaults>("runtime_get_tui_defaults");
 }
 
+let hostCharterInflight: Promise<TuiDefaults> | null = null;
+
+/** One in-flight host charter fetch — companion shells copy locally and reuse. */
+export async function fetchHostCharter(): Promise<TuiDefaults> {
+  hostCharterInflight ??= getEngineTuiDefaults().finally(() => {
+    hostCharterInflight = null;
+  });
+  return hostCharterInflight;
+}
+
 export async function putEngineTuiDefaults(dto: TuiDefaults): Promise<void> {
+  const { isTauriMobilePlatform } = await import("$lib/platform");
+  if (isTauriMobilePlatform()) {
+    throw new Error(
+      "Workshop charter is read-only on mobile — change Memory, Reach, and Voice on the host.",
+    );
+  }
   await invoke("runtime_put_tui_defaults", { dto });
 }
 
@@ -838,10 +854,10 @@ export async function enqueueDaemonAsk(
 
   return invoke<EnqueueResponse>("job_enqueue_ask", {
     prompt: request.prompt,
-    modelHint: request.modelHint,
+    modelHint: request.modelHint ?? null,
     manuscriptId: request.manuscriptId ?? null,
-    additionalManuscriptIds: request.additionalManuscriptIds ?? null,
-    suggestedCapabilityIds: request.suggestedCapabilityIds ?? null,
+    additionalManuscriptIds: invokePlain(request.additionalManuscriptIds ?? null),
+    suggestedCapabilityIds: invokePlain(request.suggestedCapabilityIds ?? null),
   });
 }
 

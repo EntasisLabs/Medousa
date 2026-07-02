@@ -38,6 +38,8 @@ mod wizard;
 mod live_activity;
 #[cfg(target_os = "ios")]
 mod home_widget;
+#[cfg(target_os = "ios")]
+mod ios_push_setup;
 
 use daemon::DaemonState;
 use tauri::Manager;
@@ -111,6 +113,7 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             {
                 human_browser_ios::init_app_handle(app.handle().clone());
+                ios_push_setup::install_ios_push_background_handler();
             }
 
             Ok(())

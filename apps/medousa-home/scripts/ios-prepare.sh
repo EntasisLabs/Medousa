@@ -118,12 +118,19 @@ if "MEDOUSA_LIVE_ACTIVITY" not in text:
     )
 
 # Live Activity: declare support in the main iOS app Info.plist (XcodeGen merge).
-if "NSSSupportsLiveActivities" not in text:
-    text = text.replace(
-        "        CFBundleVersion: \"0.1.0\"\n",
-        "        CFBundleVersion: \"0.1.0\"\n        NSSSupportsLiveActivities: true\n",
-        1,
-    )
+if "UIBackgroundModes" not in text:
+    if "NSSupportsLiveActivities" not in text:
+        text = text.replace(
+            "        CFBundleVersion: \"0.1.0\"\n",
+            "        CFBundleVersion: \"0.1.0\"\n        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - remote-notification\n",
+            1,
+        )
+    else:
+        text = text.replace(
+            "        NSSupportsLiveActivities: true\n",
+            "        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - remote-notification\n",
+            1,
+        )
 
 # Widget Extension target for Lock Screen / Dynamic Island Live Activity UI.
 if "MedousaWorkWidget:" not in text:

@@ -194,7 +194,7 @@ export MEDOUSA_DAEMON_URL="http://192.168.1.42:7419"
 npm run tauri ios dev
 ```
 
-**Settings on mobile:** Connection URL is stored on the phone. Provider, model, and API keys live on the **Mac daemon** (`tui_defaults.json`). After connecting, the app loads runtime defaults from the daemon. Change model on the phone via **You → Runtime → Controls** (updates the workshop for all clients).
+**Settings on mobile:** Connection URL is stored on the phone. Provider, model, API keys, and workshop charter (Memory, Reach, tool rounds, etc.) live on the **Mac daemon** (`tui_defaults.json`). After connecting, the app reads the full charter from the daemon — it does **not** merge phone-local defaults and cannot write charter back. Settings → Memory / Reach are read-only on the phone; edit on the Mac host. Change model/stance on the phone via the composer turn settings (updates the workshop for all clients).
 
 ---
 
@@ -262,7 +262,16 @@ The **Pulse** home-screen widget shows the same workshop heartbeat as the in-app
 3. Search **Medousa** → choose **Pulse** (small or medium).
 4. Open Medousa once while connected to your Mac daemon — the widget updates from workspace state.
 
-The widget reads the last snapshot written by the app via App Group storage. It does **not** require Live Activity to be enabled, but it only refreshes while the app is open or when you return to it (iOS does not allow arbitrary background widget polling without push).
+The widget reads the last snapshot written by the app via App Group storage. While the app is open, pulse state syncs automatically. When backgrounded, the Mac daemon can send a **silent APNs push** (`content-available`) with the latest pulse snapshot — same `MEDOUSA_APNS_*` credentials as remote push and Live Activity.
+
+**Requirements for background widget refresh:**
+
+1. **Remote push** enabled in Medousa → Settings → Rhythm
+2. Phone paired with heartbeat (device token on daemon)
+3. Daemon APNs configured (`install-apns-push.sh` or `MEDOUSA_APNS_*`)
+4. Reinstall after `ios:prepare` (needs `UIBackgroundModes: remote-notification`)
+
+Alert pushes (work finished, blocked) and silent widget pulses share the same device token.
 
 Tap the widget to deep-link via `medousa://work/<card-id>` when work is in motion.
 
@@ -495,7 +504,8 @@ Same as dev: daemon on Mac with `medousa start daemon --public`, then **You → 
 | **Code signing errors** | Xcode → Accounts → Apple Development cert; set team in Xcode project under `gen/apple`. |
 | **Blank / white webview** | Phone must reach Mac Vite on **1420** (open `http://<mac-ip>:1420` in Safari on the phone). Allow **1420** in Mac firewall. Re-run `npm run tauri ios dev` after config changes. On device, try `npm run tauri ios dev -- --force-ip-prompt` and pick the phone’s TUN address if LAN IP fails. iOS uses only the **main** window — desktop `chat-popout` is excluded from mobile builds. |
 | **Chat fails / stream URL** | Restart with `medousa start daemon --public` (sets LAN stream URLs). Old daemons bound to `0.0.0.0` without `--public` return unreachable stream URLs. |
-| **Wrong model on mobile** | Mobile reads provider/model from the Mac daemon after connect — not local `tui_defaults`. Use **You → Runtime → Controls** or edit `tui_defaults.json` on the Mac. |
+| **Wrong model on mobile** | Mobile reads provider/model from the Mac daemon after connect — not local `tui_defaults`. Use the composer turn settings or edit `tui_defaults.json` on the Mac. |
+| **Wrong charter on mobile (420 chars, 10 tool rounds)** | Phone must load full `tui_defaults` from the daemon after connect. Rebuild/reinstall if you still see frontend defaults; charter edits are host-only. |
 
 ---
 

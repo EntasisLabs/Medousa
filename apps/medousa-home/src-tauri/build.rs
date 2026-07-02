@@ -24,6 +24,7 @@ fn compile_ios_live_activity() {
         swift_root.join("App/MedousaLiveActivityManager.swift"),
         swift_root.join("App/MedousaLiveActivityBridge.swift"),
         swift_root.join("App/MedousaWidgetSnapshotStore.swift"),
+        swift_root.join("App/MedousaPushBackgroundHandler.swift"),
     ];
 
     for source in &sources {
@@ -97,6 +98,7 @@ fn compile_ios_live_activity() {
             println!("cargo:rustc-link-lib=framework=ActivityKit");
             println!("cargo:rustc-link-lib=framework=WidgetKit");
             println!("cargo:rustc-link-lib=framework=SwiftUI");
+            println!("cargo:rustc-link-lib=framework=UIKit");
         }
         Ok(s) => {
             panic!(

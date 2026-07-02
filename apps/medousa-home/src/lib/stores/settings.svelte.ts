@@ -7,6 +7,7 @@ import {
 import { resolveSkeletonThemeName } from "$lib/types/themeResolve";
 import { loadTuiDefaults, persistTuiDefaults } from "$lib/config";
 import { getRuntimeDefaults } from "$lib/daemon";
+import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { isTauri, isTauriMobilePlatform } from "$lib/platform";
 
 const DARK_MODE_KEY = "medousa-home-dark-mode";
@@ -144,6 +145,16 @@ export class SettingsStore {
   /** Pull authoritative retention policy from the Mac daemon (`tui_defaults.json`). */
   async hydrateWorkRetentionFromDaemon() {
     try {
+      if (isTauriMobilePlatform() && workshopDefaults.loaded) {
+        const draft = workshopDefaults.draft;
+        if (draft.workCardHideAfterHours != null) {
+          this.setWorkCardHideAfterHours(draft.workCardHideAfterHours);
+        }
+        if (draft.workCardWipeAfterDays != null) {
+          this.setWorkCardWipeAfterDays(draft.workCardWipeAfterDays);
+        }
+        return;
+      }
       const defaults = await getRuntimeDefaults();
       this.setWorkCardHideAfterHours(defaults.work_card_hide_after_hours);
       this.setWorkCardWipeAfterDays(defaults.work_card_wipe_after_days);

@@ -205,13 +205,17 @@ async function startWorkshopStreams(): Promise<void> {
 
 async function loadWorkshopDefaults(connected: boolean): Promise<void> {
   try {
-    await runtime.loadWorkshopRuntime({ connected });
     if (connected) {
       await workshopDefaults.load(true);
+      if (workshopDefaults.loaded) {
+        runtime.applyFromWorkshopDraft(workshopDefaults.draft);
+      }
       await voicePresets.load(true);
       await userProfiles.load();
       await settings.hydrateWorkRetentionFromDaemon();
       void runtime.refresh();
+    } else {
+      await runtime.loadWorkshopRuntime({ connected: false });
     }
   } catch {
     // Workshop defaults are optional when offline.
@@ -294,8 +298,10 @@ export async function reconnectWorkshop(
     workshopDefaults.resetForReconnect();
     userProfiles.resetForReconnect();
     vault.resetForWorkshopSwitch();
-    await runtime.loadWorkshopRuntime({ connected: true });
     await workshopDefaults.load(true);
+    if (workshopDefaults.loaded) {
+      runtime.applyFromWorkshopDraft(workshopDefaults.draft);
+    }
     await userProfiles.load();
     await settings.hydrateWorkRetentionFromDaemon();
     await startWorkshopStreams();

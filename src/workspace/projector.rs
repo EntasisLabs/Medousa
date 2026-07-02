@@ -370,6 +370,7 @@ fn publish_snapshot(
     });
     let _ = snapshot_tx.send(snapshot.clone());
     crate::home_live_activity::notify_snapshot(&snapshot);
+    crate::home_widget_push::notify_snapshot(&snapshot);
 }
 
 fn apply_item_column_transition(item: &ProjectedWorkItem) {

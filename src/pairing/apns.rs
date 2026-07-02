@@ -190,6 +190,42 @@ impl ApnsClient {
         Ok(())
     }
 
+    /// Silent background push — updates the home-screen widget via App Group storage.
+    pub async fn send_silent_widget_pulse(
+        &self,
+        device_token: &str,
+        pulse_json: &str,
+    ) -> Result<()> {
+        let token = device_token.trim();
+        if token.is_empty() {
+            bail!("empty APNs device token");
+        }
+
+        let mut builder = DefaultNotificationBuilder::new().set_content_available();
+        let options = NotificationOptions {
+            apns_id: None,
+            apns_expiration: None,
+            apns_priority: Some(Priority::Normal),
+            apns_topic: Some(self.bundle_id.as_str()),
+            apns_collapse_id: None,
+            apns_push_type: Some(PushType::Background),
+        };
+
+        let mut payload = builder.build(token, options);
+        payload
+            .add_custom_data("medousaType", &"pulse_snapshot")
+            .context("add medousaType")?;
+        payload
+            .add_custom_data("medousaPulse", &pulse_json.to_string())
+            .context("add medousaPulse")?;
+
+        self.inner
+            .send(payload)
+            .await
+            .context("APNs silent widget pulse failed")?;
+        Ok(())
+    }
+
     fn live_activity_options(&self) -> NotificationOptions<'static> {
         NotificationOptions {
             apns_id: None,

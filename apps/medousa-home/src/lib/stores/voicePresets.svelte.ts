@@ -32,19 +32,22 @@ export class VoicePresetsStore {
   async load(force = false) {
     if (!isTauri() || (this.loaded && !force)) return;
     try {
-      if (workshopDefaults.loaded) {
-        this.applyFromDraft(workshopDefaults.draft);
-      } else {
-        const summary = await loadTuiDefaultsSummary();
-        this.activeVoiceId = summary.activeVoiceId?.trim() || DEFAULT_VOICE_ID;
-        this.customPresets = normalizeCustomVoicePresets(summary.customVoicePresets);
-      }
       if (isTauriMobilePlatform()) {
+        if (!workshopDefaults.loaded) {
+          await workshopDefaults.load();
+        }
+        this.applyFromDraft(workshopDefaults.draft);
         const stored =
           typeof localStorage !== "undefined"
             ? localStorage.getItem(MOBILE_ACTIVE_VOICE_KEY)?.trim()
             : null;
         if (stored) this.activeVoiceId = stored;
+      } else if (workshopDefaults.loaded) {
+        this.applyFromDraft(workshopDefaults.draft);
+      } else {
+        const summary = await loadTuiDefaultsSummary();
+        this.activeVoiceId = summary.activeVoiceId?.trim() || DEFAULT_VOICE_ID;
+        this.customPresets = normalizeCustomVoicePresets(summary.customVoicePresets);
       }
     } catch {
       // Keep built-in default when offline.

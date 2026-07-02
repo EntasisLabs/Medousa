@@ -202,7 +202,7 @@ pub fn notify_snapshot(snapshot: &Arc<WorkspaceReadSnapshot>) {
     });
 }
 
-fn compose_live_activity_state(
+pub(crate) fn compose_live_activity_state(
     snapshot: &WorkspaceReadSnapshot,
 ) -> Option<LiveActivityContentState> {
     let blocked = blocked_count(snapshot);

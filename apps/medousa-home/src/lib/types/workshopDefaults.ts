@@ -47,6 +47,7 @@ export interface TuiDefaults {
   verifierMinSupportedClaimRatio?: number | null;
   verifierMinClaimSupportStrength?: number | null;
   responseDepthMode?: string | null;
+  reasoningEffort?: string | null;
   stageRouting?: StageRoutingMatrix | null;
   webSearchPreferredProvider?: string | null;
   webSearchTryFallbacks?: boolean | null;
@@ -209,6 +210,7 @@ export function normalizeWorkshopDefaults(raw: TuiDefaults): TuiDefaults {
     verifierMinClaimSupportStrength:
       raw.verifierMinClaimSupportStrength ?? defaults.verifierMinClaimSupportStrength,
     responseDepthMode: raw.responseDepthMode?.trim() || defaults.responseDepthMode,
+    reasoningEffort: raw.reasoningEffort?.trim() || null,
     stageRouting: raw.stageRouting ?? null,
     webSearchPreferredProvider: raw.webSearchPreferredProvider?.trim() || "",
     webSearchTryFallbacks: raw.webSearchTryFallbacks ?? true,

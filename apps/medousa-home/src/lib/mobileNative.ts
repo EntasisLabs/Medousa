@@ -71,6 +71,14 @@ export function initMobileNative(handler: OpenWorkHandler): () => void {
       } catch {
         // Notifications optional.
       }
+
+      try {
+        const { initRemotePushHandlers } = await import("$lib/pushHandlers");
+        const stop = await initRemotePushHandlers(handler);
+        if (stop) cleanups.push(stop);
+      } catch {
+        // Remote push optional.
+      }
     })();
   }
 

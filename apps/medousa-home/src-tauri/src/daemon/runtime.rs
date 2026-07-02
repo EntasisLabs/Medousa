@@ -30,10 +30,21 @@ pub async fn runtime_put_tui_defaults(
     state: State<'_, DaemonState>,
     dto: TuiDefaultsDto,
 ) -> Result<(), String> {
-    let body = crate::medousa_paths::tui_defaults_value_from_dto(&dto);
-    let _: serde_json::Value =
-        workshop_http::put_json(&state, "/v1/runtime/tui-defaults", &body).await?;
-    Ok(())
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let _ = (state, dto);
+        return Err(
+            "Workshop charter is read-only on mobile — edit tui_defaults.json on the host."
+                .to_string(),
+        );
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let body = crate::medousa_paths::tui_defaults_value_from_dto(&dto);
+        let _: serde_json::Value =
+            workshop_http::put_json(&state, "/v1/runtime/tui-defaults", &body).await?;
+        Ok(())
+    }
 }
 
 #[tauri::command]

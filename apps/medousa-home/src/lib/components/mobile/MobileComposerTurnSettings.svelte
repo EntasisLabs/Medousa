@@ -7,6 +7,7 @@
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { loadTuiDefaultsSummary } from "$lib/config";
+  import { isTauriMobilePlatform } from "$lib/platform";
   import { modelPickKey } from "$lib/utils/formatModelDisplay";
   import {
     buildMobileModelDropdownOptions,
@@ -97,10 +98,15 @@
   async function bootstrap() {
     loading = true;
     try {
+      if (isTauriMobilePlatform() && !workshopDefaults.loaded) {
+        await workshopDefaults.load().catch(() => {});
+      }
       const [catalog, probe, summary] = await Promise.all([
         listProviders(),
         probeProviders(),
-        loadTuiDefaultsSummary().catch(() => null),
+        isTauriMobilePlatform()
+          ? Promise.resolve(null)
+          : loadTuiDefaultsSummary().catch(() => null),
       ]);
       let favorites = normalizeFavoriteModels(summary?.favoriteModels);
       if (workshopDefaults.loaded) {
