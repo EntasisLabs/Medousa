@@ -87,14 +87,20 @@
           {:else if component.type === "medousa_view"}
             {@const notePath = configString(component.config, "notePath")}
             {#if notePath}
-              <EnvironmentMedousaView {notePath} />
+              <div
+                class="environment-renderer-main-item"
+                class:environment-renderer-main-item-fill={isDashboard}
+              >
+                <EnvironmentMedousaView {notePath} fill={isDashboard} />
+              </div>
             {/if}
           {:else if component.type === "chrome_action"}
             <ChromeActionRenderer {component} variant="inline" />
           {:else}
             <p class="environment-renderer-unsupported">
               Component <code>{component.id}</code> ({component.type}) is not supported in Home
-              yet — use <code>presentation</code> or <code>chrome_action</code> on custom surfaces.
+              yet — use <code>presentation</code>, <code>medousa_view</code>, or
+              <code>chrome_action</code> on custom surfaces.
             </p>
           {/if}
         {/each}

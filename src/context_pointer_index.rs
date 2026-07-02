@@ -1,6 +1,7 @@
 //! Context pointer index — ranked breadcrumbs for turn bootstrap.
 
 use chrono::{DateTime, Duration, Utc};
+use medousa_types::daemon_api::WorkBoardColumn;
 use medousa_types::environment::{
     ContextPointer, ContextPointerDigest, DIGEST_MAX_POINTERS, DIGEST_MIN_CONFIDENCE,
     POINTER_KIND_COMPONENT, POINTER_KIND_SESSION, POINTER_KIND_WORK_CARD, STALENESS_ARCHIVED,
@@ -13,12 +14,63 @@ use crate::environment_store::EnvironmentRecord;
 const SESSION_HALF_LIFE_HOURS: f64 = 48.0;
 const COMPONENT_HALF_LIFE_HOURS: f64 = 168.0;
 const WORK_CARD_HALF_LIFE_HOURS: f64 = 12.0;
+const RECENT_ACTIVITY_WINDOW: Duration = Duration::hours(1);
+
+#[derive(Debug, Clone)]
+pub struct WorkCardHint {
+    pub id: String,
+    pub label: String,
+    pub last_active_at: DateTime<Utc>,
+    pub session_id: Option<String>,
+    pub column: WorkBoardColumn,
+}
+
+/// Ranked work-card breadcrumbs from the materialized workspace snapshot.
+pub fn collect_work_card_hints(active_session_id: &str) -> Vec<WorkCardHint> {
+    let Some(hub) = crate::workspace::projector::workspace_hub() else {
+        return Vec::new();
+    };
+    let snapshot = hub.snapshot();
+    let active_session_id = active_session_id.trim();
+    let mut hints = Vec::new();
+
+    for item in snapshot.items.values() {
+        if item.detail.terminal {
+            continue;
+        }
+        let linked_to_active = item
+            .detail
+            .session_id
+            .as_deref()
+            .is_some_and(|session_id| session_id == active_session_id);
+        let in_motion = matches!(
+            item.card.column,
+            WorkBoardColumn::InFlight
+                | WorkBoardColumn::WrappingUp
+                | WorkBoardColumn::Blocked
+                | WorkBoardColumn::Backlog
+        );
+        if !linked_to_active && !in_motion {
+            continue;
+        }
+        hints.push(WorkCardHint {
+            id: item.card.id.0.clone(),
+            label: item.card.title.clone(),
+            last_active_at: item.card.updated_at_utc,
+            session_id: item.detail.session_id.clone(),
+            column: item.card.column,
+        });
+    }
+
+    hints.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+    hints
+}
 
 pub fn build_pointer_digest(
     active_session_id: &str,
     sessions: &[SessionHistorySummary],
     environment: Option<&EnvironmentRecord>,
-    work_card_hints: &[(String, String, DateTime<Utc>)],
+    work_card_hints: &[WorkCardHint],
 ) -> ContextPointerDigest {
     let mut pointers = Vec::new();
     let now = Utc::now();
@@ -31,7 +83,16 @@ pub fn build_pointer_digest(
             .last_timestamp
             .or(summary.last_verification_timestamp)
             .unwrap_or(now);
-        let confidence = score_pointer(last, SESSION_HALF_LIFE_HOURS, 1.0);
+        let mut activity_boost = 0.0_f32;
+        if (now - last) < RECENT_ACTIVITY_WINDOW {
+            activity_boost += 0.15;
+        }
+        let relevance = summary
+            .last_verification_confidence
+            .map(|value| value.clamp(0.6, 1.0))
+            .unwrap_or(0.85);
+        let confidence =
+            score_pointer(last, SESSION_HALF_LIFE_HOURS, 1.0, activity_boost, relevance);
         let staleness = staleness_band(&last, now);
         pointers.push(ContextPointer {
             id: summary.session_id.clone(),
@@ -53,7 +114,7 @@ pub fn build_pointer_digest(
     if let Some(env) = environment {
         for component in &env.spec.components {
             let last = component.updated_at.unwrap_or(env.spec.updated_at);
-            let confidence = score_pointer(last, COMPONENT_HALF_LIFE_HOURS, 0.85);
+            let confidence = score_pointer(last, COMPONENT_HALF_LIFE_HOURS, 0.85, 0.0, 0.85);
             let staleness = staleness_band(&last, now);
             pointers.push(ContextPointer {
                 id: component.id.clone(),
@@ -73,18 +134,41 @@ pub fn build_pointer_digest(
         }
     }
 
-    for (card_id, label, last) in work_card_hints {
-        let confidence = score_pointer(*last, WORK_CARD_HALF_LIFE_HOURS, 0.9);
-        let staleness = staleness_band(last, now);
+    for hint in work_card_hints {
+        let mut activity_boost = 0.0_f32;
+        if hint
+            .session_id
+            .as_deref()
+            .is_some_and(|session_id| session_id == active_session_id)
+            && matches!(
+                hint.column,
+                WorkBoardColumn::InFlight
+                    | WorkBoardColumn::WrappingUp
+                    | WorkBoardColumn::Blocked
+            )
+        {
+            activity_boost += 0.20;
+        }
+        if (now - hint.last_active_at) < RECENT_ACTIVITY_WINDOW {
+            activity_boost += 0.15;
+        }
+        let confidence = score_pointer(
+            hint.last_active_at,
+            WORK_CARD_HALF_LIFE_HOURS,
+            0.9,
+            activity_boost,
+            0.85,
+        );
+        let staleness = staleness_band(&hint.last_active_at, now);
         pointers.push(ContextPointer {
-            id: card_id.clone(),
+            id: hint.id.clone(),
             kind: POINTER_KIND_WORK_CARD.to_string(),
-            label: label.clone(),
+            label: hint.label.clone(),
             topic: None,
-            last_active_at: *last,
+            last_active_at: hint.last_active_at,
             confidence,
             staleness: staleness.to_string(),
-            age_human: human_age(*last, now),
+            age_human: human_age(hint.last_active_at, now),
             turn_count: None,
             metadata: None,
         });
@@ -190,11 +274,18 @@ pub fn resolve_pointer_slice(
     }
 }
 
-fn score_pointer(last_active: DateTime<Utc>, half_life_hours: f64, base: f32) -> f32 {
+fn score_pointer(
+    last_active: DateTime<Utc>,
+    half_life_hours: f64,
+    base: f32,
+    activity_boost: f32,
+    relevance: f32,
+) -> f32 {
     let hours = (Utc::now() - last_active).num_minutes().max(0) as f64 / 60.0;
     let lambda = std::f64::consts::LN_2 / half_life_hours;
     let recency = (-lambda * hours).exp() as f32;
-    (base * recency).clamp(0.0, 1.0)
+    let activity = (1.0 + activity_boost).min(1.35);
+    (base * recency * activity * relevance).clamp(0.0, 1.0)
 }
 
 fn staleness_band(last_active: &DateTime<Utc>, now: DateTime<Utc>) -> &'static str {
@@ -265,5 +356,56 @@ mod tests {
             &[],
         );
         assert!(digest.pointers.is_empty());
+    }
+
+    #[test]
+    fn recent_session_activity_boosts_confidence() {
+        let recent = Utc::now() - Duration::minutes(10);
+        let digest = build_pointer_digest(
+            "active",
+            &[SessionHistorySummary {
+                session_id: "recent-thread".to_string(),
+                display_name: Some("Recent".to_string()),
+                turns: 4,
+                verification_runs: 0,
+                last_timestamp: Some(recent),
+                last_verification_timestamp: None,
+                last_verification_confidence: None,
+                last_verification_coverage: None,
+                last_verification_verified: None,
+                preview: "runtime tuning".to_string(),
+            }],
+            None,
+            &[],
+        );
+        let pointer = digest
+            .pointers
+            .iter()
+            .find(|pointer| pointer.id == "recent-thread")
+            .expect("recent session pointer");
+        assert!(pointer.confidence > 0.9);
+    }
+
+    #[test]
+    fn work_card_hints_rank_in_digest() {
+        let digest = build_pointer_digest(
+            "sess-active",
+            &[],
+            None,
+            &[WorkCardHint {
+                id: "card-1".to_string(),
+                label: "Bound workshop".to_string(),
+                last_active_at: Utc::now() - Duration::minutes(5),
+                session_id: Some("sess-active".to_string()),
+                column: WorkBoardColumn::InFlight,
+            }],
+        );
+        let pointer = digest
+            .pointers
+            .iter()
+            .find(|pointer| pointer.kind == POINTER_KIND_WORK_CARD)
+            .expect("work card pointer");
+        assert_eq!(pointer.label, "Bound workshop");
+        assert!(pointer.confidence > 0.85);
     }
 }

@@ -83,7 +83,7 @@ impl StasisTool for CognitionContextFollowPointerTool {
             &active_session,
             &sessions,
             env.as_ref(),
-            &[],
+            &crate::context_pointer_index::collect_work_card_hints(&active_session),
         );
         let pointer = digest
             .pointers
@@ -148,7 +148,7 @@ impl StasisTool for CognitionContextListPointersTool {
             &active_session,
             &sessions,
             env.as_ref(),
-            &[],
+            &crate::context_pointer_index::collect_work_card_hints(&active_session),
         );
         Ok(json!({
             "ok": true,

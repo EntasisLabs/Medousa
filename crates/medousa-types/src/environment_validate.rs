@@ -164,6 +164,34 @@ fn validate_component(
             ));
         }
     }
+    if matches!(component.component_type, ComponentType::MedousaView) {
+        let note_path = component
+            .config
+            .get("notePath")
+            .or_else(|| component.config.get("note_path"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if note_path.trim().is_empty() {
+            errors.push(format!(
+                "medousa_view component '{}' requires config.notePath",
+                component.id
+            ));
+        }
+    }
+    if matches!(component.component_type, ComponentType::Presentation) {
+        let artifact_id = component
+            .config
+            .get("artifactId")
+            .or_else(|| component.config.get("artifact_id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if artifact_id.trim().is_empty() {
+            errors.push(format!(
+                "presentation component '{}' requires config.artifactId",
+                component.id
+            ));
+        }
+    }
     validate_component_surface_kind(component, surfaces, errors);
 }
 
@@ -181,7 +209,10 @@ fn validate_component_surface_kind(
     if surface.kind != SurfaceKind::Custom
         && matches!(
             component.component_type,
-            ComponentType::Presentation | ComponentType::Artifact | ComponentType::BuiltinPanel
+            ComponentType::Presentation
+                | ComponentType::MedousaView
+                | ComponentType::Artifact
+                | ComponentType::BuiltinPanel
         )
     {
         errors.push(format!(
@@ -194,7 +225,7 @@ fn validate_component_surface_kind(
         ComponentType::Artifact | ComponentType::BuiltinPanel
     ) {
         errors.push(format!(
-            "component '{}' type '{:?}' is not rendered in Home Phase 1 — use type=presentation or chrome_action",
+            "component '{}' type '{:?}' is not rendered in Home Phase 1 — use type=presentation, medousa_view, or chrome_action",
             component.id, component.component_type
         ));
     }

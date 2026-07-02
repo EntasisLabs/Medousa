@@ -161,7 +161,7 @@ pub async fn build_environment_ambient_extras(session_id: &str) -> String {
         session_id,
         &sessions,
         env.as_ref(),
-        &[],
+        &crate::context_pointer_index::collect_work_card_hints(session_id),
     );
     let mut blocks = Vec::new();
     let pointer_block = crate::context_pointer_index::format_pointer_digest_block(&digest);

@@ -5,9 +5,10 @@
 
   interface Props {
     notePath: string;
+    fill?: boolean;
   }
 
-  let { notePath }: Props = $props();
+  let { notePath, fill = false }: Props = $props();
 
   let content = $state("");
   let error = $state<string | null>(null);
@@ -38,10 +39,23 @@
 {:else if error}
   <p class="environment-medousa-view-error">{error}</p>
 {:else}
-  <VaultMarkdownPreview {content} {labelByPath} compact={true} />
+  <div class="environment-medousa-view-body" class:environment-medousa-view-body-fill={fill}>
+    <VaultMarkdownPreview {content} {labelByPath} compact={!fill} />
+  </div>
 {/if}
 
 <style>
+  .environment-medousa-view-body {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .environment-medousa-view-body-fill {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: auto;
+  }
   .environment-medousa-view-status,
   .environment-medousa-view-error {
     margin: 0;
