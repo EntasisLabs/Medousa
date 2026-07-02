@@ -52,8 +52,20 @@ public func medousa_live_activity_sync(_ json: UnsafePointer<CChar>?) -> UnsafeM
         return strdup(result)
     }
 
-    let fallback = "{\"available\":false,\"active\":false,\"error\":\"iOS 16.2+ required\"}"
+    let fallback = "{\"available\":false,\"active\":false,\"error\":\"iOS 16.2+ required\",\"pushToken\":null}"
     return strdup(fallback)
+}
+
+@_cdecl("medousa_live_activity_push_token")
+public func medousa_live_activity_push_token() -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 16.2, *) {
+        let token = runOnMainActor {
+            MedousaLiveActivityManager.shared.pushTokenHex()
+        }
+        guard let token, !token.isEmpty else { return nil }
+        return strdup(token)
+    }
+    return nil
 }
 
 @_cdecl("medousa_live_activity_free_string")

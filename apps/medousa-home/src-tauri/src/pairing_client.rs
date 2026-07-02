@@ -259,38 +259,55 @@ pub async fn send_pair_heartbeat(
         return Ok(());
     };
 
-    if let Some(body) = body {
-        let token = body
-            .apns_device_token
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or_else(crate::push::current_apns_device_token);
-        if token.is_some() || body.push_platform.is_some() {
-            let payload = serde_json::json!({
-                "apnsDeviceToken": token,
-                "pushPlatform": body.push_platform.as_deref().unwrap_or("ios"),
-            });
-            crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
-                &config,
-                "/pair/heartbeat",
-                &payload,
-            )
-            .await?;
-            return Ok(());
-        }
-    }
+    let apns_token = body
+        .and_then(|body| body.apns_device_token.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(crate::push::current_apns_device_token);
 
-    if let Some(token) = crate::push::current_apns_device_token() {
-        let payload = serde_json::json!({
-            "apnsDeviceToken": token,
-            "pushPlatform": "ios",
-        });
+    let live_activity_token = match body.and_then(|body| body.live_activity_push_token.as_ref()) {
+        Some(value) => Some(value.trim().to_string()),
+        None => {
+            #[cfg(target_os = "ios")]
+            {
+                crate::live_activity::current_push_token()
+            }
+            #[cfg(not(target_os = "ios"))]
+            {
+                None
+            }
+        }
+    };
+
+    if apns_token.is_some()
+        || body.and_then(|body| body.push_platform.as_deref()).is_some()
+        || live_activity_token.is_some()
+    {
+        let mut payload = serde_json::Map::new();
+        if let Some(token) = apns_token {
+            payload.insert("apnsDeviceToken".into(), serde_json::Value::String(token));
+            payload.insert(
+                "pushPlatform".into(),
+                serde_json::Value::String(
+                    body.and_then(|body| body.push_platform.as_deref())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("ios")
+                        .to_string(),
+                ),
+            );
+        }
+        if let Some(token) = live_activity_token {
+            payload.insert(
+                "liveActivityPushToken".into(),
+                serde_json::Value::String(token),
+            );
+        }
         crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
             &config,
             "/pair/heartbeat",
-            &payload,
+            &serde_json::Value::Object(payload),
         )
         .await?;
         return Ok(());

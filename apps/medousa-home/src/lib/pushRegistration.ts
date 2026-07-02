@@ -49,7 +49,8 @@ export async function registerRemotePush(): Promise<boolean> {
     }
 
     return true;
-  } catch {
+  } catch (err) {
+    console.warn("[mobile-push] get_token failed:", err);
     return false;
   }
 }

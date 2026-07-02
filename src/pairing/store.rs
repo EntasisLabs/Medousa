@@ -30,6 +30,10 @@ pub struct PairedDeviceRecord {
     pub push_platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_updated_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_activity_push_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_activity_push_updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -240,6 +244,8 @@ mod tests {
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,
+            live_activity_push_token: None,
+            live_activity_push_updated_at: None,
         };
         let plaintext = serde_json::to_vec(&record).expect("serialize");
         let envelope = store.encrypt(&plaintext).expect("encrypt");

@@ -409,6 +409,9 @@ async fn main() -> Result<()> {
         medousa::home_push::register_home_push(Arc::new(medousa::home_push::HomePushService::new(
             pairing_service.clone(),
         )));
+        medousa::home_live_activity::register_home_live_activity(Arc::new(
+            medousa::home_live_activity::HomeLiveActivityService::new(pairing_service.clone()),
+        ));
         tokio::spawn(async move {
             if let Err(err) = warm_service.current_qr().await {
                 tracing::warn!(error = %err, "pairing QR warm-up failed");

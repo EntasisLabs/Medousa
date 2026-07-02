@@ -104,6 +104,7 @@ pub mod product_config;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;
 pub mod home_push;
+pub mod home_live_activity;
 pub mod pairing;
 pub mod pairing_handlers;
 pub mod iroh_transport;

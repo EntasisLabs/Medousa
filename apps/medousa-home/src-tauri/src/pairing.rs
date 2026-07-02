@@ -62,6 +62,8 @@ pub struct PairHeartbeatInvokeRequest {
     pub apns_device_token: Option<String>,
     #[serde(default)]
     pub push_platform: Option<String>,
+    #[serde(default)]
+    pub live_activity_push_token: Option<String>,
 }
 
 fn pairing_http_client() -> Result<Client, String> {

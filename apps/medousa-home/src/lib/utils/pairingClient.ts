@@ -45,6 +45,7 @@ export async function loadPairingCredentials(): Promise<PairingCredentialsSummar
 export async function sendPairingHeartbeat(options?: {
   apnsDeviceToken?: string;
   pushPlatform?: string;
+  liveActivityPushToken?: string;
 }): Promise<void> {
   if (!isTauri()) return;
   await invoke("pairing_send_heartbeat", { request: options ?? null });

@@ -14,12 +14,13 @@ fi
 
 ENT_SRC="$ROOT/src-tauri/ios-entitlements/medousa-home_iOS.entitlements"
 ENT_DST="$GEN/medousa-home_iOS/medousa-home_iOS.entitlements"
-if [[ -f "$ENT_SRC" && -d "$(dirname "$ENT_DST")" ]]; then
-  if ! cmp -s "$ENT_SRC" "$ENT_DST" 2>/dev/null; then
+
+apply_push_entitlements() {
+  if [[ -f "$ENT_SRC" && -d "$(dirname "$ENT_DST")" ]]; then
     cp "$ENT_SRC" "$ENT_DST"
     echo "[ios-prepare] applied push entitlements"
   fi
-fi
+}
 
 PROJECT_YML="$PROJECT_YML" TAURI_CONF="$ROOT/src-tauri/tauri.conf.json" python3 - <<'PY'
 from pathlib import Path
@@ -178,6 +179,29 @@ if "MedousaWorkWidget:" in text and "../../ios-live-activity/Shared" not in text
         1,
     )
 
+# XcodeGen regenerates entitlements plists on every run — without properties it writes an
+# empty dict and strips aps-environment from the signed app (push + LA remote updates fail).
+entitlements_block = """    entitlements:
+      path: medousa-home_iOS/medousa-home_iOS.entitlements
+      properties:
+        aps-environment: development
+        com.apple.security.application-groups:
+          - group.com.entasislabs.medousa-home
+"""
+if "aps-environment" not in text:
+    text = text.replace(
+        "    entitlements:\n      path: medousa-home_iOS/medousa-home_iOS.entitlements\n",
+        entitlements_block,
+        1,
+    )
+
+if "com.apple.Push" not in text and "medousa-home_iOS:" in text:
+    text = text.replace(
+        "  medousa-home_iOS:\n    type: application\n",
+        "  medousa-home_iOS:\n    type: application\n    attributes:\n      SystemCapabilities:\n        com.apple.Push:\n          enabled: 1\n",
+        1,
+    )
+
 if text != original:
     project.write_text(text)
     print("[ios-prepare] patched project.yml")
@@ -186,8 +210,10 @@ PY
 if command -v xcodegen >/dev/null 2>&1; then
   (cd "$GEN" && xcodegen >/dev/null)
   echo "[ios-prepare] xcode project synced"
+  apply_push_entitlements
 else
   echo "[ios-prepare] warn: install xcodegen (brew install xcodegen) to sync Xcode after patches"
+  apply_push_entitlements
 fi
 
 # xcodegen can reintroduce libapp.a in Copy Bundle Resources — remove it.

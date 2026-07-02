@@ -143,6 +143,8 @@ pub struct PairHeartbeatRequest {
     pub apns_device_token: Option<String>,
     #[serde(default)]
     pub push_platform: Option<String>,
+    #[serde(default)]
+    pub live_activity_push_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,6 +176,12 @@ struct PendingPairSession {
 pub struct ApnsPushTarget {
     pub phone_id: String,
     pub device_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LiveActivityPushTarget {
+    pub phone_id: String,
+    pub push_token: String,
 }
 
 pub struct PairingService {
@@ -441,6 +449,8 @@ impl PairingService {
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,
+            live_activity_push_token: None,
+            live_activity_push_updated_at: None,
         };
         self.store.save_record(&record)?;
 
@@ -506,6 +516,16 @@ impl PairingService {
                     .or_else(|| Some("ios".to_string()));
                 updated.push_updated_at = Some(Utc::now());
             }
+            if let Some(live_token) = body.live_activity_push_token.as_deref() {
+                let trimmed = live_token.trim();
+                if trimmed.is_empty() {
+                    updated.live_activity_push_token = None;
+                    updated.live_activity_push_updated_at = None;
+                } else {
+                    updated.live_activity_push_token = Some(trimmed.to_string());
+                    updated.live_activity_push_updated_at = Some(Utc::now());
+                }
+            }
         }
         updated.last_seen = Utc::now();
         self.store.save_record(&updated)?;
@@ -538,6 +558,25 @@ impl PairingService {
             out.push(ApnsPushTarget {
                 phone_id: record.phone_id,
                 device_token: token.to_string(),
+            });
+        }
+        Ok(out)
+    }
+
+    pub fn list_live_activity_targets(&self) -> Result<Vec<LiveActivityPushTarget>> {
+        let mut out = Vec::new();
+        for record in self.store.list_paired()? {
+            let Some(token) = record
+                .live_activity_push_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
+            out.push(LiveActivityPushTarget {
+                phone_id: record.phone_id,
+                push_token: token.to_string(),
             });
         }
         Ok(out)

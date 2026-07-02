@@ -16,6 +16,7 @@ private struct SyncResult: Encodable {
     let available: Bool
     let active: Bool
     let error: String?
+    let pushToken: String?
 }
 
 @available(iOS 16.2, *)
@@ -24,11 +25,19 @@ final class MedousaLiveActivityManager {
     static let shared = MedousaLiveActivityManager()
 
     private var current: Activity<MedousaWorkAttributes>?
+    private var currentPushToken: String?
+    private var pushTokenTask: Task<Void, Never>?
 
-    private init() {}
+    private init() {
+        reconcileExistingActivities()
+    }
 
     func isAvailable() -> Bool {
         ActivityAuthorizationInfo().areActivitiesEnabled
+    }
+
+    func pushTokenHex() -> String? {
+        currentPushToken
     }
 
     func diagnosticsJson() -> String {
@@ -57,14 +66,24 @@ final class MedousaLiveActivityManager {
 
     func sync(json: String) -> String {
         guard let data = json.data(using: .utf8) else {
-            return encodeResult(SyncResult(available: isAvailable(), active: current != nil, error: "invalid json"))
+            return encodeResult(SyncResult(
+                available: isAvailable(),
+                active: current != nil,
+                error: "invalid json",
+                pushToken: currentPushToken
+            ))
         }
 
         let payload: SyncPayload
         do {
             payload = try JSONDecoder().decode(SyncPayload.self, from: data)
         } catch {
-            return encodeResult(SyncResult(available: isAvailable(), active: current != nil, error: error.localizedDescription))
+            return encodeResult(SyncResult(
+                available: isAvailable(),
+                active: current != nil,
+                error: error.localizedDescription,
+                pushToken: currentPushToken
+            ))
         }
 
         let shouldRun = payload.mood == "working" || payload.mood == "waiting"
@@ -74,9 +93,21 @@ final class MedousaLiveActivityManager {
         return encodeResult(endActivity())
     }
 
+    private func reconcileExistingActivities() {
+        guard current == nil else { return }
+        guard let activity = Activity<MedousaWorkAttributes>.activities.first else { return }
+        current = activity
+        observePushToken(for: activity)
+    }
+
     private func startOrUpdate(_ payload: SyncPayload) -> SyncResult {
         guard isAvailable() else {
-            return SyncResult(available: false, active: false, error: "Live Activities disabled in Settings")
+            return SyncResult(
+                available: false,
+                active: false,
+                error: "Live Activities disabled in Settings",
+                pushToken: nil
+            )
         }
 
         let state = MedousaWorkAttributes.ContentState(
@@ -93,7 +124,7 @@ final class MedousaLiveActivityManager {
             Task {
                 await activity.update(ActivityContent(state: state, staleDate: Date().addingTimeInterval(60 * 15)))
             }
-            return SyncResult(available: true, active: true, error: nil)
+            return SyncResult(available: true, active: true, error: nil, pushToken: currentPushToken)
         }
 
         let attributes = MedousaWorkAttributes(workshopName: payload.workshopName)
@@ -103,31 +134,71 @@ final class MedousaLiveActivityManager {
             let activity = try Activity.request(
                 attributes: attributes,
                 content: content,
-                pushType: nil
+                pushType: .token
             )
             current = activity
-            return SyncResult(available: true, active: true, error: nil)
-        } catch {
-            return SyncResult(available: true, active: false, error: error.localizedDescription)
+            observePushToken(for: activity)
+            return SyncResult(available: true, active: true, error: nil, pushToken: currentPushToken)
+        } catch let pushError {
+            NSLog(
+                "[live-activity] push token start failed (%@) — falling back to local-only",
+                pushError.localizedDescription
+            )
+            do {
+                let activity = try Activity.request(
+                    attributes: attributes,
+                    content: content,
+                    pushType: nil
+                )
+                current = activity
+                currentPushToken = nil
+                pushTokenTask?.cancel()
+                pushTokenTask = nil
+                return SyncResult(available: true, active: true, error: nil, pushToken: nil)
+            } catch {
+                return SyncResult(
+                    available: true,
+                    active: false,
+                    error: error.localizedDescription,
+                    pushToken: nil
+                )
+            }
         }
     }
 
     private func endActivity() -> SyncResult {
+        pushTokenTask?.cancel()
+        pushTokenTask = nil
+        currentPushToken = nil
+
         guard let activity = current else {
-            return SyncResult(available: isAvailable(), active: false, error: nil)
+            return SyncResult(available: isAvailable(), active: false, error: nil, pushToken: nil)
         }
 
         current = nil
         Task {
             await activity.end(nil, dismissalPolicy: .default)
         }
-        return SyncResult(available: isAvailable(), active: false, error: nil)
+        return SyncResult(available: isAvailable(), active: false, error: nil, pushToken: nil)
+    }
+
+    private func observePushToken(for activity: Activity<MedousaWorkAttributes>) {
+        pushTokenTask?.cancel()
+        pushTokenTask = Task { [weak self] in
+            for await tokenData in activity.pushTokenUpdates {
+                guard !Task.isCancelled else { break }
+                let hex = tokenData.map { String(format: "%02x", $0) }.joined()
+                await MainActor.run {
+                    self?.currentPushToken = hex
+                }
+            }
+        }
     }
 
     private func encodeResult(_ result: SyncResult) -> String {
         guard let data = try? JSONEncoder().encode(result),
               let text = String(data: data, encoding: .utf8) else {
-            return "{\"available\":false,\"active\":false,\"error\":\"encode failed\"}"
+            return "{\"available\":false,\"active\":false,\"error\":\"encode failed\",\"pushToken\":null}"
         }
         return text
     }

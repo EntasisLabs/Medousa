@@ -38,11 +38,44 @@ pub struct LiveActivityStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub push_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<LiveActivityDiagnostics>,
 }
 
 const BRIDGE_MISSING: &str =
     "ActivityKit bridge not linked — delete the app, run npm run ios:prepare, then rebuild";
+
+#[tauri::command]
+pub fn live_activity_push_token() -> Option<String> {
+    current_push_token()
+}
+
+pub fn set_push_token(token: Option<String>) {
+    let trimmed = token
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Ok(mut guard) = PUSH_TOKEN.lock() {
+        *guard = trimmed;
+    }
+}
+
+pub fn current_push_token() -> Option<String> {
+    #[cfg(target_os = "ios")]
+    {
+        if let Some(cached) = PUSH_TOKEN.lock().ok().and_then(|guard| guard.clone()) {
+            return Some(cached);
+        }
+        return ios::fetch_push_token();
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    {
+        None
+    }
+}
+
+static PUSH_TOKEN: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 #[tauri::command]
 pub fn live_activity_is_available() -> LiveActivityStatus {
@@ -56,6 +89,7 @@ pub fn live_activity_is_available() -> LiveActivityStatus {
         available: false,
         active: false,
         error: Some("Live Activity is iOS-only".into()),
+        push_token: None,
         diagnostics: None,
     }
 }
@@ -78,6 +112,7 @@ fn sync_impl(payload: LiveActivityPayload) -> Result<LiveActivityStatus, String>
             available: false,
             active: false,
             error: Some("Live Activity is iOS-only".into()),
+            push_token: None,
             diagnostics: None,
         })
     }
@@ -86,7 +121,8 @@ fn sync_impl(payload: LiveActivityPayload) -> Result<LiveActivityStatus, String>
 #[cfg(target_os = "ios")]
 mod ios {
     use super::{
-        LiveActivityDiagnostics, LiveActivityPayload, LiveActivityStatus, BRIDGE_MISSING,
+        set_push_token, LiveActivityDiagnostics, LiveActivityPayload, LiveActivityStatus,
+        BRIDGE_MISSING,
     };
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;
@@ -97,6 +133,7 @@ mod ios {
         fn medousa_live_activity_diagnostics() -> *mut c_char;
         fn medousa_live_activity_is_available() -> bool;
         fn medousa_live_activity_sync(json: *const c_char) -> *mut c_char;
+        fn medousa_live_activity_push_token() -> *mut c_char;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
 
@@ -202,6 +239,7 @@ mod ios {
             } else {
                 Some(explain_unavailable(&diagnostics))
             },
+            push_token: super::current_push_token(),
             diagnostics: Some(diagnostics),
         }
     }
@@ -222,12 +260,17 @@ mod ios {
                     available: false,
                     active: false,
                     error: Some("Live Activity bridge returned null".into()),
+                    push_token: None,
                     diagnostics: Some(fetch_diagnostics()),
                 });
             };
 
             let mut status: LiveActivityStatus =
                 serde_json::from_str(&text).map_err(|err| format!("decode live activity status: {err}"))?;
+            if let Some(token) = status.push_token.clone().or_else(fetch_push_token) {
+                set_push_token(Some(token.clone()));
+                status.push_token = Some(token);
+            }
             status.diagnostics = Some(fetch_diagnostics());
             return Ok(status);
         }
@@ -236,6 +279,18 @@ mod ios {
         {
             let _ = c_json;
             Ok(status_from_diagnostics(false))
+        }
+    }
+
+    pub fn fetch_push_token() -> Option<String> {
+        #[cfg(live_activity_native)]
+        {
+            let raw = unsafe { medousa_live_activity_push_token() };
+            return read_native_json(raw);
+        }
+        #[cfg(not(live_activity_native))]
+        {
+            None
         }
     }
 }

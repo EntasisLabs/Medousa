@@ -237,8 +237,11 @@ The Rust bridge compiles `App/` + `Shared/` Swift automatically during `tauri io
 ### Verify
 
 1. Connect to daemon, start a work card (`in_flight`)
-2. Background the app — Live Activity should show on Lock Screen / Dynamic Island
-3. Tap the activity — should deep-link via `medousa://work/<card-id>`
+2. Open Medousa briefly so the Live Activity starts in the foreground
+3. Background the app — Lock Screen / Dynamic Island should keep updating as work changes on your Mac
+4. Tap the activity — should deep-link via `medousa://work/<card-id>`
+
+**Background updates (Phase 4):** The phone registers an ActivityKit push token with your Mac daemon on heartbeat. When workspace state changes, the daemon sends `liveactivity` APNs updates — same APNs credentials as remote push (`MEDOUSA_APNS_*` or `install-apns-push.sh`). The app must be opened once while work is running so the activity can start and register its push token.
 
 ---
 
@@ -297,7 +300,16 @@ export MEDOUSA_APNS_SANDBOX=true
 
 ### Xcode (Push Notifications capability)
 
-Enable **Push Notifications** on the iOS app target (adds `aps-environment`). Required for device tokens in dev and release builds.
+`npm run ios:prepare` wires `aps-environment` into the iOS app entitlements and enables the Push system capability in `project.yml`. If push registration fails with **no valid aps-environment entitlement**, re-run prepare and do a clean reinstall:
+
+```bash
+npm run ios:prepare
+npm run tauri:ios:dev
+```
+
+Delete Medousa from the phone first — entitlements are baked into the signed app at install time.
+
+Required for device tokens in dev and release builds. Daemon-side APNs (`MEDOUSA_APNS_*`) is separate and only needed once the phone already has a token.
 
 ### Test
 

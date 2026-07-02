@@ -519,6 +519,8 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             live_activity::live_activity_is_available,
             #[cfg(target_os = "ios")]
+            live_activity::live_activity_push_token,
+            #[cfg(target_os = "ios")]
             live_activity::live_activity_sync,
             medousa_paths::medousa_config_paths,
             medousa_paths::connection_runbook_path,

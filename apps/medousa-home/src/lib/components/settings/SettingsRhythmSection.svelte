@@ -97,7 +97,7 @@
           {:else if liveActivityStatus.active}
             Live Activity: active on Lock Screen / Dynamic Island
           {:else if liveActivityStatus.available}
-            Live Activity: ready — starts when work is in motion (app must be open briefly)
+            Live Activity: ready — starts when work is in motion; Mac can keep it updated while backgrounded
           {:else}
             Live Activity: checking…
           {/if}

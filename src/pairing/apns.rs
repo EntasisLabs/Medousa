@@ -8,7 +8,9 @@ use a2::{
     Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
     NotificationOptions, Priority, PushType,
 };
+use a2::request::payload::PayloadLike;
 use anyhow::{Context, Result, bail};
+use serde::Serialize;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
@@ -35,6 +37,7 @@ impl ApnsConfig {
 pub struct ApnsClient {
     inner: Client,
     bundle_id: String,
+    live_activity_topic: &'static str,
 }
 
 impl ApnsClient {
@@ -59,6 +62,9 @@ impl ApnsClient {
         Ok(Self {
             inner,
             bundle_id: config.bundle_id.clone(),
+            live_activity_topic: Box::leak(
+                format!("{}.push-type.liveactivity", config.bundle_id).into_boxed_str(),
+            ),
         })
     }
 
@@ -104,6 +110,141 @@ impl ApnsClient {
             .await
             .context("APNs send failed")?;
         Ok(())
+    }
+
+    pub async fn send_live_activity_update(
+        &self,
+        push_token: &str,
+        content_state: &LiveActivityContentState,
+    ) -> Result<()> {
+        let token = push_token.trim();
+        if token.is_empty() {
+            bail!("empty Live Activity push token");
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        let stale_date = now.saturating_add(60 * 15);
+
+        let payload = LiveActivityUpdatePayload {
+            aps: LiveActivityApsBody {
+                timestamp: now,
+                event: "update",
+                content_state: content_state.clone(),
+                stale_date: Some(stale_date),
+                dismissal_date: None,
+            },
+            device_token: token,
+            options: self.live_activity_options(),
+        };
+
+        self.inner
+            .send(payload)
+            .await
+            .context("APNs Live Activity update failed")?;
+        Ok(())
+    }
+
+    pub async fn send_live_activity_end(
+        &self,
+        push_token: &str,
+        content_state: Option<&LiveActivityContentState>,
+    ) -> Result<()> {
+        let token = push_token.trim();
+        if token.is_empty() {
+            bail!("empty Live Activity push token");
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        let dismissal_date = now.saturating_add(60);
+
+        let payload = LiveActivityUpdatePayload {
+            aps: LiveActivityApsBody {
+                timestamp: now,
+                event: "end",
+                content_state: content_state.cloned().unwrap_or(LiveActivityContentState {
+                    mood: "quiet".to_string(),
+                    eyebrow: "Quiet".to_string(),
+                    headline: "Nothing needs you".to_string(),
+                    subline: None,
+                    motion_summary: None,
+                    blocked_count: 0,
+                    primary_card_id: None,
+                }),
+                stale_date: None,
+                dismissal_date: Some(dismissal_date),
+            },
+            device_token: token,
+            options: self.live_activity_options(),
+        };
+
+        self.inner
+            .send(payload)
+            .await
+            .context("APNs Live Activity end failed")?;
+        Ok(())
+    }
+
+    fn live_activity_options(&self) -> NotificationOptions<'static> {
+        NotificationOptions {
+            apns_id: None,
+            apns_expiration: None,
+            apns_priority: Some(Priority::High),
+            apns_topic: Some(self.live_activity_topic),
+            apns_collapse_id: None,
+            apns_push_type: Some(PushType::LiveActivity),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveActivityContentState {
+    pub mood: String,
+    pub eyebrow: String,
+    pub headline: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub motion_summary: Option<String>,
+    pub blocked_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_card_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LiveActivityApsBody {
+    timestamp: u64,
+    event: &'static str,
+    #[serde(rename = "content-state")]
+    content_state: LiveActivityContentState,
+    #[serde(rename = "stale-date", skip_serializing_if = "Option::is_none")]
+    stale_date: Option<u64>,
+    #[serde(rename = "dismissal-date", skip_serializing_if = "Option::is_none")]
+    dismissal_date: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct LiveActivityUpdatePayload<'a> {
+    aps: LiveActivityApsBody,
+    #[serde(skip)]
+    device_token: &'a str,
+    #[serde(skip)]
+    options: NotificationOptions<'a>,
+}
+
+impl<'a> PayloadLike for LiveActivityUpdatePayload<'a> {
+    fn get_device_token(&self) -> &str {
+        self.device_token
+    }
+
+    fn get_options(&self) -> &NotificationOptions<'_> {
+        &self.options
     }
 }
 

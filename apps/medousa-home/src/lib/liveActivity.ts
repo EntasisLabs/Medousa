@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DaemonHealth } from "$lib/daemon";
 import type { WorkCard } from "$lib/types/workspace";
 import { isTauriIos } from "$lib/platform";
+import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import {
   buildPulsePresentation,
   motionColumnCounts,
@@ -25,6 +26,7 @@ export interface LiveActivityStatus {
   available: boolean;
   active: boolean;
   error?: string;
+  pushToken?: string;
   diagnostics?: {
     bridgeLinked: boolean;
     activitiesEnabled: boolean;
@@ -35,7 +37,9 @@ export interface LiveActivityStatus {
 }
 
 let lastPayloadKey = "";
+let lastRegisteredPushToken = "";
 let syncInFlight = false;
+let pushTokenPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function liveActivityEnabled(): boolean {
   if (typeof localStorage === "undefined") return false;
@@ -94,6 +98,67 @@ export function buildLiveActivityPayload(input: {
   };
 }
 
+async function readPushToken(): Promise<string | null> {
+  try {
+    const token = await invoke<string | null>("live_activity_push_token");
+    const trimmed = token?.trim();
+    return trimmed ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function registerPushTokenIfNeeded(token: string | null): Promise<void> {
+  if (!token || token === lastRegisteredPushToken) return;
+  lastRegisteredPushToken = token;
+  try {
+    await sendPairingHeartbeat({ liveActivityPushToken: token });
+  } catch (err) {
+    console.warn("[live-activity] heartbeat push token:", err);
+  }
+}
+
+function clearPushTokenPoll(): void {
+  if (pushTokenPollTimer !== null) {
+    clearTimeout(pushTokenPollTimer);
+    pushTokenPollTimer = null;
+  }
+}
+
+function schedulePushTokenPoll(attempt = 0): void {
+  clearPushTokenPoll();
+  if (!liveActivityEnabled() || attempt > 8) return;
+
+  pushTokenPollTimer = setTimeout(() => {
+    void (async () => {
+      const token = await readPushToken();
+      if (token) {
+        await registerPushTokenIfNeeded(token);
+        return;
+      }
+      schedulePushTokenPoll(attempt + 1);
+    })();
+  }, attempt === 0 ? 400 : 800);
+}
+
+async function afterLiveActivitySync(status: LiveActivityStatus | null): Promise<void> {
+  if (!status?.active) {
+    clearPushTokenPoll();
+    if (lastRegisteredPushToken) {
+      lastRegisteredPushToken = "";
+      void sendPairingHeartbeat({ liveActivityPushToken: "" }).catch(() => {});
+    }
+    return;
+  }
+
+  const token = status.pushToken?.trim() || (await readPushToken());
+  if (token) {
+    await registerPushTokenIfNeeded(token);
+    return;
+  }
+  schedulePushTokenPoll();
+}
+
 export async function syncLiveActivity(
   payload: LiveActivityPayload,
 ): Promise<LiveActivityStatus | null> {
@@ -109,6 +174,7 @@ export async function syncLiveActivity(
     if (status.error) {
       console.warn("[live-activity] sync:", status.error);
     }
+    await afterLiveActivitySync(status);
     return status;
   } catch (err) {
     console.warn("[live-activity] invoke failed:", err);
@@ -130,4 +196,6 @@ export async function queryLiveActivityAvailability(): Promise<LiveActivityStatu
 /** Reset dedupe so the next sync always runs (e.g. after toggling the setting). */
 export function resetLiveActivitySync(): void {
   lastPayloadKey = "";
+  lastRegisteredPushToken = "";
+  clearPushTokenPoll();
 }

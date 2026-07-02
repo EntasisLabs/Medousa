@@ -368,7 +368,8 @@ fn publish_snapshot(
         cards: Arc::new(cards.clone()),
         counts_by_column: counts_by_column(&cards),
     });
-    let _ = snapshot_tx.send(snapshot);
+    let _ = snapshot_tx.send(snapshot.clone());
+    crate::home_live_activity::notify_snapshot(&snapshot);
 }
 
 fn apply_item_column_transition(item: &ProjectedWorkItem) {
