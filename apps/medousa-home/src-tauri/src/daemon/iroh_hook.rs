@@ -67,6 +67,13 @@ impl IrohHttpHook for TauriIrohHook {
             {
                 out.extend_from_slice(&chunk);
             }
+            if !(200..300).contains(&response.status) {
+                let body = String::from_utf8_lossy(&out);
+                return Err(SdkError::Http(format!(
+                    "workshop returned HTTP {} over iroh: {body}",
+                    response.status
+                )));
+            }
             Ok(out)
         })
     }

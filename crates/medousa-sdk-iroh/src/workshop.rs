@@ -103,15 +103,6 @@ impl WorkshopTransport {
         body: Option<serde_json::Value>,
     ) -> Result<serde_json::Value, SdkError> {
         let route = self.pick_workshop_route().await;
-        let headers: Vec<(String, String)> = self
-            .auth_header_pairs()
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-        let header_refs: Vec<(&str, &str)> = headers
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
 
         let payload = body.map(|value| {
             serde_json::to_vec(&value).map_err(|e| SdkError::Serde(e.to_string()))
@@ -121,6 +112,18 @@ impl WorkshopTransport {
             Some(Err(e)) => return Err(e),
             None => None,
         };
+        let mut headers: Vec<(String, String)> = self
+            .auth_header_pairs()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        if payload.is_some() {
+            headers.push(("Content-Type".to_string(), "application/json".to_string()));
+        }
+        let header_refs: Vec<(&str, &str)> = headers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
 
         let result = match route {
             WorkshopRoute::Lan => {
@@ -134,11 +137,7 @@ impl WorkshopTransport {
                 let bytes = hook
                     .request_json(method, path, &header_refs, payload.as_deref())
                     .await?;
-                if bytes.is_empty() {
-                    Ok(serde_json::Value::Null)
-                } else {
-                    serde_json::from_slice(&bytes).map_err(Into::into)
-                }
+                parse_iroh_json_bytes(&bytes)
             }
         };
 
@@ -157,11 +156,7 @@ impl WorkshopTransport {
                 let bytes = hook
                     .request_json(method, path, &header_refs, payload.as_deref())
                     .await?;
-                if bytes.is_empty() {
-                    Ok(serde_json::Value::Null)
-                } else {
-                    serde_json::from_slice(&bytes).map_err(Into::into)
-                }
+                parse_iroh_json_bytes(&bytes)
             }
             Err(err) => Err(err),
         }
@@ -349,6 +344,13 @@ impl Transport for WorkshopTransport {
     }
 }
 
+fn parse_iroh_json_bytes(bytes: &[u8]) -> Result<serde_json::Value, SdkError> {
+    if bytes.is_empty() || bytes.iter().all(|byte| byte.is_ascii_whitespace()) {
+        return Ok(serde_json::Value::Null);
+    }
+    serde_json::from_slice(bytes).map_err(Into::into)
+}
+
 impl WorkshopTransport {
     fn apply_headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         let mut builder = builder;
@@ -384,4 +386,20 @@ async fn open_lan_sse(
             .bytes_stream()
             .map(|r| r.map_err(|e| SdkError::Http(e.to_string()))),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_iroh_json_bytes;
+
+    #[test]
+    fn parse_iroh_json_bytes_treats_whitespace_as_null() {
+        assert!(parse_iroh_json_bytes(b"   ").unwrap().is_null());
+    }
+
+    #[test]
+    fn parse_iroh_json_bytes_parses_object() {
+        let value = parse_iroh_json_bytes(br#"{"turn_id":"t1"}"#).unwrap();
+        assert_eq!(value["turn_id"], "t1");
+    }
 }
