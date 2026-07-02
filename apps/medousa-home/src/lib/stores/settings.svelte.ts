@@ -225,10 +225,10 @@ function loadNotifications(): boolean {
 }
 
 function loadLiveActivity(): boolean {
-  if (typeof localStorage === "undefined") return false;
+  if (typeof localStorage === "undefined") return true;
   const stored = localStorage.getItem(LIVE_ACTIVITY_KEY);
-  if (stored === "1") return true;
-  return false;
+  if (stored === "0") return false;
+  return true;
 }
 
 function loadRemotePush(): boolean {

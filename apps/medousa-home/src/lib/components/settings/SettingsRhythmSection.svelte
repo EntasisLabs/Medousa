@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import {
+    queryLiveActivityAvailability,
+    type LiveActivityStatus,
+  } from "$lib/liveActivity";
   import {
     workshopRetentionLocalHint,
     workshopRetentionReadHint,
@@ -12,7 +17,18 @@
 
   let { mobile = false }: Props = $props();
 
+  let liveActivityStatus = $state<LiveActivityStatus | null>(null);
+
   const retentionReadOnly = $derived(mobile || isTauriMobilePlatform());
+
+  async function refreshLiveActivityStatus() {
+    if (!mobile && !isTauriMobilePlatform()) return;
+    liveActivityStatus = await queryLiveActivityAvailability();
+  }
+
+  onMount(() => {
+    void refreshLiveActivityStatus();
+  });
 </script>
 
 <section class="settings-section">
@@ -68,10 +84,33 @@
           type="checkbox"
           class="checkbox shrink-0"
           checked={settings.liveActivityEnabled}
-          onchange={(event) =>
-            settings.setLiveActivityEnabled((event.currentTarget as HTMLInputElement).checked)}
+          onchange={async (event) => {
+            settings.setLiveActivityEnabled((event.currentTarget as HTMLInputElement).checked);
+            await refreshLiveActivityStatus();
+          }}
         />
       </label>
+      {#if liveActivityStatus}
+        <p class="workshop-faint -mt-2 mb-1 px-1 text-xs">
+          {#if liveActivityStatus.error}
+            Live Activity: {liveActivityStatus.error}
+          {:else if liveActivityStatus.active}
+            Live Activity: active on Lock Screen / Dynamic Island
+          {:else if liveActivityStatus.available}
+            Live Activity: ready — starts when work is in motion (app must be open briefly)
+          {:else}
+            Live Activity: checking…
+          {/if}
+          {#if liveActivityStatus.diagnostics && !liveActivityStatus.available}
+            <span class="mt-1 block font-mono text-[10px] text-surface-500">
+              bridge={liveActivityStatus.diagnostics.bridgeLinked ? "yes" : "no"}
+              · widget={liveActivityStatus.diagnostics.widgetExtensionInstalled ? "yes" : "no"}
+              · plist={liveActivityStatus.diagnostics.supportsLiveActivities ? "yes" : "no"}
+              · ios={liveActivityStatus.diagnostics.activitiesEnabled ? "on" : "off"}
+            </span>
+          {/if}
+        </p>
+      {/if}
     {/if}
 
     <label class="settings-toggle-row">

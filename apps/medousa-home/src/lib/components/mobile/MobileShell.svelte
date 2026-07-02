@@ -19,6 +19,7 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { ensureNotificationPermission } from "$lib/notifications";
+  import { registerRemotePush } from "$lib/pushRegistration";
   import { settings } from "$lib/stores/settings.svelte";
   import {
     buildLiveActivityPayload,
@@ -109,6 +110,9 @@
   onMount(() => {
     void workshops.load();
     void ensureNotificationPermission();
+    if (isTauriIos()) {
+      void registerRemotePush();
+    }
     void vault.refreshNotes();
     const detachKeyboard = attachMobileKeyboardViewport();
     const detachWorkshop = connectWorkshop({

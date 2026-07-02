@@ -18,6 +18,7 @@ private struct SyncResult: Encodable {
     let error: String?
 }
 
+@available(iOS 16.2, *)
 @MainActor
 final class MedousaLiveActivityManager {
     static let shared = MedousaLiveActivityManager()
@@ -28,6 +29,30 @@ final class MedousaLiveActivityManager {
 
     func isAvailable() -> Bool {
         ActivityAuthorizationInfo().areActivitiesEnabled
+    }
+
+    func diagnosticsJson() -> String {
+        let info = Bundle.main.infoDictionary
+        let supports = (info?["NSSupportsLiveActivities"] as? Bool) ?? false
+        let widgetInstalled =
+            Bundle.main.path(
+                forResource: "MedousaWorkWidget",
+                ofType: "appex",
+                inDirectory: "PlugIns"
+            ) != nil
+        let auth = ActivityAuthorizationInfo()
+        let payload: [String: Any] = [
+            "bridgeLinked": true,
+            "activitiesEnabled": auth.areActivitiesEnabled,
+            "widgetExtensionInstalled": widgetInstalled,
+            "supportsLiveActivities": supports,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            return "{\"bridgeLinked\":true,\"error\":\"encode diagnostics failed\"}"
+        }
+        return text
     }
 
     func sync(json: String) -> String {

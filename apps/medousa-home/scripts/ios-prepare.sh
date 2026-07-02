@@ -52,10 +52,11 @@ for stale in (
 ):
     text = text.replace(stale, "")
 
-text = re.sub(r"iOS: 15\.0", "iOS: 16.1", text)
+text = re.sub(r"iOS: 16\.1", "iOS: 16.2", text)
+text = re.sub(r"iOS: 15\.0", "iOS: 16.2", text)
 text = re.sub(
     r"(deploymentTarget:\s*\n\s*iOS: )(\d+\.\d+)",
-    lambda m: m.group(1) + ("16.1" if float(m.group(2)) < 16.1 else m.group(2)),
+    lambda m: m.group(1) + ("16.2" if float(m.group(2)) < 16.2 else m.group(2)),
     text,
     count=1,
 )
@@ -106,6 +107,76 @@ if "Strip libapp.a from bundle" not in text:
     anchor = "    preBuildScripts:"
     if anchor in text:
         text = text.replace(anchor, strip_block + anchor, 1)
+
+# Live Activity: enable Rust/Swift bridge during Xcode Rust build.
+if "MEDOUSA_LIVE_ACTIVITY" not in text:
+    text = text.replace(
+        "        RUST_LOG: info\n",
+        "        RUST_LOG: info\n        MEDOUSA_LIVE_ACTIVITY: \"1\"\n",
+        1,
+    )
+
+# Live Activity: declare support in the main iOS app Info.plist (XcodeGen merge).
+if "NSSSupportsLiveActivities" not in text:
+    text = text.replace(
+        "        CFBundleVersion: \"0.1.0\"\n",
+        "        CFBundleVersion: \"0.1.0\"\n        NSSSupportsLiveActivities: true\n",
+        1,
+    )
+
+# Widget Extension target for Lock Screen / Dynamic Island Live Activity UI.
+if "MedousaWorkWidget:" not in text:
+    widget_target = """
+  MedousaWorkWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../ios-live-activity/Widget
+        excludes:
+          - Info.plist
+          - MedousaWorkWidget.entitlements
+      - path: ../../ios-live-activity/Shared
+    info:
+      path: ../../ios-live-activity/Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Medousa Work
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: ../../ios-live-activity/Widget/MedousaWorkWidget.entitlements
+    settings:
+      base:
+        PRODUCT_NAME: MedousaWorkWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.entasislabs.medousa-home.MedousaWorkWidget
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: NO
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
+      groups: [app]
+"""
+    text = text.rstrip() + widget_target
+
+if "target: MedousaWorkWidget" not in text:
+    text = text.replace(
+        "      - sdk: WebKit.framework\n",
+        "      - sdk: WebKit.framework\n      - target: MedousaWorkWidget\n        embed: true\n",
+        1,
+    )
+
+# Xcode scheme env vars apply at Run time, not Build Rust Code — export for cargo/build.rs.
+if "export MEDOUSA_LIVE_ACTIVITY=1" not in text:
+    text = text.replace(
+        "      - script: npm run -- tauri ios xcode-script",
+        "      - script: |\n          export MEDOUSA_LIVE_ACTIVITY=1\n          npm run -- tauri ios xcode-script",
+        1,
+    )
+
+# Widget extension must compile shared ActivityKit attribute types (older project.yml omits this).
+if "MedousaWorkWidget:" in text and "../../ios-live-activity/Shared" not in text:
+    text = text.replace(
+        "      - path: ../../ios-live-activity/Widget\n        excludes:\n          - Info.plist\n          - MedousaWorkWidget.entitlements\n",
+        "      - path: ../../ios-live-activity/Widget\n        excludes:\n          - Info.plist\n          - MedousaWorkWidget.entitlements\n      - path: ../../ios-live-activity/Shared\n",
+        1,
+    )
 
 if text != original:
     project.write_text(text)

@@ -12,9 +12,27 @@ private func runOnMainActor<T>(_ work: @MainActor () -> T) -> T {
 }
 
 /// C ABI consumed by Rust on iOS. Returns a heap-allocated JSON string; caller must free via medousa_live_activity_free_string.
+@_cdecl("medousa_live_activity_bridge_version")
+public func medousa_live_activity_bridge_version() -> UInt32 {
+    1
+}
+
+@_cdecl("medousa_live_activity_diagnostics")
+public func medousa_live_activity_diagnostics() -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 16.2, *) {
+        let result = runOnMainActor {
+            MedousaLiveActivityManager.shared.diagnosticsJson()
+        }
+        return strdup(result)
+    }
+    let fallback =
+        "{\"bridgeLinked\":true,\"activitiesEnabled\":false,\"widgetExtensionInstalled\":false,\"supportsLiveActivities\":false,\"error\":\"iOS 16.2+ required\"}"
+    return strdup(fallback)
+}
+
 @_cdecl("medousa_live_activity_is_available")
 public func medousa_live_activity_is_available() -> Bool {
-    if #available(iOS 16.1, *) {
+    if #available(iOS 16.2, *) {
         return runOnMainActor {
             MedousaLiveActivityManager.shared.isAvailable()
         }
@@ -27,14 +45,14 @@ public func medousa_live_activity_sync(_ json: UnsafePointer<CChar>?) -> UnsafeM
     guard let json else { return nil }
     let payload = String(cString: json)
 
-    if #available(iOS 16.1, *) {
+    if #available(iOS 16.2, *) {
         let result = runOnMainActor {
             MedousaLiveActivityManager.shared.sync(json: payload)
         }
         return strdup(result)
     }
 
-    let fallback = "{\"available\":false,\"active\":false,\"error\":\"iOS 16.1+ required\"}"
+    let fallback = "{\"available\":false,\"active\":false,\"error\":\"iOS 16.2+ required\"}"
     return strdup(fallback)
 }
 

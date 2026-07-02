@@ -20,9 +20,9 @@
     "icons:generate": "tauri icon app-icon.json -o src-tauri/icons --ios-color \"#0a0a0b\" && cp src-tauri/icons/128x128.png static/favicon.png",
     "tauri:ios:init": "tauri ios init && npm run ios:prepare",
     "ios:prepare": "bash scripts/ios-prepare.sh",
-    "tauri:ios:dev": "npm run ios:prepare && tauri ios dev",
-    "tauri:ios:dev:sim": "npm run ios:prepare && tauri ios dev \"iPhone 16 Pro\"",
-    "tauri:ios:build": "npm run ios:prepare && tauri ios build",
+    "tauri:ios:dev": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios dev",
+    "tauri:ios:dev:sim": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios dev \"iPhone 16 Pro\"",
+    "tauri:ios:build": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios build",
     "tauri:ios:clean": "bash scripts/ios-clean.sh",
     "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"
   },

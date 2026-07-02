@@ -1,12 +1,8 @@
 fn main() {
     embed_macos_dev_info_plist();
     if is_ios_build_target() {
-        // Live Activity native bridge is opt-in: ActivityKit without a Widget Extension
-        // can abort the process on first FFI call. Enable only when explicitly building
-        // with MEDOUSA_LIVE_ACTIVITY=1 after the extension is installed.
-        if std::env::var("MEDOUSA_LIVE_ACTIVITY").as_deref() == Ok("1") {
-            compile_ios_live_activity();
-        }
+        // Widget extension is wired by ios-prepare; always compile the ActivityKit bridge.
+        compile_ios_live_activity();
         println!("cargo:rustc-link-lib=framework=WebKit");
     }
     tauri_build::build();
@@ -67,7 +63,7 @@ fn compile_ios_live_activity() {
         }
     };
 
-    let min_version = "16.1";
+    let min_version = "16.2";
     let swift_target = if sdk == "iphonesimulator" {
         format!("arm64-apple-ios{min_version}-simulator")
     } else {
@@ -101,13 +97,13 @@ fn compile_ios_live_activity() {
             println!("cargo:rustc-link-lib=framework=SwiftUI");
         }
         Ok(s) => {
-            eprintln!(
-                "cargo:warning=Live Activity Swift compile failed (exit {}); bridge will be unavailable",
-                s
+            panic!(
+                "Live Activity Swift compile failed (exit {s}). \
+                 See ios-live-activity/App — deployment target must be iOS 16.2+"
             );
         }
         Err(err) => {
-            eprintln!("cargo:warning=Could not run xcrun swiftc: {err}");
+            panic!("Could not run xcrun swiftc for Live Activity bridge: {err}");
         }
     }
 }

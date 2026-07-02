@@ -18,7 +18,7 @@ npm run build
 
 npm run ios:prepare
 
-npm run tauri ios build -- --export-method "$EXPORT_METHOD" --build-number "$BUILD_NUMBER" --ci
+npm run tauri:ios:build -- --export-method "$EXPORT_METHOD" --build-number "$BUILD_NUMBER" --ci
 
 IPA="$(find "$ROOT/src-tauri/gen/apple/build" -name '*.ipa' -type f 2>/dev/null | head -1 || true)"
 if [[ -n "$IPA" && -f "$IPA" ]]; then

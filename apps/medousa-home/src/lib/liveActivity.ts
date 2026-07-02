@@ -25,6 +25,13 @@ export interface LiveActivityStatus {
   available: boolean;
   active: boolean;
   error?: string;
+  diagnostics?: {
+    bridgeLinked: boolean;
+    activitiesEnabled: boolean;
+    widgetExtensionInstalled: boolean;
+    supportsLiveActivities: boolean;
+    error?: string;
+  };
 }
 
 let lastPayloadKey = "";
@@ -98,8 +105,13 @@ export async function syncLiveActivity(
   syncInFlight = true;
 
   try {
-    return await invoke<LiveActivityStatus>("live_activity_sync", { payload });
-  } catch {
+    const status = await invoke<LiveActivityStatus>("live_activity_sync", { payload });
+    if (status.error) {
+      console.warn("[live-activity] sync:", status.error);
+    }
+    return status;
+  } catch (err) {
+    console.warn("[live-activity] invoke failed:", err);
     return null;
   } finally {
     syncInFlight = false;
