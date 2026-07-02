@@ -37,6 +37,7 @@ export function prepareArtifactHtml(
   raw: string,
   mode: ArtifactEmbedMode,
   isDark: boolean,
+  feedState?: Record<string, unknown> | null,
 ): string {
   const themeStyle = buildArtifactThemeStyle(isDark);
   const modeStyle = buildArtifactModeStyle(mode);
@@ -46,6 +47,10 @@ export function prepareArtifactHtml(
   }
   if (!html.includes(MODE_STYLE_ID)) {
     html = injectBeforeHeadClose(html, modeStyle);
+  }
+  if (feedState && Object.keys(feedState).length > 0) {
+    const feedScript = `<script>window.__MEDOUSA_FEED__=${JSON.stringify(feedState)};</script>`;
+    html = injectBeforeHeadClose(html, feedScript);
   }
   return html;
 }

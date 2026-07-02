@@ -84,6 +84,10 @@ pub fn build_feature_routers(
             axum::routing::get(crate::mcp_daemon_handlers::get_capability),
         )
         .route(
+            "/v1/capabilities/intents",
+            axum::routing::get(crate::mcp_daemon_handlers::list_capability_intents),
+        )
+        .route(
             "/v1/capabilities/reindex",
             axum::routing::post(crate::mcp_daemon_handlers::reindex_capabilities),
         )
@@ -238,6 +242,7 @@ pub fn build_feature_routers(
         ))
         .merge(workspace_router)
         .merge(environment_router)
+        .merge(crate::feed_handlers::feed_router())
         .merge(budget_router)
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())

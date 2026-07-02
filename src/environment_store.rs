@@ -124,6 +124,8 @@ impl EnvironmentHub {
             event_type: "spec_updated".to_string(),
             emitted_at_utc: Utc::now(),
             spec: Some(spec),
+            component_patches: None,
+            feed_event: None,
         });
         Ok(record)
     }
@@ -156,6 +158,10 @@ impl EnvironmentHub {
         let record = self.put(proposal.proposed_spec, "operator").await?;
         self.clear_pending(profile_id).await;
         Ok(record)
+    }
+
+    pub async fn emit_stream_event(&self, event: EnvironmentStreamEvent) {
+        let _ = self.tx.send(event);
     }
 }
 

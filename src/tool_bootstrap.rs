@@ -38,6 +38,9 @@ pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
     "cognition_component_delete",
     "cognition_context_follow_pointer",
     "cognition_context_list_pointers",
+    "cognition_intent_resolve",
+    "cognition_feed_subscribe",
+    "cognition_feed_publish",
 ];
 
 /// Always-visible host console tools (~12+).
@@ -384,6 +387,9 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_component_delete" => "Remove a canvas component",
         "cognition_context_follow_pointer" => "Resolve a pointer id to a focused context slice",
         "cognition_context_list_pointers" => "List ranked context pointers (bootstrap usually sufficient)",
+        "cognition_intent_resolve" => "Resolve intent to capability + suggested feeds and component template",
+        "cognition_feed_subscribe" => "Bind feed ids on a custom-surface component",
+        "cognition_feed_publish" => "Publish a bounded feed event to subscribed components",
         "cognition_turn_worker_status" => "Pending worker status",
         "cognition_capability_invoke" => "One-shot capability execution",
         "cognition_grapheme_script_load" => "Load saved Grapheme script body",

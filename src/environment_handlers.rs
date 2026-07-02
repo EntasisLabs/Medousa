@@ -169,6 +169,8 @@ async fn stream_spec(
         } else {
             None
         },
+        component_patches: None,
+        feed_event: None,
     };
 
     let rx = state.hub.subscribe();

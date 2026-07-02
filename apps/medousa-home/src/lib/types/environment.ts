@@ -104,6 +104,30 @@ export interface EnvironmentStreamEvent {
   eventType: string;
   emittedAtUtc: string;
   spec?: EnvironmentSpec | null;
+  componentPatches?: ComponentFeedPatch[] | null;
+  feedEvent?: FeedEvent | null;
+}
+
+export interface FeedRef {
+  refType: string;
+  refId: string;
+}
+
+export interface FeedEvent {
+  id: string;
+  feedId: string;
+  emittedAtUtc: string;
+  source: string;
+  summary: string;
+  refs?: FeedRef[];
+  payload?: Record<string, unknown> | null;
+}
+
+export interface ComponentFeedPatch {
+  componentId: string;
+  feedId: string;
+  patch: Record<string, unknown>;
+  seq: number;
 }
 
 export interface EnvironmentPendingProposal {

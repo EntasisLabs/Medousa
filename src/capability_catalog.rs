@@ -39,6 +39,16 @@ pub struct CapabilityDefinition {
     pub aliases: Vec<String>,
     #[serde(default)]
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub intents: Vec<String>,
+    #[serde(default)]
+    pub publish_feeds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_feed_component: Option<String>,
+    #[serde(default)]
+    pub available_jobs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_template: Option<medousa_types::feed::ComponentTemplateHint>,
 }
 
 /// Explicit Grapheme binding from manifest.
@@ -110,6 +120,16 @@ pub struct CapabilityManifestEntry {
     #[serde(default)]
     pub keywords: Vec<String>,
     #[serde(default)]
+    pub intents: Vec<String>,
+    #[serde(default)]
+    pub publish_feeds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_feed_component: Option<String>,
+    #[serde(default)]
+    pub available_jobs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_template: Option<medousa_types::feed::ComponentTemplateHint>,
+    #[serde(default)]
     pub bindings: CapabilityManifestBindings,
 }
 
@@ -121,6 +141,29 @@ impl CapabilityManifestEntry {
             description: self.description.clone(),
             aliases: self.aliases.clone(),
             keywords: self.keywords.clone(),
+            intents: self.intents.clone(),
+            publish_feeds: self.publish_feeds.clone(),
+            can_feed_component: self.can_feed_component.clone(),
+            available_jobs: self.available_jobs.clone(),
+            component_template: self.component_template.clone(),
+        }
+    }
+}
+
+impl Default for CapabilityManifestEntry {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            title: String::new(),
+            description: None,
+            aliases: Vec::new(),
+            keywords: Vec::new(),
+            intents: Vec::new(),
+            publish_feeds: Vec::new(),
+            can_feed_component: None,
+            available_jobs: Vec::new(),
+            component_template: None,
+            bindings: CapabilityManifestBindings::default(),
         }
     }
 }
@@ -519,6 +562,82 @@ impl CapabilityRegistry {
         }
     }
 
+    pub fn list_intents(&self) -> medousa_types::feed::CapabilityIntentsResponse {
+        let mut intents = Vec::new();
+        for def in self.definitions.values() {
+            for intent in &def.intents {
+                intents.push(medousa_types::feed::CapabilityIntentEntry {
+                    intent: intent.clone(),
+                    capability_id: def.id.clone(),
+                    title: def.title.clone(),
+                    publish_feeds: def.publish_feeds.clone(),
+                    can_feed_component: def.can_feed_component.clone(),
+                    component_template: def.component_template.clone(),
+                });
+            }
+        }
+        intents.sort_by(|a, b| a.intent.cmp(&b.intent));
+        medousa_types::feed::CapabilityIntentsResponse { intents }
+    }
+
+    pub fn resolve_intent(
+        &self,
+        intent: Option<&str>,
+        query: Option<&str>,
+    ) -> medousa_types::feed::IntentResolveResponse {
+        let query_label = intent
+            .map(str::to_string)
+            .or_else(|| query.map(str::to_string))
+            .unwrap_or_default();
+        let normalized_intent = intent.map(str::trim).filter(|value| !value.is_empty());
+        let normalized_query = query.map(str::trim).filter(|value| !value.is_empty());
+        let mut matches = Vec::new();
+
+        for def in self.definitions.values() {
+            let mut matched_on = None;
+            if let Some(intent_value) = normalized_intent {
+                if def
+                    .intents
+                    .iter()
+                    .any(|entry| entry.eq_ignore_ascii_case(intent_value))
+                {
+                    matched_on = Some("intent".to_string());
+                }
+            }
+            if matched_on.is_none() {
+                if let Some(query_value) = normalized_query {
+                    let (score, matched) =
+                        score_capability_match(&def.id, def, &normalize_tokens(query_value));
+                    if score > 0 {
+                        matched_on = matched;
+                    } else if def.intents.iter().any(|entry| {
+                        entry
+                            .to_ascii_lowercase()
+                            .contains(&query_value.to_ascii_lowercase())
+                    }) {
+                        matched_on = Some("intent_keyword".to_string());
+                    }
+                }
+            }
+            if matched_on.is_some() {
+                matches.push(medousa_types::feed::IntentResolveMatch {
+                    capability_id: def.id.clone(),
+                    title: def.title.clone(),
+                    publish_feeds: def.publish_feeds.clone(),
+                    can_feed_component: def.can_feed_component.clone(),
+                    component_template: def.component_template.clone(),
+                    matched_on,
+                });
+            }
+        }
+
+        matches.sort_by(|a, b| a.capability_id.cmp(&b.capability_id));
+        medousa_types::feed::IntentResolveResponse {
+            query: query_label,
+            matches,
+        }
+    }
+
     /// Merge MCP catalog availability from gateway sync.
     pub fn apply_mcp_catalog_sync(&mut self, sync: &McpCatalogSyncResponse) {
         let catalog_index = sync
@@ -832,6 +951,7 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                         },
                     ],
                 },
+                ..Default::default()
             },
             CapabilityManifestEntry {
                 id: "web_research".to_string(),
@@ -888,6 +1008,42 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     ],
                     mcp: vec![],
                 },
+                ..Default::default()
+            },
+            CapabilityManifestEntry {
+                id: "environment_canvas".to_string(),
+                title: "Build persistent UI surfaces".to_string(),
+                description: Some(
+                    "Compose custom environment surfaces, components, and live feed bindings."
+                        .to_string(),
+                ),
+                aliases: vec![
+                    "writing studio".to_string(),
+                    "custom dashboard".to_string(),
+                    "environment canvas".to_string(),
+                ],
+                keywords: vec![
+                    "environment".to_string(),
+                    "canvas".to_string(),
+                    "surface".to_string(),
+                    "dashboard".to_string(),
+                    "workshop".to_string(),
+                ],
+                intents: vec![
+                    "setup_dashboard".to_string(),
+                    "compose_surface".to_string(),
+                    "workshop_status".to_string(),
+                ],
+                publish_feeds: vec![medousa_types::feed::WORKSHOP_PULSE_FEED_ID.to_string()],
+                can_feed_component: Some("workshop-status".to_string()),
+                component_template: Some(medousa_types::feed::ComponentTemplateHint {
+                    surface_id: "workshop".to_string(),
+                    slot: "main".to_string(),
+                    component_type: "presentation".to_string(),
+                    feeds: vec![medousa_types::feed::WORKSHOP_PULSE_FEED_ID.to_string()],
+                }),
+                bindings: CapabilityManifestBindings::default(),
+                ..Default::default()
             },
             CapabilityManifestEntry {
                 id: "http_fetch".to_string(),
@@ -908,6 +1064,7 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     }],
                     mcp: vec![],
                 },
+                ..Default::default()
             },
             CapabilityManifestEntry {
                 id: "send_email".to_string(),
@@ -933,6 +1090,7 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                         ..Default::default()
                     }],
                 },
+                ..Default::default()
             },
         ],
         web_search: WebSearchSettings::default(),
@@ -977,6 +1135,25 @@ mod tests {
     }
 
     #[test]
+    fn resolve_intent_finds_environment_canvas() {
+        let registry = CapabilityRegistry::with_embedded_seed();
+        let response = registry.resolve_intent(Some("setup_dashboard"), None);
+        assert!(!response.matches.is_empty());
+        assert!(
+            response
+                .matches
+                .iter()
+                .any(|entry| entry.capability_id == "environment_canvas")
+        );
+        assert!(
+            response
+                .matches
+                .iter()
+                .any(|entry| entry.publish_feeds.contains(&"workshop.pulse".to_string()))
+        );
+    }
+
+    #[test]
     fn file_manifest_merges_with_embedded_seed() {
         let mut manifest = embedded_capability_manifest();
         let file_manifest = CapabilityManifest {
@@ -987,6 +1164,7 @@ mod tests {
                 aliases: vec![],
                 keywords: vec!["custom".to_string()],
                 bindings: CapabilityManifestBindings::default(),
+                ..Default::default()
             }],
             web_search: WebSearchSettings::default(),
             ..Default::default()

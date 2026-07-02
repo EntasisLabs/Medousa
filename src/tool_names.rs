@@ -84,6 +84,9 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_manuscript_overlay_propose",
     "cognition_manuscript_overlay_list",
     "cognition_tools_discover",
+    "cognition_intent_resolve",
+    "cognition_feed_subscribe",
+    "cognition_feed_publish",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.

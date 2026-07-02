@@ -192,6 +192,14 @@ fn validate_component(
             ));
         }
     }
+    for feed_id in &component.feeds {
+        if !crate::feed::is_valid_feed_id(feed_id) {
+            errors.push(format!(
+                "component '{}' feed id '{feed_id}' is invalid — use lowercase letters, digits, '.', '_', '-'",
+                component.id
+            ));
+        }
+    }
     validate_component_surface_kind(component, surfaces, errors);
 }
 

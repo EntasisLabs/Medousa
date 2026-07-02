@@ -614,8 +614,14 @@ pub async fn run_worker_turn(
     sink.notice(format!("◈ work_running work_id={work_id}"))
         .await;
 
-    let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
     let is_bound_workshop = record.disposition == TurnWorkDisposition::Bound;
+    if is_bound_workshop {
+        if let Some(started) = store.get(&work_id) {
+            crate::feed_adapters::publish_workshop_started(&started).await;
+        }
+    }
+
+    let intent = TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General);
     let manuscript_tools = record
         .handoff_capsule
         .as_ref()
@@ -798,6 +804,16 @@ pub async fn run_worker_turn(
             );
             sink.notice(format!("◈ work_completed work_id={work_id}"))
                 .await;
+            if is_bound_workshop {
+                if let Some(updated) = store.get(&work_id) {
+                    crate::feed_adapters::publish_workshop_working(
+                        &updated,
+                        updated.tool_names.len() as u32,
+                        &updated.tool_names,
+                    )
+                    .await;
+                }
+            }
             if let Some(updated) = store.get(&work_id) {
                 run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
             }
@@ -816,6 +832,16 @@ pub async fn run_worker_turn(
             );
             sink.notice(format!("◈ work_failed work_id={work_id} error={message}"))
                 .await;
+            if is_bound_workshop {
+                if let Some(failed) = store.get(&work_id) {
+                    crate::feed_adapters::publish_workshop_terminal(
+                        &failed,
+                        "failed",
+                        failed.error.as_deref(),
+                    )
+                    .await;
+                }
+            }
             if let Some(failed) = store.get(&work_id) {
                 run_worker_failure_notify(&ctx, failed, sink, stream_turn_id).await;
             }
@@ -1024,8 +1050,12 @@ async fn deliver_synthesis_response(
     .await;
     turn_worker_store().update(&record.work_id, |worker| {
         worker.synthesis_delivered = true;
-        worker.result_text = Some(text);
+        worker.result_text = Some(text.clone());
     });
+    if record.disposition == TurnWorkDisposition::Bound {
+        crate::feed_adapters::publish_workshop_synthesis(record, &text).await;
+        crate::feed_adapters::publish_workshop_terminal(record, "done", Some(&text)).await;
+    }
 }
 
 fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {

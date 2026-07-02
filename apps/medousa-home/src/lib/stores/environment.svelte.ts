@@ -30,6 +30,7 @@ export class EnvironmentStore {
   streamError = $state<string | null>(null);
   pendingProposal = $state<EnvironmentPendingProposal | null>(null);
   pendingBusy = $state(false);
+  feedStateByComponentId = $state<Map<string, Record<string, unknown>>>(new Map());
 
   get loaded(): boolean {
     return this.spec !== null;
@@ -111,6 +112,17 @@ export class EnvironmentStore {
     if (event.spec) {
       this.spec = event.spec;
     }
+    if (event.componentPatches?.length) {
+      const next = new Map(this.feedStateByComponentId);
+      for (const patch of event.componentPatches) {
+        next.set(patch.componentId, patch.patch);
+      }
+      this.feedStateByComponentId = next;
+    }
+  }
+
+  feedStateForComponent(componentId: string): Record<string, unknown> | null {
+    return this.feedStateByComponentId.get(componentId) ?? null;
   }
 
   applySpec(spec: EnvironmentSpec, revision: number) {
@@ -127,6 +139,7 @@ export class EnvironmentStore {
     this.revision = 0;
     this.streamError = null;
     this.pendingProposal = null;
+    this.feedStateByComponentId = new Map();
   }
 
   async refreshPending(profileId?: string): Promise<void> {

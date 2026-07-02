@@ -262,6 +262,10 @@ pub struct EnvironmentStreamEvent {
     pub emitted_at_utc: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spec: Option<EnvironmentSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component_patches: Option<Vec<crate::feed::ComponentFeedPatch>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_event: Option<crate::feed::FeedEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

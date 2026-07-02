@@ -81,6 +81,7 @@
                   label={component.label ?? "Presentation"}
                   mode={embedMode}
                   bare={presentationBare(surface?.layout, embedMode)}
+                  feedState={environment.feedStateForComponent(component.id)}
                 />
               </div>
             {/if}

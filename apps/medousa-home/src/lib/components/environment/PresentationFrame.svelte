@@ -17,6 +17,7 @@
     compact?: boolean;
     bare?: boolean;
     mode?: ArtifactEmbedMode;
+    feedState?: Record<string, unknown> | null;
     onOpenFull?: () => void;
     contentHeight?: number;
     truncated?: boolean;
@@ -31,12 +32,14 @@
     compact = false,
     bare = false,
     mode = "inline",
+    feedState = null,
     onOpenFull,
     contentHeight = $bindable(0),
     truncated = $bindable(false),
   }: Props = $props();
 
   let html = $state<string | null>(null);
+  let rawHtml = $state<string | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
   let frameHeight = $state(DEFAULT_INLINE_ARTIFACT_CAP_PX);
@@ -81,13 +84,22 @@
           error = "This artifact is not HTML.";
           return;
         }
-        html = prepareArtifactHtml(response.body, embedMode, isDarkTheme());
+        html = prepareArtifactHtml(response.body, embedMode, isDarkTheme(), feedState);
+        rawHtml = response.body;
       } catch (err) {
         error = friendlyUserError(err instanceof Error ? err.message : String(err));
       } finally {
         loading = false;
       }
     })();
+  });
+
+  $effect(() => {
+    const body = rawHtml;
+    const embedMode = mode;
+    const feed = feedState;
+    if (!body) return;
+    html = prepareArtifactHtml(body, embedMode, isDarkTheme(), feed);
   });
 
   function handleFrameLoad(event: Event) {
