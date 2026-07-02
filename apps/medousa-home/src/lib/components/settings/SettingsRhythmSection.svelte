@@ -111,6 +111,9 @@
           {/if}
         </p>
       {/if}
+      <p class="workshop-faint -mt-2 mb-1 px-1 text-xs">
+        Home screen widget: add <strong class="font-medium text-surface-300">Pulse</strong> from the iOS widget gallery — updates while the app is open or when you return to it.
+      </p>
     {/if}
 
     <label class="settings-toggle-row">

@@ -20,8 +20,10 @@ fn compile_ios_live_activity() {
     let swift_root = manifest_dir.join("ios-live-activity");
     let sources = [
         swift_root.join("Shared/MedousaWorkAttributes.swift"),
+        swift_root.join("Shared/MedousaWidgetSnapshot.swift"),
         swift_root.join("App/MedousaLiveActivityManager.swift"),
         swift_root.join("App/MedousaLiveActivityBridge.swift"),
+        swift_root.join("App/MedousaWidgetSnapshotStore.swift"),
     ];
 
     for source in &sources {

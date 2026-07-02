@@ -86,6 +86,8 @@ final class MedousaLiveActivityManager {
             ))
         }
 
+        _ = MedousaWidgetSnapshotStore.save(json: json)
+
         let shouldRun = payload.mood == "working" || payload.mood == "waiting"
         if shouldRun {
             return encodeResult(startOrUpdate(payload))

@@ -26,6 +26,7 @@
     bumpLiveActivitySync,
     syncLiveActivity,
   } from "$lib/liveActivity";
+  import { bumpHomeWidgetSync, syncHomeWidget } from "$lib/homeWidget";
   import { setMobileBadge } from "$lib/mobileBadge";
   import { isTauriIos } from "$lib/platform";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
@@ -86,6 +87,17 @@
     void syncLiveActivity(liveActivityPayload(), { force });
   }
 
+  function syncHomeWidgetNow(force = false) {
+    if (!isTauriIos() || daemonHealth === null) return;
+    void syncHomeWidget(liveActivityPayload(), { force });
+  }
+
+  $effect(() => {
+    if (!isTauriIos()) return;
+    if (daemonHealth === null) return;
+    syncHomeWidgetNow();
+  });
+
   $effect(() => {
     if (!isTauriIos() || !settings.liveActivityEnabled) return;
     // Wait until workshop connection has reported health — avoids calling native
@@ -126,7 +138,9 @@
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       bumpLiveActivitySync();
+      bumpHomeWidgetSync();
       syncLiveActivityNow(true);
+      syncHomeWidgetNow(true);
     };
     document.addEventListener("visibilitychange", onVisible);
     const detachWorkshop = connectWorkshop({

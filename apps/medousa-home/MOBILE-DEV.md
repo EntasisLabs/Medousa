@@ -245,6 +245,29 @@ The Rust bridge compiles `App/` + `Shared/` Swift automatically during `tauri io
 
 ---
 
+## 8b. Home Screen Widget (Pulse glance)
+
+The **Pulse** home-screen widget shows the same workshop heartbeat as the in-app Pulse tab — eyebrow, headline, motion summary — without starting a Live Activity.
+
+| Path | Role |
+|------|------|
+| `ios-live-activity/Shared/MedousaWidgetSnapshot.swift` | App Group snapshot (`group.com.entasislabs.medousa-home`) |
+| `ios-live-activity/Widget/MedousaHomeGlanceWidget.swift` | Small + medium WidgetKit UI |
+| `src/lib/homeWidget.ts` | Syncs pulse state from `MobileShell` |
+
+### Add to home screen
+
+1. Build and install the app (`npm run tauri:ios:dev` or TestFlight build).
+2. Long-press the home screen → **Edit Home Screen** → **+** (widgets).
+3. Search **Medousa** → choose **Pulse** (small or medium).
+4. Open Medousa once while connected to your Mac daemon — the widget updates from workspace state.
+
+The widget reads the last snapshot written by the app via App Group storage. It does **not** require Live Activity to be enabled, but it only refreshes while the app is open or when you return to it (iOS does not allow arbitrary background widget polling without push).
+
+Tap the widget to deep-link via `medousa://work/<card-id>` when work is in motion.
+
+---
+
 ## 9. Remote push (Mac daemon → iPhone)
 
 When your phone is paired, the Mac daemon can send **APNs** notifications for work finished, blocked cards, budget approval, and worker start — even when the app is closed.

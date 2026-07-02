@@ -36,6 +36,8 @@ mod window;
 mod wizard;
 #[cfg(target_os = "ios")]
 mod live_activity;
+#[cfg(target_os = "ios")]
+mod home_widget;
 
 use daemon::DaemonState;
 use tauri::Manager;
@@ -529,6 +531,8 @@ pub fn run() {
             live_activity::live_activity_push_token,
             #[cfg(target_os = "ios")]
             live_activity::live_activity_sync,
+            #[cfg(target_os = "ios")]
+            home_widget::home_widget_sync,
             medousa_paths::medousa_config_paths,
             medousa_paths::connection_runbook_path,
             medousa_paths::load_tui_defaults_summary,

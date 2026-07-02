@@ -68,6 +68,25 @@ public func medousa_live_activity_push_token() -> UnsafeMutablePointer<CChar>? {
     return nil
 }
 
+private struct WidgetSyncResult: Encodable {
+    let ok: Bool
+    let error: String?
+}
+
+@_cdecl("medousa_home_widget_sync")
+public func medousa_home_widget_sync(_ json: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    guard let json else { return nil }
+    let payload = String(cString: json)
+    let error = MedousaWidgetSnapshotStore.save(json: payload)
+    let result = WidgetSyncResult(ok: error == nil, error: error)
+    guard let data = try? JSONEncoder().encode(result),
+          let text = String(data: data, encoding: .utf8)
+    else {
+        return strdup("{\"ok\":false,\"error\":\"encode failed\"}")
+    }
+    return strdup(text)
+}
+
 @_cdecl("medousa_live_activity_free_string")
 public func medousa_live_activity_free_string(_ ptr: UnsafeMutablePointer<CChar>?) {
     guard let ptr else { return }

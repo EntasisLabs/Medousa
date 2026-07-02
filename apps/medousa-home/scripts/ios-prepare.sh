@@ -179,6 +179,19 @@ if "MedousaWorkWidget:" in text and "../../ios-live-activity/Shared" not in text
         1,
     )
 
+widget_entitlements_block = """    entitlements:
+      path: ../../ios-live-activity/Widget/MedousaWorkWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.entasislabs.medousa-home
+"""
+if "MedousaWorkWidget:" in text and "MedousaWorkWidget.entitlements\n      properties:" not in text:
+    text = text.replace(
+        "    entitlements:\n      path: ../../ios-live-activity/Widget/MedousaWorkWidget.entitlements\n",
+        widget_entitlements_block,
+        1,
+    )
+
 # XcodeGen regenerates entitlements plists on every run — without properties it writes an
 # empty dict and strips aps-environment from the signed app (push + LA remote updates fail).
 entitlements_block = """    entitlements:
