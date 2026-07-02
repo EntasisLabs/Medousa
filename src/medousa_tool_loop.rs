@@ -18,8 +18,8 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
 use crate::agent_runtime::turn_completion_fsm::{
-    decide_after_tools_text_round, decide_no_tool_debt_text_round, AfterToolsRoundContext,
-    ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
+    decide_after_tools_text_round, decide_no_tool_debt_text_round, resolve_interim_continue_cap,
+    AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
@@ -35,22 +35,16 @@ use crate::turn_budget_request::{
     turn_budget_request_store, BudgetResolution, CreateTurnBudgetRequest,
 };
 use crate::turn_control_tools::{
-    finish_turn_from_invocations, begin_work_message_from_invocations,
-    begin_work_note_from_invocations,
+    finish_turn_from_invocations, begin_work_note_from_invocations,
     checkpoint_turn_from_invocations,
     is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name,
-    is_prepare_final_tool_name,
-    is_request_more_rounds_tool_name, request_more_rounds_from_invocations,
-    terminal_text_for_fsm_end,
+    is_prepare_final_tool_name, is_request_more_rounds_tool_name, is_update_user_tool_name,
+    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
+    turn_progress_message_from_invocations,
     COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
-
-/// Per-turn budget for bounded interim auto-continues (short non-tool notes).
-/// Kept low: the `TurnLoopDiscipline` stuck guard and `max_tool_rounds` fuse are
-/// the hard safety net; this just keeps a brief "let me check" from ending the turn.
-const INTERIM_CONTINUE_CAP: usize = 2;
 
 #[derive(Clone)]
 pub struct MedousaToolLoopPipeline {
@@ -223,7 +217,7 @@ impl MedousaToolLoopPipeline {
         // Per-turn budget for bounded interim auto-continues (short non-tool notes
         // that should not end the turn). Capped low; the stuck discipline +
         // max_tool_rounds fuse below are the hard safety net.
-        let interim_continue_cap = INTERIM_CONTINUE_CAP;
+        let interim_continue_cap = resolve_interim_continue_cap(effective_max_tool_rounds);
         let mut interim_continues_used = 0usize;
 
         if !tools.is_empty() {
@@ -414,6 +408,7 @@ impl MedousaToolLoopPipeline {
                     && tool_calls.iter().any(|call| {
                         !is_prepare_final_tool_name(&call.fn_name)
                             && !is_begin_work_tool_name(&call.fn_name)
+                            && !is_update_user_tool_name(&call.fn_name)
                             && !is_checkpoint_turn_tool_name(&call.fn_name)
                             && !is_finish_turn_tool_name(&call.fn_name)
                             && !is_request_more_rounds_tool_name(&call.fn_name)
@@ -605,7 +600,7 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some(progress_message) =
-                    begin_work_message_from_invocations(round_invocations)
+                    turn_progress_message_from_invocations(round_invocations)
                 {
                     if let Some(gate) = completion_gate.as_ref() {
                         if let Some(sink) = gate.sink.as_ref() {

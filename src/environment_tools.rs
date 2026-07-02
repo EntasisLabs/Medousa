@@ -664,40 +664,12 @@ pub fn make_chrome_action_component(
 
 #[cfg(test)]
 mod demo_tests {
-    use medousa_types::environment::{
-        MobileAskEntry, MobileTabBar, ShellChromeDef, ShellChromeMobile,
-    };
-    use medousa_types::environment_default::default_environment_spec;
+    use medousa_types::environment_default::writing_studio_demo_spec;
     use medousa_types::environment_validate::is_valid_environment_spec;
-
-    use super::*;
 
     #[test]
     fn writing_studio_demo_spec_validates() {
-        let mut spec = default_environment_spec("personal");
-        spec.surfaces
-            .push(make_custom_surface("writing-studio", "Writing studio", "pen-line"));
-        spec.shell_chrome = Some(ShellChromeDef {
-            mobile: Some(ShellChromeMobile {
-                default_home: Some("writing-studio".to_string()),
-                ask_entry: Some(MobileAskEntry::Fab),
-                tab_bar: Some(MobileTabBar::Full),
-            }),
-            desktop: None,
-        });
-        spec.components.push(make_presentation_component(
-            "writing-manuscript",
-            "writing-studio",
-            "art-writing-demo",
-            "Manuscript",
-        ));
-        spec.components.push(make_chrome_action_component(
-            "writing-ask-fab",
-            "writing-studio",
-            "fab",
-            "open-ask",
-            "Ask",
-        ));
+        let spec = writing_studio_demo_spec("personal");
         assert!(is_valid_environment_spec(&spec));
     }
 }

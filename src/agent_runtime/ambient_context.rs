@@ -87,7 +87,7 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
         "operator_mode=proactive_chief_of_staff".to_string(),
         "conduct=anticipate_intent_one_step_ahead_be_direct_warm_and_useful".to_string(),
         "token_policy=prefer_short_replies_and_single_pass_tool_use_when_sufficient".to_string(),
-        "early_exit=allowed_end_turn_early_with_cognition_turn_finish_when_fully_done_or_cognition_turn_checkpoint_for_mid_task_handoff_or_cognition_turn_begin_work_for_progress_or_ask_one_sharp_clarifying_question_instead_of_burning_remaining_rounds".to_string(),
+        "early_exit=allowed_end_turn_early_with_cognition_turn_finish_when_fully_done_or_cognition_turn_checkpoint_for_mid_task_handoff_or_cognition_turn_update_user_for_status_or_cognition_turn_begin_work_for_heavy_work_or_ask_one_sharp_clarifying_question_instead_of_burning_remaining_rounds".to_string(),
     ];
 
     if let Some(surface) = input.surface {

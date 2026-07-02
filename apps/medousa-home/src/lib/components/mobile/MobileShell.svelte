@@ -15,6 +15,7 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
+  import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -48,9 +49,28 @@
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { resolveJournalDailyHeroPath } from "$lib/utils/vaultNoteBridge";
   import { vaultDisplayTitle } from "$lib/utils/formatVault";
+  import {
+    shellAskFabVisible,
+    showBuiltinHomeInlineAsk,
+    visibleMobileTabs,
+  } from "$lib/utils/mobileEnvironmentChrome";
 
   const mobileHomeSurfaceId = $derived(environment.mobileDefaultHome);
   const customMobileHome = $derived(environment.isCustomSurface(mobileHomeSurfaceId));
+  const mobileAskEntry = $derived(environment.mobileAskEntry);
+  const fabChromeOnHome = $derived(
+    environment
+      .componentsForSurface(mobileHomeSurfaceId, "fab")
+      .filter((component) => component.type === "chrome_action").length,
+  );
+  const showShellAskFab = $derived(
+    shellAskFabVisible({
+      askEntry: mobileAskEntry,
+      customHome: customMobileHome,
+      fabChromeActionCount: fabChromeOnHome,
+    }),
+  );
+  const showBuiltinInlineAsk = $derived(showBuiltinHomeInlineAsk(mobileAskEntry));
   let daemonHealth = $state<DaemonHealth | null>(null);
   let mainEl: HTMLElement | undefined = $state();
 
@@ -96,6 +116,7 @@
     void syncHomeWidget(liveActivityPayload(), { force });
   }
 
+  // iOS glance layer (WidgetKit + Live Activity) — preserve these sync paths when editing shell chrome.
   $effect(() => {
     if (!isTauriIos()) return;
     if (daemonHealth === null) return;
@@ -129,6 +150,13 @@
   $effect(() => {
     if (!mainEl) return;
     return attachMobileTabSwipe(mainEl);
+  });
+
+  $effect(() => {
+    const order = visibleMobileTabs(environment.spec);
+    if (order.length > 0 && !order.includes(layout.mobileTab)) {
+      switchMobileTab(order[0]);
+    }
   });
 
   onMount(() => {
@@ -200,6 +228,7 @@
           onOpenNote={handleOpenNote}
           onOpenSettings={() => layout.openMore("settings")}
           onToggleActivity={() => layout.toggleActivitySheet()}
+          showInlineAsk={showBuiltinInlineAsk}
         />
         {/if}
       {:else if layout.mobileTab === "chat"}
@@ -234,6 +263,10 @@
   </main>
 
   <MobileBottomChrome />
+
+  {#if showShellAskFab}
+    <ShellAskFab />
+  {/if}
 
   <MobileToast
     message={userProfiles.remoteChangeNotice}

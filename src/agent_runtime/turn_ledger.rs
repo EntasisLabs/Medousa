@@ -19,10 +19,11 @@ pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
 pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
 Runtime boundary (enforced by the daemon):
-- Short interim prose (<255 chars) may continue the turn (bounded) — pair with tools or cognition_turn_begin_work when you need visible progress.
-- Long planning prose (>255 chars, no delivered outcome) is preserved in history and the runtime reloops so you can call the tools you still need — do not treat it as final.
+- Mid-turn status for the principal: cognition_turn_update_user(message) in the same model round as your next tool — retries, quick updates, course-corrections. Same visible line as chat, but does not fight turn-end/stuck logic.
+- Heavy/long-running work starting: cognition_turn_begin_work(message, note=…) — workers, multi-step research, large vault crawl. Not for light status.
+- Chat prose with zero tool calls is turn control signal, not casual status — it may end the turn, reloop, or stub after tools.
+- Long planning prose (>255 chars, no delivered outcome) is preserved in history and the runtime reloops — pair with update_user + tools, not plan-only chat.
 - Before any tools: substantive answers with no tool calls can end the turn; long planning without tools continues instead of terminating early.
-- Progress for the principal: cognition_turn_begin_work (tool call) — optional note= pins sticky intent in scratch. Not naked interim chat prose alone.
 - After tool work: only cognition_turn_finish commits the principal-facing answer. Substantive-looking prose after tools without finish yields a stub.
 - Mid-task handoff: cognition_turn_checkpoint. Delegate: cognition_spawn_turn_worker in a tool round.
 - Host console auto-unlocks memory + vault + environment each session — call tools directly; cognition_tools_discover(domain=environment) for canvas tools.
@@ -31,7 +32,7 @@ Runtime boundary (enforced by the daemon):
 pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
 [MEDOUSA_SCRATCH] is your engine sticky notes — persists across tool rounds and client disconnect.
 The streamed UI draft may reset between rounds; scratch does not.
-Use cognition_turn_begin_work(note=...) to pin what you are about to do.
+cognition_turn_begin_work(note=…) pins heavy-work intent; cognition_turn_update_user is for short principal-visible status only.
 Check scratch digests_recent / tools_this_turn / open_gaps before re-calling tools you already ran."#;
 
 /// Default when no host gate passes a configured tool-round budget (tests, bare loops).
@@ -410,6 +411,7 @@ mod tests {
         assert!(p.contains("[MEDOUSA_TURN_RUNTIME]"));
         assert!(p.contains("[MEDOUSA_SCRATCH_POLICY]"));
         assert!(p.contains("cognition_turn_finish"));
+        assert!(p.contains("cognition_turn_update_user"));
     }
 
     #[test]

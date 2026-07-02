@@ -57,6 +57,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_artifact_read",
     "cognition_artifact_grep",
     "cognition_turn_begin_work",
+    "cognition_turn_update_user",
     "cognition_turn_checkpoint",
     "cognition_turn_finish",
     "cognition_turn_worker_status",
@@ -67,6 +68,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
 pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
     "cognition_turn_begin_work",
+    "cognition_turn_update_user",
     "cognition_turn_finish",
     "cognition_capability_invoke",
     "cognition_web_search",
@@ -343,7 +345,8 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
         "cognition_browser_snapshot" => "Snapshot a URL via Agent Browser for synthesis",
-        "cognition_turn_begin_work" => "Progress line before heavy tools (not chat prose — prose without tools ends the turn)",
+        "cognition_turn_begin_work" => "Signal heavy/long-running tool work starting (workers, big crawls)",
+        "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
         "cognition_ui_present" => "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
@@ -745,7 +748,7 @@ mod tests {
     #[test]
     fn bootstrap_host_tools_are_small() {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
-        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 16);
+        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 20);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));

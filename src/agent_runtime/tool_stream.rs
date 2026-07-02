@@ -38,6 +38,15 @@ pub fn summarize_tool_input(tool_name: &str, tool_input: &serde_json::Value) -> 
             .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
             .unwrap_or_else(|| "Starting work".to_string());
     }
+    if crate::turn_control_tools::is_update_user_tool_name(tool_name) {
+        return tool_input
+            .get("message")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| truncate_text_for_budget(value, SUMMARY_MAX_CHARS))
+            .unwrap_or_else(|| "Update".to_string());
+    }
     if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name)
         || crate::artifact_tools::is_artifact_cognition_tool(tool_name)
     {
@@ -90,6 +99,9 @@ pub fn summarize_tool_output(tool_name: &str, tool_output: &serde_json::Value) -
     }
     if crate::turn_control_tools::is_begin_work_tool_name(tool_name) {
         return Some("Progress noted".to_string());
+    }
+    if crate::turn_control_tools::is_update_user_tool_name(tool_name) {
+        return Some("Update sent".to_string());
     }
     if crate::ui_present_tools::is_ui_present_cognition_tool(tool_name)
         || tool_name == crate::artifact_tools::COGNITION_ARTIFACT_WRITE

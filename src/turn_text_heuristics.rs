@@ -24,6 +24,11 @@ const WORK_IN_PROGRESS_ANYWHERE: &[&str] = &[
     "pull up ",
     "calibrate to",
     "calibrating",
+    "now i see",
+    "went wrong",
+    "let me grab",
+    "grab the ",
+    "grab the schemas",
 ];
 
 pub fn looks_like_interim_status(text: &str) -> bool {

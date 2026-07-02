@@ -31,6 +31,7 @@
     onOpenNote: (path: string) => void | Promise<void>;
     onOpenSettings: () => void;
     onToggleActivity: () => void;
+    showInlineAsk?: boolean;
   }
 
   let {
@@ -40,6 +41,7 @@
     onOpenNote,
     onOpenSettings,
     onToggleActivity,
+    showInlineAsk = true,
   }: Props = $props();
 
   const blocked = $derived(workspace.needsAttentionCount());
@@ -284,17 +286,19 @@
 
       <h1 class="mobile-home-greeting mt-6">{greeting}</h1>
 
-      <button
-        type="button"
-        class="mobile-home-ask mt-4"
-        aria-label="Ask Medousa"
-        onclick={openAsk}
-      >
-        <span class="mobile-home-ask-placeholder">Ask Medousa anything…</span>
-        <span class="mobile-home-ask-send" aria-hidden="true">
-          <ArrowUp size={18} strokeWidth={2.25} />
-        </span>
-      </button>
+      {#if showInlineAsk}
+        <button
+          type="button"
+          class="mobile-home-ask mt-4"
+          aria-label="Ask Medousa"
+          onclick={openAsk}
+        >
+          <span class="mobile-home-ask-placeholder">Ask Medousa anything…</span>
+          <span class="mobile-home-ask-send" aria-hidden="true">
+            <ArrowUp size={18} strokeWidth={2.25} />
+          </span>
+        </button>
+      {/if}
 
       <button
         type="button"

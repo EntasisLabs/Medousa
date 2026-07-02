@@ -95,7 +95,7 @@ const TOPICS: &[WikiTopic] = &[
         step_9_presets(.95): "cognition_environment_activate_preset only for default↔focus switch — not first custom surface"
     },
     turn_discipline(.98): {
-        progress(.97): "cognition_turn_begin_work before heavy tools",
+        progress(.97): "cognition_turn_update_user for quick status; cognition_turn_begin_work before heavy tools",
         finalize(.99): "cognition_turn_finish after tool work — naked prose becomes stub"
     },
     stuck_routing(.96): {

@@ -16,6 +16,10 @@ const ALLOWED_SLOTS: &[&str] = &[
 
 const ALLOWED_CHROME_ACTIONS: &[&str] = &[CHROME_ACTION_OPEN_ASK, CHROME_ACTION_OPEN_ACTIVITY];
 
+const SAFETY_FLOOR_SURFACES: &[&str] = &[SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME];
+
+const ALLOWED_MOBILE_TAB_SLUGS: &[&str] = &["home", "chat", "notes", "web"];
+
 pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
     let mut errors = Vec::new();
 
@@ -60,6 +64,9 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
             if preset.active {
                 active_count += 1;
             }
+            if preset.label.trim().is_empty() {
+                errors.push(format!("layout preset '{}' requires a label", preset.id));
+            }
             for sid in &preset.surfaces {
                 if !surface_ids.contains(&sid.as_str()) {
                     errors.push(format!(
@@ -68,9 +75,20 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
                     ));
                 }
             }
+            for safety in SAFETY_FLOOR_SURFACES {
+                if !preset.surfaces.iter().any(|sid| sid == safety) {
+                    errors.push(format!(
+                        "layout preset '{}' must include safety surface '{safety}'",
+                        preset.id
+                    ));
+                }
+            }
         }
         if active_count > 1 {
             errors.push("only one layout preset may be active".to_string());
+        }
+        if active_count == 0 && !presets.is_empty() {
+            errors.push("at least one layout preset must be active".to_string());
         }
     }
 
@@ -101,6 +119,14 @@ fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
             "builtin surface '{}' requires builtin_id",
             surface.id
         ));
+    }
+    if let Some(mobile_tab) = &surface.mobile_tab {
+        if !ALLOWED_MOBILE_TAB_SLUGS.contains(&mobile_tab.as_str()) {
+            errors.push(format!(
+                "surface '{}' mobileTab '{}' is invalid — use home|chat|notes|web",
+                surface.id, mobile_tab
+            ));
+        }
     }
 }
 
@@ -230,9 +256,52 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_settings() {
+    fn writing_studio_demo_spec_validates() {
+        use crate::environment_default::writing_studio_demo_spec;
+
+        let spec = writing_studio_demo_spec("personal");
+        assert!(is_valid_environment_spec(&spec));
+    }
+
+    #[test]
+    fn rejects_presentation_component_on_builtin_home() {
+        let mut spec = default_environment_spec("personal");
+        spec.components.push(ComponentDef {
+            id: "bad-home-widget".to_string(),
+            component_type: ComponentType::Presentation,
+            surface_id: "home".to_string(),
+            slot: "main".to_string(),
+            label: Some("Dashboard".to_string()),
+            config: serde_json::json!({ "artifactId": "art-demo" }),
+            presentation: Some(crate::environment::UiPresentation::Inline),
+            feeds: vec![],
+            updated_at: None,
+        });
+        let errors = validate_environment_spec(&spec);
+        assert!(errors.iter().any(|e| e.contains("custom surface")));
+        assert!(errors.iter().any(|e| e.contains("home")));
+    }
+
+    #[test]
+    fn rejects_missing_settings_surface() {
         let mut spec = default_environment_spec("personal");
         spec.surfaces.retain(|s| s.id != SAFETY_SURFACE_SETTINGS);
         assert!(!is_valid_environment_spec(&spec));
+    }
+
+    #[test]
+    fn rejects_active_preset_missing_safety_floor() {
+        let mut spec = default_environment_spec("personal");
+        if let Some(presets) = &mut spec.layout_presets {
+            for preset in presets.iter_mut() {
+                if preset.active {
+                    preset
+                        .surfaces
+                        .retain(|id| id != SAFETY_SURFACE_SETTINGS);
+                }
+            }
+        }
+        let errors = validate_environment_spec(&spec);
+        assert!(errors.iter().any(|e| e.contains("safety surface")));
     }
 }

@@ -223,14 +223,31 @@ impl StasisTool for CognitionUiPresentTool {
                 .iter()
                 .position(|entry| entry.id == component_id)
             {
-                env_record.spec.components[index] = component;
+                env_record.spec.components[index] = component.clone();
             } else {
-                env_record.spec.components.push(component);
+                env_record.spec.components.push(component.clone());
+            }
+            let validation_errors =
+                medousa_types::environment_validate::validate_environment_spec(&env_record.spec);
+            if !validation_errors.is_empty() {
+                if let Some(index) = env_record
+                    .spec
+                    .components
+                    .iter()
+                    .position(|entry| entry.id == component_id)
+                {
+                    env_record.spec.components.remove(index);
+                }
+                response["ok"] = json!(false);
+                response["persisted"] = json!(false);
+                response["errors"] = json!(validation_errors);
+                return Ok(response);
             }
             let updated = crate::environment_store::environment_hub()
                 .put(env_record.spec, "agent")
                 .await
                 .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            response["persisted"] = json!(true);
             response["persisted_component_id"] = json!(component_id);
             response["environment_revision"] = json!(updated.revision);
         }

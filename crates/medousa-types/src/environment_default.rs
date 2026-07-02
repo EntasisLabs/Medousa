@@ -3,9 +3,10 @@
 use chrono::Utc;
 
 use crate::environment::{
-    ComponentType, EnvironmentSpec, LayoutPreset, MobileAskEntry, MobileTabBar, ShellChromeDef,
-    ShellChromeMobile, SurfaceDef, SurfaceKind, SurfaceLayout, ENVIRONMENT_SPEC_VERSION,
-    SAFETY_SURFACE_RUNTIME, SAFETY_SURFACE_SETTINGS,
+    ComponentDef, ComponentType, EnvironmentSpec, LayoutPreset, MobileAskEntry, MobileTabBar,
+    ShellChromeDef, ShellChromeMobile, SurfaceDef, SurfaceKind, SurfaceLayout, UiPresentation,
+    CHROME_ACTION_OPEN_ASK, ENVIRONMENT_SPEC_VERSION, SAFETY_SURFACE_RUNTIME,
+    SAFETY_SURFACE_SETTINGS,
 };
 
 pub const DEFAULT_PROFILE_ID: &str = "personal";
@@ -119,9 +120,67 @@ pub fn default_surfaces() -> Vec<SurfaceDef> {
         .collect()
 }
 
+/// Phase 1 proof demo — custom home, FAB ask, presentation + chrome_action components.
+pub fn writing_studio_demo_spec(profile_id: impl Into<String>) -> EnvironmentSpec {
+    let mut spec = default_environment_spec(profile_id);
+    spec.surfaces.push(SurfaceDef {
+        id: "writing-studio".to_string(),
+        label: "Writing studio".to_string(),
+        icon: "pen-line".to_string(),
+        kind: SurfaceKind::Custom,
+        builtin_id: None,
+        layout: SurfaceLayout::Dashboard,
+        slots: vec![],
+        mobile_tab: None,
+    });
+
+    if let Some(presets) = &mut spec.layout_presets {
+        for preset in presets.iter_mut() {
+            if preset.id == DEFAULT_PRESET_ID && !preset.surfaces.iter().any(|id| id == "writing-studio") {
+                preset.surfaces.push("writing-studio".to_string());
+            }
+        }
+    }
+
+    spec.shell_chrome = Some(ShellChromeDef {
+        mobile: Some(ShellChromeMobile {
+            default_home: Some("writing-studio".to_string()),
+            ask_entry: Some(MobileAskEntry::Fab),
+            tab_bar: Some(MobileTabBar::Full),
+        }),
+        desktop: None,
+    });
+
+    spec.components.push(ComponentDef {
+        id: "writing-manuscript".to_string(),
+        component_type: ComponentType::Presentation,
+        surface_id: "writing-studio".to_string(),
+        slot: "main".to_string(),
+        label: Some("Manuscript".to_string()),
+        config: serde_json::json!({ "artifactId": "art-writing-demo" }),
+        presentation: Some(UiPresentation::Inline),
+        feeds: vec![],
+        updated_at: Some(spec.updated_at),
+    });
+    spec.components.push(ComponentDef {
+        id: "writing-ask-fab".to_string(),
+        component_type: ComponentType::ChromeAction,
+        surface_id: "writing-studio".to_string(),
+        slot: "fab".to_string(),
+        label: Some("Ask".to_string()),
+        config: serde_json::json!({ "action": CHROME_ACTION_OPEN_ASK }),
+        presentation: None,
+        feeds: vec![],
+        updated_at: Some(spec.updated_at),
+    });
+    spec.updated_by = "demo".to_string();
+    spec
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::environment_validate::is_valid_environment_spec;
 
     #[test]
     fn default_spec_includes_safety_surfaces() {
@@ -129,5 +188,18 @@ mod tests {
         let ids: Vec<_> = spec.surfaces.iter().map(|s| s.id.as_str()).collect();
         assert!(ids.contains(&SAFETY_SURFACE_SETTINGS));
         assert!(ids.contains(&SAFETY_SURFACE_RUNTIME));
+    }
+
+    #[test]
+    fn writing_studio_demo_spec_validates() {
+        let spec = writing_studio_demo_spec(DEFAULT_PROFILE_ID);
+        assert!(is_valid_environment_spec(&spec));
+        assert_eq!(
+            spec.shell_chrome
+                .as_ref()
+                .and_then(|c| c.mobile.as_ref())
+                .and_then(|m| m.default_home.as_deref()),
+            Some("writing-studio")
+        );
     }
 }

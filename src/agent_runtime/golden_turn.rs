@@ -44,6 +44,7 @@ use crate::medousa_tool_loop::MedousaToolLoopPipeline;
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::turn_control_tools::{
     CognitionTurnBeginWorkTool, CognitionTurnCheckpointTool, CognitionTurnFinishTool,
+    CognitionTurnUpdateUserTool,
 };
 
 // ── Scripted model provider ──────────────────────────────────────────────────
@@ -285,6 +286,7 @@ async fn run_golden(
     registry.register_tool(CognitionTurnFinishTool).unwrap();
     registry.register_tool(CognitionTurnCheckpointTool).unwrap();
     registry.register_tool(CognitionTurnBeginWorkTool).unwrap();
+    registry.register_tool(CognitionTurnUpdateUserTool).unwrap();
 
     let pipeline = MedousaToolLoopPipeline::new(
         PromptExecutionPipeline::new(Arc::new(ScriptedClient::new(steps))),

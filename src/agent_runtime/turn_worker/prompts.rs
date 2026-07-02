@@ -34,9 +34,9 @@ Rules:
 - Persist runtime learnings with cognition_vault_write + tags: [runtime-learning] — turn start injects [MEDOUSA_RUNTIME_LEARNINGS]. Propose manuscript overlays with cognition_manuscript_overlay_propose (operator approves; never kernel STTP edits).
 - Turn control (runtime enforces turn loop policy — see [MEDOUSA_TURN_RUNTIME]):
   - No tools needed: substantive answer in one prose message (ends turn).
-  - Short interim (<255 chars) may continue bounded — pair with tools or cognition_turn_begin_work.
-  - Long planning prose (>255) is preserved and relooped — call the tools you still need.
-  - Before host tools: cognition_turn_begin_work(message, note=…) for progress + sticky intent.
+  - Mid-turn principal status: cognition_turn_update_user(message) in the same round as your next tool — retries, quick updates, course-corrections. Not naked chat prose.
+  - Heavy/long-running work: cognition_turn_begin_work(message, note=…) before workers, big crawls, multi-step research.
+  - Long planning prose (>255) is preserved and relooped — pair with update_user + tools, not plan-only chat.
   - Mid-task handoff: cognition_turn_checkpoint.
   - Fully done after tools: cognition_turn_finish (required — naked prose is not committed as final).
   - Custom canvas on Home: see [MEDOUSA_HOST_CANVAS] — never target builtin surfaces for agent components.
@@ -51,7 +51,8 @@ Canvas workflow (Home / supports_ui_artifacts):
 2) cognition_environment_propose + cognition_environment_apply — add kind=custom surface AND list it in active preset surfaces.
 3) cognition_ui_present(persist=true, surface_id=<custom>, component_id, slot) OR cognition_component_create with type=presentation and config.artifactId.
 4) Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces render agent components.
-5) cognition_component_list to verify. cognition_environment_activate_preset to switch layout presets. Operator approves agent proposals in Settings → Canvas."#;
+5) cognition_component_list to verify. cognition_environment_activate_preset to switch layout presets. Operator approves agent proposals in Settings → Canvas.
+6) Status while building ("pulling wiki", "retrying propose"): cognition_turn_update_user(message=…) in the same round as environment_get/wiki/propose — not naked chat prose."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -84,7 +85,7 @@ Memory:
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
 - After tools: call cognition_turn_finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
-- Use cognition_turn_begin_work for progress lines before heavy tools — not naked status prose.
+- Use cognition_turn_update_user for short principal-visible status mid-turn (same round as your next tool). Use cognition_turn_begin_work only before heavy/long-running work. Naked status chat prose fights the turn loop.
 - If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.

@@ -1,8 +1,8 @@
 //! Explicit turn completion FSM — text-only model rounds.
 //!
 //! **Prose terminates:** any non-empty assistant message with zero tool calls in that round
-//! ends the turn. Progress uses `cognition_turn_begin_work`; finals after tool work require
-//! `cognition_turn_finish`. See `architecture/turn-prose-terminates-plan.md`.
+//! ends the turn. Mid-turn status uses `cognition_turn_update_user`; heavy work uses
+//! `cognition_turn_begin_work`; finals after tool work require `cognition_turn_finish`.
 
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
@@ -15,6 +15,12 @@ use crate::turn_text_heuristics::{
 /// interim note (alongside `looks_like_interim_status`), eligible for a bounded
 /// auto-continue instead of ending the turn.
 pub const INTERIM_MAX_CHARS: usize = EXTENDED_PROSE_CHAR_THRESHOLD;
+
+/// Per-turn budget for bounded interim auto-continues (short non-tool notes).
+pub fn resolve_interim_continue_cap(max_tool_rounds: usize) -> usize {
+    let rounds = max_tool_rounds.max(1);
+    ((rounds * 2) / 5).clamp(3, 8)
+}
 
 /// What the tool loop should do after a text-only model response.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,16 +57,17 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
                 .to_string()
         }
         ContinueReason::InterimProse => {
-            "Turn continues: that was a brief acknowledgment, not the final answer. Call the \
-             tool(s) you need now (or cognition_turn_begin_work to post a visible status line), \
-             then cognition_turn_finish with the complete answer once the work is done."
+            "Turn continues: naked status prose costs a text-only continue and can hit stuck limits. \
+             Next round: call cognition_turn_update_user(message=…) in the same round as your next tool \
+             — short retries and course-corrections belong there, not chat prose. \
+             cognition_turn_begin_work is for heavy/long-running work only. \
+             Then cognition_turn_finish once done."
                 .to_string()
         }
         ContinueReason::ExtendedProse => {
-            "Runtime reloop: your last message was kept in history. The daemon sent another \
-             round intentionally — you still owe tool work or a cognition_turn_finish with the \
-             complete answer. Check [MEDOUSA_SCRATCH] digests_recent before re-calling tools you \
-             already ran."
+            "Runtime reloop: your last message was kept in history. Next round: call the tools you still \
+             need — use cognition_turn_update_user for a quick principal-visible line if helpful. \
+             Check [MEDOUSA_SCRATCH] digests_recent before re-calling tools you already ran."
                 .to_string()
         }
     }
@@ -289,8 +296,10 @@ mod tests {
 
     #[test]
     fn interim_before_tools_ends_when_cap_exhausted() {
+        let cap = resolve_interim_continue_cap(10);
         let mut round = ctx("Let me check that for you.");
-        round.interim_continues_used = round.interim_continue_cap;
+        round.interim_continues_used = cap;
+        round.interim_continue_cap = cap;
         let action = decide_no_tool_debt_text_round(&round);
         assert!(matches!(
             action,
@@ -298,6 +307,29 @@ mod tests {
                 termination_reason: "no_tools_prose"
             }
         ));
+    }
+
+    #[test]
+    fn self_correction_after_tools_continues_as_interim() {
+        let invocations = vec![tool("cognition_environment_get")];
+        let draft = "Now I see what went wrong before — I was targeting home (builtin), which \
+                     silently rejects components. Let me grab the schemas.";
+        assert!(crate::turn_text_heuristics::looks_like_interim_status(draft));
+        let action = decide_after_tools_text_round(&after_tools(draft, &invocations));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::InterimProse,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn interim_continue_cap_scales_with_round_budget() {
+        assert_eq!(resolve_interim_continue_cap(10), 4);
+        assert_eq!(resolve_interim_continue_cap(4), 3);
+        assert_eq!(resolve_interim_continue_cap(20), 8);
     }
 
     #[test]
@@ -366,8 +398,10 @@ mod tests {
     #[test]
     fn interim_prose_after_tools_ends_when_cap_exhausted() {
         let invocations = vec![tool("cognition_memory_context")];
+        let cap = resolve_interim_continue_cap(10);
         let mut round = after_tools("I'll spin up workers next.", &invocations);
-        round.interim_continues_used = round.interim_continue_cap;
+        round.interim_continues_used = cap;
+        round.interim_continue_cap = cap;
         let action = decide_after_tools_text_round(&round);
         assert!(matches!(
             action,
@@ -437,6 +471,13 @@ mod tests {
                 termination_reason: "workshop_lane_prepare_final"
             }
         ));
+    }
+
+    #[test]
+    fn interim_prose_control_message_recommends_update_user() {
+        let msg = continue_control_message(ContinueReason::InterimProse, &[]);
+        assert!(msg.contains("cognition_turn_update_user"));
+        assert!(msg.contains("cognition_turn_begin_work"));
     }
 
     #[test]
