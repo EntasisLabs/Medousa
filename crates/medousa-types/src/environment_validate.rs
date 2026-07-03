@@ -48,6 +48,10 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
             errors.push(format!("duplicate surface id '{}'", surface.id));
         }
         validate_surface(surface, &mut errors);
+        errors.extend(crate::layout::validate_layout_tree(
+            surface,
+            &spec.components,
+        ));
     }
 
     let mut seen_components = std::collections::HashSet::new();
@@ -268,6 +272,7 @@ mod tests {
                 layout: crate::environment::SurfaceLayout::Dashboard,
                 slots: vec![],
                 mobile_tab: None,
+                layout_root: None,
             });
         spec.components.push(ComponentDef {
             id: "bad".to_string(),
@@ -319,6 +324,59 @@ mod tests {
         let errors = validate_environment_spec(&spec);
         assert!(errors.iter().any(|e| e.contains("custom surface")));
         assert!(errors.iter().any(|e| e.contains("home")));
+    }
+
+    #[test]
+    fn validates_hstack_layout_on_custom_surface() {
+        let mut spec = default_environment_spec("personal");
+        spec.surfaces.push(SurfaceDef {
+            id: "studio".to_string(),
+            label: "Studio".to_string(),
+            icon: "grid".to_string(),
+            kind: SurfaceKind::Custom,
+            builtin_id: None,
+            layout: crate::environment::SurfaceLayout::Dashboard,
+            slots: vec![],
+            mobile_tab: None,
+            layout_root: Some(crate::layout::LayoutNode::HStack {
+                spacing: crate::layout::StackSpacing::Md,
+                align: crate::layout::StackAlign::Start,
+                distribution: crate::layout::StackDistribution::FillEqually,
+                children: vec![
+                    crate::layout::LayoutNode::Component {
+                        id: "left".to_string(),
+                        flex: Some(1),
+                    },
+                    crate::layout::LayoutNode::Component {
+                        id: "right".to_string(),
+                        flex: Some(1),
+                    },
+                ],
+            }),
+        });
+        spec.components.push(ComponentDef {
+            id: "left".to_string(),
+            component_type: ComponentType::Presentation,
+            surface_id: "studio".to_string(),
+            slot: "main".to_string(),
+            label: None,
+            config: serde_json::json!({ "artifactId": "art-left" }),
+            presentation: Some(crate::environment::UiPresentation::Panel),
+            feeds: vec![],
+            updated_at: None,
+        });
+        spec.components.push(ComponentDef {
+            id: "right".to_string(),
+            component_type: ComponentType::Presentation,
+            surface_id: "studio".to_string(),
+            slot: "main".to_string(),
+            label: None,
+            config: serde_json::json!({ "artifactId": "art-right" }),
+            presentation: Some(crate::environment::UiPresentation::Panel),
+            feeds: vec![],
+            updated_at: None,
+        });
+        assert!(is_valid_environment_spec(&spec));
     }
 
     #[test]

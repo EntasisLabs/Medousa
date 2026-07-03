@@ -432,6 +432,7 @@ pub(crate) async fn assemble_tui_runtime(
         capability_registry.clone(),
         turn_scope.clone(),
     )?;
+    crate::layout_tools::register_layout_tools(&mut tool_registry)?;
     tool_registry.register_tool(CognitionMcpPromoteToJobTool::new(
         runtime.clone(),
         workflow_registry.clone(),

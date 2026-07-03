@@ -69,6 +69,7 @@ pub mod feed_bus;
 pub mod feed_handlers;
 pub mod feed_store;
 pub mod feed_tools;
+pub mod layout_tools;
 pub mod environment_handlers;
 pub mod environment_store;
 pub mod environment_tools;

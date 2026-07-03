@@ -55,7 +55,44 @@ export interface SurfaceDef {
   layout: SurfaceLayout;
   slots: SlotDef[];
   mobileTab?: string | null;
+  layoutRoot?: LayoutNode | null;
 }
+
+export type StackSpacing = "none" | "sm" | "md" | "lg";
+export type StackAlign = "start" | "center" | "end" | "stretch";
+export type StackDistribution =
+  | "start"
+  | "center"
+  | "end"
+  | "space_between"
+  | "fill_equally";
+
+export type LayoutNode =
+  | {
+      type: "vstack";
+      spacing?: StackSpacing;
+      align?: StackAlign;
+      distribution?: StackDistribution;
+      children: LayoutNode[];
+    }
+  | {
+      type: "hstack";
+      spacing?: StackSpacing;
+      align?: StackAlign;
+      distribution?: StackDistribution;
+      children: LayoutNode[];
+    }
+  | {
+      type: "grid";
+      columns: number;
+      spacing?: StackSpacing;
+      children: LayoutNode[];
+    }
+  | {
+      type: "component";
+      id: string;
+      flex?: number | null;
+    };
 
 export interface ComponentDef {
   id: string;

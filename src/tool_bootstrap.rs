@@ -41,6 +41,9 @@ pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
     "cognition_intent_resolve",
     "cognition_feed_subscribe",
     "cognition_feed_publish",
+    "cognition_layout_get",
+    "cognition_layout_apply",
+    "cognition_layout_reset",
 ];
 
 /// Always-visible host console tools (~12+).
@@ -390,6 +393,9 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_intent_resolve" => "Resolve intent to capability + suggested feeds and component template",
         "cognition_feed_subscribe" => "Bind feed ids on a custom-surface component",
         "cognition_feed_publish" => "Publish a bounded feed event to subscribed components",
+        "cognition_layout_get" => "Read stack layout tree for a custom surface main body",
+        "cognition_layout_apply" => "Apply vstack/hstack/grid layout to custom surface main body",
+        "cognition_layout_reset" => "Clear layoutRoot to implicit vertical stack",
         "cognition_turn_worker_status" => "Pending worker status",
         "cognition_capability_invoke" => "One-shot capability execution",
         "cognition_grapheme_script_load" => "Load saved Grapheme script body",

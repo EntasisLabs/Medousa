@@ -724,6 +724,7 @@ pub fn make_custom_surface(id: &str, label: &str, icon: &str) -> SurfaceDef {
         layout: SurfaceLayout::Dashboard,
         slots: vec![],
         mobile_tab: None,
+        layout_root: None,
     }
 }
 

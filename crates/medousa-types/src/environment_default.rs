@@ -116,6 +116,7 @@ pub fn default_surfaces() -> Vec<SurfaceDef> {
             layout: SurfaceLayout::Single,
             slots: vec![],
             mobile_tab: mobile_tab.map(str::to_string),
+            layout_root: None,
         })
         .collect()
 }
@@ -132,6 +133,7 @@ pub fn writing_studio_demo_spec(profile_id: impl Into<String>) -> EnvironmentSpe
         layout: SurfaceLayout::Dashboard,
         slots: vec![],
         mobile_tab: None,
+        layout_root: None,
     });
 
     if let Some(presets) = &mut spec.layout_presets {

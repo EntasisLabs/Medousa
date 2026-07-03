@@ -1041,6 +1041,10 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     slot: "main".to_string(),
                     component_type: "presentation".to_string(),
                     feeds: vec![medousa_types::feed::WORKSHOP_PULSE_FEED_ID.to_string()],
+                    layout_hint: Some(
+                        "hstack fill_equally for side-by-side dashboards; grid columns=2 for 2x2 tiles"
+                            .to_string(),
+                    ),
                 }),
                 bindings: CapabilityManifestBindings::default(),
                 ..Default::default()

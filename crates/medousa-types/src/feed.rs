@@ -139,6 +139,8 @@ pub struct ComponentTemplateHint {
     pub component_type: String,
     #[serde(default)]
     pub feeds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -87,6 +87,9 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_intent_resolve",
     "cognition_feed_subscribe",
     "cognition_feed_publish",
+    "cognition_layout_get",
+    "cognition_layout_apply",
+    "cognition_layout_reset",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.

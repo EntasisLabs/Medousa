@@ -1,12 +1,16 @@
 import type { ComponentDef, SurfaceLayout } from "$lib/types/environment";
 import type { ArtifactEmbedMode } from "$lib/utils/artifactPrepareHtml";
+import type { LayoutFillContext } from "$lib/utils/layoutPresentation";
+import { shouldFillMainComponent } from "$lib/utils/layoutPresentation";
 
 /** How a canvas presentation should embed in Home for a given surface layout. */
 export function presentationEmbedMode(
   surfaceLayout: SurfaceLayout | undefined,
   component: ComponentDef,
+  fillContext?: LayoutFillContext,
 ): ArtifactEmbedMode {
-  if (surfaceLayout === "dashboard" && component.slot === "main") {
+  const fills = fillContext ? shouldFillMainComponent(fillContext) : surfaceLayout === "dashboard" && component.slot === "main";
+  if (fills) {
     return "panel";
   }
   if (component.presentation === "panel") return "panel";
@@ -17,7 +21,9 @@ export function presentationEmbedMode(
 export function presentationBare(
   surfaceLayout: SurfaceLayout | undefined,
   mode: ArtifactEmbedMode,
+  fillContext?: LayoutFillContext,
 ): boolean {
+  if (fillContext && shouldFillMainComponent(fillContext)) return true;
   if (surfaceLayout === "dashboard") return true;
   return mode !== "inline";
 }

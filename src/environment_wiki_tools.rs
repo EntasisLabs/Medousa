@@ -92,7 +92,8 @@ const TOPICS: &[WikiTopic] = &[
             component_create(.97): "type:presentation, config.artifactId from ui_present artifact_id"
         },
         step_8_verify(.99): "cognition_component_list — surfaceId must be custom not home",
-        step_9_presets(.95): "cognition_environment_activate_preset only for default↔focus switch — not first custom surface"
+        step_9_presets(.95): "cognition_environment_activate_preset only for default↔focus switch — not first custom surface",
+        step_10_layout(.97): "cognition_layout_get then cognition_layout_apply for side-by-side or grid — main slot only; immediate live update"
     },
     turn_discipline(.98): {
         progress(.97): "cognition_turn_update_user for quick status; cognition_turn_begin_work before heavy tools",
@@ -287,6 +288,9 @@ const TOPICS: &[WikiTopic] = &[
     validation_preset(.98): "surface exists but not in nav — add id to active preset surfaces",
     validation_builtin_target(.99): "presentation on home — create custom surface first",
     validation_type(.99): "artifact type rejected — use presentation",
+    validation_layout_orphan(.97): "layoutRoot references unknown component id — fix id or component_create first",
+    validation_layout_duplicate(.97): "same component id twice in layout tree — each main component once",
+    validation_layout_chrome_slot(.97): "layout tree only main-slot components — header/fab/sidebar stay chrome zones",
     success_empty_canvas(.97): {
         cause_1(.97): "propose never applied — operator approval pending",
         cause_2(.97): "component on builtin surface",
@@ -316,6 +320,39 @@ const TOPICS: &[WikiTopic] = &[
         call_next: &["cognition_environment_get", "cognition_environment_propose"],
     },
     WikiTopic {
+        id: "layout_schema",
+        title: "Stack layout grammar (Phase 3)",
+        summary: "Swift-like vstack/hstack/grid for custom surface main bodies — no pixels.",
+        policy: r#"    role(.99): "SurfaceDef.layoutRoot composes main-slot components only — chrome zones unchanged.",
+    scope(.99): {
+        applies(.99): "kind:custom surfaces",
+        main_only(.99): "layout tree references slot:main components by id",
+        immediate(.99): "cognition_layout_apply goes live without propose/apply approval"
+    },
+    node_types(.99): {
+        vstack(.99): "vertical stack — aliases v_stack; default implicit when layoutRoot absent",
+        hstack(.99): "horizontal row — aliases h_stack",
+        grid(.99): "columns 1..4 — 2x2 corners without coordinates",
+        component(.99): "leaf ref { type:component, id, flex? }"
+    },
+    aliases(.98): "Models may emit h_stack/v_stack/fillEqually — daemon accepts both compact and snake_case",
+    knobs(.98): {
+        spacing(.98): "none | sm | md | lg",
+        align(.97): "start | center | end | stretch",
+        distribution(.97): "start | center | end | space_between | fill_equally",
+        flex(.97): "0..8 on component leaf — proportional sizing in stacks"
+    },
+    tools(.99): {
+        read(.99): "cognition_layout_get — resolved_layout_root includes implicit fallback",
+        write(.99): "cognition_layout_apply { surface_id, layout_root }",
+        reset(.97): "cognition_layout_reset — back to implicit vstack order"
+    },
+    adhd_guide_example(.96): "{ surface_id:adhd-guide, layout_root:{ type:hstack, spacing:md, distribution:fill_equally, children:[{type:component,id:adhd-guide-tetris,flex:1},{type:component,id:adhd-guide-original,flex:1}] } }",
+    anti_patterns(.98): "Do not encode mosaic layout inside HTML artifact when multiple presentation components should move independently — use layout_apply instead"#,
+        related: &["component_schema", "surface_schema", "tool_map"],
+        call_next: &["cognition_layout_get", "cognition_layout_apply"],
+    },
+    WikiTopic {
         id: "tool_map",
         title: "Tool routing",
         summary: "Which cognition tool for which goal.",
@@ -330,6 +367,9 @@ const TOPICS: &[WikiTopic] = &[
         add_component(.97): "cognition_component_create",
         publish_html(.98): "cognition_ui_present",
         edit_html(.97): "cognition_artifact_write",
+        stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
+        feed_subscribe(.96): "cognition_feed_subscribe",
+        intent_wiring(.96): "cognition_intent_resolve",
         context_pointer(.95): "cognition_context_follow_pointer"
     },
     domain_unlock(.96): "environment domain auto-unlocks on Home; missing tools → client lacks supports_ui_artifacts"#,
@@ -427,7 +467,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
             "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present. \
              Returns response_format=sttp (same family as system prompt). \
              Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. \
-             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, common_errors, example_writing_studio, tool_map.",
+             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, layout_schema, common_errors, example_writing_studio, tool_map.",
         )
     }
 
@@ -448,6 +488,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
                         "propose_apply",
                         "ui_present",
                         "presets",
+                        "layout_schema",
                         "common_errors",
                         "example_writing_studio",
                         "tool_map"

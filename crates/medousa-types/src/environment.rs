@@ -167,6 +167,8 @@ pub struct SurfaceDef {
     pub slots: Vec<SlotDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mobile_tab: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_root: Option<crate::layout::LayoutNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

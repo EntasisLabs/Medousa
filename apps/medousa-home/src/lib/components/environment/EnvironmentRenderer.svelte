@@ -1,16 +1,12 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import LayoutNodeRenderer from "$lib/components/environment/LayoutNodeRenderer.svelte";
   import PresentationFrame from "$lib/components/environment/PresentationFrame.svelte";
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
-  import EnvironmentMedousaView from "$lib/components/environment/EnvironmentMedousaView.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import type { ComponentDef } from "$lib/types/environment";
-  import {
-    presentationBare,
-    presentationEmbedMode,
-    surfaceUsesDashboardFill,
-  } from "$lib/utils/environmentPresentation";
+  import { surfaceUsesDashboardFill } from "$lib/utils/environmentPresentation";
 
   interface Props {
     surfaceId: string;
@@ -23,7 +19,8 @@
   const isCustom = $derived(surface?.kind === "custom");
   const isDashboard = $derived(surfaceUsesDashboardFill(surface?.layout));
   const headerComponents = $derived(environment.componentsForSurface(surfaceId, "header"));
-  const mainComponents = $derived(environment.componentsForSurface(surfaceId, "main"));
+  const mainComponents = $derived(environment.mainComponentsForSurface(surfaceId));
+  const layoutRoot = $derived(environment.layoutRootForSurface(surfaceId));
   const fabComponents = $derived(environment.componentsForSurface(surfaceId, "fab"));
   const inlineComponents = $derived(environment.componentsForSurface(surfaceId, "inline"));
   const sidebarComponents = $derived(environment.componentsForSurface(surfaceId, "sidebar"));
@@ -65,46 +62,15 @@
     {#if isCustom}
       {#if mainComponents.length === 0}
         <p class="environment-renderer-empty">This surface has no components yet.</p>
-      {:else}
-        {#each mainComponents as component (component.id)}
-          {#if component.type === "presentation"}
-            {@const artifactId = configString(component.config, "artifactId")}
-            {@const embedMode = presentationEmbedMode(surface?.layout, component)}
-            {#if artifactId && chat.sessionId}
-              <div
-                class="environment-renderer-main-item"
-                class:environment-renderer-main-item-fill={isDashboard}
-              >
-                <PresentationFrame
-                  sessionId={chat.sessionId}
-                  artifactId={artifactId}
-                  label={component.label ?? "Presentation"}
-                  mode={embedMode}
-                  bare={presentationBare(surface?.layout, embedMode)}
-                  feedState={environment.feedStateForComponent(component.id)}
-                />
-              </div>
-            {/if}
-          {:else if component.type === "medousa_view"}
-            {@const notePath = configString(component.config, "notePath")}
-            {#if notePath}
-              <div
-                class="environment-renderer-main-item"
-                class:environment-renderer-main-item-fill={isDashboard}
-              >
-                <EnvironmentMedousaView {notePath} fill={isDashboard} />
-              </div>
-            {/if}
-          {:else if component.type === "chrome_action"}
-            <ChromeActionRenderer {component} variant="inline" />
-          {:else}
-            <p class="environment-renderer-unsupported">
-              Component <code>{component.id}</code> ({component.type}) is not supported in Home
-              yet — use <code>presentation</code>, <code>medousa_view</code>, or
-              <code>chrome_action</code> on custom surfaces.
-            </p>
-          {/if}
-        {/each}
+      {:else if layoutRoot && chat.sessionId}
+        <LayoutNodeRenderer
+          node={layoutRoot}
+          {surfaceId}
+          surfaceLayout={surface?.layout}
+          components={mainComponents}
+          sessionId={chat.sessionId}
+          feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
+        />
       {/if}
     {:else if builtin}
       {@render builtin()}

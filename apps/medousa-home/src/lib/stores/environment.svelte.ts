@@ -22,6 +22,8 @@ import {
   SAFETY_SURFACE_SETTINGS,
 } from "$lib/types/environment";
 import { defaultEnvironmentSpec } from "$lib/utils/environmentDefault";
+import { mainComponentsForSurface, resolveLayoutRoot } from "$lib/utils/layoutPresentation";
+import type { LayoutNode } from "$lib/types/environment";
 
 export class EnvironmentStore {
   spec = $state<EnvironmentSpec | null>(null);
@@ -83,6 +85,18 @@ export class EnvironmentStore {
       if (slot && component.slot !== slot) return false;
       return true;
     });
+  }
+
+  mainComponentsForSurface(surfaceId: string): ComponentDef[] {
+    const spec = this.spec ?? defaultEnvironmentSpec();
+    return mainComponentsForSurface(surfaceId, spec.components);
+  }
+
+  layoutRootForSurface(surfaceId: string): LayoutNode | null {
+    const surface = this.surfaceById(surfaceId);
+    if (!surface) return null;
+    const spec = this.spec ?? defaultEnvironmentSpec();
+    return resolveLayoutRoot(surface, spec.components);
   }
 
   mobileTabSurfaces(): SurfaceDef[] {
