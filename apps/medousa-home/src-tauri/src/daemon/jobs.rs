@@ -4,7 +4,7 @@ use crate::daemon::types::{
 };
 use tauri::State;
 
-use super::workshop_http;
+use super::sdk::{client, sdk_error};
 use super::DaemonState;
 
 #[tauri::command]
@@ -12,8 +12,11 @@ pub async fn job_get_result(
     state: State<'_, DaemonState>,
     job_id: String,
 ) -> Result<JobResultResponse, String> {
-    let encoded = urlencoding::encode(job_id.trim());
-    workshop_http::get_json(&state, &format!("/v1/jobs/{encoded}/result")).await
+    client(&state)
+        .jobs()
+        .result(job_id.trim())
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -37,7 +40,11 @@ pub async fn job_enqueue_ask(
         additional_manuscript_ids,
         suggested_capability_ids,
     };
-    workshop_http::post_json(&state, "/v1/jobs/ask", &request).await
+    client(&state)
+        .jobs()
+        .enqueue_ask(&request)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -47,17 +54,15 @@ pub async fn job_complete_actions(
     write_journal_path: Option<String>,
     notify_channel: Option<String>,
 ) -> Result<AskJobCompleteActionsResponse, String> {
-    let encoded = urlencoding::encode(job_id.trim());
     let request = AskJobCompleteActionsRequest {
         write_journal_path,
         notify_channel,
     };
-    workshop_http::post_json(
-        &state,
-        &format!("/v1/jobs/{encoded}/complete-actions"),
-        &request,
-    )
-    .await
+    client(&state)
+        .jobs()
+        .complete_actions(job_id.trim(), &request)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -66,9 +71,12 @@ pub async fn job_archive_ask(
     job_id: String,
     purge_output: Option<bool>,
 ) -> Result<ArchiveAskJobResponse, String> {
-    let encoded = urlencoding::encode(job_id.trim());
     let request = ArchiveAskJobRequest {
         purge_output: purge_output.unwrap_or(true),
     };
-    workshop_http::post_json(&state, &format!("/v1/jobs/{encoded}/archive"), &request).await
+    client(&state)
+        .jobs()
+        .archive(job_id.trim(), &request)
+        .await
+        .map_err(sdk_error)
 }

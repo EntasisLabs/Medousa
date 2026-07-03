@@ -4,7 +4,7 @@ use medousa_types::component_runtime::{
 };
 use tauri::State;
 
-use super::workshop_http::{self, path_with_query, post_json};
+use super::sdk::{client, sdk_error};
 use super::DaemonState;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -22,8 +22,11 @@ pub async fn component_runtime_append_events(
     if component_id.is_empty() {
         return Err("component_id is required".to_string());
     }
-    let path = format!("/v1/components/{component_id}/runtime/events");
-    post_json(&state, &path, &request).await
+    client(&state)
+        .components()
+        .runtime_append_events(component_id, &request)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -38,22 +41,15 @@ pub async fn component_runtime_tail_events(
         return Err("component_id is required".to_string());
     }
 
-    let mut query = Vec::new();
-    if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
-        query.push(("profile_id", profile_id));
-    }
-    if let Some(limit) = limit {
-        query.push(("limit", limit.to_string()));
-    }
-    let path = if query.is_empty() {
-        format!("/v1/components/{component_id}/runtime/events")
-    } else {
-        path_with_query(
-            &format!("/v1/components/{component_id}/runtime/events"),
-            &query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>(),
+    client(&state)
+        .components()
+        .runtime_tail_events(
+            component_id,
+            profile_id.as_deref().filter(|id| !id.trim().is_empty()),
+            limit,
         )
-    };
-    workshop_http::get_json(&state, &path).await
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -68,6 +64,16 @@ pub async fn component_runtime_complete_probe(
     if component_id.is_empty() || probe_id.is_empty() {
         return Err("component_id and probe_id are required".to_string());
     }
-    let path = format!("/v1/components/{component_id}/runtime/probe/{probe_id}/result");
-    post_json(&state, &path, &result).await
+    client(&state)
+        .components()
+        .runtime_complete_probe(component_id, probe_id, &result)
+        .await
+        .map(|value| {
+            value
+                .get("ok")
+                .and_then(|ok| ok.as_bool())
+                .map(|ok| ProbeCompleteOk { ok })
+                .unwrap_or(ProbeCompleteOk { ok: true })
+        })
+        .map_err(sdk_error)
 }

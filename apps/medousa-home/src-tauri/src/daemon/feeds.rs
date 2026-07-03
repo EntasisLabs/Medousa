@@ -1,7 +1,7 @@
-use medousa_types::feed::FeedTailResponse;
+use medousa_types::feed::{FeedTailQuery, FeedTailResponse};
 use tauri::State;
 
-use super::workshop_http::{self, path_with_query};
+use super::sdk::{client, sdk_error};
 use super::DaemonState;
 
 #[tauri::command]
@@ -19,22 +19,13 @@ pub async fn feed_tail(
         return Err(format!("invalid feed_id '{feed_id}'"));
     }
 
-    let mut query = Vec::new();
-    if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
-        query.push(("profile_id", profile_id));
-    }
-    if let Some(limit) = limit {
-        query.push(("limit", limit.clamp(1, 100).to_string()));
-    }
-
-    let path = if query.is_empty() {
-        format!("/v1/feeds/{feed_id}/tail")
-    } else {
-        path_with_query(
-            &format!("/v1/feeds/{feed_id}/tail"),
-            &query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>(),
-        )
+    let query = FeedTailQuery {
+        profile_id: profile_id.filter(|id| !id.trim().is_empty()),
+        limit: limit.map(|value| value.clamp(1, 100)),
     };
-
-    workshop_http::get_json(&state, &path).await
+    client(&state)
+        .feeds()
+        .tail(feed_id, &query)
+        .await
+        .map_err(sdk_error)
 }

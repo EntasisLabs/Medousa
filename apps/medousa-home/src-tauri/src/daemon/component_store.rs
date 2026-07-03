@@ -1,11 +1,11 @@
 use medousa_types::component_store::{
     ComponentStoreDeleteResponse, ComponentStoreGetResponse, ComponentStoreListResponse,
-    ComponentStoreSetResponse,
+    ComponentStoreSetRequest, ComponentStoreSetResponse,
 };
 use serde_json::Value;
 use tauri::State;
 
-use super::workshop_http::{self, path_with_query};
+use super::sdk::{client, sdk_error};
 use super::DaemonState;
 
 #[tauri::command]
@@ -20,24 +20,15 @@ pub async fn component_store_get(
         return Err("component_id is required".to_string());
     }
 
-    let mut query = Vec::new();
-    if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
-        query.push(("profile_id", profile_id));
-    }
-    if let Some(key) = key.filter(|value| !value.trim().is_empty()) {
-        query.push(("key", key));
-    }
-
-    let path = if query.is_empty() {
-        format!("/v1/components/{component_id}/store")
-    } else {
-        path_with_query(
-            &format!("/v1/components/{component_id}/store"),
-            &query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>(),
+    client(&state)
+        .components()
+        .store_get(
+            component_id,
+            profile_id.as_deref().filter(|id| !id.trim().is_empty()),
+            key.as_deref().filter(|value| !value.trim().is_empty()),
         )
-    };
-
-    workshop_http::get_json(&state, &path).await
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -57,12 +48,15 @@ pub async fn component_store_set(
         return Err("key is required".to_string());
     }
 
-    let path = format!("/v1/components/{component_id}/store/{key}");
-    let body = serde_json::json!({
-        "value": value,
-        "profileId": profile_id,
-    });
-    workshop_http::put_json(&state, &path, &body).await
+    let request = ComponentStoreSetRequest {
+        value,
+        profile_id: profile_id.filter(|id| !id.trim().is_empty()),
+    };
+    client(&state)
+        .components()
+        .store_put_key(component_id, key, &request)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -78,19 +72,15 @@ pub async fn component_store_delete(
         return Err("component_id and key are required".to_string());
     }
 
-    let mut query = Vec::new();
-    if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
-        query.push(("profile_id", profile_id));
-    }
-    let path = if query.is_empty() {
-        format!("/v1/components/{component_id}/store/{key}")
-    } else {
-        path_with_query(
-            &format!("/v1/components/{component_id}/store/{key}"),
-            &query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>(),
+    client(&state)
+        .components()
+        .store_delete_key(
+            component_id,
+            key,
+            profile_id.as_deref().filter(|id| !id.trim().is_empty()),
         )
-    };
-    workshop_http::delete_json(&state, &path).await
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -104,17 +94,12 @@ pub async fn component_store_list_keys(
         return Err("component_id is required".to_string());
     }
 
-    let mut query = Vec::new();
-    if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
-        query.push(("profile_id", profile_id));
-    }
-    let path = if query.is_empty() {
-        format!("/v1/components/{component_id}/store/keys")
-    } else {
-        path_with_query(
-            &format!("/v1/components/{component_id}/store/keys"),
-            &query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>(),
+    client(&state)
+        .components()
+        .store_list_keys(
+            component_id,
+            profile_id.as_deref().filter(|id| !id.trim().is_empty()),
         )
-    };
-    workshop_http::get_json(&state, &path).await
+        .await
+        .map_err(sdk_error)
 }

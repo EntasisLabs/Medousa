@@ -32,7 +32,11 @@ pub async fn catalog_list_manuscripts(
 pub async fn catalog_list_capabilities(
     state: State<'_, DaemonState>,
 ) -> Result<CapabilityListResponse, String> {
-    workshop_http::get_json(&state, "/v1/capabilities").await
+    super::sdk::client(&state)
+        .capabilities()
+        .list()
+        .await
+        .map_err(super::sdk::sdk_error)
 }
 
 #[tauri::command]
@@ -40,15 +44,22 @@ pub async fn catalog_get_capability(
     state: State<'_, DaemonState>,
     capability_id: String,
 ) -> Result<CapabilityResolveResponse, String> {
-    let id = capability_id.trim();
-    workshop_http::get_json(&state, &format!("/v1/capabilities/{}", urlencoding::encode(id))).await
+    super::sdk::client(&state)
+        .capabilities()
+        .get(capability_id.trim())
+        .await
+        .map_err(super::sdk::sdk_error)
 }
 
 #[tauri::command]
 pub async fn catalog_reindex_capabilities(
     state: State<'_, DaemonState>,
 ) -> Result<serde_json::Value, String> {
-    workshop_http::post_empty_json(&state, "/v1/capabilities/reindex").await
+    super::sdk::client(&state)
+        .capabilities()
+        .reindex()
+        .await
+        .map_err(super::sdk::sdk_error)
 }
 
 #[tauri::command]

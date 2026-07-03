@@ -6,6 +6,7 @@ use crate::daemon::types::{
 use crate::medousa_paths::TuiDefaultsDto;
 use tauri::State;
 
+use super::sdk::{client, sdk_error};
 use super::workshop_http;
 use super::DaemonState;
 
@@ -92,7 +93,11 @@ pub async fn runtime_config_command(
     state: State<'_, DaemonState>,
     request: RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse, String> {
-    workshop_http::post_json(&state, "/v1/runtime/config/command", &request).await
+    client(&state)
+        .runtime()
+        .config_command(&request)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -100,5 +105,9 @@ pub async fn runtime_stage_route_command(
     state: State<'_, DaemonState>,
     request: StageRouteCommandRequest,
 ) -> Result<StageRouteCommandResponse, String> {
-    workshop_http::post_json(&state, "/v1/runtime/stage-route/command", &request).await
+    client(&state)
+        .runtime()
+        .stage_route_command(&request)
+        .await
+        .map_err(sdk_error)
 }

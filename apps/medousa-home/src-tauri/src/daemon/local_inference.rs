@@ -75,11 +75,11 @@ pub async fn local_inference_download_status(
     state: State<'_, DaemonState>,
     job_id: String,
 ) -> Result<ModelDownloadProgress, String> {
-    workshop_http::get_json(
-        &state,
-        &format!("/v1/local/models/download/{}", job_id.trim()),
-    )
-    .await
+    sdk::client(&state)
+        .local_models()
+        .download_status(job_id.trim())
+        .await
+        .map_err(|err| err.to_string())
 }
 
 /// Spawn `medousa_local` on the desktop (daemon only probes engine status).
