@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import CanvasWidgetPickerModal from "$lib/components/environment/CanvasWidgetPickerModal.svelte";
   import LayoutEditToolbar from "$lib/components/environment/LayoutEditToolbar.svelte";
   import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
 
@@ -21,6 +22,12 @@
   {#if children}
     {@render children()}
   {/if}
+  <CanvasWidgetPickerModal
+    open={isEditing && layoutEdit.widgetPickerOpen}
+    {surfaceId}
+    onClose={() => layoutEdit.closeWidgetPicker()}
+    onAdded={(componentId) => layoutEdit.onWidgetAdded(surfaceId, componentId)}
+  />
 </div>
 
 <style>
@@ -33,7 +40,25 @@
   }
 
   .layout-edit-overlay-active {
-    outline: 1px dashed color-mix(in srgb, var(--color-primary-400) 35%, transparent);
-    outline-offset: -1px;
+    background: color-mix(in srgb, var(--color-surface-950) 18%, transparent);
+  }
+
+  .layout-edit-overlay-active :global(.tiling-layout-view) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :global(body.layout-edit-pointer-dragging) {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  :global(body.layout-edit-pointer-dragging iframe),
+  :global(body.layout-edit-pointer-dragging .presentation-frame),
+  :global(body.layout-edit-pointer-dragging .media-embed-frame),
+  :global(body.layout-edit-pointer-dragging .layout-widget-tile-body) {
+    pointer-events: none !important;
   }
 </style>

@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import LayoutNodeRenderer from "$lib/components/environment/LayoutNodeRenderer.svelte";
   import LayoutEditOverlay from "$lib/components/environment/LayoutEditOverlay.svelte";
-  import CanvasWidgetPickerModal from "$lib/components/environment/CanvasWidgetPickerModal.svelte";
+  import TilingLayoutEditor from "$lib/components/environment/TilingLayoutEditor.svelte";
+  import TilingLayoutView from "$lib/components/environment/TilingLayoutView.svelte";
   import PresentationFrame from "$lib/components/environment/PresentationFrame.svelte";
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -10,6 +10,7 @@
   import { layoutEdit, layoutRootForEditing } from "$lib/stores/layoutEdit.svelte";
   import type { ComponentDef } from "$lib/types/environment";
   import { surfaceUsesDashboardFill } from "$lib/utils/environmentPresentation";
+  import { layoutRootToTiling } from "$lib/utils/layoutTiling";
 
   interface Props {
     surfaceId: string;
@@ -25,7 +26,13 @@
   const mainComponents = $derived(environment.mainComponentsForSurface(surfaceId));
   const layoutRoot = $derived.by(() => layoutRootForEditing(surfaceId));
   const editingLayout = $derived(layoutEdit.isEditingSurface(surfaceId));
-  let widgetPickerOpen = $state(false);
+  const viewTilingRoot = $derived.by(() => {
+    if (!layoutRoot || editingLayout) return null;
+    return layoutRootToTiling(
+      layoutRoot,
+      mainComponents.map((component) => component.id),
+    );
+  });
   const fabComponents = $derived(environment.componentsForSurface(surfaceId, "fab"));
   const inlineComponents = $derived(environment.componentsForSurface(surfaceId, "inline"));
   const sidebarComponents = $derived(environment.componentsForSurface(surfaceId, "sidebar"));
@@ -71,28 +78,34 @@
             <button type="button" class="environment-renderer-edit-btn" onclick={() => layoutEdit.begin(surfaceId)}>
               Edit layout
             </button>
-            <button
-              type="button"
-              class="environment-renderer-edit-btn"
-              onclick={() => (widgetPickerOpen = true)}
-            >
-              Add widget
-            </button>
           </div>
         {/if}
-        {#if mainComponents.length === 0}
-          <p class="environment-renderer-empty">This surface has no components yet.</p>
-        {:else if layoutRoot && chat.sessionId}
-          <LayoutNodeRenderer
-            node={layoutRoot}
+        {#if editingLayout && chat.sessionId}
+          <TilingLayoutEditor
             {surfaceId}
-            surfaceLayout={surface?.layout}
             components={mainComponents}
             sessionId={chat.sessionId}
             profileId={environment.spec?.profileId}
             feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
-            editMode={editingLayout}
+            padded={!isDashboard}
           />
+        {:else if mainComponents.length === 0}
+          <p class="environment-renderer-empty">This surface has no components yet. Edit layout to add widgets.</p>
+        {:else if viewTilingRoot && chat.sessionId}
+          <div
+            class="layout-edit-canvas"
+            class:layout-edit-canvas-dashboard={isDashboard}
+          >
+            <TilingLayoutView
+              root={viewTilingRoot}
+              components={mainComponents}
+              sessionId={chat.sessionId}
+              profileId={environment.spec?.profileId}
+              feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
+              editing={false}
+              padded={!isDashboard}
+            />
+          </div>
         {/if}
       </LayoutEditOverlay>
     {:else if builtin}
@@ -126,12 +139,6 @@
       <ChromeActionRenderer {component} variant="fab" />
     {/if}
   {/each}
-
-  <CanvasWidgetPickerModal
-    open={widgetPickerOpen && isCustom}
-    {surfaceId}
-    onClose={() => (widgetPickerOpen = false)}
-  />
 </div>
 
 <style>
@@ -192,6 +199,26 @@
     border-left: 0;
     border-right: 0;
     box-shadow: none;
+  }
+
+  .layout-edit-canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .layout-edit-canvas-dashboard {
+    height: 100%;
+  }
+
+  .layout-edit-canvas-dashboard :global(.layout-widget-tile) {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .layout-edit-canvas-dashboard :global(.layout-region-pane-view) {
+    border-radius: 0;
   }
 
   .environment-renderer-sidebar {

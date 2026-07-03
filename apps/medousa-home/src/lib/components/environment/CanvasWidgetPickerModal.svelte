@@ -6,9 +6,10 @@
     open: boolean;
     surfaceId: string;
     onClose: () => void;
+    onAdded?: (componentId: string) => void;
   }
 
-  let { open, surfaceId, onClose }: Props = $props();
+  let { open, surfaceId, onClose, onAdded }: Props = $props();
 </script>
 
 {#if open}
@@ -24,7 +25,10 @@
       <CanvasWidgetCatalog
         defaultSurfaceId={surfaceId}
         compact={true}
-        onAdded={() => onClose()}
+        onAdded={(componentId) => {
+          onAdded?.(componentId);
+          onClose();
+        }}
       />
     </div>
   </div>

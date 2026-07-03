@@ -4,12 +4,6 @@
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
   import EnvironmentMedousaView from "$lib/components/environment/EnvironmentMedousaView.svelte";
   import MediaEmbedFrame from "$lib/components/environment/MediaEmbedFrame.svelte";
-  import LayoutZoneSlot from "$lib/components/environment/LayoutZoneSlot.svelte";
-  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
-  import {
-    createLayoutEditGestureState,
-    isMobileLayoutEdit,
-  } from "$lib/utils/layoutEditGestures";
   import type { ComponentDef, LayoutNode, SurfaceLayout } from "$lib/types/environment";
   import {
     presentationBare,
@@ -25,6 +19,7 @@
     stackCrossAlign,
     type LayoutFillContext,
   } from "$lib/utils/layoutPresentation";
+  import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
 
   interface Props {
     node: LayoutNode;
@@ -37,7 +32,6 @@
     parentType?: "vstack" | "hstack" | "grid" | null;
     siblingCount?: number;
     distribution?: import("$lib/types/environment").StackDistribution;
-    editMode?: boolean;
   }
 
   let {
@@ -51,70 +45,9 @@
     parentType = null,
     siblingCount = 1,
     distribution,
-    editMode = false,
   }: Props = $props();
 
   const isDashboard = $derived(surfaceUsesDashboardFill(surfaceLayout));
-  const mobileEdit = $derived(editMode && isMobileLayoutEdit());
-  const gestures = createLayoutEditGestureState();
-
-  function handleComponentPointerDown(componentId: string) {
-    if (!editMode || !mobileEdit) return;
-    gestures.handlePointerDown(componentId, "component", {
-      onSingleTap: (id, kind) => {
-        if (layoutEdit.movingId) {
-          layoutEdit.cancelMove();
-          return;
-        }
-        if (id && kind === "component") layoutEdit.select(id);
-      },
-      onLongPress: (id) => layoutEdit.pickUp(id),
-      onDoubleTap: (id, kind) => {
-        if (layoutEdit.movingId && id && kind === "component") {
-          layoutEdit.dropOnComponent(id);
-        } else if (layoutEdit.movingId && id && kind === "slot") {
-          layoutEdit.dropOnSlot(id);
-        }
-      },
-    });
-  }
-
-  function handleComponentPointerUp(componentId: string) {
-    if (!editMode || !mobileEdit) return;
-    gestures.handlePointerUp(componentId, "component", {
-      onSingleTap: (id, kind) => {
-        if (layoutEdit.movingId) {
-          layoutEdit.cancelMove();
-          return;
-        }
-        if (id && kind === "component") layoutEdit.select(id);
-      },
-      onLongPress: (id) => layoutEdit.pickUp(id),
-      onDoubleTap: (id, kind) => {
-        if (layoutEdit.movingId && id && kind === "component") {
-          layoutEdit.dropOnComponent(id);
-        } else if (layoutEdit.movingId && id && kind === "slot") {
-          layoutEdit.dropOnSlot(id);
-        }
-      },
-    });
-  }
-
-  function handleDragStart(event: DragEvent, componentId: string) {
-    if (!editMode || mobileEdit) return;
-    layoutEdit.pickUp(componentId);
-    event.dataTransfer?.setData("text/plain", componentId);
-  }
-
-  function handleDragOver(event: DragEvent) {
-    if (!editMode || mobileEdit) return;
-    event.preventDefault();
-  }
-
-  function handleDropOnSlot(slotId: string) {
-    if (!editMode || !layoutEdit.movingId) return;
-    layoutEdit.dropOnSlot(slotId);
-  }
 
   function configString(config: Record<string, unknown>, key: string): string | null {
     const camel = config[key];
@@ -166,7 +99,6 @@
         parentType="vstack"
         siblingCount={node.children.length}
         distribution={node.distribution}
-        {editMode}
       />
     {/each}
   </div>
@@ -198,7 +130,6 @@
         parentType="hstack"
         siblingCount={node.children.length}
         distribution={node.distribution}
-        {editMode}
       />
     {/each}
   </div>
@@ -223,7 +154,6 @@
         {feedStateForComponent}
         parentType="grid"
         siblingCount={node.children.length}
-        {editMode}
       />
     {/each}
   </div>
@@ -235,21 +165,10 @@
     <div
       class="environment-renderer-main-item"
       class:environment-renderer-main-item-fill={fillsMain}
-      class:environment-renderer-main-item-editing={editMode}
-      class:environment-renderer-main-item-selected={editMode && layoutEdit.selectedId === component.id}
-      class:environment-renderer-main-item-moving={editMode && layoutEdit.movingId === component.id}
       style:flex={flexStyle(node.flex, distribution)}
       style:min-height="0"
       style:min-width="0"
       style:height={isDashboard && parentType === "hstack" ? "100%" : undefined}
-      draggable={editMode && !mobileEdit}
-      ondragstart={(event) => handleDragStart(event, component.id)}
-      ondragover={handleDragOver}
-      ondrop={() => {
-        if (layoutEdit.movingId) layoutEdit.dropOnComponent(component.id);
-      }}
-      onpointerdown={() => handleComponentPointerDown(component.id)}
-      onpointerup={() => handleComponentPointerUp(component.id)}
     >
       {#if component.type === "presentation"}
         {@const artifactId = configString(component.config, "artifactId")}
@@ -265,7 +184,6 @@
             bare={presentationBare(surfaceLayout, embedMode, ctx)}
             feedState={feedStateForComponent(component.id)}
             subscribedFeedIds={component.feeds ?? []}
-            manageable={!editMode}
             onMoveInLayout={() => layoutEdit.begin(surfaceId, component.id)}
           />
         {/if}
@@ -281,7 +199,7 @@
         <MediaEmbedFrame
           config={component.config}
           label={component.label}
-          fill={presentationEmbedMode(surfaceLayout, component, ctx) === "panel"}
+          fill={fillsMain || presentationEmbedMode(surfaceLayout, component, ctx) === "panel"}
         />
       {:else if component.type === "chrome_action"}
         <ChromeActionRenderer {component} variant="inline" />
@@ -297,18 +215,7 @@
     </p>
   {/if}
 {:else if node.type === "slot"}
-  {@const slotVisible = layoutEdit.isEditingSurface(surfaceId)}
-  {#if slotVisible}
-    <LayoutZoneSlot
-      slotId={node.id}
-      {surfaceId}
-      flex={flexStyle(node.flex, distribution)}
-      selected={layoutEdit.selectedId === node.id}
-      moving={layoutEdit.movingId != null}
-      onSelect={() => layoutEdit.select(node.id)}
-      onDrop={() => layoutEdit.dropOnSlot(node.id)}
-    />
-  {/if}
+  <!-- Empty layout regions are omitted when saved; legacy slots stay hidden. -->
 {/if}
 
 <style>
@@ -333,20 +240,6 @@
 
   .environment-renderer-main-item-fill :global(.presentation-frame-fill) {
     height: 100%;
-  }
-
-  .environment-renderer-main-item-editing {
-    outline: 1px dashed color-mix(in srgb, var(--color-surface-500) 45%, transparent);
-    outline-offset: 2px;
-  }
-
-  .environment-renderer-main-item-selected {
-    outline: 1px solid rgb(var(--color-primary-400));
-  }
-
-  .environment-renderer-main-item-moving {
-    opacity: 0.72;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
   }
 
   .environment-renderer-unsupported {

@@ -156,6 +156,69 @@ function removeComponentNode(root: LayoutNode, componentId: string): LayoutNode 
   return pruneNode(root, componentId, "component");
 }
 
+export function findLayoutNode(root: LayoutNode, id: string): LayoutNode | null {
+  if ((root.type === "component" || root.type === "slot") && root.id === id) return root;
+  if (root.type === "vstack" || root.type === "hstack" || root.type === "grid") {
+    for (const child of root.children) {
+      const found = findLayoutNode(child, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+export function ensureDashboardFill(node: LayoutNode, dashboard: boolean): LayoutNode {
+  if (!dashboard) return node;
+  if (node.type === "vstack" || node.type === "hstack") {
+    const children = node.children.map((child) => ensureDashboardFill(child, dashboard));
+    return {
+      ...node,
+      distribution: children.length > 1 ? "fill_equally" : node.distribution ?? "fill_equally",
+      children,
+    };
+  }
+  if (node.type === "component" || node.type === "slot") {
+    return { ...node, flex: node.flex ?? 1 };
+  }
+  return node;
+}
+
+export function moveComponentBeforeTarget(
+  root: LayoutNode,
+  componentId: string,
+  targetId: string,
+): LayoutNode {
+  if (componentId === targetId) return root;
+
+  const target = findLayoutNode(root, targetId);
+  if (!target) return root;
+
+  let without = removeComponentNode(root, componentId);
+  if (!without) return root;
+
+  if (target.type === "slot") {
+    return assignComponentToSlot(without, targetId, componentId);
+  }
+
+  const found = findComponentParentStack(without, targetId);
+  if (!found || (found.parent.type !== "vstack" && found.parent.type !== "hstack")) {
+    return without;
+  }
+
+  const parent = found.parent as Extract<LayoutNode, { type: "vstack" | "hstack" }>;
+  const children = [...parent.children];
+  children.splice(found.index, 0, {
+    type: "component",
+    id: componentId,
+    flex: 1,
+  });
+  return replaceNode(without, parent, {
+    ...parent,
+    distribution: "fill_equally",
+    children,
+  });
+}
+
 export function findComponentParentStack(
   root: LayoutNode,
   componentId: string,
