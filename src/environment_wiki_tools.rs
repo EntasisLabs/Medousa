@@ -63,8 +63,8 @@ const TOPICS: &[WikiTopic] = &[
         fast_path(.97): "ui_present(html) then persist=true + surface_id(custom) + component_id + slot"
     },
     phase1_types(.99): {
-        allowed(.99): "presentation, chrome_action",
-        rejected(.99): "artifact, builtin_panel, medousa_view — validator errors"
+        allowed(.99): "presentation, media_embed, chrome_action, medousa_view",
+        rejected(.99): "artifact, builtin_panel — validator errors"
     },
     operator_approval(.98): {
         propose(.98): "cognition_environment_propose stores pending diff",
@@ -170,7 +170,7 @@ const TOPICS: &[WikiTopic] = &[
     WikiTopic {
         id: "component_schema",
         title: "ComponentDef Phase 1",
-        summary: "Only presentation and chrome_action render on Home.",
+        summary: "presentation, media_embed, chrome_action, and medousa_view on Home.",
         policy: r#"    role(.99): "ComponentDef pins content on custom surfaces — camelCase surfaceId not surface_id.",
     presentation(.99): {
         type(.99): "presentation",
@@ -180,6 +180,13 @@ const TOPICS: &[WikiTopic] = &[
         presentation_mode(.97): "inline | panel | fullscreen",
         feeds(.95): "[]"
     },
+    media_embed(.99): {
+        type(.99): "media_embed",
+        surfaceId(.99): "kind:custom only",
+        config(.99): "{ provider: spotify|apple_music, embedUrl or url — HTTPS share/embed link }",
+        hidden(.95): "optional config.hidden for future MedousaWidget controls — do not iframe Spotify/Apple inside HTML artifacts",
+        rule(.99): "native host iframe only — never cognition_ui_present HTML for Spotify/Apple playback"
+    },
     chrome_action(.97): {
         type(.97): "chrome_action",
         slot(.96): "fab or header common",
@@ -187,8 +194,7 @@ const TOPICS: &[WikiTopic] = &[
     },
     rejected_types(.99): {
         artifact(.99): "validation error — use presentation",
-        builtin_panel(.99): "validation error",
-        medousa_view(.98): "not rendered Phase 1"
+        builtin_panel(.99): "validation error"
     },
     create_wrapper(.98): "cognition_component_create input: { component: { … } } camelCase keys",
     json_presentation_example(.97): "{ id:writing-manuscript, type:presentation, surfaceId:writing-studio, slot:main, label:Manuscript, config:{artifactId:art-…}, presentation:inline, feeds:[] }"#,
@@ -333,7 +339,8 @@ const TOPICS: &[WikiTopic] = &[
         vstack(.99): "vertical stack — aliases v_stack; default implicit when layoutRoot absent",
         hstack(.99): "horizontal row — aliases h_stack",
         grid(.99): "columns 1..4 — 2x2 corners without coordinates",
-        component(.99): "leaf ref { type:component, id, flex? }"
+        component(.99): "leaf ref { type:component, id, flex? }",
+        slot(.99): "empty widget zone { type:slot, id, flex? } — user may add via Edit layout; replace slot with component when placing widget"
     },
     aliases(.98): "Models may emit h_stack/v_stack/fillEqually — daemon accepts both compact and snake_case",
     knobs(.98): {
@@ -348,9 +355,43 @@ const TOPICS: &[WikiTopic] = &[
         reset(.97): "cognition_layout_reset — back to implicit vstack order"
     },
     adhd_guide_example(.96): "{ surface_id:adhd-guide, layout_root:{ type:hstack, spacing:md, distribution:fill_equally, children:[{type:component,id:adhd-guide-tetris,flex:1},{type:component,id:adhd-guide-original,flex:1}] } }",
-    anti_patterns(.98): "Do not encode mosaic layout inside HTML artifact when multiple presentation components should move independently — use layout_apply instead"#,
-        related: &["component_schema", "surface_schema", "tool_map"],
+    anti_patterns(.98): "Do not encode mosaic layout inside HTML artifact when multiple presentation components should move independently — use layout_apply instead; respect user slot zones in layoutRoot"#,
+        related: &["component_schema", "surface_schema", "layout_zones", "tool_map"],
         call_next: &["cognition_layout_get", "cognition_layout_apply"],
+    },
+    WikiTopic {
+        id: "layout_zones",
+        title: "Layout slot zones + user edit",
+        summary: "Empty slot nodes hold space for future widgets; operators edit layout in Home without agent.",
+        policy: r#"    role(.99): "SurfaceDef.layoutRoot may include type:slot nodes — empty widget areas.",
+    slot_node(.99): "{ type:slot, id:zone-1, flex:1 } — no ComponentDef required until assigned",
+    visibility(.99): "Unassigned slots hidden in normal view; visible only during operator Edit layout mode",
+    operator_edit(.98): "Home custom surface → Edit layout — desktop drag or mobile tap/long-press/double-tap",
+    agent_place(.99): {
+        read(.99): "cognition_layout_get — find slot ids in layout_root",
+        write(.99): "cognition_layout_apply — replace slot node with { type:component, id:<new>, flex }",
+        add_component(.98): "add_component then layout_apply to swap slot→component ref"
+    },
+    media_note(.97): "Use media_embed component type for Spotify/Apple — not HTML iframe in artifacts"#,
+        related: &["layout_schema", "media_embed", "component_schema"],
+        call_next: &["cognition_layout_get", "cognition_layout_apply"],
+    },
+    WikiTopic {
+        id: "media_embed",
+        title: "Native Spotify / Apple Music widgets",
+        summary: "media_embed components render host iframes — not cognition_ui_present HTML.",
+        policy: r#"    role(.99): "Spotify/Apple playback requires native MediaEmbedFrame — sandboxed artifact HTML blocks nested embeds.",
+    config(.99): {
+        provider(.99): "spotify | apple_music",
+        embedUrl(.99): "https://open.spotify.com/embed/playlist/… or https://embed.music.apple.com/…",
+        url(.98): "share link normalized client-side",
+        hidden(.95): "optional — future MedousaWidget controls stub"
+    },
+    spotify(.98): "Share → Embed or open.spotify.com/track|album|playlist URL",
+    apple(.98): "music.apple.com share → Copy Embed Code URL",
+    anti_pattern(.99): "<iframe src=open.spotify.com> inside cognition_ui_present HTML — will not play reliably"#,
+        related: &["component_schema", "layout_zones", "artifact_runtime"],
+        call_next: &["cognition_component_create", "cognition_layout_apply"],
     },
     WikiTopic {
         id: "feed_client",
@@ -436,7 +477,8 @@ const TOPICS: &[WikiTopic] = &[
         recurring_bindings(.97): "recurring jobs bound to surface feed ids",
         runtime_logs(.96): "components[].runtime.logs — last console.error/warn from iframe bridge",
         store_lint(.96): "components[].runtime.store_keys — expected_array_got_* on thoughts/items keys",
-        static_lint(.96): "STATIC_LOCALSTORAGE, STATIC_STORE_SYNC_USAGE, STATIC_SLICE_WITHOUT_GUARD, STATIC_STORE_GET_NO_KEY",
+        static_lint(.96): "presentation only — STATIC_LOCALSTORAGE, STATIC_STORE_SYNC_USAGE, STATIC_SLICE_WITHOUT_GUARD, STATIC_STORE_GET_NO_KEY; media_embed skipped (native iframe, no artifact)",
+        future_controls(.95): "media_embed config.hidden reserved — future MedousaWidget.invoke(componentId, action) sibling to MedousaStore",
         probe(.95): "probe=true runs MedousaStore.ready + round-trip when Home client online"
     },
     fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_artifact_write, re-run doctor",
@@ -624,7 +666,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
             "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present. \
              Returns response_format=sttp (same family as system prompt). \
              Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. \
-             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, layout_schema, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
+             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, layout_schema, layout_zones, media_embed, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
         )
     }
 
@@ -646,6 +688,8 @@ impl StasisTool for CognitionEnvironmentWikiTool {
                         "ui_present",
                         "presets",
                         "layout_schema",
+                        "layout_zones",
+                        "media_embed",
                         "feed_client",
                         "example_trip_poll",
                         "common_errors",

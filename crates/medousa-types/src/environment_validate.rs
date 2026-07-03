@@ -225,6 +225,9 @@ fn validate_component(
             ));
         }
     }
+    if matches!(component.component_type, ComponentType::MediaEmbed) {
+        validate_media_embed_component(component, errors);
+    }
     for feed_id in &component.feeds {
         if !crate::feed::is_valid_feed_id(feed_id) {
             errors.push(format!(
@@ -252,6 +255,7 @@ fn validate_component_surface_kind(
             component.component_type,
             ComponentType::Presentation
                 | ComponentType::MedousaView
+                | ComponentType::MediaEmbed
                 | ComponentType::Artifact
                 | ComponentType::BuiltinPanel
         )
@@ -266,9 +270,67 @@ fn validate_component_surface_kind(
         ComponentType::Artifact | ComponentType::BuiltinPanel
     ) {
         errors.push(format!(
-            "component '{}' type '{:?}' is not rendered in Home Phase 1 — use type=presentation, medousa_view, or chrome_action",
+            "component '{}' type '{:?}' is not rendered in Home Phase 1 — use type=presentation, medousa_view, media_embed, or chrome_action",
             component.id, component.component_type
         ));
+    }
+}
+
+fn config_str<'a>(config: &'a serde_json::Value, camel: &str, snake: &str) -> Option<&'a str> {
+    config
+        .get(camel)
+        .or_else(|| config.get(snake))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn validate_media_embed_component(component: &ComponentDef, errors: &mut Vec<String>) {
+    let provider = config_str(&component.config, "provider", "provider").unwrap_or("");
+    match provider {
+        "spotify" | "apple_music" => {}
+        _ => {
+            errors.push(format!(
+                "media_embed component '{}' requires config.provider spotify or apple_music (got '{provider}')",
+                component.id
+            ));
+            return;
+        }
+    }
+    let embed_url = config_str(&component.config, "embedUrl", "embed_url");
+    let share_url = config_str(&component.config, "url", "url");
+    let Some(url) = embed_url.or(share_url) else {
+        errors.push(format!(
+            "media_embed component '{}' requires config.embedUrl or config.url",
+            component.id
+        ));
+        return;
+    };
+    if !url.starts_with("https://") {
+        errors.push(format!(
+            "media_embed component '{}' url must use https",
+            component.id
+        ));
+        return;
+    }
+    match provider {
+        "spotify" => {
+            if !url.contains("open.spotify.com/embed/") && !url.contains("open.spotify.com/") {
+                errors.push(format!(
+                    "media_embed component '{}' spotify url must be open.spotify.com embed or share link",
+                    component.id
+                ));
+            }
+        }
+        "apple_music" => {
+            if !url.contains("embed.music.apple.com/") && !url.contains("music.apple.com/") {
+                errors.push(format!(
+                    "media_embed component '{}' apple_music url must be embed.music.apple.com or music.apple.com link",
+                    component.id
+                ));
+            }
+        }
+        _ => {}
     }
 }
 

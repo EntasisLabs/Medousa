@@ -34,6 +34,8 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Custom chat UI](cookbook/custom-chat-ui.md) | Sessions, streaming, artifacts |
 | [Artifacts & presentations](cookbook/artifacts-and-presentations.md) | HTML artifacts, Library tab, list-ui API |
 | [Custom views & canvas](cookbook/custom-views-and-canvas.md) | Pinned dashboards Medousa builds for you |
+| [Edit canvas layout](cookbook/canvas-layout-edit.md) | Reorder widgets, zones, mobile gestures |
+| [Spotify & Apple Music widgets](cookbook/canvas-media-widgets.md) | Native media embeds on custom views |
 | [Environment canvas (advanced)](cookbook/environment-canvas-advanced.md) | Operators: spec, presets, feeds, HTTP |
 | [Vault & library](cookbook/vault-and-library.md) | Multi-root vault, wikilinks, external files |
 

@@ -3,6 +3,7 @@ export type ComponentType =
   | "medousa_view"
   | "builtin_panel"
   | "presentation"
+  | "media_embed"
   | "chrome_action";
 
 export type SurfaceKind = "builtin" | "custom";
@@ -90,6 +91,11 @@ export type LayoutNode =
     }
   | {
       type: "component";
+      id: string;
+      flex?: number | null;
+    }
+  | {
+      type: "slot";
       id: string;
       flex?: number | null;
     };

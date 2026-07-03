@@ -54,6 +54,9 @@ Workflow:
 7) MedousaStore is ASYNC (returns Promises). Always await get/set/delete in async init and event handlers — sync wrappers fail silently (empty after save). cognition_environment_wiki(topic=artifact_runtime) has the canonical template.
 8) Style canvas widgets with host CSS tokens: var(--medousa-host-fg), --medousa-host-muted, --medousa-host-accent, --medousa-host-surface, --medousa-host-brand). Set environment theme via cognition_environment_patch op set_environment_theme — cognition_environment_wiki(topic=environment_theme).
 9) Custom nav icons: pen-line, layout-grid, sparkles, etc. — cognition_environment_patch op update_surface or add_custom_surface; invalid icons fail validation.
+10) Spotify/Apple Music: type media_embed with provider + embed URL — NEVER iframe inside cognition_ui_present HTML (sandbox blocks playback). cognition_environment_wiki(topic=media_embed).
+11) User layout zones: layoutRoot may include type:slot empty zones — cognition_layout_get before add_component; replace slot with component ref via cognition_layout_apply. cognition_environment_wiki(topic=layout_zones).
+12) Operators edit layout in Home (Edit layout toolbar) — respect existing slot ids when placing new widgets.
 
 Canonical store pattern (copy when persisting widget state):
   async function loadItems() {

@@ -219,11 +219,13 @@
   data-mobile-tab={layout.mobileTab}
 >
   <EnvPendingProposalBanner />
-  <main bind:this={mainEl} class="min-h-0 flex-1 overflow-hidden">
+  <main bind:this={mainEl} class="flex min-h-0 flex-1 flex-col overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}
         {#if customMobileHome}
-          <EnvironmentRenderer surfaceId={mobileHomeSurfaceId} />
+          <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <EnvironmentRenderer surfaceId={mobileHomeSurfaceId} />
+          </div>
         {:else}
         <HomePanel
           health={daemonHealth}

@@ -75,7 +75,9 @@ Activate: `cognition_environment_activate_preset` or Settings / nav preset dropd
 | Type | Use |
 |------|-----|
 | `presentation` | HTML artifact in `PresentationFrame` |
+| `media_embed` | Native Spotify / Apple Music iframe — see [canvas media widgets](canvas-media-widgets.md) |
 | `chrome_action` | Header/FAB actions (`open_ask`, `open_activity`) |
+| `medousa_view` | Vault note renderer on custom surfaces |
 | `builtin_panel` | Host panel id on builtin surfaces |
 
 Slots: `main`, `header`, `sidebar`, `fab`, `inline`.
@@ -120,8 +122,15 @@ Patch ops run via `cognition_environment_patch` during agent turns. External int
 - `vstack` / `hstack` — `spacing`, `align`, `distribution`, `children`
 - `grid` — `columns`, `spacing`, `children`
 - `component` — `{ type: "component", id, flex? }`
+- `slot` — `{ type: "slot", id, flex? }` empty zone (hidden until edit mode or assigned)
 
 Validate with `cognition_environment_wiki(topic=layout_schema)`.
+
+### Operator layout edit
+
+Users rearrange widgets in Home without agent tools — **Edit layout** on custom surfaces. Saves via the same spec PUT as HTML edits. See [Edit canvas layout](canvas-layout-edit.md).
+
+Agents placing widgets into user-created zones: `cognition_layout_get` → find `slot` ids → `cognition_layout_apply` replacing slot with `{ type: "component", id }`. Wiki: `layout_zones`.
 
 ---
 

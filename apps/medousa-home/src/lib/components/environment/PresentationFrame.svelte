@@ -62,6 +62,7 @@
     subscribedFeedIds?: string[];
     onOpenFull?: () => void;
     onArtifactDeleted?: () => void;
+    onMoveInLayout?: () => void;
     manageable?: boolean;
     contentHeight?: number;
     truncated?: boolean;
@@ -82,6 +83,7 @@
     subscribedFeedIds = [],
     onOpenFull,
     onArtifactDeleted,
+    onMoveInLayout,
     manageable = false,
     contentHeight = $bindable(0),
     truncated = $bindable(false),
@@ -538,6 +540,7 @@
           editError = null;
           editOpen = true;
         }}
+        onMoveInLayout={() => onMoveInLayout?.()}
         onDelete={() => void handleDeleteWidget()}
       />
     </div>

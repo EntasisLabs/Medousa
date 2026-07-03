@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
+  import CanvasAddViewForm from "$lib/components/settings/CanvasAddViewForm.svelte";
+  import CanvasWidgetCatalog from "$lib/components/settings/CanvasWidgetCatalog.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -10,6 +12,10 @@
 
   const CUSTOM_VIEWS_DOC =
     "https://github.com/EntasisLabs/Medousa/blob/main/docs/cookbook/custom-views-and-canvas.md";
+  const LAYOUT_EDIT_DOC =
+    "https://github.com/EntasisLabs/Medousa/blob/main/docs/cookbook/canvas-layout-edit.md";
+  const MEDIA_WIDGETS_DOC =
+    "https://github.com/EntasisLabs/Medousa/blob/main/docs/cookbook/canvas-media-widgets.md";
 
   const spec = $derived(environment.spec);
   const pending = $derived(environment.pendingProposal);
@@ -62,13 +68,16 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Canvas</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Layout presets, custom surfaces, and agent-proposed environment changes.
+      Create custom views, pin widgets from your library, and manage layout presets.
     </p>
   </header>
 
   <div class="mt-4">
     <EnvironmentPresetSwitcher />
   </div>
+
+  <CanvasAddViewForm />
+  <CanvasWidgetCatalog />
 
   {#if activePreset?.id === "focus"}
     <p class="workshop-faint mt-3 text-xs">
@@ -121,8 +130,22 @@
         {/each}
       </ul>
       <p class="workshop-faint mt-2 text-xs">
-        Ask Medousa to change a nav icon (e.g. “set braindump icon to pen-line”) or retheme your
-        views.
+        Edit layout on any custom view from the surface toolbar or widget ⋯ menu —
+        <button
+          type="button"
+          class="settings-inline-link"
+          onclick={() => void openUrlInDefaultBrowser(LAYOUT_EDIT_DOC)}
+        >
+          layout edit guide
+        </button>
+        ·
+        <button
+          type="button"
+          class="settings-inline-link"
+          onclick={() => void openUrlInDefaultBrowser(MEDIA_WIDGETS_DOC)}
+        >
+          Spotify / Apple widgets
+        </button>
       </p>
     {/if}
   {/if}
@@ -421,5 +444,17 @@
   .env-pending-errors {
     margin: 0;
     padding-left: 1rem;
+  }
+
+  .settings-inline-link {
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-size: inherit;
+    color: rgb(var(--color-primary-300));
+    background: transparent;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 </style>

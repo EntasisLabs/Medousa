@@ -86,6 +86,12 @@ pub enum LayoutNode {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         flex: Option<u8>,
     },
+    #[serde(rename = "slot")]
+    Slot {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        flex: Option<u8>,
+    },
 }
 
 impl LayoutNode {
@@ -115,7 +121,22 @@ pub fn resolve_layout_root(surface: &SurfaceDef, components: &[ComponentDef]) ->
         })
         .map(|component| component.id.clone())
         .collect::<Vec<_>>();
-    LayoutNode::implicit_vstack(main_ids)
+    let distribution = if surface.layout == crate::environment::SurfaceLayout::Dashboard
+        && main_ids.len() > 1
+    {
+        StackDistribution::FillEqually
+    } else {
+        StackDistribution::Start
+    };
+    LayoutNode::VStack {
+        spacing: StackSpacing::Md,
+        align: StackAlign::Start,
+        distribution,
+        children: main_ids
+            .into_iter()
+            .map(|id| LayoutNode::Component { id, flex: None })
+            .collect(),
+    }
 }
 
 pub fn validate_layout_tree(
@@ -242,6 +263,29 @@ fn validate_layout_node(
                 errors.push(format!(
                     "surface '{}' layout component '{id}' must use slot '{COMPONENT_SLOT_MAIN}' (got '{}')",
                     surface.id, component.slot
+                ));
+            }
+        }
+        LayoutNode::Slot { id, flex } => {
+            if id.trim().is_empty() {
+                errors.push(format!(
+                    "surface '{}' layout slot requires id",
+                    surface.id
+                ));
+                return;
+            }
+            if let Some(flex) = flex {
+                if *flex > MAX_COMPONENT_FLEX {
+                    errors.push(format!(
+                        "surface '{}' slot '{id}' flex must be 0..={MAX_COMPONENT_FLEX}",
+                        surface.id
+                    ));
+                }
+            }
+            if !seen.insert(format!("slot:{id}")) {
+                errors.push(format!(
+                    "surface '{}' layout references slot '{id}' more than once",
+                    surface.id
                 ));
             }
         }

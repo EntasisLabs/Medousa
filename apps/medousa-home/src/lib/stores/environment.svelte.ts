@@ -208,7 +208,8 @@ export class EnvironmentStore {
   }
 
   async activatePreset(presetId: string, profileId?: string): Promise<void> {
-    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const { cloneEnvironmentSpec } = await import("$lib/utils/environmentCanvasOps");
+    const spec = cloneEnvironmentSpec(this.spec ?? defaultEnvironmentSpec(profileId));
     activateLayoutPreset(spec, presetId);
     const response = await putEnvironmentSpec({ spec });
     this.applySpec(response.spec, response.revision);
@@ -236,12 +237,18 @@ export class EnvironmentStore {
   }
 
   async saveSpec(spec: EnvironmentSpec): Promise<void> {
-    const response = await putEnvironmentSpec({ spec });
+    const { cloneEnvironmentSpec } = await import("$lib/utils/environmentCanvasOps");
+    const response = await putEnvironmentSpec({ spec: cloneEnvironmentSpec(spec) });
     this.applySpec(response.spec, response.revision);
   }
 
+  async cloneCurrentSpec(profileId?: string): Promise<EnvironmentSpec> {
+    const { cloneEnvironmentSpec } = await import("$lib/utils/environmentCanvasOps");
+    return cloneEnvironmentSpec(this.spec ?? defaultEnvironmentSpec(profileId));
+  }
+
   async removeCustomSurface(surfaceId: string, profileId?: string): Promise<void> {
-    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const spec = await this.cloneCurrentSpec(profileId);
     const surface = spec.surfaces.find((entry) => entry.id === surfaceId);
     if (!surface || surface.kind !== "custom") {
       throw new Error("Only custom views can be removed from Settings.");
@@ -253,7 +260,7 @@ export class EnvironmentStore {
   }
 
   async removePresentationComponent(componentId: string, profileId?: string): Promise<void> {
-    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const spec = await this.cloneCurrentSpec(profileId);
     const { removeComponentFromSpec } = await import("$lib/utils/environmentCanvasOps");
     removeComponentFromSpec(spec, componentId);
     await this.saveSpec(spec);
@@ -265,7 +272,7 @@ export class EnvironmentStore {
     profileId?: string,
   ): Promise<string[]> {
     if (artifactIds.length === 0) return [];
-    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const spec = await this.cloneCurrentSpec(profileId);
     const { removeComponentsReferencingArtifacts } = await import(
       "$lib/utils/environmentCanvasOps"
     );
@@ -282,10 +289,65 @@ export class EnvironmentStore {
     artifactId: string,
     profileId?: string,
   ): Promise<void> {
-    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const spec = await this.cloneCurrentSpec(profileId);
     const { updateComponentArtifactId } = await import("$lib/utils/environmentCanvasOps");
     updateComponentArtifactId(spec, componentId, artifactId);
     await this.saveSpec(spec);
+  }
+
+  async addCustomView(
+    input: {
+      id: string;
+      label: string;
+      icon: string;
+      layout?: import("$lib/types/environment").SurfaceLayout;
+      presetId?: string | null;
+      afterSurfaceId?: string | null;
+    },
+    profileId?: string,
+  ): Promise<string> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { addCustomSurfaceToSpec } = await import("$lib/utils/environmentCanvasOps");
+    addCustomSurfaceToSpec(spec, input);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+    const { slugifyCanvasId } = await import("$lib/utils/environmentCanvasOps");
+    return slugifyCanvasId(input.id);
+  }
+
+  async addPresentationFromArtifact(
+    input: {
+      surfaceId: string;
+      artifactId: string;
+      label: string;
+      componentId?: string | null;
+    },
+    profileId?: string,
+  ): Promise<string> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { addPresentationComponentToSpec } = await import("$lib/utils/environmentCanvasOps");
+    const component = addPresentationComponentToSpec(spec, input);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+    return component.id;
+  }
+
+  async addMediaEmbedWidget(
+    input: {
+      surfaceId: string;
+      provider: import("$lib/utils/mediaEmbed").MediaEmbedProvider;
+      embedUrl: string;
+      label: string;
+      componentId?: string | null;
+    },
+    profileId?: string,
+  ): Promise<string> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { addMediaEmbedComponentToSpec } = await import("$lib/utils/environmentCanvasOps");
+    const component = addMediaEmbedComponentToSpec(spec, input);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+    return component.id;
   }
 }
 

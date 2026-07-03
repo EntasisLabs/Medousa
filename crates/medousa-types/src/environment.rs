@@ -37,6 +37,7 @@ pub enum ComponentType {
     MedousaView,
     BuiltinPanel,
     Presentation,
+    MediaEmbed,
     ChromeAction,
 }
 

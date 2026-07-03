@@ -154,6 +154,7 @@ export function normalizeLayoutNodeType(value: unknown): LayoutNode["type"] | nu
   if (key === "hstack" || key === "h_stack") return "hstack";
   if (key === "grid") return "grid";
   if (key === "component") return "component";
+  if (key === "slot") return "slot";
   return null;
 }
 
@@ -162,6 +163,10 @@ export function normalizeLayoutNode(node: LayoutNode): LayoutNode {
   const type = normalizeLayoutNodeType(node.type) ?? node.type;
   if (type === "component") {
     if (node.type !== "component") return node;
+    return node;
+  }
+  if (type === "slot") {
+    if (node.type !== "slot") return node;
     return node;
   }
   if (type === "grid") {
@@ -190,12 +195,15 @@ export function resolveLayoutRoot(surface: SurfaceDef, components: ComponentDef[
   if (surface.layoutRoot) {
     return normalizeLayoutNode(surface.layoutRoot);
   }
+  const mains = mainComponentsForSurface(surface.id, components);
+  const distribution =
+    surface.layout === "dashboard" && mains.length > 1 ? "fill_equally" : "start";
   return {
     type: "vstack",
     spacing: "md",
     align: "start",
-    distribution: "start",
-    children: mainComponentsForSurface(surface.id, components).map((component) => ({
+    distribution,
+    children: mains.map((component) => ({
       type: "component",
       id: component.id,
     })),

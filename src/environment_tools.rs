@@ -38,8 +38,8 @@ fn component_def_schema() -> Value {
             "id": { "type": "string", "description": "Unique component id (kebab-case)" },
             "type": {
                 "type": "string",
-                "enum": ["presentation", "chrome_action", "artifact", "medousa_view", "builtin_panel"],
-                "description": "presentation = HTML artifact frame on custom surfaces"
+                "enum": ["presentation", "chrome_action", "artifact", "medousa_view", "builtin_panel", "media_embed"],
+                "description": "presentation = HTML artifact; media_embed = native Spotify/Apple iframe"
             },
             "surfaceId": {
                 "type": "string",

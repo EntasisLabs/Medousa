@@ -1,15 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Code2, MoreHorizontal, Pencil, Trash2 } from "@lucide/svelte";
+  import { Code2, LayoutGrid, MoreHorizontal, Pencil, Trash2 } from "@lucide/svelte";
 
   interface Props {
     disabled?: boolean;
     onViewSource: () => void;
     onEdit: () => void;
+    onMoveInLayout?: () => void;
     onDelete: () => void;
   }
 
-  let { disabled = false, onViewSource, onEdit, onDelete }: Props = $props();
+  let { disabled = false, onViewSource, onEdit, onMoveInLayout, onDelete }: Props = $props();
 
   let open = $state(false);
   let menuEl = $state<HTMLDivElement | null>(null);
@@ -65,6 +66,19 @@
         <Pencil size={14} aria-hidden="true" />
         Edit HTML
       </button>
+      {#if onMoveInLayout}
+        <button
+          type="button"
+          class="presentation-artifact-menu-item"
+          onclick={() => {
+            closeMenu();
+            onMoveInLayout();
+          }}
+        >
+          <LayoutGrid size={14} aria-hidden="true" />
+          Move in layout
+        </button>
+      {/if}
       <button
         type="button"
         class="presentation-artifact-menu-item presentation-artifact-menu-item-danger"

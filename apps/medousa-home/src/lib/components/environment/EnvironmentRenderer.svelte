@@ -1,10 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import LayoutNodeRenderer from "$lib/components/environment/LayoutNodeRenderer.svelte";
+  import LayoutEditOverlay from "$lib/components/environment/LayoutEditOverlay.svelte";
+  import CanvasWidgetPickerModal from "$lib/components/environment/CanvasWidgetPickerModal.svelte";
   import PresentationFrame from "$lib/components/environment/PresentationFrame.svelte";
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { environment } from "$lib/stores/environment.svelte";
+  import { layoutEdit, layoutRootForEditing } from "$lib/stores/layoutEdit.svelte";
   import type { ComponentDef } from "$lib/types/environment";
   import { surfaceUsesDashboardFill } from "$lib/utils/environmentPresentation";
 
@@ -20,7 +23,9 @@
   const isDashboard = $derived(surfaceUsesDashboardFill(surface?.layout));
   const headerComponents = $derived(environment.componentsForSurface(surfaceId, "header"));
   const mainComponents = $derived(environment.mainComponentsForSurface(surfaceId));
-  const layoutRoot = $derived(environment.layoutRootForSurface(surfaceId));
+  const layoutRoot = $derived.by(() => layoutRootForEditing(surfaceId));
+  const editingLayout = $derived(layoutEdit.isEditingSurface(surfaceId));
+  let widgetPickerOpen = $state(false);
   const fabComponents = $derived(environment.componentsForSurface(surfaceId, "fab"));
   const inlineComponents = $derived(environment.componentsForSurface(surfaceId, "inline"));
   const sidebarComponents = $derived(environment.componentsForSurface(surfaceId, "sidebar"));
@@ -33,7 +38,7 @@
   }
 </script>
 
-<div class="environment-renderer" data-surface-id={surfaceId}>
+<div class="environment-renderer h-full min-h-0" data-surface-id={surfaceId}>
   {#if headerComponents.length > 0}
     <div class="environment-renderer-header">
       {#each headerComponents as component (component.id)}
@@ -60,19 +65,36 @@
     class:environment-renderer-body-dashboard={isCustom && isDashboard}
   >
     {#if isCustom}
-      {#if mainComponents.length === 0}
-        <p class="environment-renderer-empty">This surface has no components yet.</p>
-      {:else if layoutRoot && chat.sessionId}
-        <LayoutNodeRenderer
-          node={layoutRoot}
-          {surfaceId}
-          surfaceLayout={surface?.layout}
-          components={mainComponents}
-          sessionId={chat.sessionId}
-          profileId={environment.spec?.profileId}
-          feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
-        />
-      {/if}
+      <LayoutEditOverlay {surfaceId} editing={editingLayout}>
+        {#if !editingLayout}
+          <div class="environment-renderer-edit-entry">
+            <button type="button" class="environment-renderer-edit-btn" onclick={() => layoutEdit.begin(surfaceId)}>
+              Edit layout
+            </button>
+            <button
+              type="button"
+              class="environment-renderer-edit-btn"
+              onclick={() => (widgetPickerOpen = true)}
+            >
+              Add widget
+            </button>
+          </div>
+        {/if}
+        {#if mainComponents.length === 0}
+          <p class="environment-renderer-empty">This surface has no components yet.</p>
+        {:else if layoutRoot && chat.sessionId}
+          <LayoutNodeRenderer
+            node={layoutRoot}
+            {surfaceId}
+            surfaceLayout={surface?.layout}
+            components={mainComponents}
+            sessionId={chat.sessionId}
+            profileId={environment.spec?.profileId}
+            feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
+            editMode={editingLayout}
+          />
+        {/if}
+      </LayoutEditOverlay>
     {:else if builtin}
       {@render builtin()}
     {/if}
@@ -104,6 +126,12 @@
       <ChromeActionRenderer {component} variant="fab" />
     {/if}
   {/each}
+
+  <CanvasWidgetPickerModal
+    open={widgetPickerOpen && isCustom}
+    {surfaceId}
+    onClose={() => (widgetPickerOpen = false)}
+  />
 </div>
 
 <style>
@@ -171,6 +199,23 @@
     border-left: 1px solid color-mix(in srgb, var(--color-surface-700) 50%, transparent);
     padding: 0.75rem;
     overflow: auto;
+  }
+
+  .environment-renderer-edit-entry {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    padding: 0.35rem 0.5rem 0;
+  }
+
+  .environment-renderer-edit-btn {
+    border: 1px solid color-mix(in srgb, var(--color-surface-600) 50%, transparent);
+    border-radius: 0.45rem;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-200));
+    background: transparent;
+    cursor: pointer;
   }
 
   .environment-renderer-empty {

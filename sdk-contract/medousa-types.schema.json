@@ -1587,6 +1587,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -1875,6 +1876,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
@@ -2236,6 +2263,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -2493,6 +2521,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
@@ -2903,6 +2957,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -3085,6 +3140,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
@@ -3431,6 +3512,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -3688,6 +3770,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
@@ -4040,6 +4148,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -4297,6 +4406,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
@@ -5218,6 +5353,32 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
           }
         ]
       },
@@ -5429,6 +5590,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -5737,6 +5899,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
@@ -6104,6 +6292,7 @@
           "medousa_view",
           "builtin_panel",
           "presentation",
+          "media_embed",
           "chrome_action"
         ]
       },
@@ -6361,6 +6550,32 @@
                 "type": "string",
                 "enum": [
                   "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
                 ]
               }
             }
