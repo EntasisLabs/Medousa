@@ -44,6 +44,9 @@ pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
     "cognition_layout_get",
     "cognition_layout_apply",
     "cognition_layout_reset",
+    "cognition_environment_patch",
+    "cognition_custom_view_doctor",
+    "cognition_custom_view_compose",
 ];
 
 /// Always-visible host console tools (~12+).
@@ -248,6 +251,17 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 summary: "Home environment — surfaces, chrome, persistent components, context pointers",
                 tools: ENVIRONMENT_DOMAIN_TOOLS,
             },
+            ToolDomainCatalogEntry {
+                domain: "presentation",
+                summary: "HTML artifacts — ui_present publish and artifact_write revise",
+                tools: &[
+                    "cognition_ui_present",
+                    "cognition_artifact_list",
+                    "cognition_artifact_read",
+                    "cognition_artifact_grep",
+                    "cognition_artifact_write",
+                ],
+            },
         ]
     })
     .as_slice()
@@ -346,6 +360,7 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
 /// Domains unlocked when a bound workshop starts (execution lane for Home).
 pub const BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS: &[&str] = &[
     "environment",
+    "presentation",
     "execute",
     "discover",
     "vault",
@@ -396,6 +411,9 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_layout_get" => "Read stack layout tree for a custom surface main body",
         "cognition_layout_apply" => "Apply vstack/hstack/grid layout to custom surface main body",
         "cognition_layout_reset" => "Clear layoutRoot to implicit vertical stack",
+        "cognition_environment_patch" => "Incremental environment ops — new custom surfaces go live; preset rewrites propose",
+        "cognition_custom_view_doctor" => "Diagnose custom surfaces — nav, feeds, recurring bindings, mismatches",
+        "cognition_custom_view_compose" => "One-shot custom view + HTML + feeds + layout + recurring poll",
         "cognition_turn_worker_status" => "Pending worker status",
         "cognition_capability_invoke" => "One-shot capability execution",
         "cognition_grapheme_script_load" => "Load saved Grapheme script body",

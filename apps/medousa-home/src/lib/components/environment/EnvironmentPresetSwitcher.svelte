@@ -1,5 +1,6 @@
 <script lang="ts">
   import { environment } from "$lib/stores/environment.svelte";
+  import { presetDisplayLabel } from "$lib/utils/customViewStatus";
   import { ChevronDown } from "@lucide/svelte";
 
   interface Props {
@@ -45,7 +46,7 @@
       onclick={() => (open = !open)}
     >
       <span class="env-preset-switcher-label">
-        {activePreset?.label ?? "Layout"}
+        {presetDisplayLabel(activePreset?.id ?? "default", activePreset?.label)}
       </span>
       <ChevronDown size={14} strokeWidth={2} />
     </button>
@@ -60,7 +61,7 @@
             class:env-preset-switcher-item-active={preset.id === activePreset?.id}
             onclick={() => void selectPreset(preset.id)}
           >
-            {preset.label}
+            {presetDisplayLabel(preset.id, preset.label)}
           </button>
         {/each}
       </div>

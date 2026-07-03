@@ -103,6 +103,11 @@ pub struct TurnWorkRecord {
     pub disposition: TurnWorkDisposition,
     #[serde(default)]
     pub steer_messages: Vec<WorkshopSteerMessage>,
+    /// Snapshotted from host client when work was delegated (Home canvas lane).
+    #[serde(default)]
+    pub supports_ui_artifacts: bool,
+    #[serde(default)]
+    pub supports_browser_host: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -212,12 +212,17 @@ impl StasisTool for CognitionFeedSubscribeTool {
             .put(record.spec, "agent")
             .await
             .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        let nav_visible =
+            crate::custom_view_status::surface_nav_visible(&updated.spec, &surface_id);
         let _ = self.turn_scope.read().await;
         Ok(json!({
             "ok": true,
             "revision": updated.revision,
             "component_id": component_id,
             "feed_ids": feed_ids,
+            "live": true,
+            "nav_visible": nav_visible,
+            "feeds_subscribed": feed_ids,
         }))
     }
 }

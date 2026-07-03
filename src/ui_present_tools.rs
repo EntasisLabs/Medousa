@@ -256,6 +256,15 @@ impl StasisTool for CognitionUiPresentTool {
             response["persisted"] = json!(true);
             response["persisted_component_id"] = json!(component_id);
             response["environment_revision"] = json!(updated.revision);
+            let nav_visible =
+                crate::custom_view_status::surface_nav_visible(&updated.spec, surface_id);
+            response["live"] = json!(true);
+            response["nav_visible"] = json!(nav_visible);
+            if !nav_visible {
+                response["hint"] = json!(format!(
+                    "Surface '{surface_id}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
+                ));
+            }
         }
 
         Ok(response)

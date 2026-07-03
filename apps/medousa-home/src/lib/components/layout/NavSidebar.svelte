@@ -2,6 +2,7 @@
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import { environment } from "$lib/stores/environment.svelte";
+  import { feedBadgeForComponents } from "$lib/utils/customViewStatus";
   import { environmentIcon } from "$lib/utils/environmentIcons";
   import { Settings, UserRound } from "@lucide/svelte";
   import type { SurfaceDef } from "$lib/types/environment";
@@ -58,6 +59,14 @@
     return 0;
   }
 
+  function feedBadgeForSurface(surface: SurfaceDef): "live" | "stale" | "none" {
+    if (surface.kind !== "custom") return "none";
+    return feedBadgeForComponents(
+      environment.componentsForSurface(surface.id),
+      environment.feedStateByComponentId,
+    );
+  }
+
   function railBtnClass(id: string, tier: "life" | "utility"): string {
     const isActive = active === id;
     const activeClass = isActive ? "workshop-rail-btn-active" : "";
@@ -75,6 +84,7 @@
     {#each lifeOrbit as surface (surface.id)}
       {@const Icon = environmentIcon(surface.icon)}
       {@const badge = activityFor(surface.id)}
+      {@const feedBadge = feedBadgeForSurface(surface)}
       <button
         type="button"
         class={railBtnClass(surface.id, "life")}
@@ -86,6 +96,12 @@
         <Icon {...iconProps} />
         {#if badge > 0}
           <span class="workshop-rail-badge" aria-hidden="true"></span>
+        {:else if feedBadge !== "none"}
+          <span
+            class="workshop-rail-feed-badge workshop-rail-feed-badge-{feedBadge}"
+            aria-hidden="true"
+            title={feedBadge === "live" ? "Live feed" : "Stale feed"}
+          ></span>
         {/if}
       </button>
     {/each}

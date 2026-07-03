@@ -368,6 +368,141 @@ pub struct EnvironmentPendingResponse {
     pub pending: Option<EnvironmentPendingProposal>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomViewComponentStatus {
+    pub component_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    #[serde(default)]
+    pub feeds: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomViewFeedStatus {
+    pub feed_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_emitted_at_utc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomViewRecurringBindingStatus {
+    pub recurring_id: String,
+    #[serde(default)]
+    pub feed_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron_expr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomViewSurfaceStatus {
+    pub surface_id: String,
+    pub label: String,
+    pub nav_visible: bool,
+    #[serde(default)]
+    pub components: Vec<CustomViewComponentStatus>,
+    #[serde(default)]
+    pub subscribed_feed_ids: Vec<String>,
+    #[serde(default)]
+    pub feed_status: Vec<CustomViewFeedStatus>,
+    #[serde(default)]
+    pub feed_mismatches: Vec<String>,
+    #[serde(default)]
+    pub recurring_bindings: Vec<CustomViewRecurringBindingStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_root: Option<crate::layout::LayoutNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentStatusResponse {
+    pub profile_id: String,
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_preset_id: Option<String>,
+    pub pending_proposal: bool,
+    #[serde(default)]
+    pub custom_surfaces: Vec<CustomViewSurfaceStatus>,
+    pub feed_mismatch_count: usize,
+    pub nav_orphan_count: usize,
+    #[serde(default)]
+    pub hints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentPatchRequest {
+    #[serde(default)]
+    pub profile_id: Option<String>,
+    pub ops: Vec<EnvironmentPatchOp>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum EnvironmentPatchOp {
+    AddCustomSurface {
+        id: String,
+        label: String,
+        #[serde(default = "default_surface_icon")]
+        icon: String,
+        #[serde(default)]
+        layout: Option<SurfaceLayout>,
+        #[serde(default = "default_true")]
+        add_to_active_preset: bool,
+    },
+    AddToActivePreset {
+        surface_id: String,
+    },
+    AddComponent {
+        component: ComponentDef,
+    },
+    SetComponentFeeds {
+        component_id: String,
+        feed_ids: Vec<String>,
+    },
+    RewriteActivePresetSurfaces {
+        surfaces: Vec<String>,
+    },
+}
+
+fn default_surface_icon() -> String {
+    "layout-grid".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentPatchResponse {
+    pub ok: bool,
+    pub live: bool,
+    #[serde(default)]
+    pub pending_operator_approval: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    #[serde(default)]
+    pub applied_ops: Vec<String>,
+}
+
 /// Activate one layout preset (marks active flag + active_preset_id).
 pub fn activate_layout_preset(spec: &mut EnvironmentSpec, preset_id: &str) -> Result<(), String> {
     let preset_id = preset_id.trim();

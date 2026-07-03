@@ -184,5 +184,47 @@ export interface EnvironmentPendingResponse {
   pending?: EnvironmentPendingProposal | null;
 }
 
+export interface CustomViewComponentStatus {
+  componentId: string;
+  artifactId?: string | null;
+  feeds: string[];
+}
+
+export interface CustomViewFeedStatus {
+  feedId: string;
+  lastEmittedAtUtc?: string | null;
+  lastSummary?: string | null;
+}
+
+export interface CustomViewRecurringBindingStatus {
+  recurringId: string;
+  feedIds: string[];
+  cronExpr?: string | null;
+  enabled?: boolean | null;
+}
+
+export interface CustomViewSurfaceStatus {
+  surfaceId: string;
+  label: string;
+  navVisible: boolean;
+  components: CustomViewComponentStatus[];
+  subscribedFeedIds: string[];
+  feedStatus: CustomViewFeedStatus[];
+  feedMismatches: string[];
+  recurringBindings: CustomViewRecurringBindingStatus[];
+  layoutRoot?: LayoutNode | null;
+}
+
+export interface EnvironmentStatusResponse {
+  profileId: string;
+  revision: number;
+  activePresetId?: string | null;
+  pendingProposal: boolean;
+  customSurfaces: CustomViewSurfaceStatus[];
+  feedMismatchCount: number;
+  navOrphanCount: number;
+  hints: string[];
+}
+
 export const SAFETY_SURFACE_SETTINGS = "settings";
 export const SAFETY_SURFACE_RUNTIME = "runtime";

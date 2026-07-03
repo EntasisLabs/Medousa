@@ -39,6 +39,18 @@ Canvas workflow (Home / supports_ui_artifacts):
 5) cognition_component_list to verify. cognition_environment_activate_preset to switch layout presets. Operator approves agent proposals in Settings → Canvas.
 6) Status while building ("pulling wiki", "retrying propose"): cognition_turn_update_user(message=…) in the same round as environment_get/wiki/propose — not naked chat prose."#;
 
+pub const WORKER_CANVAS_APPENDIX: &str = r#"
+[MEDOUSA_WORKER_CANVAS]
+Bound workshop / Home canvas lane — you may publish HTML and wire custom surfaces here (host scheduler lane cannot).
+
+Workflow:
+0) cognition_environment_wiki(topic=recipe) before guessing propose JSON.
+1) cognition_environment_get — surfaces + components.
+2) cognition_custom_view_compose for one-shot surface + HTML + feeds + recurring OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
+3) cognition_artifact_write revises an existing artifact_id; cognition_ui_present is first-time publish only.
+4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
+5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive canvas widget."#;
+
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
     format!(
@@ -139,7 +151,7 @@ fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
         }
         TurnWorkerIntent::Research | TurnWorkerIntent::General => {
             format!(
-                "{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}\n{WORKER_OPENSHELL_SKILL_APPENDIX}"
+                "{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}\n{WORKER_OPENSHELL_SKILL_APPENDIX}\n{WORKER_CANVAS_APPENDIX}"
             )
         }
     }

@@ -17,9 +17,11 @@ use crate::turn_text_heuristics::{
 pub const INTERIM_MAX_CHARS: usize = EXTENDED_PROSE_CHAR_THRESHOLD;
 
 /// Per-turn budget for bounded interim auto-continues (short non-tool notes).
+/// Scales with operator `max_tool_rounds` so canvas/workshop flows can emit several
+/// `cognition_turn_update_user`-style status beats without prematurely ending the turn.
 pub fn resolve_interim_continue_cap(max_tool_rounds: usize) -> usize {
     let rounds = max_tool_rounds.max(1);
-    ((rounds * 2) / 5).clamp(3, 8)
+    ((rounds * 4) / 5).clamp(4, 10)
 }
 
 /// What the tool loop should do after a text-only model response.
@@ -335,9 +337,9 @@ mod tests {
 
     #[test]
     fn interim_continue_cap_scales_with_round_budget() {
-        assert_eq!(resolve_interim_continue_cap(10), 4);
-        assert_eq!(resolve_interim_continue_cap(4), 3);
-        assert_eq!(resolve_interim_continue_cap(20), 8);
+        assert_eq!(resolve_interim_continue_cap(10), 8);
+        assert_eq!(resolve_interim_continue_cap(4), 4);
+        assert_eq!(resolve_interim_continue_cap(20), 10);
     }
 
     #[test]

@@ -38,6 +38,7 @@
   import { updateTrayBlockedCount } from "$lib/window";
   import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
   import ShellLayoutDebug from "$lib/components/debug/ShellLayoutDebug.svelte";
+  import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
 
@@ -128,6 +129,7 @@
     />
 
     <div class="workshop-main relative flex min-w-0 flex-1 flex-col" data-debug-label="workshop-main">
+      <EnvPendingProposalBanner />
       <div
         class="flex min-h-0 min-w-0 flex-1 overflow-hidden"
         data-debug-label="workshop-content-row"

@@ -488,6 +488,13 @@ impl StasisTool for CognitionRuntimeRecurringDoctorTool {
             row["cron_valid"] = json!(cron_ok);
             row["delivery_bound"] = json!(delivery.is_some());
             row["push_ready"] = json!(delivery.is_some() && definition.enabled);
+            let feed_binding =
+                crate::recurring_feed::feed_binding_for_recurring(&definition.id).await;
+            row["feeds_bound"] = json!(feed_binding.is_some());
+            row["feeds_binding"] = feed_binding
+                .as_ref()
+                .map(crate::custom_view_status::recurring_feed_binding_json)
+                .unwrap_or(Value::Null);
             entries.push(row);
         }
 
@@ -715,7 +722,23 @@ impl StasisTool for CognitionRuntimeRecurringRegisterTool {
             "next_run_at_utc": definition.next_run_at.to_rfc3339(),
             "enabled": enabled,
             "delivery_bound": delivery_bound,
-            "feeds_bound": feeds_bound
+            "feeds_bound": feeds_bound,
+            "live": true,
+            "feeds_bound_recurring": if feeds_bound {
+                input
+                    .get("feeds")
+                    .and_then(|feeds| feeds.get("feed_ids"))
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|value| value.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::<String>::new()
+            },
         }))
     }
 }

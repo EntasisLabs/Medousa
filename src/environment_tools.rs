@@ -434,11 +434,31 @@ impl StasisTool for CognitionComponentCreateTool {
         if let Some(session_id) = session_id.as_deref() {
             register_presentation_aliases(session_id, &component);
         }
-        Ok(json!({
+        let nav_visible =
+            surface_nav_visible_for_spec(&updated.spec, &component.surface_id);
+        let mut response = json!({
             "ok": true,
             "revision": updated.revision,
             "component": updated.spec.components.last(),
-        }))
+            "live": true,
+            "nav_visible": nav_visible,
+        });
+        if let (Some(obj), Some(extra)) = (
+            response.as_object_mut(),
+            crate::custom_view_status::nav_visibility_fields(
+                &updated.spec,
+                &component.surface_id,
+                nav_visible,
+            )
+            .as_object(),
+        ) {
+            for (key, value) in extra {
+                if key != "live" && key != "nav_visible" {
+                    obj.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        Ok(response)
     }
 }
 
@@ -711,6 +731,10 @@ fn apply_component_patch(component: &mut ComponentDef, patch: &Value) {
             _ => Some(UiPresentation::Inline),
         };
     }
+}
+
+pub fn surface_nav_visible_for_spec(spec: &EnvironmentSpec, surface_id: &str) -> bool {
+    crate::custom_view_status::surface_nav_visible(spec, surface_id)
 }
 
 /// Helper for agent-driven custom surface creation.

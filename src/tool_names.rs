@@ -90,6 +90,9 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_layout_get",
     "cognition_layout_apply",
     "cognition_layout_reset",
+    "cognition_environment_patch",
+    "cognition_custom_view_doctor",
+    "cognition_custom_view_compose",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.

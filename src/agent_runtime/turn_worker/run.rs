@@ -21,6 +21,8 @@ use crate::agent_runtime::{
 use crate::daemon_api::InteractiveTurnRequest;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::agent_runtime::system_prompt::DEFAULT_SYSTEM_PROMPT;
+use crate::channel_delivery::ChannelDeliveryTarget;
+use crate::turn_continuation::TurnContinuationScope;
 use crate::tui::settings::RuntimeSettings;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
@@ -48,6 +50,38 @@ use super::store::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
 };
 
+fn worker_canvas_lane_enabled(is_bound_workshop: bool, record: &TurnWorkRecord) -> bool {
+    is_bound_workshop || record.supports_ui_artifacts
+}
+
+async fn establish_worker_canvas_turn_scope(
+    turn_scope: &Arc<RwLock<Option<TurnContinuationScope>>>,
+    record: &TurnWorkRecord,
+) {
+    let previous = turn_scope.read().await.clone();
+    let mut next = previous.unwrap_or_else(|| TurnContinuationScope {
+        turn_correlation_id: record
+            .parent_turn_correlation_id
+            .clone()
+            .unwrap_or_else(|| format!("work-{}", record.work_id)),
+        session_id: record.session_id.clone(),
+        original_prompt: record.task_prompt.clone(),
+        delivery_target: record.delivery_target.as_ref().map(ChannelDeliveryTarget::from),
+        provider: record.provider.clone(),
+        model: record.model.clone(),
+        response_depth_mode: record.response_depth_mode.clone(),
+        supports_ui_artifacts: true,
+        supports_browser_host: record.supports_browser_host,
+        channel_surface: Some("workshop-canvas".to_string()),
+    });
+    next.supports_ui_artifacts = true;
+    if record.supports_browser_host {
+        next.supports_browser_host = true;
+    }
+    next.session_id = record.session_id.clone();
+    *turn_scope.write().await = Some(next);
+}
+
 /// Live host-turn context used when spawning a worker from the tool loop.
 #[derive(Clone)]
 pub struct ActiveWorkerBusSession {
@@ -65,9 +99,12 @@ pub struct ActiveWorkerBusSession {
     pub host_continuity_bundle: Option<crate::agent_runtime::worker_continuity::HostContinuityBundle>,
     /// Operator `max_tool_rounds` from the delegating host turn (not a separate worker cap).
     pub configured_max_tool_rounds: usize,
+    /// Home client advertised HTML/canvas support when the host delegated this work.
+    pub supports_ui_artifacts: bool,
+    pub supports_browser_host: bool,
 }
 
-/// Tooling snapshot for background workers (no `Arc<TuiRuntime>` required).
+/// Tooling snapshot for background workers (no full `Arc<TuiRuntime>` required).
 #[derive(Clone)]
 pub struct WorkerRuntimeContext {
     pub tool_registry: Arc<dyn ToolRegistry>,
@@ -75,6 +112,7 @@ pub struct WorkerRuntimeContext {
     pub provider: String,
     pub model: String,
     pub base_url: Option<String>,
+    pub turn_scope: Arc<RwLock<Option<crate::turn_continuation::TurnContinuationScope>>>,
 }
 
 impl WorkerRuntimeContext {
@@ -88,6 +126,7 @@ impl WorkerRuntimeContext {
             provider,
             model,
             base_url,
+            turn_scope: rt.turn_scope.clone(),
         }
     }
 }
@@ -293,6 +332,8 @@ impl TurnWorkerScheduler {
             archived: false,
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            supports_ui_artifacts: bus.supports_ui_artifacts,
+            supports_browser_host: bus.supports_browser_host,
             created_at: now,
             updated_at: now,
         };
@@ -505,6 +546,8 @@ impl TurnWorkerScheduler {
             archived: false,
             disposition: TurnWorkDisposition::Bound,
             steer_messages: Vec::new(),
+            supports_ui_artifacts: true,
+            supports_browser_host: bus.supports_browser_host,
             created_at: now,
             updated_at: now,
         };
@@ -644,13 +687,14 @@ pub async fn run_worker_turn(
         ctx.tool_registry.clone(),
         record.session_id.clone(),
     ));
-    let filtered_registry: Arc<dyn ToolRegistry> = if is_bound_workshop {
+    let canvas_lane = worker_canvas_lane_enabled(is_bound_workshop, &record);
+    let filtered_registry: Arc<dyn ToolRegistry> = if canvas_lane {
         Arc::new(SessionBootstrapToolRegistry::bound_workshop(
             session_registry,
             record.session_id.clone(),
             allowlist,
             true,
-            true,
+            record.supports_browser_host || is_bound_workshop,
         ))
     } else {
         Arc::new(SessionBootstrapToolRegistry::worker(
@@ -658,6 +702,13 @@ pub async fn run_worker_turn(
             record.session_id.clone(),
             allowlist,
         ))
+    };
+    let previous_turn_scope = if canvas_lane {
+        let previous = ctx.turn_scope.read().await.clone();
+        establish_worker_canvas_turn_scope(&ctx.turn_scope, &record).await;
+        Some(previous)
+    } else {
+        None
     };
     let worker_pipeline = crate::tui::runtime_services::build_tool_loop_pipeline_for_target(
         &record.provider,
@@ -753,6 +804,9 @@ pub async fn run_worker_turn(
     };
 
     if store.is_work_cancelled(&work_id) {
+        if let Some(restore) = previous_turn_scope {
+            *ctx.turn_scope.write().await = restore;
+        }
         store.update(&work_id, |r| {
             r.status = TurnWorkStatus::Cancelled;
             r.termination_reason = Some("workshop_cancelled".to_string());
@@ -782,8 +836,7 @@ pub async fn run_worker_turn(
                 });
                 sink.notice(format!("◈ work_cancelled work_id={work_id}"))
                     .await;
-                return;
-            }
+            } else {
             let tool_names: Vec<String> = response
                 .tool_invocations
                 .iter()
@@ -817,6 +870,7 @@ pub async fn run_worker_turn(
             if let Some(updated) = store.get(&work_id) {
                 run_synthesis_turn(&ctx, updated, sink, stream_turn_id).await;
             }
+            }
         }
         Err(err) => {
             let message = err.to_string();
@@ -846,6 +900,10 @@ pub async fn run_worker_turn(
                 run_worker_failure_notify(&ctx, failed, sink, stream_turn_id).await;
             }
         }
+    }
+
+    if let Some(restore) = previous_turn_scope {
+        *ctx.turn_scope.write().await = restore;
     }
 }
 
@@ -1164,6 +1222,8 @@ mod tests {
             archived: false,
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            supports_ui_artifacts: false,
+            supports_browser_host: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

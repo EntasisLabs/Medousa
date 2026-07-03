@@ -225,6 +225,7 @@ pub fn build_feature_routers(
     let environment_router = crate::environment_handlers::environment_router(
         crate::environment_handlers::EnvironmentApiState {
             hub: crate::environment_store::environment_hub(),
+            runtime: Some(Arc::new(state.composition().clone())),
         },
     );
 

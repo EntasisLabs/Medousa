@@ -9,9 +9,12 @@ use chrono::Utc;
 use futures_util::stream::{self, Stream};
 use medousa_types::environment::{
     EnvironmentPendingProposal, EnvironmentPendingResponse, EnvironmentProposeResponse,
-    EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStreamEvent,
-    EnvironmentStreamQuery, EnvironmentValidateRequest, EnvironmentValidateResponse,
+    EnvironmentSpecPutRequest, EnvironmentSpecResponse, EnvironmentStatusResponse,
+    EnvironmentStreamEvent, EnvironmentStreamQuery, EnvironmentValidateRequest,
+    EnvironmentValidateResponse,
 };
+use std::sync::Arc;
+use stasis::prelude::RuntimeComposition;
 use medousa_types::environment_validate::validate_environment_spec;
 use std::convert::Infallible;
 use std::time::Duration;
@@ -21,11 +24,20 @@ use crate::environment_store::{resolve_profile_id, EnvironmentHub};
 #[derive(Clone)]
 pub struct EnvironmentApiState {
     pub hub: &'static EnvironmentHub,
+    pub runtime: Option<Arc<RuntimeComposition>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentStatusQuery {
+    profile_id: Option<String>,
+    surface_id: Option<String>,
 }
 
 pub fn environment_router(state: EnvironmentApiState) -> Router {
     Router::new()
         .route("/v1/environment/spec", get(get_spec).put(put_spec))
+        .route("/v1/environment/status", get(get_status))
         .route("/v1/environment/spec/validate", post(validate_spec))
         .route("/v1/environment/spec/propose", post(propose_spec))
         .route("/v1/environment/spec/pending", get(get_pending).delete(dismiss_pending))
@@ -51,6 +63,28 @@ async fn get_spec(
         spec: record.spec,
         revision: record.revision,
     }))
+}
+
+async fn get_status(
+    State(state): State<EnvironmentApiState>,
+    Query(query): Query<EnvironmentStatusQuery>,
+) -> Result<Json<EnvironmentStatusResponse>, (StatusCode, String)> {
+    let profile_id = resolve_profile_id(query.profile_id.as_deref());
+    let surface_filter = query
+        .surface_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let runtime = state.runtime.as_deref();
+    crate::custom_view_status::build_environment_status(
+        state.hub,
+        &profile_id,
+        surface_filter,
+        runtime,
+    )
+    .await
+    .map(Json)
+    .map_err(internal_error)
 }
 
 async fn put_spec(

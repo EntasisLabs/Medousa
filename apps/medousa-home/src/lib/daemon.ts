@@ -301,6 +301,13 @@ export async function stopWorkspaceStream(): Promise<void> {
   return invoke("workspace_stream_stop");
 }
 
+export async function getEnvironmentStatus(
+  profileId?: string,
+  surfaceId?: string,
+): Promise<import("$lib/types/environment").EnvironmentStatusResponse> {
+  return invoke("environment_get_status", { profileId, surfaceId });
+}
+
 export async function getEnvironmentSpec(
   profileId?: string,
 ): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {

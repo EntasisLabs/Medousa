@@ -1032,6 +1032,8 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                 intents: vec![
                     "setup_dashboard".to_string(),
                     "compose_surface".to_string(),
+                    "compose_custom_view".to_string(),
+                    "diagnose_custom_view".to_string(),
                     "workshop_status".to_string(),
                     "setup_personal_app".to_string(),
                     "live_poll_dashboard".to_string(),

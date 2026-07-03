@@ -100,6 +100,8 @@ mod tests {
             archived: false,
             disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            supports_ui_artifacts: false,
+            supports_browser_host: false,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         });

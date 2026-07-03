@@ -3,6 +3,7 @@ import {
   dismissEnvironmentPending,
   getEnvironmentPending,
   getEnvironmentSpec,
+  getEnvironmentStatus,
   putEnvironmentSpec,
   startEnvironmentStream,
   stopEnvironmentStream,
@@ -11,6 +12,7 @@ import type {
   ComponentDef,
   EnvironmentPendingProposal,
   EnvironmentSpec,
+  EnvironmentStatusResponse,
   EnvironmentStreamEvent,
   SurfaceDef,
 } from "$lib/types/environment";
@@ -33,6 +35,9 @@ export class EnvironmentStore {
   pendingProposal = $state<EnvironmentPendingProposal | null>(null);
   pendingBusy = $state(false);
   feedStateByComponentId = $state<Map<string, Record<string, unknown>>>(new Map());
+  canvasStatus = $state<EnvironmentStatusResponse | null>(null);
+  canvasStatusError = $state<string | null>(null);
+  canvasStatusLoading = $state(false);
 
   get loaded(): boolean {
     return this.spec !== null;
@@ -163,6 +168,26 @@ export class EnvironmentStore {
     } catch {
       this.pendingProposal = null;
     }
+  }
+
+  async refreshCanvasStatus(profileId?: string): Promise<void> {
+    this.canvasStatusLoading = true;
+    try {
+      this.canvasStatus = await getEnvironmentStatus(profileId);
+      this.canvasStatusError = null;
+    } catch (err) {
+      this.canvasStatus = null;
+      this.canvasStatusError =
+        err instanceof Error ? err.message : "Could not load canvas status";
+    } finally {
+      this.canvasStatusLoading = false;
+    }
+  }
+
+  canvasStatusForSurface(surfaceId: string) {
+    return this.canvasStatus?.customSurfaces.find(
+      (surface) => surface.surfaceId === surfaceId,
+    );
   }
 
   async activatePreset(presetId: string, profileId?: string): Promise<void> {

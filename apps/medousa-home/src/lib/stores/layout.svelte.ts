@@ -31,6 +31,7 @@ export class LayoutStore {
   navigationEpoch = $state(0);
   mobileTab = $state<MobileTab>(loadMobileTab());
   moreDestination = $state<MoreDestination>(loadMoreDestination());
+  mobileSurfaceOverride = $state<string | null>(null);
   libraryView = $state<LibraryView>(loadLibraryView());
   libraryListScrollTop = $state(0);
   activitySheetOpen = $state(false);
@@ -198,6 +199,19 @@ export class LayoutStore {
     }
     saveMoreDestination(destination);
     this.bumpNavigation();
+  }
+
+  openCustomSurface(surfaceId: string) {
+    this.mobileSurfaceOverride = surfaceId;
+    this.setMobileTab("home", { bump: true });
+  }
+
+  clearMobileSurfaceOverride() {
+    this.mobileSurfaceOverride = null;
+  }
+
+  effectiveMobileHomeSurface(defaultHome: string): string {
+    return this.mobileSurfaceOverride ?? defaultHome;
   }
 
   backToMoreHub() {

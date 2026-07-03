@@ -759,6 +759,7 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             provider: provider.clone(),
             model: model.clone(),
             base_url: base_url.clone(),
+            turn_scope: turn_scope.clone(),
         })
         .await;
 
@@ -795,6 +796,8 @@ pub async fn execute_local_turn(sink: SharedAgentStreamSink, params: LocalTurnEx
             host_handoff_slot: host_handoff_slot.clone(),
             host_continuity_bundle,
             configured_max_tool_rounds: turn_loop_settings.configured_max_tool_rounds,
+            supports_ui_artifacts: params.supports_ui_artifacts,
+            supports_browser_host: params.supports_browser_host,
         })
         .await;
 

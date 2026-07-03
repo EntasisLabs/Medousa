@@ -21,6 +21,7 @@
   import { catalog } from "$lib/stores/catalog.svelte";
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import { layout } from "$lib/stores/layout.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
   import {
     MORE_DESTINATIONS,
     MORE_HUB_SECTIONS,
@@ -74,6 +75,14 @@
     destinationById[layout.moreDestination as Exclude<MoreDestination, "hub">]?.label ??
       layout.moreDestination,
   );
+
+  const myCustomViews = $derived(
+    environment.navSurfaces().filter((surface) => surface.kind === "custom"),
+  );
+
+  function openCustomView(surfaceId: string) {
+    layout.openCustomSurface(surfaceId);
+  }
 </script>
 
 <div class="flex h-full min-h-0 flex-col {visible ? '' : 'hidden'}">
@@ -83,6 +92,32 @@
       <p class="workshop-faint mt-1 text-sm">Settings & tools — when you need them</p>
     </header>
     <div class="mobile-you-scroll flex-1 overflow-y-auto px-4 pb-4">
+      {#if myCustomViews.length > 0}
+        <section class="mb-6">
+          <h2 class="mobile-you-section-title">My views</h2>
+          <p class="workshop-faint mb-2 text-xs">Custom surfaces from your active layout preset</p>
+          <ul class="space-y-2">
+            {#each myCustomViews as surface (surface.id)}
+              <li>
+                <button
+                  type="button"
+                  class="mobile-you-destination"
+                  onclick={() => openCustomView(surface.id)}
+                >
+                  <span class="mobile-you-destination-icon">
+                    <Sparkles size={18} strokeWidth={1.75} />
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <p class="font-medium text-surface-100">{surface.label}</p>
+                    <p class="workshop-faint mt-0.5 text-xs">{surface.id}</p>
+                  </span>
+                  <ChevronRight size={16} class="shrink-0 text-surface-600" />
+                </button>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
       {#each MORE_HUB_SECTIONS as section (section.title)}
         <section class="mb-6">
           <h2 class="mobile-you-section-title">{section.title}</h2>

@@ -247,6 +247,12 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
     )?;
     crate::environment_tools::register_environment_tools(&mut tool_registry, turn_scope.clone())?;
+    crate::custom_view_tools::register_custom_view_tools(
+        &mut tool_registry,
+        runtime.clone(),
+        event_tx.clone(),
+        turn_scope.clone(),
+    )?;
     crate::context_pointer_tools::register_context_pointer_tools(
         &mut tool_registry,
         turn_scope.clone(),

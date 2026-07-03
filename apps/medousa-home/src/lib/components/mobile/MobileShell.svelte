@@ -15,6 +15,7 @@
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
   import AskCompletionModal from "$lib/components/work/AskCompletionModal.svelte";
   import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
+  import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import ShellAskFab from "$lib/components/environment/ShellAskFab.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { layout } from "$lib/stores/layout.svelte";
@@ -55,7 +56,9 @@
     visibleMobileTabs,
   } from "$lib/utils/mobileEnvironmentChrome";
 
-  const mobileHomeSurfaceId = $derived(environment.mobileDefaultHome);
+  const mobileHomeSurfaceId = $derived(
+    layout.effectiveMobileHomeSurface(environment.mobileDefaultHome),
+  );
   const customMobileHome = $derived(environment.isCustomSurface(mobileHomeSurfaceId));
   const mobileAskEntry = $derived(environment.mobileAskEntry);
   const fabChromeOnHome = $derived(
@@ -215,6 +218,7 @@
   class="mobile-shell flex min-h-0 w-full flex-col bg-surface-950 text-surface-50"
   data-mobile-tab={layout.mobileTab}
 >
+  <EnvPendingProposalBanner />
   <main bind:this={mainEl} class="min-h-0 flex-1 overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}

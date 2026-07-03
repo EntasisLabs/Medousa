@@ -376,6 +376,7 @@ const TOPICS: &[WikiTopic] = &[
         fields(.98): "{ feeds: { feed_ids: [trip.london.trains], payload_mode: parsed_poll } }"
     },
     personal_app_recipe(.97): {
+        preferred(.98): "cognition_custom_view_compose { surface_id, component_id, html, feed_ids, recurring }",
         step_1(.97): "cognition_grapheme_template_run template=http_poll url=<discovered>",
         step_2(.97): "cognition_ui_present + cognition_layout_apply dashboard HTML",
         step_3(.97): "cognition_feed_subscribe same feed_ids",
@@ -406,6 +407,39 @@ const TOPICS: &[WikiTopic] = &[
         call_next: &["cognition_feed_subscribe", "cognition_runtime_recurring_register"],
     },
     WikiTopic {
+        id: "custom_view_compose",
+        title: "Custom view compose (Phase 5)",
+        summary: "One-shot cognition_custom_view_compose for surface + HTML + feeds + recurring.",
+        policy: r#"    role(.99): "Prefer compose over manual patch + ui_present + subscribe + recurring chain.",
+    input(.99): {
+        required(.99): "surface_id, component_id, html (or artifact_id for revise-only)",
+        optional(.98): "label, icon, feed_ids, layout_root, recurring { cron_expr, poll_url|source }, nav.add_to_active_preset",
+        preset_rewrite(.96): "routes through propose — returns pending_operator_approval"
+    },
+    hybrid(.99): {
+        immediate(.99): "add_custom_surface + add_to_active_preset, component persist, feed subscribe, layout apply, recurring register",
+        gated(.98): "rewrite_active_preset_surfaces or preset_rewrite in compose input"
+    },
+    response(.98): "live, nav_visible, feeds_subscribed, feeds_bound_recurring, next_run_at_utc, embedded doctor summary"#,
+        related: &["custom_view_doctor", "feed_client", "example_trip_poll", "tool_map"],
+        call_next: &["cognition_custom_view_compose", "cognition_custom_view_doctor"],
+    },
+    WikiTopic {
+        id: "custom_view_doctor",
+        title: "Custom view doctor (Phase 5)",
+        summary: "Diagnose nav visibility, feed subscribe vs recurring binding mismatches.",
+        policy: r#"    role(.99): "Run before user notices blank widgets or missing nav entries.",
+    inspects(.99): {
+        nav_visible(.99): "surface id in active preset surfaces",
+        feed_mismatches(.98): "component feeds ⊄ recurring feeds.feed_ids or subscribe without recurring",
+        feed_status(.97): "last tail event per subscribed feed",
+        recurring_bindings(.97): "recurring jobs bound to surface feed ids"
+    },
+    http(.96): "GET /v1/environment/status mirrors doctor JSON for Home Settings Canvas"#,
+        related: &["custom_view_compose", "feed_client", "tool_map"],
+        call_next: &["cognition_custom_view_doctor", "cognition_environment_patch"],
+    },
+    WikiTopic {
         id: "tool_map",
         title: "Tool routing",
         summary: "Which cognition tool for which goal.",
@@ -423,6 +457,9 @@ const TOPICS: &[WikiTopic] = &[
         stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
         feed_subscribe(.96): "cognition_feed_subscribe",
         recurring_feeds(.96): "cognition_runtime_recurring_register feeds.feed_ids",
+        compose_custom_view(.97): "cognition_custom_view_compose — prefer for feed+poll dashboards",
+        diagnose_custom_view(.96): "cognition_custom_view_doctor",
+        environment_patch(.96): "cognition_environment_patch — incremental ops with hybrid approval",
         intent_wiring(.96): "cognition_intent_resolve",
         context_pointer(.95): "cognition_context_follow_pointer"
     },

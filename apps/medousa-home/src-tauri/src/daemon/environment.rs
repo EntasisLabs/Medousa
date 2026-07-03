@@ -1,11 +1,35 @@
 use crate::daemon::types::{
     EnvironmentPendingResponse, EnvironmentSpecPutRequest, EnvironmentSpecResponse,
-    EnvironmentStreamQuery,
+    EnvironmentStatusResponse, EnvironmentStreamQuery,
 };
 use tauri::State;
 
 use super::workshop_http::{self, delete_json, path_with_query, post_empty_json};
 use super::DaemonState;
+
+#[tauri::command]
+pub async fn environment_get_status(
+    state: State<'_, DaemonState>,
+    profile_id: Option<String>,
+    surface_id: Option<String>,
+) -> Result<EnvironmentStatusResponse, String> {
+    let mut query = Vec::new();
+    if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
+        query.push(("profile_id", profile_id));
+    }
+    if let Some(surface_id) = surface_id.filter(|id| !id.trim().is_empty()) {
+        query.push(("surface_id", surface_id));
+    }
+    let path = if query.is_empty() {
+        "/v1/environment/status".to_string()
+    } else {
+        path_with_query(
+            "/v1/environment/status",
+            &query.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>(),
+        )
+    };
+    workshop_http::get_json(&state, &path).await
+}
 
 #[tauri::command]
 pub async fn environment_get_spec(

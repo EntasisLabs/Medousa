@@ -424,6 +424,7 @@ pub fn run() {
             daemon::workspace_stream_start,
             daemon::workspace_stream_stop,
             daemon::environment::environment_get_spec,
+            daemon::environment::environment_get_status,
             daemon::environment::environment_put_spec,
             daemon::environment::environment_get_pending,
             daemon::environment::environment_apply_pending,
