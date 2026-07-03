@@ -244,6 +244,7 @@ pub fn build_feature_routers(
         .merge(workspace_router)
         .merge(environment_router)
         .merge(crate::feed_handlers::feed_router())
+        .merge(crate::component_store_handlers::component_store_router())
         .merge(budget_router)
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())

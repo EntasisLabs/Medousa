@@ -1,8 +1,14 @@
 <script lang="ts">
-  import { fetchArtifact, fetchFeedTail } from "$lib/daemon";
+  import {
+    componentStoreDelete,
+    componentStoreGet,
+    componentStoreListKeys,
+    componentStoreSet,
+    fetchArtifact,
+    fetchFeedTail,
+  } from "$lib/daemon";
   import {
     DEFAULT_INLINE_ARTIFACT_CAP_PX,
-    measureIframeContentHeight,
     prepareArtifactHtml,
     type ArtifactEmbedMode,
   } from "$lib/utils/artifactPrepareHtml";
@@ -11,12 +17,19 @@
     isValidFeedId,
     type MedousaFeedTailResponse,
   } from "$lib/utils/medousaFeedClient";
+  import {
+    isMedousaStoreRequest,
+    isValidStoreKey,
+    type MedousaStoreResponse,
+  } from "$lib/utils/medousaStoreClient";
   import { friendlyUserError } from "$lib/utils/normieErrors";
 
   interface Props {
     sessionId: string;
     artifactId: string;
     label: string;
+    componentId?: string | null;
+    profileId?: string | null;
     mime?: string;
     heightPx?: number | null;
     compact?: boolean;
@@ -33,6 +46,8 @@
     sessionId,
     artifactId,
     label,
+    componentId = null,
+    profileId = null,
     mime = "text/html",
     heightPx = 360,
     compact = false,
@@ -52,17 +67,21 @@
   let frameHeight = $state(DEFAULT_INLINE_ARTIFACT_CAP_PX);
   let frameEl = $state<HTMLIFrameElement | null>(null);
   let frameReady = $state(false);
+  let reportedContentHeight = $state(0);
 
   const inlineCapPx = $derived(heightPx ?? DEFAULT_INLINE_ARTIFACT_CAP_PX);
   const fillsParent = $derived(mode === "panel" || mode === "fullscreen");
+  const storeScopeId = $derived(componentId?.trim() || null);
+  const storeProfileId = $derived(profileId?.trim() || undefined);
 
   function isDarkTheme(): boolean {
     if (typeof document === "undefined") return true;
     return document.documentElement.classList.contains("dark");
   }
 
-  function applyFrameMetrics(frame: HTMLIFrameElement) {
-    const measured = measureIframeContentHeight(frame);
+  function applyFrameMetrics(reportedHeight?: number) {
+    const measured = reportedHeight ?? reportedContentHeight;
+    if (measured <= 0) return;
     contentHeight = measured;
 
     if (mode !== "inline") {
@@ -73,6 +92,12 @@
     const cap = inlineCapPx;
     truncated = measured > cap + 4;
     frameHeight = Math.min(Math.max(measured, 120), cap);
+  }
+
+  function isArtifactHeightMessage(data: unknown): data is { type: string; height: number } {
+    if (!data || typeof data !== "object") return false;
+    const msg = data as Record<string, unknown>;
+    return msg.type === "medousa:artifact:height" && typeof msg.height === "number";
   }
 
   function postFeedPatchToFrame(state: Record<string, unknown> | null) {
@@ -87,8 +112,11 @@
     return subscribedFeedIds.includes(feedId);
   }
 
-  async function handleWindowMessage(event: MessageEvent) {
-    if (event.source !== frameEl?.contentWindow) return;
+  function respondStore(payload: MedousaStoreResponse) {
+    frameEl?.contentWindow?.postMessage(payload, "*");
+  }
+
+  async function handleFeedTailRequest(event: MessageEvent) {
     if (!isMedousaFeedTailRequest(event.data)) return;
 
     const { requestId, feedId } = event.data;
@@ -128,10 +156,107 @@
     }
   }
 
+  async function handleStoreRequest(event: MessageEvent) {
+    if (!isMedousaStoreRequest(event.data)) return;
+
+    const scope = storeScopeId;
+    const { requestId, type } = event.data;
+    if (!scope) {
+      respondStore({
+        type: "medousa:store:response",
+        requestId,
+        ok: false,
+        error: "MedousaStore unavailable for chat-only artifacts",
+      });
+      return;
+    }
+
+    try {
+      if (type === "medousa:store:get") {
+        const key =
+          typeof event.data.key === "string" && event.data.key.trim()
+            ? event.data.key.trim()
+            : undefined;
+        if (key && !isValidStoreKey(key)) {
+          throw new Error(`invalid store key '${key}'`);
+        }
+        const response = await componentStoreGet(scope, {
+          key,
+          profileId: storeProfileId,
+        });
+        if (key) {
+          respondStore({
+            type: "medousa:store:response",
+            requestId,
+            ok: true,
+            value: response.entries[key] ?? null,
+          });
+          return;
+        }
+        respondStore({
+          type: "medousa:store:response",
+          requestId,
+          ok: true,
+          entries: response.entries,
+        });
+        return;
+      }
+
+      if (type === "medousa:store:set") {
+        const key = event.data.key?.trim();
+        if (!key || !isValidStoreKey(key)) {
+          throw new Error("invalid store key");
+        }
+        await componentStoreSet(scope, key, event.data.value, storeProfileId);
+        respondStore({ type: "medousa:store:response", requestId, ok: true });
+        return;
+      }
+
+      if (type === "medousa:store:delete") {
+        const key = event.data.key?.trim();
+        if (!key || !isValidStoreKey(key)) {
+          throw new Error("invalid store key");
+        }
+        await componentStoreDelete(scope, key, storeProfileId);
+        respondStore({ type: "medousa:store:response", requestId, ok: true });
+        return;
+      }
+
+      if (type === "medousa:store:list") {
+        const response = await componentStoreListKeys(scope, storeProfileId);
+        respondStore({
+          type: "medousa:store:response",
+          requestId,
+          ok: true,
+          keys: response.keys,
+        });
+      }
+    } catch (err) {
+      respondStore({
+        type: "medousa:store:response",
+        requestId,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  async function handleWindowMessage(event: MessageEvent) {
+    if (event.source !== frameEl?.contentWindow) return;
+    if (isArtifactHeightMessage(event.data)) {
+      reportedContentHeight = Math.max(0, Math.round(event.data.height));
+      applyFrameMetrics(reportedContentHeight);
+      return;
+    }
+    await handleFeedTailRequest(event);
+    await handleStoreRequest(event);
+  }
+
   $effect(() => {
     const sid = sessionId;
     const aid = artifactId;
     const embedMode = mode;
+    const scope = storeScopeId;
     html = null;
     error = null;
     loading = true;
@@ -147,7 +272,13 @@
           error = "This artifact is not HTML.";
           return;
         }
-        html = prepareArtifactHtml(response.body, embedMode, isDarkTheme(), feedState);
+        html = prepareArtifactHtml(
+          response.body,
+          embedMode,
+          isDarkTheme(),
+          feedState,
+          scope,
+        );
         rawHtml = response.body;
       } catch (err) {
         error = friendlyUserError(err instanceof Error ? err.message : String(err));
@@ -161,8 +292,9 @@
     const body = rawHtml;
     const embedMode = mode;
     const isDark = isDarkTheme();
+    const scope = storeScopeId;
     if (!body) return;
-    html = prepareArtifactHtml(body, embedMode, isDark, feedState);
+    html = prepareArtifactHtml(body, embedMode, isDark, feedState, scope);
   });
 
   $effect(() => {
@@ -180,7 +312,7 @@
   function handleFrameLoad(event: Event) {
     const frame = event.currentTarget as HTMLIFrameElement;
     frameReady = true;
-    applyFrameMetrics(frame);
+    applyFrameMetrics();
     postFeedPatchToFrame(feedState);
   }
 </script>

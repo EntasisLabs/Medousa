@@ -49,7 +49,8 @@ Workflow:
 2) cognition_custom_view_compose for one-shot surface + HTML + feeds + recurring OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
 3) cognition_artifact_write revises an existing artifact_id; cognition_ui_present is first-time publish only.
 4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
-5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive canvas widget."#;
+5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive canvas widget.
+6) Interactive widgets: NEVER localStorage/sessionStorage in artifact HTML (sandbox blocks it). Use window.MedousaStore.get/set/delete/list — engine-backed KV scoped to component_id; survives refresh."#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");

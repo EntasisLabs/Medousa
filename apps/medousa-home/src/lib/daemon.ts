@@ -361,6 +361,53 @@ export async function fetchFeedTail(
   });
 }
 
+export async function componentStoreGet(
+  componentId: string,
+  options?: { key?: string; profileId?: string },
+): Promise<import("$lib/types/environment").ComponentStoreGetResponse> {
+  return invoke("component_store_get", {
+    componentId,
+    key: options?.key ?? null,
+    profileId: options?.profileId ?? null,
+  });
+}
+
+export async function componentStoreSet(
+  componentId: string,
+  key: string,
+  value: unknown,
+  profileId?: string,
+): Promise<import("$lib/types/environment").ComponentStoreSetResponse> {
+  return invoke("component_store_set", {
+    componentId,
+    key,
+    value,
+    profileId: profileId ?? null,
+  });
+}
+
+export async function componentStoreDelete(
+  componentId: string,
+  key: string,
+  profileId?: string,
+): Promise<import("$lib/types/environment").ComponentStoreDeleteResponse> {
+  return invoke("component_store_delete", {
+    componentId,
+    key,
+    profileId: profileId ?? null,
+  });
+}
+
+export async function componentStoreListKeys(
+  componentId: string,
+  profileId?: string,
+): Promise<import("$lib/types/environment").ComponentStoreListResponse> {
+  return invoke("component_store_list_keys", {
+    componentId,
+    profileId: profileId ?? null,
+  });
+}
+
 export function onEnvironmentEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {

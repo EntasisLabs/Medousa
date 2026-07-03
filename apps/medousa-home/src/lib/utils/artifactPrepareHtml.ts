@@ -2,12 +2,50 @@ import {
   buildMedousaFeedClientScript,
   MEDOUSA_FEED_CLIENT_SCRIPT_ID,
 } from "$lib/utils/medousaFeedClient";
+import {
+  buildMedousaStoreBootstrapScript,
+  buildMedousaStoreClientScript,
+  MEDOUSA_STORE_BOOTSTRAP_SCRIPT_ID,
+  MEDOUSA_STORE_CLIENT_SCRIPT_ID,
+} from "$lib/utils/medousaStoreClient";
 
 export type ArtifactEmbedMode = "inline" | "panel" | "fullscreen";
 
 const THEME_STYLE_ID = "medousa-artifact-theme";
 const MODE_STYLE_ID = "medousa-artifact-mode";
 const FEED_CLIENT_STYLE_ID = "medousa-feed-client-style";
+const ARTIFACT_METRICS_SCRIPT_ID = "medousa-artifact-metrics-script";
+
+function buildArtifactMetricsScript(): string {
+  const source = `(function(){
+if(window.__MEDOUSA_ARTIFACT_METRICS__)return;
+window.__MEDOUSA_ARTIFACT_METRICS__=true;
+function report(){
+  var h=Math.max(
+    document.documentElement.scrollHeight||0,
+    document.documentElement.offsetHeight||0,
+    document.body.scrollHeight||0,
+    document.body.offsetHeight||0,
+    120
+  );
+  parent.postMessage({type:"medousa:artifact:height",height:h},"*");
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",report);
+else report();
+if(typeof ResizeObserver!=="undefined"){
+  try{new ResizeObserver(report).observe(document.documentElement);}catch(e){}
+}
+})();`;
+  return `<script id="${ARTIFACT_METRICS_SCRIPT_ID}">${source}</script>`;
+}
+
+function stripInjectionById(html: string, scriptId: string): string {
+  const pattern = new RegExp(
+    `<script[^>]*id=["']${scriptId}["'][^>]*>[\\s\\S]*?</script>`,
+    "i",
+  );
+  return html.replace(pattern, "");
+}
 
 function buildMedousaFeedClientStyle(): string {
   return `<style id="${FEED_CLIENT_STYLE_ID}">medousa-feed,.medousa-feed-card{display:block;font:13px/1.45 system-ui,sans-serif;color:var(--medousa-host-fg,#f4f4f5)}.medousa-feed-phase{font-weight:600;text-transform:capitalize}.medousa-feed-status,.medousa-feed-time{font-size:12px;color:var(--medousa-host-muted,#a1a1aa)}.medousa-feed-excerpt{margin-top:6px;white-space:pre-wrap;word-break:break-word}</style>`;
@@ -48,6 +86,7 @@ export function prepareArtifactHtml(
   mode: ArtifactEmbedMode,
   isDark: boolean,
   feedState?: Record<string, unknown> | null,
+  componentId?: string | null,
 ): string {
   const themeStyle = buildArtifactThemeStyle(isDark);
   const modeStyle = buildArtifactModeStyle(mode);
@@ -64,6 +103,16 @@ export function prepareArtifactHtml(
   if (!html.includes(MEDOUSA_FEED_CLIENT_SCRIPT_ID)) {
     html = injectBeforeHeadClose(html, buildMedousaFeedClientScript());
   }
+  if (!html.includes(ARTIFACT_METRICS_SCRIPT_ID)) {
+    html = injectBeforeHeadClose(html, buildArtifactMetricsScript());
+  }
+  if (!html.includes(MEDOUSA_STORE_CLIENT_SCRIPT_ID)) {
+    html = injectBeforeHeadClose(html, buildMedousaStoreClientScript());
+  }
+  if (componentId?.trim()) {
+    html = stripInjectionById(html, MEDOUSA_STORE_BOOTSTRAP_SCRIPT_ID);
+    html = injectBeforeHeadClose(html, buildMedousaStoreBootstrapScript(componentId.trim()));
+  }
   if (feedState && Object.keys(feedState).length > 0) {
     const feedScript = `<script>window.__MEDOUSA_FEED__=${JSON.stringify(feedState)};</script>`;
     html = injectBeforeHeadClose(html, feedScript);
@@ -72,6 +121,8 @@ export function prepareArtifactHtml(
 }
 
 export function measureIframeContentHeight(frame: HTMLIFrameElement): number {
+  // Sandboxed srcdoc iframes (no allow-same-origin) block contentDocument — callers
+  // should prefer medousa:artifact:height postMessage from the injected metrics script.
   try {
     const doc = frame.contentDocument;
     if (!doc) return 0;

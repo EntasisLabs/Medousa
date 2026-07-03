@@ -69,6 +69,7 @@
           surfaceLayout={surface?.layout}
           components={mainComponents}
           sessionId={chat.sessionId}
+          profileId={environment.spec?.profileId}
           feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
         />
       {/if}
@@ -85,6 +86,8 @@
           {#if artifactId && chat.sessionId}
             <PresentationFrame
               sessionId={chat.sessionId}
+              componentId={component.id}
+              profileId={environment.spec?.profileId}
               artifactId={artifactId}
               label={component.label ?? "Presentation"}
               mode="panel"

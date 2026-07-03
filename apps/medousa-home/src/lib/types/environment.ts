@@ -226,5 +226,29 @@ export interface EnvironmentStatusResponse {
   hints: string[];
 }
 
+export interface ComponentStoreGetResponse {
+  componentId: string;
+  entries: Record<string, unknown>;
+}
+
+export interface ComponentStoreSetResponse {
+  ok: boolean;
+  componentId: string;
+  key: string;
+  updatedAtUtc: string;
+}
+
+export interface ComponentStoreListResponse {
+  componentId: string;
+  keys: string[];
+}
+
+export interface ComponentStoreDeleteResponse {
+  ok: boolean;
+  componentId: string;
+  key: string;
+  deleted: boolean;
+}
+
 export const SAFETY_SURFACE_SETTINGS = "settings";
 export const SAFETY_SURFACE_RUNTIME = "runtime";

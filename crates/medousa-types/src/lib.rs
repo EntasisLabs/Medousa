@@ -3,6 +3,7 @@
 //! Used by the server, SDK clients, and channel adapters to prevent contract drift.
 
 pub mod capability;
+pub mod component_store;
 pub mod daemon_api;
 pub mod environment;
 pub mod environment_default;
@@ -24,6 +25,7 @@ pub mod workflow;
 pub mod workflow_plan;
 
 pub use capability::*;
+pub use component_store::*;
 pub use daemon_api::*;
 pub use environment::*;
 pub use feed::*;

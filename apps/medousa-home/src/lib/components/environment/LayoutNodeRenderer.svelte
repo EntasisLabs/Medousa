@@ -24,6 +24,7 @@
     surfaceLayout: SurfaceLayout | undefined;
     components: ComponentDef[];
     sessionId: string | null;
+    profileId?: string | null;
     feedStateForComponent: (componentId: string) => Record<string, unknown> | null;
     parentType?: "vstack" | "hstack" | "grid" | null;
     siblingCount?: number;
@@ -36,6 +37,7 @@
     surfaceLayout,
     components,
     sessionId,
+    profileId = null,
     feedStateForComponent,
     parentType = null,
     siblingCount = 1,
@@ -89,6 +91,7 @@
         {surfaceLayout}
         {components}
         {sessionId}
+        {profileId}
         {feedStateForComponent}
         parentType="vstack"
         siblingCount={node.children.length}
@@ -119,6 +122,7 @@
         {surfaceLayout}
         {components}
         {sessionId}
+        {profileId}
         {feedStateForComponent}
         parentType="hstack"
         siblingCount={node.children.length}
@@ -143,6 +147,7 @@
         {surfaceLayout}
         {components}
         {sessionId}
+        {profileId}
         {feedStateForComponent}
         parentType="grid"
         siblingCount={node.children.length}
@@ -167,6 +172,8 @@
         {#if artifactId && sessionId}
           <PresentationFrame
             {sessionId}
+            componentId={component.id}
+            {profileId}
             artifactId={artifactId}
             label={component.label ?? "Presentation"}
             mode={embedMode}
