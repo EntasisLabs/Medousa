@@ -83,6 +83,6 @@ MEDOUSA_VERSION=$version
 MEDOUSA_TARGET=$Target
 MEDOUSA_BACKEND=$Backend
 MEDOUSA_BIN_DIR=$binDir
-"@ | Set-Content -Encoding utf8NoBOM (Join-Path $Output "build-meta.env")
+"@ | Set-MedousaUtf8Content -Path (Join-Path $Output "build-meta.env")
 
 Write-MedousaLog "done - $dst"

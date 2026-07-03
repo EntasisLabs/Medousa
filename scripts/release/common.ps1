@@ -48,6 +48,15 @@ function Get-MedousaVersion {
     return Get-MedousaParseCargoVersion (Join-Path $root "Cargo.toml")
 }
 
+function Set-MedousaUtf8Content {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(ValueFromPipeline = $true)][string]$Content
+    )
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 function Get-MedousaWhatsappVersion {
     $root = Get-MedousaRepoRoot
     return Get-MedousaParseCargoVersion (Join-Path $root "adapters/medousa-whatsapp/Cargo.toml")
@@ -245,7 +254,7 @@ function Write-MedousaComponentInstallManifest {
   "binaries": [$binJson],
   "component_set_id": "$componentSetId"
 }
-"@ | Set-Content -LiteralPath $OutPath -Encoding utf8NoBOM
+"@ | Set-MedousaUtf8Content -Path $OutPath
 }
 
 function Write-MedousaInstallManifest {
@@ -271,7 +280,7 @@ function Write-MedousaInstallManifest {
   "binaries": [$binJson],
   "component_set_id": "$componentSetId"
 }
-"@ | Set-Content -LiteralPath $OutPath -Encoding utf8NoBOM
+"@ | Set-MedousaUtf8Content -Path $OutPath
 }
 
 function Update-MedousaChecksumsFile([string]$DistDir, [string]$ArchiveName, [string]$Hash) {
@@ -281,7 +290,7 @@ function Update-MedousaChecksumsFile([string]$DistDir, [string]$ArchiveName, [st
         $lines = Get-Content -LiteralPath $checksumsFile | Where-Object { $_ -notmatch "  $([regex]::Escape($ArchiveName))$" }
     }
     $lines += "$Hash  $ArchiveName"
-    $lines | Set-Content -LiteralPath $checksumsFile -Encoding utf8NoBOM
+    $lines | Set-MedousaUtf8Content -Path $checksumsFile -Content ($lines -join "`n")
 }
 
 function Invoke-MedousaTarGz([string]$ArchivePath, [string]$WorkDir, [string]$Basename) {

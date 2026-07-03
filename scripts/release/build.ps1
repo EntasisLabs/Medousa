@@ -123,7 +123,7 @@ MEDOUSA_TARGET=$Target
 MEDOUSA_BIN_DIR=$binDir
 MEDOUSA_WITH_IROH=$([int]$WithIroh)
 MEDOUSA_WITH_LOCAL_BRAIN=$([int]$WithLocalBrain)
-"@ | Set-Content -Encoding utf8NoBOM (Join-Path $Output "build-meta.env")
+"@ | Set-MedousaUtf8Content -Path (Join-Path $Output "build-meta.env")
 
 $stagedCount = (Get-ChildItem -File $binDir).Count
 Write-MedousaLog "phase 1/2 complete - $stagedCount binaries in $binDir"
