@@ -1033,9 +1033,18 @@ pub fn embedded_capability_manifest() -> CapabilityManifest {
                     "setup_dashboard".to_string(),
                     "compose_surface".to_string(),
                     "workshop_status".to_string(),
+                    "setup_personal_app".to_string(),
+                    "live_poll_dashboard".to_string(),
                 ],
-                publish_feeds: vec![medousa_types::feed::WORKSHOP_PULSE_FEED_ID.to_string()],
+                publish_feeds: vec![
+                    medousa_types::feed::WORKSHOP_PULSE_FEED_ID.to_string(),
+                    crate::feed_adapters::TRIP_LONDON_TRAINS_FEED_ID.to_string(),
+                ],
                 can_feed_component: Some("workshop-status".to_string()),
+                available_jobs: vec![
+                    "workflow.grapheme.run".to_string(),
+                    "http_poll".to_string(),
+                ],
                 component_template: Some(medousa_types::feed::ComponentTemplateHint {
                     surface_id: "workshop".to_string(),
                     slot: "main".to_string(),
@@ -1154,6 +1163,32 @@ mod tests {
                 .matches
                 .iter()
                 .any(|entry| entry.publish_feeds.contains(&"workshop.pulse".to_string()))
+        );
+    }
+
+    #[test]
+    fn resolve_intent_finds_personal_app_poll_dashboard() {
+        let registry = CapabilityRegistry::with_embedded_seed();
+        let response = registry.resolve_intent(Some("live_poll_dashboard"), None);
+        assert!(
+            response.matches.iter().any(|entry| {
+                entry.capability_id == "environment_canvas"
+                    && entry
+                        .publish_feeds
+                        .contains(&crate::feed_adapters::TRIP_LONDON_TRAINS_FEED_ID.to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn resolve_intent_finds_setup_personal_app() {
+        let registry = CapabilityRegistry::with_embedded_seed();
+        let response = registry.resolve_intent(Some("setup_personal_app"), None);
+        assert!(
+            response.matches.iter().any(|entry| {
+                entry.capability_id == "environment_canvas"
+                    && entry.publish_feeds.iter().any(|feed| feed.contains("trip.london"))
+            })
         );
     }
 

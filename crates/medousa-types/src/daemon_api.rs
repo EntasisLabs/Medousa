@@ -496,6 +496,8 @@ pub struct RegisterRecurringPromptRequest {
     pub model_hint: Option<String>,
     /// Optional channel push target for each successful materialized run.
     pub delivery: Option<serde_json::Value>,
+    /// Optional environment feed ids to publish on each materialized run terminal.
+    pub feeds: Option<serde_json::Value>,
     /// Medousa session id for `delivery.mode=linked_channel` (defaults to `recurring-{id}`).
     pub session_id: Option<String>,
     /// `agent_turn` (default) or `prompt` (single LLM, no tools).
@@ -571,6 +573,9 @@ pub struct UpdateRecurringRequest {
     /// Replace delivery binding; pass `{ "delivery": null }` to clear channel push.
     #[serde(default)]
     pub delivery: Option<serde_json::Value>,
+    /// Replace feed binding; pass `{ "feeds": null }` to clear feed publish.
+    #[serde(default)]
+    pub feeds: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

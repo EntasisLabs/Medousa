@@ -1,7 +1,17 @@
+import {
+  buildMedousaFeedClientScript,
+  MEDOUSA_FEED_CLIENT_SCRIPT_ID,
+} from "$lib/utils/medousaFeedClient";
+
 export type ArtifactEmbedMode = "inline" | "panel" | "fullscreen";
 
 const THEME_STYLE_ID = "medousa-artifact-theme";
 const MODE_STYLE_ID = "medousa-artifact-mode";
+const FEED_CLIENT_STYLE_ID = "medousa-feed-client-style";
+
+function buildMedousaFeedClientStyle(): string {
+  return `<style id="${FEED_CLIENT_STYLE_ID}">medousa-feed,.medousa-feed-card{display:block;font:13px/1.45 system-ui,sans-serif;color:var(--medousa-host-fg,#f4f4f5)}.medousa-feed-phase{font-weight:600;text-transform:capitalize}.medousa-feed-status,.medousa-feed-time{font-size:12px;color:var(--medousa-host-muted,#a1a1aa)}.medousa-feed-excerpt{margin-top:6px;white-space:pre-wrap;word-break:break-word}</style>`;
+}
 
 function injectBeforeHeadClose(html: string, injection: string): string {
   if (html.includes(injection)) return html;
@@ -47,6 +57,12 @@ export function prepareArtifactHtml(
   }
   if (!html.includes(MODE_STYLE_ID)) {
     html = injectBeforeHeadClose(html, modeStyle);
+  }
+  if (!html.includes(FEED_CLIENT_STYLE_ID)) {
+    html = injectBeforeHeadClose(html, buildMedousaFeedClientStyle());
+  }
+  if (!html.includes(MEDOUSA_FEED_CLIENT_SCRIPT_ID)) {
+    html = injectBeforeHeadClose(html, buildMedousaFeedClientScript());
   }
   if (feedState && Object.keys(feedState).length > 0) {
     const feedScript = `<script>window.__MEDOUSA_FEED__=${JSON.stringify(feedState)};</script>`;

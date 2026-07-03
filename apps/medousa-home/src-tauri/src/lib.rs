@@ -428,6 +428,7 @@ pub fn run() {
             daemon::environment::environment_get_pending,
             daemon::environment::environment_apply_pending,
             daemon::environment::environment_dismiss_pending,
+            daemon::feeds::feed_tail,
             daemon::environment_stream_start,
             daemon::environment_stream_stop,
             daemon::interactive_turn_send,

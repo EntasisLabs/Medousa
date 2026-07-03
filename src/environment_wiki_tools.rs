@@ -353,6 +353,59 @@ const TOPICS: &[WikiTopic] = &[
         call_next: &["cognition_layout_get", "cognition_layout_apply"],
     },
     WikiTopic {
+        id: "feed_client",
+        title: "HTML as feed notification client (Phase 4)",
+        summary: "Presentation components consume bounded feed slices — no external fetch from artifact HTML.",
+        policy: r#"    role(.99): "Recurring/flow jobs publish to feed bus; subscribed HTML reads __MEDOUSA_FEED__ only.",
+    security_lock(.99): {
+        daemon_only_fetch(.99): "http_poll and grapheme runs happen on Stasis — iframe never calls third-party APIs",
+        bounded_slice(.99): "payload ≤2KB via feed_bus; full job output stays in diagnostics/refs"
+    },
+    subscribe(.99): {
+        tool(.99): "cognition_feed_subscribe { component_id, feed_ids: [trip.london.trains] }",
+        component(.98): "ComponentDef.feeds must include feed id for Home injection"
+    },
+    html_pattern(.99): {
+        read(.99): "const feed = window.__MEDOUSA_FEED__?.feeds?.['trip.london.trains'];",
+        render(.98): "Use feed.lastPatch.phase, checkedAt, statusCode, excerpt — no fetch()",
+        element(.97): "<medousa-feed feed=\"trip.london.trains\"></medousa-feed> — auto-render card from lastPatch",
+        api(.97): "MedousaFeed.on('trip.london.trains', handler) for custom DOM; MedousaFeed.fetchTail(id) on reconnect (parent proxies GET /v1/feeds/{id}/tail)"
+    },
+    register_recurring(.99): {
+        tool(.99): "cognition_runtime_recurring_register with feeds.feed_ids + cron http_poll grapheme",
+        fields(.98): "{ feeds: { feed_ids: [trip.london.trains], payload_mode: parsed_poll } }"
+    },
+    personal_app_recipe(.97): {
+        step_1(.97): "cognition_grapheme_template_run template=http_poll url=<discovered>",
+        step_2(.97): "cognition_ui_present + cognition_layout_apply dashboard HTML",
+        step_3(.97): "cognition_feed_subscribe same feed_ids",
+        step_4(.97): "cognition_runtime_recurring_register same feed_ids + 5m cron",
+        step_5(.96): "Turn ends — ticks keep UI live via component_patch SSE"
+    }"#,
+        related: &["tool_map", "example_trip_poll", "component_schema"],
+        call_next: &["cognition_feed_subscribe", "cognition_runtime_recurring_register"],
+    },
+    WikiTopic {
+        id: "example_trip_poll",
+        title: "Worked example: trip.london.trains live poll",
+        summary: "5-minute http_poll recurring → trip.london.trains feed → subscribed HTML dashboard.",
+        policy: r#"    role(.98): "End-to-end personal-app slice — daemon fetches; HTML is read-only notification client.",
+    feed_id(.99): "trip.london.trains",
+    cron(.98): "0 */5 * * * * * (every 5 minutes, 7-field cron, min interval 60s enforced separately)",
+    recurring_register(.99): {
+        job_type(.99): "workflow.grapheme.run",
+        source(.98): "http_poll grapheme from cognition_grapheme_template_run url=<train-status-url>",
+        feeds(.99): "{ feed_ids: [trip.london.trains], payload_mode: parsed_poll }"
+    },
+    component(.98): {
+        subscribe(.98): "cognition_feed_subscribe { component_id: trip-trains, feed_ids: [trip.london.trains] }",
+        html(.97): "Read window.__MEDOUSA_FEED__.feeds['trip.london.trains'].lastPatch — render statusCode + excerpt"
+    },
+    payload_fields(.98): "phase tick_succeeded|tick_failed, checkedAt, statusCode, excerpt, recurringId, jobId"#,
+        related: &["feed_client", "component_schema"],
+        call_next: &["cognition_feed_subscribe", "cognition_runtime_recurring_register"],
+    },
+    WikiTopic {
         id: "tool_map",
         title: "Tool routing",
         summary: "Which cognition tool for which goal.",
@@ -369,6 +422,7 @@ const TOPICS: &[WikiTopic] = &[
         edit_html(.97): "cognition_artifact_write",
         stack_layout(.98): "cognition_layout_get / cognition_layout_apply / cognition_layout_reset",
         feed_subscribe(.96): "cognition_feed_subscribe",
+        recurring_feeds(.96): "cognition_runtime_recurring_register feeds.feed_ids",
         intent_wiring(.96): "cognition_intent_resolve",
         context_pointer(.95): "cognition_context_follow_pointer"
     },
@@ -467,7 +521,7 @@ impl StasisTool for CognitionEnvironmentWikiTool {
             "Environment/canvas SDK as STTP temporal nodes — schemas, merge rules, propose/apply, ui_present. \
              Returns response_format=sttp (same family as system prompt). \
              Call topic=recipe or merge_spec BEFORE hand-building environment spec JSON. \
-             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, layout_schema, common_errors, example_writing_studio, tool_map.",
+             Topics: mental_model, recipe, merge_spec, surface_schema, component_schema, propose_apply, ui_present, presets, layout_schema, feed_client, example_trip_poll, common_errors, example_writing_studio, tool_map.",
         )
     }
 
@@ -489,6 +543,8 @@ impl StasisTool for CognitionEnvironmentWikiTool {
                         "ui_present",
                         "presets",
                         "layout_schema",
+                        "feed_client",
+                        "example_trip_poll",
                         "common_errors",
                         "example_writing_studio",
                         "tool_map"

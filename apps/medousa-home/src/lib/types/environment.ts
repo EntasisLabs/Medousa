@@ -160,6 +160,11 @@ export interface FeedEvent {
   payload?: Record<string, unknown> | null;
 }
 
+export interface FeedTailResponse {
+  feedId: string;
+  events: FeedEvent[];
+}
+
 export interface ComponentFeedPatch {
   componentId: string;
   feedId: string;

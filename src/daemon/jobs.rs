@@ -788,11 +788,16 @@ pub async fn register_recurring_prompt(
         &delivery_input,
         crate::recurring_delivery::DeliveryResolveContext {
             ambient: None,
-            fallback_session_id,
+            fallback_session_id: fallback_session_id.clone(),
         },
     )
     .await
     .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
+
+    let feeds_input = serde_json::json!({ "feeds": request.feeds });
+    crate::recurring_feed::persist_recurring_feed_binding(&recurring_id, &feeds_input)
+        .await
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
 
     let sdk = RuntimeSdk::new(state.composition().clone());
     sdk.register_recurring(definition.clone())

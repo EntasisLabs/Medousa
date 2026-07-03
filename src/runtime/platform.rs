@@ -15,6 +15,7 @@ use crate::turn_continuation;
 use crate::recurring_agent_turn;
 use crate::openshell_sandbox_run;
 use crate::recurring_delivery;
+use crate::recurring_feed;
 use crate::session_meta_store;
 use crate::session_store;
 use crate::verification_store;
@@ -139,6 +140,7 @@ async fn build_platform_inner(
     artifact_store::init_artifact_store_with_runtime(&composition).await;
     turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
     recurring_delivery::init_recurring_delivery_store_with_runtime(&composition).await;
+    recurring_feed::init_recurring_feed_store_with_runtime(&composition).await;
 
     eprintln!("medousa-daemon: assembling agent runtime…");
     let agent = assemble_tui_runtime(

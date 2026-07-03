@@ -21,6 +21,7 @@ pub mod workspace_card;
 pub mod turn_budget;
 pub mod tool_history;
 pub mod environment;
+pub mod feeds;
 pub mod workflow;
 pub mod workshop_http;
 

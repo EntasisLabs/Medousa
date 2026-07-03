@@ -1,11 +1,16 @@
 <script lang="ts">
-  import { fetchArtifact } from "$lib/daemon";
+  import { fetchArtifact, fetchFeedTail } from "$lib/daemon";
   import {
     DEFAULT_INLINE_ARTIFACT_CAP_PX,
     measureIframeContentHeight,
     prepareArtifactHtml,
     type ArtifactEmbedMode,
   } from "$lib/utils/artifactPrepareHtml";
+  import {
+    isMedousaFeedTailRequest,
+    isValidFeedId,
+    type MedousaFeedTailResponse,
+  } from "$lib/utils/medousaFeedClient";
   import { friendlyUserError } from "$lib/utils/normieErrors";
 
   interface Props {
@@ -18,6 +23,7 @@
     bare?: boolean;
     mode?: ArtifactEmbedMode;
     feedState?: Record<string, unknown> | null;
+    subscribedFeedIds?: string[];
     onOpenFull?: () => void;
     contentHeight?: number;
     truncated?: boolean;
@@ -33,6 +39,7 @@
     bare = false,
     mode = "inline",
     feedState = null,
+    subscribedFeedIds = [],
     onOpenFull,
     contentHeight = $bindable(0),
     truncated = $bindable(false),
@@ -43,6 +50,8 @@
   let error = $state<string | null>(null);
   let loading = $state(true);
   let frameHeight = $state(DEFAULT_INLINE_ARTIFACT_CAP_PX);
+  let frameEl = $state<HTMLIFrameElement | null>(null);
+  let frameReady = $state(false);
 
   const inlineCapPx = $derived(heightPx ?? DEFAULT_INLINE_ARTIFACT_CAP_PX);
   const fillsParent = $derived(mode === "panel" || mode === "fullscreen");
@@ -66,6 +75,59 @@
     frameHeight = Math.min(Math.max(measured, 120), cap);
   }
 
+  function postFeedPatchToFrame(state: Record<string, unknown> | null) {
+    const target = frameEl?.contentWindow;
+    if (!target || !state) return;
+    target.postMessage({ type: "medousa:feed:patch", feedState: state }, "*");
+  }
+
+  function feedAllowed(feedId: string): boolean {
+    if (!isValidFeedId(feedId)) return false;
+    if (subscribedFeedIds.length === 0) return false;
+    return subscribedFeedIds.includes(feedId);
+  }
+
+  async function handleWindowMessage(event: MessageEvent) {
+    if (event.source !== frameEl?.contentWindow) return;
+    if (!isMedousaFeedTailRequest(event.data)) return;
+
+    const { requestId, feedId } = event.data;
+    const limit = typeof event.data.limit === "number" ? event.data.limit : 10;
+    const respond = (payload: MedousaFeedTailResponse) => {
+      frameEl?.contentWindow?.postMessage(payload, "*");
+    };
+
+    if (!feedAllowed(feedId)) {
+      respond({
+        type: "medousa:feed:tail:response",
+        requestId,
+        feedId,
+        ok: false,
+        error: "feed not subscribed for this component",
+      });
+      return;
+    }
+
+    try {
+      const tail = await fetchFeedTail(feedId, limit);
+      respond({
+        type: "medousa:feed:tail:response",
+        requestId,
+        feedId,
+        ok: true,
+        events: tail.events,
+      });
+    } catch (err) {
+      respond({
+        type: "medousa:feed:tail:response",
+        requestId,
+        feedId,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   $effect(() => {
     const sid = sessionId;
     const aid = artifactId;
@@ -73,6 +135,7 @@
     html = null;
     error = null;
     loading = true;
+    frameReady = false;
     truncated = false;
     contentHeight = 0;
     frameHeight = embedMode === "inline" ? inlineCapPx : DEFAULT_INLINE_ARTIFACT_CAP_PX;
@@ -97,13 +160,28 @@
   $effect(() => {
     const body = rawHtml;
     const embedMode = mode;
-    const feed = feedState;
+    const isDark = isDarkTheme();
     if (!body) return;
-    html = prepareArtifactHtml(body, embedMode, isDarkTheme(), feed);
+    html = prepareArtifactHtml(body, embedMode, isDark, feedState);
+  });
+
+  $effect(() => {
+    const state = feedState;
+    if (!frameReady || !state) return;
+    postFeedPatchToFrame(state);
+  });
+
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    window.addEventListener("message", handleWindowMessage);
+    return () => window.removeEventListener("message", handleWindowMessage);
   });
 
   function handleFrameLoad(event: Event) {
-    applyFrameMetrics(event.currentTarget as HTMLIFrameElement);
+    const frame = event.currentTarget as HTMLIFrameElement;
+    frameReady = true;
+    applyFrameMetrics(frame);
+    postFeedPatchToFrame(feedState);
   }
 </script>
 
@@ -128,6 +206,7 @@
     <p class="presentation-frame-error">{error}</p>
   {:else if html}
     <iframe
+      bind:this={frameEl}
       class="presentation-frame-embed"
       class:presentation-frame-embed-fill={fillsParent}
       title={label}

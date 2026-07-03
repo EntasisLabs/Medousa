@@ -6,6 +6,8 @@ pub mod agent_runtime;
 pub mod channel_delivery;
 pub mod comms;
 pub mod recurring_delivery;
+pub mod recurring_feed;
+pub mod feed_sink;
 pub mod recurring_agent_turn;
 pub mod recurring_handlers;
 pub mod line_grep;

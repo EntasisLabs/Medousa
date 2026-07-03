@@ -20,6 +20,7 @@ use crate::daemon_api::{
 };
 use crate::recurring_agent_turn;
 use crate::recurring_delivery;
+use crate::recurring_feed;
 use crate::turn_continuation::StoredDeliveryTarget;
 
 static IN_MEMORY_DELETED_RECURRING: LazyLock<RwLock<HashSet<String>>> =
@@ -396,6 +397,18 @@ pub async fn update_recurring(
         }
     }
 
+    if let Some(feeds) = request.feeds {
+        if feeds.is_null() {
+            let _ = recurring_feed::remove_recurring_feed_binding(recurring_id).await;
+        } else {
+            recurring_feed::persist_recurring_feed_binding(
+                recurring_id,
+                &serde_json::json!({ "feeds": feeds }),
+            )
+            .await?;
+        }
+    }
+
     Ok(UpdateRecurringResponse {
         recurring_id: definition.id,
         enabled: definition.enabled,
@@ -436,6 +449,7 @@ pub async fn delete_recurring(
     }
 
     let _ = recurring_delivery::remove_recurring_delivery_binding(recurring_id).await;
+    let _ = recurring_feed::remove_recurring_feed_binding(recurring_id).await;
 
     Ok(DeleteRecurringResponse {
         recurring_id: recurring_id.to_string(),

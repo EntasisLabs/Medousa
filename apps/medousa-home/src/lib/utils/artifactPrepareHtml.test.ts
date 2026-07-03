@@ -54,5 +54,6 @@ describe("artifactPrepareHtml", () => {
     expect(html).toContain("window.__MEDOUSA_FEED__=");
     expect(html).toContain('"phase":"working"');
     expect(html).toContain("workshop.pulse");
+    expect(html).toContain("medousa-feed-client-script");
   });
 });

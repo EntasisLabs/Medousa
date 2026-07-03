@@ -342,6 +342,18 @@ export async function stopEnvironmentStream(): Promise<void> {
   return invoke("environment_stream_stop");
 }
 
+export async function fetchFeedTail(
+  feedId: string,
+  limit?: number,
+  profileId?: string,
+): Promise<import("$lib/types/environment").FeedTailResponse> {
+  return invoke("feed_tail", {
+    feedId,
+    limit: limit ?? null,
+    profileId: profileId ?? null,
+  });
+}
+
 export function onEnvironmentEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
