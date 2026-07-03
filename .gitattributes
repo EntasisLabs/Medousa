@@ -1,0 +1,9 @@
+# Shell scripts must stay LF so Git Bash / WSL on Windows do not hit `$'\r'` parse errors.
+*.sh text eol=lf
+
+# PowerShell scripts use CRLF on Windows checkouts.
+*.ps1 text eol=crlf
+
+# Batch files
+*.bat text eol=crlf
+*.cmd text eol=crlf

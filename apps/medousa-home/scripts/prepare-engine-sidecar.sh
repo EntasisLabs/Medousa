@@ -9,8 +9,6 @@ MEDOUSA_ROOT="$(cd "${HOME_DIR}/../.." && pwd)"
 BINARIES_DIR="${HOME_DIR}/src-tauri/binaries"
 
 TARGET="${CARGO_BUILD_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
-DAEMON_SIDECAR_NAME="medousa_daemon-${TARGET}"
-LOCAL_SIDECAR_NAME="medousa_local-${TARGET}"
 WITH_IROH=1
 WITH_LOCAL_BRAIN=0
 
@@ -99,18 +97,44 @@ TARGET_DIR="${CARGO_TARGET_DIR:-${MEDOUSA_CARGO_TARGET_DIR:-${MEDOUSA_ROOT}/../.
 
 find_release_binary() {
   local bin="$1"
-  local candidate="${TARGET_DIR}/${TARGET}/release/${bin}"
+  local file="${bin}"
+  if [[ "${TARGET}" == *"-pc-windows-msvc" ]]; then
+    file="${bin}.exe"
+  fi
+  local candidate="${TARGET_DIR}/${TARGET}/release/${file}"
   if [[ -f "${candidate}" ]]; then
     echo "${candidate}"
     return 0
   fi
-  candidate="${TARGET_DIR}/release/${bin}"
+  candidate="${TARGET_DIR}/release/${file}"
+  if [[ -f "${candidate}" ]]; then
+    echo "${candidate}"
+    return 0
+  fi
+  candidate="${MEDOUSA_ROOT}/target/${TARGET}/release/${file}"
+  if [[ -f "${candidate}" ]]; then
+    echo "${candidate}"
+    return 0
+  fi
+  candidate="${MEDOUSA_ROOT}/target/release/${file}"
   if [[ -f "${candidate}" ]]; then
     echo "${candidate}"
     return 0
   fi
   return 1
 }
+
+sidecar_name() {
+  local base="$1"
+  if [[ "${TARGET}" == *"-pc-windows-msvc" ]]; then
+    echo "${base}-${TARGET}.exe"
+  else
+    echo "${base}-${TARGET}"
+  fi
+}
+
+DAEMON_SIDECAR_NAME="$(sidecar_name medousa_daemon)"
+LOCAL_SIDECAR_NAME="$(sidecar_name medousa_local)"
 
 DAEMON_FEATURES=()
 if [[ "${WITH_IROH}" -eq 1 ]]; then

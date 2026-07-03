@@ -16,10 +16,43 @@ Release binary:
 
 ```bash
 cd apps/medousa-home
-npm run tauri build
+npm run tauri:build
 ```
 
-Artifacts: `apps/medousa-home/src-tauri/target/release/`
+Artifacts: `apps/medousa-home/src-tauri/target/release/bundle/` (or `target/<triple>/release/bundle/` when cross-compiling)
+
+### Windows (native PowerShell)
+
+Shell scripts (`.sh`) are kept with LF line endings for Git Bash/WSL. On a bare Windows dev machine, use the PowerShell equivalents via the Node runners — they avoid `$'\r'` parse errors from CRLF in bash scripts.
+
+**Desktop app + sidecar:**
+
+```powershell
+cd apps\medousa-home
+npm install
+npm run tauri:build
+```
+
+`prepare:sidecar` and `tauri:build` call `prepare-engine-sidecar-runner.mjs`, which runs `prepare-engine-sidecar.ps1` on Windows.
+
+**Release binaries (engine/adapters):**
+
+```powershell
+cd Medousa   # repo root
+node scripts/release/release-runner.mjs build.ps1 build.sh -- --target x86_64-pc-windows-msvc
+node scripts/release/release-runner.mjs package-all-components.ps1 package-all-components.sh -- --target x86_64-pc-windows-msvc
+```
+
+**Full desktop installer bundle:**
+
+```powershell
+cd apps\medousa-home
+npm run build:full
+```
+
+Requires `tar` (built into Windows 10+) for `.tar.gz` packaging scripts.
+
+If Git still checks out `.sh` files with CRLF, re-normalize once: `git add --renormalize .` then recommit `.gitattributes`.
 
 Design notes: [architecture/archive/medousa-home-tauri-design.md](../../architecture/archive/medousa-home-tauri-design.md)
 
