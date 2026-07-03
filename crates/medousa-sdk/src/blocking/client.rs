@@ -1,8 +1,9 @@
 #[cfg(feature = "blocking")]
 use medousa_types::{
     ActiveSessionTurnResponse, ArchiveAskJobRequest, ArchiveAskJobResponse,
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactFetchRequest, ArtifactFetchResponse,
-    ArtifactListUiRequest, ArtifactListUiResponse, AskJobCompleteActionsRequest,
+    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
     AskJobCompleteActionsResponse, CancelActiveSessionTurnResponse, CapabilityListResponse,
     CapabilityResolveResponse, DeleteRecurringResponse, EnqueueAskRequest, EnqueuePromptRequest,
     EnqueueReportRequest, EnqueueResponse, HealthResponse, IngestRequest, IngestResponse,
@@ -489,6 +490,20 @@ impl BlockingRuntimeApi<'_> {
         request: &ArtifactListUiRequest,
     ) -> Result<ArtifactListUiResponse, SdkError> {
         self.http.post("/v1/runtime/artifact/list-ui", request)
+    }
+
+    pub fn artifact_write(
+        &self,
+        request: &ArtifactWriteRequest,
+    ) -> Result<ArtifactWriteResponse, SdkError> {
+        self.http.post("/v1/runtime/artifact/write", request)
+    }
+
+    pub fn artifact_delete(
+        &self,
+        request: &ArtifactDeleteRequest,
+    ) -> Result<ArtifactDeleteResponse, SdkError> {
+        self.http.post("/v1/runtime/artifact/delete", request)
     }
 
     pub fn config_command(

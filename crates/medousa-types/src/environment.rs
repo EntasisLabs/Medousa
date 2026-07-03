@@ -481,6 +481,27 @@ pub enum EnvironmentPatchOp {
     RewriteActivePresetSurfaces {
         surfaces: Vec<String>,
     },
+    UpdateSurface {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+    },
+    SetEnvironmentTheme {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color_theme_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        brand_color: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tagline: Option<String>,
+    },
+    RemoveCustomSurface {
+        id: String,
+    },
+    RemoveComponent {
+        component_id: String,
+    },
 }
 
 fn default_surface_icon() -> String {

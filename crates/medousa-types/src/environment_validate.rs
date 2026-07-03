@@ -1,10 +1,12 @@
 //! Validation for environment specs — Frame / Chrome / Content design lock.
 
 use crate::environment::{
-    ComponentDef, ComponentType, EnvironmentSpec, SurfaceDef, SurfaceKind,
+    ComponentDef, ComponentType, EnvironmentSpec, EnvironmentTheme, SurfaceDef, SurfaceKind,
     CHROME_ACTION_OPEN_ACTIVITY, CHROME_ACTION_OPEN_ASK, COMPONENT_SLOT_FAB, COMPONENT_SLOT_HEADER,
     COMPONENT_SLOT_MAIN, COMPONENT_SLOT_SIDEBAR, SAFETY_SURFACE_RUNTIME, SAFETY_SURFACE_SETTINGS,
 };
+use crate::environment_icons::is_valid_surface_icon;
+use crate::environment_themes::{is_valid_brand_color, is_valid_color_theme_id};
 
 const ALLOWED_SLOTS: &[&str] = &[
     COMPONENT_SLOT_MAIN,
@@ -108,7 +110,28 @@ pub fn validate_environment_spec(spec: &EnvironmentSpec) -> Vec<String> {
         }
     }
 
+    if let Some(theme) = &spec.theme {
+        validate_environment_theme(theme, &mut errors);
+    }
+
     errors
+}
+
+fn validate_environment_theme(theme: &EnvironmentTheme, errors: &mut Vec<String>) {
+    if let Some(id) = &theme.color_theme_id {
+        if !is_valid_color_theme_id(id) {
+            errors.push(format!(
+                "theme.colorThemeId '{id}' is invalid — use a known Room palette id"
+            ));
+        }
+    }
+    if let Some(brand) = &theme.brand_color {
+        if !is_valid_brand_color(brand) {
+            errors.push(
+                "theme.brandColor must be a hex color (#RGB or #RRGGBB)".to_string(),
+            );
+        }
+    }
 }
 
 fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
@@ -131,6 +154,12 @@ fn validate_surface(surface: &SurfaceDef, errors: &mut Vec<String>) {
                 surface.id, mobile_tab
             ));
         }
+    }
+    if !is_valid_surface_icon(&surface.icon) {
+        errors.push(format!(
+            "surface '{}' icon '{}' is not in the allowed icon catalog",
+            surface.id, surface.icon
+        ));
     }
 }
 
@@ -266,7 +295,7 @@ mod tests {
             .push(crate::environment::SurfaceDef {
                 id: "studio".to_string(),
                 label: "Studio".to_string(),
-                icon: "pen".to_string(),
+                icon: "pen-line".to_string(),
                 kind: SurfaceKind::Custom,
                 builtin_id: None,
                 layout: crate::environment::SurfaceLayout::Dashboard,
@@ -332,7 +361,7 @@ mod tests {
         spec.surfaces.push(SurfaceDef {
             id: "studio".to_string(),
             label: "Studio".to_string(),
-            icon: "grid".to_string(),
+            icon: "layout-grid".to_string(),
             kind: SurfaceKind::Custom,
             builtin_id: None,
             layout: crate::environment::SurfaceLayout::Dashboard,

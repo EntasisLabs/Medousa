@@ -42,6 +42,29 @@ See [SDK transports](../sdk/transports.md).
 | `vault.svelte.ts` | `vault_*` | `/v1/vault/*` |
 | `workspace.svelte.ts` | `workspace_stream_*`, `workspace_*_card` | `/v1/workspace/*` |
 | `externalDesk.svelte.ts` | local FS + vault roots | `/v1/vault/roots`, active root |
+| `environment.svelte.ts` | `environment_get_spec`, `environment_stream_*`, `environment_get_status` | `/v1/environment/*` |
+
+## Environment / Canvas
+
+Custom views are agent-built surfaces pinned in nav. The **environment store** (`environment.svelte.ts`) holds:
+
+- `spec` — surfaces, layout presets, components, `theme`
+- `pendingProposal` — operator approval queue
+- `feedStateByComponentId` — live feed patches for presentation widgets
+- `canvasStatus` — doctor-shaped status for Settings → Canvas
+
+**UI entry points:**
+
+| Location | Behavior |
+|----------|----------|
+| Left nav rail (`NavSidebar.svelte`) | Custom surface icons from active preset; feed live dots |
+| Settings → Canvas (`SettingsCanvasSection.svelte`) | Preset switcher, pending apply/dismiss, per-surface status |
+| Mobile More → My views (`MoreHub.svelte`) | Custom surfaces from active preset |
+| `EnvironmentRenderer.svelte` | Renders custom vs builtin; `PresentationFrame` for HTML widgets |
+
+**Theming:** `spec.theme` is environment-first; widgets receive `--medousa-host-*` CSS vars via `artifactPrepareHtml.ts`. Workshop Room theme is fallback.
+
+Cookbooks: [Custom views](../cookbook/custom-views-and-canvas.md) · [Advanced](../cookbook/environment-canvas-advanced.md)
 
 ## Tauri IPC command index (grouped)
 

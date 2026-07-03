@@ -1209,6 +1209,22 @@ export async function listUiArtifacts(options?: {
   });
 }
 
+export async function writeArtifact(
+  request: import("$lib/types/artifact").ArtifactWriteRequest,
+): Promise<import("$lib/types/artifact").ArtifactWriteResponse> {
+  return invoke<import("$lib/types/artifact").ArtifactWriteResponse>("artifact_write", {
+    request,
+  });
+}
+
+export async function deleteArtifact(
+  request: import("$lib/types/artifact").ArtifactDeleteRequest,
+): Promise<import("$lib/types/artifact").ArtifactDeleteResponse> {
+  return invoke<import("$lib/types/artifact").ArtifactDeleteResponse>("artifact_delete", {
+    request,
+  });
+}
+
 export async function updateRecurring(
   recurringId: string,
   request: UpdateRecurringRequest,

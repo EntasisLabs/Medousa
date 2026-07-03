@@ -259,7 +259,7 @@ mod tests {
         SurfaceDef {
             id: id.to_string(),
             label: id.to_string(),
-            icon: "grid".to_string(),
+            icon: "layout-grid".to_string(),
             kind: SurfaceKind::Custom,
             builtin_id: None,
             layout: SurfaceLayout::Dashboard,

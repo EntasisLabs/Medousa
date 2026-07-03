@@ -27,4 +27,9 @@ Agents build persistent UI on **custom surfaces** in the environment spec. Built
 
 Validation failures return `errors[]` from propose/create/update — fix surface preset membership and field names before retrying.
 
+## Human docs
+
+- [Custom views & canvas (normie)](../../cookbook/custom-views-and-canvas.md) — approval, presets, My views
+- [Environment canvas (advanced)](../../cookbook/environment-canvas-advanced.md) — spec, feeds, HTTP, themes, icons
+
 See also [agent-tools.md](./agent-tools.md).

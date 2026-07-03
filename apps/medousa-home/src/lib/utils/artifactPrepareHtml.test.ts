@@ -13,6 +13,8 @@ describe("artifactPrepareHtml", () => {
     expect(html).toContain("medousa-artifact-mode");
     expect(html).toContain("overflow:hidden");
     expect(html).toContain("--medousa-host-fg");
+    expect(html).toContain("--medousa-host-accent");
+    expect(html).toContain("--medousa-host-brand");
     expect(html).not.toContain("!important");
   });
 

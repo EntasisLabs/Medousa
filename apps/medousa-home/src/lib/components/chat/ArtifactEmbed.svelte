@@ -11,6 +11,7 @@
     compact?: boolean;
     bare?: boolean;
     mode?: ArtifactEmbedMode;
+    manageable?: boolean;
     onOpenFull?: () => void;
     contentHeight?: number;
     truncated?: boolean;
@@ -25,6 +26,7 @@
     compact = false,
     bare = false,
     mode = "inline",
+    manageable = false,
     onOpenFull,
     contentHeight = $bindable(0),
     truncated = $bindable(false),
@@ -40,6 +42,7 @@
   {compact}
   {bare}
   {mode}
+  {manageable}
   {onOpenFull}
   bind:contentHeight
   bind:truncated

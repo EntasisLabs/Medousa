@@ -3,9 +3,11 @@
 use chrono::Utc;
 use medousa_types::environment::{
     EnvironmentPatchOp, EnvironmentPatchResponse, EnvironmentPendingProposal, EnvironmentSpec,
-    SurfaceKind, SurfaceLayout,
+    EnvironmentTheme, SurfaceKind, SurfaceLayout,
 };
 use medousa_types::environment_validate::validate_environment_spec;
+use medousa_types::environment_icons::is_valid_surface_icon;
+use medousa_types::environment_themes::{is_valid_brand_color, is_valid_color_theme_id};
 use medousa_types::feed::is_valid_feed_id;
 use serde_json::json;
 
@@ -37,6 +39,10 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                 layout,
                 add_to_active_preset,
             } => {
+                let icon = icon.trim();
+                if !is_valid_surface_icon(icon) {
+                    return Err(format!("add_custom_surface: invalid icon '{icon}'"));
+                }
                 let id = id.trim();
                 if id.is_empty() {
                     return Err("add_custom_surface: id is required".to_string());
@@ -99,6 +105,103 @@ pub fn apply_patch_ops(spec: &mut EnvironmentSpec, ops: &[EnvironmentPatchOp]) -
                     })?;
                 presets[active_index].surfaces = surfaces.clone();
                 applied.push("rewrite_active_preset_surfaces".to_string());
+            }
+            EnvironmentPatchOp::UpdateSurface { id, label, icon } => {
+                let id = id.trim();
+                let Some(surface) = spec.surfaces.iter_mut().find(|surface| surface.id == id) else {
+                    return Err(format!("update_surface: unknown surface '{id}'"));
+                };
+                if let Some(label) = label {
+                    let label = label.trim();
+                    if label.is_empty() {
+                        return Err("update_surface: label cannot be empty".to_string());
+                    }
+                    surface.label = label.to_string();
+                }
+                if let Some(icon) = icon {
+                    let icon = icon.trim();
+                    if !is_valid_surface_icon(icon) {
+                        return Err(format!("update_surface: invalid icon '{icon}'"));
+                    }
+                    surface.icon = icon.to_string();
+                }
+                applied.push(format!("update_surface:{id}"));
+            }
+            EnvironmentPatchOp::SetEnvironmentTheme {
+                color_theme_id,
+                brand_color,
+                tagline,
+            } => {
+                let theme = spec.theme.get_or_insert(EnvironmentTheme {
+                    color_theme_id: None,
+                    brand_color: None,
+                    tagline: None,
+                });
+                if let Some(id) = color_theme_id {
+                    let id = id.trim();
+                    if id.is_empty() {
+                        theme.color_theme_id = None;
+                    } else if !is_valid_color_theme_id(id) {
+                        return Err(format!("set_environment_theme: invalid colorThemeId '{id}'"));
+                    } else {
+                        theme.color_theme_id = Some(id.to_string());
+                    }
+                }
+                if let Some(brand) = brand_color {
+                    let brand = brand.trim();
+                    if brand.is_empty() {
+                        theme.brand_color = None;
+                    } else if !is_valid_brand_color(brand) {
+                        return Err(
+                            "set_environment_theme: brandColor must be #RGB or #RRGGBB".to_string(),
+                        );
+                    } else {
+                        let normalized = if brand.starts_with('#') {
+                            brand.to_string()
+                        } else {
+                            format!("#{brand}")
+                        };
+                        theme.brand_color = Some(normalized);
+                    }
+                }
+                if let Some(tagline) = tagline {
+                    let tagline = tagline.trim();
+                    theme.tagline = if tagline.is_empty() {
+                        None
+                    } else {
+                        Some(tagline.to_string())
+                    };
+                }
+                applied.push("set_environment_theme".to_string());
+            }
+            EnvironmentPatchOp::RemoveCustomSurface { id } => {
+                let id = id.trim();
+                let Some(surface) = spec.surfaces.iter().find(|surface| surface.id == id) else {
+                    return Err(format!("remove_custom_surface: unknown surface '{id}'"));
+                };
+                if surface.kind != SurfaceKind::Custom {
+                    return Err(format!("remove_custom_surface: '{id}' is not a custom surface"));
+                }
+                spec.surfaces.retain(|surface| surface.id != id);
+                if let Some(presets) = spec.layout_presets.as_mut() {
+                    for preset in presets.iter_mut() {
+                        preset.surfaces.retain(|surface_id| surface_id != id);
+                    }
+                }
+                spec.components.retain(|component| component.surface_id != id);
+                applied.push(format!("remove_custom_surface:{id}"));
+            }
+            EnvironmentPatchOp::RemoveComponent { component_id } => {
+                let component_id = component_id.trim();
+                if !spec
+                    .components
+                    .iter()
+                    .any(|component| component.id == component_id)
+                {
+                    return Err(format!("remove_component: unknown component '{component_id}'"));
+                }
+                spec.components.retain(|component| component.id != component_id);
+                applied.push(format!("remove_component:{component_id}"));
             }
         }
     }
@@ -182,6 +285,12 @@ pub async fn execute_environment_patch(
             EnvironmentPatchOp::RewriteActivePresetSurfaces { .. } => {
                 "rewrite_active_preset_surfaces".to_string()
             }
+            EnvironmentPatchOp::UpdateSurface { id, .. } => format!("update_surface:{id}"),
+            EnvironmentPatchOp::SetEnvironmentTheme { .. } => "set_environment_theme".to_string(),
+            EnvironmentPatchOp::RemoveCustomSurface { id } => format!("remove_custom_surface:{id}"),
+            EnvironmentPatchOp::RemoveComponent { component_id } => {
+                format!("remove_component:{component_id}")
+            }
         })
         .collect();
 
@@ -243,7 +352,7 @@ impl StasisTool for CognitionEnvironmentPatchTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Apply incremental environment spec ops. New custom surfaces and preset membership go live immediately; preset rewrites require operator approval.",
+            "Apply incremental environment spec ops. New custom surfaces, update_surface, set_environment_theme, and preset membership go live immediately; preset rewrites require operator approval.",
         )
     }
 
@@ -257,7 +366,11 @@ impl StasisTool for CognitionEnvironmentPatchTool {
                     "type": "array",
                     "items": {
                         "type": "object",
-                        "description": "add_custom_surface | add_to_active_preset | add_component | set_component_feeds | rewrite_active_preset_surfaces"
+                        "description": "Tagged op: add_custom_surface | add_to_active_preset | add_component | set_component_feeds | rewrite_active_preset_surfaces | update_surface | set_environment_theme | remove_custom_surface | remove_component",
+                        "required": ["op"],
+                        "properties": {
+                            "op": { "type": "string" }
+                        }
                     }
                 }
             }
@@ -314,7 +427,7 @@ mod tests {
         let ops = vec![EnvironmentPatchOp::AddCustomSurface {
             id: "trip-london".to_string(),
             label: "Trip".to_string(),
-            icon: "train".to_string(),
+            icon: "train-front".to_string(),
             layout: Some(SurfaceLayout::Dashboard),
             add_to_active_preset: true,
         }];

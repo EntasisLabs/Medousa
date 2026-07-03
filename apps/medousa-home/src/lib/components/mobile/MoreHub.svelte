@@ -22,6 +22,7 @@
   import { automationDraftForSpecialist } from "$lib/utils/specialistAutomation";
   import { layout } from "$lib/stores/layout.svelte";
   import { environment } from "$lib/stores/environment.svelte";
+  import { environmentIcon } from "$lib/utils/environmentIcons";
   import {
     MORE_DESTINATIONS,
     MORE_HUB_SECTIONS,
@@ -98,6 +99,7 @@
           <p class="workshop-faint mb-2 text-xs">Custom surfaces from your active layout preset</p>
           <ul class="space-y-2">
             {#each myCustomViews as surface (surface.id)}
+              {@const SurfaceIcon = environmentIcon(surface.icon)}
               <li>
                 <button
                   type="button"
@@ -105,7 +107,7 @@
                   onclick={() => openCustomView(surface.id)}
                 >
                   <span class="mobile-you-destination-icon">
-                    <Sparkles size={18} strokeWidth={1.75} />
+                    <SurfaceIcon size={18} strokeWidth={1.75} />
                   </span>
                   <span class="min-w-0 flex-1">
                     <p class="font-medium text-surface-100">{surface.label}</p>

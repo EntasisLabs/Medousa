@@ -152,7 +152,7 @@ const TOPICS: &[WikiTopic] = &[
     custom_template(.99): {
         id(.99): "kebab-case unique e.g. writing-studio",
         label(.99): "required — nav label; missing causes serde/validation failure",
-        icon(.99): "required — lucide-style e.g. pen-line",
+        icon(.99): "required — lucide kebab-case from allowlist e.g. pen-line, layout-grid, sparkles — cognition_environment_wiki(topic=environment_theme) lists themes; invalid icons fail validation",
         kind(.99): "custom",
         layout(.99): "dashboard — usual choice",
         slots(.97): "[] acceptable Phase 1",
@@ -477,8 +477,33 @@ const TOPICS: &[WikiTopic] = &[
     anti_patterns(.98): "return MedousaStore.get(key) without await; sync store.get wrapper; loadThoughts() without async",
     probe(.96): "Doctor probe=true → SSE runtime_probe → iframe self-test → POST .../runtime/probe/{id}/result",
     agent_codes(.97): "STATIC_LOCALSTORAGE, STATIC_STORE_SYNC_USAGE, STORE_WRONG_TYPE, RUNTIME_LOG, PROBE_STORE_NOT_READY"#,
-        related: &["custom_view_doctor", "feed_client", "component_schema"],
+        related: &["custom_view_doctor", "feed_client", "component_schema", "environment_theme"],
         call_next: &["cognition_custom_view_doctor", "cognition_artifact_write"],
+    },
+    WikiTopic {
+        id: "environment_theme",
+        title: "Environment theme + host CSS tokens",
+        summary: "spec.theme drives canvas widget colors; workshop palette is fallback.",
+        policy: r#"    role(.99): "EnvironmentSpec.theme (colorThemeId, brandColor, tagline) — environment-first; workshop Room theme fills gaps.",
+    patch(.99): {
+        op(.99): "set_environment_theme",
+        fields(.99): "color_theme_id (palette id), brand_color (#hex), tagline (optional string)",
+        example(.98): "{ op:set_environment_theme, color_theme_id:ember, brand_color:#e85d04, tagline:My studio }"
+    },
+    palettes(.98): "ember, ocean, forest, slate, rose, sand, midnight, aurora — same ids as Home themeRegistry",
+    host_tokens(.99): "Presentation iframes inject :root CSS vars — style widgets with these, never hardcode brand colors:",
+    tokens(.99): {
+        fg(.99): "var(--medousa-host-fg)",
+        muted(.99): "var(--medousa-host-muted)",
+        accent(.99): "var(--medousa-host-accent)",
+        surface(.99): "var(--medousa-host-surface)",
+        brand(.99): "var(--medousa-host-brand) — brandColor or accent fallback"
+    },
+    html_example(.97): ".card{background:var(--medousa-host-surface);color:var(--medousa-host-fg);border:1px solid var(--medousa-host-muted)} .accent{color:var(--medousa-host-brand)}",
+    surface_icons(.98): "update_surface op changes label/icon — allowed icons: activity, bar-chart-3, bell, bike, book-open, bookmark, bot, brain, calendar, camera, car, checklist, clipboard, cloud, coffee, compass, database, droplet, file-text, flag, flame, folder, gamepad-2, gem, globe, hash, headphones, heart, home, image, layout-grid, line-chart, list, map-pin, message-circle, mic, moon, music, orbit, paintbrush, palette, pen-line, pie-chart, plane, radio, rss, settings, sparkles, star, sun, tag, target, train-front, trophy, user, users, video, wand-sparkles, zap",
+    operator(.96): "Settings → Canvas shows active theme read-only — ask principal to approve propose when rewriting full spec"#,
+        related: &["surface_schema", "artifact_runtime", "ui_present"],
+        call_next: &["cognition_environment_patch"],
     },
     WikiTopic {
         id: "tool_map",
@@ -500,7 +525,7 @@ const TOPICS: &[WikiTopic] = &[
         recurring_feeds(.96): "cognition_runtime_recurring_register feeds.feed_ids",
         compose_custom_view(.97): "cognition_custom_view_compose — prefer for feed+poll dashboards",
         diagnose_custom_view(.96): "cognition_custom_view_doctor",
-        environment_patch(.96): "cognition_environment_patch — incremental ops with hybrid approval",
+        environment_patch(.96): "cognition_environment_patch — incremental ops: add_custom_surface, update_surface (label/icon), set_environment_theme, add_component, set_component_feeds, rewrite_active_preset_surfaces (needs approval)",
         intent_wiring(.96): "cognition_intent_resolve",
         context_pointer(.95): "cognition_context_follow_pointer"
     },

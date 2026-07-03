@@ -29,6 +29,32 @@ export interface ArtifactListUiResponse {
   artifacts: ArtifactSummary[];
 }
 
+export interface ArtifactWriteRequest {
+  session_id: string;
+  artifact_id: string;
+  title: string;
+  html: string;
+  presentation?: string | null;
+  height_px?: number | null;
+  if_match_hash64?: string | null;
+}
+
+export interface ArtifactWriteResponse {
+  artifact_id: string;
+  supersedes_artifact_id: string;
+  hash64: string;
+  label: string;
+}
+
+export interface ArtifactDeleteRequest {
+  session_id: string;
+  artifact_id: string;
+}
+
+export interface ArtifactDeleteResponse {
+  deleted_artifact_ids: string[];
+}
+
 export interface ArtifactPreview {
   artifact_id: string;
   rendered_output: string;

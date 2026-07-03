@@ -13,7 +13,8 @@ import {
   MEDOUSA_STORE_CLIENT_SCRIPT_ID,
 } from "$lib/utils/medousaStoreClient";
 
-export type ArtifactEmbedMode = "inline" | "panel" | "fullscreen";
+import type { HostThemeTokens } from "$lib/utils/environmentTheme";
+import { legacyHostThemeTokens } from "$lib/utils/environmentTheme";
 
 const THEME_STYLE_ID = "medousa-artifact-theme";
 const MODE_STYLE_ID = "medousa-artifact-mode";
@@ -71,10 +72,9 @@ function injectBeforeHeadClose(html: string, injection: string): string {
 }
 
 /** Optional host tokens — artifacts opt in via var(--medousa-host-*); no element overrides. */
-export function buildArtifactThemeStyle(isDark: boolean): string {
-  const fg = isDark ? "#f4f4f5" : "#18181b";
-  const muted = isDark ? "#a1a1aa" : "#52525b";
-  return `<style id="${THEME_STYLE_ID}">:root{--medousa-host-bg:transparent;--medousa-host-fg:${fg};--medousa-host-muted:${muted}}</style>`;
+export function buildArtifactThemeStyle(theme: HostThemeTokens | boolean): string {
+  const tokens = typeof theme === "boolean" ? legacyHostThemeTokens(theme) : theme;
+  return `<style id="${THEME_STYLE_ID}">:root{--medousa-host-bg:transparent;--medousa-host-fg:${tokens.fg};--medousa-host-muted:${tokens.muted};--medousa-host-accent:${tokens.accent};--medousa-host-surface:${tokens.surface};--medousa-host-brand:${tokens.brand}}</style>`;
 }
 
 /** Root-only embed chrome — never styles artifact markup. */
@@ -88,11 +88,11 @@ export function buildArtifactModeStyle(mode: ArtifactEmbedMode): string {
 export function prepareArtifactHtml(
   raw: string,
   mode: ArtifactEmbedMode,
-  isDark: boolean,
+  theme: HostThemeTokens | boolean,
   feedState?: Record<string, unknown> | null,
   componentId?: string | null,
 ): string {
-  const themeStyle = buildArtifactThemeStyle(isDark);
+  const themeStyle = buildArtifactThemeStyle(theme);
   const modeStyle = buildArtifactModeStyle(mode);
   let html = raw;
   if (!html.includes(THEME_STYLE_ID)) {

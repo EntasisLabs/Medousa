@@ -1521,6 +1521,43 @@ pub struct ArtifactListUiResponse {
     pub artifacts: Vec<ArtifactSummary>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactWriteRequest {
+    pub session_id: String,
+    pub artifact_id: String,
+    pub title: String,
+    pub html: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_px: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub if_match_hash64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactWriteResponse {
+    pub artifact_id: String,
+    pub supersedes_artifact_id: String,
+    pub hash64: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactDeleteRequest {
+    pub session_id: String,
+    pub artifact_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactDeleteResponse {
+    pub deleted_artifact_ids: Vec<String>,
+}
+
 // ── Ingester types ────────────────────────────────────────────────────────────
 
 /// Optional attachment forwarded by a channel adapter.

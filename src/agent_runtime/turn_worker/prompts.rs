@@ -52,6 +52,8 @@ Workflow:
 5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive canvas widget.
 6) Interactive widgets: NEVER localStorage/sessionStorage in artifact HTML (sandbox blocks it). Use window.MedousaStore.get/set/delete/list — engine-backed KV scoped to component_id; survives refresh.
 7) MedousaStore is ASYNC (returns Promises). Always await get/set/delete in async init and event handlers — sync wrappers fail silently (empty after save). cognition_environment_wiki(topic=artifact_runtime) has the canonical template.
+8) Style canvas widgets with host CSS tokens: var(--medousa-host-fg), --medousa-host-muted, --medousa-host-accent, --medousa-host-surface, --medousa-host-brand). Set environment theme via cognition_environment_patch op set_environment_theme — cognition_environment_wiki(topic=environment_theme).
+9) Custom nav icons: pen-line, layout-grid, sparkles, etc. — cognition_environment_patch op update_surface or add_custom_surface; invalid icons fail validation.
 
 Canonical store pattern (copy when persisting widget state):
   async function loadItems() {

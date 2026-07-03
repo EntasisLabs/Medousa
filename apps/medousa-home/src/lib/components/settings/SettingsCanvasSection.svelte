@@ -2,7 +2,14 @@
   import { onMount } from "svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import { environment } from "$lib/stores/environment.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { presetDisplayLabel } from "$lib/utils/customViewStatus";
+  import { resolveEnvironmentTheme } from "$lib/utils/environmentTheme";
+  import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
+
+  const CUSTOM_VIEWS_DOC =
+    "https://github.com/EntasisLabs/Medousa/blob/main/docs/cookbook/custom-views-and-canvas.md";
 
   const spec = $derived(environment.spec);
   const pending = $derived(environment.pendingProposal);
@@ -16,10 +23,39 @@
       spec?.layoutPresets?.find((preset) => preset.id === activePresetId) ??
       null,
   );
+  const resolvedTheme = $derived(
+    resolveEnvironmentTheme(
+      spec,
+      workshops.activeColorThemeId ?? settings.colorTheme,
+      workshops.activeBrandColor,
+      settings.darkMode,
+    ),
+  );
 
   onMount(() => {
     void environment.refreshCanvasStatus();
   });
+
+  let confirmDeleteSurfaceId = $state<string | null>(null);
+  let deleteBusy = $state(false);
+  let deleteError = $state<string | null>(null);
+
+  async function deleteCustomView(surfaceId: string, label: string) {
+    const confirmed = window.confirm(
+      `Remove “${label}” from your canvas? Widget HTML files stay in your library.`,
+    );
+    if (!confirmed) return;
+    deleteBusy = true;
+    deleteError = null;
+    try {
+      await environment.removeCustomSurface(surfaceId);
+      confirmDeleteSurfaceId = null;
+    } catch (err) {
+      deleteError = err instanceof Error ? err.message : String(err);
+    } finally {
+      deleteBusy = false;
+    }
+  }
 </script>
 
 <section class="settings-section">
@@ -58,7 +94,41 @@
         <dt>Custom surfaces</dt>
         <dd>{customSurfaces.map((s) => s.id).join(", ") || "none"}</dd>
       </div>
+      <div>
+        <dt>Environment theme</dt>
+        <dd class="env-theme-row">
+          <span>{resolvedTheme.paletteLabel}</span>
+          {#if resolvedTheme.brandColor}
+            <span
+              class="env-theme-swatch"
+              style:background={resolvedTheme.brandColor}
+              title={resolvedTheme.brandColor}
+            ></span>
+          {/if}
+          {#if resolvedTheme.tagline}
+            <span class="workshop-faint"> — {resolvedTheme.tagline}</span>
+          {/if}
+        </dd>
+      </div>
     </dl>
+    {#if customSurfaces.length > 0}
+      <ul class="env-surface-meta mt-3 text-xs">
+        {#each customSurfaces as surface (surface.id)}
+          <li>
+            <span class="text-surface-200">{surface.label}</span>
+            <span class="workshop-faint"> · icon: {surface.icon}</span>
+          </li>
+        {/each}
+      </ul>
+      <p class="workshop-faint mt-2 text-xs">
+        Ask Medousa to change a nav icon (e.g. “set braindump icon to pen-line”) or retheme your
+        views.
+      </p>
+    {/if}
+  {/if}
+
+  {#if deleteError}
+    <p class="mt-3 text-xs text-error-300">{deleteError}</p>
   {/if}
 
   {#if environment.canvasStatusLoading}
@@ -70,11 +140,47 @@
       <h3 class="text-sm font-medium text-surface-100">Custom surface status</h3>
       {#each canvasStatus.customSurfaces as row (row.surfaceId)}
         <article class="env-status-card">
-          <header class="flex flex-wrap items-center justify-between gap-2">
-            <p class="font-medium text-surface-100">{row.label}</p>
-            <span class="env-status-pill" class:env-status-pill-on={row.navVisible}>
-              {row.navVisible ? "In nav" : "Hidden from nav"}
-            </span>
+          <header class="env-status-card-header">
+            <div class="min-w-0">
+              <p class="font-medium text-surface-100">{row.label}</p>
+              <p class="workshop-faint text-xs">{row.surfaceId}</p>
+            </div>
+            <div class="env-status-card-actions">
+              <span class="env-status-pill" class:env-status-pill-on={row.navVisible}>
+                {row.navVisible ? "In nav" : "Hidden from nav"}
+              </span>
+              {#if confirmDeleteSurfaceId === row.surfaceId}
+                <button
+                  type="button"
+                  class="btn btn-xs btn-ghost text-error-300"
+                  disabled={deleteBusy}
+                  onclick={() => void deleteCustomView(row.surfaceId, row.label)}
+                >
+                  {deleteBusy ? "Removing…" : "Confirm remove"}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-ghost"
+                  disabled={deleteBusy}
+                  onclick={() => {
+                    confirmDeleteSurfaceId = null;
+                  }}
+                >
+                  Cancel
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  class="btn btn-xs btn-ghost text-error-300"
+                  disabled={deleteBusy}
+                  onclick={() => {
+                    confirmDeleteSurfaceId = row.surfaceId;
+                  }}
+                >
+                  Remove view
+                </button>
+              {/if}
+            </div>
           </header>
           <dl class="env-status-kv mt-2">
             <div>
@@ -180,6 +286,16 @@
       </div>
     </div>
   {/if}
+
+  <footer class="mt-6">
+    <button
+      type="button"
+      class="btn btn-sm btn-ghost workshop-faint"
+      onclick={() => void openUrlInDefaultBrowser(CUSTOM_VIEWS_DOC)}
+    >
+      Learn about custom views
+    </button>
+  </footer>
 </section>
 
 <style>
@@ -198,11 +314,49 @@
     color: rgb(var(--color-surface-100));
   }
 
+  .env-theme-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .env-theme-swatch {
+    display: inline-block;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 50%, transparent);
+  }
+
+  .env-surface-meta {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.25rem;
+  }
+
   .env-status-card {
     border-radius: 0.75rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 35%, transparent);
     padding: 0.75rem 0.875rem;
+  }
+
+  .env-status-card-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .env-status-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .env-status-kv {

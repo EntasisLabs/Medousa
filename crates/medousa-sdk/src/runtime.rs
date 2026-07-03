@@ -1,7 +1,8 @@
 #[cfg(feature = "async")]
 use medousa_types::{
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactFetchRequest, ArtifactFetchResponse,
-    ArtifactListUiRequest, ArtifactListUiResponse, RuntimeConfigCommandRequest,
+    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactWriteRequest, ArtifactWriteResponse, RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse, StageRouteCommandRequest, StageRouteCommandResponse,
 };
 
@@ -42,6 +43,26 @@ impl RuntimeApi<'_> {
         self.client
             .http()
             .post("/v1/runtime/artifact/list-ui", request)
+            .await
+    }
+
+    pub async fn artifact_write(
+        &self,
+        request: &ArtifactWriteRequest,
+    ) -> Result<ArtifactWriteResponse, crate::SdkError> {
+        self.client
+            .http()
+            .post("/v1/runtime/artifact/write", request)
+            .await
+    }
+
+    pub async fn artifact_delete(
+        &self,
+        request: &ArtifactDeleteRequest,
+    ) -> Result<ArtifactDeleteResponse, crate::SdkError> {
+        self.client
+            .http()
+            .post("/v1/runtime/artifact/delete", request)
             .await
     }
 

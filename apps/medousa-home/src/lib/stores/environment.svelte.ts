@@ -234,6 +234,59 @@ export class EnvironmentStore {
       this.pendingBusy = false;
     }
   }
+
+  async saveSpec(spec: EnvironmentSpec): Promise<void> {
+    const response = await putEnvironmentSpec({ spec });
+    this.applySpec(response.spec, response.revision);
+  }
+
+  async removeCustomSurface(surfaceId: string, profileId?: string): Promise<void> {
+    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const surface = spec.surfaces.find((entry) => entry.id === surfaceId);
+    if (!surface || surface.kind !== "custom") {
+      throw new Error("Only custom views can be removed from Settings.");
+    }
+    const { removeCustomSurfaceFromSpec } = await import("$lib/utils/environmentCanvasOps");
+    removeCustomSurfaceFromSpec(spec, surfaceId);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+  }
+
+  async removePresentationComponent(componentId: string, profileId?: string): Promise<void> {
+    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const { removeComponentFromSpec } = await import("$lib/utils/environmentCanvasOps");
+    removeComponentFromSpec(spec, componentId);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+  }
+
+  async unlinkComponentsForArtifacts(
+    artifactIds: string[],
+    profileId?: string,
+  ): Promise<string[]> {
+    if (artifactIds.length === 0) return [];
+    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const { removeComponentsReferencingArtifacts } = await import(
+      "$lib/utils/environmentCanvasOps"
+    );
+    const removed = removeComponentsReferencingArtifacts(spec, artifactIds);
+    if (removed.length > 0) {
+      await this.saveSpec(spec);
+      await this.refreshCanvasStatus(profileId);
+    }
+    return removed;
+  }
+
+  async updatePresentationArtifactId(
+    componentId: string,
+    artifactId: string,
+    profileId?: string,
+  ): Promise<void> {
+    const spec = structuredClone(this.spec ?? defaultEnvironmentSpec(profileId));
+    const { updateComponentArtifactId } = await import("$lib/utils/environmentCanvasOps");
+    updateComponentArtifactId(spec, componentId, artifactId);
+    await this.saveSpec(spec);
+  }
 }
 
 export const environment = new EnvironmentStore();

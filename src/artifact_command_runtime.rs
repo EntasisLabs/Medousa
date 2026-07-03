@@ -472,3 +472,79 @@ pub fn execute_artifact_list_ui(
         .collect();
     Ok(crate::daemon_api::ArtifactListUiResponse { artifacts })
 }
+
+pub fn execute_artifact_write(
+    request: crate::daemon_api::ArtifactWriteRequest,
+) -> Result<crate::daemon_api::ArtifactWriteResponse> {
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("session_id is required"));
+    }
+    let artifact_id = request.artifact_id.trim().to_string();
+    if artifact_id.is_empty() {
+        return Err(anyhow!("artifact_id is required"));
+    }
+    let title = request.title.trim().to_string();
+    if title.is_empty() {
+        return Err(anyhow!("title is required"));
+    }
+    let html = request.html.trim().to_string();
+    if html.is_empty() {
+        return Err(anyhow!("html is required"));
+    }
+    if let Some(expected) = request
+        .if_match_hash64
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let previous = crate::artifact_store::fetch_artifact_at_id(&session_id, &artifact_id)
+            .ok_or_else(|| anyhow!("artifact not found: {artifact_id}"))?;
+        if previous.record.hash64 != expected {
+            return Err(anyhow!(
+                "if_match_hash64 mismatch (expected {expected}, got {})",
+                previous.record.hash64
+            ));
+        }
+    }
+    let presentation = request
+        .presentation
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("inline");
+    let record = crate::artifact_store::persist_ui_artifact_revision(
+        &session_id,
+        &html,
+        &title,
+        presentation,
+        request.height_px,
+        Some(&artifact_id),
+    )
+    .map_err(|err| anyhow!(err))?;
+    Ok(crate::daemon_api::ArtifactWriteResponse {
+        artifact_id: record.artifact_id.clone(),
+        supersedes_artifact_id: artifact_id,
+        hash64: record.hash64,
+        label: record.label.unwrap_or(title),
+    })
+}
+
+pub fn execute_artifact_delete(
+    request: crate::daemon_api::ArtifactDeleteRequest,
+) -> Result<crate::daemon_api::ArtifactDeleteResponse> {
+    let session_id = request.session_id.trim().to_string();
+    if session_id.is_empty() {
+        return Err(anyhow!("session_id is required"));
+    }
+    let artifact_id = request.artifact_id.trim().to_string();
+    if artifact_id.is_empty() {
+        return Err(anyhow!("artifact_id is required"));
+    }
+    let deleted_artifact_ids =
+        crate::artifact_store::delete_ui_artifact(&session_id, &artifact_id)
+            .map_err(|err| anyhow!(err))?;
+    Ok(crate::daemon_api::ArtifactDeleteResponse {
+        deleted_artifact_ids,
+    })
+}

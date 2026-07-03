@@ -61,6 +61,10 @@ fn main() {
     export_type!(schemas, ArtifactCommandResponse, "ArtifactCommandResponse");
     export_type!(schemas, ArtifactFetchRequest, "ArtifactFetchRequest");
     export_type!(schemas, ArtifactFetchResponse, "ArtifactFetchResponse");
+    export_type!(schemas, ArtifactWriteRequest, "ArtifactWriteRequest");
+    export_type!(schemas, ArtifactWriteResponse, "ArtifactWriteResponse");
+    export_type!(schemas, ArtifactDeleteRequest, "ArtifactDeleteRequest");
+    export_type!(schemas, ArtifactDeleteResponse, "ArtifactDeleteResponse");
     export_type!(schemas, ArtifactListUiRequest, "ArtifactListUiRequest");
     export_type!(schemas, ArtifactListUiResponse, "ArtifactListUiResponse");
     export_type!(schemas, RuntimeConfigCommandRequest, "RuntimeConfigCommandRequest");

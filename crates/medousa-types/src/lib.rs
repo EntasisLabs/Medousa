@@ -8,6 +8,8 @@ pub mod component_store;
 pub mod daemon_api;
 pub mod environment;
 pub mod environment_default;
+pub mod environment_icons;
+pub mod environment_themes;
 pub mod environment_validate;
 pub mod feed;
 pub mod layout;

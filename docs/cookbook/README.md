@@ -16,6 +16,8 @@ Product users: [README](../README.md) → download **Medousa**.
 | [Mobile & LAN](mobile-and-lan.md) | Pairing, iOS dev, workshop transport |
 | [Custom chat UI](custom-chat-ui.md) | Streaming client, artifacts |
 | [Artifacts & presentations](artifacts-and-presentations.md) | HTML artifacts, Library |
+| [Custom views & canvas](custom-views-and-canvas.md) | Pinned dashboards, Settings → Canvas, My views |
+| [Environment canvas (advanced)](environment-canvas-advanced.md) | Spec, presets, feeds, HTTP API, operators |
 | [Vault & library](vault-and-library.md) | Notes, multi-root, wikilinks |
 
 Engine reference: [../engine/README.md](../engine/README.md) · SDK: [../sdk/README.md](../sdk/README.md)

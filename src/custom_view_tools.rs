@@ -681,7 +681,7 @@ mod tests {
         let ops = vec![EnvironmentPatchOp::AddCustomSurface {
             id: "trip-london".to_string(),
             label: "Trip".to_string(),
-            icon: "train".to_string(),
+            icon: "train-front".to_string(),
             layout: Some(SurfaceLayout::Dashboard),
             add_to_active_preset: true,
         }];

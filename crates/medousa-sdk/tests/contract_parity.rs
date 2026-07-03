@@ -38,6 +38,8 @@ pub const PARITY_ROUTES: &[(&str, &str, &str, &str)] = &[
     ("interactive", "stream", "SSE", "/v1/interactive/turn/{id}/stream"),
     ("runtime", "artifact_command", "POST", "/v1/runtime/artifact/command"),
     ("runtime", "artifact_fetch", "POST", "/v1/runtime/artifact/fetch"),
+    ("runtime", "artifact_write", "POST", "/v1/runtime/artifact/write"),
+    ("runtime", "artifact_delete", "POST", "/v1/runtime/artifact/delete"),
     ("runtime", "artifact_list_ui", "POST", "/v1/runtime/artifact/list-ui"),
     ("runtime", "config_command", "POST", "/v1/runtime/config/command"),
     ("runtime", "stage_route_command", "POST", "/v1/runtime/stage-route/command"),

@@ -192,6 +192,7 @@ use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 pub use daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactWriteRequest, ArtifactWriteResponse,
     ArtifactSummary, ArtifactVerificationPolicyInput, DaemonStatsResponse, EnqueueAskRequest,
     EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,

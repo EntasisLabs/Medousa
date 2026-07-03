@@ -180,6 +180,7 @@
             bare={presentationBare(surfaceLayout, embedMode, ctx)}
             feedState={feedStateForComponent(component.id)}
             subscribedFeedIds={component.feeds ?? []}
+            manageable={true}
           />
         {/if}
       {:else if component.type === "medousa_view"}

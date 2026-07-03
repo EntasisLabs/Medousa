@@ -479,6 +479,80 @@ pub fn resolve_latest_artifact_id(session_id: &str, artifact_id: &str) -> Option
     Some(current.artifact_id)
 }
 
+/// Delete a UI HTML artifact revision chain (root + superseding revisions). Payload files are removed.
+pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::Result<Vec<String>, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let resolved = resolve_artifact_reference(session_id, artifact_ref);
+    if resolved.is_empty() {
+        return Err("artifact_id is required".to_string());
+    }
+    let latest = resolve_latest_artifact_id(session_id, &resolved).unwrap_or(resolved);
+    let records = read_index_records();
+    let Some(seed) = records
+        .iter()
+        .find(|record| record.session_id == session_id && record.artifact_id == latest)
+        .cloned()
+        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, &latest))
+    else {
+        return Err(format!("artifact not found: {latest}"));
+    };
+    if seed.direction != "ui" {
+        return Err("only UI HTML presentation artifacts can be deleted from Home".to_string());
+    }
+
+    let root = seed
+        .root_artifact_id
+        .clone()
+        .unwrap_or_else(|| seed.artifact_id.clone());
+    let mut chain_ids: HashSet<String> = HashSet::new();
+    chain_ids.insert(root.clone());
+    for record in &records {
+        if record.session_id != session_id {
+            continue;
+        }
+        let record_root = record
+            .root_artifact_id
+            .clone()
+            .unwrap_or_else(|| record.artifact_id.clone());
+        if record_root == root {
+            chain_ids.insert(record.artifact_id.clone());
+        }
+    }
+
+    let to_delete: Vec<ArtifactRecord> = records
+        .iter()
+        .filter(|record| {
+            record.session_id == session_id && chain_ids.contains(&record.artifact_id)
+        })
+        .cloned()
+        .collect();
+    if to_delete.is_empty() {
+        return Err(format!("artifact not found: {latest}"));
+    }
+
+    let deleted_ids: Vec<String> = to_delete.iter().map(|r| r.artifact_id.clone()).collect();
+    let remaining: Vec<ArtifactRecord> = records
+        .into_iter()
+        .filter(|record| !deleted_ids.contains(&record.artifact_id))
+        .collect();
+    overwrite_index_records(&remaining)?;
+
+    let mut deleted_paths = HashSet::new();
+    for record in &to_delete {
+        if deleted_paths.insert(record.payload_path.clone()) {
+            let path = std::path::Path::new(&record.payload_path);
+            if path.is_file() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    Ok(deleted_ids)
+}
+
 pub fn grep_ui_artifact(
     session_id: &str,
     artifact_id: &str,
@@ -686,6 +760,7 @@ fn repair_ui_artifact_index_from_disk() {
 
 const ARTIFACT_HOST_STYLE: &str = concat!(
     "<style id=\"medousa-artifact-host\">",
+    // Minimal host vars for chat/library exports; Home PresentationFrame injects full theme tokens live.
     ":root{--medousa-host-bg:transparent;--medousa-host-fg:inherit;--medousa-host-muted:inherit}",
     "html,body{margin:0;padding:0;background:var(--medousa-host-bg,transparent);overflow:hidden;",
     "scrollbar-width:none;-ms-overflow-style:none}",

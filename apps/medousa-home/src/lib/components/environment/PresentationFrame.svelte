@@ -6,8 +6,10 @@
     componentStoreGet,
     componentStoreListKeys,
     componentStoreSet,
+    deleteArtifact,
     fetchArtifact,
     fetchFeedTail,
+    writeArtifact,
     type ComponentRuntimeEventInput,
   } from "$lib/daemon";
   import {
@@ -30,7 +32,13 @@
     isMedousaArtifactRuntimeEvent,
   } from "$lib/utils/medousaArtifactRuntimeClient";
   import { environment } from "$lib/stores/environment.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
+  import { resolveEnvironmentTheme } from "$lib/utils/environmentTheme";
   import { friendlyUserError } from "$lib/utils/normieErrors";
+  import PresentationArtifactMenu from "$lib/components/environment/PresentationArtifactMenu.svelte";
+  import ArtifactSourceModal from "$lib/components/environment/ArtifactSourceModal.svelte";
+  import ArtifactEditModal from "$lib/components/environment/ArtifactEditModal.svelte";
 
   const RUNTIME_FLUSH_MS = 500;
   const RUNTIME_MAX_BATCH = 20;
@@ -53,6 +61,8 @@
     feedState?: Record<string, unknown> | null;
     subscribedFeedIds?: string[];
     onOpenFull?: () => void;
+    onArtifactDeleted?: () => void;
+    manageable?: boolean;
     contentHeight?: number;
     truncated?: boolean;
   }
@@ -71,9 +81,18 @@
     feedState = null,
     subscribedFeedIds = [],
     onOpenFull,
+    onArtifactDeleted,
+    manageable = false,
     contentHeight = $bindable(0),
     truncated = $bindable(false),
   }: Props = $props();
+
+  let activeArtifactId = $state(artifactId);
+  let sourceOpen = $state(false);
+  let editOpen = $state(false);
+  let editBusy = $state(false);
+  let editError = $state<string | null>(null);
+  let actionBusy = $state(false);
 
   let html = $state<string | null>(null);
   let rawHtml = $state<string | null>(null);
@@ -91,6 +110,75 @@
   const pendingRuntimeProbe = $derived(
     storeScopeId ? environment.pendingRuntimeProbes.get(storeScopeId) ?? null : null,
   );
+  const hostTheme = $derived(
+    resolveEnvironmentTheme(
+      environment.spec,
+      workshops.activeColorThemeId ?? settings.colorTheme,
+      workshops.activeBrandColor,
+      isDarkTheme(),
+    ),
+  );
+
+  $effect(() => {
+    activeArtifactId = artifactId;
+  });
+
+  async function handleSaveEdit(nextHtml: string) {
+    editBusy = true;
+    editError = null;
+    try {
+      const response = await writeArtifact({
+        session_id: sessionId,
+        artifact_id: activeArtifactId,
+        title: label,
+        html: nextHtml,
+        presentation: mode,
+      });
+      if (componentId) {
+        await environment.updatePresentationArtifactId(
+          componentId,
+          response.artifact_id,
+          storeProfileId ?? environment.spec?.profileId,
+        );
+      }
+      activeArtifactId = response.artifact_id;
+      editOpen = false;
+    } catch (err) {
+      editError = friendlyUserError(err instanceof Error ? err.message : String(err));
+    } finally {
+      editBusy = false;
+    }
+  }
+
+  async function handleDeleteWidget() {
+    const confirmed = window.confirm(
+      `Delete “${label}”? This removes the widget from your view and deletes the HTML file.`,
+    );
+    if (!confirmed) return;
+    actionBusy = true;
+    try {
+      const response = await deleteArtifact({
+        session_id: sessionId,
+        artifact_id: activeArtifactId,
+      });
+      if (componentId) {
+        await environment.removePresentationComponent(
+          componentId,
+          storeProfileId ?? environment.spec?.profileId,
+        );
+      } else {
+        await environment.unlinkComponentsForArtifacts(
+          response.deleted_artifact_ids,
+          storeProfileId ?? environment.spec?.profileId,
+        );
+      }
+      onArtifactDeleted?.();
+    } catch (err) {
+      error = friendlyUserError(err instanceof Error ? err.message : String(err));
+    } finally {
+      actionBusy = false;
+    }
+  }
 
   async function flushRuntimeEvents() {
     if (runtimeFlushTimer) {
@@ -351,7 +439,7 @@
 
   $effect(() => {
     const sid = sessionId;
-    const aid = artifactId;
+    const aid = activeArtifactId;
     const embedMode = mode;
     const scope = storeScopeId;
     html = null;
@@ -372,7 +460,7 @@
         html = prepareArtifactHtml(
           response.body,
           embedMode,
-          isDarkTheme(),
+          hostTheme.tokens,
           feedState,
           scope,
         );
@@ -388,10 +476,10 @@
   $effect(() => {
     const body = rawHtml;
     const embedMode = mode;
-    const isDark = isDarkTheme();
+    const tokens = hostTheme.tokens;
     const scope = storeScopeId;
     if (!body) return;
-    html = prepareArtifactHtml(body, embedMode, isDark, feedState, scope);
+    html = prepareArtifactHtml(body, embedMode, tokens, feedState, scope);
   });
 
   $effect(() => {
@@ -437,7 +525,23 @@
   class:presentation-frame-panel={mode === "panel"}
   class:presentation-frame-fullscreen={mode === "fullscreen"}
   class:presentation-frame-fill={fillsParent}
+  class:presentation-frame-manageable={manageable}
 >
+  {#if manageable && !loading && !error}
+    <div class="presentation-frame-toolbar">
+      <PresentationArtifactMenu
+        disabled={actionBusy || editBusy}
+        onViewSource={() => {
+          sourceOpen = true;
+        }}
+        onEdit={() => {
+          editError = null;
+          editOpen = true;
+        }}
+        onDelete={() => void handleDeleteWidget()}
+      />
+    </div>
+  {/if}
   {#if loading}
     <div
       class="presentation-frame-skeleton"
@@ -471,7 +575,39 @@
   {/if}
 </div>
 
+<ArtifactSourceModal
+  open={sourceOpen}
+  title={label}
+  source={rawHtml ?? ""}
+  onClose={() => {
+    sourceOpen = false;
+  }}
+/>
+
+<ArtifactEditModal
+  open={editOpen}
+  title={label}
+  source={rawHtml ?? ""}
+  busy={editBusy}
+  error={editError}
+  onClose={() => {
+    if (!editBusy) editOpen = false;
+  }}
+  onSave={handleSaveEdit}
+/>
+
 <style>
+  .presentation-frame-manageable {
+    position: relative;
+  }
+
+  .presentation-frame-toolbar {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 4;
+  }
+
   .presentation-frame {
     overflow: hidden;
     border-radius: 0.875rem;
