@@ -1,50 +1,62 @@
 # Package medousa_local into a release tarball.
-param(
-    [string]$Target = "",
-    [string]$Input = "",
-    [string]$DistDir = "",
-    [ValidateSet("auto", "metal", "cuda", "cpu")]
-    [string]$Backend = "auto",
-    [switch]$Help
-)
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\common.ps1"
 
+$Target = ""
+$InputDir = ""
+$DistDir = ""
+$Backend = "auto"
+
 function Show-Usage {
-    @"
+    Write-Host @'
 Usage: scripts/release/package-local-brain.ps1 [options]
 
 Options:
-  -Target <triple>   Rust target triple (default: host)
-  -Input <dir>       Staging dir from build-local-brain.ps1
-  -DistDir <dir>     Output directory (default: dist/)
-  -Backend <mode>    auto|metal|cuda|cpu (for archive naming only)
-  -Help              Show this help
-"@
+  --target <triple>   Rust target triple (default: host)
+  --input <dir>       Staging dir from build-local-brain.ps1
+  --dist <dir>        Output directory (default: dist/)
+  --backend <mode>    auto|metal|cuda|cpu (for archive naming only)
+  -h, --help          Show this help
+'@
 }
 
-foreach ($arg in $args) {
-    switch ($arg) {
+for ($i = 0; $i -lt $args.Count; $i++) {
+    switch ($args[$i]) {
         { $_ -in @("-h", "--help") } { Show-Usage; exit 0 }
-        "--target" { throw "--target requires a value; use -Target on PowerShell" }
-        "--input" { throw "--input requires a value; use -Input on PowerShell" }
-        "--dist" { throw "--dist requires a value; use -DistDir on PowerShell" }
-        "--backend" { throw "--backend requires a value; use -Backend on PowerShell" }
+        "--target" {
+            $i++
+            if ($i -ge $args.Count) { throw "--target requires a value" }
+            $Target = $args[$i]
+        }
+        "--input" {
+            $i++
+            if ($i -ge $args.Count) { throw "--input requires a value" }
+            $InputDir = $args[$i]
+        }
+        "--dist" {
+            $i++
+            if ($i -ge $args.Count) { throw "--dist requires a value" }
+            $DistDir = $args[$i]
+        }
+        "--backend" {
+            $i++
+            if ($i -ge $args.Count) { throw "--backend requires a value" }
+            $Backend = $args[$i]
+        }
+        default { throw "error: unknown argument: $($args[$i])" }
     }
 }
-
-if ($Help) { Show-Usage; exit 0 }
 
 Assert-MedousaCommand tar
 Push-Location $MEDOUSA_ROOT
 try {
     $version = Get-MedousaVersion
     if (-not $Target) { $Target = Get-MedousaHostTarget }
-    if (-not $Input) { $Input = Join-Path $MEDOUSA_ROOT "dist\build-local-brain\$Target" }
+    if (-not $InputDir) { $InputDir = Join-Path $MEDOUSA_ROOT "dist\build-local-brain\$Target" }
     if (-not $DistDir) { $DistDir = Join-Path $MEDOUSA_ROOT "dist" }
 
-    $binDir = Join-Path $Input "bin"
+    $binDir = Join-Path $InputDir "bin"
     if (-not (Test-Path -LiteralPath $binDir)) {
         throw "missing $binDir"
     }

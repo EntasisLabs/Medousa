@@ -1,4 +1,4 @@
-# Medousa release scripts — shared constants and helpers (Windows PowerShell).
+# Medousa release scripts - shared constants and helpers (Windows PowerShell).
 # Dot-source from other scripts: . "$PSScriptRoot/common.ps1"
 
 $ErrorActionPreference = "Stop"
@@ -57,7 +57,7 @@ function Assert-MedousaVersionsMatch {
     $rootV = Get-MedousaVersion
     $waV = Get-MedousaWhatsappVersion
     if ($rootV -ne $waV) {
-        throw "version mismatch — root Cargo.toml ($rootV) != whatsapp ($waV)"
+        throw "version mismatch - root Cargo.toml ($rootV) != whatsapp ($waV)"
     }
 }
 
@@ -167,6 +167,30 @@ function Write-MedousaLog([string]$Message) {
 function Assert-MedousaCommand([string]$Command) {
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
         throw "required command not found: $Command"
+    }
+}
+
+function Invoke-MedousaCargo {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CargoArgs)
+
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        if (-not $script:MedousaMsvcEnvLoaded) {
+            $msvcEnv = Join-Path $MEDOUSA_ROOT "scripts\dev\msvc-env.ps1"
+            if (Test-Path -LiteralPath $msvcEnv) {
+                . $msvcEnv
+                Import-MedousaMsvcBuildEnvironment -RepoRoot $MEDOUSA_ROOT | Out-Null
+                $script:MedousaMsvcEnvLoaded = $true
+            }
+        }
+    }
+
+    Push-Location $MEDOUSA_ROOT
+    try {
+        & cargo @CargoArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+    finally {
+        Pop-Location
     }
 }
 

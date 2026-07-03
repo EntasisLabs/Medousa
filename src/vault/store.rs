@@ -201,8 +201,9 @@ impl VaultStore {
                 .strip_prefix(root)
                 .ok()
                 .and_then(|value| value.to_str())
+                .map(|value| value.replace('\\', "/"))
                 .unwrap_or_default();
-            let normalized = match normalize_vault_path(relative) {
+            let normalized = match normalize_vault_path(&relative) {
                 Ok(value) => value,
                 Err(_) => continue,
             };

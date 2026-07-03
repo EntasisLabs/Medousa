@@ -53,11 +53,27 @@ pub(crate) fn resolve_backend() -> String {
     DEFAULT_BACKEND.to_string()
 }
 
+pub(crate) fn platform_binary_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
 pub(crate) fn find_command_in_path(command: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
-    std::env::split_paths(&path_var)
-        .map(|path| path.join(command))
-        .find(|candidate| candidate.exists())
+    let names = if cfg!(windows) {
+        vec![platform_binary_name(command), command.to_string()]
+    } else {
+        vec![command.to_string()]
+    };
+    std::env::split_paths(&path_var).find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| candidate.is_file())
+    })
 }
 
 pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
@@ -72,7 +88,7 @@ pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
     }
 
     if let Ok(current_exe) = std::env::current_exe() {
-        let sibling = current_exe.with_file_name("medousa_daemon");
+        let sibling = current_exe.with_file_name(platform_binary_name("medousa_daemon"));
         if sibling.exists() {
             return Ok(ComponentCommand {
                 program: sibling.to_string_lossy().to_string(),
@@ -83,7 +99,7 @@ pub(crate) fn resolve_daemon_binary() -> Result<ComponentCommand, String> {
 
     if find_command_in_path("medousa_daemon").is_some() {
         return Ok(ComponentCommand {
-            program: "medousa_daemon".to_string(),
+            program: platform_binary_name("medousa_daemon"),
             pre_args: Vec::new(),
         });
     }
@@ -105,7 +121,7 @@ pub(crate) fn resolve_local_binary() -> Result<ComponentCommand, String> {
     }
 
     if let Ok(current_exe) = std::env::current_exe() {
-        let sibling = current_exe.with_file_name("medousa_local");
+        let sibling = current_exe.with_file_name(platform_binary_name("medousa_local"));
         if sibling.exists() {
             return Ok(ComponentCommand {
                 program: sibling.to_string_lossy().to_string(),
@@ -116,7 +132,7 @@ pub(crate) fn resolve_local_binary() -> Result<ComponentCommand, String> {
 
     if find_command_in_path("medousa_local").is_some() {
         return Ok(ComponentCommand {
-            program: "medousa_local".to_string(),
+            program: platform_binary_name("medousa_local"),
             pre_args: Vec::new(),
         });
     }

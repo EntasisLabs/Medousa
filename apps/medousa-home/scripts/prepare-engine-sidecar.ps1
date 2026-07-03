@@ -49,9 +49,31 @@ $BinariesDir = Join-Path $HomeDir "src-tauri\binaries"
 
 function Get-HostTarget {
     if ($env:CARGO_BUILD_TARGET) { return $env:CARGO_BUILD_TARGET.Trim() }
-    $hostLine = (& rustc -vV | Select-String -Pattern '^host: ').Line
-    if (-not $hostLine) { throw "failed to read host target from rustc -vV" }
-    return $hostLine.Substring(6).Trim()
+    foreach ($line in (& rustc -vV 2>&1)) {
+        if ($line -match '^host:\s*(.+)$') {
+            return $matches[1].Trim()
+        }
+    }
+    throw "failed to read host target from rustc -vV"
+}
+
+function Invoke-MedousaCargo {
+    param([string[]]$CargoArgs)
+
+    $cargoMsvc = Join-Path $MedousaRoot "scripts\dev\cargo-msvc.ps1"
+    if (Test-Path -LiteralPath $cargoMsvc) {
+        & $cargoMsvc @CargoArgs
+    } else {
+        Push-Location $MedousaRoot
+        try {
+            & cargo @CargoArgs
+        } finally {
+            Pop-Location
+        }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "cargo $($CargoArgs -join ' ') failed (exit $LASTEXITCODE)"
+    }
 }
 
 function Test-WindowsMsvcTarget([string]$Target) {
@@ -116,19 +138,12 @@ New-Item -ItemType Directory -Force -Path $BinariesDir | Out-Null
 $daemonFeatures = @()
 if ($withIroh) { $daemonFeatures += "iroh-transport" }
 
-Write-Host "prepare-engine-sidecar: building slim medousa_daemon for $Target…"
-Push-Location $MedousaRoot
-try {
-    $cargoArgs = @("build", "--release", "-p", "medousa", "--bin", "medousa_daemon")
-    if ($daemonFeatures.Count -gt 0) {
-        $cargoArgs += @("--features", ($daemonFeatures -join ","))
-    }
-    & cargo @cargoArgs
-    if ($LASTEXITCODE -ne 0) { throw "cargo build medousa_daemon failed" }
+Write-Host "prepare-engine-sidecar: building slim medousa_daemon for $Target..."
+$cargoArgs = @("build", "--release", "-p", "medousa", "--bin", "medousa_daemon")
+if ($daemonFeatures.Count -gt 0) {
+    $cargoArgs += @("--features", ($daemonFeatures -join ","))
 }
-finally {
-    Pop-Location
-}
+Invoke-MedousaCargo -CargoArgs $cargoArgs
 
 $daemonSrc = Find-ReleaseBinary "medousa_daemon" $Target
 $daemonSidecar = Get-SidecarFileName "medousa_daemon" $Target
@@ -138,14 +153,9 @@ Write-Host "prepare-engine-sidecar: $(Join-Path $BinariesDir $daemonSidecar)"
 if ($WithLocalBrain) {
     $inferenceFeature = Resolve-InferenceFeature $Target
     Write-Host "prepare-engine-sidecar: building medousa_local ($inferenceFeature)…"
-    Push-Location $MedousaRoot
-    try {
-        & cargo build --release -p medousa --bin medousa_local --features $inferenceFeature
-        if ($LASTEXITCODE -ne 0) { throw "cargo build medousa_local failed" }
-    }
-    finally {
-        Pop-Location
-    }
+    Invoke-MedousaCargo -CargoArgs @(
+        "build", "--release", "-p", "medousa", "--bin", "medousa_local", "--features", $inferenceFeature
+    )
     $localSrc = Find-ReleaseBinary "medousa_local" $Target
     $localSidecar = Get-SidecarFileName "medousa_local" $Target
     Copy-Item -LiteralPath $localSrc -Destination (Join-Path $BinariesDir $localSidecar) -Force
