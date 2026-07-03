@@ -7,6 +7,9 @@ from medousa.sync.transport import SyncTransport
 if TYPE_CHECKING:
     from medousa.sync.budget import BudgetApiSync
     from medousa.sync.capabilities import CapabilitiesApiSync
+    from medousa.sync.components import ComponentsApiSync
+    from medousa.sync.environment import EnvironmentApiSync
+    from medousa.sync.feeds import FeedsApiSync
     from medousa.sync.health import HealthApiSync
     from medousa.sync.ingest import IngestApiSync
     from medousa.sync.interactive import InteractiveApiSync
@@ -95,6 +98,21 @@ class MedousaClientSync:
         from medousa.sync.vault import VaultApiSync
 
         return VaultApiSync(self)
+
+    def environment(self) -> EnvironmentApiSync:
+        from medousa.sync.environment import EnvironmentApiSync
+
+        return EnvironmentApiSync(self)
+
+    def components(self) -> ComponentsApiSync:
+        from medousa.sync.components import ComponentsApiSync
+
+        return ComponentsApiSync(self)
+
+    def feeds(self) -> FeedsApiSync:
+        from medousa.sync.feeds import FeedsApiSync
+
+        return FeedsApiSync(self)
 
     def workspace(self) -> WorkspaceApiSync:
         from medousa.sync.workspace import WorkspaceApiSync

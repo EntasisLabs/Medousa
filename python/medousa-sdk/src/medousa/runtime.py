@@ -5,10 +5,14 @@ from medousa.client import MedousaClient
 from medousa.types import (
     ArtifactCommandRequest,
     ArtifactCommandResponse,
+    ArtifactDeleteRequest,
+    ArtifactDeleteResponse,
     ArtifactFetchRequest,
     ArtifactFetchResponse,
     ArtifactListUiRequest,
     ArtifactListUiResponse,
+    ArtifactWriteRequest,
+    ArtifactWriteResponse,
     RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse,
     StageRouteCommandRequest,
@@ -38,6 +42,22 @@ class RuntimeApi:
             request.model_dump(mode="json"),
         )
         return decode(ArtifactFetchResponse, value)
+
+    async def artifact_write(self, request: ArtifactWriteRequest) -> ArtifactWriteResponse:
+        value = await self._client.transport.post_json(
+            self._client.base_url,
+            "/v1/runtime/artifact/write",
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(ArtifactWriteResponse, value)
+
+    async def artifact_delete(self, request: ArtifactDeleteRequest) -> ArtifactDeleteResponse:
+        value = await self._client.transport.post_json(
+            self._client.base_url,
+            "/v1/runtime/artifact/delete",
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(ArtifactDeleteResponse, value)
 
     async def artifact_list_ui(self, request: ArtifactListUiRequest) -> ArtifactListUiResponse:
         value = await self._client.transport.post_json(

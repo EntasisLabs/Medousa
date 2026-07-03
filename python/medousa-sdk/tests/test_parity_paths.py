@@ -70,6 +70,9 @@ def test_manifest_minimum_accessors():
         "mcp_gateway",
         "budget",
         "vault",
+        "environment",
+        "components",
+        "feeds",
         "workspace",
     }
     assert expected <= accessors

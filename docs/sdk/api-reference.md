@@ -123,6 +123,8 @@ Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-
 |--------|------|-------|
 | `artifact_command(request)` | `POST /v1/runtime/artifact/command` | `ArtifactCommandRequest` |
 | `artifact_fetch(request)` | `POST /v1/runtime/artifact/fetch` | `ArtifactFetchRequest` |
+| `artifact_write(request)` | `POST /v1/runtime/artifact/write` | `ArtifactWriteRequest` |
+| `artifact_delete(request)` | `POST /v1/runtime/artifact/delete` | `ArtifactDeleteRequest` |
 | `artifact_list_ui(request)` | `POST /v1/runtime/artifact/list-ui` | `ArtifactListUiRequest` |
 | `config_command(request)` | `POST /v1/runtime/config/command` | `RuntimeConfigCommandRequest` |
 | `stage_route_command(request)` | `POST /v1/runtime/stage-route/command` | `StageRouteCommandRequest` |
@@ -176,6 +178,51 @@ Both Rust (`sse` feature) and Python ship built-in SSE clients — [interactive-
 
 ---
 
+## `environment()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `get_spec(profile_id?)` | `GET /v1/environment/spec` | `EnvironmentSpecResponse` |
+| `put_spec(request)` | `PUT /v1/environment/spec` | `EnvironmentSpecPutRequest` |
+| `get_status(...)` | `GET /v1/environment/status` | `EnvironmentStatusResponse` |
+| `validate_spec(request)` | `POST /v1/environment/spec/validate` | `EnvironmentValidateRequest` |
+| `propose_spec(request)` | `POST /v1/environment/spec/propose` | `EnvironmentSpecPutRequest` |
+| `get_pending(profile_id?)` | `GET /v1/environment/spec/pending` | `EnvironmentPendingResponse` |
+| `dismiss_pending(profile_id?)` | `DELETE /v1/environment/spec/pending` | — |
+| `apply_pending(profile_id?)` | `POST /v1/environment/spec/pending/apply` | `EnvironmentSpecResponse` |
+| `stream_spec(...)` | SSE `GET /v1/environment/spec/stream` | `EnvironmentStreamEvent` |
+
+Incremental patch ops (`remove_custom_surface`, `remove_component`, etc.) are agent-internal via `cognition_environment_patch`. SDK integrators use `put_spec` for full spec replace.
+
+---
+
+## `components()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `store_get(component_id, ...)` | `GET /v1/components/{id}/store` | `ComponentStoreGetResponse` |
+| `store_set(component_id, key, request)` | `PUT /v1/components/{id}/store?key=` | `ComponentStoreSetRequest` |
+| `store_list_keys(component_id, ...)` | `GET /v1/components/{id}/store/keys` | `ComponentStoreListResponse` |
+| `store_get_key(component_id, key, ...)` | `GET /v1/components/{id}/store/{key}` | `ComponentStoreGetResponse` |
+| `store_put_key(component_id, key, request)` | `PUT /v1/components/{id}/store/{key}` | `ComponentStoreSetRequest` |
+| `store_delete_key(component_id, key, ...)` | `DELETE /v1/components/{id}/store/{key}` | `ComponentStoreDeleteResponse` |
+| `runtime_tail_events(component_id, ...)` | `GET /v1/components/{id}/runtime/events` | `ComponentRuntimeEventsTailResponse` |
+| `runtime_append_events(component_id, request)` | `POST /v1/components/{id}/runtime/events` | `ComponentRuntimeEventsRequest` |
+| `runtime_complete_probe(component_id, probe_id, request)` | `POST .../probe/{probe_id}/result` | `ComponentRuntimeProbeResult` |
+
+---
+
+## `feeds()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `list(profile_id?)` | `GET /v1/feeds` | `FeedListResponse` |
+| `tail(feed_id, query)` | `GET /v1/feeds/{feed_id}/tail` | `FeedTailQuery` |
+| `mark_read(feed_id, request)` | `POST /v1/feeds/{feed_id}/read` | `FeedReadRequest` |
+| `stream(profile_id?)` | SSE `GET /v1/feeds/stream` | `FeedStreamEvent` |
+
+---
+
 ## `workspace()`
 
 | Method | HTTP | Types |
@@ -223,6 +270,7 @@ See [python.md](python.md).
 
 - Identity, grapheme, workflows (full surface)
 - Ingest SSE stream
+- Environment patch semantics (`cognition_environment_patch` ops — no HTTP patch route; use `environment().put_spec`)
 - Tauri app uses bridge commands for SSE when `WorkshopTransport` cannot stream directly
 
 Track new wrappers in PRs that update `sdk-contract/manifest.yaml`.

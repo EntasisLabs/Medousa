@@ -31,12 +31,14 @@ Vault parity: `cognition_vault_grep`, line-range `cognition_vault_read` — see 
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/v1/runtime/artifact/fetch` | Full HTML body (`ArtifactFetchRequest`) |
+| POST | `/v1/runtime/artifact/write` | Create or update HTML revision (`ArtifactWriteRequest`) |
+| POST | `/v1/runtime/artifact/delete` | Remove artifact from session store (`ArtifactDeleteRequest`) |
 | POST | `/v1/runtime/artifact/list-ui` | Library catalog (`ArtifactListUiRequest`) |
 | POST | `/v1/runtime/artifact/command` | TUI slash command DSL (`ArtifactCommandSpec`) |
 
 `fetch` resolves to the **latest revision** in a lineage chain.
 
-SDK: `runtime().artifact_fetch`, `artifact_list_ui`, `artifact_command` — [sdk/artifacts.md](../sdk/artifacts.md)
+SDK: `runtime().artifact_fetch`, `artifact_write`, `artifact_delete`, `artifact_list_ui`, `artifact_command` — [sdk/artifacts.md](../sdk/artifacts.md)
 
 ---
 

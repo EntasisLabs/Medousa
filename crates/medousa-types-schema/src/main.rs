@@ -110,6 +110,39 @@ fn main() {
     export_type!(schemas, WorkspaceLinkVaultRequest, "WorkspaceLinkVaultRequest");
     export_type!(schemas, WorkspaceStreamEvent, "WorkspaceStreamEvent");
 
+    // Environment (canvas)
+    export_type!(schemas, EnvironmentSpec, "EnvironmentSpec");
+    export_type!(schemas, EnvironmentSpecResponse, "EnvironmentSpecResponse");
+    export_type!(schemas, EnvironmentSpecPutRequest, "EnvironmentSpecPutRequest");
+    export_type!(schemas, EnvironmentStatusResponse, "EnvironmentStatusResponse");
+    export_type!(schemas, EnvironmentValidateRequest, "EnvironmentValidateRequest");
+    export_type!(schemas, EnvironmentValidateResponse, "EnvironmentValidateResponse");
+    export_type!(schemas, EnvironmentProposeResponse, "EnvironmentProposeResponse");
+    export_type!(schemas, EnvironmentPendingResponse, "EnvironmentPendingResponse");
+    export_type!(schemas, EnvironmentStreamEvent, "EnvironmentStreamEvent");
+    export_type!(schemas, EnvironmentStreamQuery, "EnvironmentStreamQuery");
+
+    // Component store & runtime
+    export_type!(schemas, ComponentStoreQuery, "ComponentStoreQuery");
+    export_type!(schemas, ComponentStoreGetResponse, "ComponentStoreGetResponse");
+    export_type!(schemas, ComponentStoreSetRequest, "ComponentStoreSetRequest");
+    export_type!(schemas, ComponentStoreSetResponse, "ComponentStoreSetResponse");
+    export_type!(schemas, ComponentStoreListResponse, "ComponentStoreListResponse");
+    export_type!(schemas, ComponentStoreDeleteResponse, "ComponentStoreDeleteResponse");
+    export_type!(schemas, ComponentRuntimeEventsRequest, "ComponentRuntimeEventsRequest");
+    export_type!(schemas, ComponentRuntimeEventsResponse, "ComponentRuntimeEventsResponse");
+    export_type!(schemas, ComponentRuntimeEventsQuery, "ComponentRuntimeEventsQuery");
+    export_type!(schemas, ComponentRuntimeEventsTailResponse, "ComponentRuntimeEventsTailResponse");
+    export_type!(schemas, ComponentRuntimeProbeResult, "ComponentRuntimeProbeResult");
+
+    // Feeds
+    export_type!(schemas, FeedListResponse, "FeedListResponse");
+    export_type!(schemas, FeedTailQuery, "FeedTailQuery");
+    export_type!(schemas, FeedTailResponse, "FeedTailResponse");
+    export_type!(schemas, FeedReadRequest, "FeedReadRequest");
+    export_type!(schemas, FeedStreamQuery, "FeedStreamQuery");
+    export_type!(schemas, FeedStreamEvent, "FeedStreamEvent");
+
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../sdk-contract");
     fs::create_dir_all(&out_dir).expect("create sdk-contract dir");

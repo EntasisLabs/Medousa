@@ -89,7 +89,7 @@ Slots: `main`, `header`, `sidebar`, `fab`, `inline`.
 | One-shot surface + HTML + feeds + recurring | `cognition_custom_view_compose` |
 | First HTML publish | `cognition_ui_present` (`persist=true` + `surface_id` + `component_id` + `slot`) |
 | Revise HTML | `cognition_artifact_write` (`artifact_id`) |
-| Incremental spec edits | `cognition_environment_patch` |
+| Incremental spec edits | `cognition_environment_patch` (agent tool only — SDK uses `environment().put_spec`) |
 | Layout tree only | `cognition_layout_apply` (immediate, no approval) |
 | Full spec replace | `cognition_environment_propose` → operator **Apply** in Settings → Canvas |
 
@@ -105,7 +105,11 @@ Slots: `main`, `header`, `sidebar`, `fab`, `inline`.
 | `set_component_feeds` | Bind feed ids |
 | `update_surface` | Change `label` and/or `icon` on existing surface |
 | `set_environment_theme` | Set `spec.theme` (`colorThemeId`, `brandColor`, `tagline`) |
+| `remove_custom_surface` | Remove a custom surface from spec (does not delete artifact files) |
+| `remove_component` | Remove a presentation component from spec |
 | `rewrite_active_preset_surfaces` | Replace active preset surface list (gated) |
+
+Patch ops run via `cognition_environment_patch` during agent turns. External integrators replace the full spec with `PUT /v1/environment/spec` (`environment().put_spec` in the SDK).
 
 ---
 

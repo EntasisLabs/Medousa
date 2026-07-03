@@ -6,6 +6,12 @@ use crate::budget::BudgetApi;
 #[cfg(feature = "async")]
 use crate::capabilities::CapabilitiesApi;
 #[cfg(feature = "async")]
+use crate::components::ComponentsApi;
+#[cfg(feature = "async")]
+use crate::environment::EnvironmentApi;
+#[cfg(feature = "async")]
+use crate::feeds::FeedsApi;
+#[cfg(feature = "async")]
 use crate::health::{HealthApi, IngestApi};
 #[cfg(feature = "async")]
 use crate::http::HttpApi;
@@ -114,6 +120,21 @@ impl MedousaClient {
     #[cfg(feature = "async")]
     pub fn vault(&self) -> VaultApi<'_> {
         VaultApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn environment(&self) -> EnvironmentApi<'_> {
+        EnvironmentApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn components(&self) -> ComponentsApi<'_> {
+        ComponentsApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn feeds(&self) -> FeedsApi<'_> {
+        FeedsApi { client: self }
     }
 
     #[cfg(feature = "async")]

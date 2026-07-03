@@ -111,7 +111,16 @@ except ImportError:
     sys.exit(2)
 from pathlib import Path
 data = yaml.safe_load(Path(sys.argv[1]).read_text())
-for entry in data.get("methods", []):
+methods = data.get("methods", [])
+if len(methods) < 40:
+    print(f"ERROR: manifest methods count too low ({len(methods)}); check YAML structure", file=sys.stderr)
+    sys.exit(3)
+helpers = data.get("client_helpers", [])
+for entry in helpers:
+    if isinstance(entry, dict) and "http" in entry:
+        print(f"ERROR: client_helpers entry must not define HTTP routes: {entry.get('accessor')}", file=sys.stderr)
+        sys.exit(4)
+for entry in methods:
     if entry.get("status") == "planned":
         continue
     acc = entry["accessor"]
@@ -121,11 +130,23 @@ for entry in data.get("methods", []):
 PY
 }
 
+if ! parse_manifest > /tmp/medousa-manifest-methods.tsv 2>&1; then
+  parse_manifest 2>&1 || true
+  fail "failed to parse sdk-contract/manifest.yaml (install PyYAML or fix manifest structure)"
+  exit 1
+fi
+
+method_count=$(wc -l < /tmp/medousa-manifest-methods.tsv | tr -d ' ')
+if [[ "$method_count" -lt 40 ]]; then
+  fail "manifest parsed only $method_count methods (expected >= 40)"
+  exit 1
+fi
+
 while IFS=$'\t' read -r accessor method streaming; do
   [[ -z "$accessor" ]] && continue
   check_python_method "$accessor" "$method" "$streaming"
   check_rust_method "$accessor" "$method" "$streaming"
-done < <(parse_manifest)
+done < /tmp/medousa-manifest-methods.tsv
 
 # Manifest must exist for docs
 if [[ ! -f "$ROOT/docs/sdk/python.md" ]]; then
