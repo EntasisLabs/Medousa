@@ -35,6 +35,9 @@ export class EnvironmentStore {
   pendingProposal = $state<EnvironmentPendingProposal | null>(null);
   pendingBusy = $state(false);
   feedStateByComponentId = $state<Map<string, Record<string, unknown>>>(new Map());
+  pendingRuntimeProbes = $state<Map<string, import("$lib/types/environment").ComponentRuntimeProbeRequest>>(
+    new Map(),
+  );
   canvasStatus = $state<EnvironmentStatusResponse | null>(null);
   canvasStatusError = $state<string | null>(null);
   canvasStatusLoading = $state(false);
@@ -138,6 +141,17 @@ export class EnvironmentStore {
       }
       this.feedStateByComponentId = next;
     }
+    if (event.runtimeProbe?.componentId) {
+      const next = new Map(this.pendingRuntimeProbes);
+      next.set(event.runtimeProbe.componentId, event.runtimeProbe);
+      this.pendingRuntimeProbes = next;
+    }
+  }
+
+  clearRuntimeProbe(componentId: string) {
+    const next = new Map(this.pendingRuntimeProbes);
+    next.delete(componentId);
+    this.pendingRuntimeProbes = next;
   }
 
   feedStateForComponent(componentId: string): Record<string, unknown> | null {
@@ -159,6 +173,7 @@ export class EnvironmentStore {
     this.streamError = null;
     this.pendingProposal = null;
     this.feedStateByComponentId = new Map();
+    this.pendingRuntimeProbes = new Map();
   }
 
   async refreshPending(profileId?: string): Promise<void> {
@@ -173,7 +188,9 @@ export class EnvironmentStore {
   async refreshCanvasStatus(profileId?: string): Promise<void> {
     this.canvasStatusLoading = true;
     try {
-      this.canvasStatus = await getEnvironmentStatus(profileId);
+      this.canvasStatus = await getEnvironmentStatus(profileId, undefined, {
+        includeRuntime: true,
+      });
       this.canvasStatusError = null;
     } catch (err) {
       this.canvasStatus = null;

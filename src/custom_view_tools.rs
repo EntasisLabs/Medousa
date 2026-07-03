@@ -15,7 +15,7 @@ use stasis::application::orchestration::tool_registry::StasisTool;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 use tokio::sync::{mpsc, RwLock};
 
-use crate::custom_view_status::{build_environment_status, surface_nav_visible};
+use crate::custom_view_status::{build_environment_status, surface_nav_visible, DoctorDiagnosticOptions};
 use crate::environment_patch::execute_environment_patch;
 use crate::environment_store::{environment_hub, resolve_profile_id};
 use crate::environment_tools::make_presentation_component;
@@ -61,7 +61,7 @@ impl StasisTool for CognitionCustomViewDoctorTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Diagnose custom environment surfaces: nav visibility, feed subscriptions, recurring bindings, and feed mismatches.",
+            "Diagnose custom environment surfaces: nav, feeds, recurring bindings, widget runtime logs, store lint, and static HTML checks.",
         )
     }
 
@@ -73,7 +73,27 @@ impl StasisTool for CognitionCustomViewDoctorTool {
                     "type": "string",
                     "description": "Optional single custom surface id; omit to inspect all"
                 },
-                "profile_id": { "type": "string" }
+                "component_id": {
+                    "type": "string",
+                    "description": "Optional presentation component id to narrow runtime diagnostics"
+                },
+                "profile_id": { "type": "string" },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional chat session for artifact HTML resolution"
+                },
+                "include_runtime": {
+                    "type": "boolean",
+                    "description": "Include MedousaStore lint and runtime log tail (default true)"
+                },
+                "include_static_lint": {
+                    "type": "boolean",
+                    "description": "Lint artifact HTML for sandbox anti-patterns (default true)"
+                },
+                "probe": {
+                    "type": "boolean",
+                    "description": "Run active store self-test when Home client is open (default false)"
+                }
             }
         }))
     }
@@ -89,12 +109,42 @@ impl StasisTool for CognitionCustomViewDoctorTool {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty());
+        let component_id = input
+            .get("component_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let include_runtime = input
+            .get("include_runtime")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let include_static_lint = input
+            .get("include_static_lint")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let probe = input.get("probe").and_then(Value::as_bool).unwrap_or(false);
+        let session_id = input
+            .get("session_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        let diagnostics = DoctorDiagnosticOptions {
+            component_id_filter: component_id,
+            include_runtime,
+            include_static_lint,
+            probe,
+            session_id,
+        };
 
         let status = build_environment_status(
             environment_hub(),
             &profile_id,
             surface_filter,
             Some(self.runtime.as_ref()),
+            Some(&diagnostics),
         )
         .await
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
@@ -438,6 +488,7 @@ impl StasisTool for CognitionCustomViewComposeTool {
             &profile_id,
             Some(&surface_id),
             Some(self.runtime.as_ref()),
+            None,
         )
         .await
         .map_err(|err| StasisError::PortFailure(err.to_string()))?;
@@ -489,6 +540,7 @@ async fn merge_compose_status(
             profile_id,
             Some(surface_id),
             Some(runtime),
+            None,
         )
         .await
         {

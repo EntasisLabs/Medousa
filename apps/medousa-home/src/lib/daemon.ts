@@ -304,8 +304,13 @@ export async function stopWorkspaceStream(): Promise<void> {
 export async function getEnvironmentStatus(
   profileId?: string,
   surfaceId?: string,
+  options?: { includeRuntime?: boolean },
 ): Promise<import("$lib/types/environment").EnvironmentStatusResponse> {
-  return invoke("environment_get_status", { profileId, surfaceId });
+  return invoke("environment_get_status", {
+    profileId,
+    surfaceId,
+    includeRuntime: options?.includeRuntime ?? null,
+  });
 }
 
 export async function getEnvironmentSpec(
@@ -405,6 +410,51 @@ export async function componentStoreListKeys(
   return invoke("component_store_list_keys", {
     componentId,
     profileId: profileId ?? null,
+  });
+}
+
+export type ComponentRuntimeEventInput = {
+  level: string;
+  message: string;
+  stack?: string;
+  source?: string;
+  sessionId?: string;
+};
+
+export async function componentRuntimeAppendEvents(
+  componentId: string,
+  events: ComponentRuntimeEventInput[],
+  options?: { profileId?: string; sessionId?: string },
+): Promise<{ ok: boolean; accepted: number }> {
+  return invoke("component_runtime_append_events", {
+    componentId,
+    request: {
+      events,
+      profileId: options?.profileId ?? null,
+      sessionId: options?.sessionId ?? null,
+    },
+  });
+}
+
+export async function componentRuntimeCompleteProbe(
+  componentId: string,
+  probeId: string,
+  result: {
+    probeId: string;
+    componentId: string;
+    storeReady: boolean;
+    storeRoundTripOk: boolean;
+    errors: string[];
+    profileId?: string;
+  },
+): Promise<{ ok: boolean }> {
+  return invoke("component_runtime_complete_probe", {
+    componentId,
+    probeId,
+    result: {
+      ...result,
+      profileId: result.profileId ?? null,
+    },
   });
 }
 

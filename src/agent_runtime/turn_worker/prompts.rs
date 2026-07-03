@@ -50,7 +50,25 @@ Workflow:
 3) cognition_artifact_write revises an existing artifact_id; cognition_ui_present is first-time publish only.
 4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
 5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive canvas widget.
-6) Interactive widgets: NEVER localStorage/sessionStorage in artifact HTML (sandbox blocks it). Use window.MedousaStore.get/set/delete/list — engine-backed KV scoped to component_id; survives refresh."#;
+6) Interactive widgets: NEVER localStorage/sessionStorage in artifact HTML (sandbox blocks it). Use window.MedousaStore.get/set/delete/list — engine-backed KV scoped to component_id; survives refresh.
+7) MedousaStore is ASYNC (returns Promises). Always await get/set/delete in async init and event handlers — sync wrappers fail silently (empty after save). cognition_environment_wiki(topic=artifact_runtime) has the canonical template.
+
+Canonical store pattern (copy when persisting widget state):
+  async function loadItems() {
+    const raw = await MedousaStore.get('items');
+    return Array.isArray(raw) ? raw : [];
+  }
+  async function saveItems(items) {
+    if (!MedousaStore.ready()) return;
+    await MedousaStore.set('items', items);
+  }
+  // init: void loadItems().then(render);
+
+Broken widget troubleshoot (no DevTools needed):
+1) cognition_custom_view_doctor(surface_id, probe=true, include_runtime=true, include_static_lint=true)
+2) Read components[].runtime.issues[] — STATIC_LOCALSTORAGE → MedousaStore; STATIC_STORE_SYNC_USAGE → add await; STORE_WRONG_TYPE / STATIC_SLICE_WITHOUT_GUARD → Array.isArray guards
+3) cognition_artifact_write minimal diff; reset bad store keys via component store API if needed
+4) Re-run doctor until issues is empty"#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");

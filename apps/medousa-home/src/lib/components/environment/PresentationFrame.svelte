@@ -1,11 +1,14 @@
 <script lang="ts">
   import {
+    componentRuntimeAppendEvents,
+    componentRuntimeCompleteProbe,
     componentStoreDelete,
     componentStoreGet,
     componentStoreListKeys,
     componentStoreSet,
     fetchArtifact,
     fetchFeedTail,
+    type ComponentRuntimeEventInput,
   } from "$lib/daemon";
   import {
     DEFAULT_INLINE_ARTIFACT_CAP_PX,
@@ -22,7 +25,19 @@
     isValidStoreKey,
     type MedousaStoreResponse,
   } from "$lib/utils/medousaStoreClient";
+  import {
+    isMedousaArtifactProbeResult,
+    isMedousaArtifactRuntimeEvent,
+  } from "$lib/utils/medousaArtifactRuntimeClient";
+  import { environment } from "$lib/stores/environment.svelte";
   import { friendlyUserError } from "$lib/utils/normieErrors";
+
+  const RUNTIME_FLUSH_MS = 500;
+  const RUNTIME_MAX_BATCH = 20;
+
+  let runtimeEventBuffer: ComponentRuntimeEventInput[] = [];
+  let runtimeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastDispatchedProbeId = $state<string | null>(null);
 
   interface Props {
     sessionId: string;
@@ -73,6 +88,75 @@
   const fillsParent = $derived(mode === "panel" || mode === "fullscreen");
   const storeScopeId = $derived(componentId?.trim() || null);
   const storeProfileId = $derived(profileId?.trim() || undefined);
+  const pendingRuntimeProbe = $derived(
+    storeScopeId ? environment.pendingRuntimeProbes.get(storeScopeId) ?? null : null,
+  );
+
+  async function flushRuntimeEvents() {
+    if (runtimeFlushTimer) {
+      clearTimeout(runtimeFlushTimer);
+      runtimeFlushTimer = null;
+    }
+    const scope = storeScopeId;
+    if (!scope || runtimeEventBuffer.length === 0) return;
+    const batch = runtimeEventBuffer.splice(0, RUNTIME_MAX_BATCH);
+    try {
+      await componentRuntimeAppendEvents(scope, batch, {
+        profileId: storeProfileId,
+        sessionId,
+      });
+    } catch {
+      // best-effort telemetry
+    }
+    if (runtimeEventBuffer.length > 0) {
+      runtimeFlushTimer = setTimeout(() => void flushRuntimeEvents(), RUNTIME_FLUSH_MS);
+    }
+  }
+
+  function queueRuntimeEvent(
+    level: string,
+    message: string,
+    stack?: string,
+    source?: string,
+  ) {
+    if (!storeScopeId) return;
+    runtimeEventBuffer.push({
+      level,
+      message,
+      stack,
+      source,
+      sessionId,
+    });
+    if (runtimeEventBuffer.length >= RUNTIME_MAX_BATCH) {
+      void flushRuntimeEvents();
+      return;
+    }
+    if (!runtimeFlushTimer) {
+      runtimeFlushTimer = setTimeout(() => void flushRuntimeEvents(), RUNTIME_FLUSH_MS);
+    }
+  }
+
+  async function handleRuntimeProbeResult(event: MessageEvent) {
+    if (!isMedousaArtifactProbeResult(event.data)) return;
+    const scope = storeScopeId;
+    if (!scope) return;
+    const { probeId, storeReady, storeRoundTripOk, errors } = event.data;
+    try {
+      await componentRuntimeCompleteProbe(scope, probeId, {
+        probeId,
+        componentId: scope,
+        storeReady,
+        storeRoundTripOk,
+        errors,
+        profileId: storeProfileId,
+      });
+    } catch {
+      // probe is best-effort
+    } finally {
+      environment.clearRuntimeProbe(scope);
+      lastDispatchedProbeId = null;
+    }
+  }
 
   function isDarkTheme(): boolean {
     if (typeof document === "undefined") return true;
@@ -248,6 +332,19 @@
       applyFrameMetrics(reportedContentHeight);
       return;
     }
+    if (isMedousaArtifactRuntimeEvent(event.data)) {
+      queueRuntimeEvent(
+        event.data.level,
+        event.data.message,
+        event.data.stack,
+        event.data.source,
+      );
+      return;
+    }
+    if (isMedousaArtifactProbeResult(event.data)) {
+      await handleRuntimeProbeResult(event);
+      return;
+    }
     await handleFeedTailRequest(event);
     await handleStoreRequest(event);
   }
@@ -306,7 +403,23 @@
   $effect(() => {
     if (typeof window === "undefined") return;
     window.addEventListener("message", handleWindowMessage);
-    return () => window.removeEventListener("message", handleWindowMessage);
+    return () => {
+      window.removeEventListener("message", handleWindowMessage);
+      void flushRuntimeEvents();
+    };
+  });
+
+  $effect(() => {
+    const probe = pendingRuntimeProbe;
+    const ready = frameReady;
+    const frame = frameEl;
+    if (!probe || !ready || !frame?.contentWindow) return;
+    if (lastDispatchedProbeId === probe.probeId) return;
+    lastDispatchedProbeId = probe.probeId;
+    frame.contentWindow.postMessage(
+      { type: "medousa:artifact:probe", probeId: probe.probeId },
+      "*",
+    );
   });
 
   function handleFrameLoad(event: Event) {

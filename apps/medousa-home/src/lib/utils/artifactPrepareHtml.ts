@@ -1,4 +1,8 @@
 import {
+  buildMedousaArtifactRuntimeClientScript,
+  MEDOUSA_ARTIFACT_RUNTIME_SCRIPT_ID,
+} from "$lib/utils/medousaArtifactRuntimeClient";
+import {
   buildMedousaFeedClientScript,
   MEDOUSA_FEED_CLIENT_SCRIPT_ID,
 } from "$lib/utils/medousaFeedClient";
@@ -108,6 +112,9 @@ export function prepareArtifactHtml(
   }
   if (!html.includes(MEDOUSA_STORE_CLIENT_SCRIPT_ID)) {
     html = injectBeforeHeadClose(html, buildMedousaStoreClientScript());
+  }
+  if (!html.includes(MEDOUSA_ARTIFACT_RUNTIME_SCRIPT_ID)) {
+    html = injectBeforeHeadClose(html, buildMedousaArtifactRuntimeClientScript());
   }
   if (componentId?.trim()) {
     html = stripInjectionById(html, MEDOUSA_STORE_BOOTSTRAP_SCRIPT_ID);

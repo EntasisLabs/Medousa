@@ -143,6 +143,7 @@ export interface EnvironmentStreamEvent {
   spec?: EnvironmentSpec | null;
   componentPatches?: ComponentFeedPatch[] | null;
   feedEvent?: FeedEvent | null;
+  runtimeProbe?: ComponentRuntimeProbeRequest | null;
 }
 
 export interface FeedRef {
@@ -184,10 +185,32 @@ export interface EnvironmentPendingResponse {
   pending?: EnvironmentPendingProposal | null;
 }
 
+export interface ComponentRuntimeProbeRequest {
+  probeId: string;
+  componentId: string;
+  profileId?: string | null;
+}
+
+export interface ComponentRuntimeDiagnostic {
+  componentId: string;
+  artifactId?: string | null;
+  lastError?: string | null;
+  storeKeyCount: number;
+  issues?: ComponentRuntimeIssue[];
+}
+
+export interface ComponentRuntimeIssue {
+  code: string;
+  severity: string;
+  message: string;
+  fixHint: string;
+}
+
 export interface CustomViewComponentStatus {
   componentId: string;
   artifactId?: string | null;
   feeds: string[];
+  runtime?: ComponentRuntimeDiagnostic | null;
 }
 
 export interface CustomViewFeedStatus {

@@ -1,7 +1,7 @@
 //! Read-only custom view / environment status for doctor tool and HTTP API.
 
 use medousa_types::environment::{
-    CustomViewComponentStatus, CustomViewFeedStatus, CustomViewRecurringBindingStatus,
+    ComponentType, CustomViewComponentStatus, CustomViewFeedStatus, CustomViewRecurringBindingStatus,
     CustomViewSurfaceStatus, EnvironmentSpec, EnvironmentStatusResponse, SurfaceKind,
 };
 use medousa_types::layout::resolve_layout_root;
@@ -10,6 +10,9 @@ use stasis::domain::runtime::recurring::RecurringDefinition;
 use stasis::prelude::RuntimeComposition;
 use stasis::ports::outbound::runtime::recurring_store::RecurringStore;
 
+use crate::component_runtime_diagnostics::{
+    build_component_runtime_diagnostic, RuntimeDiagnosticOptions,
+};
 use crate::environment_store::EnvironmentHub;
 use crate::feed_store::feed_store;
 use crate::recurring_feed::{self, feeds_binding_to_json, RecurringFeedBinding};
@@ -123,11 +126,21 @@ fn feed_mismatches_for_surface(
     mismatches
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DoctorDiagnosticOptions {
+    pub component_id_filter: Option<String>,
+    pub include_runtime: bool,
+    pub include_static_lint: bool,
+    pub probe: bool,
+    pub session_id: Option<String>,
+}
+
 pub async fn build_environment_status(
     hub: &EnvironmentHub,
     profile_id: &str,
     surface_filter: Option<&str>,
     runtime: Option<&RuntimeComposition>,
+    diagnostics: Option<&DoctorDiagnosticOptions>,
 ) -> anyhow::Result<EnvironmentStatusResponse> {
     let record = hub.get(profile_id).await?;
     let spec = &record.spec;
@@ -154,16 +167,48 @@ pub async fn build_environment_status(
             nav_orphan_count += 1;
         }
 
-        let components: Vec<CustomViewComponentStatus> = spec
+        let mut components: Vec<CustomViewComponentStatus> = Vec::new();
+        for component in spec
             .components
             .iter()
             .filter(|component| component.surface_id == surface.id)
-            .map(|component| CustomViewComponentStatus {
+        {
+            if let Some(filter) = diagnostics.and_then(|opts| opts.component_id_filter.as_deref()) {
+                if component.id != filter {
+                    continue;
+                }
+            }
+            let mut runtime_diag = None;
+            if let Some(opts) = diagnostics {
+                let wants_runtime = opts.include_runtime || opts.include_static_lint || opts.probe;
+                if wants_runtime && component.component_type == ComponentType::Presentation {
+                    let should_probe = opts.probe
+                        && opts
+                            .component_id_filter
+                            .as_deref()
+                            .is_none_or(|id| id == component.id);
+                    runtime_diag = Some(
+                        build_component_runtime_diagnostic(
+                            component,
+                            &RuntimeDiagnosticOptions {
+                                profile_id: profile_id.to_string(),
+                                include_runtime: opts.include_runtime,
+                                include_static_lint: opts.include_static_lint,
+                                probe: should_probe,
+                                session_id: opts.session_id.clone(),
+                            },
+                        )
+                        .await,
+                    );
+                }
+            }
+            components.push(CustomViewComponentStatus {
                 component_id: component.id.clone(),
                 artifact_id: presentation_artifact_id(&component.config),
                 feeds: component.feeds.clone(),
-            })
-            .collect();
+                runtime: runtime_diag,
+            });
+        }
 
         let mut subscribed_feed_ids = Vec::new();
         for component in &components {
@@ -220,7 +265,7 @@ pub async fn build_environment_status(
         });
     }
 
-    let hints = build_hints(nav_orphan_count, feed_mismatch_count, pending);
+    let hints = build_hints(nav_orphan_count, feed_mismatch_count, pending, diagnostics);
 
     Ok(EnvironmentStatusResponse {
         profile_id: profile_id.to_string(),
@@ -234,7 +279,12 @@ pub async fn build_environment_status(
     })
 }
 
-fn build_hints(nav_orphan_count: usize, feed_mismatch_count: usize, pending: bool) -> Vec<String> {
+fn build_hints(
+    nav_orphan_count: usize,
+    feed_mismatch_count: usize,
+    pending: bool,
+    diagnostics: Option<&DoctorDiagnosticOptions>,
+) -> Vec<String> {
     let mut hints = Vec::new();
     if nav_orphan_count > 0 {
         hints.push(
@@ -251,6 +301,12 @@ fn build_hints(nav_orphan_count: usize, feed_mismatch_count: usize, pending: boo
     if pending {
         hints.push(
             "A layout proposal is pending operator approval in Settings → Canvas."
+                .to_string(),
+        );
+    }
+    if diagnostics.is_some_and(|opts| opts.include_runtime || opts.include_static_lint) {
+        hints.push(
+            "Widget runtime issues appear under components[].runtime — fix via cognition_artifact_write and re-run doctor."
                 .to_string(),
         );
     }

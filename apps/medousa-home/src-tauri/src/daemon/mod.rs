@@ -23,6 +23,7 @@ pub mod tool_history;
 pub mod environment;
 pub mod feeds;
 pub mod component_store;
+pub mod component_runtime;
 pub mod workflow;
 pub mod workshop_http;
 

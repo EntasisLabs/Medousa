@@ -126,6 +126,7 @@ impl EnvironmentHub {
             spec: Some(spec),
             component_patches: None,
             feed_event: None,
+            runtime_probe: None,
         });
         Ok(record)
     }

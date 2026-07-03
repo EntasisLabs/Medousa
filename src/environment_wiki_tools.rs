@@ -427,17 +427,58 @@ const TOPICS: &[WikiTopic] = &[
     WikiTopic {
         id: "custom_view_doctor",
         title: "Custom view doctor (Phase 5)",
-        summary: "Diagnose nav visibility, feed subscribe vs recurring binding mismatches.",
-        policy: r#"    role(.99): "Run before user notices blank widgets or missing nav entries.",
+        summary: "Diagnose nav visibility, feed subscribe vs recurring binding mismatches, widget runtime logs, store lint, and static HTML checks.",
+        policy: r#"    role(.99): "Run before user notices blank widgets or missing nav entries; use probe=true when Home is open.",
     inspects(.99): {
         nav_visible(.99): "surface id in active preset surfaces",
         feed_mismatches(.98): "component feeds ⊄ recurring feeds.feed_ids or subscribe without recurring",
         feed_status(.97): "last tail event per subscribed feed",
-        recurring_bindings(.97): "recurring jobs bound to surface feed ids"
+        recurring_bindings(.97): "recurring jobs bound to surface feed ids",
+        runtime_logs(.96): "components[].runtime.logs — last console.error/warn from iframe bridge",
+        store_lint(.96): "components[].runtime.store_keys — expected_array_got_* on thoughts/items keys",
+        static_lint(.96): "STATIC_LOCALSTORAGE, STATIC_STORE_SYNC_USAGE, STATIC_SLICE_WITHOUT_GUARD, STATIC_STORE_GET_NO_KEY",
+        probe(.95): "probe=true runs MedousaStore.ready + round-trip when Home client online"
     },
-    http(.96): "GET /v1/environment/status mirrors doctor JSON for Home Settings Canvas"#,
-        related: &["custom_view_compose", "feed_client", "tool_map"],
-        call_next: &["cognition_custom_view_doctor", "cognition_environment_patch"],
+    fix_hints(.96): "issues[].fix_hint + suggested_actions[] — patch via cognition_artifact_write, re-run doctor",
+    http(.96): "GET /v1/environment/status?include_runtime=true mirrors lightweight runtime for Settings Canvas"#,
+        related: &["custom_view_compose", "feed_client", "artifact_runtime", "tool_map"],
+        call_next: &["cognition_custom_view_doctor", "cognition_environment_patch", "cognition_artifact_write"],
+    },
+    WikiTopic {
+        id: "artifact_runtime",
+        title: "Artifact runtime bridge",
+        summary: "Sandboxed presentation iframes forward console errors and accept MedousaStore probes via postMessage.",
+        policy: r#"    bridge(.99): "Host injects medousa-artifact-runtime-script — wraps console.error/warn, onerror, unhandledrejection",
+    events(.98): "iframe postMessage medousa:artifact:runtime → Home batches POST /v1/components/{id}/runtime/events",
+    store(.99): "MedousaStore.get/set/delete return Promises — NEVER call without await; sync wrappers break persistence silently",
+    store_template(.99): "async load/save/render — await every get/set; Array.isArray guard on reads; void load().then(render) on init",
+    canonical_example(.99): "
+      const STORE_KEY = 'my_widget_items';
+      async function loadItems() {
+        const raw = await MedousaStore.get(STORE_KEY);
+        return Array.isArray(raw) ? raw : [];
+      }
+      async function saveItems(items) {
+        if (!MedousaStore.ready()) return;
+        await MedousaStore.set(STORE_KEY, items);
+      }
+      async function render() {
+        const items = await loadItems();
+        /* update DOM from items */
+      }
+      document.getElementById('save').addEventListener('click', async () => {
+        const items = await loadItems();
+        items.push({ text: input.value.trim(), ts: new Date().toISOString() });
+        await saveItems(items);
+        await render();
+      });
+      void render();
+    ",
+    anti_patterns(.98): "return MedousaStore.get(key) without await; sync store.get wrapper; loadThoughts() without async",
+    probe(.96): "Doctor probe=true → SSE runtime_probe → iframe self-test → POST .../runtime/probe/{id}/result",
+    agent_codes(.97): "STATIC_LOCALSTORAGE, STATIC_STORE_SYNC_USAGE, STORE_WRONG_TYPE, RUNTIME_LOG, PROBE_STORE_NOT_READY"#,
+        related: &["custom_view_doctor", "feed_client", "component_schema"],
+        call_next: &["cognition_custom_view_doctor", "cognition_artifact_write"],
     },
     WikiTopic {
         id: "tool_map",

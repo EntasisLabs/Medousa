@@ -32,6 +32,7 @@ pub struct EnvironmentApiState {
 struct EnvironmentStatusQuery {
     profile_id: Option<String>,
     surface_id: Option<String>,
+    include_runtime: Option<bool>,
 }
 
 pub fn environment_router(state: EnvironmentApiState) -> Router {
@@ -76,11 +77,21 @@ async fn get_status(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let runtime = state.runtime.as_deref();
+    let diagnostics = query.include_runtime.unwrap_or(false).then(|| {
+        crate::custom_view_status::DoctorDiagnosticOptions {
+            component_id_filter: None,
+            include_runtime: true,
+            include_static_lint: false,
+            probe: false,
+            session_id: None,
+        }
+    });
     crate::custom_view_status::build_environment_status(
         state.hub,
         &profile_id,
         surface_filter,
         runtime,
+        diagnostics.as_ref(),
     )
     .await
     .map(Json)
@@ -205,6 +216,7 @@ async fn stream_spec(
         },
         component_patches: None,
         feed_event: None,
+        runtime_probe: None,
     };
 
     let rx = state.hub.subscribe();

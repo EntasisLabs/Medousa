@@ -56,4 +56,17 @@ describe("artifactPrepareHtml", () => {
     expect(html).toContain("workshop.pulse");
     expect(html).toContain("medousa-feed-client-script");
   });
+
+  it("injects runtime bridge for presentation widgets", () => {
+    const html = prepareArtifactHtml(
+      "<!DOCTYPE html><html><head></head><body></body></html>",
+      "panel",
+      true,
+      null,
+      "braindump-widget",
+    );
+    expect(html).toContain("medousa-artifact-runtime-script");
+    expect(html).toContain("medousa:artifact:runtime");
+    expect(html).toContain("medousa-store-bootstrap-script");
+  });
 });

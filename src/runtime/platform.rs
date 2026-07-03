@@ -139,6 +139,7 @@ async fn build_platform_inner(
     channel_session_store::init_channel_session_store_with_runtime(&composition).await;
     artifact_store::init_artifact_store_with_runtime(&composition).await;
     crate::component_store::init_component_store_with_runtime(&composition).await;
+    crate::component_runtime_store::init_component_runtime_with_runtime(&composition).await;
     turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
     recurring_delivery::init_recurring_delivery_store_with_runtime(&composition).await;
     recurring_feed::init_recurring_feed_store_with_runtime(&composition).await;

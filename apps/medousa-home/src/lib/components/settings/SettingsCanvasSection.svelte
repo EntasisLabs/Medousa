@@ -85,6 +85,25 @@
                   : "none"}
               </dd>
             </div>
+            {#each row.components as comp (comp.componentId)}
+              {#if comp.runtime?.lastError || (comp.runtime?.storeKeyCount ?? 0) > 0}
+                <div class="env-status-runtime">
+                  <dt>{comp.componentId}</dt>
+                  <dd>
+                    {#if comp.runtime?.lastError}
+                      <span class="env-status-error" title={comp.runtime.lastError}>
+                        Last error: {comp.runtime.lastError}
+                      </span>
+                    {/if}
+                    {#if (comp.runtime?.storeKeyCount ?? 0) > 0}
+                      <span class="env-status-muted">
+                        Store keys: {comp.runtime?.storeKeyCount}
+                      </span>
+                    {/if}
+                  </dd>
+                </div>
+              {/if}
+            {/each}
             <div>
               <dt>Feeds</dt>
               <dd>{row.subscribedFeedIds.join(", ") || "none"}</dd>
@@ -217,6 +236,25 @@
   .env-status-warnings {
     margin: 0;
     padding-left: 1rem;
+  }
+
+  .env-status-runtime {
+    grid-column: 1 / -1;
+  }
+
+  .env-status-error {
+    display: block;
+    color: rgb(var(--color-error-300));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .env-status-muted {
+    display: block;
+    color: rgb(var(--color-surface-500));
+    font-size: 0.6875rem;
   }
 
   .env-pending-card {

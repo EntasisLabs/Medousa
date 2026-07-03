@@ -101,6 +101,7 @@ pub(crate) async fn build_tui_runtime_services(
     crate::session_store::init_session_store_with_runtime(&composition).await;
     crate::artifact_store::init_artifact_store_with_runtime(&composition).await;
     crate::component_store::init_component_store_with_runtime(&composition).await;
+    crate::component_runtime_store::init_component_runtime_with_runtime(&composition).await;
     crate::verification_store::init_verification_store_with_runtime(&composition).await;
     crate::turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
 

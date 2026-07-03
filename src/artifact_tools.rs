@@ -367,7 +367,8 @@ impl StasisTool for CognitionArtifactWriteTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision \
-             (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present.",
+             (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. \
+             Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
         )
     }
 
@@ -377,7 +378,10 @@ impl StasisTool for CognitionArtifactWriteTool {
             "required": ["title", "html", "presentation"],
             "properties": {
                 "title": { "type": "string" },
-                "html": { "type": "string" },
+                "html": {
+                    "type": "string",
+                    "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime)."
+                },
                 "presentation": { "type": "string", "enum": ["inline", "panel", "fullscreen"] },
                 "artifact_id": { "type": "string", "description": "When set, supersedes this artifact revision" },
                 "if_match_hash64": { "type": "string", "description": "Optional hash64 of the artifact being revised" },

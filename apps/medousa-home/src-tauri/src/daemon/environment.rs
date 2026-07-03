@@ -12,6 +12,7 @@ pub async fn environment_get_status(
     state: State<'_, DaemonState>,
     profile_id: Option<String>,
     surface_id: Option<String>,
+    include_runtime: Option<bool>,
 ) -> Result<EnvironmentStatusResponse, String> {
     let mut query = Vec::new();
     if let Some(profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
@@ -19,6 +20,9 @@ pub async fn environment_get_status(
     }
     if let Some(surface_id) = surface_id.filter(|id| !id.trim().is_empty()) {
         query.push(("surface_id", surface_id));
+    }
+    if include_runtime.unwrap_or(false) {
+        query.push(("include_runtime", "true".to_string()));
     }
     let path = if query.is_empty() {
         "/v1/environment/status".to_string()

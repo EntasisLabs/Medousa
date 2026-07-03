@@ -44,6 +44,12 @@ struct ComponentKvRecord {
     updated_at: chrono::DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Deserialize, SurrealValue)]
+struct ComponentKvRow {
+    store_key: String,
+    value_json: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct FileComponentStoreDocument {
     #[serde(default)]
@@ -220,7 +226,7 @@ impl ComponentStoreService {
         }
 
         let mut response = query.await.map_err(|err| err.to_string())?;
-        let rows: Vec<ComponentKvRecord> = response.take(0).map_err(|err| err.to_string())?;
+        let rows: Vec<ComponentKvRow> = response.take(0).map_err(|err| err.to_string())?;
         let mut entries = BTreeMap::new();
         for row in rows {
             if let Ok(value) = serde_json::from_str::<Value>(&row.value_json) {

@@ -227,6 +227,7 @@ pub async fn publish(request: FeedPublishRequest) -> Result<FeedEvent> {
                 Some(patches)
             },
             feed_event: Some(event.clone()),
+            runtime_probe: None,
         })
         .await;
 

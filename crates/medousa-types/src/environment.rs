@@ -268,6 +268,8 @@ pub struct EnvironmentStreamEvent {
     pub component_patches: Option<Vec<crate::feed::ComponentFeedPatch>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feed_event: Option<crate::feed::FeedEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_probe: Option<crate::component_runtime::ComponentRuntimeProbeRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,6 +379,8 @@ pub struct CustomViewComponentStatus {
     pub artifact_id: Option<String>,
     #[serde(default)]
     pub feeds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<crate::component_runtime::ComponentRuntimeDiagnostic>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
