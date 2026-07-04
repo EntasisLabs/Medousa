@@ -6,6 +6,7 @@
   import CanvasAddLayoutPresetForm from "$lib/components/settings/CanvasAddLayoutPresetForm.svelte";
   import CanvasViewsPanel from "$lib/components/settings/CanvasViewsPanel.svelte";
   import { environment } from "$lib/stores/environment.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { resolveEnvironmentTheme } from "$lib/utils/environmentTheme";
@@ -47,6 +48,10 @@
   let deleteBusy = $state(false);
   let deleteError = $state<string | null>(null);
   let advancedOpen = $state(false);
+  let mobileHomeBusy = $state(false);
+  let mobileHomeError = $state<string | null>(null);
+
+  const mobileHomeValue = $derived(environment.mobileDefaultHome);
 
   function navVisibleFor(surfaceId: string): boolean {
     const statusRow = canvasStatus?.customSurfaces.find((row) => row.surfaceId === surfaceId);
@@ -64,6 +69,20 @@
       deleteError = err instanceof Error ? err.message : String(err);
     } finally {
       deleteBusy = false;
+    }
+  }
+
+  async function onMobileHomeChange(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    mobileHomeBusy = true;
+    mobileHomeError = null;
+    try {
+      await environment.setMobileDefaultHome(value);
+      layout.clearMobileSurfaceOverride();
+    } catch (err) {
+      mobileHomeError = err instanceof Error ? err.message : String(err);
+    } finally {
+      mobileHomeBusy = false;
     }
   }
 </script>
@@ -125,6 +144,31 @@
         Show or hide built-in views in the rail. Switch presets above for quick profiles like Focus.
       </p>
       <CanvasNavDestinationsPanel {spec} />
+    </div>
+
+    <div class="canvas-settings-block">
+      <h3 class="canvas-settings-heading">Mobile Home button</h3>
+      <p class="canvas-settings-lead">
+        What the phone Home tab shows. Native Home is the default work/glance screen. Opening a custom
+        view from More is temporary — tap Home again to leave it.
+      </p>
+      <label class="canvas-mobile-home-field">
+        <span class="sr-only">Mobile Home surface</span>
+        <select
+          class="select"
+          value={mobileHomeValue}
+          disabled={mobileHomeBusy}
+          onchange={(event) => void onMobileHomeChange(event)}
+        >
+          <option value="home">Native Home</option>
+          {#each customSurfaces as surface (surface.id)}
+            <option value={surface.id}>{surface.label}</option>
+          {/each}
+        </select>
+      </label>
+      {#if mobileHomeError}
+        <p class="canvas-settings-note text-warning-200">{mobileHomeError}</p>
+      {/if}
     </div>
   {/if}
 

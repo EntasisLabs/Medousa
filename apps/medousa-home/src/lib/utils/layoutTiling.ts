@@ -41,6 +41,35 @@ export function collectComponentIds(node: TilingNode, ids: string[] = []): strin
   return ids;
 }
 
+/**
+ * Desktop reading order (left→right, top→bottom) for mobile stack presentation.
+ * Appends any main components missing from the tree at the end.
+ */
+export function componentsInReadingOrder<T extends { id: string }>(
+  tree: TilingNode | null,
+  components: T[],
+): T[] {
+  const byId = new Map(components.map((component) => [component.id, component]));
+  const ordered: T[] = [];
+  const seen = new Set<string>();
+  if (tree) {
+    for (const id of collectComponentIds(tree)) {
+      const component = byId.get(id);
+      if (component && !seen.has(id)) {
+        ordered.push(component);
+        seen.add(id);
+      }
+    }
+  }
+  for (const component of components) {
+    if (!seen.has(component.id)) {
+      ordered.push(component);
+      seen.add(component.id);
+    }
+  }
+  return ordered;
+}
+
 export function findPane(node: TilingNode, paneId: string): TilingPane | null {
   if (node.kind === "pane") {
     return node.pane.id === paneId ? node.pane : null;

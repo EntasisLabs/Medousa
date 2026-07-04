@@ -55,11 +55,16 @@ export async function rotatePairingInvite(): Promise<PairingQrResponse> {
   return invoke<PairingQrResponse>("pairing_rotate_invite");
 }
 
-export async function fetchPairingQr(): Promise<PairingQrResponse> {
+export async function fetchPairingQr(options?: {
+  /** Embed Iroh ticket (large). Default is compact camera-friendly invite. */
+  full?: boolean;
+}): Promise<PairingQrResponse> {
   if (!isTauri()) {
     throw new Error("Pairing requires the Medousa desktop app");
   }
-  return invoke<PairingQrResponse>("pairing_fetch_qr");
+  return invoke<PairingQrResponse>("pairing_fetch_qr", {
+    full: options?.full ?? false,
+  });
 }
 
 export async function fetchPairingQrImage(): Promise<PairingQrImage> {

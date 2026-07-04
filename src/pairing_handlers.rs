@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Path, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use axum::response::IntoResponse;
 use axum::{Json, routing::{delete, get, post}, Router};
+use serde::Deserialize;
 
 use crate::pairing::{
     PairHeartbeatRequest, PairInitRequest, PairVerifyRequest, PairingService,
@@ -51,12 +52,25 @@ async fn get_iroh_ticket(
     }
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QrQuery {
+    /// When true, embed Iroh ticket (v2). Default is compact v1 for camera/Messages.
+    #[serde(default)]
+    full: Option<bool>,
+}
+
+fn wants_full_qr(query: &QrQuery) -> bool {
+    query.full.unwrap_or(false)
+}
+
 async fn get_qr(
     State(state): State<PairingApiState>,
+    Query(query): Query<QrQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
         .service
-        .current_qr()
+        .current_qr_with_options(wants_full_qr(&query))
         .await
         .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -75,10 +89,11 @@ async fn rotate_qr(
 
 async fn get_qr_png(
     State(state): State<PairingApiState>,
+    Query(query): Query<QrQuery>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let qr = state
         .service
-        .current_qr()
+        .current_qr_with_options(wants_full_qr(&query))
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let png = state
@@ -90,10 +105,11 @@ async fn get_qr_png(
 
 async fn get_qr_image(
     State(state): State<PairingApiState>,
+    Query(query): Query<QrQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     state
         .service
-        .current_qr_image()
+        .current_qr_image_with_options(wants_full_qr(&query))
         .await
         .map(|response| Json(serde_json::to_value(response).unwrap_or_default()))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)

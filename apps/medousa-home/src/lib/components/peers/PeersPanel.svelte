@@ -23,6 +23,7 @@
   } from "$lib/utils/lanShareApi";
   import {
     fetchBonjourStatus,
+    fetchPairingQr,
     fetchPairingQrImage,
     formatCountdown,
     formatShortCode,
@@ -31,6 +32,7 @@
     type BonjourStatus,
     type PairingQrImage,
   } from "$lib/utils/pairingApi";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { isTauri } from "$lib/window";
   import {
     Copy,
@@ -47,9 +49,13 @@
 
   interface Props {
     visible?: boolean;
+    /** Single-column list↔thread stack for phone. */
+    mobile?: boolean;
+    /** Nested under More hub (no duplicate page title). */
+    embedded?: boolean;
   }
 
-  let { visible = true }: Props = $props();
+  let { visible = true, mobile = false, embedded = false }: Props = $props();
 
   let qr = $state<PairingQrImage | null>(null);
   let countdown = $state(0);
@@ -176,14 +182,19 @@
     }
   }
 
-  async function copyInviteLink() {
-    if (!qr?.url) return;
+  async function copyInviteLink(full = false) {
     try {
-      await navigator.clipboard.writeText(qr.url);
+      const invite = full ? await fetchPairingQr({ full: true }) : qr;
+      const url = invite?.url;
+      if (!url) return;
+      await navigator.clipboard.writeText(url);
       copyFlash = true;
       setTimeout(() => {
         copyFlash = false;
       }, 1500);
+      success = full
+        ? "Full invite copied (works off-LAN when pasted)."
+        : "Invite copied — scan or open on the same Wi‑Fi.";
     } catch {
       error = "Could not copy invite link.";
     }
@@ -250,13 +261,15 @@
   }
 
   async function refreshAll() {
-    await Promise.all([
-      refreshInvite(),
+    const tasks: Array<Promise<unknown>> = [
       refreshNearby(),
       refreshTrusted(),
       refreshInbox(),
-      refreshLanPairing(),
-    ]);
+    ];
+    if (!mobile) {
+      tasks.push(refreshInvite(), refreshLanPairing());
+    }
+    await Promise.all(tasks);
   }
 
   async function connectNearby(workshop: DiscoveredWorkshop) {
@@ -461,7 +474,9 @@
     error = null;
     success = null;
     addPeerOpen = true;
-    void refreshInvite();
+    if (!mobile) {
+      void refreshInvite();
+    }
     void refreshNearby();
   }
 
@@ -491,15 +506,47 @@
     if (pollTimer) clearInterval(pollTimer);
     if (countdownTimer) clearInterval(countdownTimer);
   });
+
+  $effect(() => {
+    if (!mobile || !visible) return;
+    return registerMobileBackHandler(() => {
+      if (addPeerOpen) {
+        addPeerOpen = false;
+        return true;
+      }
+      if (fallbackOpen) {
+        fallbackOpen = false;
+        return true;
+      }
+      if (selectedPeerId) {
+        selectedPeerId = null;
+        peerMenuOpen = false;
+        cancelRename();
+        return true;
+      }
+      return false;
+    });
+  });
 </script>
 
-<section class="peers-panel {visible ? '' : 'hidden'}" aria-label="Peers">
-  <aside class="peers-sidebar">
+<section
+  class="peers-panel {visible ? '' : 'hidden'}"
+  class:peers-panel-mobile={mobile}
+  class:peers-panel-embedded={embedded}
+  aria-label="Peers"
+>
+  <aside class="peers-sidebar" class:peers-mobile-pane-hidden={mobile && !!selectedPeer}>
     <header class="peers-sidebar-head">
-      <div>
-        <h1 class="peers-app-title">Peers</h1>
-        <p class="peers-app-sub">People on your network</p>
-      </div>
+      {#if !embedded}
+        <div>
+          <h1 class="peers-app-title">Peers</h1>
+          <p class="peers-app-sub">People on your network</p>
+        </div>
+      {:else}
+        <div>
+          <p class="peers-app-sub">Connect and message other workshops</p>
+        </div>
+      {/if}
       <button
         type="button"
         class="peers-add-btn"
@@ -592,7 +639,7 @@
     {/if}
   </aside>
 
-  <div class="peers-main">
+  <div class="peers-main" class:peers-mobile-pane-hidden={mobile && !selectedPeer}>
     {#if !selectedPeer}
       <div class="peers-empty-main">
         <div class="peers-empty-icon" aria-hidden="true">
@@ -811,13 +858,24 @@
       </div>
     {/if}
 
-    {#if error}
+    {#if !mobile && error}
       <p class="peers-error">{error}</p>
     {/if}
-    {#if success}
+    {#if !mobile && success}
       <p class="peers-success">{success}</p>
     {/if}
   </div>
+
+  {#if mobile && (error || success)}
+    <div class="peers-mobile-status">
+      {#if error}
+        <p class="peers-error">{error}</p>
+      {/if}
+      {#if success}
+        <p class="peers-success">{success}</p>
+      {/if}
+    </div>
+  {/if}
 </section>
 
 {#if addPeerOpen}
@@ -835,44 +893,54 @@
           <X size={18} />
         </button>
       </header>
-      <p class="peers-sheet-lead">
-        Others on your Wi‑Fi can tap Connect on your name — or scan this invite.
-      </p>
-
-      <label class="peers-lan-toggle">
-        <input
-          type="checkbox"
-          checked={lanPairing?.enabled ?? false}
-          disabled={lanBusy}
-          onchange={(event) =>
-            void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
-        />
-        <span>LAN pairing window (restarts engine)</span>
-      </label>
-      {#if lanPairing}
-        <p class="peers-sheet-lead">{lanPairing.message}</p>
-      {/if}
-
-      {#if bonjour?.likelyAdvertising}
-        <span class="peers-visible-pill">Visible on network</span>
-      {/if}
-
-      {#if qr}
-        <img class="peers-qr" src={qr.dataUrl} alt="Peer invite QR code" />
-        <p class="peers-code">{formatShortCode(qr.shortCode)}</p>
-        <p class="peers-countdown">Expires in {formatCountdown(countdown)}</p>
-        <div class="peers-sheet-actions">
-          <button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => void copyInviteLink()}>
-            <Copy size={14} />
-            {copyFlash ? "Copied" : "Copy link"}
-          </button>
-          <button type="button" class="btn btn-sm btn-ghost" disabled={busy} onclick={() => void rotateInvite()}>
-            <RefreshCw size={14} />
-            Refresh
-          </button>
-        </div>
+      {#if mobile}
+        <p class="peers-sheet-lead">
+          Connect to another workshop on your Wi‑Fi by address, or tap Connect when they appear nearby.
+        </p>
       {:else}
-        <p class="peers-sheet-lead">Loading invite…</p>
+        <p class="peers-sheet-lead">
+          Others on your Wi‑Fi can tap Connect on your name — or scan this invite.
+        </p>
+
+        <label class="peers-lan-toggle">
+          <input
+            type="checkbox"
+            checked={lanPairing?.enabled ?? false}
+            disabled={lanBusy}
+            onchange={(event) =>
+              void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>LAN pairing window (restarts engine)</span>
+        </label>
+        {#if lanPairing}
+          <p class="peers-sheet-lead">{lanPairing.message}</p>
+        {/if}
+
+        {#if bonjour?.likelyAdvertising}
+          <span class="peers-visible-pill">Visible on network</span>
+        {/if}
+
+        {#if qr}
+          <img class="peers-qr" src={qr.dataUrl} alt="Peer invite QR code" />
+          <p class="peers-code">{formatShortCode(qr.shortCode)}</p>
+          <p class="peers-countdown">Expires in {formatCountdown(countdown)}</p>
+          <p class="peers-sheet-hint">Camera scan works on the same Wi‑Fi. Paste full link only if they are off-LAN.</p>
+          <div class="peers-sheet-actions">
+            <button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => void copyInviteLink(false)}>
+              <Copy size={14} />
+              {copyFlash ? "Copied" : "Copy link"}
+            </button>
+            <button type="button" class="btn btn-sm btn-ghost" disabled={busy} onclick={() => void copyInviteLink(true)}>
+              Full link
+            </button>
+            <button type="button" class="btn btn-sm btn-ghost" disabled={busy} onclick={() => void rotateInvite()}>
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+          </div>
+        {:else}
+          <p class="peers-sheet-lead">Loading invite…</p>
+        {/if}
       {/if}
 
       {#if nearbyUntrusted.length > 0}
@@ -974,6 +1042,31 @@
     height: 100%;
     min-height: 0;
     background: rgb(var(--color-surface-950));
+  }
+
+  .peers-panel-mobile {
+    flex-direction: column;
+  }
+
+  .peers-panel-mobile .peers-sidebar,
+  .peers-panel-mobile .peers-main {
+    width: 100%;
+    border-right: 0;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .peers-panel-mobile .peers-mobile-pane-hidden {
+    display: none;
+  }
+
+  .peers-panel-embedded {
+    background: transparent;
+  }
+
+  .peers-mobile-status {
+    flex-shrink: 0;
+    padding: 0.35rem 0.75rem 0.65rem;
   }
 
   .peers-sidebar {

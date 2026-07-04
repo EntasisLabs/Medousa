@@ -81,10 +81,12 @@ fn run_pair_status(daemon_url: &str) -> Result<()> {
 
 fn run_pair_qr(daemon_url: &str, args: &[String]) -> Result<()> {
     let client = http_client()?;
-    let response = client
-        .get(format!("{daemon_url}/qr"))
-        .send()
-        .context("GET /qr")?;
+    let path = if has_flag(args, "--full") {
+        format!("{daemon_url}/qr?full=true")
+    } else {
+        format!("{daemon_url}/qr")
+    };
+    let response = client.get(&path).send().context("GET /qr")?;
     if !response.status().is_success() {
         bail!("GET /qr returned {}", response.status());
     }
@@ -104,9 +106,9 @@ fn run_pair_qr(daemon_url: &str, args: &[String]) -> Result<()> {
 
     println!("Pairing URL:\n{url}");
     if url.contains("medousa://pair/2.0") {
-        println!("Protocol: QR v2 (LAN + Iroh relay)");
+        println!("Protocol: QR v2 (LAN + Iroh ticket — large; for paste only)");
     } else {
-        println!("Protocol: QR v1 (LAN only)");
+        println!("Protocol: QR v1 compact (camera-friendly; Iroh ticket fetched after pair)");
     }
     println!("Short code: {short_code}");
     println!("Expires: {expires_at}");
@@ -268,7 +270,7 @@ fn print_pair_help() {
     println!("USAGE:");
     println!("  medousa pair status [--daemon-url <url>]");
     println!("  medousa pair list [--daemon-url <url>]");
-    println!("  medousa pair qr [--term] [--open] [--daemon-url <url>]");
+    println!("  medousa pair qr [--term] [--open] [--full] [--daemon-url <url>]");
     println!("  medousa pair remove <pairing_id> [--daemon-url <url>]");
     println!("  medousa pair lan status|on|off");
     println!();

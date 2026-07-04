@@ -63,6 +63,11 @@ export function tryMobileBackNavigation(): boolean {
     workspace.clearSelection();
     return true;
   }
+  if (layout.mobileTab === "home" && layout.mobileSurfaceOverride) {
+    layout.clearMobileSurfaceOverride();
+    layout.setMobileTab("home", { bump: true });
+    return true;
+  }
   if (layout.mobileTab === "more" && layout.moreDestination !== "hub") {
     layout.backToMoreHub();
     return true;
@@ -92,7 +97,11 @@ export function switchMobileTab(tab: MobileTab): void {
     layout.setMobileTab(order[0] ?? "home", { bump: true });
     return;
   }
-  const changed = layout.mobileTab !== tab;
+  // Home tab exits a temporary custom view (e.g. arcade opened from More).
+  if (tab === "home" && layout.mobileSurfaceOverride) {
+    layout.clearMobileSurfaceOverride();
+  }
+  const changed = layout.mobileTab !== tab || tab === "home";
   layout.setMobileTab(tab, { bump: changed });
   if (tab === "chat") {
     void chat.refreshSessions();

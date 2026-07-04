@@ -280,6 +280,15 @@ export class EnvironmentStore {
     await this.refreshCanvasStatus(profileId);
   }
 
+  async setMobileDefaultHome(surfaceId: string, profileId?: string): Promise<void> {
+    const { setMobileDefaultHome: applyMobileHome } = await import(
+      "$lib/utils/environmentCanvasOps"
+    );
+    const spec = await this.cloneCurrentSpec(profileId);
+    applyMobileHome(spec, surfaceId);
+    await this.saveSpec(spec);
+  }
+
   async applyPendingProposal(profileId?: string): Promise<void> {
     this.pendingBusy = true;
     try {

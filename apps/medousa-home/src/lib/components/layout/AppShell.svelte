@@ -12,8 +12,10 @@
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { applyNativeMobileShellLayout, isTauri, isTauriMobilePlatform, watchMobileViewport } from "$lib/platform";
@@ -71,7 +73,24 @@
             handoffBrowserShell(mobile);
           }
         });
-    const stopNative = initMobileNative(openWorkCard, openVaultNote);
+    const stopNative = initMobileNative(openWorkCard, openVaultNote, {
+      onPairLink: (pairUrl) => {
+        // Global handler for medousa://pair/… (camera / Messages). Wizard may override while onboarding.
+        void workshops
+          .joinFromPairLink(pairUrl)
+          .then((result) => {
+            toast.show(`Connected to ${result.workshopPeerName}`);
+            if (result.workshopId) {
+              void workshops.selectWorkshop(result.workshopId);
+            }
+          })
+          .catch((err) => {
+            toast.show(err instanceof Error ? err.message : String(err), {
+              durationMs: 4500,
+            });
+          });
+      },
+    });
     const stopAgentBrowserCoord = attachAgentBrowserCoord();
 
     const onKeydown = (event: KeyboardEvent) => {

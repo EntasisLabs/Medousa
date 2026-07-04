@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import {
     CheckCircle2,
+    Copy,
     LoaderCircle,
     Radio,
     RefreshCw,
@@ -11,6 +12,7 @@
   } from "@lucide/svelte";
   import {
     fetchBonjourStatus,
+    fetchPairingQr,
     fetchPairingQrImage,
     fetchPairingStatus,
     formatCountdown,
@@ -46,6 +48,8 @@
   let connectedDevice = $state<PairedDeviceSummary | null>(null);
   let showDiagnostics = $state(false);
   let coreOnline = $state(false);
+  let copyFlash = $state(false);
+  let copyHint = $state<string | null>(null);
 
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -201,6 +205,24 @@
     }
   }
 
+  async function copyInviteLink(full = false) {
+    try {
+      const invite = full ? await fetchPairingQr({ full: true }) : qr;
+      const url = invite?.url;
+      if (!url) return;
+      await navigator.clipboard.writeText(url);
+      copyFlash = true;
+      copyHint = full
+        ? "Full invite copied (off-LAN paste)."
+        : "Invite copied — same Wi‑Fi scan or open.";
+      setTimeout(() => {
+        copyFlash = false;
+      }, 1500);
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Could not copy invite link.";
+    }
+  }
+
   async function forgetDevice(pairingId: string) {
     try {
       await revokePairingDevice(pairingId);
@@ -278,8 +300,31 @@
 
       <p class="mt-4 max-w-sm text-center text-sm leading-relaxed text-surface-400">
         Open Medousa on your phone on the same Wi‑Fi and scan this code — or enter the short code
-        manually.
+        manually. Off-LAN? Use Full link and paste in the app.
       </p>
+      {#if qr}
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <button type="button" class="btn btn-sm btn-primary" onclick={() => void copyInviteLink(false)}>
+            <Copy class="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+            {copyFlash ? "Copied" : "Copy link"}
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost" onclick={() => void copyInviteLink(true)}>
+            Full link
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost"
+            disabled={refreshing}
+            onclick={() => void refreshQr()}
+          >
+            <RefreshCw class="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
+        {#if copyHint}
+          <p class="workshop-faint mt-2 text-center text-xs">{copyHint}</p>
+        {/if}
+      {/if}
     </div>
   {/if}
 

@@ -7,6 +7,7 @@ export type MoreDestination =
   | "workshop"
   | "automations"
   | "messaging"
+  | "peers"
   | "settings"
   | "runtime";
 
@@ -27,6 +28,7 @@ export const MORE_DESTINATIONS: {
   { id: "context", label: "Context", hint: "What she remembers about you" },
   { id: "workshop", label: "Capabilities", hint: "Specialists & connections" },
   { id: "messaging", label: "Channels", hint: "Telegram, Discord, Slack & more" },
+  { id: "peers", label: "Peers", hint: "Nearby workshops & inbox" },
   { id: "settings", label: "Preferences", hint: "Models, voice, rhythm & reach" },
   { id: "runtime", label: "Workshop", hint: "Live pulse, jobs & delivery" },
 ];
@@ -40,7 +42,7 @@ export const MORE_HUB_SECTIONS: {
   {
     title: "Stay in touch",
     subtitle: "Memory, skills, and channels",
-    destinations: ["profiles", "context", "workshop", "messaging"],
+    destinations: ["profiles", "context", "workshop", "messaging", "peers"],
   },
   {
     title: "Capabilities",

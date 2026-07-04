@@ -12,7 +12,10 @@ export type OpenPairHandler = (pairUrl: string) => void;
 
 let workHandler: OpenWorkHandler | null = null;
 let vaultHandler: OpenVaultNoteHandler | null = null;
+/** Temporary override (e.g. onboarding wizard). */
 let pairHandler: OpenPairHandler | null = null;
+/** App-wide handler for medousa://pair/… after onboarding. */
+let defaultPairHandler: OpenPairHandler | null = null;
 
 async function dispatchWorkLink(link: WorkDeepLink) {
   if (!workHandler) return;
@@ -24,10 +27,15 @@ async function dispatchVaultLink(notePath: string) {
   await vaultHandler(notePath);
 }
 
+function dispatchPairLink(url: string) {
+  const handler = pairHandler ?? defaultPairHandler;
+  handler?.(url);
+}
+
 function handleUrls(urls: string[]) {
   for (const url of urls) {
     if (parsePairQrUrl(url)) {
-      pairHandler?.(url);
+      dispatchPairLink(url);
       return;
     }
     const link = parseDeepLink(url);
@@ -42,6 +50,7 @@ function handleUrls(urls: string[]) {
   }
 }
 
+/** Override pair handling (wizard). Pass null to restore the default app handler. */
 export function setPairDeepLinkHandler(handler: OpenPairHandler | null) {
   pairHandler = handler;
 }
@@ -57,9 +66,12 @@ export function setWorkDeepLinkHandler(handler: OpenWorkHandler | null) {
 export function initMobileNative(
   handler: OpenWorkHandler,
   vaultNoteHandler?: OpenVaultNoteHandler,
+  options?: { onPairLink?: OpenPairHandler },
 ): () => void {
   setWorkDeepLinkHandler(handler);
   setVaultDeepLinkHandler(vaultNoteHandler ?? null);
+  // Install default pair handler synchronously so cold-start deep links are not dropped.
+  defaultPairHandler = options?.onPairLink ?? null;
 
   const cleanups: Array<() => void> = [];
 
@@ -105,6 +117,7 @@ export function initMobileNative(
     setWorkDeepLinkHandler(null);
     setVaultDeepLinkHandler(null);
     setPairDeepLinkHandler(null);
+    defaultPairHandler = null;
     for (const cleanup of cleanups) cleanup();
   };
 }

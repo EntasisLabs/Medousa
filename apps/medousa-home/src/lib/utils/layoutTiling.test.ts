@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   collectComponentIds,
+  componentsInReadingOrder,
   layoutRootToTiling,
   tilingToLayoutRoot,
   type TilingNode,
@@ -102,5 +103,29 @@ describe("layoutTiling roundtrip", () => {
         ),
       ),
     );
+  });
+});
+
+describe("componentsInReadingOrder", () => {
+  it("walks left-to-right then top-to-bottom and appends orphans", () => {
+    const tree = split(
+      "vertical",
+      split("horizontal", pane("a"), pane("b")),
+      split("horizontal", pane("c"), pane("d")),
+    );
+    const components = [
+      { id: "d" },
+      { id: "orphan" },
+      { id: "a" },
+      { id: "c" },
+      { id: "b" },
+    ];
+    expect(componentsInReadingOrder(tree, components).map((entry) => entry.id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "orphan",
+    ]);
   });
 });

@@ -96,11 +96,19 @@ fn pairing_unavailable_message(status: reqwest::StatusCode, body: &str) -> Strin
 }
 
 #[tauri::command]
-pub async fn pairing_fetch_qr(state: State<'_, DaemonState>) -> Result<PairingQrResponse, String> {
+pub async fn pairing_fetch_qr(
+    state: State<'_, DaemonState>,
+    full: Option<bool>,
+) -> Result<PairingQrResponse, String> {
     let base = daemon_base(&state)?;
     let client = pairing_http_client()?;
+    let path = if full.unwrap_or(false) {
+        format!("{base}/qr?full=true")
+    } else {
+        format!("{base}/qr")
+    };
     let response = client
-        .get(format!("{base}/qr"))
+        .get(path)
         .send()
         .await
         .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;

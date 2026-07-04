@@ -107,6 +107,25 @@ fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
         .to_string())
 }
 
+/// True when Home is co-located with the workshop engine (loopback).
+/// Phone / remote portal clients are separate surfaces — they must not use the host peer inbox.
+fn is_host_engine(state: &State<'_, DaemonState>) -> bool {
+    let Ok(base) = daemon_base(state) else {
+        return false;
+    };
+    let host = if let Ok(url) = url::Url::parse(&base) {
+        url.host_str().unwrap_or("").to_string()
+    } else {
+        base.trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .split(['/', ':'])
+            .next()
+            .unwrap_or("")
+            .to_string()
+    };
+    matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1" | "[::1]")
+}
+
 #[tauri::command]
 pub fn lan_pairing_status() -> Result<crate::workshop_runtime::LanPairingStatus, String> {
     crate::workshop_runtime::lan_pairing_status()
@@ -339,53 +358,56 @@ pub async fn list_trusted_workshops(
         });
     }
 
-    // Surfaces that connected *to* us as peers (CLI / other Home) — conversations live here.
-    if let Ok(status) = fetch_pair_status_value(&state).await {
-        if let Some(devices) = status.get("pairedDevices").and_then(|v| v.as_array()) {
-            for device in devices {
-                let role = device
-                    .get("role")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("portal");
-                if role != "peer" {
-                    continue;
+    // Inbound peers only exist on the host engine (people who Connected to this workshop).
+    // A phone portal must not list the host's inbound peers as its own.
+    if is_host_engine(&state) {
+        if let Ok(status) = fetch_pair_status_value(&state).await {
+            if let Some(devices) = status.get("pairedDevices").and_then(|v| v.as_array()) {
+                for device in devices {
+                    let role = device
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("portal");
+                    if role != "peer" {
+                        continue;
+                    }
+                    let phone_id = device
+                        .get("phoneId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if phone_id.is_empty() {
+                        continue;
+                    }
+                    if known_device_ids.iter().any(|id| {
+                        id == &phone_id
+                            || id.starts_with(&phone_id[..phone_id.len().min(8)])
+                            || phone_id.starts_with(&id[..id.len().min(8)])
+                    }) {
+                        continue;
+                    }
+                    let label = device
+                        .get("phoneName")
+                        .and_then(|v| v.as_str())
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("Peer")
+                        .to_string();
+                    let paired_at = device
+                        .get("pairedAt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    out.push(TrustedWorkshopSummary {
+                        workshop_id: format!("inbound-{phone_id}"),
+                        label,
+                        daemon_url: String::new(),
+                        workshop_device_id: phone_id,
+                        paired_at,
+                        has_session_token: true,
+                        has_iroh_ticket: false,
+                        inbound: true,
+                    });
                 }
-                let phone_id = device
-                    .get("phoneId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if phone_id.is_empty() {
-                    continue;
-                }
-                if known_device_ids.iter().any(|id| {
-                    id == &phone_id
-                        || id.starts_with(&phone_id[..phone_id.len().min(8)])
-                        || phone_id.starts_with(&id[..id.len().min(8)])
-                }) {
-                    continue;
-                }
-                let label = device
-                    .get("phoneName")
-                    .and_then(|v| v.as_str())
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or("Peer")
-                    .to_string();
-                let paired_at = device
-                    .get("pairedAt")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                out.push(TrustedWorkshopSummary {
-                    workshop_id: format!("inbound-{phone_id}"),
-                    label,
-                    daemon_url: String::new(),
-                    workshop_device_id: phone_id,
-                    paired_at,
-                    has_session_token: true,
-                    has_iroh_ticket: false,
-                    inbound: true,
-                });
             }
         }
     }
@@ -552,7 +574,7 @@ pub async fn peer_send_message(
         "attachment": request.attachment,
     });
 
-    // Deliver to their workshop when we have outbound credentials (mutual / Connect).
+    // Deliver to their workshop when we have outbound credentials (Connect).
     if let Some(config) = remote_config {
         crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
             &config,
@@ -560,36 +582,55 @@ pub async fn peer_send_message(
             &deliver_body,
         )
         .await?;
+    } else if !is_host_engine(&state) {
+        return Err("Messaging requires a peer connection from this device".to_string());
     }
 
-    // Always keep a local outbound copy so Home threads show what we sent.
-    // Inbound-only peers poll this host for these copies.
-    let local_body = serde_json::json!({
+    let outbound = serde_json::json!({
+        "id": format!("out_{}", uuid::Uuid::new_v4()),
         "body": request.body,
         "fromDeviceId": from_device_id,
         "fromName": from_name,
         "toDeviceId": to_device_id,
         "toName": to_name,
         "direction": "out",
+        "sentAt": chrono::Utc::now().to_rfc3339(),
+        "readAt": null,
         "attachment": request.attachment,
     });
-    let base = daemon_base(&state)?;
-    let client = daemon_http_client()?;
-    let response = client
-        .post(format!("{base}/v1/peer/messages"))
-        .json(&local_body)
-        .send()
-        .await
-        .map_err(|err| format!("failed to record sent message: {err}"))?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("failed to record sent message HTTP {status}: {body}"));
+
+    // Host engine keeps outbound copies in its own inbox (inbound peers poll them).
+    // Phone / portal clients are separate surfaces — conversation lives on the peer host only.
+    if is_host_engine(&state) {
+        let local_body = serde_json::json!({
+            "body": request.body,
+            "fromDeviceId": from_device_id,
+            "fromName": from_name,
+            "toDeviceId": to_device_id,
+            "toName": to_name,
+            "direction": "out",
+            "attachment": request.attachment,
+        });
+        let base = daemon_base(&state)?;
+        let client = daemon_http_client()?;
+        let response = client
+            .post(format!("{base}/v1/peer/messages"))
+            .json(&local_body)
+            .send()
+            .await
+            .map_err(|err| format!("failed to record sent message: {err}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("failed to record sent message HTTP {status}: {body}"));
+        }
+        return response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|err| err.to_string());
     }
-    response
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|err| err.to_string())
+
+    Ok(outbound)
 }
 
 async fn resolve_peer_send_target(
@@ -653,10 +694,18 @@ pub async fn peer_list_messages(
     state: State<'_, DaemonState>,
     unread_only: Option<bool>,
 ) -> Result<serde_json::Value, String> {
+    let unread_only = unread_only.unwrap_or(false);
+
+    // Phone / portal client: conversations live on peer hosts we Connected to — not the portal inbox.
+    if !is_host_engine(&state) {
+        let messages = fetch_remote_peer_conversations(&state, unread_only, true).await;
+        return Ok(serde_json::json!({ "messages": messages }));
+    }
+
     let base = daemon_base(&state)?;
     let client = daemon_http_client()?;
     let mut url = format!("{base}/v1/peer/messages");
-    if unread_only.unwrap_or(false) {
+    if unread_only {
         url.push_str("?unreadOnly=true");
     }
     let response = client
@@ -674,8 +723,8 @@ pub async fn peer_list_messages(
         .await
         .map_err(|err| err.to_string())?;
 
-    // Pull replies from workshops we connected to (their outbound copies live there).
-    let remote = fetch_remote_peer_replies(&state, unread_only.unwrap_or(false)).await;
+    // Host: pull replies from workshops we connected to (their outbound copies).
+    let remote = fetch_remote_peer_conversations(&state, unread_only, false).await;
     if !remote.is_empty() {
         let messages = payload
             .get_mut("messages")
@@ -706,11 +755,14 @@ pub async fn peer_list_messages(
     Ok(payload)
 }
 
-/// Remote hosts store replies as `direction=out` addressed to our phone id.
-/// Map them into local-shaped inbound messages so threads render correctly.
-async fn fetch_remote_peer_replies(
+/// Pull conversations from peer hosts we Connected to (uses peer bearer credentials).
+///
+/// `full_thread`: when true (client surfaces), include our sends mirrored there as outbound.
+/// When false (host), only their replies — our sends already live in the host inbox.
+async fn fetch_remote_peer_conversations(
     state: &State<'_, DaemonState>,
     unread_only: bool,
+    full_thread: bool,
 ) -> Vec<serde_json::Value> {
     let Ok(registry) = crate::workshop_registry::load_registry() else {
         return Vec::new();
@@ -743,30 +795,40 @@ async fn fetch_remote_peer_replies(
             continue;
         };
         for message in messages {
-            // Their outbound = reply to us. Skip our own deliveries mirrored there.
-            if message.get("direction").and_then(|value| value.as_str()) != Some("out") {
-                continue;
+            let direction = message
+                .get("direction")
+                .and_then(|value| value.as_str())
+                .unwrap_or("in");
+            // Remote "out" = they sent to us. Remote "in" = we sent to them.
+            if direction == "out" {
+                if unread_only && message.get("readAt").and_then(|value| value.as_str()).is_some() {
+                    continue;
+                }
+                let mut mapped = message.clone();
+                if let Some(object) = mapped.as_object_mut() {
+                    object.insert("direction".into(), serde_json::json!("in"));
+                    object.insert(
+                        "fromDeviceId".into(),
+                        serde_json::json!(pairing.workshop_device_id),
+                    );
+                    object.insert("fromName".into(), serde_json::json!(workshop.label));
+                }
+                out.push(mapped);
+            } else if full_thread && direction == "in" {
+                if unread_only {
+                    continue;
+                }
+                let mut mapped = message.clone();
+                if let Some(object) = mapped.as_object_mut() {
+                    object.insert("direction".into(), serde_json::json!("out"));
+                    object.insert(
+                        "toDeviceId".into(),
+                        serde_json::json!(pairing.workshop_device_id),
+                    );
+                    object.insert("toName".into(), serde_json::json!(workshop.label));
+                }
+                out.push(mapped);
             }
-            if unread_only && message.get("readAt").and_then(|value| value.as_str()).is_some() {
-                continue;
-            }
-            let mut mapped = message.clone();
-            if let Some(object) = mapped.as_object_mut() {
-                object.insert("direction".into(), serde_json::json!("in"));
-                object.insert(
-                    "fromDeviceId".into(),
-                    serde_json::json!(pairing.workshop_device_id),
-                );
-                object.insert("fromName".into(), serde_json::json!(workshop.label));
-                object.insert(
-                    "toDeviceId".into(),
-                    message
-                        .get("toDeviceId")
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null),
-                );
-            }
-            out.push(mapped);
         }
     }
     out
@@ -774,6 +836,11 @@ async fn fetch_remote_peer_replies(
 
 #[tauri::command]
 pub async fn peer_unread_count(state: State<'_, DaemonState>) -> Result<serde_json::Value, String> {
+    if !is_host_engine(&state) {
+        let unread = fetch_remote_peer_conversations(&state, true, true).await.len();
+        return Ok(serde_json::json!({ "unread": unread }));
+    }
+
     let base = daemon_base(&state)?;
     let client = daemon_http_client()?;
     let response = client
@@ -791,7 +858,7 @@ pub async fn peer_unread_count(state: State<'_, DaemonState>) -> Result<serde_js
         .await
         .map_err(|err| err.to_string())?;
 
-    let remote_unread = fetch_remote_peer_replies(&state, true).await.len();
+    let remote_unread = fetch_remote_peer_conversations(&state, true, false).await.len();
     if remote_unread > 0 {
         let local = payload
             .get("unread")
@@ -809,25 +876,25 @@ pub async fn peer_mark_read(
     state: State<'_, DaemonState>,
     message_id: String,
 ) -> Result<serde_json::Value, String> {
-    let base = daemon_base(&state)?;
-    let client = daemon_http_client()?;
-    let response = client
-        .post(format!("{base}/v1/peer/messages/{message_id}/read"))
-        .send()
-        .await
-        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if response.status().is_success() {
-        return response
-            .json::<serde_json::Value>()
+    if is_host_engine(&state) {
+        let base = daemon_base(&state)?;
+        let client = daemon_http_client()?;
+        let response = client
+            .post(format!("{base}/v1/peer/messages/{message_id}/read"))
+            .send()
             .await
-            .map_err(|err| err.to_string());
+            .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
+        if response.status().is_success() {
+            return response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|err| err.to_string());
+        }
     }
 
-    // Message may live on a remote peer host (their outbound reply).
+    // Message may live on a remote peer host.
     let Ok(registry) = crate::workshop_registry::load_registry() else {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Mark read failed HTTP {status}: {body}"));
+        return Err("message not found".to_string());
     };
     for workshop in registry.workshops {
         if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
@@ -850,12 +917,18 @@ pub async fn peer_mark_read(
         }
     }
 
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    Err(format!("Mark read failed HTTP {status}: {body}"))
+    Err("message not found".to_string())
 }
 
 async fn local_identity(state: &State<'_, DaemonState>) -> (String, String) {
+    // Host: workshop device identity. Client surface: this install's phone identity.
+    if !is_host_engine(state) {
+        if let Ok(identity) = crate::pairing_client::client_surface_identity() {
+            return identity;
+        }
+        return ("client".to_string(), "Medousa".to_string());
+    }
+
     let base = match daemon_base(state) {
         Ok(base) => base,
         Err(_) => return ("local".to_string(), "Medousa".to_string()),

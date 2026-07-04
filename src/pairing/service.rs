@@ -303,15 +303,17 @@ impl PairingService {
             protocol_version: PROTOCOL_VERSION.to_string(),
             daemon_public_key: verifying_key_to_b64(self.identity.verifying_key()),
             iroh_available: self.iroh.is_some(),
-            qr_protocol_version: if self.should_emit_qr_v2() {
-                super::crypto::QR_PROTOCOL_V2.to_string()
-            } else {
-                super::crypto::QR_PROTOCOL_V1.to_string()
-            },
+            // Default QR/PNG is always compact v1 (camera-friendly). Full v2 via ?full=1.
+            qr_protocol_version: super::crypto::QR_PROTOCOL_V1.to_string(),
         })
     }
 
+    /// Default invite is compact v1 (camera / Messages friendly). Pass `full=true` for v2 with Iroh ticket.
     pub async fn current_qr(&self) -> Result<QrResponse> {
+        self.current_qr_with_options(false).await
+    }
+
+    pub async fn current_qr_with_options(&self, full: bool) -> Result<QrResponse> {
         let mut guard = self.active_qr.write().await;
         let needs_refresh = guard.as_ref().is_none_or(|session| {
             session.used || session.expires_at <= Utc::now()
@@ -321,7 +323,7 @@ impl PairingService {
         }
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
-            url: self.build_qr_url(session)?,
+            url: self.build_qr_url(session, full)?,
             expires_at: session.expires_at,
             short_code: session.short_code.clone(),
         })
@@ -333,7 +335,7 @@ impl PairingService {
         *guard = Some(self.build_qr_session()?);
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
-            url: self.build_qr_url(session)?,
+            url: self.build_qr_url(session, false)?,
             expires_at: session.expires_at,
             short_code: session.short_code.clone(),
         })
@@ -344,7 +346,11 @@ impl PairingService {
     }
 
     pub async fn current_qr_image(&self) -> Result<QrImageResponse> {
-        let qr = self.current_qr().await?;
+        self.current_qr_image_with_options(false).await
+    }
+
+    pub async fn current_qr_image_with_options(&self, full: bool) -> Result<QrImageResponse> {
+        let qr = self.current_qr_with_options(full).await?;
         let png = self.render_qr_png(&qr.url)?;
         Ok(QrImageResponse {
             url: qr.url,
@@ -644,11 +650,13 @@ impl PairingService {
         })
     }
 
-    fn build_qr_url(&self, session: &ActiveQrSession) -> Result<String> {
+    fn build_qr_url(&self, session: &ActiveQrSession, full: bool) -> Result<String> {
         let name = urlencoding::encode(&self.peer_name);
         let address = urlencoding::encode(&self.advertise_address);
 
-        if self.should_emit_qr_v2() {
+        // Compact v1 is the default for camera / Messages. Full v2 embeds the Iroh ticket
+        // (large) and is only for explicit paste/share when off-LAN bootstrap is required.
+        if full && self.can_emit_qr_v2() {
             let iroh = self
                 .iroh
                 .as_ref()
@@ -680,7 +688,7 @@ impl PairingService {
         ))
     }
 
-    fn should_emit_qr_v2(&self) -> bool {
+    fn can_emit_qr_v2(&self) -> bool {
         self.iroh.is_some() && !pairing_qr_v1_from_env()
     }
 
@@ -933,9 +941,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn qr_v2_url_contains_iroh_ticket() {
+    async fn default_qr_stays_compact_when_iroh_available() {
         let service = test_service_with_iroh();
         let qr = service.current_qr().await.expect("qr");
+        assert!(qr.url.contains("medousa://pair/1.0"));
+        assert!(!qr.url.contains("k="));
+    }
+
+    #[tokio::test]
+    async fn full_qr_v2_url_contains_iroh_ticket() {
+        let service = test_service_with_iroh();
+        let qr = service
+            .current_qr_with_options(true)
+            .await
+            .expect("full qr");
         assert!(qr.url.contains("medousa://pair/2.0"));
         assert!(qr.url.contains("k=test-iroh-ticket"));
         assert!(qr.url.contains("e="));

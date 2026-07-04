@@ -1,17 +1,19 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import LayoutEditOverlay from "$lib/components/environment/LayoutEditOverlay.svelte";
+  import MobileStackLayoutView from "$lib/components/environment/MobileStackLayoutView.svelte";
   import TilingLayoutEditor from "$lib/components/environment/TilingLayoutEditor.svelte";
   import TilingLayoutView from "$lib/components/environment/TilingLayoutView.svelte";
   import PresentationFrame from "$lib/components/environment/PresentationFrame.svelte";
   import ChromeActionRenderer from "$lib/components/environment/ChromeActionRenderer.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { environment } from "$lib/stores/environment.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { layoutEdit, layoutRootForEditing } from "$lib/stores/layoutEdit.svelte";
   import type { ComponentDef } from "$lib/types/environment";
   import { surfaceUsesDashboardFill } from "$lib/utils/environmentPresentation";
   import { environmentIcon } from "$lib/utils/environmentIcons";
-  import { layoutRootToTiling } from "$lib/utils/layoutTiling";
+  import { componentsInReadingOrder, layoutRootToTiling } from "$lib/utils/layoutTiling";
   import { LayoutGrid, Pencil } from "@lucide/svelte";
 
   interface Props {
@@ -23,6 +25,7 @@
 
   const autoEditSurfaces = new Set<string>();
 
+  const isMobile = $derived(layout.isMobile);
   const surface = $derived(environment.surfaceById(surfaceId));
   const isCustom = $derived(surface?.kind === "custom");
   const isDashboard = $derived(surfaceUsesDashboardFill(surface?.layout));
@@ -39,15 +42,26 @@
       mainComponents.map((component) => component.id),
     );
   });
+  /** Phone: one full-width card per widget, desktop reading order. */
+  const mobileStackComponents = $derived(
+    componentsInReadingOrder(viewTilingRoot, mainComponents),
+  );
   const fabComponents = $derived(environment.componentsForSurface(surfaceId, "fab"));
   const inlineComponents = $derived(environment.componentsForSurface(surfaceId, "inline"));
   const sidebarComponents = $derived(environment.componentsForSurface(surfaceId, "sidebar"));
 
   $effect(() => {
-    if (!isCustom || editingLayout || componentCount > 0 || !chat.sessionId) return;
+    // Desktop only — never auto-open the tiling editor on a phone.
+    if (isMobile || !isCustom || editingLayout || componentCount > 0 || !chat.sessionId) return;
     if (autoEditSurfaces.has(surfaceId)) return;
     autoEditSurfaces.add(surfaceId);
     layoutEdit.begin(surfaceId);
+  });
+
+  $effect(() => {
+    if (isMobile && editingLayout) {
+      layoutEdit.cancel();
+    }
   });
 
   function configString(config: Record<string, unknown>, key: string): string | null {
@@ -58,6 +72,7 @@
   }
 
   function startArranging() {
+    if (isMobile) return;
     layoutEdit.begin(surfaceId);
   }
 </script>
@@ -86,11 +101,16 @@
   <div
     class="environment-renderer-body"
     class:environment-renderer-body-custom={isCustom}
-    class:environment-renderer-body-dashboard={isCustom && isDashboard}
+    class:environment-renderer-body-dashboard={isCustom && isDashboard && !isMobile}
+    class:environment-renderer-body-mobile-stack={isCustom && isMobile}
   >
     {#if isCustom}
-      <LayoutEditOverlay {surfaceId} editing={editingLayout} dashboard={isDashboard}>
-        {#if !editingLayout}
+      <LayoutEditOverlay
+        {surfaceId}
+        editing={!isMobile && editingLayout}
+        dashboard={isDashboard && !isMobile}
+      >
+        {#if !editingLayout || isMobile}
           <div class="environment-renderer-canvas-bar">
             {#if surface}
               <div class="environment-renderer-surface-title">
@@ -98,17 +118,19 @@
                 <span>{surface.label}</span>
               </div>
             {/if}
-            <button
-              type="button"
-              class="environment-renderer-edit-btn"
-              onclick={() => layoutEdit.begin(surfaceId)}
-            >
-              <Pencil size={14} strokeWidth={2} aria-hidden="true" />
-              Edit layout
-            </button>
+            {#if !isMobile}
+              <button
+                type="button"
+                class="environment-renderer-edit-btn"
+                onclick={() => layoutEdit.begin(surfaceId)}
+              >
+                <Pencil size={14} strokeWidth={2} aria-hidden="true" />
+                Edit layout
+              </button>
+            {/if}
           </div>
         {/if}
-        {#if editingLayout && chat.sessionId}
+        {#if !isMobile && editingLayout && chat.sessionId}
           <TilingLayoutEditor
             {surfaceId}
             components={mainComponents}
@@ -124,12 +146,25 @@
             </div>
             <h2 class="environment-renderer-empty-room-title">This room is empty</h2>
             <p class="environment-renderer-empty-room-copy">
-              Add your first widget to make this view yours.
+              {#if isMobile}
+                Arrange widgets on your computer — they show here as a scrollable stack.
+              {:else}
+                Add your first widget to make this view yours.
+              {/if}
             </p>
-            <button type="button" class="environment-renderer-empty-room-cta" onclick={startArranging}>
-              Start arranging
-            </button>
+            {#if !isMobile}
+              <button type="button" class="environment-renderer-empty-room-cta" onclick={startArranging}>
+                Start arranging
+              </button>
+            {/if}
           </div>
+        {:else if isMobile && chat.sessionId && mobileStackComponents.length > 0}
+          <MobileStackLayoutView
+            components={mobileStackComponents}
+            sessionId={chat.sessionId}
+            profileId={environment.spec?.profileId}
+            feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
+          />
         {:else if viewTilingRoot && chat.sessionId}
           <div
             class="layout-edit-canvas"
@@ -152,7 +187,7 @@
     {/if}
   </div>
 
-  {#if sidebarComponents.length > 0}
+  {#if !isMobile && sidebarComponents.length > 0}
     <aside class="environment-renderer-sidebar">
       {#each sidebarComponents as component (component.id)}
         {#if component.type === "presentation"}
@@ -220,6 +255,13 @@
   .environment-renderer-body-dashboard {
     padding: 0;
     overflow: hidden;
+    gap: 0;
+  }
+
+  .environment-renderer-body-mobile-stack {
+    padding: 0.5rem 0.65rem 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
     gap: 0;
   }
 

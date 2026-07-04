@@ -290,8 +290,56 @@ export function removeCustomSurfaceFromSpec(spec: EnvironmentSpec, surfaceId: st
   spec.surfaces = spec.surfaces.filter((surface) => surface.id !== surfaceId);
   for (const preset of spec.layoutPresets ?? []) {
     preset.surfaces = preset.surfaces.filter((id) => id !== surfaceId);
+    if (preset.shellChrome?.mobile?.defaultHome === surfaceId) {
+      preset.shellChrome = {
+        ...preset.shellChrome,
+        mobile: {
+          ...preset.shellChrome.mobile,
+          defaultHome: "home",
+        },
+      };
+    }
+  }
+  if (spec.shellChrome?.mobile?.defaultHome === surfaceId) {
+    setMobileDefaultHome(spec, "home");
   }
   spec.components = spec.components.filter((component) => component.surfaceId !== surfaceId);
+}
+
+/** Persist which surface the mobile Home tab shows (`home` = native HomePanel). */
+export function setMobileDefaultHome(spec: EnvironmentSpec, surfaceId: string): void {
+  const id = surfaceId.trim() || "home";
+  if (id !== "home" && !spec.surfaces.some((surface) => surface.id === id)) {
+    throw new Error(`Unknown surface '${id}'.`);
+  }
+  if (id !== "home") {
+    const surface = spec.surfaces.find((entry) => entry.id === id);
+    if (surface?.kind !== "custom") {
+      throw new Error("Mobile home must be native Home or a custom view.");
+    }
+  }
+  const mobile = {
+    ...(spec.shellChrome?.mobile ?? {}),
+    defaultHome: id,
+  };
+  spec.shellChrome = {
+    ...(spec.shellChrome ?? {}),
+    mobile,
+  };
+  const active =
+    spec.layoutPresets?.find((preset) => preset.active) ??
+    spec.layoutPresets?.find((preset) => preset.id === spec.activePresetId);
+  if (active) {
+    active.shellChrome = {
+      ...(active.shellChrome ?? {}),
+      mobile: {
+        ...(active.shellChrome?.mobile ?? {}),
+        defaultHome: id,
+      },
+    };
+  }
+  spec.updatedAt = new Date().toISOString();
+  spec.updatedBy = "operator";
 }
 
 export function updateCustomSurfaceInSpec(

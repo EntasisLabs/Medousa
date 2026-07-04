@@ -31,7 +31,15 @@ Open **Peers** in the Life rail (Users icon, under Chat).
 
 ### My invite
 
-Large QR, short code, **Copy link** (`medousa://pair/…`). Others on the same Wi‑Fi can connect without typing codes.
+Large **compact** QR (`medousa://pair/1.0?…`, camera-friendly), short code, **Copy link**. The Iroh ticket is fetched after LAN pair so the QR stays scannable. Use **Full link** only when pasting an off-LAN invite (`GET /qr?full=true` / v2).
+
+### Mobile
+
+**More → Peers** — phone is its **own client surface** (pairing credentials), not a remote control of the host Peers rail. Connect by address / nearby, list, thread, send. Conversations live on the peer hosts you Connected to; they are **not** the same threads as desktop Peers on that workshop.
+
+Portal phone pairing (QR / Iroh) is for chat, vault, and canvas of the workshop — separate from Peers.
+
+**Mobile Home button** — Settings → Canvas → Mobile Home button (Native Home or a custom view). Opening a custom view from More is temporary; tap Home again to leave it.
 
 ### One-tap Connect
 

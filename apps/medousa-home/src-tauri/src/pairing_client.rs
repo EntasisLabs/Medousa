@@ -532,6 +532,12 @@ fn normalize_daemon_url(raw: &str) -> Result<String, String> {
     Ok(format!("http://{trimmed}"))
 }
 
+/// Stable client identity for this Home install (phone / laptop surface), not the workshop device id.
+pub fn client_surface_identity() -> Result<(String, String), String> {
+    let identity = PhoneIdentity::load_or_create()?;
+    Ok((identity.phone_id, "Medousa".to_string()))
+}
+
 impl PhoneIdentity {
     fn load_or_create() -> Result<Self, String> {
         let path = phone_identity_path();
