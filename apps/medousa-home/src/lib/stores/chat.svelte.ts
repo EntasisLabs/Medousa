@@ -469,10 +469,23 @@ export class ChatStore {
       const attached = await this.tryReattachActiveTurn(cards);
       if (epoch !== this.transcriptEpoch) return;
 
+      // Handoff / budget turns are not live interactive streams — synthesis lands via
+      // workspace cards + session history. Blocking history merge here left mobile
+      // stuck until a hard refresh after workshop mode finished.
       const liveStream =
-        this.messages.some((message) => message.streaming) ||
+        this.messages.some(
+          (message) =>
+            message.streaming &&
+            message.lane !== "worker" &&
+            message.phase !== "budget_blocked",
+        ) ||
         [...this.turns.values()].some(
-          (turn) => !turn.terminal && turn.mode === "interactive",
+          (turn) =>
+            !turn.terminal &&
+            turn.mode === "interactive" &&
+            turn.phase !== "worker_handoff" &&
+            turn.phase !== "workshop_handoff" &&
+            turn.phase !== "budget_blocked",
         );
 
       // Merging daemon history mid-stream duplicates local user/assistant bubbles.
@@ -1362,7 +1375,7 @@ export class ChatStore {
     if (this.hasFollowUpSynthesis(link.messageId, content)) {
       this.finalizeWorkerHandoffBubble(link.messageId);
       this.markWorkerSynthesisDelivered(workId);
-      this.noteBackgroundSettled();
+      this.settleParentAfterWorkerSynthesis(link.parentTurnId);
       return;
     }
 
@@ -1392,22 +1405,35 @@ export class ChatStore {
         ];
         this.finalizeWorkerHandoffBubble(link.messageId);
         this.markWorkerSynthesisDelivered(workId);
-        if (link.parentTurnId) {
-          const turn = this.turns.get(link.parentTurnId);
-          if (turn?.mode === "background") {
-            this.settleTurn(link.parentTurnId);
-          } else {
-            this.noteBackgroundSettled();
-          }
-        } else {
-          this.noteBackgroundSettled();
-        }
+        this.settleParentAfterWorkerSynthesis(link.parentTurnId);
         return;
       }
     }
 
     this.appendWorkerSynthesisMessage(workId, link.parentTurnId, content, detail?.tool_names);
     this.markWorkerSynthesisDelivered(workId);
+    this.settleParentAfterWorkerSynthesis(link.parentTurnId);
+  }
+
+  /** Close handoff parent turns (interactive workshop/worker) so resume can merge history. */
+  private settleParentAfterWorkerSynthesis(parentTurnId: string | null) {
+    if (!parentTurnId) {
+      this.noteBackgroundSettled();
+      return;
+    }
+    const turn = this.turns.get(parentTurnId);
+    if (!turn) {
+      this.noteBackgroundSettled();
+      return;
+    }
+    if (
+      turn.mode === "background" ||
+      turn.phase === "worker_handoff" ||
+      turn.phase === "workshop_handoff"
+    ) {
+      this.settleTurn(parentTurnId);
+      return;
+    }
     this.noteBackgroundSettled();
   }
 
@@ -2225,9 +2251,8 @@ export class ChatStore {
     this.backgroundActivity += 1;
 
     if (phase === "worker_ack" || phase === "workshop_ack") {
-      if (phase === "worker_ack") {
-        void this.detachStreamOwner(event.turn_id);
-      }
+      // Host interactive stream is done; work continues on the board.
+      void this.detachStreamOwner(event.turn_id);
       this.linkWorkerFromStream(event, messageId);
       return;
     }

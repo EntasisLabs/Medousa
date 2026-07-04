@@ -184,8 +184,8 @@ pub async fn share_push_to_workshop(
         .iter()
         .find(|entry| entry.id == request.workshop_id)
         .ok_or_else(|| format!("Unknown workshop '{}'", request.workshop_id))?;
-    if workshop.kind != "paired" {
-        return Err("Share push requires a trusted paired workshop".to_string());
+    if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
+        return Err("Share push requires a peer connection (inbox-only)".to_string());
     }
     let config = crate::pairing_client::load_workshop_transport_config_for_id(
         &request.workshop_id,
@@ -255,6 +255,7 @@ pub async fn lan_connect_workshop(
         qr_url: qr.url,
         daemon_url,
         phone_name: Some(workshop_name),
+        role: Some("peer".to_string()),
     })
     .await
 }
@@ -276,12 +277,13 @@ pub async fn trust_workshop_from_qr(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("Trusted workshop")
+        .unwrap_or("Trusted peer")
         .to_string();
     crate::pairing_client::pair_complete_from_qr(crate::pairing_client::PairCompleteFromQrRequest {
         qr_url: request.qr_url,
         daemon_url: request.daemon_url,
         phone_name: Some(workshop_name),
+        role: Some("peer".to_string()),
     })
     .await
 }
@@ -291,7 +293,7 @@ pub fn list_trusted_workshops() -> Result<Vec<TrustedWorkshopSummary>, String> {
     let registry = crate::workshop_registry::load_registry()?;
     let mut out = Vec::new();
     for workshop in registry.workshops {
-        if workshop.kind != "paired" {
+        if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
             continue;
         }
         let Some(pairing) = workshop.pairing else {
@@ -328,8 +330,8 @@ pub fn revoke_trusted_workshop(workshop_id: String) -> Result<(), String> {
         .find(|entry| entry.id == trimmed)
         .cloned()
         .ok_or_else(|| format!("Unknown workshop '{trimmed}'"))?;
-    if removed.kind != "paired" {
-        return Err("Only trusted workshops can be revoked".to_string());
+    if !crate::workshop_registry::is_peer_kind(&removed.kind) {
+        return Err("Only peer connections can be revoked here".to_string());
     }
     let device_id = removed
         .pairing
@@ -418,8 +420,8 @@ pub async fn peer_send_message(
         .iter()
         .find(|entry| entry.id == request.workshop_id)
         .ok_or_else(|| format!("Unknown workshop '{}'", request.workshop_id))?;
-    if workshop.kind != "paired" {
-        return Err("Messaging requires a trusted paired workshop".to_string());
+    if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
+        return Err("Messaging requires a peer connection".to_string());
     }
     let config = crate::pairing_client::load_workshop_transport_config_for_id(
         &request.workshop_id,

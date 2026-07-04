@@ -141,8 +141,8 @@
   <header class="settings-section-header">
     <h2 class="text-base font-semibold text-surface-50">Nearby &amp; sharing</h2>
     <p class="workshop-faint mt-1 text-sm">
-      Connect and message peers from the Peers rail. Use this page for canvas bundle export and
-      advanced trust management.
+      Peers are inbox-only connections (not full workshop memberships). Use the Peers rail to connect
+      and message; use this page for canvas bundles and revoke.
     </p>
   </header>
 
@@ -150,7 +150,7 @@
     <div>
       <p class="lan-share-cta-title">Peers</p>
       <p class="lan-share-cta-body">
-        Show your invite QR, one-tap connect on the same Wi‑Fi, and your inbox.
+        Inbox and share only — peers never appear in the workshop switcher.
       </p>
     </div>
     <button type="button" class="btn btn-sm btn-primary" onclick={openPeers}>
@@ -160,9 +160,9 @@
   </div>
 
   <div class="lan-share-block">
-    <h3 class="lan-share-heading">Trusted workshops</h3>
+    <h3 class="lan-share-heading">Peer connections</h3>
     {#if trusted.length === 0}
-      <p class="lan-share-empty">No trusted peers yet — connect from Peers.</p>
+      <p class="lan-share-empty">No peers yet — connect from Peers.</p>
     {:else}
       <ul class="lan-share-list">
         {#each trusted as workshop (workshop.workshopId)}

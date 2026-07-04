@@ -202,9 +202,11 @@ final class MedousaLiveActivityManager {
             return SyncResult(available: isAvailable(), active: false, error: nil, pushToken: nil)
         }
 
+        // Immediate dismissal when work is done — default policy left the LA stuck
+        // on the Lock Screen after workshop turns finished in the background.
         for activity in activities {
             Task {
-                await activity.end(nil, dismissalPolicy: .default)
+                await activity.end(nil, dismissalPolicy: .immediate)
             }
         }
         return SyncResult(available: isAvailable(), active: false, error: nil, pushToken: nil)

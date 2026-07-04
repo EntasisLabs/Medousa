@@ -297,10 +297,13 @@ export async function resumeWorkshop(
 
   void registerBrowserHostClient(health);
 
+  // Cards first so handoff synthesis recovery has an authoritative board.
+  await workspace.reconcileCardsFromSnapshot();
+  await workspace.refreshTerminalWorkerDetails();
+
   await Promise.all([
     chat.reconcileOnResume({ notice: false }, workspace.cards),
     chat.hydrateAskThreads(workspace.cards),
-    workspace.reconcileCardsFromSnapshot(),
     userProfiles.syncOnResume(health),
     // If the WebView was evicted while backgrounded, the open note's path
     // survives but its body does not. Re-fetch so the reader is not blank.
@@ -309,10 +312,42 @@ export async function resumeWorkshop(
       : Promise.resolve(),
   ]);
 
+  // Deliver workshop/worker syntheses that finished while SSE was detached.
+  await workspace.syncTurnWorkerCardsToChat();
+
   try {
     await restartWorkshopStreamsLite();
   } catch {
     scheduleWorkspaceStreamReconnect();
+  }
+
+  // Glance surfaces (Live Activity / home widget) need a forced quiet/working sync
+  // after cards refresh — otherwise they stay stuck on the pre-background snapshot.
+  if (isTauriMobilePlatform()) {
+    try {
+      const { isTauriIos } = await import("$lib/platform");
+      if (isTauriIos()) {
+        const { bumpLiveActivitySync, syncLiveActivity, buildLiveActivityPayload } =
+          await import("$lib/liveActivity");
+        const { bumpHomeWidgetSync, syncHomeWidget } = await import("$lib/homeWidget");
+        const payload = buildLiveActivityPayload({
+          health,
+          cards: workspace.cards,
+          blocked: workspace.blockedCount(),
+          inMotion: workspace.inMotionCount(),
+          primaryCard: workspace.primaryInMotionCard(),
+          workshopName: workshops.activeLabel,
+        });
+        bumpLiveActivitySync();
+        bumpHomeWidgetSync();
+        if (settings.liveActivityEnabled) {
+          void syncLiveActivity(payload, { force: true });
+        }
+        void syncHomeWidget(payload, { force: true });
+      }
+    } catch {
+      // Glance sync is best-effort on resume.
+    }
   }
 }
 

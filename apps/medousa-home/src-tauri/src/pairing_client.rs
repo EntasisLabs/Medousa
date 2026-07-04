@@ -53,6 +53,9 @@ pub struct PairCompleteFromQrRequest {
     pub daemon_url: String,
     #[serde(default)]
     pub phone_name: Option<String>,
+    /// `portal` (full client) or `peer` (inbox/share only). Defaults to portal.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,12 +117,19 @@ pub async fn pair_complete_from_qr(
 ) -> Result<PairCompleteFromQrResult, String> {
     let parsed_qr = parse_pair_qr_url(&request.qr_url)?;
     let daemon_url = normalize_daemon_url(&request.daemon_url)?;
+    let role = crate::workshop_registry::normalize_connection_role(
+        request.role.as_deref().unwrap_or("portal"),
+    );
     let phone_name = request
         .phone_name
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("Medousa Phone")
+        .unwrap_or(if role == "peer" {
+            "Medousa Peer"
+        } else {
+            "Medousa Phone"
+        })
         .to_string();
 
     let client = http_client()?;
@@ -134,6 +144,7 @@ pub async fn pair_complete_from_qr(
         &identity.phone_id,
         &phone_name,
         &base64url_encode(identity.verifying_key.as_bytes()),
+        role,
     )
     .await?;
 
@@ -189,7 +200,19 @@ pub async fn pair_complete_from_qr(
         fetch_iroh_ticket(&client, &daemon_url).await.ok()
     };
 
-    let workshop_id = crate::workshop_registry::paired_workshop_id(&status.device_id);
+    let workshop_id = crate::workshop_registry::register_paired_workshop(
+        crate::workshop_registry::RegisterPairedInput {
+            pairing_id: pairing_id.clone(),
+            phone_id: identity.phone_id.clone(),
+            workshop_device_id: status.device_id.clone(),
+            workshop_peer_name: status.peer_name.clone(),
+            daemon_url: daemon_url.clone(),
+            paired_at: chrono::Utc::now().to_rfc3339(),
+            has_iroh_ticket: iroh_ticket.is_some(),
+            role: role.to_string(),
+        },
+    )?;
+
     save_pairing_credentials(
         &workshop_id,
         &pairing_id,
@@ -199,16 +222,6 @@ pub async fn pair_complete_from_qr(
         &session_token,
         iroh_ticket.as_deref(),
     )?;
-
-    crate::workshop_registry::register_paired_workshop(crate::workshop_registry::RegisterPairedInput {
-        pairing_id: pairing_id.clone(),
-        phone_id: identity.phone_id.clone(),
-        workshop_device_id: status.device_id.clone(),
-        workshop_peer_name: status.peer_name.clone(),
-        daemon_url: daemon_url.clone(),
-        paired_at: chrono::Utc::now().to_rfc3339(),
-        has_iroh_ticket: iroh_ticket.is_some(),
-    })?;
 
     crate::workshop_transport::invalidate_workshop_route_cache();
 
@@ -426,6 +439,7 @@ async fn post_pair_init(
     phone_id: &str,
     phone_name: &str,
     public_key: &str,
+    role: &str,
 ) -> Result<PairInitPayload, String> {
     let response = client
         .post(format!("{daemon_url}/pair/init"))
@@ -434,6 +448,7 @@ async fn post_pair_init(
             "phoneId": phone_id,
             "phoneName": phone_name,
             "publicKey": public_key,
+            "role": role,
         }))
         .send()
         .await

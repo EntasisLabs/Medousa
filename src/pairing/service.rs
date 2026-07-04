@@ -18,7 +18,7 @@ use super::crypto::{
     verifying_key_to_b64,
 };
 use super::identity::DeviceIdentity;
-use super::store::{PairedDeviceRecord, PairingStore};
+use super::store::{PairedDeviceRecord, PairingRole, PairingStore};
 
 const QR_TTL: Duration = Duration::from_secs(300);
 const VERIFY_TTL: Duration = Duration::from_secs(10);
@@ -91,6 +91,9 @@ pub struct PairInitRequest {
     pub phone_id: String,
     pub phone_name: String,
     pub public_key: String,
+    /// `portal` (full client) or `peer` (inbox/share only). Defaults to portal.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -168,6 +171,7 @@ struct PendingPairSession {
     phone_id: String,
     phone_name: String,
     phone_public_key: VerifyingKey,
+    role: PairingRole,
     server_nonce: [u8; 32],
     created_at: Instant,
 }
@@ -390,6 +394,7 @@ impl PairingService {
                 phone_id: request.phone_id.clone(),
                 phone_name: request.phone_name.clone(),
                 phone_public_key: phone_key,
+                role: PairingRole::parse(request.role.as_deref()),
                 server_nonce,
                 created_at: Instant::now(),
             },
@@ -446,6 +451,7 @@ impl PairingService {
             last_seen: now,
             session_token_hash: hash_session_token(&session_token),
             session_token_expiry: now + SESSION_TOKEN_TTL,
+            role: pending.role,
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,
@@ -717,10 +723,59 @@ impl PairingService {
     }
 
     pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
+        Ok(self.resolve_bearer_role(token)?.is_some())
+    }
+
+    /// Returns the pairing role when the bearer is valid and unexpired.
+    pub fn resolve_bearer_role(&self, token: &str) -> Result<Option<PairingRole>> {
         let Some(record) = self.find_by_session_token(token)? else {
+            return Ok(None);
+        };
+        if record.session_token_expiry < Utc::now() {
+            return Ok(None);
+        }
+        Ok(Some(record.role))
+    }
+
+    /// Peer-scoped tokens may only use inbox/share surfaces (and pairing heartbeat).
+    pub fn bearer_allows_path(&self, token: &str, path: &str) -> Result<bool> {
+        let Some(role) = self.resolve_bearer_role(token)? else {
             return Ok(false);
         };
-        Ok(record.session_token_expiry >= Utc::now())
+        if role.allows_full_portal() {
+            return Ok(true);
+        }
+        Ok(path_allowed_for_peer(path))
+    }
+}
+
+pub fn path_allowed_for_peer(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or(path);
+    path.starts_with("/v1/peer/")
+        || path.starts_with("/v1/share/")
+        || path == "/pair/heartbeat"
+        || path == "/pair/status"
+        || path == "/pair/iroh-ticket"
+}
+
+#[cfg(test)]
+mod peer_role_tests {
+    use super::{path_allowed_for_peer, PairingRole};
+
+    #[test]
+    fn pairing_role_defaults_to_portal() {
+        assert_eq!(PairingRole::parse(None), PairingRole::Portal);
+        assert_eq!(PairingRole::parse(Some("portal")), PairingRole::Portal);
+        assert_eq!(PairingRole::parse(Some("peer")), PairingRole::Peer);
+    }
+
+    #[test]
+    fn peer_paths_are_allowlisted() {
+        assert!(path_allowed_for_peer("/v1/peer/messages"));
+        assert!(path_allowed_for_peer("/v1/share/push"));
+        assert!(path_allowed_for_peer("/pair/heartbeat"));
+        assert!(!path_allowed_for_peer("/v1/vault/notes"));
+        assert!(!path_allowed_for_peer("/v1/interactive/turn"));
     }
 }
 
@@ -902,6 +957,7 @@ mod tests {
             phone_id: "phone0001".to_string(),
             phone_name: "Phone A".to_string(),
             public_key: verifying_key_to_b64(&phone.verifying_key()),
+            role: None,
         };
         let first = service.pair_init(init.clone(), "127.0.0.1").await.expect("init");
         assert_eq!(first.status, "challenge");
@@ -924,6 +980,7 @@ mod tests {
                     phone_id: "phone0002".to_string(),
                     phone_name: "Phone B".to_string(),
                     public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: None,
                 },
                 "127.0.0.1",
             )
@@ -961,6 +1018,7 @@ mod tests {
                     phone_id: "phone-revoke".to_string(),
                     phone_name: "Phone R".to_string(),
                     public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: Some("portal".to_string()),
                 },
                 "127.0.0.1",
             )

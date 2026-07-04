@@ -1,53 +1,71 @@
-# Peers, LAN discovery, and sharing
+# Peers, portals, and LAN sharing
 
-Connect to other Medousa workshops on your network, message them asynchronously, and share notes, artifacts, and canvas layouts.
+Medousa treats the **daemon as the app**. Phones, desktops, and Peers are **surfaces** that connect with credentials. There are two different relationships:
 
-## Peers surface (primary)
+| Role | Meaning | Where it appears | Access |
+|------|---------|------------------|--------|
+| **portal** | You are a full client of that brain | Workshop switcher | Chat, vault, canvas, work, … |
+| **peer** | You can message that brain | Peers only | Inbox + share bundles |
 
-Open **Peers** in the Life rail (Users icon).
+Same crypto and transport (QR, bearer, Iroh). Different **scope**.
+
+## Peers surface (peer role)
+
+Open **Peers** in the Life rail (Users icon, under Chat).
 
 ### My invite
 
-Your workshop shows a large QR, short code, and **Copy link** (`medousa://pair/…`). Others on the same Wi‑Fi can connect without typing codes. A **Visible on network** pill means mDNS advertising is active.
+Large QR, short code, **Copy link** (`medousa://pair/…`). Others on the same Wi‑Fi can connect without typing codes.
 
 ### One-tap Connect
 
-Nearby workshops appear via mDNS (`_medousa._tcp.local.`). Tap **Connect**:
+Nearby workshops appear via mDNS. Tap **Connect**:
 
-1. Home fetches their unauthenticated `GET /qr` over LAN
-2. Completes the existing Ed25519 trust ceremony
-3. Adds them to your trusted people list
+1. Fetch their `GET /qr` over LAN
+2. Complete the trust ceremony with **`role: peer`**
+3. Store credentials as a **peer** entry (`peer-{deviceId}`) — **not** a workshop switcher membership
 
-No paste required on the same network. If auto-connect fails, a fallback sheet accepts their invite link (daemon URL prefilled).
+Peer tokens on the host are scoped: they may only call `/v1/peer/*`, `/v1/share/*`, and pairing heartbeat/status. Escalation to vault/chat is rejected with 403.
 
 ### Inbox
 
-Select a person to see messages and compose (optional note/artifact attachment). Unread count badges the Peers rail icon.
+Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon.
 
-**Replies** require mutual trust: after you connect, they should open Peers and tap Connect on your name.
+**Replies** require mutual peer trust: they must Connect to you from their Peers surface.
+
+Revoke a peer from Peers (⋯ → Remove) — that device’s peer credentials only.
+
+## Workshop membership (portal role)
+
+Phone pairing and **Join workshop** (Settings / workshop switcher) use **`role: portal`**.
+
+- Full client of that Medousa
+- Appears in the workshop switcher
+- Legacy `paired` entries migrate to `portal` on load
+
+Compromised phone: revoke that portal pairing without removing peer relationships (and vice versa).
 
 ## Settings → Nearby
 
 Advanced only:
 
 - **Open Peers** CTA
-- Revoke trusted workshops
-- Full canvas **share bundle** export / import / push
+- Peer revoke list
+- Canvas **share bundle** export / import / push (peer credentials)
 
-Phone pairing (portal to this brain) stays under **Settings → Phone**.
+Phone portal QR stays under **Settings → Phone**.
 
-## Share bundles and single items
+## Share bundles
 
-Share bundles (`.medousa-share.json`) include artifacts, vault notes, and optional environment sections.
-
-- **Peers / Vault / Artifact menus** — share one note or artifact to a peer
-- **Settings → Nearby** — export/import full canvas bundles
+- **Peers / Vault / Artifact menus** — share one note or artifact to a **peer**
+- **Settings → Nearby** — full canvas bundle export/import
 
 Daemon:
 
 - `GET /v1/lan/workshops` — mDNS browse
 - `POST /v1/share/export` / `import` / `push`
 - `POST/GET /v1/peer/messages`, mark-read, unread-count
+- Pair init accepts `role`: `portal` | `peer`
 
 ## Capability bits
 
@@ -59,7 +77,8 @@ Daemon:
 
 ## Out of scope
 
-- Camera QR scan (link paste + one-tap LAN is v1)
+- Camera QR scan
 - Live typing / presence
 - Agent-to-agent protocols
-- Merging external channel Messaging into Peers
+- Daemon-to-daemon relay (enterprise mesh)
+- Auto-promoting a peer to a portal membership

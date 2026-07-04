@@ -452,9 +452,16 @@ async fn main() -> Result<()> {
         local_device_id: share_api_state.local_device_id.clone(),
         local_peer_name: share_api_state.local_peer_name.clone(),
     };
+    let peer_scope_pairing = peer_message_state.pairing.clone();
     app = app
         .merge(medousa::share_handlers::share_router(share_api_state))
         .merge(medousa::peer_message_handlers::peer_message_router(peer_message_state));
+    if let Some(pairing) = peer_scope_pairing {
+        app = app.layer(axum::middleware::from_fn_with_state(
+            pairing,
+            medousa::peer_scope::reject_peer_scope_escalation,
+        ));
+    }
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

@@ -44,8 +44,13 @@ export class WorkshopsStore {
 
   activeWorkshop = $derived(activeWorkshop(this.registry));
   activeWorkshopId = $derived(this.registry.activeWorkshopId);
-  workshops = $derived(this.registry.workshops);
-  hasMultipleWorkshops = $derived(this.registry.workshops.length > 1);
+  /** Portal memberships only — peers are inbox-only and never appear here. */
+  workshops = $derived(
+    this.registry.workshops.filter(
+      (workshop) => workshop.kind === "local" || workshop.kind === "portal" || workshop.kind === "paired",
+    ),
+  );
+  hasMultipleWorkshops = $derived(this.workshops.length > 1);
   activeLabel = $derived(this.activeWorkshop?.label ?? "Personal");
   activeMonogram = $derived(workshopMonogram(this.activeLabel));
   activeBrandColor = $derived(this.activeWorkshop?.brandColor);
@@ -142,6 +147,7 @@ export class WorkshopsStore {
         qrUrl: trimmed,
         daemonUrl,
         phoneName: options?.phoneName,
+        role: "portal",
       });
       await this.onPairComplete(result);
       return result;

@@ -161,8 +161,8 @@ impl ApnsClient {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|duration| duration.as_secs())
             .unwrap_or(0);
-        let dismissal_date = now.saturating_add(60);
-
+        // Dismiss immediately when work is idle — a future dismissal_date left the
+        // Live Activity on the Lock Screen after workshop turns finished.
         let payload = LiveActivityUpdatePayload {
             aps: LiveActivityApsBody {
                 timestamp: now,
@@ -177,7 +177,7 @@ impl ApnsClient {
                     primary_card_id: None,
                 }),
                 stale_date: None,
-                dismissal_date: Some(dismissal_date),
+                dismissal_date: Some(now),
             },
             device_token: token,
             options: self.live_activity_options(),

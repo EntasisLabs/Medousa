@@ -178,21 +178,6 @@ export class WorkspaceStore {
       );
     }
     if (
-      previous === "in_flight" &&
-      card.column === "done" &&
-      !isAskJobId(card.id)
-    ) {
-      chat.noteBackgroundSettled();
-      void this.syncTurnWorkerCardsToChat();
-    }
-    if (
-      previous === "wrapping_up" &&
-      card.column === "done" &&
-      !isAskJobId(card.id)
-    ) {
-      void this.syncTurnWorkerCardsToChat();
-    }
-    if (
       previous === "blocked" &&
       card.status_label !== "needs approval"
     ) {
@@ -233,6 +218,21 @@ export class WorkspaceStore {
   async syncTurnWorkerCardsToChat() {
     chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
     await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
+  }
+
+  /** Foreground resume — pull details for terminal cards so workshop synthesis can land. */
+  async refreshTerminalWorkerDetails() {
+    const terminal = this.cards.filter(
+      (card) =>
+        !isAskJobId(card.id) &&
+        (card.column === "done" || card.column === "blocked"),
+    );
+    if (terminal.length === 0) return;
+    await Promise.all(
+      terminal.slice(0, 12).map((card) =>
+        this.cacheCardDetail(card.id, this.previousColumns.get(card.id), true),
+      ),
+    );
   }
 
   /** Pull authoritative card columns when activity says done but the board lagged. */
@@ -383,13 +383,10 @@ export class WorkspaceStore {
     );
   }
 
-  /** Re-fetch card detail when a known worker/ask card reaches a terminal column. */
+  /** Re-fetch card detail when a card reaches a terminal column (synthesis may be ready). */
   private shouldRefreshCardDetail(card: WorkCard, previous?: string): boolean {
     if (previous === card.column) return false;
-    if (card.column !== "done" && card.column !== "blocked") return false;
-    const cached = this.cardDetailsCache.get(card.id);
-    if (cached?.kind === "turn_worker") return true;
-    return isAskJobId(card.id);
+    return card.column === "done" || card.column === "blocked";
   }
 
   private async cacheCardDetail(

@@ -137,6 +137,7 @@ pub mod share;
 pub mod share_handlers;
 pub mod peer_messages;
 pub mod peer_message_handlers;
+pub mod peer_scope;
 pub mod iroh_transport;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;

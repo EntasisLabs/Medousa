@@ -12,7 +12,29 @@ export const MAX_WORKSHOPS = 10;
 
 export const DEFAULT_LOCAL_DAEMON_URL = "http://127.0.0.1:7419";
 
-export type WorkshopKind = "local" | "paired";
+/**
+ * - local: this device's engine
+ * - portal: full client of a remote brain (phone / workshop switcher)
+ * - peer: inbox + share only (Peers surface)
+ * - paired: legacy alias migrated to portal
+ */
+export type WorkshopKind = "local" | "portal" | "peer" | "paired";
+
+export type WorkshopConnectionRole = "portal" | "peer";
+
+export function workshopConnectionRole(workshop: WorkshopServer): WorkshopConnectionRole | null {
+  if (workshop.kind === "peer") return "peer";
+  if (workshop.kind === "portal" || workshop.kind === "paired") return "portal";
+  return null;
+}
+
+export function isPortalWorkshop(workshop: WorkshopServer): boolean {
+  return workshop.kind === "local" || workshop.kind === "portal" || workshop.kind === "paired";
+}
+
+export function isPeerWorkshop(workshop: WorkshopServer): boolean {
+  return workshop.kind === "peer";
+}
 
 export type WorkshopIcon = "home" | "building" | "team";
 
@@ -108,7 +130,12 @@ export function activeWorkshop(registry: WorkshopRegistry): WorkshopServer | und
 }
 
 function isWorkshopKind(value: unknown): value is WorkshopKind {
-  return value === "local" || value === "paired";
+  return (
+    value === "local" ||
+    value === "paired" ||
+    value === "portal" ||
+    value === "peer"
+  );
 }
 
 function isWorkshopIcon(value: unknown): value is WorkshopIcon {
@@ -159,12 +186,20 @@ function parseWorkshop(raw: unknown): WorkshopServer | null {
   }
 
   const pairing = parsePairingRef(record.pairing);
-  if (record.kind === "paired" && !pairing) return null;
+  if (
+    (record.kind === "paired" || record.kind === "portal" || record.kind === "peer") &&
+    !pairing
+  ) {
+    return null;
+  }
+
+  // Legacy "paired" rows were full portal memberships.
+  const kind: WorkshopKind = record.kind === "paired" ? "portal" : record.kind;
 
   return {
     id: record.id,
     label: record.label,
-    kind: record.kind,
+    kind,
     url: normalizeWorkshopUrl(record.url),
     icon: isWorkshopIcon(record.icon) ? record.icon : undefined,
     createdAt: record.createdAt,
@@ -239,12 +274,13 @@ export function workshopRemoteAccessNote(
   workshop: WorkshopServer,
   isMobile: boolean,
 ): string | null {
-  if (isMobile || workshop.kind !== "paired") return null;
+  if (isMobile || !isPortalWorkshop(workshop) || workshop.kind === "local") return null;
   return "LAN only on desktop — use the mobile app for LTE";
 }
 
 export function workshopHostLabel(url: string, kind: WorkshopKind): string {
   if (kind === "local") return "This Mac";
+  if (kind === "peer") return "Peer";
   try {
     const host = new URL(url).hostname.replace(/^www\./, "");
     if (host === "127.0.0.1" || host === "localhost" || host === "::1") {

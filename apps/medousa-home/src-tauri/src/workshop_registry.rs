@@ -83,6 +83,31 @@ pub struct RegisterPairedInput {
     pub daemon_url: String,
     pub paired_at: String,
     pub has_iroh_ticket: bool,
+    /// `portal` (full client) or `peer` (inbox/share only).
+    pub role: String,
+}
+
+pub fn normalize_connection_role(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "peer" => "peer",
+        _ => "portal",
+    }
+}
+
+pub fn is_portal_kind(kind: &str) -> bool {
+    matches!(kind, "local" | "portal" | "paired")
+}
+
+pub fn is_peer_kind(kind: &str) -> bool {
+    kind == "peer"
+}
+
+fn migrate_kind(kind: &str) -> String {
+    if kind == "paired" {
+        "portal".to_string()
+    } else {
+        kind.to_string()
+    }
 }
 
 pub fn medousa_data_dir() -> PathBuf {
@@ -153,8 +178,30 @@ pub fn load_registry() -> Result<WorkshopRegistry, String> {
     let path = workshops_registry_path();
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
     let mut registry: WorkshopRegistry = serde_json::from_str(&raw).map_err(|err| err.to_string())?;
+    let mut migrated = false;
+    for workshop in &mut registry.workshops {
+        let next_kind = migrate_kind(&workshop.kind);
+        if next_kind != workshop.kind {
+            workshop.kind = next_kind;
+            migrated = true;
+        }
+    }
+    // Peer credentials must never be the active workshop.
+    if let Some(active) = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == registry.active_workshop_id)
+    {
+        if is_peer_kind(&active.kind) {
+            registry.active_workshop_id = PERSONAL_WORKSHOP_ID.to_string();
+            migrated = true;
+        }
+    }
     validate_registry(&registry)?;
     crate::workshop_runtime::backfill_local_workshop_fields(&mut registry);
+    if migrated {
+        save_registry(&registry)?;
+    }
     Ok(registry)
 }
 
@@ -279,7 +326,7 @@ pub fn ensure_migrated() -> Result<WorkshopRegistry, String> {
         registry.workshops.push(WorkshopServer {
             id: workshop_id.clone(),
             label,
-            kind: "paired".to_string(),
+            kind: "portal".to_string(),
             url: url.clone(),
             icon: Some("building".to_string()),
             created_at: legacy.paired_at.clone(),
@@ -341,7 +388,12 @@ pub fn update_active_workshop_url(url: &str) -> Result<(), String> {
 
 pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, String> {
     let mut registry = ensure_migrated()?;
-    let workshop_id = paired_workshop_id(&input.workshop_device_id);
+    let role = normalize_connection_role(&input.role);
+    let workshop_id = if role == "peer" {
+        format!("peer-{}", input.workshop_device_id)
+    } else {
+        paired_workshop_id(&input.workshop_device_id)
+    };
     let credentials_rel = pairing_credentials_rel_path(&workshop_id);
     let label = if input.workshop_peer_name.trim().is_empty() {
         format!("Workshop {}", input.workshop_device_id)
@@ -359,6 +411,12 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
         workshop_peer_name: Some(label.clone()),
     };
 
+    let icon = if role == "peer" {
+        Some("users".to_string())
+    } else {
+        Some("building".to_string())
+    };
+
     if let Some(existing) = registry
         .workshops
         .iter_mut()
@@ -366,7 +424,8 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
     {
         existing.label = label;
         existing.url = url;
-        existing.kind = "paired".to_string();
+        existing.kind = role.to_string();
+        existing.icon = icon;
         existing.updated_at = now_iso();
         existing.pairing = Some(pairing);
     } else {
@@ -379,9 +438,9 @@ pub fn register_paired_workshop(input: RegisterPairedInput) -> Result<String, St
         registry.workshops.push(WorkshopServer {
             id: workshop_id.clone(),
             label,
-            kind: "paired".to_string(),
+            kind: role.to_string(),
             url,
-            icon: Some("building".to_string()),
+            icon,
             created_at: iso.clone(),
             updated_at: iso,
             last_connected_at: None,
@@ -422,6 +481,12 @@ pub async fn workshops_set_active(
     else {
         return Err("Workshop not found".to_string());
     };
+
+    if is_peer_kind(&workshop.kind) {
+        return Err(
+            "Peer connections are inbox-only — use Peers, not the workshop switcher.".to_string(),
+        );
+    }
 
     if workshop.kind == "local" {
         let ensure = crate::workshop_runtime::ensure_local_engine(
@@ -496,7 +561,7 @@ pub fn workshops_remove(
         if workshop.kind == "local" {
             crate::workshop_runtime::stop_local_engine(&workshop.id);
         }
-        if workshop.kind == "paired" {
+        if workshop.kind != "local" {
             let device_id = workshop
                 .pairing
                 .as_ref()

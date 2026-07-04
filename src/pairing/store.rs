@@ -13,6 +13,41 @@ use sha2::{Digest, Sha256};
 
 use super::paths::{pairings_dir, revoked_pairings_path};
 
+/// How this surface relates to the workshop.
+/// - `portal`: full client of this brain (phone / workshop switcher)
+/// - `peer`: inbox + share only
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum PairingRole {
+    #[default]
+    Portal,
+    Peer,
+}
+
+impl PairingRole {
+    pub fn parse(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("peer") => Self::Peer,
+            _ => Self::Portal,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Portal => "portal",
+            Self::Peer => "peer",
+        }
+    }
+
+    pub fn allows_peer_surface(self) -> bool {
+        matches!(self, Self::Peer | Self::Portal)
+    }
+
+    pub fn allows_full_portal(self) -> bool {
+        matches!(self, Self::Portal)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PairedDeviceRecord {
@@ -24,6 +59,9 @@ pub struct PairedDeviceRecord {
     pub last_seen: DateTime<Utc>,
     pub session_token_hash: String,
     pub session_token_expiry: DateTime<Utc>,
+    /// Defaults to portal for records written before role split.
+    #[serde(default)]
+    pub role: PairingRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apns_device_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -241,6 +279,7 @@ mod tests {
             last_seen: Utc::now(),
             session_token_hash: "deadbeef".to_string(),
             session_token_expiry: Utc::now(),
+            role: PairingRole::Portal,
             apns_device_token: None,
             push_platform: None,
             push_updated_at: None,
