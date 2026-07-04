@@ -19,10 +19,10 @@ pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
 pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
 Runtime boundary (enforced by the daemon):
-- Host scheduler: memory, identity, runtime, vault read, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
-- cognition_turn_begin_work enters the bound workshop (one per session) — host ends with ack; synthesis delivers on the same thread.
-- Chat prose on host may continue briefly for scheduling; execution (environment, canvas, web, grapheme) belongs in the workshop.
-- After tool work on host: cognition_turn_finish commits the principal-facing answer.
+- Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
+- cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
+- Chat prose may continue briefly for scheduling; Studio/environment/canvas, Grapheme, and heavy web belong in the Workshop.
+- After tool work on Chat: cognition_turn_finish commits the principal-facing answer.
 - Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
 - UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
 

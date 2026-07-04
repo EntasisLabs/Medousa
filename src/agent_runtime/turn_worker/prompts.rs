@@ -13,67 +13,55 @@ const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
 
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-Host scheduler lane — same Medousa voice; you schedule, the bound workshop executes.
+Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
 
 Host affordances:
 - Memory, identity, runtime orchestration, cognition_vault_read/search, capability catalog search/resolve (orchestration only).
-- cognition_turn_begin_work(message, goal) — enter bound workshop for environment/canvas, components, vault writes, web, grapheme execution (one workshop per session).
+- cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
+- cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
 - cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl).
-- cognition_workshop_steer — forward principal guidance into the active bound workshop.
-- cognition_turn_worker_status / cognition_turn_worker_cancel for workshop and worker records.
+- cognition_workshop_steer — forward principal guidance into the active bound Workshop.
+- cognition_turn_worker_status / cognition_turn_worker_cancel for Workshop and worker records.
 
 Rules:
-- Do not call environment_*, component_*, ui_present, web_search, grapheme run, or capability invoke on host — use begin_work with a concrete goal.
-- After begin_work, host turn ends with the ack; workshop synthesis delivers on the same thread.
-- Quick vault peek: cognition_vault_read on host without entering the workshop.
-- Turn control: cognition_turn_finish for host answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
+- Do not call environment_*, component_*, ui_present, grapheme run, or capability invoke on Chat — use begin_work with a concrete goal.
+- After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
+- Quick vault peek: cognition_vault_read on Chat without entering the Workshop.
+- Turn control: cognition_turn_finish for Chat answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
 
 pub const HOST_CANVAS_APPENDIX: &str = r#"
 [MEDOUSA_HOST_CANVAS]
-Canvas workflow (Home / supports_ui_artifacts):
-0) cognition_environment_wiki — STTP temporal nodes (topic=recipe or merge_spec) BEFORE hand-building propose/apply JSON.
-1) cognition_environment_get — read spec, custom surfaces, existing components.
-2) cognition_environment_propose + cognition_environment_apply — add kind=custom surface AND list it in active preset surfaces.
-3) cognition_ui_present(persist=true, surface_id=<custom>, component_id, slot) OR cognition_component_create with type=presentation and config.artifactId.
-4) Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces render agent components.
-5) cognition_component_list to verify. cognition_environment_activate_preset to switch layout presets. Operator approves agent proposals in Settings → Canvas.
-6) Status while building ("pulling wiki", "retrying propose"): cognition_turn_update_user(message=…) in the same round as environment_get/wiki/propose — not naked chat prose."#;
+Studio layout (supports_ui_artifacts) — schedule via begin_work; do not execute on Chat.
+
+Routing:
+- cognition_turn_begin_work with a goal describing the Studio change (surface, widget, preset).
+- Full recipes: cognition_environment_wiki(topic=recipe|merge_spec|artifact_runtime|…) — wiki before hand-building propose/apply JSON.
+- Workflow sketch: wiki → cognition_environment_get → propose/apply → ui_present(persist) or component_create.
+- Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces.
+- Operator approves agent proposals in Settings → Canvas."#;
 
 pub const WORKER_CANVAS_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_CANVAS]
-Bound workshop / Home canvas lane — you may publish HTML and wire custom surfaces here (host scheduler lane cannot).
+Bound Workshop / Studio lane — publish HTML and wire custom surfaces here (Chat host cannot).
+
+Full recipes: cognition_environment_wiki(topic=recipe|artifact_runtime|environment_theme|media_embed|layout_zones|…) — prefer wiki over memorizing this appendix.
 
 Workflow:
-0) cognition_environment_wiki(topic=recipe) before guessing propose JSON.
+0) cognition_environment_wiki before guessing propose JSON.
 1) cognition_environment_get — surfaces + components.
-2) cognition_custom_view_compose for one-shot surface + HTML + feeds + recurring OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
+2) cognition_custom_view_compose for one-shot OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
 3) cognition_artifact_write revises an existing artifact_id; cognition_ui_present is first-time publish only.
 4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
-5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive canvas widget.
-6) Interactive widgets: NEVER localStorage/sessionStorage in artifact HTML (sandbox blocks it). Use window.MedousaStore.get/set/delete/list — engine-backed KV scoped to component_id; survives refresh.
-7) MedousaStore is ASYNC (returns Promises). Always await get/set/delete in async init and event handlers — sync wrappers fail silently (empty after save). cognition_environment_wiki(topic=artifact_runtime) has the canonical template.
-8) Style canvas widgets with host CSS tokens: var(--medousa-host-fg), --medousa-host-muted, --medousa-host-accent, --medousa-host-surface, --medousa-host-brand). Set environment theme via cognition_environment_patch op set_environment_theme — cognition_environment_wiki(topic=environment_theme).
-9) Custom nav icons: pen-line, layout-grid, sparkles, etc. — cognition_environment_patch op update_surface or add_custom_surface; invalid icons fail validation.
-10) Spotify/Apple Music: type media_embed with provider + embed URL — NEVER iframe inside cognition_ui_present HTML (sandbox blocks playback). cognition_environment_wiki(topic=media_embed).
-11) User layout zones: layoutRoot may include type:slot empty zones — cognition_layout_get before add_component; replace slot with component ref via cognition_layout_apply. cognition_environment_wiki(topic=layout_zones).
-12) Operators edit layout in Home (Edit layout toolbar) — respect existing slot ids when placing new widgets.
+5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive Studio widget.
+6) Interactive widgets: NEVER localStorage/sessionStorage (sandbox blocks it). Use window.MedousaStore — engine-backed KV; survives refresh.
+7) MedousaStore is ASYNC — always await get/set/delete (sync wrappers fail silently). See cognition_environment_wiki(topic=artifact_runtime).
+8) Style with host CSS tokens (--medousa-host-fg, --medousa-host-muted, --medousa-host-accent, --medousa-host-surface, --medousa-host-brand).
+9) Principals edit layout in Studio (Edit layout toolbar) — respect existing slot ids.
 
-Canonical store pattern (copy when persisting widget state):
-  async function loadItems() {
-    const raw = await MedousaStore.get('items');
-    return Array.isArray(raw) ? raw : [];
-  }
-  async function saveItems(items) {
-    if (!MedousaStore.ready()) return;
-    await MedousaStore.set('items', items);
-  }
-  // init: void loadItems().then(render);
-
-Broken widget troubleshoot (no DevTools needed):
+Broken widget troubleshoot:
 1) cognition_custom_view_doctor(surface_id, probe=true, include_runtime=true, include_static_lint=true)
-2) Read components[].runtime.issues[] — STATIC_LOCALSTORAGE → MedousaStore; STATIC_STORE_SYNC_USAGE → add await; STORE_WRONG_TYPE / STATIC_SLICE_WITHOUT_GUARD → Array.isArray guards
-3) cognition_artifact_write minimal diff; reset bad store keys via component store API if needed
-4) Re-run doctor until issues is empty"#;
+2) Read components[].runtime.issues[] — fix per wiki/doctor hints
+3) cognition_artifact_write minimal diff; re-run doctor until issues is empty"#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -89,7 +77,7 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
 pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_DISCIPLINE]
 Scope:
-- Complete WORKER_TASK only. Console lane already orchestrated — workshop executes, does not re-host.
+- Complete WORKER_TASK only. Chat host already orchestrated — Workshop executes, does not re-host.
 - Same Medousa voice as the console; read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] for thread and tone.
 - Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show capability_resolve/search or modules search already succeeded, do not repeat them unless the prior receipt failed.
 
@@ -338,6 +326,6 @@ mod tests {
         let host = system_prompt_for_host_profile("base-sttp", true, None);
         assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(host.contains("[MEDOUSA_HOST_BUS]"));
-        assert!(host.contains("Console lane"));
+        assert!(host.contains("Chat (host)"));
     }
 }

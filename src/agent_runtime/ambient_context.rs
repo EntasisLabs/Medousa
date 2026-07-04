@@ -183,7 +183,7 @@ pub async fn build_environment_ambient_extras(session_id: &str) -> String {
             .map(|c| format!("{}:{}@{}", c.id, format!("{:?}", c.component_type).to_ascii_lowercase(), c.surface_id))
             .collect();
         blocks.push(format!(
-            "[MEDOUSA_CANVAS]\npreset={}\ncomponents={}\nsurfaces={}\nsurface_ids={}\ncustom_surface_ids={}\ncomponent_summary={}\nrecipe=cognition_environment_wiki(topic=recipe) → get → merge full spec → propose/apply → ui_present(persist) OR component_create(presentation)\nactions=cognition_environment_wiki · cognition_environment_get · cognition_environment_propose/apply · cognition_component_* · cognition_ui_present(persist=true) · cognition_context_follow_pointer",
+            "[MEDOUSA_CANVAS]\nstudio_layout=true\npreset={}\ncomponents={}\nsurfaces={}\nsurface_ids={}\ncustom_surface_ids={}\ncomponent_summary={}\nrecipe=cognition_environment_wiki(topic=recipe) → get → merge full spec → propose/apply → ui_present(persist) OR component_create(presentation)\nactions=cognition_environment_wiki · cognition_environment_get · cognition_environment_propose/apply · cognition_component_* · cognition_ui_present(persist=true) · cognition_context_follow_pointer",
             env.spec.active_preset_id.as_deref().unwrap_or("default"),
             env.spec.components.len(),
             env.spec.surfaces.len(),

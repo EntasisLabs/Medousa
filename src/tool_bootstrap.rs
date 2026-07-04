@@ -637,7 +637,7 @@ pub fn build_tool_hints_block(
     let full_allow = host_bus_tool_names();
     let surface = load_session_tool_surface(session_id);
     let mut lines = vec![
-        "Bootstrap tools are always available. Host console sessions auto-unlock memory + vault domains (calibrate, vault write, …).".to_string(),
+        "Bootstrap tools are always available. Chat auto-unlocks memory, vault read, identity, and catalog/runtime orchestration. Studio/canvas tools unlock in Workshop after begin_work.".to_string(),
         format!(
             "Unlocked domains: {}",
             if surface.unlocked_domains.is_empty() {

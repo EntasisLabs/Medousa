@@ -281,6 +281,15 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         ],
     );
 
+    push(
+        &mut names,
+        &[
+            "cognition_web_search",
+            "cognition_browser_fetch",
+            "cognition_browser_snapshot",
+        ],
+    );
+
     names
 }
 
@@ -385,10 +394,12 @@ mod tests {
         assert!(!names.contains("cognition_capability_invoke"));
         assert!(!names.contains("cognition_mcp_invoke"));
         assert!(!names.contains("cognition_turn_prepare_final"));
-        assert!(!names.contains("cognition_environment_get"));
-        assert!(!names.contains("cognition_ui_present"));
         assert!(names.contains("cognition_turn_begin_work"));
         assert!(names.contains("cognition_turn_finish"));
+        assert!(names.contains("cognition_web_search"));
+        assert!(names.contains("cognition_browser_fetch"));
+        assert!(!names.contains("cognition_environment_get"));
+        assert!(!names.contains("cognition_ui_present"));
     }
 
     #[test]
