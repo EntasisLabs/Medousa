@@ -67,6 +67,24 @@ export interface TrustWorkshopResult {
   daemonUrl: string;
 }
 
+export interface PeerMessageAttachmentResult {
+  imported: boolean;
+  summary?: string | null;
+  artifactsImported?: number | null;
+  vaultNotesImported?: number | null;
+}
+
+export interface PeerMessage {
+  id: string;
+  fromDeviceId: string;
+  fromName: string;
+  body: string;
+  sentAt: string;
+  readAt?: string | null;
+  attachment?: Record<string, unknown> | null;
+  attachmentResult?: PeerMessageAttachmentResult | null;
+}
+
 function requireTauri(): void {
   if (!isTauri()) {
     throw new Error("LAN sharing requires the Medousa desktop app");
@@ -132,6 +150,70 @@ export async function pushShareBundleToWorkshop(input: {
       profileId: input.profileId ?? null,
     },
   });
+}
+
+export async function shareArtifactToPeer(
+  workshopId: string,
+  artifactId: string,
+  conflictStrategy: ShareConflictStrategy = "rename",
+): Promise<ShareImportResult> {
+  requireTauri();
+  return invoke<ShareImportResult>("share_item_to_peer", {
+    request: {
+      workshopId,
+      artifactId,
+      conflictStrategy,
+    },
+  });
+}
+
+export async function shareNoteToPeer(
+  workshopId: string,
+  vaultPath: string,
+  conflictStrategy: ShareConflictStrategy = "rename",
+): Promise<ShareImportResult> {
+  requireTauri();
+  return invoke<ShareImportResult>("share_item_to_peer", {
+    request: {
+      workshopId,
+      vaultPath,
+      conflictStrategy,
+    },
+  });
+}
+
+export async function peerSendMessage(input: {
+  workshopId: string;
+  body: string;
+  attachment?: Record<string, unknown> | null;
+}): Promise<PeerMessage> {
+  requireTauri();
+  return invoke<PeerMessage>("peer_send_message", {
+    request: {
+      workshopId: input.workshopId,
+      body: input.body,
+      attachment: input.attachment ?? null,
+    },
+  });
+}
+
+export async function peerListMessages(unreadOnly = false): Promise<PeerMessage[]> {
+  requireTauri();
+  const response = await invoke<{ messages: PeerMessage[] }>("peer_list_messages", {
+    unreadOnly,
+  });
+  return response.messages ?? [];
+}
+
+export async function peerUnreadCount(): Promise<number> {
+  requireTauri();
+  const response = await invoke<{ unread: number }>("peer_unread_count");
+  return response.unread ?? 0;
+}
+
+export async function peerMarkRead(messageId: string): Promise<PeerMessage> {
+  requireTauri();
+  return invoke<PeerMessage>("peer_mark_read", { messageId });
 }
 
 export function capabilityBadges(flags?: string | null): string[] {

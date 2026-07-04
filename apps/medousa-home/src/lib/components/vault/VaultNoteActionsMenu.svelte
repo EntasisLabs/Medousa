@@ -1,9 +1,27 @@
 <script lang="ts">
+  import ShareToPeerSheet from "$lib/components/settings/ShareToPeerSheet.svelte";
   import { vault } from "$lib/stores/vault.svelte";
+  import { listTrustedWorkshops } from "$lib/utils/lanShareApi";
+  import { isTauri } from "$lib/window";
+  import { onMount } from "svelte";
 
   let titleDraft = $state("");
   let pathDraft = $state("");
   let confirmDelete = $state(false);
+  let peerShareOpen = $state(false);
+  let hasTrustedPeers = $state(false);
+  let peerStatus = $state<string | null>(null);
+
+  onMount(() => {
+    if (!isTauri()) return;
+    void listTrustedWorkshops()
+      .then((peers) => {
+        hasTrustedPeers = peers.some((peer) => peer.hasSessionToken);
+      })
+      .catch(() => {
+        hasTrustedPeers = false;
+      });
+  });
 
   $effect(() => {
     if (vault.noteActionsOpen) {
@@ -95,6 +113,24 @@
         </button>
       </form>
 
+      {#if hasTrustedPeers && vault.selectedPath}
+        <div class="border-t border-surface-500/35 pt-4">
+          <button
+            type="button"
+            class="btn btn-sm variant-soft-primary"
+            onclick={() => {
+              peerStatus = null;
+              peerShareOpen = true;
+            }}
+          >
+            Share to peer…
+          </button>
+          {#if peerStatus}
+            <p class="mt-2 text-xs text-surface-400">{peerStatus}</p>
+          {/if}
+        </div>
+      {/if}
+
       <div class="border-t border-surface-500/35 pt-4">
         <button
           type="button"
@@ -113,3 +149,18 @@
     </div>
   </div>
 {/if}
+
+<ShareToPeerSheet
+  open={peerShareOpen}
+  vaultPath={vault.selectedPath}
+  label={vault.title}
+  onClose={() => {
+    peerShareOpen = false;
+  }}
+  onShared={(message) => {
+    peerStatus = message;
+  }}
+  onError={(message) => {
+    peerStatus = message;
+  }}
+/>

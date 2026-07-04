@@ -7,7 +7,9 @@
     FileText,
     MoreHorizontal,
     Share2,
+    Users,
   } from "@lucide/svelte";
+  import ShareToPeerSheet from "$lib/components/settings/ShareToPeerSheet.svelte";
   import { haptic } from "$lib/haptics";
   import {
     copyArtifactId,
@@ -17,6 +19,8 @@
     exportArtifactPng,
     shareArtifact,
   } from "$lib/utils/artifactExport";
+  import { isTauri } from "$lib/window";
+  import { listTrustedWorkshops } from "$lib/utils/lanShareApi";
 
   interface Props {
     sessionId: string;
@@ -37,6 +41,8 @@
   let open = $state(false);
   let busy = $state(false);
   let menuEl = $state<HTMLDivElement | null>(null);
+  let peerShareOpen = $state(false);
+  let hasTrustedPeers = $state(false);
 
   function setStatus(message: string | null) {
     onStatus?.(message);
@@ -59,6 +65,17 @@
 
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeydown);
+
+    if (isTauri()) {
+      void listTrustedWorkshops()
+        .then((peers) => {
+          hasTrustedPeers = peers.some((peer) => peer.hasSessionToken);
+        })
+        .catch(() => {
+          hasTrustedPeers = false;
+        });
+    }
+
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeydown);
@@ -136,6 +153,20 @@
         <Share2 size={14} strokeWidth={2} aria-hidden="true" />
         Share summary
       </button>
+      {#if hasTrustedPeers}
+        <button
+          type="button"
+          class="artifact-export-item"
+          role="menuitem"
+          onclick={() => {
+            closeMenu();
+            peerShareOpen = true;
+          }}
+        >
+          <Users size={14} strokeWidth={2} aria-hidden="true" />
+          Share to peer…
+        </button>
+      {/if}
       <button
         type="button"
         class="artifact-export-item"
@@ -202,6 +233,17 @@
     </div>
   {/if}
 </div>
+
+<ShareToPeerSheet
+  open={peerShareOpen}
+  {artifactId}
+  {label}
+  onClose={() => {
+    peerShareOpen = false;
+  }}
+  onShared={(message) => setStatus(message)}
+  onError={(message) => setStatus(message)}
+/>
 
 <style>
   .artifact-export-menu {

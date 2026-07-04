@@ -3,7 +3,7 @@ use base64::Engine;
 use chrono::Utc;
 use medousa_types::environment::{ComponentDef, EnvironmentSpec, SurfaceDef, SurfaceKind, SurfaceLayout};
 
-use crate::artifact_store::{fetch_artifact_at_id, persist_ui_artifact};
+use crate::artifact_store::{fetch_artifact_at_id, list_ui_artifacts, persist_ui_artifact, FetchedArtifact};
 use crate::environment_store::{EnvironmentHub, resolve_profile_id};
 use crate::share::bundle::{
     ShareArtifactEntry, ShareBundle, ShareConflictStrategy, ShareExportRequest, ShareImportRequest,
@@ -12,6 +12,63 @@ use crate::share::bundle::{
 use crate::vault::store::vault_store;
 
 const SHARE_IMPORT_SESSION: &str = "__share_import__";
+
+fn resolve_artifact_for_export(artifact_id: &str) -> Option<FetchedArtifact> {
+    let id = artifact_id.trim();
+    if id.is_empty() {
+        return None;
+    }
+    if let Some(fetched) = fetch_artifact_at_id(SHARE_IMPORT_SESSION, id)
+        .or_else(|| fetch_artifact_at_id("", id))
+    {
+        return Some(fetched);
+    }
+    let records = list_ui_artifacts(None, 500, Some(id));
+    let record = records.into_iter().find(|entry| {
+        entry.artifact_id == id || entry.artifact_id.starts_with(id) || id.starts_with(&entry.artifact_id)
+    })?;
+    fetch_artifact_at_id(&record.session_id, &record.artifact_id)
+}
+
+fn artifact_entry_from_fetched(fetched: FetchedArtifact) -> ShareArtifactEntry {
+    ShareArtifactEntry {
+        id: fetched.record.artifact_id.clone(),
+        title: fetched
+            .record
+            .label
+            .clone()
+            .unwrap_or_else(|| "Shared artifact".to_string()),
+        mime: fetched.mime.clone(),
+        content_base64: base64::engine::general_purpose::STANDARD.encode(fetched.body.as_bytes()),
+        presentation: fetched.record.presentation.clone(),
+        height_px: fetched.record.height_px.map(|value| value as u32),
+    }
+}
+
+/// Export a single UI artifact as a mini share bundle.
+pub fn export_single_artifact(
+    artifact_id: &str,
+    source: ShareSourceWorkshop,
+) -> Result<ShareBundle> {
+    export_bundle(
+        ShareExportRequest {
+            artifact_ids: vec![artifact_id.trim().to_string()],
+            ..Default::default()
+        },
+        source,
+    )
+}
+
+/// Export a single vault note as a mini share bundle.
+pub fn export_single_vault_note(path: &str, source: ShareSourceWorkshop) -> Result<ShareBundle> {
+    export_bundle(
+        ShareExportRequest {
+            vault_paths: vec![path.trim().to_string()],
+            ..Default::default()
+        },
+        source,
+    )
+}
 
 pub fn export_bundle(
     request: ShareExportRequest,
@@ -23,23 +80,9 @@ pub fn export_bundle(
         if id.is_empty() {
             continue;
         }
-        let fetched = fetch_artifact_at_id(SHARE_IMPORT_SESSION, id)
-            .or_else(|| fetch_artifact_at_id("", id))
+        let fetched = resolve_artifact_for_export(id)
             .with_context(|| format!("artifact '{id}' not found"))?;
-        let content_base64 =
-            base64::engine::general_purpose::STANDARD.encode(fetched.body.as_bytes());
-        artifacts.push(ShareArtifactEntry {
-            id: fetched.record.artifact_id.clone(),
-            title: fetched
-                .record
-                .label
-                .clone()
-                .unwrap_or_else(|| "Shared artifact".to_string()),
-            mime: fetched.mime.clone(),
-            content_base64,
-            presentation: fetched.record.presentation.clone(),
-            height_px: fetched.record.height_px.map(|value| value as u32),
-        });
+        artifacts.push(artifact_entry_from_fetched(fetched));
     }
 
     let store = vault_store();
@@ -397,7 +440,10 @@ fn rename_component_id(base: &str, existing: &std::collections::HashSet<String>)
 mod tests {
     use chrono::Utc;
 
-    use super::{ShareBundle, ShareSourceWorkshop, SHARE_BUNDLE_VERSION};
+    use super::{
+        export_single_artifact, export_single_vault_note, ShareBundle, ShareSourceWorkshop,
+        SHARE_BUNDLE_VERSION,
+    };
 
     fn sample_source() -> ShareSourceWorkshop {
         ShareSourceWorkshop {
@@ -431,5 +477,13 @@ mod tests {
             environment: None,
         };
         assert!(bundle.validate().is_empty());
+    }
+
+    #[test]
+    fn export_single_helpers_require_existing_items() {
+        let err = export_single_artifact("art:missing", sample_source()).unwrap_err();
+        assert!(err.to_string().contains("not found"));
+        let err = export_single_vault_note("missing/note.md", sample_source()).unwrap_err();
+        assert!(err.to_string().contains("not found"));
     }
 }

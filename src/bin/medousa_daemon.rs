@@ -447,7 +447,14 @@ async fn main() -> Result<()> {
     if let Some(pairing_router) = pairing_router {
         app = app.merge(pairing_router);
     }
-    app = app.merge(medousa::share_handlers::share_router(share_api_state));
+    let peer_message_state = medousa::peer_message_handlers::PeerMessageApiState {
+        pairing: share_api_state.pairing.clone(),
+        local_device_id: share_api_state.local_device_id.clone(),
+        local_peer_name: share_api_state.local_peer_name.clone(),
+    };
+    app = app
+        .merge(medousa::share_handlers::share_router(share_api_state))
+        .merge(medousa::peer_message_handlers::peer_message_router(peer_message_state));
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

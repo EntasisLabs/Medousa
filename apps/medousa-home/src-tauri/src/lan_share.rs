@@ -284,3 +284,203 @@ pub fn revoke_trusted_workshop(workshop_id: String) -> Result<(), String> {
     crate::workshop_transport::invalidate_workshop_route_cache();
     Ok(())
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareItemToPeerRequest {
+    pub workshop_id: String,
+    #[serde(default)]
+    pub artifact_id: Option<String>,
+    #[serde(default)]
+    pub vault_path: Option<String>,
+    #[serde(default)]
+    pub conflict_strategy: String,
+}
+
+#[tauri::command]
+pub async fn share_item_to_peer(
+    state: State<'_, DaemonState>,
+    request: ShareItemToPeerRequest,
+) -> Result<serde_json::Value, String> {
+    let artifact_id = request
+        .artifact_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let vault_path = request
+        .vault_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if artifact_id.is_none() && vault_path.is_none() {
+        return Err("artifactId or vaultPath is required".to_string());
+    }
+    if artifact_id.is_some() && vault_path.is_some() {
+        return Err("Share one item at a time (artifact or note)".to_string());
+    }
+
+    let export_request = ShareExportInvokeRequest {
+        artifact_ids: artifact_id.map(|id| vec![id.to_string()]).unwrap_or_default(),
+        vault_paths: vault_path.map(|path| vec![path.to_string()]).unwrap_or_default(),
+        ..Default::default()
+    };
+    let bundle = share_export_bundle(state, export_request).await?;
+    share_push_to_workshop(SharePushInvokeRequest {
+        workshop_id: request.workshop_id,
+        bundle,
+        conflict_strategy: if request.conflict_strategy.trim().is_empty() {
+            "rename".to_string()
+        } else {
+            request.conflict_strategy
+        },
+        profile_id: None,
+    })
+    .await
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerSendMessageRequest {
+    pub workshop_id: String,
+    pub body: String,
+    #[serde(default)]
+    pub attachment: Option<serde_json::Value>,
+}
+
+#[tauri::command]
+pub async fn peer_send_message(
+    state: State<'_, DaemonState>,
+    request: PeerSendMessageRequest,
+) -> Result<serde_json::Value, String> {
+    let registry = crate::workshop_registry::load_registry()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|entry| entry.id == request.workshop_id)
+        .ok_or_else(|| format!("Unknown workshop '{}'", request.workshop_id))?;
+    if workshop.kind != "paired" {
+        return Err("Messaging requires a trusted paired workshop".to_string());
+    }
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        &request.workshop_id,
+        &workshop.url,
+    )
+    .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
+
+    let (from_device_id, from_name) = local_identity(&state).await;
+
+    let body = serde_json::json!({
+        "body": request.body,
+        "fromDeviceId": from_device_id,
+        "fromName": from_name,
+        "attachment": request.attachment,
+    });
+
+    crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+        &config,
+        "/v1/peer/messages",
+        &body,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn peer_list_messages(
+    state: State<'_, DaemonState>,
+    unread_only: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let base = daemon_base(&state)?;
+    let client = daemon_http_client()?;
+    let mut url = format!("{base}/v1/peer/messages");
+    if unread_only.unwrap_or(false) {
+        url.push_str("?unreadOnly=true");
+    }
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("List peer messages failed HTTP {status}: {body}"));
+    }
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn peer_unread_count(state: State<'_, DaemonState>) -> Result<serde_json::Value, String> {
+    let base = daemon_base(&state)?;
+    let client = daemon_http_client()?;
+    let response = client
+        .get(format!("{base}/v1/peer/messages/unread-count"))
+        .send()
+        .await
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Unread count failed HTTP {status}: {body}"));
+    }
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn peer_mark_read(
+    state: State<'_, DaemonState>,
+    message_id: String,
+) -> Result<serde_json::Value, String> {
+    let base = daemon_base(&state)?;
+    let client = daemon_http_client()?;
+    let response = client
+        .post(format!("{base}/v1/peer/messages/{message_id}/read"))
+        .send()
+        .await
+        .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Mark read failed HTTP {status}: {body}"));
+    }
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+async fn local_identity(state: &State<'_, DaemonState>) -> (String, String) {
+    let base = match daemon_base(state) {
+        Ok(base) => base,
+        Err(_) => return ("local".to_string(), "Medousa".to_string()),
+    };
+    let client = match daemon_http_client() {
+        Ok(client) => client,
+        Err(_) => return ("local".to_string(), "Medousa".to_string()),
+    };
+    let Ok(response) = client.get(format!("{base}/pair/status")).send().await else {
+        return ("local".to_string(), "Medousa".to_string());
+    };
+    if !response.status().is_success() {
+        return ("local".to_string(), "Medousa".to_string());
+    }
+    let Ok(value) = response.json::<serde_json::Value>().await else {
+        return ("local".to_string(), "Medousa".to_string());
+    };
+    let device_id = value
+        .get("deviceId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("local")
+        .to_string();
+    let peer_name = value
+        .get("peerName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Medousa")
+        .to_string();
+    (device_id, peer_name)
+}
