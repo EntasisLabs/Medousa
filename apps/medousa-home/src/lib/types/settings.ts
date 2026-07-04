@@ -7,6 +7,7 @@ export type SettingsSectionId =
   | "voice"
   | "reach"
   | "phone"
+  | "nearby"
   | "basement";
 
 export const SETTINGS_SECTIONS: {
@@ -22,6 +23,7 @@ export const SETTINGS_SECTIONS: {
   { id: "voice", label: "Voice", hint: "Stance & answer depth" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
+  { id: "nearby", label: "Nearby", hint: "Discover & share with other workshops" },
   { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },
 ];
 

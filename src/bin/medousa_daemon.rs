@@ -321,6 +321,11 @@ async fn main() -> Result<()> {
     let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
     #[cfg(feature = "iroh-transport")]
     let mut iroh_gateway_hold: Option<medousa::iroh_transport::WorkshopGateway> = None;
+    let mut share_api_state = medousa::share_handlers::ShareApiState {
+        pairing: None,
+        local_device_id: "local".to_string(),
+        local_peer_name: "Medousa".to_string(),
+    };
     let pairing_router = if medousa::pairing::pairing_enabled_from_env() {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
@@ -424,6 +429,11 @@ async fn main() -> Result<()> {
                 tracing::warn!(error = %err, "pairing QR warm-up failed");
             }
         });
+        share_api_state = medousa::share_handlers::ShareApiState {
+            pairing: Some(pairing_service.clone()),
+            local_device_id: pairing_service.device_id().to_string(),
+            local_peer_name: pairing_service.peer_name().to_string(),
+        };
         Some(
             medousa::pairing_handlers::routes().with_state(medousa::pairing_handlers::PairingApiState {
                 service: pairing_service,
@@ -437,6 +447,7 @@ async fn main() -> Result<()> {
     if let Some(pairing_router) = pairing_router {
         app = app.merge(pairing_router);
     }
+    app = app.merge(medousa::share_handlers::share_router(share_api_state));
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

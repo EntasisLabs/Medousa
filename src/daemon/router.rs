@@ -252,6 +252,7 @@ pub fn build_feature_routers(
         .merge(crate::inference_profiles_handlers::routes())
         .merge(crate::daemon::runtime_tui_defaults::routes())
         .merge(crate::stt_handlers::routes())
+        .merge(crate::lan_handlers::lan_router())
         .merge(dashboard)
 }
 

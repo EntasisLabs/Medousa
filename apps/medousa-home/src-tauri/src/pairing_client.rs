@@ -239,9 +239,33 @@ pub fn load_pairing_credentials_summary() -> Option<PairingCredentialsSummary> {
 
 pub fn load_workshop_transport_config(lan_base: &str) -> Option<WorkshopTransportConfig> {
     let file = read_credentials_file()?;
+    build_transport_config(&file, lan_base)
+}
+
+pub fn load_workshop_transport_config_for_id(
+    workshop_id: &str,
+    lan_base: &str,
+) -> Option<WorkshopTransportConfig> {
+    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
+    let raw = fs::read_to_string(path).ok()?;
+    let file = serde_json::from_str::<PairingCredentialsFile>(&raw).ok()?;
+    build_transport_config(&file, lan_base)
+}
+
+pub fn workshop_has_session_token(workshop_id: &str, workshop_device_id: &str) -> bool {
+    read_session_token(workshop_device_id).is_some()
+        || read_credentials_for_workshop(workshop_id)
+            .is_some_and(|file| read_session_token(&file.workshop_device_id).is_some())
+}
+
+fn build_transport_config(file: &PairingCredentialsFile, lan_base: &str) -> Option<WorkshopTransportConfig> {
     let lan = lan_base.trim().trim_end_matches('/').to_string();
     Some(WorkshopTransportConfig {
-        lan_base: if lan.is_empty() { file.daemon_url.clone() } else { lan },
+        lan_base: if lan.is_empty() {
+            file.daemon_url.clone()
+        } else {
+            lan
+        },
         iroh_ticket: file
             .iroh_ticket
             .as_ref()
@@ -249,6 +273,12 @@ pub fn load_workshop_transport_config(lan_base: &str) -> Option<WorkshopTranspor
             .filter(|value| !value.is_empty()),
         session_token: read_session_token(&file.workshop_device_id),
     })
+}
+
+fn read_credentials_for_workshop(workshop_id: &str) -> Option<PairingCredentialsFile> {
+    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
 }
 
 pub async fn send_pair_heartbeat(

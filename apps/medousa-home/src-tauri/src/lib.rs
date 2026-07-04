@@ -13,6 +13,7 @@ mod medousa_paths;
 mod packages;
 mod pairing;
 mod pairing_client;
+mod lan_share;
 mod push;
 mod workshop_registry;
 mod workshop_transport;
@@ -199,6 +200,13 @@ pub fn run() {
             push::push_register_apns_token,
             push::push_clear_apns_token,
             pairing::bonjour_status,
+            lan_share::lan_discover_workshops,
+            lan_share::share_export_bundle,
+            lan_share::share_import_bundle,
+            lan_share::share_push_to_workshop,
+            lan_share::trust_workshop_from_qr,
+            lan_share::list_trusted_workshops,
+            lan_share::revoke_trusted_workshop,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,

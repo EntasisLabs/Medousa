@@ -706,7 +706,7 @@ impl PairingService {
         true
     }
 
-    fn find_by_session_token(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
+    pub fn find_by_session_token(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
         let hash = hash_session_token(token);
         for record in self.store.list_paired()? {
             if record.session_token_hash == hash {
@@ -714,6 +714,13 @@ impl PairingService {
             }
         }
         Ok(None)
+    }
+
+    pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
+        let Some(record) = self.find_by_session_token(token)? else {
+            return Ok(false);
+        };
+        Ok(record.session_token_expiry >= Utc::now())
     }
 }
 

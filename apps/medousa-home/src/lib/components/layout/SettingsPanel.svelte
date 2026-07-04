@@ -7,6 +7,7 @@
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
+  import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
   import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
@@ -101,6 +102,8 @@
         <SettingsReachSection {mobile} />
       {:else if activeSection === "phone"}
         <SettingsPhoneSection {mobile} />
+      {:else if activeSection === "nearby"}
+        <SettingsLanShareSection />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}
