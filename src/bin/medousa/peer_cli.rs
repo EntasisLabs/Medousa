@@ -215,42 +215,105 @@ fn run_send(args: &[String]) -> Result<()> {
         let body = response.text().unwrap_or_default();
         bail!("send failed HTTP {status}: {body}");
     }
+
+    // Keep a local outbound copy when this machine also runs an engine (Home threads / local inbox).
+    let local_url = resolve_daemon_url(None);
+    let _ = client
+        .post(format!("{local_url}/v1/peer/messages"))
+        .json(&serde_json::json!({
+            "body": message,
+            "fromDeviceId": sender.device_id,
+            "fromName": sender.peer_name,
+            "toDeviceId": connection.workshop_device_id,
+            "toName": connection.label,
+            "direction": "out",
+        }))
+        .send();
+
     println!("Sent to {}", connection.label);
     Ok(())
 }
 
 fn run_inbox(args: &[String]) -> Result<()> {
-    let daemon_url = resolve_daemon_url_arg(args);
     let unread_only = has_flag(args, "--unread");
     let client = http_client()?;
-    let mut url = format!("{daemon_url}/v1/peer/messages");
-    if unread_only {
-        url.push_str("?unreadOnly=true");
+    let mut rows: Vec<(String, Value)> = Vec::new();
+
+    // Local workshop inbox (when this machine is also a host).
+    let local_url = resolve_daemon_url_arg(args);
+    if let Ok(messages) = fetch_messages(&client, &local_url, None, unread_only) {
+        for message in messages {
+            rows.push(("local".to_string(), message));
+        }
     }
-    let response = client
-        .get(&url)
-        .send()
-        .context("GET /v1/peer/messages")?;
-    if !response.status().is_success() {
-        bail!("GET /v1/peer/messages returned {}", response.status());
+
+    // Conversations on hosts we connected to (includes their replies to us).
+    let store = load_store()?;
+    for connection in &store.connections {
+        match fetch_messages(
+            &client,
+            &connection.daemon_url,
+            Some(&connection.session_token),
+            unread_only,
+        ) {
+            Ok(messages) => {
+                for message in messages {
+                    rows.push((connection.label.clone(), message));
+                }
+            }
+            Err(err) => {
+                eprintln!(
+                    "[warn] could not read inbox on {}: {err}",
+                    connection.label
+                );
+            }
+        }
     }
-    let body: Value = response.json().context("parse inbox json")?;
-    let messages = body
-        .get("messages")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if messages.is_empty() {
+
+    rows.sort_by(|left, right| {
+        let left_at = left.1.get("sentAt").and_then(Value::as_str).unwrap_or("");
+        let right_at = right.1.get("sentAt").and_then(Value::as_str).unwrap_or("");
+        right_at.cmp(left_at)
+    });
+
+    // Dedupe by message id (local + remote shouldn't collide, but be safe).
+    let mut seen = std::collections::HashSet::new();
+    rows.retain(|(_, message)| {
+        let id = message
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        id.is_empty() || seen.insert(id)
+    });
+
+    if rows.is_empty() {
         println!("Inbox empty.");
         return Ok(());
     }
-    println!("ID\tFROM\tREAD\tBODY");
-    for message in messages {
+    println!("ID\tHOST\tDIR\tFROM\tREAD\tBODY");
+    for (host, message) in rows {
         let id = message.get("id").and_then(Value::as_str).unwrap_or("-");
-        let from = message
-            .get("fromName")
+        let direction = message
+            .get("direction")
             .and_then(Value::as_str)
-            .unwrap_or("-");
+            .unwrap_or("in");
+        // On a remote host, direction=out means they sent to us.
+        let display_dir = if host == "local" {
+            direction
+        } else if direction == "out" {
+            "in"
+        } else {
+            "out"
+        };
+        let from = if display_dir == "out" {
+            "you"
+        } else {
+            message
+                .get("fromName")
+                .and_then(Value::as_str)
+                .unwrap_or("-")
+        };
         let read = if message.get("readAt").and_then(Value::as_str).is_some() {
             "yes"
         } else {
@@ -262,10 +325,36 @@ fn run_inbox(args: &[String]) -> Result<()> {
             .unwrap_or("")
             .replace('\n', " ");
         let short_id = id.chars().take(12).collect::<String>();
-        let preview: String = body.chars().take(60).collect();
-        println!("{short_id}\t{from}\t{read}\t{preview}");
+        let preview: String = body.chars().take(48).collect();
+        println!("{short_id}\t{host}\t{display_dir}\t{from}\t{read}\t{preview}");
     }
     Ok(())
+}
+
+fn fetch_messages(
+    client: &reqwest::blocking::Client,
+    daemon_url: &str,
+    bearer: Option<&str>,
+    unread_only: bool,
+) -> Result<Vec<Value>> {
+    let mut url = format!("{daemon_url}/v1/peer/messages");
+    if unread_only {
+        url.push_str("?unreadOnly=true");
+    }
+    let mut request = client.get(&url);
+    if let Some(token) = bearer {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().context("GET /v1/peer/messages")?;
+    if !response.status().is_success() {
+        bail!("GET /v1/peer/messages returned {}", response.status());
+    }
+    let body: Value = response.json().context("parse inbox json")?;
+    Ok(body
+        .get("messages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
 }
 
 fn run_read(args: &[String]) -> Result<()> {
@@ -274,26 +363,50 @@ fn run_read(args: &[String]) -> Result<()> {
         .map(String::as_str)
         .filter(|value| !value.starts_with("--"))
         .context("usage: medousa peer read <message-id>")?;
-    let daemon_url = resolve_daemon_url_arg(args);
     let client = http_client()?;
-    let response = client
-        .post(format!("{daemon_url}/v1/peer/messages/{id}/read"))
-        .send()
-        .context("POST mark read")?;
-    if !response.status().is_success() {
-        bail!("mark read returned {}", response.status());
+    let store = load_store()?;
+
+    // Prefer marking read on the host that owns the conversation.
+    let mut targets: Vec<(String, Option<String>)> = vec![(resolve_daemon_url_arg(args), None)];
+    for connection in &store.connections {
+        targets.push((
+            connection.daemon_url.clone(),
+            Some(connection.session_token.clone()),
+        ));
     }
-    let body: Value = response.json().context("parse message json")?;
-    let from = body.get("fromName").and_then(Value::as_str).unwrap_or("-");
-    let text = body.get("body").and_then(Value::as_str).unwrap_or("");
-    println!("From: {from}");
-    println!("{text}");
-    if let Some(result) = body.get("attachmentResult") {
-        if let Some(summary) = result.get("summary").and_then(Value::as_str) {
-            println!("Attachment: {summary}");
+
+    for (daemon_url, token) in targets {
+        let mut request = client.post(format!("{daemon_url}/v1/peer/messages/{id}/read"));
+        if let Some(token) = token.as_deref() {
+            request = request.bearer_auth(token);
         }
+        let Ok(response) = request.send() else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let body: Value = response.json().context("parse message json")?;
+        let direction = body
+            .get("direction")
+            .and_then(Value::as_str)
+            .unwrap_or("in");
+        let from = if direction == "out" {
+            body.get("fromName").and_then(Value::as_str).unwrap_or("host")
+        } else {
+            "you"
+        };
+        let text = body.get("body").and_then(Value::as_str).unwrap_or("");
+        println!("From: {from}");
+        println!("{text}");
+        if let Some(result) = body.get("attachmentResult") {
+            if let Some(summary) = result.get("summary").and_then(Value::as_str) {
+                println!("Attachment: {summary}");
+            }
+        }
+        return Ok(());
     }
-    Ok(())
+    bail!("message not found: {id}");
 }
 
 fn complete_pair_ceremony(

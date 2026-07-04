@@ -27,6 +27,8 @@ export interface TrustedWorkshopSummary {
   pairedAt: string;
   hasSessionToken: boolean;
   hasIrohTicket: boolean;
+  /** They connected to us; replies are stored here for them to poll. */
+  inbound?: boolean;
 }
 
 export type ShareConflictStrategy = "skip" | "rename" | "overwrite";
@@ -81,6 +83,10 @@ export interface PeerMessage {
   body: string;
   sentAt: string;
   readAt?: string | null;
+  /** `in` = received here, `out` = sent from here */
+  direction?: "in" | "out" | string;
+  toDeviceId?: string | null;
+  toName?: string | null;
   attachment?: Record<string, unknown> | null;
   attachmentResult?: PeerMessageAttachmentResult | null;
 }

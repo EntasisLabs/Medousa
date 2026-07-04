@@ -37,6 +37,9 @@ pub struct TrustedWorkshopSummary {
     pub paired_at: String,
     pub has_session_token: bool,
     pub has_iroh_ticket: bool,
+    /// True when they connected to us (no outbound credentials); replies stay on this host for them to poll.
+    #[serde(default)]
+    pub inbound: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -228,18 +231,22 @@ pub struct LanConnectWorkshopRequest {
     pub peer_name: Option<String>,
 }
 
+fn normalize_lan_daemon_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("Workshop URL is required".to_string());
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return Ok(trimmed.to_string());
+    }
+    Ok(format!("http://{trimmed}"))
+}
+
 #[tauri::command]
 pub async fn lan_connect_workshop(
     request: LanConnectWorkshopRequest,
 ) -> Result<crate::pairing_client::PairCompleteFromQrResult, String> {
-    let daemon_url = request
-        .daemon_url
-        .trim()
-        .trim_end_matches('/')
-        .to_string();
-    if daemon_url.is_empty() {
-        return Err("Workshop URL is required".to_string());
-    }
+    let daemon_url = normalize_lan_daemon_url(&request.daemon_url)?;
     let client = daemon_http_client()?;
     let response = client
         .get(format!("{daemon_url}/qr"))
@@ -302,9 +309,12 @@ pub async fn trust_workshop_from_qr(
 }
 
 #[tauri::command]
-pub fn list_trusted_workshops() -> Result<Vec<TrustedWorkshopSummary>, String> {
+pub async fn list_trusted_workshops(
+    state: State<'_, DaemonState>,
+) -> Result<Vec<TrustedWorkshopSummary>, String> {
     let registry = crate::workshop_registry::load_registry()?;
     let mut out = Vec::new();
+    let mut known_device_ids = Vec::new();
     for workshop in registry.workshops {
         if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
             continue;
@@ -312,6 +322,7 @@ pub fn list_trusted_workshops() -> Result<Vec<TrustedWorkshopSummary>, String> {
         let Some(pairing) = workshop.pairing else {
             continue;
         };
+        known_device_ids.push(pairing.workshop_device_id.clone());
         let has_session_token = crate::pairing_client::workshop_has_session_token(
             &workshop.id,
             &pairing.workshop_device_id,
@@ -324,18 +335,121 @@ pub fn list_trusted_workshops() -> Result<Vec<TrustedWorkshopSummary>, String> {
             paired_at: pairing.paired_at,
             has_session_token,
             has_iroh_ticket: pairing.has_iroh_ticket.unwrap_or(false),
+            inbound: false,
         });
     }
+
+    // Surfaces that connected *to* us as peers (CLI / other Home) — conversations live here.
+    if let Ok(status) = fetch_pair_status_value(&state).await {
+        if let Some(devices) = status.get("pairedDevices").and_then(|v| v.as_array()) {
+            for device in devices {
+                let role = device
+                    .get("role")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("portal");
+                if role != "peer" {
+                    continue;
+                }
+                let phone_id = device
+                    .get("phoneId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if phone_id.is_empty() {
+                    continue;
+                }
+                if known_device_ids.iter().any(|id| {
+                    id == &phone_id
+                        || id.starts_with(&phone_id[..phone_id.len().min(8)])
+                        || phone_id.starts_with(&id[..id.len().min(8)])
+                }) {
+                    continue;
+                }
+                let label = device
+                    .get("phoneName")
+                    .and_then(|v| v.as_str())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("Peer")
+                    .to_string();
+                let paired_at = device
+                    .get("pairedAt")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                out.push(TrustedWorkshopSummary {
+                    workshop_id: format!("inbound-{phone_id}"),
+                    label,
+                    daemon_url: String::new(),
+                    workshop_device_id: phone_id,
+                    paired_at,
+                    has_session_token: true,
+                    has_iroh_ticket: false,
+                    inbound: true,
+                });
+            }
+        }
+    }
+
     out.sort_by(|left, right| left.label.cmp(&right.label));
     Ok(out)
 }
 
+async fn fetch_pair_status_value(
+    state: &State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    let base = daemon_base(state)?;
+    let client = daemon_http_client()?;
+    let response = client
+        .get(format!("{base}/pair/status"))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("pair status HTTP {}", response.status()));
+    }
+    response.json().await.map_err(|err| err.to_string())
+}
+
 #[tauri::command]
-pub fn revoke_trusted_workshop(workshop_id: String) -> Result<(), String> {
+pub async fn revoke_trusted_workshop(
+    state: State<'_, DaemonState>,
+    workshop_id: String,
+) -> Result<(), String> {
     let trimmed = workshop_id.trim();
     if trimmed.is_empty() {
         return Err("Workshop id is required".to_string());
     }
+
+    if let Some(phone_id) = trimmed.strip_prefix("inbound-") {
+        let status = fetch_pair_status_value(&state).await?;
+        let pairing_id = status
+            .get("pairedDevices")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .find(|device| {
+                device.get("phoneId").and_then(|v| v.as_str()) == Some(phone_id)
+                    && device.get("role").and_then(|v| v.as_str()) == Some("peer")
+            })
+            .and_then(|device| device.get("pairingId").and_then(|v| v.as_str()))
+            .ok_or_else(|| format!("Inbound peer '{phone_id}' not found"))?
+            .to_string();
+        let base = daemon_base(&state)?;
+        let client = daemon_http_client()?;
+        let response = client
+            .delete(format!("{base}/pair/{pairing_id}"))
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Failed to revoke inbound peer HTTP {}",
+                response.status()
+            ));
+        }
+        return Ok(());
+    }
+
     let mut registry = crate::workshop_registry::load_registry()?;
     let removed = registry
         .workshops
@@ -427,36 +541,111 @@ pub async fn peer_send_message(
     state: State<'_, DaemonState>,
     request: PeerSendMessageRequest,
 ) -> Result<serde_json::Value, String> {
-    let registry = crate::workshop_registry::load_registry()?;
-    let workshop = registry
-        .workshops
-        .iter()
-        .find(|entry| entry.id == request.workshop_id)
-        .ok_or_else(|| format!("Unknown workshop '{}'", request.workshop_id))?;
-    if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
-        return Err("Messaging requires a peer connection".to_string());
-    }
-    let config = crate::pairing_client::load_workshop_transport_config_for_id(
-        &request.workshop_id,
-        &workshop.url,
-    )
-    .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
-
     let (from_device_id, from_name) = local_identity(&state).await;
+    let (to_device_id, to_name, remote_config) =
+        resolve_peer_send_target(&state, &request.workshop_id).await?;
 
-    let body = serde_json::json!({
+    let deliver_body = serde_json::json!({
         "body": request.body,
         "fromDeviceId": from_device_id,
         "fromName": from_name,
         "attachment": request.attachment,
     });
 
-    crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
-        &config,
-        "/v1/peer/messages",
-        &body,
+    // Deliver to their workshop when we have outbound credentials (mutual / Connect).
+    if let Some(config) = remote_config {
+        crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+            &config,
+            "/v1/peer/messages",
+            &deliver_body,
+        )
+        .await?;
+    }
+
+    // Always keep a local outbound copy so Home threads show what we sent.
+    // Inbound-only peers poll this host for these copies.
+    let local_body = serde_json::json!({
+        "body": request.body,
+        "fromDeviceId": from_device_id,
+        "fromName": from_name,
+        "toDeviceId": to_device_id,
+        "toName": to_name,
+        "direction": "out",
+        "attachment": request.attachment,
+    });
+    let base = daemon_base(&state)?;
+    let client = daemon_http_client()?;
+    let response = client
+        .post(format!("{base}/v1/peer/messages"))
+        .json(&local_body)
+        .send()
+        .await
+        .map_err(|err| format!("failed to record sent message: {err}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("failed to record sent message HTTP {status}: {body}"));
+    }
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+async fn resolve_peer_send_target(
+    state: &State<'_, DaemonState>,
+    workshop_id: &str,
+) -> Result<
+    (
+        String,
+        String,
+        Option<crate::pairing_client::WorkshopTransportConfig>,
+    ),
+    String,
+> {
+    if let Some(phone_id) = workshop_id.strip_prefix("inbound-") {
+        let status = fetch_pair_status_value(state).await?;
+        let device = status
+            .get("pairedDevices")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .find(|entry| {
+                entry.get("phoneId").and_then(|v| v.as_str()) == Some(phone_id)
+                    && entry.get("role").and_then(|v| v.as_str()).unwrap_or("portal") == "peer"
+            })
+            .ok_or_else(|| format!("Inbound peer '{phone_id}' not found"))?;
+        let label = device
+            .get("phoneName")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Peer")
+            .to_string();
+        return Ok((phone_id.to_string(), label, None));
+    }
+
+    let registry = crate::workshop_registry::load_registry()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|entry| entry.id == workshop_id)
+        .ok_or_else(|| format!("Unknown workshop '{workshop_id}'"))?;
+    if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
+        return Err("Messaging requires a peer connection".to_string());
+    }
+    let pairing = workshop
+        .pairing
+        .as_ref()
+        .ok_or_else(|| "Peer credentials are missing".to_string())?;
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        workshop_id,
+        &workshop.url,
     )
-    .await
+    .ok_or_else(|| "Trusted workshop credentials are missing or expired".to_string())?;
+    Ok((
+        pairing.workshop_device_id.clone(),
+        workshop.label.clone(),
+        Some(config),
+    ))
 }
 
 #[tauri::command]
@@ -480,10 +669,107 @@ pub async fn peer_list_messages(
         let body = response.text().await.unwrap_or_default();
         return Err(format!("List peer messages failed HTTP {status}: {body}"));
     }
-    response
+    let mut payload = response
         .json::<serde_json::Value>()
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    // Pull replies from workshops we connected to (their outbound copies live there).
+    let remote = fetch_remote_peer_replies(&state, unread_only.unwrap_or(false)).await;
+    if !remote.is_empty() {
+        let messages = payload
+            .get_mut("messages")
+            .and_then(|value| value.as_array_mut());
+        if let Some(messages) = messages {
+            let mut seen: std::collections::HashSet<String> = messages
+                .iter()
+                .filter_map(|message| {
+                    message
+                        .get("id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string)
+                })
+                .collect();
+            for message in remote {
+                let id = message
+                    .get("id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if id.is_empty() || seen.insert(id) {
+                    messages.push(message);
+                }
+            }
+        }
+    }
+
+    Ok(payload)
+}
+
+/// Remote hosts store replies as `direction=out` addressed to our phone id.
+/// Map them into local-shaped inbound messages so threads render correctly.
+async fn fetch_remote_peer_replies(
+    state: &State<'_, DaemonState>,
+    unread_only: bool,
+) -> Vec<serde_json::Value> {
+    let Ok(registry) = crate::workshop_registry::load_registry() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for workshop in registry.workshops {
+        if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
+            continue;
+        }
+        let Some(pairing) = workshop.pairing.as_ref() else {
+            continue;
+        };
+        let Some(config) = crate::pairing_client::load_workshop_transport_config_for_id(
+            &workshop.id,
+            &workshop.url,
+        ) else {
+            continue;
+        };
+        let path = if unread_only {
+            "/v1/peer/messages?unreadOnly=true"
+        } else {
+            "/v1/peer/messages"
+        };
+        let Ok(payload) =
+            crate::workshop_transport::workshop_get_json::<serde_json::Value>(&config, path).await
+        else {
+            continue;
+        };
+        let Some(messages) = payload.get("messages").and_then(|value| value.as_array()) else {
+            continue;
+        };
+        for message in messages {
+            // Their outbound = reply to us. Skip our own deliveries mirrored there.
+            if message.get("direction").and_then(|value| value.as_str()) != Some("out") {
+                continue;
+            }
+            if unread_only && message.get("readAt").and_then(|value| value.as_str()).is_some() {
+                continue;
+            }
+            let mut mapped = message.clone();
+            if let Some(object) = mapped.as_object_mut() {
+                object.insert("direction".into(), serde_json::json!("in"));
+                object.insert(
+                    "fromDeviceId".into(),
+                    serde_json::json!(pairing.workshop_device_id),
+                );
+                object.insert("fromName".into(), serde_json::json!(workshop.label));
+                object.insert(
+                    "toDeviceId".into(),
+                    message
+                        .get("toDeviceId")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                );
+            }
+            out.push(mapped);
+        }
+    }
+    out
 }
 
 #[tauri::command]
@@ -500,10 +786,22 @@ pub async fn peer_unread_count(state: State<'_, DaemonState>) -> Result<serde_js
         let body = response.text().await.unwrap_or_default();
         return Err(format!("Unread count failed HTTP {status}: {body}"));
     }
-    response
+    let mut payload = response
         .json::<serde_json::Value>()
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+
+    let remote_unread = fetch_remote_peer_replies(&state, true).await.len();
+    if remote_unread > 0 {
+        let local = payload
+            .get("unread")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        if let Some(object) = payload.as_object_mut() {
+            object.insert("unread".into(), serde_json::json!(local + remote_unread as u64));
+        }
+    }
+    Ok(payload)
 }
 
 #[tauri::command]
@@ -518,15 +816,43 @@ pub async fn peer_mark_read(
         .send()
         .await
         .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
-    if !response.status().is_success() {
+    if response.status().is_success() {
+        return response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|err| err.to_string());
+    }
+
+    // Message may live on a remote peer host (their outbound reply).
+    let Ok(registry) = crate::workshop_registry::load_registry() else {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(format!("Mark read failed HTTP {status}: {body}"));
-    }
-    response
-        .json::<serde_json::Value>()
+    };
+    for workshop in registry.workshops {
+        if !crate::workshop_registry::is_peer_kind(&workshop.kind) {
+            continue;
+        }
+        let Some(config) = crate::pairing_client::load_workshop_transport_config_for_id(
+            &workshop.id,
+            &workshop.url,
+        ) else {
+            continue;
+        };
+        if let Ok(value) = crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+            &config,
+            &format!("/v1/peer/messages/{message_id}/read"),
+            &serde_json::json!({}),
+        )
         .await
-        .map_err(|err| err.to_string())
+        {
+            return Ok(value);
+        }
+    }
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    Err(format!("Mark read failed HTTP {status}: {body}"))
 }
 
 async fn local_identity(state: &State<'_, DaemonState>) -> (String, String) {

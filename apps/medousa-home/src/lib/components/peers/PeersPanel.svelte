@@ -65,6 +65,8 @@
   let composeArtifactId = $state("");
   let attachMenuOpen = $state(false);
   let peerMenuOpen = $state(false);
+  let renaming = $state(false);
+  let renameDraft = $state("");
   let addPeerOpen = $state(false);
   let fallbackOpen = $state(false);
   let fallbackDaemonUrl = $state("");
@@ -107,17 +109,29 @@
     return null;
   });
 
-  function matchesPeer(message: PeerMessage, deviceId: string): boolean {
+  function deviceIdsMatch(left: string, right: string): boolean {
+    if (!left || !right) return left === right;
     return (
-      message.fromDeviceId === deviceId ||
-      message.fromDeviceId.startsWith(deviceId.slice(0, 8)) ||
-      deviceId.startsWith(message.fromDeviceId.slice(0, 8))
+      left === right ||
+      left.startsWith(right.slice(0, 8)) ||
+      right.startsWith(left.slice(0, 8))
     );
+  }
+
+  function matchesPeer(message: PeerMessage, deviceId: string): boolean {
+    if (deviceIdsMatch(message.fromDeviceId, deviceId)) return true;
+    if (message.toDeviceId && deviceIdsMatch(message.toDeviceId, deviceId)) return true;
+    return false;
+  }
+
+  function isOutbound(message: PeerMessage): boolean {
+    return message.direction === "out";
   }
 
   function unreadForPeer(peer: TrustedWorkshopSummary): number {
     return inbox.filter(
-      (message) => !message.readAt && matchesPeer(message, peer.workshopDeviceId),
+      (message) =>
+        !isOutbound(message) && !message.readAt && matchesPeer(message, peer.workshopDeviceId),
     ).length;
   }
 
@@ -272,25 +286,84 @@
     }
   }
 
+  function daemonUrlFromInvite(qrUrl: string): string | null {
+    try {
+      const url = new URL(qrUrl);
+      const address = url.searchParams.get("a")?.trim();
+      if (!address) return null;
+      if (address.startsWith("http://") || address.startsWith("https://")) {
+        return address.replace(/\/$/, "");
+      }
+      return `http://${address}`;
+    } catch {
+      return null;
+    }
+  }
+
   async function submitFallback() {
-    if (!fallbackDaemonUrl.trim() || !fallbackQrUrl.trim()) {
-      error = "Paste their invite link to connect.";
+    const daemonUrl = fallbackDaemonUrl.trim();
+    const qrUrl = fallbackQrUrl.trim();
+    if (!daemonUrl && !qrUrl) {
+      error = "Enter a workshop URL (e.g. http://10.12.0.13:7419).";
       return;
     }
     busy = true;
     error = null;
+    success = null;
     try {
-      const result = await trustWorkshopFromQr({
-        qrUrl: fallbackQrUrl.trim(),
-        daemonUrl: fallbackDaemonUrl.trim(),
-        workshopName: fallbackName.trim() || null,
-      });
+      // Same path as `medousa peer connect <url>`: fetch /qr over LAN when no invite is pasted.
+      const result = qrUrl
+        ? await trustWorkshopFromQr({
+            qrUrl,
+            daemonUrl: daemonUrl || daemonUrlFromInvite(qrUrl) || "",
+            workshopName: fallbackName.trim() || null,
+          })
+        : await connectToNearbyWorkshop({
+            daemonUrl,
+            peerName: fallbackName.trim() || null,
+          });
       success = `Connected to ${result.workshopPeerName}. Ask them to Connect back so they can reply.`;
       fallbackOpen = false;
       addPeerOpen = false;
       await workshops.load();
       await refreshTrusted();
       selectedPeerId = result.workshopId;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function startRename() {
+    if (!selectedPeer || selectedPeer.inbound) return;
+    peerMenuOpen = false;
+    renameDraft = selectedPeer.label;
+    renaming = true;
+  }
+
+  function cancelRename() {
+    renaming = false;
+    renameDraft = "";
+  }
+
+  async function commitRename() {
+    if (!selectedPeerId) {
+      cancelRename();
+      return;
+    }
+    const label = renameDraft.trim();
+    if (!label) {
+      cancelRename();
+      return;
+    }
+    busy = true;
+    error = null;
+    try {
+      await workshops.renameWorkshop(selectedPeerId, label);
+      await refreshTrusted();
+      renaming = false;
+      renameDraft = "";
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -356,13 +429,13 @@
   }
 
   async function openMessage(message: PeerMessage) {
-    if (!message.readAt) {
-      try {
-        await peerMarkRead(message.id);
-        await refreshInbox();
-      } catch {
-        /* ignore */
-      }
+    // Outbound copies share readAt with the recipient — only they should mark them read.
+    if (isOutbound(message) || message.readAt) return;
+    try {
+      await peerMarkRead(message.id);
+      await refreshInbox();
+    } catch {
+      /* ignore */
     }
   }
 
@@ -493,13 +566,20 @@
               onclick={() => {
                 selectedPeerId = peer.workshopId;
                 peerMenuOpen = false;
+                cancelRename();
               }}
             >
               <span class="peers-avatar" aria-hidden="true">{monogram(peer.label)}</span>
               <span class="peers-person-copy">
                 <span class="peers-person-name">{peer.label}</span>
                 <span class="peers-person-meta">
-                  {peer.hasSessionToken ? "Ready" : "Reconnect needed"}
+                  {#if peer.inbound}
+                    Connected to you
+                  {:else if peer.hasSessionToken}
+                    Ready
+                  {:else}
+                    Reconnect needed
+                  {/if}
                 </span>
               </span>
               {#if peerUnread > 0}
@@ -539,12 +619,39 @@
       <header class="peers-thread-head">
         <div class="peers-thread-identity">
           <span class="peers-avatar peers-avatar-lg" aria-hidden="true">
-            {monogram(selectedPeer.label)}
+            {monogram(renaming ? renameDraft || selectedPeer.label : selectedPeer.label)}
           </span>
           <div>
-            <h2 class="peers-thread-name">{selectedPeer.label}</h2>
+            {#if renaming}
+              <input
+                class="peers-rename-input"
+                type="text"
+                bind:value={renameDraft}
+                disabled={busy}
+                aria-label="Peer display name"
+                autofocus
+                onkeydown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void commitRename();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                onblur={() => void commitRename()}
+              />
+            {:else}
+              <h2 class="peers-thread-name">{selectedPeer.label}</h2>
+            {/if}
             <p class="peers-thread-status">
-              {selectedPeer.hasSessionToken ? "Connected" : "Needs reconnect"}
+              {#if selectedPeer.inbound}
+                Connected to you — replies stay here for them to read
+              {:else if selectedPeer.hasSessionToken}
+                Connected
+              {:else}
+                Needs reconnect
+              {/if}
             </p>
           </div>
         </div>
@@ -560,6 +667,17 @@
           </button>
           {#if peerMenuOpen}
             <div class="peers-menu" role="menu">
+              {#if !selectedPeer.inbound}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="peers-menu-item"
+                  disabled={busy}
+                  onclick={startRename}
+                >
+                  Rename
+                </button>
+              {/if}
               <button
                 type="button"
                 role="menuitem"
@@ -584,7 +702,8 @@
             <button
               type="button"
               class="peers-bubble"
-              class:peers-bubble-unread={!message.readAt}
+              class:peers-bubble-out={isOutbound(message)}
+              class:peers-bubble-unread={!isOutbound(message) && !message.readAt}
               onclick={() => void openMessage(message)}
             >
               <p class="peers-bubble-body">{message.body}</p>
@@ -594,7 +713,9 @@
                     (message.attachmentResult.imported ? "Attachment imported" : "Attachment")}
                 </p>
               {/if}
-              <span class="peers-bubble-time">{formatTime(message.sentAt)}</span>
+              <span class="peers-bubble-time">
+                {isOutbound(message) ? "You · " : ""}{formatTime(message.sentAt)}
+              </span>
             </button>
           {/each}
         {/if}
@@ -786,7 +907,7 @@
         }}
       >
         <Link2 size={14} />
-        Paste invite link instead
+        Connect by address
       </button>
     </div>
   </div>
@@ -800,28 +921,47 @@
       if (event.target === event.currentTarget) fallbackOpen = false;
     }}
   >
-    <div class="peers-sheet peers-sheet-sm" role="dialog" aria-modal="true" aria-label="Connect with link">
+    <div class="peers-sheet peers-sheet-sm" role="dialog" aria-modal="true" aria-label="Connect by address">
       <header class="peers-sheet-head">
-        <h2>Paste invite</h2>
+        <h2>Connect by address</h2>
         <button type="button" class="peers-icon-btn" aria-label="Close" onclick={() => (fallbackOpen = false)}>
           <X size={18} />
         </button>
       </header>
-      <label class="peers-field">
-        <span>Invite link</span>
-        <input type="text" bind:value={fallbackQrUrl} placeholder="medousa://pair/…" disabled={busy} />
-      </label>
+      <p class="peers-sheet-hint">
+        Same as <code>medousa peer connect</code> — we fetch their invite over the LAN.
+      </p>
       <label class="peers-field">
         <span>Workshop URL</span>
-        <input type="text" bind:value={fallbackDaemonUrl} placeholder="http://192.168.x.x:7419" disabled={busy} />
+        <input
+          type="text"
+          bind:value={fallbackDaemonUrl}
+          placeholder="http://10.12.0.13:7419"
+          disabled={busy}
+          autofocus
+        />
       </label>
       <label class="peers-field">
-        <span>Name</span>
-        <input type="text" bind:value={fallbackName} disabled={busy} />
+        <span>Name <span class="peers-field-optional">optional</span></span>
+        <input type="text" bind:value={fallbackName} placeholder="Their workshop" disabled={busy} />
+      </label>
+      <label class="peers-field">
+        <span>Invite link <span class="peers-field-optional">optional</span></span>
+        <input
+          type="text"
+          bind:value={fallbackQrUrl}
+          placeholder="medousa://pair/… only if /qr is unreachable"
+          disabled={busy}
+        />
       </label>
       <div class="peers-sheet-actions">
-        <button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => void submitFallback()}>
-          Connect
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          disabled={busy || (!fallbackDaemonUrl.trim() && !fallbackQrUrl.trim())}
+          onclick={() => void submitFallback()}
+        >
+          {busy ? "Connecting…" : "Connect"}
         </button>
       </div>
     </div>
@@ -1110,6 +1250,20 @@
     color: rgb(var(--color-surface-50));
   }
 
+  .peers-rename-input {
+    display: block;
+    width: min(16rem, 100%);
+    margin: 0;
+    border: 1px solid color-mix(in srgb, var(--color-primary-400) 55%, transparent);
+    border-radius: 0.4rem;
+    padding: 0.2rem 0.45rem;
+    font-size: 1rem;
+    font-weight: 650;
+    color: rgb(var(--color-surface-50));
+    background: color-mix(in srgb, var(--color-surface-900) 80%, transparent);
+    outline: none;
+  }
+
   .peers-thread-status {
     margin: 0.1rem 0 0;
     font-size: 0.75rem;
@@ -1189,6 +1343,12 @@
     color: inherit;
     background: color-mix(in srgb, var(--color-surface-800) 70%, transparent);
     cursor: pointer;
+  }
+
+  .peers-bubble-out {
+    align-self: flex-end;
+    border-radius: 1rem 1rem 0.35rem 1rem;
+    background: color-mix(in srgb, var(--color-primary-700) 45%, var(--color-surface-900));
   }
 
   .peers-bubble-unread {
@@ -1440,6 +1600,23 @@
 
   .peers-field span {
     color: rgb(var(--color-surface-400));
+  }
+
+  .peers-field-optional {
+    color: rgb(var(--color-surface-500));
+    font-weight: 400;
+  }
+
+  .peers-sheet-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .peers-sheet-hint code {
+    font-size: 0.7rem;
+    color: rgb(var(--color-surface-300));
   }
 
   .peers-lan-toggle {

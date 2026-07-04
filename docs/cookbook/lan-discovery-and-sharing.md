@@ -41,13 +41,19 @@ Nearby workshops appear via mDNS. Tap **Connect**:
 2. Complete the trust ceremony with **`role: peer`**
 3. Store credentials as a **peer** entry (`peer-{deviceId}`) — **not** a workshop switcher membership
 
+If mDNS misses them, use **Connect by address** and enter their workshop URL (`http://10.12.0.13:7419`) — same as `medousa peer connect`. Invite link is optional (only if `/qr` is unreachable).
+
 Peer tokens on the host are scoped: they may only call `/v1/peer/*`, `/v1/share/*`, and pairing heartbeat/status. Escalation to vault/chat is rejected with 403.
 
 ### Inbox
 
 Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon.
 
-**Replies** require mutual peer trust: they must Connect to you from their Peers surface.
+Threads show **both sides**: messages they sent you and messages you sent them (outbound copies stay on your workshop).
+
+**People who connected to you** (CLI / another Home) appear as *Connected to you*. You can reply immediately — your reply is stored on this host and they pick it up with `medousa peer inbox` (or their Peers surface).
+
+**People you Connected to** get live delivery when online, and Home also pulls their replies from their host over LAN/Iroh so one-way Connect is enough for a full thread.
 
 Revoke a peer from Peers (⋯ → Remove) — that device’s peer credentials only.
 

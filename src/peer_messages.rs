@@ -1,4 +1,4 @@
-//! Async peer inbox for trusted workshop messaging.
+//! Peer conversation store (inbound + outbound copies on this workshop).
 
 use std::fs;
 use std::path::PathBuf;
@@ -39,11 +39,23 @@ pub struct PeerMessage {
     pub sent_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_at: Option<DateTime<Utc>>,
+    /// `in` = delivered to this workshop, `out` = sent from this workshop.
+    #[serde(default = "default_direction_in")]
+    pub direction: String,
+    /// Recipient device id (set for outbound copies and optional on inbound).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_device_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_name: Option<String>,
     /// Raw attachment bundle (cleared after successful auto-import when summary is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment: Option<ShareBundle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_result: Option<PeerMessageAttachmentSummary>,
+}
+
+fn default_direction_in() -> String {
+    "in".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -61,6 +73,13 @@ pub struct PeerMessagePostRequest {
     pub from_device_id: Option<String>,
     #[serde(default)]
     pub from_name: Option<String>,
+    #[serde(default)]
+    pub to_device_id: Option<String>,
+    #[serde(default)]
+    pub to_name: Option<String>,
+    /// Only honored for local (loopback) posts. Remote posts are always inbound.
+    #[serde(default)]
+    pub direction: Option<String>,
     #[serde(default)]
     pub attachment: Option<ShareBundle>,
 }
@@ -115,9 +134,35 @@ pub fn list_messages(unread_only: bool) -> Result<Vec<PeerMessage>> {
     let inbox = load_inbox()?;
     let mut messages = inbox.messages;
     if unread_only {
-        messages.retain(|message| message.read_at.is_none());
+        messages.retain(|message| message.direction != "out" && message.read_at.is_none());
     }
     Ok(messages)
+}
+
+/// Messages in a conversation with `device_id` (as sender or recipient).
+pub fn messages_for_device(device_id: &str) -> Result<Vec<PeerMessage>> {
+    let messages = list_messages(false)?;
+    Ok(messages
+        .into_iter()
+        .filter(|message| involves_device(message, device_id))
+        .collect())
+}
+
+pub fn involves_device(message: &PeerMessage, device_id: &str) -> bool {
+    device_ids_match(&message.from_device_id, device_id)
+        || message
+            .to_device_id
+            .as_deref()
+            .is_some_and(|to| device_ids_match(to, device_id))
+}
+
+fn device_ids_match(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return left == right;
+    }
+    left == right
+        || left.starts_with(&right[..right.len().min(8)])
+        || right.starts_with(&left[..left.len().min(8)])
 }
 
 pub fn unread_count() -> Result<usize> {
@@ -146,10 +191,13 @@ pub fn get_message(message_id: &str) -> Result<Option<PeerMessage>> {
     Ok(messages.into_iter().find(|entry| entry.id == message_id))
 }
 
-pub fn build_inbound_message(
+pub fn build_message(
     request: PeerMessagePostRequest,
-    fallback_device_id: &str,
-    fallback_name: &str,
+    fallback_from_id: &str,
+    fallback_from_name: &str,
+    default_direction: &str,
+    default_to_id: Option<&str>,
+    default_to_name: Option<&str>,
 ) -> Result<PeerMessage> {
     let body = request.body.trim().to_string();
     if body.is_empty() && request.attachment.is_none() {
@@ -161,6 +209,30 @@ pub fn build_inbound_message(
             bail!(errors.join("; "));
         }
     }
+    let direction = request
+        .direction
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default_direction)
+        .to_ascii_lowercase();
+    let direction = if direction == "out" { "out" } else { "in" }.to_string();
+
+    let to_device_id = request
+        .to_device_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| default_to_id.map(str::to_string));
+    let to_name = request
+        .to_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| default_to_name.map(str::to_string));
+
     Ok(PeerMessage {
         id: format!("msg_{}", Uuid::new_v4()),
         from_device_id: request
@@ -168,21 +240,34 @@ pub fn build_inbound_message(
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .unwrap_or(fallback_device_id)
+            .unwrap_or(fallback_from_id)
             .to_string(),
         from_name: request
             .from_name
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .unwrap_or(fallback_name)
+            .unwrap_or(fallback_from_name)
             .to_string(),
         body,
         sent_at: Utc::now(),
+        // Recipients mark read when they open the message (including outbound copies they poll).
         read_at: None,
+        direction,
+        to_device_id,
+        to_name,
         attachment: request.attachment,
         attachment_result: None,
     })
+}
+
+/// Backward-compatible helper used by older call sites/tests.
+pub fn build_inbound_message(
+    request: PeerMessagePostRequest,
+    fallback_device_id: &str,
+    fallback_name: &str,
+) -> Result<PeerMessage> {
+    build_message(request, fallback_device_id, fallback_name, "in", None, None)
 }
 
 #[cfg(test)]
@@ -196,6 +281,9 @@ mod tests {
                 body: "  ".to_string(),
                 from_device_id: None,
                 from_name: None,
+                to_device_id: None,
+                to_name: None,
+                direction: None,
                 attachment: None,
             },
             "dev",
@@ -206,20 +294,46 @@ mod tests {
     }
 
     #[test]
-    fn build_inbound_accepts_body() {
-        let message = build_inbound_message(
+    fn build_outbound_marks_read() {
+        let message = build_message(
             PeerMessagePostRequest {
                 body: "hello".to_string(),
-                from_device_id: Some("abc".to_string()),
-                from_name: Some("Studio".to_string()),
+                from_device_id: Some("host".to_string()),
+                from_name: Some("Host".to_string()),
+                to_device_id: Some("peer".to_string()),
+                to_name: Some("Peer".to_string()),
+                direction: Some("out".to_string()),
                 attachment: None,
             },
-            "dev",
-            "Peer",
+            "host",
+            "Host",
+            "out",
+            None,
+            None,
         )
         .unwrap();
-        assert_eq!(message.body, "hello");
-        assert_eq!(message.from_device_id, "abc");
-        assert!(message.id.starts_with("msg_"));
+        assert_eq!(message.direction, "out");
+        assert_eq!(message.to_device_id.as_deref(), Some("peer"));
+        assert!(message.read_at.is_none());
+    }
+
+    #[test]
+    fn involves_device_matches_to_and_from() {
+        let message = PeerMessage {
+            id: "1".into(),
+            from_device_id: "aaa".into(),
+            from_name: "A".into(),
+            body: "hi".into(),
+            sent_at: Utc::now(),
+            read_at: None,
+            direction: "out".into(),
+            to_device_id: Some("bbb".into()),
+            to_name: Some("B".into()),
+            attachment: None,
+            attachment_result: None,
+        };
+        assert!(involves_device(&message, "bbb"));
+        assert!(involves_device(&message, "aaa"));
+        assert!(!involves_device(&message, "ccc"));
     }
 }
