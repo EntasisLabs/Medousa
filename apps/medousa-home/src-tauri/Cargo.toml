@@ -43,6 +43,7 @@ url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
+medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
 medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
@@ -52,9 +53,6 @@ medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
-medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"

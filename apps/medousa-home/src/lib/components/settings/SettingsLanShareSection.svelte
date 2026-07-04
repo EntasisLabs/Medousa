@@ -6,10 +6,13 @@
   import {
     downloadShareBundle,
     exportShareBundle,
+    getLanPairingStatus,
     importShareBundle,
     listTrustedWorkshops,
     pushShareBundleToWorkshop,
     revokeTrustedWorkshop,
+    setLanPairingEnabled,
+    type LanPairingStatus,
     type ShareConflictStrategy,
     type ShareImportResult,
     type TrustedWorkshopSummary,
@@ -18,6 +21,8 @@
   import { Share2, Upload, Users } from "@lucide/svelte";
 
   let trusted = $state<TrustedWorkshopSummary[]>([]);
+  let lanPairing = $state<LanPairingStatus | null>(null);
+  let lanBusy = $state(false);
   let busy = $state(false);
   let error = $state<string | null>(null);
   let success = $state<string | null>(null);
@@ -43,8 +48,33 @@
     }
   }
 
+  async function refreshLanPairing() {
+    if (!isTauri()) return;
+    try {
+      lanPairing = await getLanPairingStatus();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function toggleLanPairing(enabled: boolean) {
+    lanBusy = true;
+    error = null;
+    success = null;
+    try {
+      lanPairing = await setLanPairingEnabled(enabled);
+      success = lanPairing.message;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      await refreshLanPairing();
+    } finally {
+      lanBusy = false;
+    }
+  }
+
   onMount(() => {
     void refreshTrusted();
+    void refreshLanPairing();
   });
 
   async function handleExport() {
@@ -157,6 +187,28 @@
       <Users size={14} />
       Open Peers
     </button>
+  </div>
+
+  <div class="lan-share-block">
+    <h3 class="lan-share-heading">LAN pairing window</h3>
+    <p class="lan-share-lead">
+      Turn on briefly to pair phones and peers on your Wi‑Fi, then turn off. The engine goes back to
+      loopback-only; already-paired clients keep working over the private tunnel.
+    </p>
+    <label class="lan-share-checkbox">
+      <input
+        type="checkbox"
+        checked={lanPairing?.enabled ?? false}
+        disabled={lanBusy || !isTauri()}
+        onchange={(event) =>
+          void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
+      />
+      Allow LAN pairing (restarts engine)
+    </label>
+    {#if lanPairing}
+      <p class="lan-share-empty">{lanPairing.message}</p>
+      <p class="lan-share-empty">Bind: {lanPairing.bind}</p>
+    {/if}
   </div>
 
   <div class="lan-share-block">

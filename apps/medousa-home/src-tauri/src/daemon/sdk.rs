@@ -9,7 +9,6 @@ use tauri::State;
 use crate::daemon::DaemonState;
 use crate::pairing_client::WorkshopTransportConfig;
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 use crate::daemon::iroh_hook::TauriIrohHook;
 
 pub fn sdk_error(err: SdkError) -> String {
@@ -28,7 +27,6 @@ fn build_sdk_transport(config: &WorkshopTransportConfig) -> Arc<dyn Transport> {
         config.iroh_ticket.clone(),
     );
     let mut transport = WorkshopTransport::new(sdk_config);
-    #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(ticket) = config.iroh_ticket.as_deref() {
         transport = transport.with_iroh_hook(Arc::new(TauriIrohHook::new(ticket)));
     }

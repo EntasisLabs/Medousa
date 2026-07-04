@@ -81,6 +81,7 @@ pub struct PairedDeviceSummary {
     pub phone_name: String,
     pub paired_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -293,6 +294,7 @@ impl PairingService {
                     phone_name: record.phone_name,
                     paired_at: record.paired_at,
                     last_seen: record.last_seen,
+                    role: record.role.as_str().to_string(),
                 })
                 .collect(),
             qr_active,

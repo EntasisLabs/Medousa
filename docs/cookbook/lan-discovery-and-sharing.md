@@ -9,6 +9,22 @@ Medousa treats the **daemon as the app**. Phones, desktops, and Peers are **surf
 
 Same crypto and transport (QR, bearer, Iroh). Different **scope**.
 
+## Desktop as a client (Iroh)
+
+Home on **desktop** uses the same transport as mobile: try LAN, then fall back to the **Iroh ticket** saved at pair time. A laptop can join your Mac mini as a **portal** (full client) or **peer** (inbox only) and keep working off-LAN without binding the host to the public internet.
+
+## LAN pairing window
+
+Public bind (`0.0.0.0`) is only for **pairing**, not ongoing access.
+
+1. Turn on **LAN pairing window** (Settings → Nearby, or Peers → Add peer)
+2. Engine restarts listening on the LAN (mDNS + `GET /qr`)
+3. Pair phones / peers / laptop on trusted Wi‑Fi
+4. Turn the toggle **off** — engine restarts on **loopback only**
+5. Already-paired clients keep working over the **private Iroh tunnel**
+
+Do not leave LAN pairing on at a café.
+
 ## Peers surface (peer role)
 
 Open **Peers** in the Life rail (Users icon, under Chat).
@@ -75,6 +91,31 @@ Daemon:
 | 4 | `brain_sync` | Environment + vault in bundles |
 | 5 | `relay_capable` | Iroh transport available |
 
+## Headless CLI
+
+Host (this engine):
+
+```bash
+medousa pair lan on          # bind 0.0.0.0 for pairing
+medousa pair qr --term       # show invite
+medousa pair status          # surfaces + roles
+medousa pair lan off         # back to loopback; clients use Iroh
+```
+
+Client (another machine or the same host connecting out):
+
+```bash
+medousa peer nearby                              # mDNS browse via local engine
+medousa peer connect http://192.168.1.20:7419    # role=peer (inbox only)
+medousa peer connect http://192.168.1.20:7419 --portal --name mini
+medousa peer list
+medousa peer send mini "hello from headless"
+medousa peer inbox --unread                      # this engine's inbox
+medousa peer read <message-id>
+```
+
+Credentials live under `{medousa_data_dir}/cli/connections.json`. Peer tokens stay scoped to inbox + share on the remote host.
+
 ## Out of scope
 
 - Camera QR scan
@@ -82,3 +123,4 @@ Daemon:
 - Agent-to-agent protocols
 - Daemon-to-daemon relay (enterprise mesh)
 - Auto-promoting a peer to a portal membership
+- Full portal chat/vault over CLI (use Home or `medousa tui` / workspace APIs)

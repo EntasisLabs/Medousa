@@ -1,25 +1,17 @@
-//! Mobile Iroh hook for [`medousa_sdk_iroh::WorkshopTransport`].
+//! Iroh HTTP hook for [`medousa_sdk_iroh::WorkshopTransport`] (desktop + mobile).
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 use std::future::Future;
-#[cfg(any(target_os = "ios", target_os = "android"))]
 use std::pin::Pin;
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 use futures_util::{Stream, StreamExt, TryStreamExt};
-
-#[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa_sdk::SdkError;
-#[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa_sdk_iroh::IrohHttpHook;
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 #[derive(Clone)]
 pub struct TauriIrohHook {
     ticket: String,
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 impl TauriIrohHook {
     pub fn new(ticket: impl Into<String>) -> Self {
         Self {
@@ -28,7 +20,6 @@ impl TauriIrohHook {
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 impl IrohHttpHook for TauriIrohHook {
     fn request_json<'a>(
         &'a self,
@@ -116,7 +107,6 @@ impl IrohHttpHook for TauriIrohHook {
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 fn iroh_body_stream(
     body: medousa_iroh_http::IrohHttpBody,
 ) -> impl Stream<Item = Result<bytes::Bytes, SdkError>> {

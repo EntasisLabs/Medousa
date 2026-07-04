@@ -91,6 +91,24 @@ function requireTauri(): void {
   }
 }
 
+export interface LanPairingStatus {
+  enabled: boolean;
+  bind: string;
+  url: string;
+  message: string;
+}
+
+export async function getLanPairingStatus(): Promise<LanPairingStatus> {
+  requireTauri();
+  return invoke<LanPairingStatus>("lan_pairing_status");
+}
+
+/** Restart personal engine with public bind (true) or loopback-only (false). */
+export async function setLanPairingEnabled(enabled: boolean): Promise<LanPairingStatus> {
+  requireTauri();
+  return invoke<LanPairingStatus>("set_lan_pairing_enabled", { enabled });
+}
+
 export async function discoverLanWorkshops(): Promise<LanWorkshopsResponse> {
   requireTauri();
   return invoke<LanWorkshopsResponse>("lan_discover_workshops");

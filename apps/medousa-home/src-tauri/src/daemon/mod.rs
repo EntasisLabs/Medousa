@@ -10,7 +10,6 @@ pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
 pub mod sdk;
-#[cfg(any(target_os = "ios", target_os = "android"))]
 pub mod iroh_hook;
 pub mod session;
 pub mod sse;

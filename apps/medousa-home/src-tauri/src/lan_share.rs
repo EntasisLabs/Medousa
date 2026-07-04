@@ -105,6 +105,19 @@ fn daemon_base(state: &State<'_, DaemonState>) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn lan_pairing_status() -> Result<crate::workshop_runtime::LanPairingStatus, String> {
+    crate::workshop_runtime::lan_pairing_status()
+}
+
+#[tauri::command]
+pub async fn set_lan_pairing_enabled(
+    state: State<'_, DaemonState>,
+    enabled: bool,
+) -> Result<crate::workshop_runtime::LanPairingStatus, String> {
+    crate::workshop_runtime::set_lan_pairing_enabled(&state, enabled).await
+}
+
+#[tauri::command]
 pub async fn lan_discover_workshops(
     state: State<'_, DaemonState>,
 ) -> Result<LanWorkshopsResponse, String> {

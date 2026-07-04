@@ -7,14 +7,17 @@
     connectToNearbyWorkshop,
     discoverLanWorkshops,
     exportShareBundle,
+    getLanPairingStatus,
     listTrustedWorkshops,
     peerListMessages,
     peerMarkRead,
     peerSendMessage,
     peerUnreadCount,
     revokeTrustedWorkshop,
+    setLanPairingEnabled,
     trustWorkshopFromQr,
     type DiscoveredWorkshop,
+    type LanPairingStatus,
     type PeerMessage,
     type TrustedWorkshopSummary,
   } from "$lib/utils/lanShareApi";
@@ -72,6 +75,8 @@
   let error = $state<string | null>(null);
   let success = $state<string | null>(null);
   let copyFlash = $state(false);
+  let lanPairing = $state<LanPairingStatus | null>(null);
+  let lanBusy = $state(false);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -205,8 +210,39 @@
     }
   }
 
+  async function refreshLanPairing() {
+    if (!isTauri()) return;
+    try {
+      lanPairing = await getLanPairingStatus();
+    } catch {
+      /* optional */
+    }
+  }
+
+  async function toggleLanPairing(enabled: boolean) {
+    lanBusy = true;
+    error = null;
+    try {
+      lanPairing = await setLanPairingEnabled(enabled);
+      success = lanPairing.message;
+      await refreshInvite();
+      await refreshNearby();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      await refreshLanPairing();
+    } finally {
+      lanBusy = false;
+    }
+  }
+
   async function refreshAll() {
-    await Promise.all([refreshInvite(), refreshNearby(), refreshTrusted(), refreshInbox()]);
+    await Promise.all([
+      refreshInvite(),
+      refreshNearby(),
+      refreshTrusted(),
+      refreshInbox(),
+      refreshLanPairing(),
+    ]);
   }
 
   async function connectNearby(workshop: DiscoveredWorkshop) {
@@ -681,6 +717,20 @@
       <p class="peers-sheet-lead">
         Others on your Wi‑Fi can tap Connect on your name — or scan this invite.
       </p>
+
+      <label class="peers-lan-toggle">
+        <input
+          type="checkbox"
+          checked={lanPairing?.enabled ?? false}
+          disabled={lanBusy}
+          onchange={(event) =>
+            void toggleLanPairing((event.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>LAN pairing window (restarts engine)</span>
+      </label>
+      {#if lanPairing}
+        <p class="peers-sheet-lead">{lanPairing.message}</p>
+      {/if}
 
       {#if bonjour?.likelyAdvertising}
         <span class="peers-visible-pill">Visible on network</span>
@@ -1390,6 +1440,16 @@
 
   .peers-field span {
     color: rgb(var(--color-surface-400));
+  }
+
+  .peers-lan-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.65rem 0 0.35rem;
+    font-size: 0.75rem;
+    color: rgb(var(--color-surface-200));
+    cursor: pointer;
   }
 
   .peers-field input {

@@ -142,7 +142,7 @@ fn normalize_url(raw: &str) -> String {
     raw.trim().trim_end_matches('/').to_string()
 }
 
-fn now_iso() -> String {
+pub fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 

@@ -34,6 +34,9 @@ mod onboard_wizard;
 #[path = "medousa/pair_cli.rs"]
 mod pair_cli;
 
+#[path = "medousa/peer_cli.rs"]
+mod peer_cli;
+
 #[path = "medousa/iroh_cli.rs"]
 mod iroh_cli;
 
@@ -81,6 +84,7 @@ fn main() -> Result<()> {
         "workspace" => run_workspace(&args[1..]),
         "vault" => run_vault(&args[1..]),
         "pair" => pair_cli::run_pair(&args[1..]),
+        "peer" => peer_cli::run_peer(&args[1..]),
         "iroh" => iroh_cli::run_iroh(&args[1..]),
         "models" => medousa::local_inference_cli::run_models_command(&args[1..]),
         "help" | "--help" | "-h" => {
@@ -3625,7 +3629,8 @@ fn print_help() {
     println!("Workshop (sessions, artifacts, remote):");
     println!("  medousa workspace …");
     println!("  medousa vault …");
-    println!("  medousa pair status|list|qr|remove …");
+    println!("  medousa pair status|list|qr|remove|lan …   host pairing + LAN window");
+    println!("  medousa peer nearby|connect|list|send|inbox …  headless peer/portal client");
     println!("  medousa iroh …");
     println!();
     println!("Configure:");
