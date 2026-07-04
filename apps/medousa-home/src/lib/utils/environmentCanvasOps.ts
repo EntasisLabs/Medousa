@@ -294,6 +294,35 @@ export function removeCustomSurfaceFromSpec(spec: EnvironmentSpec, surfaceId: st
   spec.components = spec.components.filter((component) => component.surfaceId !== surfaceId);
 }
 
+export function updateCustomSurfaceInSpec(
+  spec: EnvironmentSpec,
+  surfaceId: string,
+  input: { label?: string; icon?: string },
+): void {
+  const surface = spec.surfaces.find((entry) => entry.id === surfaceId);
+  if (!surface) {
+    throw new Error(`Unknown surface '${surfaceId}'.`);
+  }
+  if (surface.kind !== "custom") {
+    throw new Error("Only custom views can be edited.");
+  }
+  if (input.label !== undefined) {
+    const label = input.label.trim();
+    if (!label) {
+      throw new Error("View name is required.");
+    }
+    surface.label = label;
+  }
+  if (input.icon !== undefined) {
+    if (!isAllowedSurfaceIcon(input.icon)) {
+      throw new Error(`Icon '${input.icon}' is not allowed.`);
+    }
+    surface.icon = input.icon;
+  }
+  spec.updatedAt = new Date().toISOString();
+  spec.updatedBy = "operator";
+}
+
 export function removeComponentFromSpec(spec: EnvironmentSpec, componentId: string): void {
   spec.components = spec.components.filter((component) => component.id !== componentId);
   pruneSurfaceLayoutRoots(spec, componentId);

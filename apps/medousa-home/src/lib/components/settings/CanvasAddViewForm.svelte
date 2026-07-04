@@ -1,14 +1,9 @@
 <script lang="ts">
   import { environment } from "$lib/stores/environment.svelte";
-  import { environmentIcon } from "$lib/utils/environmentIcons";
-  import {
-    ALLOWED_SURFACE_ICONS,
-    SURFACE_ICON_GROUPS,
-    type AllowedSurfaceIcon,
-  } from "$lib/utils/environmentIconCatalog";
+  import CanvasIconPicker from "$lib/components/settings/CanvasIconPicker.svelte";
   import { slugifyCanvasId } from "$lib/utils/environmentCanvasOps";
   import type { SurfaceLayout } from "$lib/types/environment";
-  import { ChevronDown } from "@lucide/svelte";
+  import type { AllowedSurfaceIcon } from "$lib/utils/environmentIconCatalog";
 
   interface Props {
     onCreated?: (surfaceId: string) => void;
@@ -25,7 +20,6 @@
   let afterSurfaceId = $state("");
   let busy = $state(false);
   let error = $state<string | null>(null);
-  let iconPickerOpen = $state(false);
 
   const presets = $derived(environment.spec?.layoutPresets ?? []);
   const activePreset = $derived(
@@ -51,8 +45,6 @@
       surfaceId = slugifyCanvasId(label);
     }
   });
-
-  const SelectedIcon = $derived(environmentIcon(icon));
 
   async function submit() {
     error = null;
@@ -84,7 +76,7 @@
 
 <div class="canvas-add-view">
   <button type="button" class="canvas-add-view-toggle" onclick={() => (open = !open)}>
-    {open ? "Cancel new view" : "Add custom view"}
+    {open ? "Cancel" : "+ New view"}
   </button>
 
   {#if open}
@@ -121,61 +113,13 @@
 
       <div class="canvas-field">
         <span>Nav icon</span>
-        <div class="canvas-icon-picker">
-          <button
-            type="button"
-            class="canvas-icon-picker-btn"
-            aria-expanded={iconPickerOpen}
-            disabled={busy}
-            onclick={() => (iconPickerOpen = !iconPickerOpen)}
-          >
-            <SelectedIcon size={16} strokeWidth={1.75} />
-            <span>{icon}</span>
-            <ChevronDown size={14} />
-          </button>
-          {#if iconPickerOpen}
-            <div class="canvas-icon-grid" role="listbox">
-              {#each Object.entries(SURFACE_ICON_GROUPS) as [group, icons] (group)}
-                <p class="canvas-icon-group-label">{group}</p>
-                {#each icons as name (name)}
-                  {@const Icon = environmentIcon(name)}
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={icon === name}
-                    class="canvas-icon-option"
-                    class:canvas-icon-option-active={icon === name}
-                    title={name}
-                    onclick={() => {
-                      icon = name;
-                      iconPickerOpen = false;
-                    }}
-                  >
-                    <Icon size={16} strokeWidth={1.75} />
-                  </button>
-                {/each}
-              {/each}
-              <p class="canvas-icon-group-label">all</p>
-              {#each ALLOWED_SURFACE_ICONS as name (name)}
-                {@const Icon = environmentIcon(name)}
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={icon === name}
-                  class="canvas-icon-option"
-                  class:canvas-icon-option-active={icon === name}
-                  title={name}
-                  onclick={() => {
-                    icon = name;
-                    iconPickerOpen = false;
-                  }}
-                >
-                  <Icon size={16} strokeWidth={1.75} />
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+        <CanvasIconPicker
+          {icon}
+          disabled={busy}
+          onChange={(next) => {
+            icon = next;
+          }}
+        />
       </div>
 
       <label class="canvas-field">
@@ -251,70 +195,6 @@
     padding: 0.35rem 0.5rem;
     font-size: 0.8125rem;
     color: rgb(var(--color-surface-100));
-  }
-
-  .canvas-icon-picker {
-    position: relative;
-  }
-
-  .canvas-icon-picker-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border-radius: 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
-    padding: 0.35rem 0.5rem;
-    font-size: 0.75rem;
-    color: rgb(var(--color-surface-100));
-    background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
-    cursor: pointer;
-  }
-
-  .canvas-icon-grid {
-    position: absolute;
-    z-index: 20;
-    left: 0;
-    right: 0;
-    top: calc(100% + 0.25rem);
-    max-height: 14rem;
-    overflow: auto;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
-    gap: 0.25rem;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 60%, transparent);
-    background: rgb(var(--color-surface-900));
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
-  }
-
-  .canvas-icon-group-label {
-    grid-column: 1 / -1;
-    margin: 0.25rem 0 0;
-    font-size: 0.625rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: rgb(var(--color-surface-500));
-  }
-
-  .canvas-icon-option {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 0.375rem;
-    color: rgb(var(--color-surface-300));
-    cursor: pointer;
-  }
-
-  .canvas-icon-option:hover {
-    background: color-mix(in srgb, var(--color-surface-700) 55%, transparent);
-  }
-
-  .canvas-icon-option-active {
-    color: rgb(var(--color-primary-200));
-    background: color-mix(in srgb, var(--color-primary-500) 18%, transparent);
   }
 
   .canvas-form-error {

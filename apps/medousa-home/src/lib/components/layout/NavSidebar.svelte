@@ -78,7 +78,7 @@
 
 <nav class="workshop-icon-rail" aria-label="Primary navigation" data-debug-label="nav-rail">
   <WorkshopSwitcherCompact variant="rail" />
-  <EnvironmentPresetSwitcher compact />
+  <EnvironmentPresetSwitcher variant="rail" />
 
   <div class="flex flex-1 flex-col gap-0.5">
     {#each lifeOrbit as surface (surface.id)}

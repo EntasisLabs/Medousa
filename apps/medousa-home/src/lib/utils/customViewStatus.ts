@@ -40,3 +40,13 @@ export function presetDisplayLabel(presetId: string, presetLabel?: string | null
   if (presetId === "focus") return "Focus";
   return presetLabel ?? presetId;
 }
+
+export function presetDescription(presetId: string): string {
+  if (presetId === "focus") {
+    return "Quiet nav — hides web and workshop noise";
+  }
+  if (presetId === "default") {
+    return "All destinations in the rail";
+  }
+  return "Custom nav layout";
+}

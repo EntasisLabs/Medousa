@@ -215,6 +215,20 @@ export class EnvironmentStore {
     this.applySpec(response.spec, response.revision);
   }
 
+  async setSurfaceNavVisible(
+    surfaceId: string,
+    visible: boolean,
+    profileId?: string,
+  ): Promise<void> {
+    const { setSurfaceNavVisible: applyNavVisibility } = await import(
+      "$lib/utils/environmentLayout"
+    );
+    const spec = await this.cloneCurrentSpec(profileId);
+    applyNavVisibility(spec, surfaceId, visible);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+  }
+
   async applyPendingProposal(profileId?: string): Promise<void> {
     this.pendingBusy = true;
     try {
@@ -313,6 +327,40 @@ export class EnvironmentStore {
     await this.refreshCanvasStatus(profileId);
     const { slugifyCanvasId } = await import("$lib/utils/environmentCanvasOps");
     return slugifyCanvasId(input.id);
+  }
+
+  async updateCustomView(
+    input: { surfaceId: string; label?: string; icon?: string },
+    profileId?: string,
+  ): Promise<void> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { updateCustomSurfaceInSpec } = await import("$lib/utils/environmentCanvasOps");
+    updateCustomSurfaceInSpec(spec, input.surfaceId, {
+      label: input.label,
+      icon: input.icon,
+    });
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+  }
+
+  async addLayoutPreset(
+    input: { label: string; id?: string | null },
+    profileId?: string,
+  ): Promise<string> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { addLayoutPresetFromActive } = await import("$lib/utils/environmentLayout");
+    const presetId = addLayoutPresetFromActive(spec, input);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+    return presetId;
+  }
+
+  async removeLayoutPreset(presetId: string, profileId?: string): Promise<void> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { removeLayoutPreset } = await import("$lib/utils/environmentLayout");
+    removeLayoutPreset(spec, presetId);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
   }
 
   async addPresentationFromArtifact(
