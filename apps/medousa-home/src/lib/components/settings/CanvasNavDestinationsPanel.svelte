@@ -7,6 +7,7 @@
     isSurfaceNavVisible,
     NAV_DESTINATION_GROUPS,
   } from "$lib/utils/environmentLayout";
+  import { ensurePeersSurfaceInSpec } from "$lib/utils/environmentDefault";
 
   interface Props {
     spec: NonNullable<typeof environment.spec>;
@@ -17,8 +18,9 @@
   let busySurfaceId = $state<string | null>(null);
   let error = $state<string | null>(null);
 
-  const customSurfaces = $derived(spec.surfaces.filter((surface) => surface.kind === "custom"));
-  const surfaceById = $derived(new Map(spec.surfaces.map((surface) => [surface.id, surface])));
+  const liveSpec = $derived(ensurePeersSurfaceInSpec(spec));
+  const customSurfaces = $derived(liveSpec.surfaces.filter((surface) => surface.kind === "custom"));
+  const surfaceById = $derived(new Map(liveSpec.surfaces.map((surface) => [surface.id, surface])));
 
   function resolveSurfaces(ids: string[]): SurfaceDef[] {
     return ids
@@ -27,7 +29,7 @@
   }
 
   function isVisible(surfaceId: string): boolean {
-    return isSurfaceNavVisible(spec, surfaceId);
+    return isSurfaceNavVisible(liveSpec, surfaceId);
   }
 
   async function setVisible(surfaceId: string, visible: boolean) {
@@ -116,7 +118,7 @@
   {/if}
 
   <p class="canvas-nav-destinations-note workshop-faint">
-    Settings and Runtime always stay reachable. Changes apply to the active layout preset ({spec.layoutPresets?.find((preset) => preset.active)?.label ?? "current"}).
+    Settings and Runtime always stay reachable. Changes apply to the active layout preset ({liveSpec.layoutPresets?.find((preset) => preset.active)?.label ?? "current"}).
   </p>
 
   {#if error}

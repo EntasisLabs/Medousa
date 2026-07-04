@@ -27,6 +27,7 @@ const GO_DESTINATIONS: { surface: Surface; label: string; subtitle: string; keyw
   { surface: "automations", label: "Automations", subtitle: "Scripts and schedules", keywords: "cron scripts grapheme" },
   { surface: "workshop", label: "Capabilities", subtitle: "Skills and specialist workspaces", keywords: "skills manuscripts workshop capabilities specialist" },
   { surface: "context", label: "Context map", subtitle: "Memory and threads", keywords: "memory locus context" },
+  { surface: "peers", label: "Peers", subtitle: "Nearby workshops and inbox", keywords: "peers nearby share trust lan inbox" },
   { surface: "profiles", label: "Profiles", subtitle: "People and identity", keywords: "profiles identity people" },
   { surface: "messaging", label: "Messaging", subtitle: "WhatsApp, Telegram, and more", keywords: "channels telegram whatsapp" },
   { surface: "runtime", label: "Engine status", subtitle: "Jobs, delivery, health", keywords: "runtime engine daemon health" },

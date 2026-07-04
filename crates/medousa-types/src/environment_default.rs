@@ -35,6 +35,7 @@ pub fn default_environment_spec(profile_id: impl Into<String>) -> EnvironmentSpe
                 active: false,
                 surfaces: vec![
                     "chat".to_string(),
+                    "peers".to_string(),
                     "work".to_string(),
                     "library".to_string(),
                     SAFETY_SURFACE_SETTINGS.to_string(),
@@ -66,6 +67,7 @@ pub fn default_surface_ids() -> Vec<String> {
     vec![
         "home".to_string(),
         "chat".to_string(),
+        "peers".to_string(),
         "work".to_string(),
         "library".to_string(),
         "web".to_string(),
@@ -82,6 +84,7 @@ pub fn default_surfaces() -> Vec<SurfaceDef> {
     let builtin = [
         ("home", "Home", "home", Some("home"), Some("home")),
         ("chat", "Chat", "message-circle", Some("chat"), Some("chat")),
+        ("peers", "Peers", "users", Some("peers"), None),
         ("work", "Work", "layout-grid", Some("work"), None),
         ("library", "Library", "book-open", Some("library"), Some("notes")),
         ("web", "Web", "globe", Some("web"), Some("web")),

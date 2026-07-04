@@ -201,6 +201,7 @@ pub fn run() {
             push::push_clear_apns_token,
             pairing::bonjour_status,
             lan_share::lan_discover_workshops,
+            lan_share::lan_connect_workshop,
             lan_share::share_export_bundle,
             lan_share::share_import_bundle,
             lan_share::share_push_to_workshop,

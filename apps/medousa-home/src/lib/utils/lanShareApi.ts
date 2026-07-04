@@ -116,6 +116,20 @@ export async function trustWorkshopFromQr(input: {
   });
 }
 
+/** One-tap connect: fetch peer invite over LAN and complete trust ceremony. */
+export async function connectToNearbyWorkshop(input: {
+  daemonUrl: string;
+  peerName?: string | null;
+}): Promise<TrustWorkshopResult> {
+  requireTauri();
+  return invoke<TrustWorkshopResult>("lan_connect_workshop", {
+    request: {
+      daemonUrl: input.daemonUrl,
+      peerName: input.peerName ?? null,
+    },
+  });
+}
+
 export async function revokeTrustedWorkshop(workshopId: string): Promise<void> {
   requireTauri();
   await invoke("revoke_trusted_workshop", { workshopId });

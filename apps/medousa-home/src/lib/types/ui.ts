@@ -8,6 +8,7 @@ export type BuiltinSurface =
   | "profiles"
   | "workshop"
   | "automations"
+  | "peers"
   | "messaging"
   | "runtime"
   | "settings";

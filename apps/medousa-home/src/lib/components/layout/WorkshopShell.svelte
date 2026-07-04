@@ -22,6 +22,8 @@
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
+  import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
+  import { peerUnreadCount } from "$lib/utils/lanShareApi";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
@@ -50,16 +52,37 @@
 
   let daemonHealth = $state<DaemonHealth | null>(null);
   let shellRootEl = $state<HTMLElement | null>(null);
+  let peersUnread = $state(0);
+  let peersUnreadTimer: ReturnType<typeof setInterval> | null = null;
 
   const activeSurface = $derived(layout.desktopSurface);
+
+  async function refreshPeersUnread() {
+    if (!isTauri()) return;
+    try {
+      peersUnread = await peerUnreadCount();
+    } catch {
+      peersUnread = 0;
+    }
+  }
 
   $effect(() => {
     if (!isTauri()) return;
     void updateTrayBlockedCount(workspace.blockedCount());
   });
 
+  $effect(() => {
+    if (activeSurface === "peers") {
+      void refreshPeersUnread();
+    }
+  });
+
   onMount(() => {
     void workshops.load();
+    void refreshPeersUnread();
+    peersUnreadTimer = setInterval(() => {
+      void refreshPeersUnread();
+    }, 8000);
     const detachViewport = layout.attachViewportTracking();
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
@@ -68,6 +91,7 @@
     });
     const detachBrowserContext = browserContext.attachListeners();
     return () => {
+      if (peersUnreadTimer) clearInterval(peersUnreadTimer);
       detachViewport();
       detachWorkshop();
       detachBrowserContext();
@@ -125,6 +149,7 @@
       onSelect={handleSurfaceSelect}
       chatActivity={chat.backgroundActivity}
       workActivity={workspace.inMotionCount()}
+      peersActivity={peersUnread}
       activeProfileLabel={userProfiles.activeDisplayName}
     />
 
@@ -189,6 +214,8 @@
             />
           {:else if activeSurface === "automations"}
             <AutomationsPanel visible={true} />
+          {:else if activeSurface === "peers"}
+            <PeersPanel visible={true} />
           {:else if activeSurface === "messaging"}
             <MessagingPanel visible={true} health={daemonHealth} />
           {:else if activeSurface === "work"}

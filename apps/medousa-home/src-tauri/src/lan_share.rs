@@ -207,6 +207,66 @@ pub async fn share_push_to_workshop(
     .await
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanConnectWorkshopRequest {
+    pub daemon_url: String,
+    #[serde(default)]
+    pub peer_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn lan_connect_workshop(
+    request: LanConnectWorkshopRequest,
+) -> Result<crate::pairing_client::PairCompleteFromQrResult, String> {
+    let daemon_url = request
+        .daemon_url
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    if daemon_url.is_empty() {
+        return Err("Workshop URL is required".to_string());
+    }
+    let client = daemon_http_client()?;
+    let response = client
+        .get(format!("{daemon_url}/qr"))
+        .send()
+        .await
+        .map_err(|err| format!("cannot reach workshop at {daemon_url}: {err}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Could not fetch invite from workshop (HTTP {status}): {body}"
+        ));
+    }
+    let qr = response
+        .json::<PairingQrResponse>()
+        .await
+        .map_err(|err| format!("invalid workshop invite response: {err}"))?;
+    let workshop_name = request
+        .peer_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Trusted workshop")
+        .to_string();
+    crate::pairing_client::pair_complete_from_qr(crate::pairing_client::PairCompleteFromQrRequest {
+        qr_url: qr.url,
+        daemon_url,
+        phone_name: Some(workshop_name),
+    })
+    .await
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PairingQrResponse {
+    url: String,
+    expires_at: String,
+    short_code: String,
+}
+
 #[tauri::command]
 pub async fn trust_workshop_from_qr(
     request: TrustWorkshopFromQrRequest,

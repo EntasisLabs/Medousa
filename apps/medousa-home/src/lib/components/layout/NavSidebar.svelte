@@ -16,6 +16,7 @@
     onSelect: (surface: string) => void;
     chatActivity?: number;
     workActivity?: number;
+    peersActivity?: number;
     activeProfileLabel?: string;
   }
 
@@ -24,10 +25,11 @@
     onSelect,
     chatActivity = 0,
     workActivity = 0,
+    peersActivity = 0,
     activeProfileLabel = "Personal",
   }: Props = $props();
 
-  const LIFE_IDS = new Set(["chat", "work", "library", "web", "context"]);
+  const LIFE_IDS = new Set(["chat", "work", "library", "web", "context", "peers"]);
   const WORKSHOP_IDS = new Set(["workshop", "automations"]);
   const UTILITY_IDS = new Set(["messaging", SAFETY_SURFACE_RUNTIME]);
 
@@ -50,13 +52,19 @@
 
   function navTitle(surface: SurfaceDef): string {
     if (surface.id === "context") return "Threads & memory";
+    if (surface.id === "peers") return "Peers";
     return surface.label;
   }
 
   function activityFor(id: string): number {
     if (id === "chat") return chatActivity;
     if (id === "work") return workActivity;
+    if (id === "peers") return peersActivity;
     return 0;
+  }
+
+  function showCountBadge(id: string): boolean {
+    return id === "peers";
   }
 
   function feedBadgeForSurface(surface: SurfaceDef): "live" | "stale" | "none" {
@@ -94,7 +102,9 @@
         onclick={() => onSelect(surface.id)}
       >
         <Icon {...iconProps} />
-        {#if badge > 0}
+        {#if badge > 0 && showCountBadge(surface.id)}
+          <span class="workshop-rail-count-badge" aria-hidden="true">{badge > 9 ? "9+" : badge}</span>
+        {:else if badge > 0}
           <span class="workshop-rail-badge" aria-hidden="true"></span>
         {:else if feedBadge !== "none"}
           <span

@@ -23,9 +23,28 @@ import {
   SAFETY_SURFACE_RUNTIME,
   SAFETY_SURFACE_SETTINGS,
 } from "$lib/types/environment";
-import { defaultEnvironmentSpec } from "$lib/utils/environmentDefault";
+import {
+  defaultEnvironmentSpec,
+  ensurePeersSurfaceInSpec,
+} from "$lib/utils/environmentDefault";
 import { mainComponentsForSurface, resolveLayoutRoot } from "$lib/utils/layoutPresentation";
 import type { LayoutNode } from "$lib/types/environment";
+
+function peersNavMigrationNeeded(
+  original: EnvironmentSpec,
+  migrated: EnvironmentSpec,
+): boolean {
+  const originalIds = original.surfaces.map((surface) => surface.id).join("\0");
+  const migratedIds = migrated.surfaces.map((surface) => surface.id).join("\0");
+  if (originalIds !== migratedIds) return true;
+  const originalPresets = JSON.stringify(
+    (original.layoutPresets ?? []).map((preset) => [preset.id, preset.surfaces]),
+  );
+  const migratedPresets = JSON.stringify(
+    (migrated.layoutPresets ?? []).map((preset) => [preset.id, preset.surfaces]),
+  );
+  return originalPresets !== migratedPresets;
+}
 
 export class EnvironmentStore {
   spec = $state<EnvironmentSpec | null>(null);
@@ -41,6 +60,7 @@ export class EnvironmentStore {
   canvasStatus = $state<EnvironmentStatusResponse | null>(null);
   canvasStatusError = $state<string | null>(null);
   canvasStatusLoading = $state(false);
+  private peersMigrationPersisted = false;
 
   get loaded(): boolean {
     return this.spec !== null;
@@ -59,13 +79,27 @@ export class EnvironmentStore {
   }
 
   navSurfaces(): SurfaceDef[] {
-    const spec = this.spec ?? defaultEnvironmentSpec();
-    const preset = spec.layoutPresets?.find((entry) => entry.active);
+    const spec = ensurePeersSurfaceInSpec(this.spec ?? defaultEnvironmentSpec());
+    const preset =
+      spec.layoutPresets?.find((entry) => entry.active) ??
+      spec.layoutPresets?.find((entry) => entry.id === spec.activePresetId);
     const orderedIds = preset?.surfaces ?? spec.surfaces.map((surface) => surface.id);
     const byId = new Map(spec.surfaces.map((surface) => [surface.id, surface]));
     const ordered = orderedIds
       .map((id) => byId.get(id))
       .filter((surface): surface is SurfaceDef => Boolean(surface));
+
+    // Peers is a Life destination — always surface it next to Chat when present on the spec.
+    const peers = byId.get("peers");
+    if (peers && !ordered.some((surface) => surface.id === "peers")) {
+      const chatAt = ordered.findIndex((surface) => surface.id === "chat");
+      ordered.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
+    } else if (peers) {
+      const withoutPeers = ordered.filter((surface) => surface.id !== "peers");
+      const chatAt = withoutPeers.findIndex((surface) => surface.id === "chat");
+      withoutPeers.splice(chatAt >= 0 ? chatAt + 1 : 0, 0, peers);
+      ordered.splice(0, ordered.length, ...withoutPeers);
+    }
 
     for (const safetyId of [SAFETY_SURFACE_SETTINGS, SAFETY_SURFACE_RUNTIME]) {
       if (!ordered.some((surface) => surface.id === safetyId)) {
@@ -116,10 +150,11 @@ export class EnvironmentStore {
     try {
       const response = await getEnvironmentSpec(profileId);
       this.applySpec(response.spec, response.revision);
+      await this.persistPeersMigrationIfNeeded(response.spec);
       await this.refreshPending(profileId);
       this.streamError = null;
     } catch (err) {
-      this.spec = defaultEnvironmentSpec(profileId);
+      this.spec = ensurePeersSurfaceInSpec(defaultEnvironmentSpec(profileId));
       this.revision = 0;
       this.streamError =
         err instanceof Error ? err.message : "Could not load environment spec";
@@ -132,7 +167,8 @@ export class EnvironmentStore {
     this.revision = event.revision;
     this.streamError = null;
     if (event.spec) {
-      this.spec = event.spec;
+      this.applySpec(event.spec, event.revision);
+      void this.persistPeersMigrationIfNeeded(event.spec);
     }
     if (event.componentPatches?.length) {
       const next = new Map(this.feedStateByComponentId);
@@ -159,8 +195,23 @@ export class EnvironmentStore {
   }
 
   applySpec(spec: EnvironmentSpec, revision: number) {
-    this.spec = spec;
+    this.spec = ensurePeersSurfaceInSpec(spec);
     this.revision = revision;
+  }
+
+  /** Persist Peers into the daemon so rail + Canvas settings stay in sync after reload. */
+  private async persistPeersMigrationIfNeeded(original: EnvironmentSpec): Promise<void> {
+    if (this.peersMigrationPersisted || !this.spec) return;
+    if (!peersNavMigrationNeeded(original, this.spec)) {
+      this.peersMigrationPersisted = true;
+      return;
+    }
+    this.peersMigrationPersisted = true;
+    try {
+      await this.saveSpec(this.spec);
+    } catch {
+      this.peersMigrationPersisted = false;
+    }
   }
 
   setError(message: string) {

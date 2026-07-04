@@ -1,99 +1,65 @@
-# LAN discovery and workshop sharing
+# Peers, LAN discovery, and sharing
 
-Discover other Medousa workshops on your local network, trust them with the same Ed25519 pairing ceremony used for phones, share canvas layouts / notes / artifacts, and exchange async inbox messages.
+Connect to other Medousa workshops on your network, message them asynchronously, and share notes, artifacts, and canvas layouts.
 
-## Discover nearby workshops
+## Peers surface (primary)
 
-When Medousa Engine is running on your LAN, it advertises `_medousa._tcp.local.` via mDNS with TXT metadata:
+Open **Peers** in the Life rail (Users icon).
 
-- `dv` — device id prefix
-- `pn` — peer display name
-- `pf` — capability bitfield (`file_push`, `brain_sync`, relay)
-- `ar` — auth required flag
+### My invite
 
-Open **Settings → Nearby** to browse the network. The list refreshes every few seconds while the panel is open.
+Your workshop shows a large QR, short code, and **Copy link** (`medousa://pair/…`). Others on the same Wi‑Fi can connect without typing codes. A **Visible on network** pill means mDNS advertising is active.
 
-Daemon endpoint: `GET /v1/lan/workshops`
+### One-tap Connect
 
-## Trust another workshop
+Nearby workshops appear via mDNS (`_medousa._tcp.local.`). Tap **Connect**:
 
-Trust is **not** phone pairing — it reuses the same crypto, but stores credentials as a **paired workshop** in your workshop registry.
+1. Home fetches their unauthenticated `GET /qr` over LAN
+2. Completes the existing Ed25519 trust ceremony
+3. Adds them to your trusted people list
 
-1. On the remote workshop, generate a pair invite (`GET /qr` or Settings → Phone QR).
-2. On your machine, open **Settings → Nearby**, click **Trust** on the discovered row (or paste the `medousa://pair/…` link).
-3. Complete the ceremony — your app stores a bearer session token for cross-workshop HTTP.
+No paste required on the same network. If auto-connect fails, a fallback sheet accepts their invite link (daemon URL prefilled).
 
-Revoke trust from the **Trusted workshops** list.
+### Inbox
 
-**Mutual trust for replies:** you can send messages and share items one-way as soon as *you* trust them. For them to reply, they must also trust you (each side completes the trust ceremony).
+Select a person to see messages and compose (optional note/artifact attachment). Unread count badges the Peers rail icon.
 
-## Single note / artifact share
+**Replies** require mutual trust: after you connect, they should open Peers and tap Connect on your name.
 
-Share one vault note or one presentation artifact to a trusted peer:
+## Settings → Nearby
 
-- **Settings → Nearby** — “Share a note…” / “Share an artifact…”
-- **Artifact menu** (Share → Share to peer…) when trusted peers exist
-- **Vault note actions** — Share to peer…
+Advanced only:
 
-Flow: local mini-bundle export (`POST /v1/share/export` with one id/path) → `POST /v1/share/push` on the peer with bearer auth.
+- **Open Peers** CTA
+- Revoke trusted workshops
+- Full canvas **share bundle** export / import / push
 
-Conflict strategy: rename (default), skip, or overwrite.
+Phone pairing (portal to this brain) stays under **Settings → Phone**.
 
-## Share bundles
+## Share bundles and single items
 
-Share bundles (`.medousa-share.json`) are versioned JSON payloads:
+Share bundles (`.medousa-share.json`) include artifacts, vault notes, and optional environment sections.
 
-- `artifacts` — HTML presentation artifacts (base64)
-- `vaultNotes` — note paths + markdown content
-- `environment` — custom surfaces, components, and layout presets
+- **Peers / Vault / Artifact menus** — share one note or artifact to a peer
+- **Settings → Nearby** — export/import full canvas bundles
 
-### Export / import locally
+Daemon:
 
-**Settings → Nearby → Share bundle**
-
-- **Export bundle** downloads JSON (includes custom canvas views when checked).
-- **Import file** applies the bundle with a conflict strategy: rename, skip, or overwrite duplicates.
-
-Daemon endpoints:
-
-- `POST /v1/share/export`
-- `POST /v1/share/import`
-- `GET /v1/share/capabilities`
-
-### Push to a trusted peer
-
-After exporting (or reusing the last bundle in-session), choose a trusted workshop and **Push bundle**. The app sends `POST /v1/share/push` to the peer over LAN HTTP (Iroh fallback when configured) using the stored bearer token.
-
-Remote imports require a valid pairing session token unless the request originates from loopback.
-
-## Peer inbox (async messaging)
-
-Trusted workshops can send short text messages (optionally with a note/artifact attachment). Delivery is push-based and async — no live typing or presence.
-
-| Method | Path | Who | Behavior |
-|--------|------|-----|----------|
-| POST | `/v1/peer/messages` | Peer (bearer) or loopback | Append inbound message; auto-import attachment with rename |
-| GET | `/v1/peer/messages` | Local only | List inbox (newest first); `?unreadOnly=true` |
-| POST | `/v1/peer/messages/{id}/read` | Local only | Mark read |
-| GET | `/v1/peer/messages/unread-count` | Local only | Badge count |
-
-Messages persist in `peer_inbox.json` (cap 500). Unread count badges **Settings → Nearby**.
-
-Compose from Nearby: pick peer, write text, optionally attach a note or artifact (mini-bundle).
+- `GET /v1/lan/workshops` — mDNS browse
+- `POST /v1/share/export` / `import` / `push`
+- `POST/GET /v1/peer/messages`, mark-read, unread-count
 
 ## Capability bits
 
 | Bit | Name | Behavior |
 |-----|------|----------|
-| 3 | `file_push` | Share bundle / item push/import |
-| 4 | `brain_sync` | Environment + vault sections in bundles |
+| 3 | `file_push` | Share push/import |
+| 4 | `brain_sync` | Environment + vault in bundles |
 | 5 | `relay_capable` | Iroh transport available |
 
 ## Out of scope
 
-- Agent-to-agent messaging
-- Continuous sync / CRDT replication
+- Camera QR scan (link paste + one-tap LAN is v1)
 - Live typing / presence
-- Desktop Iroh off-LAN (LAN + mobile Iroh only)
-- Push notifications for peer messages
-- Sharing chat runtime state
+- Agent-to-agent protocols
+- Merging external channel Messaging into Peers

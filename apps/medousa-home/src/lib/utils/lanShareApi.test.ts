@@ -17,4 +17,11 @@ describe("lanShareApi", () => {
     expect(capabilityBadges("0010")).toEqual(["Layouts"]);
     expect(capabilityBadges("0018")).toEqual(["Share", "Layouts"]);
   });
+
+  it("documents connectToNearbyWorkshop as Tauri-only", async () => {
+    const { connectToNearbyWorkshop } = await import("$lib/utils/lanShareApi");
+    await expect(
+      connectToNearbyWorkshop({ daemonUrl: "http://192.168.1.2:7419", peerName: "Studio" }),
+    ).rejects.toThrow(/desktop app/i);
+  });
 });
