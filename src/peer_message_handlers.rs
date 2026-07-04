@@ -9,10 +9,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use crate::environment_store::environment_hub;
-use crate::pairing::{PairedDeviceRecord, PairingService};
+use crate::pairing::{PairedDeviceRecord, PairingRole, PairingService};
 use crate::peer_messages::{
-    append_message, build_message, get_message, list_messages, mark_read, messages_for_device,
-    unread_count, PeerMessage, PeerMessageAttachmentSummary, PeerMessagePostRequest,
+    append_message, build_message, get_message, involves_device, list_messages,
+    list_messages_filtered, list_messages_for_peer_device, mark_read, unread_count,
+    unread_count_for_device, PeerMessage, PeerMessageAttachmentSummary, PeerMessagePostRequest,
     PeerMessagesListResponse, PeerUnreadCountResponse,
 };
 use crate::share::bundle::{ShareConflictStrategy, ShareImportRequest};
@@ -29,6 +30,7 @@ pub struct PeerMessageApiState {
 #[serde(rename_all = "camelCase")]
 struct ListQuery {
     unread_only: Option<bool>,
+    device_id: Option<String>,
 }
 
 pub fn peer_message_router(state: PeerMessageApiState) -> Router {
@@ -45,20 +47,31 @@ async fn list_peer_messages(
     headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<PeerMessagesListResponse>, (StatusCode, String)> {
+    let unread_only = query.unread_only.unwrap_or(false);
+    let device_filter = query
+        .device_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
     let messages = if is_local_request(addr.ip()) {
-        list_messages(query.unread_only.unwrap_or(false))
+        list_messages_filtered(unread_only, device_filter)
             .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     } else {
         let record = authorize_remote_record(&state, &headers)?;
-        let mut messages = messages_for_device(&record.phone_id)
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-        if query.unread_only.unwrap_or(false) {
-            // Peer's unread = outbound-from-host copies not yet read by them.
-            messages.retain(|message| {
-                message.direction == "out" && message.read_at.is_none()
-            });
+        if record.role.allows_full_portal() {
+            list_messages_filtered(unread_only, device_filter)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        } else {
+            if device_filter.is_some() {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    "Peer credentials cannot filter other conversations".to_string(),
+                ));
+            }
+            list_messages_for_peer_device(&record.phone_id, unread_only)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
         }
-        messages
     };
     Ok(Json(PeerMessagesListResponse { messages }))
 }
@@ -72,11 +85,12 @@ async fn peer_unread_count(
         unread_count().map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
     } else {
         let record = authorize_remote_record(&state, &headers)?;
-        messages_for_device(&record.phone_id)
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-            .into_iter()
-            .filter(|message| message.direction == "out" && message.read_at.is_none())
-            .count()
+        if record.role.allows_full_portal() {
+            unread_count().map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        } else {
+            unread_count_for_device(&record.phone_id)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        }
     };
     Ok(Json(PeerUnreadCountResponse { unread }))
 }
@@ -94,8 +108,43 @@ async fn post_peer_message(
         Some(authorize_remote_record(&state, &headers)?)
     };
 
+    let portal_host_reply = remote_record.as_ref().is_some_and(|record| {
+        record.role.allows_full_portal()
+            && body
+                .direction
+                .as_deref()
+                .is_some_and(|value| value.eq_ignore_ascii_case("out"))
+            && body
+                .to_device_id
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty())
+    });
+
+    if portal_host_reply {
+        let to_device_id = body
+            .to_device_id
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or_default();
+        if !is_paired_peer_device(&state, to_device_id)? {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "toDeviceId must refer to a paired peer".to_string(),
+            ));
+        }
+    }
+
     let (default_direction, default_to_id, default_to_name, fallback_from_id, fallback_from_name) =
-        if let Some(record) = &remote_record {
+        if portal_host_reply {
+            (
+                "out",
+                None,
+                None,
+                state.local_device_id.as_str(),
+                state.local_peer_name.as_str(),
+            )
+        } else if let Some(record) = &remote_record {
             (
                 "in",
                 Some(state.local_device_id.as_str()),
@@ -127,14 +176,18 @@ async fn post_peer_message(
             )
         };
 
-    // Remote peers cannot forge outbound copies on this host.
+    // Remote peers cannot forge outbound copies; portal sudo may reply as the workshop.
     let mut request = body;
-    if remote_record.is_some() {
+    if remote_record.is_some() && !portal_host_reply {
         request.direction = Some("in".to_string());
         request.from_device_id = Some(fallback_from_id.to_string());
         request.from_name = Some(fallback_from_name.to_string());
         request.to_device_id = Some(state.local_device_id.clone());
         request.to_name = Some(state.local_peer_name.clone());
+    } else if portal_host_reply {
+        request.direction = Some("out".to_string());
+        request.from_device_id = Some(state.local_device_id.clone());
+        request.from_name = Some(state.local_peer_name.clone());
     }
 
     let mut message = build_message(
@@ -209,11 +262,16 @@ async fn read_peer_message(
 ) -> Result<Json<PeerMessage>, (StatusCode, String)> {
     if !is_local_request(addr.ip()) {
         let record = authorize_remote_record(&state, &headers)?;
-        let message = get_message(&message_id)
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "message not found".to_string()))?;
-        if !crate::peer_messages::involves_device(&message, &record.phone_id) {
-            return Err((StatusCode::FORBIDDEN, "message not in your conversation".to_string()));
+        if !record.role.allows_full_portal() {
+            let message = get_message(&message_id)
+                .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+                .ok_or_else(|| (StatusCode::NOT_FOUND, "message not found".to_string()))?;
+            if !involves_device(&message, &record.phone_id) {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    "message not in your conversation".to_string(),
+                ));
+            }
         }
     }
     mark_read(&message_id).map(Json).map_err(|err| {
@@ -278,5 +336,41 @@ fn is_local_request(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4.is_loopback(),
         IpAddr::V6(v6) => v6.is_loopback(),
+    }
+}
+
+fn is_paired_peer_device(
+    state: &PeerMessageApiState,
+    device_id: &str,
+) -> Result<bool, (StatusCode, String)> {
+    let Some(pairing) = state.pairing.as_ref() else {
+        return Ok(false);
+    };
+    let paired = pairing
+        .list_paired_devices()
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    Ok(paired.into_iter().any(|record| {
+        record.role == PairingRole::Peer && involves_device_id(&record.phone_id, device_id)
+    }))
+}
+
+fn involves_device_id(left: &str, right: &str) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return left == right;
+    }
+    left == right
+        || left.starts_with(&right[..right.len().min(8)])
+        || right.starts_with(&left[..left.len().min(8)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn involves_device_id_prefix_match() {
+        assert!(involves_device_id("abcdef123456", "abcdef12"));
+        assert!(involves_device_id("abcdef12", "abcdef123456"));
+        assert!(!involves_device_id("aaa", "bbb"));
     }
 }

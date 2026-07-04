@@ -11,6 +11,8 @@
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { initMobileNative } from "$lib/mobileNative";
+  import { setPendingPeerNavigation } from "$lib/peerNavigation";
+  import { startPeerMessageNotificationPolling } from "$lib/peerNotifications";
   import { layout } from "$lib/stores/layout.svelte";
   import { toast } from "$lib/stores/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
@@ -48,6 +50,19 @@
   async function openVaultNote(notePath: string) {
     layout.navigateDesktop("library");
     await vault.openNote(notePath);
+  }
+
+  async function openPeerThread(input: {
+    workshopId: string;
+    peerDeviceId?: string;
+    messageId?: string;
+  }) {
+    setPendingPeerNavigation(input.workshopId);
+    if (layout.isMobile) {
+      layout.openMore("peers");
+    } else {
+      layout.navigateDesktop("peers", { bump: true });
+    }
   }
 
   onMount(() => {
@@ -90,7 +105,9 @@
             });
           });
       },
+      onOpenPeer: openPeerThread,
     });
+    const stopPeerNotifications = startPeerMessageNotificationPolling();
     const stopAgentBrowserCoord = attachAgentBrowserCoord();
 
     const onKeydown = (event: KeyboardEvent) => {
@@ -120,6 +137,7 @@
       stopViewport();
       stopMobileViewport();
       stopNative();
+      stopPeerNotifications();
       stopAgentBrowserCoord();
       window.removeEventListener("keydown", onKeydown);
     };

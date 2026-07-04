@@ -277,6 +277,10 @@ impl PairingService {
             .unwrap_or(crate::daemon_api::DEFAULT_DAEMON_PORT)
     }
 
+    pub fn list_paired_devices(&self) -> Result<Vec<PairedDeviceRecord>> {
+        self.store.list_paired()
+    }
+
     pub async fn pair_status(&self) -> Result<PairStatusResponse> {
         let paired = self.store.list_paired()?;
         let qr_active = self

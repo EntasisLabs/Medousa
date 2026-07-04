@@ -66,7 +66,10 @@ export function setWorkDeepLinkHandler(handler: OpenWorkHandler | null) {
 export function initMobileNative(
   handler: OpenWorkHandler,
   vaultNoteHandler?: OpenVaultNoteHandler,
-  options?: { onPairLink?: OpenPairHandler },
+  options?: {
+    onPairLink?: OpenPairHandler;
+    onOpenPeer?: import("$lib/notifications").OpenPeerHandler;
+  },
 ): () => void {
   setWorkDeepLinkHandler(handler);
   setVaultDeepLinkHandler(vaultNoteHandler ?? null);
@@ -97,7 +100,10 @@ export function initMobileNative(
 
       try {
         const { initNotificationRouting } = await import("$lib/notifications");
-        const stop = await initNotificationRouting((cardId) => handler(cardId));
+        const stop = await initNotificationRouting(
+          (cardId) => handler(cardId),
+          options?.onOpenPeer,
+        );
         if (stop) cleanups.push(stop);
       } catch {
         // Notifications optional.

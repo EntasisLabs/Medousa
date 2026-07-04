@@ -35,9 +35,14 @@ Large **compact** QR (`medousa://pair/1.0?…`, camera-friendly), short code, **
 
 ### Mobile
 
-**More → Peers** — phone is its **own client surface** (pairing credentials), not a remote control of the host Peers rail. Connect by address / nearby, list, thread, send. Conversations live on the peer hosts you Connected to; they are **not** the same threads as desktop Peers on that workshop.
+**More → Peers** — two sections when portal-paired to the **active workshop**:
 
-Portal phone pairing (QR / Iroh) is for chat, vault, and canvas of the workshop — separate from Peers.
+- **Workshop inbox** — same sudo view as desktop host (everyone who connected to your workshop)
+- **My peer connections** — outbound peer connects from this phone
+
+If the phone only has peer connections (no active portal workshop), you see **My peer connections** only.
+
+Portal phone pairing (QR / Iroh) is for chat, vault, canvas **and** workshop inbox when that workshop is active in the switcher.
 
 **Mobile Home button** — Settings → Canvas → Mobile Home button (Native Home or a custom view). Opening a custom view from More is temporary; tap Home again to leave it.
 
@@ -55,7 +60,20 @@ Peer tokens on the host are scoped: they may only call `/v1/peer/*`, `/v1/share/
 
 ### Inbox
 
-Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon.
+Peers splits into two sections when you have **Workshop inbox** access (host desktop or **portal** on the active workshop):
+
+| Section | Who sees it | Scope |
+|---------|-------------|--------|
+| **Workshop inbox** | Host engine or portal on active workshop | Everyone who connected **to you** as a peer — reply **as the workshop** |
+| **My peer connections** | Any surface | Workshops **you** connected to — one thread each, send **as you** |
+
+**Peer** role (Connect / `medousa peer connect`): single thread with that host only.
+
+**Portal** role (phone pairing / workshop switcher): sudo on that workshop — full inbox on the active workshop, same as desktop host.
+
+Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon. Opening a thread marks it read; use ⋯ → **Mark read** to clear manually.
+
+Local notifications fire when new inbound peer messages arrive (poll-based; respects Settings notification preference).
 
 Threads show **both sides**: messages they sent you and messages you sent them (outbound copies stay on your workshop).
 
@@ -128,7 +146,7 @@ medousa peer inbox --unread                      # this engine's inbox
 medousa peer read <message-id>
 ```
 
-Credentials live under `{medousa_data_dir}/cli/connections.json`. Peer tokens stay scoped to inbox + share on the remote host.
+Credentials live under `{medousa_data_dir}/cli/connections.json`. Peer tokens stay scoped to inbox + share on the remote host. Portal tokens see the remote workshop's **full** peer inbox (same as host loopback).
 
 ## Out of scope
 

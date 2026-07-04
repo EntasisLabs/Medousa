@@ -758,4 +758,12 @@ mod tests {
         assert_eq!(registry.active_workshop_id, PERSONAL_WORKSHOP_ID);
         assert_eq!(registry.workshops.len(), 1);
     }
+
+    #[test]
+    fn portal_kind_qualifies_for_saved_pairing_credentials() {
+        assert!(is_portal_kind("portal"));
+        assert!(is_portal_kind("paired"));
+        assert!(is_portal_kind("local"));
+        assert!(!is_portal_kind("peer"));
+    }
 }

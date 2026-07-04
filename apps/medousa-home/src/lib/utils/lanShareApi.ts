@@ -89,6 +89,14 @@ export interface PeerMessage {
   toName?: string | null;
   attachment?: Record<string, unknown> | null;
   attachmentResult?: PeerMessageAttachmentResult | null;
+  /** Which inbox sink this message came from (host / portal / peer). */
+  sinkKind?: "host" | "portal" | "peer" | string;
+  workshopId?: string | null;
+}
+
+export interface PeerComposeIdentity {
+  workshopName: string;
+  clientName: string;
 }
 
 function requireTauri(): void {
@@ -249,9 +257,29 @@ export async function peerUnreadCount(): Promise<number> {
   return response.unread ?? 0;
 }
 
-export async function peerMarkRead(messageId: string): Promise<PeerMessage> {
+export async function peerMarkRead(
+  messageId: string,
+  options?: { sinkKind?: string; workshopId?: string },
+): Promise<PeerMessage> {
   requireTauri();
-  return invoke<PeerMessage>("peer_mark_read", { messageId });
+  return invoke<PeerMessage>("peer_mark_read", {
+    messageId,
+    sinkKind: options?.sinkKind ?? null,
+    workshopId: options?.workshopId ?? null,
+  });
+}
+
+export async function peerMarkThreadRead(peerDeviceId: string): Promise<number> {
+  requireTauri();
+  const response = await invoke<{ marked: number }>("peer_mark_thread_read", {
+    peerDeviceId,
+  });
+  return response.marked ?? 0;
+}
+
+export async function peerComposeIdentity(): Promise<PeerComposeIdentity> {
+  requireTauri();
+  return invoke<PeerComposeIdentity>("peer_compose_identity");
 }
 
 export function capabilityBadges(flags?: string | null): string[] {

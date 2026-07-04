@@ -822,8 +822,8 @@ fn print_peer_help() {
     println!("Medousa peer/portal client (headless)");
     println!();
     println!("Connect this machine as a surface to another Medousa:");
-    println!("  peer  — inbox + share only");
-    println!("  portal — full client (use --portal)");
+    println!("  portal — full client (use --portal); remote inbox = entire workshop mailbox");
+    println!("  peer  — inbox + share only; remote inbox = your thread with that host");
     println!();
     println!("USAGE:");
     println!("  medousa peer nearby [--daemon-url <url>]");

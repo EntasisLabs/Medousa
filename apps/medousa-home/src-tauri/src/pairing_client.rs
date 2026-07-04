@@ -614,7 +614,7 @@ fn save_pairing_credentials(
 fn read_credentials_file() -> Option<PairingCredentialsFile> {
     let registry = crate::workshop_registry::ensure_migrated().ok()?;
     let workshop = crate::workshop_registry::active_workshop(&registry)?;
-    if workshop.kind != "paired" {
+    if !crate::workshop_registry::is_portal_kind(&workshop.kind) {
         return None;
     }
     let rel = workshop
@@ -878,5 +878,21 @@ mod tests {
         assert_eq!(parsed.qr_token, "token");
         assert_eq!(parsed.signature, "sig");
         assert_eq!(parsed.peer_name, "Desk");
+    }
+
+    #[test]
+    fn build_transport_config_includes_iroh_and_session() {
+        let file = PairingCredentialsFile {
+            pairing_id: "p1".to_string(),
+            phone_id: "phone1".to_string(),
+            workshop_device_id: "abcd1234".to_string(),
+            daemon_url: "http://192.168.1.2:7419".to_string(),
+            paired_at: chrono::Utc::now().to_rfc3339(),
+            iroh_ticket: Some("ticket-abc".to_string()),
+            workshop_endpoint_id: None,
+        };
+        let config = build_transport_config(&file, "http://192.168.1.2:7419").expect("config");
+        assert_eq!(config.lan_base, "http://192.168.1.2:7419");
+        assert_eq!(config.iroh_ticket.as_deref(), Some("ticket-abc"));
     }
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { artifacts } from "$lib/stores/artifacts.svelte";
+  import { toast } from "$lib/stores/toast.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
@@ -11,6 +12,8 @@
     listTrustedWorkshops,
     peerListMessages,
     peerMarkRead,
+    peerMarkThreadRead,
+    peerComposeIdentity,
     peerSendMessage,
     peerUnreadCount,
     revokeTrustedWorkshop,
@@ -18,6 +21,7 @@
     trustWorkshopFromQr,
     type DiscoveredWorkshop,
     type LanPairingStatus,
+    type PeerComposeIdentity,
     type PeerMessage,
     type TrustedWorkshopSummary,
   } from "$lib/utils/lanShareApi";
@@ -33,6 +37,7 @@
     type PairingQrImage,
   } from "$lib/utils/pairingApi";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
+  import { consumePendingPeerNavigation } from "$lib/peerNavigation";
   import { isTauri } from "$lib/window";
   import {
     Copy,
@@ -85,13 +90,17 @@
   let copyFlash = $state(false);
   let lanPairing = $state<LanPairingStatus | null>(null);
   let lanBusy = $state(false);
+  let composeIdentity = $state<PeerComposeIdentity | null>(null);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
   const noteOptions = $derived((vault.notes ?? []).slice(0, 40));
   const artifactOptions = $derived((artifacts.artifacts ?? []).slice(0, 40));
+  const workshopInboxPeers = $derived(trusted.filter((peer) => peer.inbound));
+  const myPeerConnections = $derived(trusted.filter((peer) => !peer.inbound));
   const hasPeers = $derived(trusted.length > 0);
+  const showWorkshopInbox = $derived(workshopInboxPeers.length > 0);
   const nearbyUntrusted = $derived(nearby.filter((workshop) => !isTrustedNearby(workshop)));
 
   const selectedPeer = $derived(
@@ -113,6 +122,14 @@
       );
     }
     return null;
+  });
+
+  const composeAsLabel = $derived.by(() => {
+    if (!selectedPeer) return "";
+    if (selectedPeer.inbound) {
+      return `Replying as ${composeIdentity?.workshopName ?? "workshop"}`;
+    }
+    return `Sending as ${composeIdentity?.clientName ?? "you"}`;
   });
 
   function deviceIdsMatch(left: string, right: string): boolean {
@@ -214,7 +231,10 @@
     if (!isTauri()) return;
     try {
       trusted = await listTrustedWorkshops();
-      if (!selectedPeerId && trusted.length > 0) {
+      const pending = consumePendingPeerNavigation();
+      if (pending && trusted.some((peer) => peer.workshopId === pending)) {
+        selectedPeerId = pending;
+      } else if (!selectedPeerId && trusted.length > 0) {
         selectedPeerId = trusted[0]!.workshopId;
       }
       if (selectedPeerId && !trusted.some((peer) => peer.workshopId === selectedPeerId)) {
@@ -232,6 +252,15 @@
       unread = await peerUnreadCount();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function refreshComposeIdentity() {
+    if (!isTauri()) return;
+    try {
+      composeIdentity = await peerComposeIdentity();
+    } catch {
+      composeIdentity = null;
     }
   }
 
@@ -265,6 +294,7 @@
       refreshNearby(),
       refreshTrusted(),
       refreshInbox(),
+      refreshComposeIdentity(),
     ];
     if (!mobile) {
       tasks.push(refreshInvite(), refreshLanPairing());
@@ -442,13 +472,41 @@
   }
 
   async function openMessage(message: PeerMessage) {
-    // Outbound copies share readAt with the recipient — only they should mark them read.
     if (isOutbound(message) || message.readAt) return;
     try {
-      await peerMarkRead(message.id);
+      await peerMarkRead(message.id, {
+        sinkKind: message.sinkKind ?? undefined,
+        workshopId: message.workshopId ?? undefined,
+      });
       await refreshInbox();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function markThreadRead() {
+    if (!selectedPeer) return;
+    peerMenuOpen = false;
+    try {
+      await peerMarkThreadRead(selectedPeer.workshopDeviceId);
+      await refreshInbox();
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function selectPeer(workshopId: string) {
+    selectedPeerId = workshopId;
+    peerMenuOpen = false;
+    cancelRename();
+    const peer = trusted.find((entry) => entry.workshopId === workshopId);
+    if (peer) {
+      try {
+        await peerMarkThreadRead(peer.workshopDeviceId);
+        await refreshInbox();
+      } catch {
+        /* best-effort on open */
+      }
     }
   }
 
@@ -602,40 +660,62 @@
         </button>
       </div>
     {:else}
-      <ul class="peers-people">
-        {#each trusted as peer (peer.workshopId)}
-          {@const peerUnread = unreadForPeer(peer)}
-          <li>
-            <button
-              type="button"
-              class="peers-person"
-              class:peers-person-active={selectedPeerId === peer.workshopId}
-              onclick={() => {
-                selectedPeerId = peer.workshopId;
-                peerMenuOpen = false;
-                cancelRename();
-              }}
-            >
-              <span class="peers-avatar" aria-hidden="true">{monogram(peer.label)}</span>
-              <span class="peers-person-copy">
-                <span class="peers-person-name">{peer.label}</span>
-                <span class="peers-person-meta">
-                  {#if peer.inbound}
-                    Connected to you
-                  {:else if peer.hasSessionToken}
-                    Ready
-                  {:else}
-                    Reconnect needed
-                  {/if}
+      {#if showWorkshopInbox}
+        <p class="peers-section-label">Workshop inbox</p>
+        <ul class="peers-people">
+          {#each workshopInboxPeers as peer (peer.workshopId)}
+            {@const peerUnread = unreadForPeer(peer)}
+            <li>
+              <button
+                type="button"
+                class="peers-person"
+                class:peers-person-active={selectedPeerId === peer.workshopId}
+                onclick={() => void selectPeer(peer.workshopId)}
+              >
+                <span class="peers-avatar" aria-hidden="true">{monogram(peer.label)}</span>
+                <span class="peers-person-copy">
+                  <span class="peers-person-name">{peer.label}</span>
+                  <span class="peers-person-meta">Connected to you</span>
                 </span>
-              </span>
-              {#if peerUnread > 0}
-                <span class="peers-person-unread">{peerUnread}</span>
-              {/if}
-            </button>
-          </li>
-        {/each}
-      </ul>
+                {#if peerUnread > 0}
+                  <span class="peers-person-unread">{peerUnread}</span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if myPeerConnections.length > 0}
+        <p class="peers-section-label">My peer connections</p>
+        <ul class="peers-people">
+          {#each myPeerConnections as peer (peer.workshopId)}
+            {@const peerUnread = unreadForPeer(peer)}
+            <li>
+              <button
+                type="button"
+                class="peers-person"
+                class:peers-person-active={selectedPeerId === peer.workshopId}
+                onclick={() => void selectPeer(peer.workshopId)}
+              >
+                <span class="peers-avatar" aria-hidden="true">{monogram(peer.label)}</span>
+                <span class="peers-person-copy">
+                  <span class="peers-person-name">{peer.label}</span>
+                  <span class="peers-person-meta">
+                    {#if peer.hasSessionToken}
+                      Ready
+                    {:else}
+                      Reconnect needed
+                    {/if}
+                  </span>
+                </span>
+                {#if peerUnread > 0}
+                  <span class="peers-person-unread">{peerUnread}</span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </aside>
 
@@ -714,6 +794,15 @@
           </button>
           {#if peerMenuOpen}
             <div class="peers-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                class="peers-menu-item"
+                disabled={busy}
+                onclick={() => void markThreadRead()}
+              >
+                Mark read
+              </button>
               {#if !selectedPeer.inbound}
                 <button
                   type="button"
@@ -769,6 +858,9 @@
       </div>
 
       <div class="peers-compose">
+        {#if composeAsLabel}
+          <p class="peers-compose-as">{composeAsLabel}</p>
+        {/if}
         {#if attachmentLabel}
           <div class="peers-attach-chip">
             <Paperclip size={12} />
@@ -1100,6 +1192,20 @@
     margin: 0.15rem 0 0;
     font-size: 0.75rem;
     color: rgb(var(--color-surface-500));
+  }
+
+  .peers-section-label {
+    margin: 0.65rem 0 0.35rem;
+    padding: 0 0.15rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--color-surface-500));
+  }
+
+  .peers-section-label:first-of-type {
+    margin-top: 0.25rem;
   }
 
   .peers-add-btn,
@@ -1472,6 +1578,12 @@
   .peers-compose {
     padding: 0.65rem 1rem 1rem;
     border-top: 1px solid color-mix(in srgb, var(--color-surface-700) 40%, transparent);
+  }
+
+  .peers-compose-as {
+    margin: 0 0 0.45rem;
+    font-size: 0.72rem;
+    color: rgb(var(--color-surface-500));
   }
 
   .peers-attach-chip {

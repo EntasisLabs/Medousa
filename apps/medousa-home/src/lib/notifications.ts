@@ -42,6 +42,15 @@ type WorkNotificationExtra = {
   kind: "work";
 };
 
+type PeerNotificationExtra = {
+  kind: "peer";
+  workshopId: string;
+  peerDeviceId?: string;
+  messageId?: string;
+};
+
+const peerNotified = new Set<string>();
+
 function notificationId(seed: string): number {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
@@ -64,8 +73,55 @@ function rememberBudgetNotification(requestId: string): boolean {
   return rememberOnce(budgetNotified, requestId, 128);
 }
 
-function rememberWorkNotification(seed: string): boolean {
-  return rememberOnce(workNotified, seed, 256);
+function rememberPeerNotification(seed: string): boolean {
+  return rememberOnce(peerNotified, seed, 256);
+}
+
+async function sendPeerNotification(
+  seed: string,
+  title: string,
+  body: string,
+  extra: PeerNotificationExtra,
+) {
+  if (!notificationsEnabled()) return;
+  if (!rememberPeerNotification(seed)) return;
+  if (!(await ensureNotificationPermission())) return;
+
+  enqueueNotification(async () => {
+    const { sendNotification } = await notificationApi();
+    sendNotification({
+      id: notificationId(seed),
+      title,
+      body,
+      actionTypeId: "medousa-peer",
+      extra,
+    });
+  });
+}
+
+export async function notifyPeerMessage(input: {
+  fromName: string;
+  body: string;
+  workshopId: string;
+  peerDeviceId?: string;
+  messageId?: string;
+}) {
+  try {
+    const preview = input.body.trim() || "New message";
+    await sendPeerNotification(
+      `peer-${input.messageId ?? `${input.workshopId}-${Date.now()}`}`,
+      `Medousa — ${input.fromName}`,
+      preview,
+      {
+        kind: "peer",
+        workshopId: input.workshopId,
+        peerDeviceId: input.peerDeviceId,
+        messageId: input.messageId,
+      },
+    );
+  } catch {
+    // Vite-only dev or plugin unavailable — ignore.
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -248,6 +304,10 @@ export async function notifyWorkerHandoff(
   }
 }
 
+function rememberWorkNotification(seed: string): boolean {
+  return rememberOnce(workNotified, seed, 256);
+}
+
 function cardIdFromNotification(extra: unknown): string | null {
   if (!extra || typeof extra !== "object") return null;
   const record = extra as Record<string, unknown>;
@@ -256,9 +316,31 @@ function cardIdFromNotification(extra: unknown): string | null {
   return typeof cardId === "string" && cardId.trim() ? cardId.trim() : null;
 }
 
-/** Wire notification taps to work-card navigation (Tauri mobile + desktop). */
+function peerTargetFromNotification(extra: unknown): PeerNotificationExtra | null {
+  if (!extra || typeof extra !== "object") return null;
+  const record = extra as Record<string, unknown>;
+  if (record.kind !== "peer") return null;
+  const workshopId = record.workshopId;
+  if (typeof workshopId !== "string" || !workshopId.trim()) return null;
+  return {
+    kind: "peer",
+    workshopId: workshopId.trim(),
+    peerDeviceId:
+      typeof record.peerDeviceId === "string" ? record.peerDeviceId.trim() : undefined,
+    messageId: typeof record.messageId === "string" ? record.messageId.trim() : undefined,
+  };
+}
+
+export type OpenPeerHandler = (input: {
+  workshopId: string;
+  peerDeviceId?: string;
+  messageId?: string;
+}) => void | Promise<void>;
+
+/** Wire notification taps to work-card and peer-thread navigation. */
 export async function initNotificationRouting(
   onOpenWork: OpenWorkHandler,
+  onOpenPeer?: OpenPeerHandler,
 ): Promise<(() => void) | null> {
   try {
     const { registerActionTypes, onAction } = await notificationApi();
@@ -273,11 +355,28 @@ export async function initNotificationRouting(
           },
         ],
       },
+      {
+        id: "medousa-peer",
+        actions: [
+          {
+            id: "open",
+            title: "Open",
+            foreground: true,
+          },
+        ],
+      },
     ]);
 
     const listener = await onAction((notification) => {
       const cardId = cardIdFromNotification(notification.extra);
-      if (cardId) void onOpenWork(cardId);
+      if (cardId) {
+        void onOpenWork(cardId);
+        return;
+      }
+      const peer = peerTargetFromNotification(notification.extra);
+      if (peer && onOpenPeer) {
+        void onOpenPeer(peer);
+      }
     });
     return () => {
       void listener.unregister();

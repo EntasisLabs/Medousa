@@ -14,6 +14,7 @@ mod packages;
 mod pairing;
 mod pairing_client;
 mod lan_share;
+mod peer_inbox_sink;
 mod push;
 mod workshop_registry;
 mod workshop_transport;
@@ -215,6 +216,8 @@ pub fn run() {
             lan_share::peer_list_messages,
             lan_share::peer_unread_count,
             lan_share::peer_mark_read,
+            lan_share::peer_mark_thread_read,
+            lan_share::peer_compose_identity,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,

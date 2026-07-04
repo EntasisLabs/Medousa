@@ -148,6 +148,28 @@ pub fn messages_for_device(device_id: &str) -> Result<Vec<PeerMessage>> {
         .collect())
 }
 
+/// Full inbox with optional thread filter (portal / host).
+pub fn list_messages_filtered(unread_only: bool, device_id: Option<&str>) -> Result<Vec<PeerMessage>> {
+    let mut messages = list_messages(unread_only)?;
+    if let Some(device_id) = device_id.filter(|value| !value.is_empty()) {
+        messages.retain(|message| involves_device(message, device_id));
+    }
+    Ok(messages)
+}
+
+/// Peer-scoped remote view: one thread; unread = outbound copies not yet read by peer.
+pub fn list_messages_for_peer_device(device_id: &str, unread_only: bool) -> Result<Vec<PeerMessage>> {
+    let mut messages = messages_for_device(device_id)?;
+    if unread_only {
+        messages.retain(|message| message.direction == "out" && message.read_at.is_none());
+    }
+    Ok(messages)
+}
+
+pub fn unread_count_for_device(device_id: &str) -> Result<usize> {
+    Ok(list_messages_for_peer_device(device_id, true)?.len())
+}
+
 pub fn involves_device(message: &PeerMessage, device_id: &str) -> bool {
     device_ids_match(&message.from_device_id, device_id)
         || message
