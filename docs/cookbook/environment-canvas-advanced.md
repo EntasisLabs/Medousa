@@ -82,6 +82,55 @@ Activate: `cognition_environment_activate_preset` or Settings / nav preset dropd
 
 Slots: `main`, `header`, `sidebar`, `fab`, `inline`.
 
+### Vault note widgets (`medousa_view`)
+
+Operators can pin vault notes as canvas widgets without agent tools:
+
+1. **Settings → Canvas** — open the widget catalog, **Vault notes** tab, search a note, **Add to view**.
+2. **Edit layout** on a custom surface — **Add widget** → **Vault notes** tab (same catalog).
+
+Spec shape:
+
+```json
+{
+  "id": "journal-widget",
+  "type": "medousa_view",
+  "surfaceId": "journal-desk",
+  "slot": "main",
+  "label": "Daily note",
+  "config": { "notePath": "journal/daily.md" },
+  "feeds": []
+}
+```
+
+Embedded notes support wikilinks and **Open in Vault** from the tile header.
+
+### Artifact navigation to vault notes
+
+Presentation HTML can open vault notes from inside the iframe (parent handles navigation):
+
+**JavaScript API** (injected with artifact runtime scripts):
+
+```js
+await Medousa.navigate({ type: "vault", path: "journal/daily.md" });
+// shorthand
+Medousa.openVaultNote("journal/daily.md");
+```
+
+**Zero-JS links** (click interceptor posts to parent):
+
+```html
+<a href="medousa://vault/journal/daily.md">Open daily note</a>
+```
+
+**App-level deeplinks** (outside iframes, notifications, mobile):
+
+```text
+medousa://vault/journal/daily.md
+```
+
+Paths must be relative vault paths (no `..` or leading `/`).
+
 ---
 
 ## Publishing paths

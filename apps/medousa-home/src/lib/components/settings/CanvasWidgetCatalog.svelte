@@ -2,8 +2,12 @@
   import { onMount } from "svelte";
   import { listUiArtifacts } from "$lib/daemon";
   import { environment } from "$lib/stores/environment.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
+  import VaultKindBadge from "$lib/components/vault/VaultKindBadge.svelte";
   import type { ArtifactSummary } from "$lib/types/artifact";
+  import { vaultDisplayTitle } from "$lib/utils/formatVault";
   import type { MediaEmbedProvider } from "$lib/utils/mediaEmbed";
+  import { fuzzyMatchVaultNotes } from "$lib/utils/vaultFuzzyMatch";
 
   interface Props {
     defaultSurfaceId?: string | null;
@@ -13,8 +17,9 @@
 
   let { defaultSurfaceId = null, compact = false, onAdded }: Props = $props();
 
-  let tab = $state<"artifacts" | "media">("artifacts");
+  let tab = $state<"artifacts" | "media" | "notes">("artifacts");
   let query = $state("");
+  let noteQuery = $state("");
   let artifacts = $state<ArtifactSummary[]>([]);
   let loading = $state(false);
   let loadError = $state<string | null>(null);
@@ -26,9 +31,14 @@
   let mediaUrl = $state("");
   let mediaLabel = $state("");
   let mediaBusy = $state(false);
+  let noteBusyPath = $state<string | null>(null);
 
   const customSurfaces = $derived(
     (environment.spec?.surfaces ?? []).filter((surface) => surface.kind === "custom"),
+  );
+  const noteLabelByPath = $derived(vault.labelByPathMap);
+  const noteMatches = $derived(
+    fuzzyMatchVaultNotes(vault.notes, noteQuery, noteLabelByPath, compact ? 20 : 30),
   );
 
   $effect(() => {
@@ -41,6 +51,7 @@
 
   onMount(() => {
     void refreshArtifacts();
+    void vault.refreshNotes();
   });
 
   async function refreshArtifacts() {
@@ -102,6 +113,27 @@
     }
   }
 
+  async function addNoteWidget(notePath: string) {
+    if (!targetSurfaceId) {
+      actionError = "Create a custom view first.";
+      return;
+    }
+    noteBusyPath = notePath;
+    actionError = null;
+    try {
+      const componentId = await environment.addMedousaViewFromNote({
+        surfaceId: targetSurfaceId,
+        notePath,
+        label: vaultDisplayTitle(noteLabelByPath.get(notePath) ?? notePath, notePath),
+      });
+      onAdded?.(componentId);
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      noteBusyPath = null;
+    }
+  }
+
   function formatWhen(value: string): string {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -119,7 +151,7 @@
     <div>
       <h3 class="canvas-widget-catalog-title">Widget catalog</h3>
       <p class="workshop-faint text-xs">
-        Add HTML presentations from your library or native Spotify / Apple embeds.
+        Add HTML presentations, vault notes, or native Spotify / Apple embeds.
       </p>
     </div>
     <label class="canvas-target-field">
@@ -157,6 +189,16 @@
     >
       Spotify / Apple
     </button>
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === "notes"}
+      class="canvas-widget-tab"
+      class:canvas-widget-tab-active={tab === "notes"}
+      onclick={() => (tab = "notes")}
+    >
+      Vault notes
+    </button>
   </div>
 
   {#if tab === "artifacts"}
@@ -183,12 +225,12 @@
         No presentations in your library yet — ask Medousa to build a widget, then pin it here.
       </p>
     {:else}
-      <ul class="canvas-artifact-list">
+      <ul class="canvas-picker-list">
         {#each artifacts as artifact (artifact.artifact_id)}
-          <li class="canvas-artifact-row">
-            <div class="min-w-0">
-              <p class="canvas-artifact-title">{artifact.label}</p>
-              <p class="workshop-faint text-xs">
+          <li class="canvas-picker-tile">
+            <div class="canvas-picker-tile-main">
+              <p class="canvas-picker-tile-title">{artifact.label}</p>
+              <p class="canvas-picker-tile-meta">
                 {formatWhen(artifact.stored_at_utc)}
                 {#if artifact.presentation}
                   · {artifact.presentation}
@@ -197,7 +239,7 @@
             </div>
             <button
               type="button"
-              class="btn btn-xs btn-primary"
+              class="canvas-picker-tile-btn"
               disabled={!targetSurfaceId || busyArtifactId === artifact.artifact_id}
               onclick={() => void addArtifact(artifact)}
             >
@@ -207,7 +249,7 @@
         {/each}
       </ul>
     {/if}
-  {:else}
+  {:else if tab === "media"}
     <form
       class="canvas-media-form"
       onsubmit={(event) => {
@@ -240,6 +282,43 @@
         {mediaBusy ? "Adding…" : "Add media widget"}
       </button>
     </form>
+  {:else}
+    <div class="canvas-widget-search-row">
+      <input
+        type="search"
+        bind:value={noteQuery}
+        placeholder="Search vault notes…"
+      />
+    </div>
+    {#if vault.notes.length === 0}
+      <p class="workshop-faint text-xs">No notes in your vault yet.</p>
+    {:else if noteMatches.length === 0}
+      <p class="workshop-faint text-xs">No notes match your search.</p>
+    {:else}
+      <ul class="canvas-picker-list">
+        {#each noteMatches as note (note.path)}
+          <li class="canvas-picker-tile">
+            <div class="canvas-picker-tile-main">
+              <p class="canvas-picker-tile-title">
+                {vaultDisplayTitle(noteLabelByPath.get(note.path) ?? note.path, note.path)}
+              </p>
+              <div class="canvas-picker-tile-meta">
+                <VaultKindBadge kind={note.kind} />
+                <span class="canvas-picker-tile-path" title={note.path}>{note.path}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="canvas-picker-tile-btn"
+              disabled={!targetSurfaceId || noteBusyPath === note.path}
+              onclick={() => void addNoteWidget(note.path)}
+            >
+              {noteBusyPath === note.path ? "Adding…" : "Add"}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 
   {#if actionError}
@@ -254,6 +333,7 @@
     border-radius: 0.75rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-600) 45%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 30%, transparent);
+    min-width: 0;
   }
 
   .canvas-widget-catalog-compact {
@@ -298,6 +378,13 @@
     padding: 0.3rem 0.45rem;
     font-size: 0.75rem;
     color: rgb(var(--color-surface-100));
+    outline: none;
+  }
+
+  .canvas-target-field select:focus-visible,
+  .canvas-target-field input:focus-visible {
+    border-color: rgb(var(--color-primary-400));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400));
   }
 
   .canvas-widget-tabs {
@@ -324,50 +411,106 @@
     display: flex;
     gap: 0.35rem;
     margin-bottom: 0.5rem;
+    padding-block: 2px;
   }
 
   .canvas-widget-search-row input {
     flex: 1 1 auto;
+    min-width: 0;
     border-radius: 0.45rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
     background: color-mix(in srgb, var(--color-surface-900) 60%, transparent);
     padding: 0.35rem 0.5rem;
     font-size: 0.75rem;
     color: rgb(var(--color-surface-100));
+    outline: none;
   }
 
-  .canvas-artifact-list {
+  .canvas-widget-search-row input:focus-visible {
+    border-color: rgb(var(--color-primary-400));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400));
+  }
+
+  .canvas-picker-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 0.35rem;
+    gap: 0.45rem;
     max-height: 16rem;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-width: 0;
   }
 
-  .canvas-artifact-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+  .canvas-picker-tile {
+    display: grid;
     gap: 0.5rem;
-    padding: 0.45rem 0.5rem;
-    border-radius: 0.5rem;
-    border: 1px solid color-mix(in srgb, var(--color-surface-700) 45%, transparent);
+    padding: 0.6rem 0.65rem;
+    border-radius: 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-700) 50%, transparent);
+    background: color-mix(in srgb, var(--color-surface-900) 45%, transparent);
+    min-width: 0;
+    overflow: hidden;
   }
 
-  .canvas-artifact-title {
+  .canvas-picker-tile-main {
+    min-width: 0;
+  }
+
+  .canvas-picker-tile-title {
     margin: 0;
     font-size: 0.8125rem;
+    font-weight: 500;
     color: rgb(var(--color-surface-100));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .canvas-picker-tile-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+    min-width: 0;
+    font-size: 0.6875rem;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .canvas-picker-tile-meta :global(.badge) {
+    flex-shrink: 0;
+  }
+
+  .canvas-picker-tile-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .canvas-picker-tile-btn {
+    justify-self: start;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.28rem 0.7rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-primary-600));
+    cursor: pointer;
+  }
+
+  .canvas-picker-tile-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   .canvas-media-form {
     display: grid;
     gap: 0.55rem;
+    padding-block: 2px;
   }
 
   .canvas-widget-error {

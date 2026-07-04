@@ -1,9 +1,16 @@
-/** Parse `medousa://work/{cardId}` and web dev fallbacks. */
+/** Parse `medousa://work/{cardId}` and `medousa://vault/{notePath}` deeplinks. */
 
 export type WorkDeepLink = {
   kind: "work";
   cardId: string;
 };
+
+export type VaultDeepLink = {
+  kind: "vault";
+  notePath: string;
+};
+
+export type DeepLink = WorkDeepLink | VaultDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -11,7 +18,11 @@ export function workDeepLinkUrl(cardId: string): string {
   return `medousa://work/${encodeURIComponent(cardId)}`;
 }
 
-export function parseDeepLink(raw: string): WorkDeepLink | null {
+export function vaultDeepLinkUrl(notePath: string): string {
+  return `medousa://vault/${encodeURIComponent(notePath.replace(/^\/+/, ""))}`;
+}
+
+export function parseDeepLink(raw: string): DeepLink | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
@@ -19,9 +30,17 @@ export function parseDeepLink(raw: string): WorkDeepLink | null {
     if (trimmed.startsWith("medousa:")) {
       const url = new URL(trimmed);
       const host = url.hostname.toLowerCase();
-      const pathId = url.pathname.replace(/^\/+/, "");
-      if (host === "work" && pathId) {
-        return { kind: "work", cardId: decodeURIComponent(pathId) };
+      const pathSegment = url.pathname.replace(/^\/+/, "");
+      if (host === "work" && pathSegment) {
+        return { kind: "work", cardId: decodeURIComponent(pathSegment) };
+      }
+      if (host === "vault") {
+        const rawPath = trimmed.replace(/^medousa:\/\/vault\/?/i, "");
+        if (!rawPath || rawPath.includes("..")) return null;
+        const notePath = decodeURIComponent(rawPath);
+        if (notePath && !notePath.includes("..") && !notePath.startsWith("/")) {
+          return { kind: "vault", notePath };
+        }
       }
       const match = WORK_PATH.exec(url.pathname);
       if (match?.[1]) {

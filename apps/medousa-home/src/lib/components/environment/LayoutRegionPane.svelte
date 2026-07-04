@@ -47,6 +47,9 @@
   function handlePaneClick(event: MouseEvent) {
     if (event.defaultPrevented || isLayoutPointerDragging()) return;
     onSelect?.();
+    if (editing && selected && !component) {
+      layoutEdit.openWidgetPicker();
+    }
   }
 
   function handleHandlePointerDown(event: PointerEvent) {
@@ -118,7 +121,7 @@
         {#if isDragging}
           Release to place here
         {:else if selected}
-          Empty pane — add a widget or drop one here
+          Empty pane — click to add a widget
         {:else}
           Drop a widget here
         {/if}

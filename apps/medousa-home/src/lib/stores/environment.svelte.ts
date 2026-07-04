@@ -349,6 +349,23 @@ export class EnvironmentStore {
     await this.refreshCanvasStatus(profileId);
     return component.id;
   }
+
+  async addMedousaViewFromNote(
+    input: {
+      surfaceId: string;
+      notePath: string;
+      label?: string | null;
+      componentId?: string | null;
+    },
+    profileId?: string,
+  ): Promise<string> {
+    const spec = await this.cloneCurrentSpec(profileId);
+    const { addMedousaViewComponentToSpec } = await import("$lib/utils/environmentCanvasOps");
+    const component = addMedousaViewComponentToSpec(spec, input);
+    await this.saveSpec(spec);
+    await this.refreshCanvasStatus(profileId);
+    return component.id;
+  }
 }
 
 export const environment = new EnvironmentStore();

@@ -22,12 +22,15 @@
   }: Props = $props();
 
   const root = $derived(layoutEdit.tilingRoot);
+  const editComponents = $derived(
+    components.filter((component) => !layoutEdit.removedDuringEdit.includes(component.id)),
+  );
 </script>
 
 {#if root && layoutEdit.isEditingSurface(surfaceId)}
   <TilingLayoutView
     {root}
-    {components}
+    components={editComponents}
     {sessionId}
     {profileId}
     {feedStateForComponent}

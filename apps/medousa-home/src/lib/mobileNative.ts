@@ -7,14 +7,21 @@ import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 import { isTauri } from "$lib/window";
 
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
+export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
 export type OpenPairHandler = (pairUrl: string) => void;
 
 let workHandler: OpenWorkHandler | null = null;
+let vaultHandler: OpenVaultNoteHandler | null = null;
 let pairHandler: OpenPairHandler | null = null;
 
 async function dispatchWorkLink(link: WorkDeepLink) {
   if (!workHandler) return;
   await workHandler(link.cardId);
+}
+
+async function dispatchVaultLink(notePath: string) {
+  if (!vaultHandler) return;
+  await vaultHandler(notePath);
 }
 
 function handleUrls(urls: string[]) {
@@ -28,6 +35,10 @@ function handleUrls(urls: string[]) {
       void dispatchWorkLink(link);
       return;
     }
+    if (link?.kind === "vault") {
+      void dispatchVaultLink(link.notePath);
+      return;
+    }
   }
 }
 
@@ -35,12 +46,20 @@ export function setPairDeepLinkHandler(handler: OpenPairHandler | null) {
   pairHandler = handler;
 }
 
+export function setVaultDeepLinkHandler(handler: OpenVaultNoteHandler | null) {
+  vaultHandler = handler;
+}
+
 export function setWorkDeepLinkHandler(handler: OpenWorkHandler | null) {
   workHandler = handler;
 }
 
-export function initMobileNative(handler: OpenWorkHandler): () => void {
+export function initMobileNative(
+  handler: OpenWorkHandler,
+  vaultNoteHandler?: OpenVaultNoteHandler,
+): () => void {
   setWorkDeepLinkHandler(handler);
+  setVaultDeepLinkHandler(vaultNoteHandler ?? null);
 
   const cleanups: Array<() => void> = [];
 
@@ -74,7 +93,7 @@ export function initMobileNative(handler: OpenWorkHandler): () => void {
 
       try {
         const { initRemotePushHandlers } = await import("$lib/pushHandlers");
-        const stop = await initRemotePushHandlers(handler);
+        const stop = await initRemotePushHandlers(handler, vaultNoteHandler ?? undefined);
         if (stop) cleanups.push(stop);
       } catch {
         // Remote push optional.
@@ -84,6 +103,7 @@ export function initMobileNative(handler: OpenWorkHandler): () => void {
 
   return () => {
     setWorkDeepLinkHandler(null);
+    setVaultDeepLinkHandler(null);
     setPairDeepLinkHandler(null);
     for (const cleanup of cleanups) cleanup();
   };

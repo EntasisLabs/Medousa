@@ -7,6 +7,10 @@ import {
   MEDOUSA_FEED_CLIENT_SCRIPT_ID,
 } from "$lib/utils/medousaFeedClient";
 import {
+  buildMedousaNavigateClientScript,
+  MEDOUSA_NAVIGATE_CLIENT_SCRIPT_ID,
+} from "$lib/utils/medousaNavigateClient";
+import {
   buildMedousaStoreBootstrapScript,
   buildMedousaStoreClientScript,
   MEDOUSA_STORE_BOOTSTRAP_SCRIPT_ID,
@@ -115,6 +119,9 @@ export function prepareArtifactHtml(
   }
   if (!html.includes(MEDOUSA_ARTIFACT_RUNTIME_SCRIPT_ID)) {
     html = injectBeforeHeadClose(html, buildMedousaArtifactRuntimeClientScript());
+  }
+  if (!html.includes(MEDOUSA_NAVIGATE_CLIENT_SCRIPT_ID)) {
+    html = injectBeforeHeadClose(html, buildMedousaNavigateClientScript());
   }
   if (componentId?.trim()) {
     html = stripInjectionById(html, MEDOUSA_STORE_BOOTSTRAP_SCRIPT_ID);

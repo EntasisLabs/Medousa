@@ -204,6 +204,50 @@ export function addMediaEmbedComponentToSpec(
   return component;
 }
 
+export function addMedousaViewComponentToSpec(
+  spec: EnvironmentSpec,
+  input: {
+    surfaceId: string;
+    notePath: string;
+    label?: string | null;
+    componentId?: string | null;
+  },
+): ComponentDef {
+  const surface = spec.surfaces.find((entry) => entry.id === input.surfaceId);
+  if (!surface || surface.kind !== "custom") {
+    throw new Error("Vault note widgets can only be added to custom views.");
+  }
+  const notePath = input.notePath.trim();
+  if (!notePath) {
+    throw new Error("A vault note path is required.");
+  }
+  if (notePath.includes("..")) {
+    throw new Error("Invalid note path.");
+  }
+  const label = input.label?.trim() || notePath.split("/").pop()?.replace(/\.md$/i, "") || "Note";
+  const componentId =
+    input.componentId?.trim() ||
+    uniqueComponentId(spec, `${input.surfaceId}-${slugifyCanvasId(label)}`);
+  if (spec.components.some((component) => component.id === componentId)) {
+    throw new Error(`Component "${componentId}" already exists.`);
+  }
+  const component: ComponentDef = {
+    id: componentId,
+    type: "medousa_view",
+    surfaceId: input.surfaceId,
+    slot: "main",
+    label,
+    config: { notePath },
+    presentation: "inline",
+    feeds: [],
+    updatedAt: new Date().toISOString(),
+  };
+  spec.components.push(component);
+  spec.updatedAt = new Date().toISOString();
+  spec.updatedBy = "operator";
+  return component;
+}
+
 export function configString(
   config: Record<string, unknown>,
   key: string,

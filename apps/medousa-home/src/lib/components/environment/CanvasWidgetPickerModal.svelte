@@ -1,6 +1,8 @@
 <script lang="ts">
   import CanvasWidgetCatalog from "$lib/components/settings/CanvasWidgetCatalog.svelte";
   import { X } from "@lucide/svelte";
+  import { cubicOut } from "svelte/easing";
+  import { fade, fly } from "svelte/transition";
 
   interface Props {
     open: boolean;
@@ -13,8 +15,19 @@
 </script>
 
 {#if open}
-  <div class="canvas-widget-modal-backdrop" role="presentation" onclick={onClose}></div>
-  <div class="canvas-widget-modal" role="dialog" aria-modal="true" aria-label="Add widget">
+  <div
+    class="canvas-widget-modal-backdrop"
+    role="presentation"
+    transition:fade={{ duration: 180 }}
+    onclick={onClose}
+  ></div>
+  <div
+    class="canvas-widget-modal"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Add widget"
+    transition:fly={{ y: 20, duration: 240, easing: cubicOut }}
+  >
     <header class="canvas-widget-modal-header">
       <h2 class="canvas-widget-modal-title">Add widget</h2>
       <button type="button" class="canvas-widget-modal-close" aria-label="Close" onclick={onClose}>
@@ -52,6 +65,8 @@
     max-height: min(34rem, calc(100vh - 2rem));
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
     border-radius: 0.85rem;
     border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
     background: rgb(var(--color-surface-900));
@@ -86,7 +101,9 @@
   }
 
   .canvas-widget-modal-body {
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding: 0.85rem;
+    min-width: 0;
   }
 </style>

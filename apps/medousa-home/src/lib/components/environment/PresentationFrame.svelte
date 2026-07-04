@@ -31,7 +31,13 @@
     isMedousaArtifactProbeResult,
     isMedousaArtifactRuntimeEvent,
   } from "$lib/utils/medousaArtifactRuntimeClient";
+  import {
+    isMedousaNavigateRequest,
+    isSafeVaultNavigatePath,
+  } from "$lib/utils/medousaNavigateClient";
   import { environment } from "$lib/stores/environment.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { resolveEnvironmentTheme } from "$lib/utils/environmentTheme";
@@ -415,6 +421,15 @@
     }
   }
 
+  async function handleNavigateRequest(event: MessageEvent) {
+    if (!isMedousaNavigateRequest(event.data)) return;
+    if (event.data.target !== "vault") return;
+    const path = event.data.path.trim();
+    if (!isSafeVaultNavigatePath(path)) return;
+    layout.navigateDesktop("library");
+    await vault.openNote(path);
+  }
+
   async function handleWindowMessage(event: MessageEvent) {
     if (event.source !== frameEl?.contentWindow) return;
     if (isArtifactHeightMessage(event.data)) {
@@ -433,6 +448,10 @@
     }
     if (isMedousaArtifactProbeResult(event.data)) {
       await handleRuntimeProbeResult(event);
+      return;
+    }
+    if (isMedousaNavigateRequest(event.data)) {
+      await handleNavigateRequest(event);
       return;
     }
     await handleFeedTailRequest(event);

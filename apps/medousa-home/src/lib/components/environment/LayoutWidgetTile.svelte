@@ -39,6 +39,8 @@
 
   function handleHandlePointerDown(event: PointerEvent) {
     if (!draggable || event.button !== 0) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest(".layout-widget-tile-remove")) return;
     event.preventDefault();
     event.stopPropagation();
     onHandlePointerDown?.(event);
@@ -68,6 +70,9 @@
           type="button"
           class="layout-widget-tile-remove"
           aria-label={`Remove ${component.label ?? "widget"}`}
+          onpointerdown={(event) => {
+            event.stopPropagation();
+          }}
           onclick={handleRemove}
         >
           <X size={12} strokeWidth={2.5} aria-hidden="true" />

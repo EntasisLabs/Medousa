@@ -52,6 +52,11 @@
     padding: 0.5rem;
   }
 
+  .tiling-layout-view-editing :global(.layout-region-pane:not(.layout-region-pane-selected):not(.layout-region-pane-target)) {
+    opacity: 0.68;
+    transition: opacity 140ms ease;
+  }
+
   .tiling-layout-view :global(> *) {
     flex: 1 1 auto;
     min-height: 0;

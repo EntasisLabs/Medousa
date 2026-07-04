@@ -130,21 +130,14 @@
         {/each}
       </ul>
       <p class="workshop-faint mt-2 text-xs">
-        Edit layout on any custom view from the surface toolbar or widget ⋯ menu —
+        Edit layout on any custom view with the <strong class="text-surface-300">Edit layout</strong> button —
+        pin presentations, vault notes, or Spotify / Apple widgets from the catalog below.
         <button
           type="button"
           class="settings-inline-link"
           onclick={() => void openUrlInDefaultBrowser(LAYOUT_EDIT_DOC)}
         >
-          layout edit guide
-        </button>
-        ·
-        <button
-          type="button"
-          class="settings-inline-link"
-          onclick={() => void openUrlInDefaultBrowser(MEDIA_WIDGETS_DOC)}
-        >
-          Spotify / Apple widgets
+          Layout edit guide
         </button>
       </p>
     {/if}

@@ -59,9 +59,7 @@ class LayoutEditStore {
     if (!this.tilingRoot || !this.selectedPaneId) return;
     const pane = findPane(this.tilingRoot, this.selectedPaneId);
     if (!pane?.componentId) return;
-    this.markRemoved(pane.componentId);
-    this.tilingRoot = cloneTilingNode(clearPaneComponent(this.tilingRoot, this.selectedPaneId));
-    this.syncDraftFromTiling();
+    this.removeWidget(this.selectedPaneId);
   }
 
   removeWidget(paneId: string): void {
@@ -226,10 +224,15 @@ class LayoutEditStore {
     try {
       let updated = applyLayoutRoot(spec, surfaceId, nextRoot);
       const keptIds = new Set(collectComponentIds(this.tilingRoot));
-      for (const componentId of this.componentIds(surfaceId)) {
-        if (!keptIds.has(componentId)) {
-          removeComponentFromSpec(updated, componentId);
-        }
+      const originalMainIds = mainComponentsForSurface(surfaceId, spec.components).map(
+        (component) => component.id,
+      );
+      for (const componentId of componentIdsToPruneOnSave(
+        this.removedDuringEdit,
+        originalMainIds,
+        keptIds,
+      )) {
+        removeComponentFromSpec(updated, componentId);
       }
       await environment.saveSpec(updated);
       this.cancel();
@@ -244,6 +247,20 @@ class LayoutEditStore {
 }
 
 export const layoutEdit = new LayoutEditStore();
+
+export function componentIdsToPruneOnSave(
+  removedDuringEdit: readonly string[],
+  originalMainIds: readonly string[],
+  keptIds: ReadonlySet<string>,
+): string[] {
+  const toRemove = new Set<string>(removedDuringEdit);
+  for (const componentId of originalMainIds) {
+    if (!keptIds.has(componentId)) {
+      toRemove.add(componentId);
+    }
+  }
+  return [...toRemove];
+}
 
 export function layoutRootForEditing(surfaceId: string): LayoutNode | null {
   const spec = environment.spec;

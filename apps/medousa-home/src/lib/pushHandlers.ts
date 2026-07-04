@@ -1,7 +1,7 @@
 import { parseDeepLink } from "$lib/deepLinks";
 import type { LiveActivityPayload } from "$lib/liveActivity";
 import { syncHomeWidget } from "$lib/homeWidget";
-import type { OpenWorkHandler } from "$lib/mobileNative";
+import type { OpenVaultNoteHandler, OpenWorkHandler } from "$lib/mobileNative";
 import { isTauriIos } from "$lib/platform";
 
 function readString(data: Record<string, unknown>, key: string): string | undefined {
@@ -58,15 +58,20 @@ async function applyPulseNotification(data: Record<string, unknown>): Promise<vo
   await syncHomeWidget(payload, { force: true });
 }
 
-function openWorkFromNotification(
+function openFromNotification(
   data: Record<string, unknown>,
   onOpenWork: OpenWorkHandler,
+  onOpenVault?: OpenVaultNoteHandler,
 ): void {
   const url = readString(data, "url");
   if (url) {
     const link = parseDeepLink(url);
     if (link?.kind === "work") {
       void onOpenWork(link.cardId);
+      return;
+    }
+    if (link?.kind === "vault" && onOpenVault) {
+      void onOpenVault(link.notePath);
       return;
     }
   }
@@ -77,9 +82,10 @@ function openWorkFromNotification(
   }
 }
 
-/** Remote APNs: widget pulse refresh + tap-to-open work cards. */
+/** Remote APNs: widget pulse refresh + tap-to-open work cards and vault notes. */
 export async function initRemotePushHandlers(
   onOpenWork: OpenWorkHandler,
+  onOpenVault?: OpenVaultNoteHandler,
 ): Promise<(() => void) | null> {
   if (!isTauriIos()) return null;
 
@@ -95,7 +101,7 @@ export async function initRemotePushHandlers(
 
     const tapped = await onNotificationTapped((notification) => {
       const data = (notification.data ?? {}) as Record<string, unknown>;
-      openWorkFromNotification(data, onOpenWork);
+      openFromNotification(data, onOpenWork, onOpenVault);
     });
 
     return () => {

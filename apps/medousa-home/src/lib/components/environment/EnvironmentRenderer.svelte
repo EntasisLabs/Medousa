@@ -10,7 +10,9 @@
   import { layoutEdit, layoutRootForEditing } from "$lib/stores/layoutEdit.svelte";
   import type { ComponentDef } from "$lib/types/environment";
   import { surfaceUsesDashboardFill } from "$lib/utils/environmentPresentation";
+  import { environmentIcon } from "$lib/utils/environmentIcons";
   import { layoutRootToTiling } from "$lib/utils/layoutTiling";
+  import { LayoutGrid, Pencil } from "@lucide/svelte";
 
   interface Props {
     surfaceId: string;
@@ -19,6 +21,8 @@
 
   let { surfaceId, builtin }: Props = $props();
 
+  const autoEditSurfaces = new Set<string>();
+
   const surface = $derived(environment.surfaceById(surfaceId));
   const isCustom = $derived(surface?.kind === "custom");
   const isDashboard = $derived(surfaceUsesDashboardFill(surface?.layout));
@@ -26,6 +30,8 @@
   const mainComponents = $derived(environment.mainComponentsForSurface(surfaceId));
   const layoutRoot = $derived.by(() => layoutRootForEditing(surfaceId));
   const editingLayout = $derived(layoutEdit.isEditingSurface(surfaceId));
+  const componentCount = $derived(mainComponents.length);
+  const SurfaceIcon = $derived(surface ? environmentIcon(surface.icon) : LayoutGrid);
   const viewTilingRoot = $derived.by(() => {
     if (!layoutRoot || editingLayout) return null;
     return layoutRootToTiling(
@@ -37,11 +43,22 @@
   const inlineComponents = $derived(environment.componentsForSurface(surfaceId, "inline"));
   const sidebarComponents = $derived(environment.componentsForSurface(surfaceId, "sidebar"));
 
+  $effect(() => {
+    if (!isCustom || editingLayout || componentCount > 0 || !chat.sessionId) return;
+    if (autoEditSurfaces.has(surfaceId)) return;
+    autoEditSurfaces.add(surfaceId);
+    layoutEdit.begin(surfaceId);
+  });
+
   function configString(config: Record<string, unknown>, key: string): string | null {
     const camel = config[key];
     if (typeof camel === "string" && camel.trim()) return camel.trim();
     const snake = config[key.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)];
     return typeof snake === "string" && snake.trim() ? snake.trim() : null;
+  }
+
+  function startArranging() {
+    layoutEdit.begin(surfaceId);
   }
 </script>
 
@@ -72,10 +89,21 @@
     class:environment-renderer-body-dashboard={isCustom && isDashboard}
   >
     {#if isCustom}
-      <LayoutEditOverlay {surfaceId} editing={editingLayout}>
+      <LayoutEditOverlay {surfaceId} editing={editingLayout} dashboard={isDashboard}>
         {#if !editingLayout}
-          <div class="environment-renderer-edit-entry">
-            <button type="button" class="environment-renderer-edit-btn" onclick={() => layoutEdit.begin(surfaceId)}>
+          <div class="environment-renderer-canvas-bar">
+            {#if surface}
+              <div class="environment-renderer-surface-title">
+                <SurfaceIcon size={16} strokeWidth={1.75} aria-hidden="true" />
+                <span>{surface.label}</span>
+              </div>
+            {/if}
+            <button
+              type="button"
+              class="environment-renderer-edit-btn"
+              onclick={() => layoutEdit.begin(surfaceId)}
+            >
+              <Pencil size={14} strokeWidth={2} aria-hidden="true" />
               Edit layout
             </button>
           </div>
@@ -89,8 +117,19 @@
             feedStateForComponent={(componentId) => environment.feedStateForComponent(componentId)}
             padded={!isDashboard}
           />
-        {:else if mainComponents.length === 0}
-          <p class="environment-renderer-empty">This surface has no components yet. Edit layout to add widgets.</p>
+        {:else if componentCount === 0}
+          <div class="environment-renderer-empty-room">
+            <div class="environment-renderer-empty-room-icon" aria-hidden="true">
+              <LayoutGrid size={32} strokeWidth={1.5} />
+            </div>
+            <h2 class="environment-renderer-empty-room-title">This room is empty</h2>
+            <p class="environment-renderer-empty-room-copy">
+              Add your first widget to make this view yours.
+            </p>
+            <button type="button" class="environment-renderer-empty-room-cta" onclick={startArranging}>
+              Start arranging
+            </button>
+          </div>
         {:else if viewTilingRoot && chat.sessionId}
           <div
             class="layout-edit-canvas"
@@ -221,11 +260,28 @@
     border-radius: 0;
   }
 
-  .environment-renderer-sidebar {
-    width: min(22rem, 100%);
-    border-left: 1px solid color-mix(in srgb, var(--color-surface-700) 50%, transparent);
-    padding: 0.75rem;
-    overflow: auto;
+  .environment-renderer-canvas-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0.5rem 0.5rem;
+  }
+
+  .environment-renderer-surface-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .environment-renderer-surface-title span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .environment-renderer-edit-entry {
@@ -236,13 +292,81 @@
   }
 
   .environment-renderer-edit-btn {
-    border: 1px solid color-mix(in srgb, var(--color-surface-600) 50%, transparent);
-    border-radius: 0.45rem;
-    padding: 0.25rem 0.55rem;
-    font-size: 0.6875rem;
-    color: rgb(var(--color-surface-200));
-    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--color-surface-600) 55%, transparent);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgb(var(--color-surface-100));
+    background: color-mix(in srgb, var(--color-surface-800) 65%, transparent);
     cursor: pointer;
+    transition:
+      background 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .environment-renderer-edit-btn:hover {
+    background: color-mix(in srgb, var(--color-surface-700) 75%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary-400) 45%, transparent);
+    color: rgb(var(--color-surface-50));
+  }
+
+  .environment-renderer-empty-room {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    padding: 2.5rem 1.25rem;
+    text-align: center;
+  }
+
+  .environment-renderer-empty-room-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 999px;
+    color: rgb(var(--color-primary-300));
+    background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
+  }
+
+  .environment-renderer-empty-room-title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .environment-renderer-empty-room-copy {
+    margin: 0;
+    max-width: 22rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: rgb(var(--color-surface-400));
+  }
+
+  .environment-renderer-empty-room-cta {
+    margin-top: 0.35rem;
+    border: 0;
+    border-radius: 0.55rem;
+    padding: 0.55rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--color-surface-950));
+    background: rgb(var(--color-primary-400));
+    cursor: pointer;
+    transition: background 140ms ease;
+  }
+
+  .environment-renderer-empty-room-cta:hover {
+    background: rgb(var(--color-primary-300));
   }
 
   .environment-renderer-empty {
@@ -251,6 +375,13 @@
     text-align: center;
     font-size: 0.8125rem;
     color: rgb(var(--color-surface-400));
+  }
+
+  .environment-renderer-sidebar {
+    width: min(22rem, 100%);
+    border-left: 1px solid color-mix(in srgb, var(--color-surface-700) 50%, transparent);
+    padding: 0.75rem;
+    overflow: auto;
   }
 
   .environment-renderer-unsupported {

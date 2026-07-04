@@ -3,19 +3,39 @@
   import CanvasWidgetPickerModal from "$lib/components/environment/CanvasWidgetPickerModal.svelte";
   import LayoutEditToolbar from "$lib/components/environment/LayoutEditToolbar.svelte";
   import { layoutEdit } from "$lib/stores/layoutEdit.svelte";
+  import { onMount } from "svelte";
 
   interface Props {
     surfaceId: string;
     editing?: boolean;
+    dashboard?: boolean;
     children?: Snippet;
   }
 
-  let { surfaceId, editing = false, children }: Props = $props();
+  let { surfaceId, editing = false, dashboard = false, children }: Props = $props();
 
   const isEditing = $derived(editing || layoutEdit.isEditingSurface(surfaceId));
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!layoutEdit.isEditingSurface(surfaceId) || event.key !== "Escape") return;
+    if (layoutEdit.widgetPickerOpen) {
+      layoutEdit.closeWidgetPicker();
+      return;
+    }
+    layoutEdit.cancel();
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  });
 </script>
 
-<div class="layout-edit-overlay" class:layout-edit-overlay-active={isEditing}>
+<div
+  class="layout-edit-overlay"
+  class:layout-edit-overlay-active={isEditing}
+  class:layout-edit-overlay-dashboard={dashboard}
+>
   {#if isEditing}
     <LayoutEditToolbar {surfaceId} />
   {/if}
@@ -37,10 +57,20 @@
     flex-direction: column;
     min-height: 0;
     min-width: 0;
+    transition: background 180ms ease;
   }
 
   .layout-edit-overlay-active {
     background: color-mix(in srgb, var(--color-surface-950) 18%, transparent);
+  }
+
+  .layout-edit-overlay-active.layout-edit-overlay-dashboard :global(.layout-widget-tile) {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .layout-edit-overlay-active.layout-edit-overlay-dashboard :global(.layout-region-pane) {
+    border-radius: 0;
   }
 
   .layout-edit-overlay-active :global(.tiling-layout-view) {

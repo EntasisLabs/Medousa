@@ -12,6 +12,7 @@
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { initMobileNative } from "$lib/mobileNative";
   import { layout } from "$lib/stores/layout.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
@@ -42,6 +43,11 @@
     await workspace.selectCard(cardId);
   }
 
+  async function openVaultNote(notePath: string) {
+    layout.navigateDesktop("library");
+    await vault.openNote(notePath);
+  }
+
   onMount(() => {
     commandSpotlight.closeSpotlight();
     document.querySelectorAll(".command-spotlight-backdrop").forEach((node) => {
@@ -65,7 +71,7 @@
             handoffBrowserShell(mobile);
           }
         });
-    const stopNative = initMobileNative(openWorkCard);
+    const stopNative = initMobileNative(openWorkCard, openVaultNote);
     const stopAgentBrowserCoord = attachAgentBrowserCoord();
 
     const onKeydown = (event: KeyboardEvent) => {
