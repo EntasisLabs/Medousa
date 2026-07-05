@@ -20,6 +20,13 @@ pub fn stream_event_to_turn_event(event: &InteractiveTurnStreamEvent) -> TurnEve
             message: event.message.clone(),
             tool_names: event.tool_names.clone().unwrap_or_default(),
         },
+        "assistant_pack_hold" => TurnEvent::Progress {
+            message: event
+                .final_text
+                .clone()
+                .unwrap_or_else(|| event.message.clone()),
+            tool_names: event.tool_names.clone().unwrap_or_default(),
+        },
         "status" => TurnEvent::Status {
             phase: event.phase.clone(),
             message: event.message.clone(),

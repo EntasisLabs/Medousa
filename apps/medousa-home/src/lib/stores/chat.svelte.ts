@@ -1660,6 +1660,14 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "assistant_pack_hold") {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (messageId) {
+        this.applyStreamEventToMessage(messageId, event);
+      }
+      return;
+    }
+
     if (event.event_type === "scratch_reset") {
       const messageId = this.messageIdForTurn(event.turn_id);
       if (messageId) {
@@ -1909,6 +1917,31 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "assistant_pack_hold") {
+      const held =
+        event.final_text?.trim() ||
+        event.message?.trim() ||
+        current.content;
+      const next: ChatMessage = {
+        ...current,
+        content: held || current.content,
+        phase: "pack_hold",
+        streaming: true,
+        statusLine:
+          event.operator_message?.trim() ||
+          "Medousa is finishing this thought…",
+        tools: event.tool_names?.length
+          ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
+          : current.tools,
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      return;
+    }
+
     if (event.event_type === "turn_checkpoint") {
       const checkpointBody =
         event.final_text?.trim() ||
@@ -1947,6 +1980,9 @@ export class ChatStore {
     }
 
     if (event.event_type === "scratch_reset") {
+      if (current.phase === "pack_hold") {
+        return;
+      }
       const next: ChatMessage = {
         ...current,
         content: "",

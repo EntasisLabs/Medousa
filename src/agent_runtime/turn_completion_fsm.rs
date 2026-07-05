@@ -2,9 +2,8 @@
 //!
 //! **Workshop/worker:** heuristic interim continues + `prose_requires_finish` after tools.
 //!
-//! **Host scheduler (`host_scheduler_lane`):** prose-terminates after tools — any non-empty
-//! assistant message commits as the principal-facing answer. Before the first tool call,
-//! bounded continues (`AwaitingTools`, cap 2) absorb status preamble without cold handoff.
+//! **Host scheduler (`host_scheduler_lane`):** ambiguous prose enters **content pack hold**
+//! (one resolution round, merge or tools). Substantive answers commit immediately.
 //! Execution work uses `cognition_turn_begin_work`; workshop uses `cognition_turn_finish`.
 
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
@@ -27,15 +26,8 @@ pub fn resolve_interim_continue_cap(max_tool_rounds: usize) -> usize {
     ((rounds * 4) / 5).clamp(4, 10)
 }
 
-/// Host scheduler: status preamble before the first tool call may continue at most this many times.
-pub const HOST_PRE_TOOLS_CONTINUE_CAP: usize = 2;
-
 /// Host scheduler: empty model round after tools may continue at most once.
 pub const HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP: usize = 1;
-
-pub fn resolve_host_pre_tools_continue_cap() -> usize {
-    HOST_PRE_TOOLS_CONTINUE_CAP
-}
 
 /// What the tool loop should do after a text-only model response.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,8 +51,8 @@ pub enum ContinueReason {
     InterimProse,
     /// Long planning/status prose — reloop with full text kept in transcript.
     ExtendedProse,
-    /// Host scheduler only: status prose before any tool call — nudge tools in this round.
-    AwaitingTools,
+    /// Host scheduler only: ambiguous prose held for one resolution round (content pack).
+    PackHold,
 }
 
 /// Developer-facing turn-control body for `[MEDOUSA_TURN_CONTROL]`.
@@ -85,12 +77,7 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
              Check [MEDOUSA_SCRATCH] digests_recent before re-calling tools you already ran."
                 .to_string()
         }
-        ContinueReason::AwaitingTools => {
-            "Turn continues: you sent status prose without tools. Call host tools now (memory, vault read, \
-             runtime) or cognition_turn_begin_work(goal, message) for execution — deliver the \
-             principal-facing answer in this round."
-                .to_string()
-        }
+        ContinueReason::PackHold => crate::agent_runtime::turn_ledger::pack_hold_resolution_control_message(),
     }
 }
 
@@ -193,20 +180,14 @@ fn decide_host_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoun
         };
     }
 
-    if looks_like_clarifying_question(&ctx.draft_text) {
-        return TurnRoundAction::EndTurn {
-            termination_reason: "clarifying_question",
-        };
-    }
-
     if looks_like_substantive_final_answer(&ctx.draft_text) {
         return TurnRoundAction::EndTurn {
             termination_reason: "no_tools_prose",
         };
     }
 
-    if !draft.is_empty() && ctx.interim_continues_used < ctx.interim_continue_cap {
-        return continue_loop(ContinueReason::AwaitingTools, vec![]);
+    if !draft.is_empty() {
+        return continue_loop(ContinueReason::PackHold, vec![]);
     }
 
     TurnRoundAction::EndTurn {
@@ -242,15 +223,13 @@ fn decide_host_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnR
         };
     }
 
-    if looks_like_clarifying_question(&ctx.draft_text) {
+    if looks_like_substantive_final_answer(&ctx.draft_text) {
         return TurnRoundAction::EndTurn {
-            termination_reason: "clarifying_question",
+            termination_reason: "host_scheduler_prose",
         };
     }
 
-    TurnRoundAction::EndTurn {
-        termination_reason: "host_scheduler_prose",
-    }
+    continue_loop(ContinueReason::PackHold, vec![])
 }
 
 /// Zero tool invocations this turn — any non-empty prose ends the turn.
@@ -383,7 +362,7 @@ mod tests {
             rounds_executed: 1,
             max_tool_rounds: 10,
             interim_continues_used: 0,
-            interim_continue_cap: HOST_PRE_TOOLS_CONTINUE_CAP,
+            interim_continue_cap: 1,
             host_scheduler_lane: true,
         }
     }
@@ -397,7 +376,7 @@ mod tests {
             invocations,
             workshop_lane: false,
             interim_continues_used: 0,
-            interim_continue_cap: HOST_PRE_TOOLS_CONTINUE_CAP,
+            interim_continue_cap: 1,
             host_scheduler_lane: true,
             empty_after_tools_continues_used: 0,
         }
@@ -641,19 +620,19 @@ mod tests {
     }
 
     #[test]
-    fn host_preamble_before_tools_continues_awaiting_tools() {
+    fn host_preamble_before_tools_enters_pack_hold() {
         let action = decide_no_tool_debt_text_round(&host_ctx("Let me check that for you."));
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::AwaitingTools,
+                reason: ContinueReason::PackHold,
                 ..
             }
         ));
     }
 
     #[test]
-    fn host_planning_before_tools_continues_without_heuristics() {
+    fn host_planning_before_tools_enters_pack_hold() {
         let planning = "The environment is confirmed — 11 surfaces, blank canvas, and the full \
                         component toolkit is live. Let's make the first mark. I'm going to build \
                         you a Home dashboard — a persistent component on the home surface.";
@@ -661,7 +640,7 @@ mod tests {
         assert!(matches!(
             action,
             TurnRoundAction::ContinueLoop {
-                reason: ContinueReason::AwaitingTools,
+                reason: ContinueReason::PackHold,
                 ..
             }
         ));
@@ -681,14 +660,15 @@ mod tests {
     }
 
     #[test]
-    fn host_preamble_before_tools_ends_when_cap_exhausted() {
+    fn host_ambiguous_no_tool_prose_enters_pack_hold() {
         let mut round = host_ctx("Let me check that for you.");
-        round.interim_continues_used = HOST_PRE_TOOLS_CONTINUE_CAP;
+        round.interim_continues_used = 99;
         let action = decide_no_tool_debt_text_round(&round);
         assert!(matches!(
             action,
-            TurnRoundAction::EndTurn {
-                termination_reason: "no_tools_prose"
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
             }
         ));
     }
@@ -710,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn host_interim_after_tools_commits_not_continues() {
+    fn host_interim_after_tools_enters_pack_hold() {
         let invocations = vec![tool("cognition_memory_context")];
         let action = decide_after_tools_text_round(&host_after_tools(
             "I'll spin up workers next.",
@@ -718,8 +698,25 @@ mod tests {
         ));
         assert!(matches!(
             action,
-            TurnRoundAction::EndTurn {
-                termination_reason: "host_scheduler_prose"
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn host_clarifying_question_after_tools_enters_pack_hold() {
+        let invocations = vec![tool("cognition_memory_context")];
+        let action = decide_after_tools_text_round(&host_after_tools(
+            "Which repository should I search — medousa or stasis?",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::PackHold,
+                ..
             }
         ));
     }

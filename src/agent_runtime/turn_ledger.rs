@@ -16,6 +16,50 @@ use crate::agent_runtime::turn_completion_fsm::ContinueReason;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
+/// Host content-pack hold — one resolution round before commit or more tools.
+pub const PACK_HOLD_PREFIX: &str = "[MEDOUSA_PACK_HOLD]";
+
+pub fn pack_hold_resolution_control_message() -> String {
+    format!(
+        "{PACK_HOLD_PREFIX}\n\
+         Your last message is held — we were not sure if it is a final reply, a clarifying \
+         question for the principal, or a brief status note before more tools.\n\
+         If it is a question: send one more message continuing that thought.\n\
+         If you still have work: call tools (or cognition_turn_begin_work) this round."
+    )
+}
+
+/// Merge held assistant fragments with the resolution prose into one principal-facing body.
+pub fn merge_assistant_pack_fragments(fragments: &[String], resolution: &str) -> String {
+    let mut parts: Vec<String> = fragments
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    let trimmed_resolution = resolution.trim();
+    if !trimmed_resolution.is_empty() {
+        let duplicate_last = parts
+            .last()
+            .is_some_and(|last| last.eq_ignore_ascii_case(trimmed_resolution));
+        if !duplicate_last {
+            parts.push(trimmed_resolution.to_string());
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    if parts.len() == 1 {
+        return parts.into_iter().next().unwrap_or_default();
+    }
+    parts.join("\n\n")
+}
+
+pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
+    messages.push(ChatMessage::system(
+        pack_hold_resolution_control_message(),
+    ));
+}
+
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
 pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
 Runtime boundary (enforced by the daemon):
@@ -431,5 +475,24 @@ mod tests {
         assert!(msg.contains("10"));
         assert!(msg.contains("turn budget: 10"));
         assert!(msg.contains("used 7 this turn"));
+    }
+
+    #[test]
+    fn merge_assistant_pack_joins_fragments() {
+        let merged = merge_assistant_pack_fragments(
+            &["Which repository should I search?".to_string()],
+            "medousa or stasis?",
+        );
+        assert_eq!(
+            merged,
+            "Which repository should I search?\n\nmedousa or stasis?"
+        );
+    }
+
+    #[test]
+    fn merge_assistant_pack_dedupes_identical_resolution() {
+        let merged =
+            merge_assistant_pack_fragments(&["Which repo?".to_string()], "Which repo?");
+        assert_eq!(merged, "Which repo?");
     }
 }

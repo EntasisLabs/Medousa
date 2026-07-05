@@ -217,6 +217,26 @@ pub fn turn_progress_stream_event(
     Ok(event)
 }
 
+/// Host content-pack hold — keep streamed draft visible; turn not terminal yet.
+pub fn pack_hold_stream_event(
+    turn_id: &str,
+    fragments: &[String],
+    tool_names: Vec<String>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let held = fragments
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let messages = classify_stream_messages("pack_hold", &held);
+    let mut event = build_event_messages(turn_id, "assistant_pack_hold", "pack_hold", messages)?;
+    event.final_text = Some(held);
+    event.tool_names = Some(tool_names);
+    event.terminal = false;
+    Ok(event)
+}
+
 /// Mid-task handoff: principal sees a durable update; turn ends without claiming final completion.
 pub fn turn_checkpoint_stream_event(
     turn_id: &str,

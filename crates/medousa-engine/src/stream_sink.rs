@@ -19,6 +19,15 @@ pub trait AgentStreamSink: Send + Sync {
     async fn agent_turn_progress(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         let _ = (turn_id, message, tool_names);
     }
+    /// Host content-pack hold — ambiguous prose held for one resolution round; do not wipe UI draft.
+    async fn agent_pack_hold(
+        &self,
+        turn_id: u64,
+        fragments: Vec<String>,
+        tool_names: Vec<String>,
+    ) {
+        let _ = (turn_id, fragments, tool_names);
+    }
     async fn agent_turn_checkpoint(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
         self.agent_response(turn_id, message, tool_names).await;
     }
