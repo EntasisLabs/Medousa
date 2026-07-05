@@ -9,6 +9,7 @@
   import { visibleActivityFeed } from "$lib/utils/activityFilter";
   import { resolveActivityEnrichment } from "$lib/utils/activityEnrichment";
   import { presentActivityEvent } from "$lib/utils/activityPresentation";
+  import ActivityToolReceipts from "$lib/components/layout/ActivityToolReceipts.svelte";
 
   interface Props {
     events: WorkspaceEvent[];
@@ -162,4 +163,6 @@
       </li>
     {/each}
   </ol>
+
+  <ActivityToolReceipts sessionScoped={true} />
 </aside>

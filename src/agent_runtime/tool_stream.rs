@@ -153,6 +153,26 @@ pub fn tool_status_from_output(tool_output: &serde_json::Value) -> &'static str 
     if tool_output.get("error").is_some() {
         return "failed";
     }
+    if matches!(
+        tool_output.get("persisted_verified").and_then(|value| value.as_bool()),
+        Some(false)
+    ) && matches!(
+        tool_output.get("committed").and_then(|value| value.as_bool()),
+        Some(true)
+    ) {
+        return "failed";
+    }
+    if matches!(
+        tool_output.get("committed").and_then(|value| value.as_bool()),
+        Some(false)
+    ) && !matches!(
+        tool_output
+            .get("requires_confirmation")
+            .and_then(|value| value.as_bool()),
+        Some(true)
+    ) {
+        return "failed";
+    }
     "succeeded"
 }
 
@@ -354,5 +374,16 @@ mod tests {
             "failed"
         );
         assert_eq!(tool_status_from_output(&json!({"ok": true})), "succeeded");
+        assert_eq!(
+            tool_status_from_output(&json!({"committed": false})),
+            "failed"
+        );
+        assert_eq!(
+            tool_status_from_output(&json!({
+                "committed": false,
+                "requires_confirmation": true
+            })),
+            "succeeded"
+        );
     }
 }

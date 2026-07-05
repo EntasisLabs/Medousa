@@ -7,7 +7,6 @@ const TECHNICAL_SUMMARY = /dead_letter|workflow:\s*cognitio|cognition_[a-z0-9_]+
 const TECHNICAL_KINDS = new Set([
   "turn_accepted",
   "turn_completed",
-  "identity_remembered",
   "locus_bridge_written",
 ]);
 

@@ -31,6 +31,7 @@ const TONE_BY_KIND: Record<string, ActivityTone> = {
   job_enqueued: "motion",
   work_wrapping_up: "motion",
   turn_accepted: "neutral",
+  identity_remembered: "success",
 };
 
 function simplifyFragment(text: string): string {
@@ -85,6 +86,8 @@ function summaryForDetailLine(event: WorkspaceEvent, detailLine: string): string
     case "vault_note_created":
     case "vault_note_updated":
       return vaultActivitySummary(event, detailLine);
+    case "identity_remembered":
+      return detailLine ? `Remembered ${detailLine}` : "Identity updated";
     default:
       return detailLine;
   }

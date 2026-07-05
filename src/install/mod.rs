@@ -16,5 +16,6 @@ pub use packages::{
 };
 pub use release_config::{
     host_platform_key, host_target, installer_bootstrap_url, release_base_url, release_channel,
-    release_manifest_url, InstallerBootstrap, InstallerBootstrapPlatform,
+    release_manifest_url, set_embedded_release_defaults, InstallerBootstrap,
+    InstallerBootstrapPlatform,
 };

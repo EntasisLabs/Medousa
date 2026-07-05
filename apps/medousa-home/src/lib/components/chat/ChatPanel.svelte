@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ArrowDown, ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
+  import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
@@ -500,6 +501,7 @@
           ? 'mobile-chat-scroll space-y-3'
           : 'chat-scroll space-y-4'}"
     >
+      <ChatAsyncToolsHint {mobile} />
       {#if askThreads.length > 0 && !embedded}
         {#if mobile}
           <button

@@ -21,7 +21,7 @@ use crate::cognitive_identity::{
     DEFAULT_RELATIONAL_DIGEST_BUDGET,
 };
 use crate::identity_memory::full_identity_context_request;
-use crate::identity_store_ext::MedousaIdentityMemoryStore;
+use crate::identity_store_ext::{user_patch_already_applied, MedousaIdentityMemoryStore};
 use crate::identity_write_policy::{evaluate_identity_commit, load_identity_product_config};
 use crate::product_config::IdentityProductConfig;
 
@@ -42,6 +42,9 @@ pub struct CognitiveWriteResult {
     pub sttp_bridge_stored: bool,
     pub digest_preview: Option<String>,
     pub rationale: Option<String>,
+    /// Read-back check: patch visible via identity context after commit.
+    pub persisted_verified: bool,
+    pub user_version: Option<i32>,
 }
 
 pub struct CognitiveIdentityWriter {
@@ -256,6 +259,8 @@ impl CognitiveIdentityWriter {
         let mut stored_bridge = false;
         let mut requires_confirmation = false;
         let mut last_rationale = None;
+        let mut persisted_verified = false;
+        let mut user_version = None;
 
         for (idx, proposal_id) in proposed.proposal_ids.iter().enumerate() {
             let tier = proposed.tiers.get(idx).copied().unwrap_or(UpdateTier::AutoCommit);
@@ -282,13 +287,36 @@ impl CognitiveIdentityWriter {
 
             let commit = self.service.commit_entity_update(&commit_req).await?;
             if commit.committed {
-                committed_any = true;
-                if maybe_store_identity_sttp_bridge(
-                    self.memory_writer.as_ref(),
-                    &self.config,
-                    &commit,
-                )
-                .await?
+                if entity_type == IdentityEntityType::UserEntity {
+                    match self.verify_user_patch_readable(user_id, &patch).await {
+                        Ok((verified, version)) => {
+                            user_version = Some(version);
+                            if verified {
+                                committed_any = true;
+                                persisted_verified = true;
+                            } else {
+                                last_rationale = Some(format!(
+                                    "commit acknowledged (proposal {proposal_id}) but read-back verification failed — preference not visible in identity context for {user_id}"
+                                ));
+                            }
+                        }
+                        Err(err) => {
+                            last_rationale = Some(format!(
+                                "commit acknowledged but identity read-back failed: {err}"
+                            ));
+                        }
+                    }
+                } else {
+                    committed_any = true;
+                    persisted_verified = true;
+                }
+                if committed_any
+                    && maybe_store_identity_sttp_bridge(
+                        self.memory_writer.as_ref(),
+                        &self.config,
+                        &commit,
+                    )
+                    .await?
                 {
                     stored_bridge = true;
                 }
@@ -320,7 +348,32 @@ impl CognitiveIdentityWriter {
             sttp_bridge_stored: stored_bridge,
             digest_preview,
             rationale: last_rationale,
+            persisted_verified,
+            user_version,
         })
+    }
+
+    async fn verify_user_patch_readable(
+        &self,
+        user_id: &str,
+        patch: &Value,
+    ) -> StasisResult<(bool, i32)> {
+        let context = self
+            .store
+            .get_identity_context(&full_identity_context_request(
+                user_id,
+                crate::identity_memory::resolve_identity_persona_id(),
+                crate::identity_memory::resolve_identity_channel_id(Some("interactive")),
+                4,
+            ))
+            .await?;
+        let Some(user) = context.user else {
+            return Ok((false, 0));
+        };
+        Ok((
+            user_patch_already_applied(&user, patch),
+            user.version,
+        ))
     }
 }
 
@@ -361,6 +414,8 @@ fn denied(reason: &str) -> CognitiveWriteResult {
         sttp_bridge_stored: false,
         digest_preview: None,
         rationale: Some(reason.to_string()),
+        persisted_verified: false,
+        user_version: None,
     }
 }
 

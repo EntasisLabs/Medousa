@@ -10,6 +10,8 @@ const EVENT_LABELS: Record<string, string> = {
   work_wrapping_up: "Wrapping up",
   work_unblocked: "Unblocked",
   turn_accepted: "Turn accepted",
+  identity_remembered: "Identity",
+  agent_replied: "Reply",
   vault_note_updated: "Vault linked",
 };
 

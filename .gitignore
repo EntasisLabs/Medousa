@@ -36,3 +36,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+scripts/release/azure-signing-metadata.json
+scripts/release/release.env

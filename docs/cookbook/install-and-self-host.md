@@ -18,6 +18,8 @@ Download **Medousa Installer** from your release endpoint:
 
 The installer manages Desktop, Engine, adapters, offline brain, and model packs.
 
+**Self-hosted / R2:** see [release-to-r2.md](release-to-r2.md) for Cloudflare R2 upload, signing, and landing-page wiring.
+
 ### CLI / headless install
 
 One command installs the full versioned set (launcher, engine, TUI, channel adapters) to `~/.local/bin`:

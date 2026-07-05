@@ -390,9 +390,37 @@ impl StasisTool for CognitionIdentityRecallTool {
         }
 
         let result = recall_identity_facts(&snapshot, query, fact_kind, limit);
-        Ok(serde_json::to_value(result).map_err(|e| {
+        let hits_empty = result.hits.is_empty();
+        let mut payload = serde_json::to_value(&result).map_err(|e| {
             StasisError::PortFailure(format!("cognition_identity_recall encode: {e}"))
-        })?)
+        })?;
+        if let Some(obj) = payload.as_object_mut() {
+            let preferences_count = snapshot
+                .user
+                .as_ref()
+                .map(|user| user.preferences.len())
+                .unwrap_or(0);
+            obj.insert(
+                "store_preferences_count".to_string(),
+                json!(preferences_count),
+            );
+            obj.insert(
+                "user_version".to_string(),
+                json!(snapshot.user.as_ref().map(|user| user.version)),
+            );
+            if hits_empty && preferences_count > 0 {
+                obj.insert(
+                    "hint".to_string(),
+                    json!("Identity store has preferences but none matched this query — try a broader query or fact_kind=any"),
+                );
+            } else if hits_empty && preferences_count == 0 {
+                obj.insert(
+                    "hint".to_string(),
+                    json!("No preferences in identity store for this user — remember may not have persisted; check Automations → History receipts"),
+                );
+            }
+        }
+        Ok(payload)
     }
 }
 
@@ -599,6 +627,8 @@ impl StasisTool for CognitionIdentityRememberTool {
 
         Ok(json!({
             "committed": result.committed,
+            "persisted_verified": result.persisted_verified,
+            "user_version": result.user_version,
             "proposal_ids": result.proposal_ids,
             "requires_confirmation": result.requires_confirmation,
             "sttp_bridge_stored": result.sttp_bridge_stored,
