@@ -68,6 +68,10 @@ const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
+/** Delay before fetching daemon history to backfill a settled turn. */
+const TERMINAL_RECONCILE_DELAY_MS = 2_000;
+/** Accept late SSE frames for recently settled turns (ordering / dual-window). */
+const RECENTLY_SETTLED_TTL_MS = 30_000;
 /** Terminal answers shorter than this appear instantly. */
 const CONTENT_REVEAL_MIN_CHARS = 80;
 const CONTENT_REVEAL_CHUNK_CHARS = 14;
@@ -144,6 +148,19 @@ export class ChatStore {
   /** Progressive reveal when terminal final_text lands on an empty bubble. */
   private contentRevealTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pop-out windows observe SSE without owning Rust stream slots. */
+  streamRole: "owner" | "observer" = "owner";
+  private recentlySettledTurns = new Map<string, number>();
+  private terminalReconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Pop-out / secondary shells: display stream events without reattaching SSE. */
+  setStreamRole(role: "owner" | "observer") {
+    this.streamRole = role;
+  }
+
+  ownsInteractiveStreams(): boolean {
+    return this.streamRole === "owner";
+  }
 
   /** True while the composer must wait — Tier 2c: always open. */
   get composerBlocked(): boolean {
@@ -392,6 +409,79 @@ export class ChatStore {
       this.sessionsRefreshTimer = null;
       void this.refreshSessions({ force: true });
     }, SESSIONS_REFRESH_DEBOUNCE_MS);
+  }
+
+  private markRecentlySettled(turnId: string) {
+    this.recentlySettledTurns.set(turnId, Date.now());
+    for (const [id, settledAt] of this.recentlySettledTurns) {
+      if (Date.now() - settledAt > RECENTLY_SETTLED_TTL_MS) {
+        this.recentlySettledTurns.delete(id);
+      }
+    }
+  }
+
+  private recentlySettledTurnIdSet(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const [id, settledAt] of this.recentlySettledTurns) {
+      if (Date.now() - settledAt <= RECENTLY_SETTLED_TTL_MS) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  private transcriptTurnIdSet(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const message of this.messages) {
+      const turnId = message.turnId?.trim();
+      if (turnId) ids.add(turnId);
+    }
+    return ids;
+  }
+
+  private scheduleTerminalHistoryReconcile(turnId: string) {
+    const trimmed = turnId.trim();
+    if (!trimmed) return;
+    const existing = this.terminalReconcileTimers.get(trimmed);
+    if (existing) clearTimeout(existing);
+    this.terminalReconcileTimers.set(
+      trimmed,
+      setTimeout(() => {
+        this.terminalReconcileTimers.delete(trimmed);
+        void this.reconcileTurnFromHistory(trimmed);
+      }, TERMINAL_RECONCILE_DELAY_MS),
+    );
+  }
+
+  /** Backfill assistant content from daemon history when SSE missed the final commit. */
+  private async reconcileTurnFromHistory(turnId: string) {
+    const sessionId = this.sessionId.trim();
+    if (!sessionId) return;
+
+    const assistants = this.messages.filter(
+      (message) => message.turnId === turnId && message.role === "assistant",
+    );
+    if (assistants.length === 0) return;
+
+    const needsMerge = assistants.some(
+      (message) =>
+        message.streaming ||
+        message.failed ||
+        !message.content.trim() ||
+        isEngineTelemetryText(message.content),
+    );
+    if (!needsMerge) return;
+
+    const epoch = this.transcriptEpoch;
+    try {
+      const history = await getSessionHistory(sessionId);
+      if (epoch !== this.transcriptEpoch) return;
+      const daemonMessages = mapTurns(history.turns, { sessionId });
+      this.messages = mergeTranscript(this.messages, daemonMessages);
+      this.sanitizeTranscript();
+    } catch {
+      // Best-effort — manual reload still works.
+    }
   }
 
   private async fetchSessions(hadCache: boolean, query = "") {
@@ -681,6 +771,7 @@ export class ChatStore {
    * Reattach SSE listeners for owned, non-terminal session turns after refresh/reconnect.
    */
   async tryReattachActiveTurn(cards: WorkCard[] = []): Promise<boolean> {
+    if (this.streamRole === "observer") return false;
     const sessionId = this.sessionId.trim();
     if (!sessionId) return false;
 
@@ -818,6 +909,7 @@ export class ChatStore {
   }
 
   private async attachTurnStream(record: TurnTicketRecord): Promise<boolean> {
+    if (this.streamRole === "observer") return false;
     if (!shouldReattachTurnRecord(record, this.reattachContextFor(record))) {
       return false;
     }
@@ -1555,6 +1647,8 @@ export class ChatStore {
     next.delete(turnId);
     this.turns = next;
     this.lastSeqByTurn.delete(turnId);
+    this.markRecentlySettled(turnId);
+    this.scheduleTerminalHistoryReconcile(turnId);
     void this.detachStreamOwner(turnId);
   }
 
@@ -1703,7 +1797,15 @@ export class ChatStore {
 
     const workerLink = this.workerLinkForTurn(event.turn_id);
     if (event.terminal && workerLink?.synthesisDelivered) {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (
+        messageId &&
+        (event.final_text?.trim() || event.content_delta?.trim())
+      ) {
+        this.applyStreamEventToMessage(messageId, event);
+      }
       this.settleTurn(event.turn_id);
+      this.scheduleSessionsRefresh();
       return;
     }
 
@@ -2100,7 +2202,9 @@ export class ChatStore {
       content =
         (isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope) && terminal
           ? event.final_text!
-          : resolveTurnContent(current.content, event.final_text, terminal);
+          : resolveTurnContent(current.content, event.final_text, terminal, {
+              afterToolLoop: (current.toolRuns?.length ?? 0) > 0,
+            });
 
       const shouldReveal =
         event.terminal &&
@@ -2225,6 +2329,7 @@ export class ChatStore {
   private noteTurnTerminal(event: InteractiveTurnStreamEvent) {
     if (!this.shouldSettleTurnFromStream(event.turn_id)) return;
     this.settleTurn(event.turn_id);
+    this.scheduleSessionsRefresh();
   }
 
   /** Resume stream after handoff (e.g. budget approved) with no active assistant bubble. */
@@ -2663,7 +2768,10 @@ export class ChatStore {
     const workId = event.work_id?.trim();
     if (workId && this.workers.has(workId)) return true;
 
-    return shouldAcceptStreamEvent(turnId, this.streamOwners, this.turns);
+    return shouldAcceptStreamEvent(turnId, this.streamOwners, this.turns, {
+      recentlySettledTurnIds: this.recentlySettledTurnIdSet(),
+      transcriptTurnIds: this.transcriptTurnIdSet(),
+    });
   }
 
   private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {

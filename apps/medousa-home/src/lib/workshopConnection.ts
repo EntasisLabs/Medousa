@@ -56,6 +56,8 @@ export type WorkshopConnection = {
   refreshHealth: () => Promise<DaemonHealth | null>;
 };
 
+export type WorkshopConnectMode = "full" | "observer";
+
 async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
   if (!health.ok) return;
   try {
@@ -67,6 +69,7 @@ async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
 }
 
 let workshopTeardown = false;
+let workshopConnectMode: WorkshopConnectMode = "full";
 const workspaceReconnect = new ReconnectScheduler({
   policy: DEFAULT_WORKSPACE_BACKOFF,
 });
@@ -83,7 +86,7 @@ function cancelScheduledStreamRecovery() {
 }
 
 function scheduleEnvironmentStreamReconnect() {
-  if (workshopTeardown) return;
+  if (workshopTeardown || workshopConnectMode === "observer") return;
   workspaceReconnect.schedule(() => recoverEnvironmentStream());
 }
 
@@ -105,7 +108,7 @@ async function recoverEnvironmentStream(): Promise<void> {
 }
 
 function scheduleWorkspaceStreamReconnect() {
-  if (workshopTeardown) return;
+  if (workshopTeardown || workshopConnectMode === "observer") return;
   workspaceReconnect.schedule(() => recoverWorkspaceStream());
 }
 
@@ -131,7 +134,7 @@ async function recoverWorkspaceStream(): Promise<void> {
 }
 
 function scheduleInteractiveStreamRecover() {
-  if (workshopTeardown) return;
+  if (workshopTeardown || workshopConnectMode === "observer") return;
   interactiveReconnect.schedule(() => recoverInteractiveStreams());
 }
 
@@ -272,6 +275,57 @@ async function loadWorkshopDefaults(connected: boolean): Promise<void> {
   }
 }
 
+async function bootstrapWorkshopObserver(): Promise<void> {
+  await Promise.all([
+    chat.refreshSessions({ force: true }),
+    chat.ensureSessionHydrated({ notice: false }),
+  ]);
+  await workspace.reconcileCardsFromSnapshot();
+  await workspace.recoverPendingWorkerResults();
+}
+
+export async function resumeWorkshopObserver(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<void> {
+  const now = Date.now();
+  if (resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
+    return;
+  }
+  resumeWorkshopInFlight = true;
+  lastResumeWorkshopAt = now;
+
+  let health: DaemonHealth;
+  try {
+    health = await checkDaemonHealth();
+  } finally {
+    resumeWorkshopInFlight = false;
+  }
+  connection.setHealth(health);
+  onHealthChange(health);
+  if (!health.ok) return;
+
+  await workspace.reconcileCardsFromSnapshot();
+  await Promise.all([
+    chat.reconcileOnResume({ notice: false }, workspace.cards),
+    chat.hydrateAskThreads(workspace.cards),
+  ]);
+  await workspace.recoverPendingWorkerResults();
+}
+
+export function attachWorkshopObserverForegroundResume(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  const handler = () => {
+    if (document.visibilityState !== "visible") return;
+    void resumeWorkshopObserver(onHealthChange);
+  };
+
+  document.addEventListener("visibilitychange", handler);
+  return () => document.removeEventListener("visibilitychange", handler);
+}
+
 export async function resumeWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<void> {
@@ -398,16 +452,26 @@ export async function reconnectWorkshop(
 
 /**
  * Shared daemon + SSE bootstrap for desktop and mobile shells.
+ *
+ * `observer` mode (pop-out chat): listens to broadcast SSE events without
+ * starting or tearing down global stream pipes owned by the main window.
  */
 export function connectWorkshop(options: {
   onHealthChange: (health: DaemonHealth | null) => void;
+  mode?: WorkshopConnectMode;
 }): () => void {
+  const mode = options.mode ?? "full";
+  workshopConnectMode = mode;
   workshopTeardown = false;
+  chat.setStreamRole(mode === "observer" ? "observer" : "owner");
   settings.applyTheme();
   const unlisteners: Promise<() => void>[] = [];
   registerStreamListeners(unlisteners);
 
-  const detachForeground = attachWorkshopForegroundResume(options.onHealthChange);
+  const detachForeground =
+    mode === "full"
+      ? attachWorkshopForegroundResume(options.onHealthChange)
+      : attachWorkshopObserverForegroundResume(options.onHealthChange);
 
   void (async () => {
     try {
@@ -421,9 +485,13 @@ export function connectWorkshop(options: {
       void loadWorkshopDefaults(health.ok);
 
       if (health.ok) {
-        await startWorkshopStreams();
-        await workshops.restoreLastSession();
-        void registerBrowserHostClient(health);
+        if (mode === "full") {
+          await startWorkshopStreams();
+          await workshops.restoreLastSession();
+          void registerBrowserHostClient(health);
+        } else {
+          await bootstrapWorkshopObserver();
+        }
       }
       workshops.applyThemeForActiveWorkshop();
     } catch (err) {
@@ -438,16 +506,18 @@ export function connectWorkshop(options: {
 
   return () => {
     workshopTeardown = true;
-    cancelScheduledStreamRecovery();
-    workspaceReconnect.teardown();
-    interactiveReconnect.teardown();
     detachForeground();
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
-    void (async () => {
-      await stopWorkspaceStream();
-      await stopEnvironmentSync();
-      await chat.stopOwnedInteractiveStreams();
-    })();
+    if (mode === "full") {
+      cancelScheduledStreamRecovery();
+      workspaceReconnect.teardown();
+      interactiveReconnect.teardown();
+      void (async () => {
+        await stopWorkspaceStream();
+        await stopEnvironmentSync();
+        await chat.stopOwnedInteractiveStreams();
+      })();
+    }
   };
 }
 
