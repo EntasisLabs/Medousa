@@ -18,8 +18,9 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
 use crate::agent_runtime::turn_completion_fsm::{
-    decide_after_tools_text_round, decide_no_tool_debt_text_round, resolve_interim_continue_cap,
-    AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
+    decide_after_tools_text_round, decide_no_tool_debt_text_round, resolve_host_pre_tools_continue_cap,
+    resolve_interim_continue_cap, AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext,
+    TurnRoundAction,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
@@ -214,11 +215,18 @@ impl MedousaToolLoopPipeline {
         let mut discipline =
             TurnLoopDiscipline::with_max_text_only_stuck_continues(max_text_only_stuck);
         let mut loop_awareness = TurnLoopAwareness::default();
-        // Per-turn budget for bounded interim auto-continues (short non-tool notes
-        // that should not end the turn). Capped low; the stuck discipline +
-        // max_tool_rounds fuse below are the hard safety net.
-        let interim_continue_cap = resolve_interim_continue_cap(effective_max_tool_rounds);
+        let host_scheduler_lane = completion_gate
+            .as_ref()
+            .map(|gate| gate.host_scheduler_lane)
+            .unwrap_or(false);
+        // Workshop: scaled interim cap. Host scheduler: fixed small pre-tool cap only.
+        let interim_continue_cap = if host_scheduler_lane {
+            resolve_host_pre_tools_continue_cap()
+        } else {
+            resolve_interim_continue_cap(effective_max_tool_rounds)
+        };
         let mut interim_continues_used = 0usize;
+        let mut empty_after_tools_continues_used = 0usize;
 
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {
@@ -338,10 +346,6 @@ impl MedousaToolLoopPipeline {
                             .as_ref()
                             .map(|gate| gate.skip_avec_ritual_check)
                             .unwrap_or(false);
-                        let host_scheduler_lane = completion_gate
-                            .as_ref()
-                            .map(|gate| gate.host_scheduler_lane)
-                            .unwrap_or(false);
                         let action = if invocations.is_empty() {
                             decide_no_tool_debt_text_round(&NoToolDebtRoundContext {
                                 draft_text: text.clone(),
@@ -363,6 +367,7 @@ impl MedousaToolLoopPipeline {
                                 interim_continues_used,
                                 interim_continue_cap,
                                 host_scheduler_lane,
+                                empty_after_tools_continues_used,
                             })
                         };
 
@@ -407,9 +412,17 @@ impl MedousaToolLoopPipeline {
                             } => {
                                 if matches!(
                                     reason,
-                                    ContinueReason::InterimProse | ContinueReason::ExtendedProse
+                                    ContinueReason::InterimProse
+                                        | ContinueReason::ExtendedProse
+                                        | ContinueReason::AwaitingTools
                                 ) {
                                     interim_continues_used += 1;
+                                }
+                                if host_scheduler_lane
+                                    && reason == ContinueReason::EmptyAfterTools
+                                    && !invocations.is_empty()
+                                {
+                                    empty_after_tools_continues_used += 1;
                                 }
                                 if let Some(response) = apply_fsm_continue_loop(
                                     &text,
@@ -425,6 +438,7 @@ impl MedousaToolLoopPipeline {
                                     &shared_inputs,
                                     rounds_executed,
                                     effective_max_tool_rounds,
+                                    host_scheduler_lane,
                                 )
                                 .await?
                                 {
@@ -1050,6 +1064,7 @@ async fn apply_fsm_continue_loop(
     shared_inputs: &ToolLoopSharedInputs,
     rounds_executed: usize,
     max_tool_rounds: usize,
+    host_scheduler_lane: bool,
 ) -> Result<Option<ToolLoopExecutionResponse>> {
     if !missing_tools.is_empty() {
         turn_ctx.scratchpad.set_open_gaps(missing_tools);
@@ -1079,27 +1094,25 @@ async fn apply_fsm_continue_loop(
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
     }
-    // Interim prose: surface the short note to the principal as a non-terminal
-    // progress line so they SEE it, AND append it to `tool_lane.messages` so the
-    // model retains continuity into the next round. Previously this prose was dropped
-    // (to avoid self-dialogue), but combined with the scratch_reset that wipes the
-    // draft it gave the model "amnesia" — it would forget what it just did and redo
-    // finished work. Preserving the note keeps memory intact; the turn-control nudge
-    // below still steers it to a tool / cognition_turn_finish, and the bounded
-    // interim_continue_cap prevents the loop from spinning.
-    if matches!(
-        continue_reason,
-        ContinueReason::InterimProse | ContinueReason::ExtendedProse
-    ) && !text.trim().is_empty()
-    {
-        if let Some(gate) = completion_gate.as_ref() {
-            if let Some(sink) = gate.sink.as_ref() {
-                sink.agent_turn_progress(
-                    gate.stream_turn_id,
-                    text.trim().to_string(),
-                    ledger_tool_names(invocations),
-                )
-                .await;
+    let preserve_prose_in_tool_lane = if host_scheduler_lane {
+        matches!(continue_reason, ContinueReason::AwaitingTools) && !text.trim().is_empty()
+    } else {
+        matches!(
+            continue_reason,
+            ContinueReason::InterimProse | ContinueReason::ExtendedProse
+        ) && !text.trim().is_empty()
+    };
+    if preserve_prose_in_tool_lane {
+        if !host_scheduler_lane {
+            if let Some(gate) = completion_gate.as_ref() {
+                if let Some(sink) = gate.sink.as_ref() {
+                    sink.agent_turn_progress(
+                        gate.stream_turn_id,
+                        text.trim().to_string(),
+                        ledger_tool_names(invocations),
+                    )
+                    .await;
+                }
             }
         }
         turn_ctx
@@ -1308,6 +1321,7 @@ mod tests {
             interim_continues_used: 0,
             interim_continue_cap: 2,
             host_scheduler_lane: false,
+            empty_after_tools_continues_used: 0,
         });
         assert!(matches!(
             action,

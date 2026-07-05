@@ -1,8 +1,11 @@
 //! Explicit turn completion FSM — text-only model rounds.
 //!
-//! **Prose terminates:** any non-empty assistant message with zero tool calls in that round
-//! ends the turn. Mid-turn status uses `cognition_turn_update_user`; heavy work uses
-//! `cognition_turn_begin_work`; finals after tool work require `cognition_turn_finish`.
+//! **Workshop/worker:** heuristic interim continues + `prose_requires_finish` after tools.
+//!
+//! **Host scheduler (`host_scheduler_lane`):** prose-terminates after tools — any non-empty
+//! assistant message commits as the principal-facing answer. Before the first tool call,
+//! bounded continues (`AwaitingTools`, cap 2) absorb status preamble without cold handoff.
+//! Execution work uses `cognition_turn_begin_work`; workshop uses `cognition_turn_finish`.
 
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
@@ -22,6 +25,16 @@ pub const INTERIM_MAX_CHARS: usize = EXTENDED_PROSE_CHAR_THRESHOLD;
 pub fn resolve_interim_continue_cap(max_tool_rounds: usize) -> usize {
     let rounds = max_tool_rounds.max(1);
     ((rounds * 4) / 5).clamp(4, 10)
+}
+
+/// Host scheduler: status preamble before the first tool call may continue at most this many times.
+pub const HOST_PRE_TOOLS_CONTINUE_CAP: usize = 2;
+
+/// Host scheduler: empty model round after tools may continue at most once.
+pub const HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP: usize = 1;
+
+pub fn resolve_host_pre_tools_continue_cap() -> usize {
+    HOST_PRE_TOOLS_CONTINUE_CAP
 }
 
 /// What the tool loop should do after a text-only model response.
@@ -46,6 +59,8 @@ pub enum ContinueReason {
     InterimProse,
     /// Long planning/status prose — reloop with full text kept in transcript.
     ExtendedProse,
+    /// Host scheduler only: status prose before any tool call — nudge tools in this round.
+    AwaitingTools,
 }
 
 /// Developer-facing turn-control body for `[MEDOUSA_TURN_CONTROL]`.
@@ -70,7 +85,19 @@ pub fn continue_control_message(reason: ContinueReason, _missing_tools: &[String
              Check [MEDOUSA_SCRATCH] digests_recent before re-calling tools you already ran."
                 .to_string()
         }
+        ContinueReason::AwaitingTools => {
+            "Turn continues: you sent status prose without tools. Call host tools now (memory, vault read, \
+             runtime) or cognition_turn_begin_work(goal, message) for execution — deliver the \
+             principal-facing answer in this round."
+                .to_string()
+        }
     }
+}
+
+fn host_empty_after_tools_control_message() -> String {
+    "Turn continues: last round had no assistant text after tools. Call cognition_turn_begin_work for \
+     execution work or any host tools you still need, then deliver your answer in prose."
+        .to_string()
 }
 
 fn is_short_interim_prose(draft: &str) -> bool {
@@ -129,7 +156,7 @@ pub struct NoToolDebtRoundContext {
     pub interim_continues_used: usize,
     /// Per-turn budget for interim auto-continues (bounded so the loop can't spin).
     pub interim_continue_cap: usize,
-    /// Host scheduler: cooperative prose; execution via bound workshop.
+    /// Host scheduler: prose-terminates after tools; bounded pre-tool continues.
     pub host_scheduler_lane: bool,
 }
 
@@ -145,12 +172,93 @@ pub struct AfterToolsRoundContext<'a> {
     pub interim_continues_used: usize,
     /// Per-turn budget for interim auto-continues (bounded so the loop can't spin).
     pub interim_continue_cap: usize,
-    /// Host scheduler: cooperative prose; execution via bound workshop.
+    /// Host scheduler: prose-terminates after tools; bounded pre-tool continues.
     pub host_scheduler_lane: bool,
+    /// Host scheduler: empty-after-tools continues already spent this turn.
+    pub empty_after_tools_continues_used: usize,
+}
+
+fn decide_host_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
+    let draft = ctx.draft_text.trim();
+
+    if ctx.pending_final_answer && !draft.is_empty() {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "prepare_final_then_text",
+        };
+    }
+
+    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "max_rounds_fuse",
+        };
+    }
+
+    if looks_like_clarifying_question(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "clarifying_question",
+        };
+    }
+
+    if looks_like_substantive_final_answer(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "no_tools_prose",
+        };
+    }
+
+    if !draft.is_empty() && ctx.interim_continues_used < ctx.interim_continue_cap {
+        return continue_loop(ContinueReason::AwaitingTools, vec![]);
+    }
+
+    TurnRoundAction::EndTurn {
+        termination_reason: "no_tools_prose",
+    }
+}
+
+fn decide_host_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
+    let draft = ctx.draft_text.trim();
+
+    if ctx.pending_final_answer && !draft.is_empty() {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "prepare_final_then_text",
+        };
+    }
+
+    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "max_rounds_fuse",
+        };
+    }
+
+    if draft.is_empty() {
+        if ctx.empty_after_tools_continues_used < HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP {
+            return TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::EmptyAfterTools,
+                control_message: host_empty_after_tools_control_message(),
+                missing_tools: vec![],
+            };
+        }
+        return TurnRoundAction::EndTurn {
+            termination_reason: "max_rounds_fuse",
+        };
+    }
+
+    if looks_like_clarifying_question(&ctx.draft_text) {
+        return TurnRoundAction::EndTurn {
+            termination_reason: "clarifying_question",
+        };
+    }
+
+    TurnRoundAction::EndTurn {
+        termination_reason: "host_scheduler_prose",
+    }
 }
 
 /// Zero tool invocations this turn — any non-empty prose ends the turn.
 pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRoundAction {
+    if ctx.host_scheduler_lane {
+        return decide_host_no_tool_debt_text_round(ctx);
+    }
+
     let draft = ctx.draft_text.trim();
 
     if ctx.pending_final_answer && !draft.is_empty() {
@@ -185,8 +293,13 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
     }
 }
 
-/// Tools already ran — non-empty prose without `cognition_turn_finish` ends with a stub body.
+/// Tools already ran — workshop prose without `cognition_turn_finish` ends with a stub body;
+/// host scheduler prose commits directly.
 pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRoundAction {
+    if ctx.host_scheduler_lane {
+        return decide_host_after_tools_text_round(ctx);
+    }
+
     let draft = ctx.draft_text.trim();
 
     if ctx.workshop_lane && ctx.pending_final_answer && !draft.is_empty() {
@@ -226,10 +339,6 @@ pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext<'_>) -> TurnRo
         return action;
     }
 
-    if ctx.host_scheduler_lane && !draft.is_empty() && !ctx.pending_final_answer {
-        return continue_loop(ContinueReason::ExtendedProse, vec![]);
-    }
-
     TurnRoundAction::EndTurn {
         termination_reason: "prose_requires_finish",
     }
@@ -263,6 +372,34 @@ mod tests {
             interim_continues_used: 0,
             interim_continue_cap: 2,
             host_scheduler_lane: false,
+            empty_after_tools_continues_used: 0,
+        }
+    }
+
+    fn host_ctx(draft: &str) -> NoToolDebtRoundContext {
+        NoToolDebtRoundContext {
+            draft_text: draft.to_string(),
+            pending_final_answer: false,
+            rounds_executed: 1,
+            max_tool_rounds: 10,
+            interim_continues_used: 0,
+            interim_continue_cap: HOST_PRE_TOOLS_CONTINUE_CAP,
+            host_scheduler_lane: true,
+        }
+    }
+
+    fn host_after_tools<'a>(draft: &str, invocations: &'a [ToolInvocation]) -> AfterToolsRoundContext<'a> {
+        AfterToolsRoundContext {
+            draft_text: draft.to_string(),
+            pending_final_answer: false,
+            rounds_executed: 3,
+            max_tool_rounds: 10,
+            invocations,
+            workshop_lane: false,
+            interim_continues_used: 0,
+            interim_continue_cap: HOST_PRE_TOOLS_CONTINUE_CAP,
+            host_scheduler_lane: true,
+            empty_after_tools_continues_used: 0,
         }
     }
 
@@ -501,5 +638,116 @@ mod tests {
     fn empty_after_tools_control_message_mentions_prose_rule() {
         let msg = continue_control_message(ContinueReason::EmptyAfterTools, &[]);
         assert!(msg.contains("cognition_turn_finish"));
+    }
+
+    #[test]
+    fn host_preamble_before_tools_continues_awaiting_tools() {
+        let action = decide_no_tool_debt_text_round(&host_ctx("Let me check that for you."));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::AwaitingTools,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn host_planning_before_tools_continues_without_heuristics() {
+        let planning = "The environment is confirmed — 11 surfaces, blank canvas, and the full \
+                        component toolkit is live. Let's make the first mark. I'm going to build \
+                        you a Home dashboard — a persistent component on the home surface.";
+        let action = decide_no_tool_debt_text_round(&host_ctx(planning));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::AwaitingTools,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn host_substantive_no_tool_answer_ends() {
+        let answer = "Here is a complete explanation of how the ingester maps channel \
+                      sessions to Medousa history without any further steps needed.";
+        let action = decide_no_tool_debt_text_round(&host_ctx(answer));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "no_tools_prose"
+            }
+        ));
+    }
+
+    #[test]
+    fn host_preamble_before_tools_ends_when_cap_exhausted() {
+        let mut round = host_ctx("Let me check that for you.");
+        round.interim_continues_used = HOST_PRE_TOOLS_CONTINUE_CAP;
+        let action = decide_no_tool_debt_text_round(&round);
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "no_tools_prose"
+            }
+        ));
+    }
+
+    #[test]
+    fn host_prose_after_tools_commits_directly() {
+        let invocations = vec![tool("cognition_memory_moods")];
+        let action = decide_after_tools_text_round(&host_after_tools(
+            "Focused preset pulled and applied: stability is now 0.95, friction dropped to 0.12, \
+             and autonomy holds at 0.80. I stored the calibration summary in Locus for this session.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "host_scheduler_prose"
+            }
+        ));
+    }
+
+    #[test]
+    fn host_interim_after_tools_commits_not_continues() {
+        let invocations = vec![tool("cognition_memory_context")];
+        let action = decide_after_tools_text_round(&host_after_tools(
+            "I'll spin up workers next.",
+            &invocations,
+        ));
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "host_scheduler_prose"
+            }
+        ));
+    }
+
+    #[test]
+    fn host_empty_after_tools_continues_once() {
+        let invocations = vec![tool("cognition_tool_history_summary")];
+        let action = decide_after_tools_text_round(&host_after_tools("", &invocations));
+        assert!(matches!(
+            action,
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::EmptyAfterTools,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn host_empty_after_tools_fuses_after_one_continue() {
+        let invocations = vec![tool("cognition_tool_history_summary")];
+        let mut round = host_after_tools("", &invocations);
+        round.empty_after_tools_continues_used = HOST_EMPTY_AFTER_TOOLS_CONTINUE_CAP;
+        let action = decide_after_tools_text_round(&round);
+        assert!(matches!(
+            action,
+            TurnRoundAction::EndTurn {
+                termination_reason: "max_rounds_fuse"
+            }
+        ));
     }
 }
