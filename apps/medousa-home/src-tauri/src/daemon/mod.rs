@@ -5,6 +5,7 @@ pub mod identity;
 pub mod jobs;
 pub mod local_inference;
 pub mod locus;
+pub mod maintenance;
 pub mod media;
 pub mod model_catalog;
 pub mod recurring;

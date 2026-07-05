@@ -280,6 +280,9 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 pub fn build_core_router(state: AppState) -> Router {
     use axum::routing::{delete, get, patch, post, put};
 
+    use crate::maintenance_handlers::{
+        get_artifact_retention_status, update_artifact_retention,
+    };
     use crate::daemon::continuations::{
         continuation_lineage, continuation_status, replay_and_resume_job,
     };
@@ -372,6 +375,10 @@ pub fn build_core_router(state: AppState) -> Router {
         .route("/v1/runtime/artifact/write", post(artifact_write))
         .route("/v1/runtime/artifact/delete", post(artifact_delete))
         .route("/v1/runtime/artifact/list-ui", post(artifact_list_ui))
+        .route(
+            "/v1/maintenance/artifacts",
+            get(get_artifact_retention_status).put(update_artifact_retention),
+        )
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))

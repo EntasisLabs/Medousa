@@ -1558,6 +1558,45 @@ pub struct ArtifactDeleteResponse {
     pub deleted_artifact_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactRetentionSettingsResponse {
+    pub enabled: bool,
+    pub max_age_days: i64,
+    pub max_per_session: usize,
+    pub recurring_id: String,
+    pub cron_expr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactRetentionStatusResponse {
+    pub settings: ArtifactRetentionSettingsResponse,
+    pub scheduled: bool,
+    pub enabled: bool,
+    pub next_run_at_utc: Option<DateTime<Utc>>,
+    pub last_run_at_utc: Option<DateTime<Utc>>,
+    pub last_run_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct UpdateArtifactRetentionRequest {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub max_age_days: Option<i64>,
+    #[serde(default)]
+    pub max_per_session: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct UpdateArtifactRetentionResponse {
+    pub settings: ArtifactRetentionSettingsResponse,
+    pub next_run_at_utc: DateTime<Utc>,
+}
+
 // ── Ingester types ────────────────────────────────────────────────────────────
 
 /// Optional attachment forwarded by a channel adapter.

@@ -1,5 +1,6 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
+  import SettingsPresentationRetention from "$lib/components/settings/SettingsPresentationRetention.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
 
@@ -87,4 +88,6 @@
   <div class="mt-6 border-t border-surface-500/35 pt-5">
     <SettingsCharterSaveBar {mobile} />
   </div>
+
+  <SettingsPresentationRetention {mobile} />
 </section>

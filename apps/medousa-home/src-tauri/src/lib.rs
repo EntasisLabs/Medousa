@@ -525,6 +525,8 @@ pub fn run() {
             daemon::jobs::job_complete_actions,
             daemon::jobs::job_archive_ask,
             daemon::recurring::recurring_list,
+            daemon::maintenance::artifact_retention_status,
+            daemon::maintenance::artifact_retention_update,
             daemon::recurring::recurring_register_prompt,
             daemon::recurring::recurring_update,
             daemon::recurring::recurring_delete,

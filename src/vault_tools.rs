@@ -28,10 +28,12 @@ pub fn register_vault_tools(
     registry.register_tool(CognitionVaultSearchTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultTagsTool::new(event_tx.clone()))?;
     registry.register_tool(CognitionVaultWriteTool::new(
-        event_tx,
-        turn_scope,
-        fallback_chat_session_id,
+        event_tx.clone(),
+        turn_scope.clone(),
+        fallback_chat_session_id.clone(),
     ))?;
+    registry.register_tool(CognitionVaultDeleteTool::new(event_tx.clone()))?;
+    registry.register_tool(CognitionVaultMoveTool::new(event_tx))?;
     Ok(())
 }
 
@@ -488,5 +490,108 @@ fn truncate_chars(body: &str, max_chars: usize) -> TruncatedBody {
     TruncatedBody {
         body: format!("{}…", body.chars().take(max_chars).collect::<String>()),
         truncated: true,
+    }
+}
+
+pub struct CognitionVaultDeleteTool {
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionVaultDeleteTool {
+    pub fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionVaultDeleteTool {
+    fn name(&self) -> &'static str {
+        "cognition_vault_delete"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Soft-delete a vault markdown note (moves to .trash). Use after confirming the path with list/read.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+                "path": { "type": "string", "description": "Relative vault note path to delete" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let path = input
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("path is required".to_string()))?;
+        emit_invoked(&self.event_tx, self.name(), path);
+        let response = VaultService::delete_note(path)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
+    }
+}
+
+pub struct CognitionVaultMoveTool {
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionVaultMoveTool {
+    pub fn new(event_tx: mpsc::Sender<TuiEvent>) -> Self {
+        Self { event_tx }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionVaultMoveTool {
+    fn name(&self) -> &'static str {
+        "cognition_vault_move"
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Move/rename a vault note to a new relative path. Creates parent folders as needed and removes the source note.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["from_path", "to_path"],
+            "properties": {
+                "from_path": { "type": "string", "description": "Existing note path" },
+                "to_path": { "type": "string", "description": "Destination path" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        let from_path = input
+            .get("from_path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("from_path is required".to_string()))?;
+        let to_path = input
+            .get("to_path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("to_path is required".to_string()))?;
+        emit_invoked(
+            &self.event_tx,
+            self.name(),
+            &format!("{from_path} -> {to_path}"),
+        );
+        let response = VaultService::relocate_note(from_path, to_path)
+            .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+        serde_json::to_value(response).map_err(|err| StasisError::PortFailure(err.to_string()))
     }
 }

@@ -1241,6 +1241,36 @@ export async function deleteRecurring(
   return invoke<DeleteRecurringResponse>("recurring_delete", { recurringId });
 }
 
+export interface ArtifactRetentionStatus {
+  settings: {
+    enabled: boolean;
+    max_age_days: number;
+    max_per_session: number;
+    recurring_id: string;
+    cron_expr: string;
+  };
+  scheduled: boolean;
+  enabled: boolean;
+  next_run_at_utc: string | null;
+  last_run_at_utc: string | null;
+  last_run_summary: string | null;
+}
+
+export async function getArtifactRetentionStatus(): Promise<ArtifactRetentionStatus> {
+  return invoke<ArtifactRetentionStatus>("artifact_retention_status");
+}
+
+export async function updateArtifactRetention(request: {
+  enabled?: boolean;
+  max_age_days?: number;
+  max_per_session?: number;
+}): Promise<{
+  settings: ArtifactRetentionStatus["settings"];
+  next_run_at_utc: string;
+}> {
+  return invoke("artifact_retention_update", { request });
+}
+
 export async function registerRecurringPrompt(request: {
   prompt: string;
   cron_expr: string;
