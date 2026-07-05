@@ -20,9 +20,19 @@ if (process.platform === "win32") {
   process.exit(result.status ?? 1);
 }
 
+const env = { ...process.env };
+if (process.platform === "linux") {
+  // linuxdeploy ships an old strip that chokes on .relr.dyn (SHT_RELR) in modern
+  // distro libs (Arch, Fedora, etc.). Ubuntu 22.04 CI is unaffected but this is harmless there.
+  env.NO_STRIP ??= "1";
+  // AppImage bundlers are AppImages themselves; extract-and-run avoids needing FUSE.
+  env.APPIMAGE_EXTRACT_AND_RUN ??= "1";
+}
+
 const result = spawnSync("npx", ["tauri", "build", ...args], {
   cwd: homeDir,
   stdio: "inherit",
   shell: true,
+  env,
 });
 process.exit(result.status ?? 1);
