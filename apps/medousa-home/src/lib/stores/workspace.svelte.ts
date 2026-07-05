@@ -29,6 +29,10 @@ import {
   isActionableBlockedCard,
   visibleWorkCards,
 } from "$lib/utils/workCardRetention";
+import {
+  terminalWorkerCardsNeedingRecovery,
+  WORKER_RECOVERY_FETCH_CONCURRENCY,
+} from "$lib/utils/workerSynthesisRecovery";
 import type {
   WorkCard,
   WorkspaceEvent,
@@ -75,6 +79,7 @@ export class WorkspaceStore {
   workView = $state<WorkView>("kanban");
   private previousColumns = new Map<string, string>();
   private reconcilingCards = false;
+  private recoveringWorkerResults = false;
   private heartbeatsSinceReconcile = 0;
 
   applyEvent(event: WorkspaceStreamEvent) {
@@ -216,23 +221,54 @@ export class WorkspaceStore {
 
   /** Tier 3 — scan cached turn_worker cards and deliver pending syntheses to chat. */
   async syncTurnWorkerCardsToChat() {
-    chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
-    await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
+    await this.recoverPendingWorkerResults();
   }
 
   /** Foreground resume — pull details for terminal cards so workshop synthesis can land. */
   async refreshTerminalWorkerDetails() {
-    const terminal = this.cards.filter(
-      (card) =>
-        !isAskJobId(card.id) &&
-        (card.column === "done" || card.column === "blocked"),
-    );
-    if (terminal.length === 0) return;
-    await Promise.all(
-      terminal.slice(0, 12).map((card) =>
-        this.cacheCardDetail(card.id, this.previousColumns.get(card.id), true),
-      ),
-    );
+    await this.recoverPendingWorkerResults();
+  }
+
+  /** Fetch card detail for worker synthesis retry (chat-owned). */
+  async fetchWorkerCardDetail(
+    id: string,
+    force = true,
+  ): Promise<WorkCardDetail | null> {
+    await this.cacheCardDetail(id, this.previousColumns.get(id), force);
+    return this.cardDetailsCache.get(id) ?? null;
+  }
+
+  /**
+   * Fetch terminal worker details and deliver pending syntheses to chat.
+   * Used after snapshot reconcile, workspace reconnect, and foreground resume.
+   */
+  async recoverPendingWorkerResults(options?: {
+    previousColumns?: Map<string, string>;
+  }) {
+    if (this.recoveringWorkerResults) return;
+    this.recoveringWorkerResults = true;
+    try {
+      const previousColumns = options?.previousColumns ?? this.previousColumns;
+      const targets = terminalWorkerCardsNeedingRecovery(
+        this.cards,
+        previousColumns,
+        chat.pendingWorkerSynthesisIds(),
+      );
+
+      for (let i = 0; i < targets.length; i += WORKER_RECOVERY_FETCH_CONCURRENCY) {
+        const batch = targets.slice(i, i + WORKER_RECOVERY_FETCH_CONCURRENCY);
+        await Promise.all(
+          batch.map((card) =>
+            this.cacheCardDetail(card.id, previousColumns.get(card.id), true),
+          ),
+        );
+      }
+
+      chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+      await chat.recoverPendingWorkerSyntheses(this.cards, this.cardDetailsCache);
+    } finally {
+      this.recoveringWorkerResults = false;
+    }
   }
 
   /** Pull authoritative card columns when activity says done but the board lagged. */
@@ -246,11 +282,13 @@ export class WorkspaceStore {
       if (snapshot.cards.length === 0 && this.revision > 0) {
         return;
       }
+      const previousColumns = new Map(this.previousColumns);
       this.revision = snapshot.workspace_revision;
       this.cards = snapshot.cards;
       this.columnCounts = snapshot.counts_by_column;
-      this.syncColumnMemory();
       chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+      await this.recoverPendingWorkerResults({ previousColumns });
+      this.syncColumnMemory();
     } catch (err) {
       this.streamError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -412,27 +450,48 @@ export class WorkspaceStore {
         return;
       }
     }
-    try {
-      const detail = await getWorkspaceCard(id);
-      this.cardDetailsCache.set(id, detail);
-      this.cardDetailsCache = new Map(this.cardDetailsCache);
-      if (this.selectedCardId === id) {
-        this.selectedCardDetail = detail;
+
+    const retryDelaysMs = [0, 300];
+    for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
+      const delayMs = retryDelaysMs[attempt] ?? 0;
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
-      const card = this.cards.find((item) => item.id === id);
-      if (card) {
-        chat.onWorkerCardDetail(detail, card.column, previousColumn);
-        chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
-        if (
-          detail.kind === "turn_worker" &&
-          (card.column === "done" ||
-            (card.column === "blocked" && detail.terminal))
-        ) {
-          void chat.recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
+      try {
+        const detail = await getWorkspaceCard(id);
+        this.cardDetailsCache.set(id, detail);
+        this.cardDetailsCache = new Map(this.cardDetailsCache);
+        if (this.selectedCardId === id) {
+          this.selectedCardDetail = detail;
+        }
+        const card = this.cards.find((item) => item.id === id);
+        if (card) {
+          chat.onWorkerCardDetail(detail, card.column, previousColumn);
+          chat.syncWorkerLaneFromCards(this.cards, this.cardDetailsCache);
+          if (
+            detail.kind === "turn_worker" &&
+            (card.column === "done" ||
+              (card.column === "blocked" && detail.terminal))
+          ) {
+            void chat.recoverPendingWorkerSyntheses([card], this.cardDetailsCache);
+          }
+        }
+        return;
+      } catch {
+        if (attempt === retryDelaysMs.length - 1) {
+          const card = this.cards.find((item) => item.id === id);
+          if (
+            card &&
+            (card.column === "done" || card.column === "blocked") &&
+            chat.hasPendingWorkerSynthesis(id)
+          ) {
+            chat.noteWorkerSynthesisFailure(
+              id,
+              "Couldn't load worker result. Tap to retry.",
+            );
+          }
         }
       }
-    } catch {
-      // Swimlane label falls back when detail is missing.
     }
   }
 

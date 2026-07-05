@@ -1171,6 +1171,78 @@ export class ChatStore {
     }
   }
 
+  pendingWorkerSynthesisIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const [workId, link] of this.workers) {
+      if (!link.synthesisDelivered) ids.add(workId);
+    }
+    return ids;
+  }
+
+  hasPendingWorkerSynthesis(cardOrWorkId: string): boolean {
+    const id = cardOrWorkId.trim();
+    if (!id) return false;
+    return this.pendingWorkerSynthesisIds().has(id);
+  }
+
+  noteWorkerSynthesisFailure(workId: string, errorLine: string) {
+    const link = this.workers.get(workId);
+    if (!link || link.synthesisDelivered) return;
+
+    const messageId = link.synthesisMessageId ?? link.messageId;
+    if (!messageId) return;
+    this.markMessageFailed(messageId, errorLine);
+  }
+
+  clearWorkerSynthesisFailure(workId: string) {
+    const link = this.workers.get(workId);
+    if (!link) return;
+
+    const messageId = link.synthesisMessageId ?? link.messageId;
+    if (!messageId) return;
+
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0 || !this.messages[idx].failed) return;
+
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        failed: false,
+        errorLine: null,
+        answerState: null,
+        streaming: true,
+        statusLine: "Loading result…",
+      },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
+  async retryWorkerSynthesis(workId: string) {
+    const trimmed = workId.trim();
+    if (!trimmed) return;
+
+    const link = this.workers.get(trimmed);
+    if (!link || link.synthesisDelivered) return;
+
+    this.clearWorkerSynthesisFailure(trimmed);
+
+    const { workspace } = await import("$lib/stores/workspace.svelte");
+    const detail = await workspace.fetchWorkerCardDetail(trimmed, true);
+    const card = workspace.cards.find((item) => item.id === trimmed);
+    if (!card || !detail || detail.kind !== "turn_worker") {
+      this.noteWorkerSynthesisFailure(
+        trimmed,
+        "Couldn't load worker result. Tap to retry.",
+      );
+      return;
+    }
+
+    this.onWorkerCardDetail(detail, card.column, undefined);
+    await this.deliverWorkerSynthesis(trimmed, detail);
+  }
+
   /** Keep worker-lane bubbles in sync with workspace card columns (no parent SSE). */
   syncWorkerLaneFromCards(
     cards: WorkCard[],
@@ -1370,7 +1442,18 @@ export class ChatStore {
     if (!link || link.synthesisDelivered) return;
 
     const content = await this.resolveWorkerSynthesisContent(link, detail);
-    if (!content) return;
+    const isTerminal =
+      detail?.card?.column === "done" ||
+      (detail?.card?.column === "blocked" && detail.terminal === true);
+    if (!content) {
+      if (isTerminal) {
+        this.noteWorkerSynthesisFailure(
+          workId,
+          "Worker finished, but the result didn't load.",
+        );
+      }
+      return;
+    }
 
     if (this.hasFollowUpSynthesis(link.messageId, content)) {
       this.finalizeWorkerHandoffBubble(link.messageId);
@@ -1393,6 +1476,9 @@ export class ChatStore {
             ...this.messages[idx],
             content,
             streaming: false,
+            failed: false,
+            errorLine: null,
+            answerState: null,
             phase: null,
             statusLine: null,
             lane: "worker",

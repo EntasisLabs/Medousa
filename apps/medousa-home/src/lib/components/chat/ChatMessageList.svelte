@@ -5,6 +5,7 @@
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
   import ChatMediaParts from "$lib/components/chat/ChatMediaParts.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import type { ChatMessage } from "$lib/types/chat";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import { formatToolName } from "$lib/utils/formatTurn";
@@ -23,6 +24,12 @@
 
   function displayStatusLine(message: ChatMessage): string | null {
     return visibleChatStatusLine(message.statusLine, settings.showEngineDetailsInChat);
+  }
+
+  function retryWorkerSynthesis(workId: string | null | undefined) {
+    const trimmed = workId?.trim();
+    if (!trimmed) return;
+    void chat.retryWorkerSynthesis(trimmed);
   }
 </script>
 
@@ -96,6 +103,15 @@
 
       {#if message.failed && message.errorLine}
         <p class="chat-turn-error" role="alert">{message.errorLine}</p>
+        {#if message.workId}
+          <button
+            type="button"
+            class="chat-turn-retry"
+            onclick={() => retryWorkerSynthesis(message.workId)}
+          >
+            Retry
+          </button>
+        {/if}
       {/if}
       {#if message.content?.trim()}
         <div class="chat-voice">
@@ -158,5 +174,21 @@
     background: color-mix(in srgb, var(--color-error-500) 10%, transparent);
     font-size: 0.75rem;
     color: rgb(var(--color-error-300));
+  }
+
+  .chat-turn-retry {
+    margin: 0 0 0.75rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 0.375rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary-400) 35%, transparent);
+    background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: rgb(var(--color-primary-200));
+    cursor: pointer;
+  }
+
+  .chat-turn-retry:hover {
+    background: color-mix(in srgb, var(--color-primary-500) 20%, transparent);
   }
 </style>

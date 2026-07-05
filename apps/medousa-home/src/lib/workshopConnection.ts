@@ -123,6 +123,7 @@ async function recoverWorkspaceStream(): Promise<void> {
     await stopWorkspaceStream();
     await startWorkspaceStream(workspace.revision || undefined);
     workspaceReconnect.noteSuccess();
+    await workspace.recoverPendingWorkerResults();
     void chat.tryReattachActiveTurn(workspace.cards);
   } catch {
     scheduleWorkspaceStreamReconnect();
@@ -299,7 +300,6 @@ export async function resumeWorkshop(
 
   // Cards first so handoff synthesis recovery has an authoritative board.
   await workspace.reconcileCardsFromSnapshot();
-  await workspace.refreshTerminalWorkerDetails();
 
   await Promise.all([
     chat.reconcileOnResume({ notice: false }, workspace.cards),
@@ -312,8 +312,8 @@ export async function resumeWorkshop(
       : Promise.resolve(),
   ]);
 
-  // Deliver workshop/worker syntheses that finished while SSE was detached.
-  await workspace.syncTurnWorkerCardsToChat();
+  // History merge may link workers missed while SSE was detached.
+  await workspace.recoverPendingWorkerResults();
 
   try {
     await restartWorkshopStreamsLite();
