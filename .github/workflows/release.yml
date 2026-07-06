@@ -111,7 +111,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x64
-            native_build: false
+            native_build: true
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: linux-x64
@@ -241,6 +241,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Resolve Windows bundle dir
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
+        working-directory: .
+        run: |
+          BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-home/src-tauri)"
+          echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
+
       - name: Sign Windows desktop bundles
         if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/artifact-signing-action@v2
@@ -248,7 +255,7 @@ jobs:
           endpoint: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_CODESIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_CODESIGNING_PROFILE }}
-          files-folder: ${{ github.workspace }}\apps\medousa-home\src-tauri\target\${{ matrix.target }}\release\bundle
+          files-folder: ${{ env.BUNDLE_DIR }}
           files-folder-filter: exe,msi,dll
           files-folder-recurse: true
           file-digest: SHA256
@@ -292,7 +299,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x64
-            native_build: false
+            native_build: true
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: linux-x64
@@ -419,6 +426,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Resolve Windows bundle dir
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
+        working-directory: .
+        run: |
+          BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-installer/src-tauri)"
+          echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
+
       - name: Sign Windows installer bundles
         if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/artifact-signing-action@v2
@@ -426,7 +440,7 @@ jobs:
           endpoint: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_CODESIGNING_ACCOUNT }}
           certificate-profile-name: ${{ vars.AZURE_CODESIGNING_PROFILE }}
-          files-folder: ${{ github.workspace }}\apps\medousa-installer\src-tauri\target\${{ matrix.target }}\release\bundle
+          files-folder: ${{ env.BUNDLE_DIR }}
           files-folder-filter: exe,msi,dll
           files-folder-recurse: true
           file-digest: SHA256
