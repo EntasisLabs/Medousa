@@ -5,12 +5,33 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v (default — Cargo.toml)"
+        required: false
+        type: string
+      upload_r2:
+        description: Upload artifacts to Cloudflare R2
+        required: true
+        type: boolean
+        default: true
+      publish_github:
+        description: Create GitHub Release
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
 env:
   CARGO_TERM_COLOR: always
+  # Non-secret defaults — override in repo Variables if needed.
+  MEDOUSA_RELEASE_BASE_URL: ${{ vars.MEDOUSA_RELEASE_BASE_URL || 'https://releases.entasislabs.com/medousa' }}
+  MEDOUSA_RELEASE_CHANNEL: ${{ vars.MEDOUSA_RELEASE_CHANNEL || 'stable' }}
+  MEDOUSA_R2_BUCKET: ${{ vars.MEDOUSA_R2_BUCKET || 'medousa' }}
+  MEDOUSA_R2_ENDPOINT: ${{ vars.MEDOUSA_R2_ENDPOINT || 'https://3b2e3338687e8e0abd4c85280e87fd7a.r2.cloudflarestorage.com' }}
+  MEDOUSA_R2_PREFIX: ${{ vars.MEDOUSA_R2_PREFIX || 'medousa/stable' }}
 
 jobs:
   build-cli:
@@ -74,7 +95,10 @@ jobs:
   build-desktop:
     name: app (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    environment: MEDOUSA
+    permissions:
+      contents: read
+      id-token: write
+    environment: ${{ matrix.os == 'macos-14' && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -192,6 +216,28 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
         run: npm run tauri:build -- --target "${{ matrix.target }}"
 
+      - name: Azure login (Windows signing)
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows desktop bundles
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODESIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CODESIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\apps\medousa-home\src-tauri\target\${{ matrix.target }}\release\bundle
+          files-folder-filter: exe,msi,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Stage desktop installers
         shell: bash
         working-directory: .
@@ -217,6 +263,9 @@ jobs:
   build-installer:
     name: installer (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -267,10 +316,47 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Configure installer CDN URL
+        working-directory: .
+        env:
+          MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
+        run: |
+          if [[ -z "${MEDOUSA_RELEASE_BASE_URL}" ]]; then
+            echo "::warning::MEDOUSA_RELEASE_BASE_URL is empty — installer will fall back to GitHub Releases"
+          else
+            echo "Installer will fetch releases from ${MEDOUSA_RELEASE_BASE_URL}/${MEDOUSA_RELEASE_CHANNEL}"
+          fi
+          ./scripts/release/set-installer-config.sh
+
       - name: Build installer
         env:
           CI: true
+          MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
         run: npm run tauri build -- --target ${{ matrix.target }}
+
+      - name: Azure login (Windows signing)
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows installer bundles
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODESIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CODESIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\apps\medousa-installer\src-tauri\target\${{ matrix.target }}\release\bundle
+          files-folder-filter: exe,msi,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
 
       - name: Stage installer bundles
         shell: bash
@@ -295,12 +381,32 @@ jobs:
           if-no-files-found: warn
 
   release:
-    name: publish GitHub Release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: publish (GitHub + R2)
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      github.event_name == 'workflow_dispatch'
     needs: [build-cli, build-desktop, build-installer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            v="${{ github.event.inputs.version }}"
+            v="${v#v}"
+            echo "version=${v}" >> "$GITHUB_OUTPUT"
+            echo "tag=v${v}" >> "$GITHUB_OUTPUT"
+          else
+            v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+            echo "version=${v}" >> "$GITHUB_OUTPUT"
+            echo "tag=v${v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
@@ -317,6 +423,7 @@ jobs:
           find dist/artifacts -name 'adapter-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'mcp-gateway-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'medousa_local-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -type f \( \
             -name 'MedousaInstaller*' -o \
             -name 'Medousa_*' -o \
@@ -337,13 +444,38 @@ jobs:
       - name: Generate release manifests
         shell: bash
         env:
-          MEDOUSA_RELEASE_BASE_URL: ${{ vars.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
         run: |
-          ./scripts/release/publish-self-hosted.sh --staging dist/final --base-url "${MEDOUSA_RELEASE_BASE_URL:-https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}}"
+          ./scripts/release/publish-self-hosted.sh \
+            --staging dist/final \
+            --version "${{ steps.version.outputs.version }}" \
+            --channel "${MEDOUSA_RELEASE_CHANNEL}" \
+            --base-url "${MEDOUSA_RELEASE_BASE_URL}"
+
+      - name: Upload to Cloudflare R2
+        if: github.event_name == 'push' || github.event.inputs.upload_r2 != 'false'
+        env:
+          MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
+          MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
+          MEDOUSA_R2_BUCKET: ${{ env.MEDOUSA_R2_BUCKET }}
+          MEDOUSA_R2_ENDPOINT: ${{ env.MEDOUSA_R2_ENDPOINT }}
+          MEDOUSA_R2_PREFIX: ${{ env.MEDOUSA_R2_PREFIX }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "::error::R2 secrets missing — add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY in repo Secrets"
+            exit 1
+          fi
+          ./scripts/release/upload-r2.sh dist/final
 
       - name: Create GitHub Release
+        if: github.event_name == 'push' || github.event.inputs.publish_github != 'false'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Medousa ${{ steps.version.outputs.tag }}
           files: |
             dist/final/engine-*.tar.gz
             dist/final/cli-*.tar.gz
