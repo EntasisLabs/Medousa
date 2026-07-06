@@ -26,13 +26,15 @@ Or manual export at **1440×900** @2x PNG, Obsidian dark theme (`data-theme="med
 
 | File | Surface | In README |
 |------|---------|-----------|
-| `chat.png` | Chat | Thinking trace + memory |
+| `chat-thinking.png` | Chat | Thinking trace expanded |
+| `chat-identity.png` | Chat | Identity recall — builder table |
+| `chat-memory.png` | Chat | Deep memory across projects |
 | `vault.png` | Vault | Split editor / bonsai note |
 | `presentation.png` | Library → Presentations | Voidsurge sandbox artifact |
 | `canvas.png` | Canvas | Vibe Studio widgets |
 | `automations.png` | Automations | Flows + Plan steps |
-| `peers.png` | Peers | Inbox + workshop chat |
-| `pairing.png` | Peers → Add peer | QR LAN invite |
+| `pairing.png` | Peers → Add peer | Workshop LAN QR invite |
+| `phone-pairing.png` | Settings → Phone | iOS/Android companion QR |
 | `channels.png` | Messaging | Telegram + WhatsApp configured |
 | `identity.png` | Context → You | Identity canvas |
 | `themes.png` | Settings → Room | Color palettes |
@@ -41,6 +43,12 @@ Or manual export at **1440×900** @2x PNG, Obsidian dark theme (`data-theme="med
 | `settings-reach.png` | Settings → Reach | Tools, search, specialists |
 | `capabilities.png` | Capabilities | MCP gateway |
 | `tui.png` | Engine | TUI setup (developers section) |
+
+## Still to capture
+
+| File | Surface |
+|------|---------|
+| `peers.png` | Peers | Inbox + workshop chat **without** Add-peer modal open |
 
 ## Optional (builders / engine page — not README hero)
 
