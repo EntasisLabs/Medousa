@@ -56,40 +56,47 @@ ROOT="$(medousa_repo_root)"
 cd "${ROOT}"
 
 STAGING_DIR="${STAGING_DIR:-${ROOT}/dist}"
-VERSION="${VERSION:-$(medousa_version)}"
-FINAL_DIR="${ROOT}/dist/final"
+if [[ "${STAGING_DIR}" != /* ]]; then
+  STAGING_DIR="${ROOT}/${STAGING_DIR}"
+fi
+STAGING_DIR="$(cd "${STAGING_DIR}" && pwd)"
 
-mkdir -p "${FINAL_DIR}"
+VERSION="${VERSION:-$(medousa_version)}"
+FINAL_DIR="$(mkdir -p "${ROOT}/dist/final" && cd "${ROOT}/dist/final" && pwd)"
 
 medousa_log "staging release v${VERSION} channel=${CHANNEL}"
 
-# Copy all release artifacts into final/
-shopt -s nullglob
-for pattern in \
-  "*.tar.gz" \
-  "*.dmg" "*.msi" "*.exe" \
-  "*.AppImage" "*.deb" \
-  "model-*.manifest.json" \
-  "SHA256SUMS"; do
-  for file in "${STAGING_DIR}"/${pattern}; do
-    cp -a "${file}" "${FINAL_DIR}/"
+if [[ "${STAGING_DIR}" == "${FINAL_DIR}" ]]; then
+  medousa_log "staging dir is final output (${FINAL_DIR}) — skipping artifact copy"
+else
+  # Copy all release artifacts into final/
+  shopt -s nullglob
+  for pattern in \
+    "*.tar.gz" \
+    "*.dmg" "*.msi" "*.exe" \
+    "*.AppImage" "*.deb" \
+    "model-*.manifest.json" \
+    "SHA256SUMS"; do
+    for file in "${STAGING_DIR}"/${pattern}; do
+      cp -a "${file}" "${FINAL_DIR}/"
+    done
   done
-done
-shopt -u nullglob
+  shopt -u nullglob
 
-# Also pull desktop/installer bundles from subdirs
-find "${STAGING_DIR}" -maxdepth 3 -type f \( \
-  -name 'Medousa_*.dmg' -o \
-  -name 'Medousa_*.msi' -o \
-  -name 'Medousa_*.exe' -o \
-  -name 'Medousa_*.AppImage' -o \
-  -name 'Medousa_*.deb' -o \
-  -name 'MedousaInstaller*.dmg' -o \
-  -name 'MedousaInstaller*.msi' -o \
-  -name 'MedousaInstaller*.exe' -o \
-  -name 'MedousaInstaller*.AppImage' -o \
-  -name 'MedousaInstaller*.deb' \
-  \) -exec cp -a {} "${FINAL_DIR}/" \;
+  # Also pull desktop/installer bundles from subdirs
+  find "${STAGING_DIR}" -maxdepth 3 -type f \( \
+    -name 'Medousa_*.dmg' -o \
+    -name 'Medousa_*.msi' -o \
+    -name 'Medousa_*.exe' -o \
+    -name 'Medousa_*.AppImage' -o \
+    -name 'Medousa_*.deb' -o \
+    -name 'MedousaInstaller*.dmg' -o \
+    -name 'MedousaInstaller*.msi' -o \
+    -name 'MedousaInstaller*.exe' -o \
+    -name 'MedousaInstaller*.AppImage' -o \
+    -name 'MedousaInstaller*.deb' \
+    \) -exec cp -a {} "${FINAL_DIR}/" \;
+fi
 
 GEN_ARGS=(--dist "${FINAL_DIR}" --version "${VERSION}" --channel "${CHANNEL}")
 [[ -n "${BASE_URL_OVERRIDE}" ]] && GEN_ARGS+=(--base-url "${BASE_URL_OVERRIDE}")
