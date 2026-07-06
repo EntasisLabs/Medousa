@@ -2,6 +2,8 @@
 
 Self-hosted distribution: build locally → sign → publish manifests → upload to R2 → landing page + installer pull from the same CDN.
 
+**CI:** see [release-ci-setup.md](release-ci-setup.md) for GitHub Actions + R2 secrets.
+
 ## One-time setup
 
 ### 1. Cloudflare R2
@@ -14,14 +16,17 @@ Self-hosted distribution: build locally → sign → publish manifests → uploa
 Set these in your shell profile or a local `release.env` (do not commit secrets):
 
 ```bash
-export MEDOUSA_RELEASE_BASE_URL="https://releases.medousa.app/medousa"
+export MEDOUSA_RELEASE_BASE_URL="https://releases.entasislabs.com/medousa"
 export MEDOUSA_RELEASE_CHANNEL="stable"
 
-export MEDOUSA_R2_BUCKET="medousa-releases"
-export MEDOUSA_R2_ENDPOINT="https://<accountid>.r2.cloudflarestorage.com"
+export MEDOUSA_R2_BUCKET="medousa"
+export MEDOUSA_R2_ENDPOINT="https://3b2e3338687e8e0abd4c85280e87fd7a.r2.cloudflarestorage.com"
 export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 ```
+
+Public download URL: `https://releases.entasislabs.com/medousa`  
+S3 upload endpoint: `https://3b2e3338687e8e0abd4c85280e87fd7a.r2.cloudflarestorage.com` (CI/local sync only)
 
 Object layout after upload:
 
@@ -46,7 +51,7 @@ Public URLs:
 In `medousa-landing/.env.local`:
 
 ```bash
-VITE_MEDOUSA_RELEASE_BASE_URL=https://releases.medousa.app/medousa
+VITE_MEDOUSA_RELEASE_BASE_URL=https://releases.entasislabs.com/medousa
 VITE_MEDOUSA_RELEASE_CHANNEL=stable
 ```
 
@@ -54,26 +59,9 @@ Rebuild and deploy the landing site. Download buttons fetch `installer-bootstrap
 
 ### 3. Windows signing (Azure Artifact Signing)
 
-On a Windows machine:
+Full guide: **[azure-windows-signing.md](azure-windows-signing.md)** — Azure app registration, GitHub secrets/variables, CI (automatic), and local `sign-windows.ps1`.
 
-```powershell
-winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
-az login
-```
-
-Copy and fill in:
-
-```powershell
-copy scripts\release\azure-signing-metadata.example.json scripts\release\azure-signing-metadata.json
-# Edit Endpoint, CodeSigningAccountName, CertificateProfileName
-```
-
-Sign after each build, **before** publishing (so SHA256s match):
-
-```powershell
-.\scripts\release\sign-windows.ps1 -Verify dist\final\MedousaInstaller_*.exe
-.\scripts\release\sign-windows.ps1 -Verify dist\final\Medousa_*.exe
-```
+Sign **before** publishing so manifest SHA256s match signed files.
 
 ### 4. macOS (optional)
 
