@@ -45,8 +45,6 @@ Talk from the app, Discord, Telegram, Slack, or WhatsApp. Send the big job to th
 | Run it fully offline | **Private brain** on your device — Gemma, local. Your hardware. Your rules. (Cloud models are optional — bring your own keys.) |
 | Start fresh on a new device | Run **Medousa Installer** or open the app, welcome flow, land in chat. About ninety seconds. No terminal. |
 
-Screenshots in [`assets/screenshots/`](assets/screenshots/). Recapture with `npm run assets:capture` in **medousa-landing** when UI changes.
-
 ### Chat — thinking trace, memory, identity
 <img width="1440" height="900" alt="Chat with thinking trace expanded" src="assets/screenshots/chat-thinking.png" />
 
