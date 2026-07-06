@@ -26,12 +26,18 @@ https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json
 
 Repo: **EntasisLabs/Medousa**
 
-### Secrets (Settings → Secrets and variables → Actions → Secrets)
+### Secrets (Environment: `MEDOUSA`)
+
+The **publish** job and **Windows signing** use GitHub Environment **`MEDOUSA`**. Store release secrets there (Settings → Environments → MEDOUSA → Secrets).
 
 | Secret | Required | Notes |
 |--------|----------|-------|
-| `R2_ACCESS_KEY_ID` | **Yes** | Cloudflare R2 → Manage R2 API tokens |
-| `R2_SECRET_ACCESS_KEY` | **Yes** | Same token |
+| `MEDOUSA_R2_ACCESS_KEY_ID` | **Yes** (for R2 upload) | Cloudflare R2 → Manage R2 API tokens |
+| `MEDOUSA_R2_SECRET_ACCESS_KEY` | **Yes** | Same token |
+
+Legacy names `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` also work (repo or environment secrets).
+
+Repository-level secrets work too if you remove `environment: MEDOUSA` from the publish job.
 
 ### Variables (optional — workflow has sensible defaults)
 
@@ -66,17 +72,21 @@ When your certificate profile is ready, follow **[azure-windows-signing.md](azur
 
 Quick checklist:
 
-| GitHub **Variables** | From Azure portal |
+| GitHub **Variables** (on `MEDOUSA` environment or repo) | From Azure portal |
 |---------------------|-------------------|
-| `AZURE_CODESIGNING_ENDPOINT` | e.g. `https://eus.codesigning.azure.net/` |
-| `AZURE_CODESIGNING_ACCOUNT` | Signing account name |
-| `AZURE_CODESIGNING_PROFILE` | Certificate profile name |
+| `MEDOUSA_AZURE_CODESIGNING_ENDPOINT` | e.g. `https://eus.codesigning.azure.net/` |
+| `MEDOUSA_AZURE_CODESIGNING_ACCOUNT` | Signing account name |
+| `MEDOUSA_AZURE_CODESIGNING_PROFILE` | Certificate profile name |
 
-| GitHub **Secrets** | From App Registration |
+Legacy names `AZURE_CODESIGNING_*` also work.
+
+| GitHub **Secrets** (on `MEDOUSA` environment) | From App Registration |
 |---------------------|----------------------|
-| `AZURE_CLIENT_ID` | Application ID |
-| `AZURE_TENANT_ID` | Directory ID |
-| `AZURE_SUBSCRIPTION_ID` | Subscription ID |
+| `MEDOUSA_AZURE_CLIENT_ID` | Application ID |
+| `MEDOUSA_AZURE_TENANT_ID` | Directory ID |
+| `MEDOUSA_AZURE_SUBSCRIPTION_ID` | Subscription ID |
+
+Legacy names `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` also work.
 
 Use a **federated credential** on the app registration for GitHub OIDC (recommended — no client secret). See [azure-windows-signing.md](azure-windows-signing.md).
 
