@@ -104,7 +104,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ (matrix.os == 'macos-14' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
+    environment: ${{ matrix.os == 'macos-14' && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -187,8 +187,7 @@ jobs:
           [[ -z "${APPLE_TEAM_ID:-}" ]] && missing+=(APPLE_TEAM_ID)
           if ((${#missing[@]})); then
             echo "::error::Missing Apple signing values: ${missing[*]}"
-            echo "Add them as **Environment secrets** on GitHub → Settings → Environments → Medousa"
-            echo "(Repository secrets also work if you remove the job's environment: line.)"
+            echo "Add them as Repository secrets (Settings → Secrets and variables → Actions)."
             exit 1
           fi
           echo "Apple signing secrets are present."
@@ -245,7 +244,7 @@ jobs:
           fi
 
       - name: Azure login (Windows signing)
-        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
+        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -253,14 +252,14 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Windows bundle dir
-        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
+        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-home/src-tauri)"
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows desktop bundles
-        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
+        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
         uses: azure/artifact-signing-action@v2
         with:
           endpoint: ${{ secrets.AZURE_CODESIGNING_ENDPOINT }}
@@ -298,7 +297,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ (matrix.os == 'macos-14' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
+    environment: ${{ matrix.os == 'macos-14' && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -438,7 +437,7 @@ jobs:
           fi
 
       - name: Azure login (Windows signing)
-        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
+        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -446,14 +445,14 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Windows bundle dir
-        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
+        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-installer/src-tauri)"
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows installer bundles
-        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
+        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
         uses: azure/artifact-signing-action@v2
         with:
           endpoint: ${{ secrets.AZURE_CODESIGNING_ENDPOINT }}
@@ -559,7 +558,7 @@ jobs:
             --base-url "${MEDOUSA_RELEASE_BASE_URL}"
 
       - name: Upload to Cloudflare R2
-        if: github.event_name == 'push' || github.event.inputs.upload_r2 != 'false'
+        if: github.event_name == 'push' || github.event.inputs.upload_r2 == true
         env:
           MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
           MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
@@ -576,7 +575,7 @@ jobs:
           ./scripts/release/upload-r2.sh dist/final
 
       - name: Create GitHub Release
-        if: github.event_name == 'push' || github.event.inputs.publish_github != 'false'
+        if: github.event_name == 'push' || github.event.inputs.publish_github == true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
