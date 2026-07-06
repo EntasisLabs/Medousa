@@ -107,12 +107,15 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             name: macos-aarch64
+            native_build: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x64
+            native_build: false
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: linux-x64
+            native_build: true
 
     defaults:
       run:
@@ -121,6 +124,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare CI scripts
+        working-directory: .
+        run: chmod +x scripts/ci/*.sh
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-22.04'
@@ -198,6 +205,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "KEYCHAIN_PATH=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
           if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "Developer ID Application"; then
             echo "::error::APPLE_CERTIFICATE must contain a Developer ID Application cert (for .dmg distribution)."
             echo "You imported Apple Development — that is for local/Xcode builds only."
@@ -211,14 +219,19 @@ jobs:
       - name: Build desktop app
         env:
           CI: true
-          CARGO_BUILD_TARGET: ${{ matrix.target }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY || vars.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
-        run: npm run tauri:build -- --target "${{ matrix.target }}"
+        run: |
+          if [[ "${{ matrix.native_build }}" == "true" ]]; then
+            npm run tauri:build
+          else
+            export CARGO_BUILD_TARGET="${{ matrix.target }}"
+            npm run tauri:build -- --target "${{ matrix.target }}"
+          fi
 
       - name: Azure login (Windows signing)
         if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
@@ -245,16 +258,14 @@ jobs:
       - name: Stage desktop installers
         working-directory: .
         run: |
-          BUNDLE="apps/medousa-home/src-tauri/target/${{ matrix.target }}/release/bundle"
-          mkdir -p dist/desktop/${{ matrix.name }}
-          find "$BUNDLE" -type f \( \
-            -name '*.dmg' -o \
-            -name '*.msi' -o \
-            -name '*.exe' -o \
-            -name '*.AppImage' -o \
-            -name '*.deb' \
-            \) -exec cp {} "dist/desktop/${{ matrix.name }}/" \;
-          ls -la "dist/desktop/${{ matrix.name }}/"
+          TARGET="${{ matrix.target }}"
+          if [[ "${{ matrix.native_build }}" == "true" ]]; then
+            TARGET=""
+          fi
+          ./scripts/ci/stage-tauri-bundle.sh \
+            apps/medousa-home/src-tauri \
+            "dist/desktop/${{ matrix.name }}" \
+            "${TARGET}"
 
       - name: Upload desktop artifact
         uses: actions/upload-artifact@v4
@@ -269,6 +280,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    environment: ${{ matrix.os == 'macos-14' && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -276,12 +288,15 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             name: macos-aarch64
+            native_build: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x64
+            native_build: false
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: linux-x64
+            native_build: true
 
     defaults:
       run:
@@ -290,6 +305,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare CI scripts
+        working-directory: .
+        run: chmod +x scripts/ci/*.sh
 
       - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-22.04'
@@ -313,9 +332,56 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            apps/medousa-installer/src-tauri
+          workspaces: apps/medousa-installer/src-tauri
+
+      - name: Validate Apple signing secrets
+        if: matrix.os == 'macos-14'
+        working-directory: .
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY || vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          [[ -z "${APPLE_CERTIFICATE:-}" ]] && missing+=(APPLE_CERTIFICATE)
+          [[ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]] && missing+=(APPLE_CERTIFICATE_PASSWORD)
+          [[ -z "${APPLE_SIGNING_IDENTITY:-}" ]] && missing+=(APPLE_SIGNING_IDENTITY)
+          [[ -z "${APPLE_ID:-}" ]] && missing+=(APPLE_ID)
+          [[ -z "${APPLE_PASSWORD:-}" ]] && missing+=(APPLE_PASSWORD)
+          [[ -z "${APPLE_TEAM_ID:-}" ]] && missing+=(APPLE_TEAM_ID)
+          if ((${#missing[@]})); then
+            echo "::error::Missing Apple signing values: ${missing[*]}"
+            exit 1
+          fi
+          echo "Apple signing secrets are present."
+
+      - name: Import Apple Developer certificate
+        if: matrix.os == 'macos-14'
+        working-directory: .
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KP="${KEYCHAIN_PASSWORD:-medousa-ci-keychain}"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KP" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KP" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "KEYCHAIN_PATH=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "Developer ID Application"; then
+            echo "::error::APPLE_CERTIFICATE must contain a Developer ID Application cert."
+            exit 1
+          fi
 
       - name: Install npm dependencies
         run: npm ci
@@ -332,7 +398,18 @@ jobs:
           CI: true
           MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
           MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
-        run: npm run tauri build -- --target ${{ matrix.target }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' && secrets.APPLE_SIGNING_IDENTITY || vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
+        run: |
+          if [[ "${{ matrix.native_build }}" == "true" ]]; then
+            npm run tauri build
+          else
+            npm run tauri build -- --target "${{ matrix.target }}"
+          fi
 
       - name: Azure login (Windows signing)
         if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
@@ -359,16 +436,14 @@ jobs:
       - name: Stage installer bundles
         working-directory: .
         run: |
-          BUNDLE="apps/medousa-installer/src-tauri/target/${{ matrix.target }}/release/bundle"
-          mkdir -p "dist/installer/${{ matrix.name }}"
-          find "$BUNDLE" -type f \( \
-            -name 'MedousaInstaller*.dmg' -o \
-            -name 'MedousaInstaller*.msi' -o \
-            -name 'MedousaInstaller*.exe' -o \
-            -name 'MedousaInstaller*.AppImage' -o \
-            -name 'MedousaInstaller*.deb' \
-            \) -exec cp {} "dist/installer/${{ matrix.name }}/" \;
-          ls -la "dist/installer/${{ matrix.name }}/" || true
+          TARGET="${{ matrix.target }}"
+          if [[ "${{ matrix.native_build }}" == "true" ]]; then
+            TARGET=""
+          fi
+          ./scripts/ci/stage-tauri-bundle.sh \
+            apps/medousa-installer/src-tauri \
+            "dist/installer/${{ matrix.name }}" \
+            "${TARGET}"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4

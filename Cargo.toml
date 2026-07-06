@@ -16,6 +16,7 @@ members = [
     "crates/medousa-host",
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
+    "crates/medousa-install-support",
 ]
 exclude = ["apps/medousa-home/src-tauri", "apps/medousa-installer/src-tauri"]
 
@@ -57,6 +58,7 @@ path = "src/bin/medousa_mcp_gateway.rs"
 
 [dependencies]
 medousa-types = { path = "crates/medousa-types" }
+medousa-install-support = { path = "crates/medousa-install-support" }
 medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }

@@ -3,13 +3,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use flate2::read::GzDecoder;
-use medousa::install::manifest::{
+use medousa_install_support::manifest::{
     mark_package_installed, shared_bin_dir, unmark_package_installed, ReleaseManifest,
     ReleasePackage,
 };
-use medousa::install::packages::{catalog_entry, is_desktop_package, is_model_pack, is_tarball_package};
-use medousa::install::release_config::release_manifest_url;
-use medousa::local_inference::{builtin_catalog, MODEL_STORE};
+use medousa_install_support::packages::{
+    catalog_entry, is_desktop_package, is_model_pack, is_tarball_package,
+};
+use medousa_install_support::release_config::release_manifest_url;
+use medousa_install_support::{builtin_catalog, read_install_manifest, MODEL_STORE};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tar::Archive;
@@ -40,8 +42,8 @@ pub fn resolve_release_package<'a>(
     package_id: &str,
 ) -> Result<&'a ReleasePackage, String> {
     let target = std::env::var("MEDOUSA_INSTALL_TARGET")
-        .unwrap_or_else(|_| medousa::install::release_config::host_target());
-    let platform = medousa::install::release_config::host_platform_key();
+        .unwrap_or_else(|_| medousa_install_support::host_target());
+    let platform = medousa_install_support::host_platform_key();
     let keys = [
         format!("{package_id}-{target}"),
         format!("{package_id}-{platform}"),
@@ -534,7 +536,7 @@ fn extract_tar_gz(bytes: &[u8], dest: &Path) -> Result<(), String> {
     archive.unpack(dest).map_err(|err| err.to_string())
 }
 
-pub fn read_local_install_manifest(install_root: &Path) -> Option<medousa::install::InstallManifest> {
+pub fn read_local_install_manifest(install_root: &Path) -> Option<medousa_install_support::InstallManifest> {
     let path = install_manifest_path(install_root);
-    medousa::install::read_install_manifest(&path).ok()
+    read_install_manifest(&path).ok()
 }
