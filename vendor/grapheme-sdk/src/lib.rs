@@ -269,6 +269,26 @@ impl GraphemeEngine {
         self.execute_compiled(&compiled)
     }
 
+    /// Compile and execute source, applying an optional per-call `state.current`
+    /// seed without rebuilding the engine.
+    ///
+    /// This lets callers cache a single configured `GraphemeEngine` and still
+    /// vary the initial state per execution (instead of rebuilding the whole
+    /// engine via `GraphemeEngineBuilder::with_initial_state_current`). Passing
+    /// `None` preserves whatever initial state the engine was configured with.
+    pub fn execute_source_with_initial_state(
+        &self,
+        source: &str,
+        initial_state_current: Option<JsonValue>,
+    ) -> Result<ExecuteResultPayload, GraphemeSdkError> {
+        let compiled = Compiler::compile_source(source, self.compiler_options.clone())?;
+        self.execute_artifact_with_lints_and_state(
+            &compiled.artifact,
+            compiled.compilation.lint_warnings.clone(),
+            initial_state_current,
+        )
+    }
+
     /// Compile source into a Stage A AOT envelope.
     pub fn compile_source_to_aot(&self, source: &str) -> Result<AotEnvelope, GraphemeSdkError> {
         let compiled = Compiler::compile_source_to_aot(source, self.compiler_options.clone())?;
@@ -344,11 +364,23 @@ impl GraphemeEngine {
         artifact: &ArtifactEnvelope,
         lint_warnings: Vec<LintWarning>,
     ) -> Result<ExecuteResultPayload, GraphemeSdkError> {
+        self.execute_artifact_with_lints_and_state(artifact, lint_warnings, None)
+    }
+
+    fn execute_artifact_with_lints_and_state(
+        &self,
+        artifact: &ArtifactEnvelope,
+        lint_warnings: Vec<LintWarning>,
+        initial_state_current: Option<JsonValue>,
+    ) -> Result<ExecuteResultPayload, GraphemeSdkError> {
         let mut options = self.runtime_options.clone();
         for (module, path) in &self.module_bindings {
             options
                 .module_registry
                 .set_wasm_path(module.as_str(), path.clone());
+        }
+        if let Some(state) = initial_state_current {
+            options.initial_state_current = Some(state);
         }
 
         let runtime = RuntimeEngine::new(options);

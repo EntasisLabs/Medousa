@@ -31,9 +31,25 @@ fn adapter_log_path(channel: &str) -> PathBuf {
 
 fn find_command_in_path(command: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
-    std::env::split_paths(&path_var)
-        .map(|path| path.join(command))
-        .find(|candidate| candidate.exists())
+    let names = if cfg!(windows) {
+        vec![format!("{command}.exe"), command.to_string()]
+    } else {
+        vec![command.to_string()]
+    };
+    std::env::split_paths(&path_var).find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn platform_binary_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
 }
 
 fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand, String> {
@@ -49,7 +65,7 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand, Stri
     }
 
     if let Ok(current_exe) = std::env::current_exe() {
-        let sibling = current_exe.with_file_name(binary_name);
+        let sibling = current_exe.with_file_name(platform_binary_name(binary_name));
         if sibling.exists() {
             return Ok(ComponentCommand {
                 program: sibling.to_string_lossy().to_string(),
@@ -60,7 +76,7 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand, Stri
 
     if find_command_in_path(binary_name).is_some() {
         return Ok(ComponentCommand {
-            program: binary_name.to_string(),
+            program: platform_binary_name(binary_name),
             pre_args: Vec::new(),
         });
     }

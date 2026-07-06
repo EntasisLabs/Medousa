@@ -278,6 +278,15 @@ pub async fn emit_orchestration_summary(
     sink: &SharedAgentStreamSink,
     state: &TurnOrchestrationState,
 ) {
+    tracing::info!(
+        target: "medousa::turn",
+        final_mode = %state.final_mode,
+        calls_total = state.calls_total,
+        tool_loop_calls = state.tool_loop_calls,
+        retries = state.retries,
+        loop_guard_tripped = state.loop_guard_tripped,
+        "turn_orchestration_summary"
+    );
     sink.notice(format!(
         "◈ orchestration_summary calls_total={} classifier_calls={} tool_loop_calls={} prompt_only_calls={} continuations={} retries={} loop_guard_tripped={} final_mode={}",
         state.calls_total,

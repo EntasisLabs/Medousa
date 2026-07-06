@@ -82,6 +82,7 @@
             heightPx={artifact.heightPx ?? 720}
             bare={true}
             mode="panel"
+            manageable={true}
           />
         </ArtifactPresentationChrome>
       </aside>

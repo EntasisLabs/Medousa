@@ -1,7 +1,9 @@
-//! Daemon JSON API traffic routes through [`medousa-sdk`] (LAN / Iroh via Tauri transport).
+//! Daemon JSON API traffic routes through [`medousa-sdk`] typed accessors where available.
 //!
-//! Streaming (`get_bytes_stream`) and multipart uploads still use [`crate::workshop_transport`]
-//! directly because the SDK transport surface is JSON-only today.
+//! `workshop_http` remains a thin wrapper over `client().http()` for routes without SDK
+//! accessors (workflows, identity, grapheme, manuscripts, etc.) and for non-JSON I/O:
+//! streaming (`get_bytes_stream`), multipart uploads (`post_multipart`), and raw PUT
+//! (`put_raw`) when not covered by an accessor.
 
 use serde::de::DeserializeOwned;
 use tauri::State;

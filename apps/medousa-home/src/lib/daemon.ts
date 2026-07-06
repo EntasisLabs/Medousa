@@ -193,6 +193,19 @@ export async function cancelActiveSessionTurn(
   });
 }
 
+export async function steerBoundWorkshop(
+  sessionId: string,
+  message: string,
+): Promise<{ ok: boolean; work_id?: string; error?: string }> {
+  return invoke("session_steer_bound_workshop", { sessionId, message });
+}
+
+/** Plain JSON clone — strips Svelte proxies before Tauri IPC serialization. */
+function invokePlain<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export async function createTurnTicket(
   request: import("$lib/types/session").CreateTurnTicketRequest,
 ): Promise<import("$lib/types/session").TurnTicketResponse> {
@@ -204,9 +217,9 @@ export async function createTurnTicket(
     model: request.model ?? null,
     responseDepthMode: request.responseDepthMode ?? null,
     reasoningEffort: request.reasoningEffort ?? null,
-    stageRouting: request.stageRouting ?? null,
+    stageRouting: invokePlain(request.stageRouting ?? null),
     channelSurface: request.channelSurface ?? null,
-    mediaRefs: request.mediaRefs ?? null,
+    mediaRefs: invokePlain(request.mediaRefs ?? null),
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
     identityUserId: request.identityUserId ?? null,
@@ -288,6 +301,183 @@ export async function stopWorkspaceStream(): Promise<void> {
   return invoke("workspace_stream_stop");
 }
 
+export async function getEnvironmentStatus(
+  profileId?: string,
+  surfaceId?: string,
+  options?: { includeRuntime?: boolean },
+): Promise<import("$lib/types/environment").EnvironmentStatusResponse> {
+  return invoke("environment_get_status", {
+    profileId,
+    surfaceId,
+    includeRuntime: options?.includeRuntime ?? null,
+  });
+}
+
+export async function getEnvironmentSpec(
+  profileId?: string,
+): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {
+  return invoke("environment_get_spec", { profileId });
+}
+
+export async function putEnvironmentSpec(
+  request: import("$lib/types/environment").EnvironmentSpecPutRequest,
+): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {
+  return invoke("environment_put_spec", { request });
+}
+
+export async function getEnvironmentPending(
+  profileId?: string,
+): Promise<import("$lib/types/environment").EnvironmentPendingResponse> {
+  return invoke("environment_get_pending", { profileId });
+}
+
+export async function applyEnvironmentPending(
+  profileId?: string,
+): Promise<import("$lib/types/environment").EnvironmentSpecResponse> {
+  return invoke("environment_apply_pending", { profileId });
+}
+
+export async function dismissEnvironmentPending(
+  profileId?: string,
+): Promise<void> {
+  return invoke("environment_dismiss_pending", { profileId });
+}
+
+export async function startEnvironmentStream(
+  sinceRevision?: number,
+  profileId?: string,
+): Promise<void> {
+  return invoke("environment_stream_start", { sinceRevision, profileId });
+}
+
+export async function stopEnvironmentStream(): Promise<void> {
+  return invoke("environment_stream_stop");
+}
+
+export async function fetchFeedTail(
+  feedId: string,
+  limit?: number,
+  profileId?: string,
+): Promise<import("$lib/types/environment").FeedTailResponse> {
+  return invoke("feed_tail", {
+    feedId,
+    limit: limit ?? null,
+    profileId: profileId ?? null,
+  });
+}
+
+export async function componentStoreGet(
+  componentId: string,
+  options?: { key?: string; profileId?: string },
+): Promise<import("$lib/types/environment").ComponentStoreGetResponse> {
+  return invoke("component_store_get", {
+    componentId,
+    key: options?.key ?? null,
+    profileId: options?.profileId ?? null,
+  });
+}
+
+export async function componentStoreSet(
+  componentId: string,
+  key: string,
+  value: unknown,
+  profileId?: string,
+): Promise<import("$lib/types/environment").ComponentStoreSetResponse> {
+  return invoke("component_store_set", {
+    componentId,
+    key,
+    value,
+    profileId: profileId ?? null,
+  });
+}
+
+export async function componentStoreDelete(
+  componentId: string,
+  key: string,
+  profileId?: string,
+): Promise<import("$lib/types/environment").ComponentStoreDeleteResponse> {
+  return invoke("component_store_delete", {
+    componentId,
+    key,
+    profileId: profileId ?? null,
+  });
+}
+
+export async function componentStoreListKeys(
+  componentId: string,
+  profileId?: string,
+): Promise<import("$lib/types/environment").ComponentStoreListResponse> {
+  return invoke("component_store_list_keys", {
+    componentId,
+    profileId: profileId ?? null,
+  });
+}
+
+export type ComponentRuntimeEventInput = {
+  level: string;
+  message: string;
+  stack?: string;
+  source?: string;
+  sessionId?: string;
+};
+
+export async function componentRuntimeAppendEvents(
+  componentId: string,
+  events: ComponentRuntimeEventInput[],
+  options?: { profileId?: string; sessionId?: string },
+): Promise<{ ok: boolean; accepted: number }> {
+  return invoke("component_runtime_append_events", {
+    componentId,
+    request: {
+      events,
+      profileId: options?.profileId ?? null,
+      sessionId: options?.sessionId ?? null,
+    },
+  });
+}
+
+export async function componentRuntimeCompleteProbe(
+  componentId: string,
+  probeId: string,
+  result: {
+    probeId: string;
+    componentId: string;
+    storeReady: boolean;
+    storeRoundTripOk: boolean;
+    errors: string[];
+    profileId?: string;
+  },
+): Promise<{ ok: boolean }> {
+  return invoke("component_runtime_complete_probe", {
+    componentId,
+    probeId,
+    result: {
+      ...result,
+      profileId: result.profileId ?? null,
+    },
+  });
+}
+
+export function onEnvironmentEvent<T>(
+  handler: (payload: T) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("environment://event", (event) => {
+    try {
+      handler(JSON.parse(event.payload) as T);
+    } catch {
+      // Ignore malformed SSE payloads.
+    }
+  });
+}
+
+export function onEnvironmentError(
+  handler: (message: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ message: string }>("environment://error", (event) => {
+    handler(event.payload.message);
+  });
+}
+
 export interface InteractiveTurnOptions {
   provider?: string;
   model?: string;
@@ -361,7 +551,23 @@ export async function getEngineTuiDefaults(): Promise<TuiDefaults> {
   return invoke<TuiDefaults>("runtime_get_tui_defaults");
 }
 
+let hostCharterInflight: Promise<TuiDefaults> | null = null;
+
+/** One in-flight host charter fetch — companion shells copy locally and reuse. */
+export async function fetchHostCharter(): Promise<TuiDefaults> {
+  hostCharterInflight ??= getEngineTuiDefaults().finally(() => {
+    hostCharterInflight = null;
+  });
+  return hostCharterInflight;
+}
+
 export async function putEngineTuiDefaults(dto: TuiDefaults): Promise<void> {
+  const { isTauriMobilePlatform } = await import("$lib/platform");
+  if (isTauriMobilePlatform()) {
+    throw new Error(
+      "Workshop charter is read-only on mobile — change Memory, Reach, and Voice on the host.",
+    );
+  }
   await invoke("runtime_put_tui_defaults", { dto });
 }
 
@@ -832,10 +1038,10 @@ export async function enqueueDaemonAsk(
 
   return invoke<EnqueueResponse>("job_enqueue_ask", {
     prompt: request.prompt,
-    modelHint: request.modelHint,
+    modelHint: request.modelHint ?? null,
     manuscriptId: request.manuscriptId ?? null,
-    additionalManuscriptIds: request.additionalManuscriptIds ?? null,
-    suggestedCapabilityIds: request.suggestedCapabilityIds ?? null,
+    additionalManuscriptIds: invokePlain(request.additionalManuscriptIds ?? null),
+    suggestedCapabilityIds: invokePlain(request.suggestedCapabilityIds ?? null),
   });
 }
 
@@ -1003,6 +1209,22 @@ export async function listUiArtifacts(options?: {
   });
 }
 
+export async function writeArtifact(
+  request: import("$lib/types/artifact").ArtifactWriteRequest,
+): Promise<import("$lib/types/artifact").ArtifactWriteResponse> {
+  return invoke<import("$lib/types/artifact").ArtifactWriteResponse>("artifact_write", {
+    request,
+  });
+}
+
+export async function deleteArtifact(
+  request: import("$lib/types/artifact").ArtifactDeleteRequest,
+): Promise<import("$lib/types/artifact").ArtifactDeleteResponse> {
+  return invoke<import("$lib/types/artifact").ArtifactDeleteResponse>("artifact_delete", {
+    request,
+  });
+}
+
 export async function updateRecurring(
   recurringId: string,
   request: UpdateRecurringRequest,
@@ -1017,6 +1239,36 @@ export async function deleteRecurring(
   recurringId: string,
 ): Promise<DeleteRecurringResponse> {
   return invoke<DeleteRecurringResponse>("recurring_delete", { recurringId });
+}
+
+export interface ArtifactRetentionStatus {
+  settings: {
+    enabled: boolean;
+    max_age_days: number;
+    max_per_session: number;
+    recurring_id: string;
+    cron_expr: string;
+  };
+  scheduled: boolean;
+  enabled: boolean;
+  next_run_at_utc: string | null;
+  last_run_at_utc: string | null;
+  last_run_summary: string | null;
+}
+
+export async function getArtifactRetentionStatus(): Promise<ArtifactRetentionStatus> {
+  return invoke<ArtifactRetentionStatus>("artifact_retention_status");
+}
+
+export async function updateArtifactRetention(request: {
+  enabled?: boolean;
+  max_age_days?: number;
+  max_per_session?: number;
+}): Promise<{
+  settings: ArtifactRetentionStatus["settings"];
+  next_run_at_utc: string;
+}> {
+  return invoke("artifact_retention_update", { request });
 }
 
 export async function registerRecurringPrompt(request: {

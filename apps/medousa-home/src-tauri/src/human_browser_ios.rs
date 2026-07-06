@@ -4,7 +4,7 @@
 
 use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -12,11 +12,9 @@ use block2::{ManualBlockEncoding, RcBlock};
 use medousa_browser_lite::{markdown_from_html, search_response_from_ddg_html, SearchResponse};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
-use objc2::{msg_send, MainThreadMarker};
+use objc2::{class, msg_send, MainThreadMarker};
 use objc2_core_foundation::{CGFloat, CGRect, CGPoint, CGSize};
-use objc2_foundation::{
-    NSDate, NSDefaultRunLoopMode, NSRunLoop, NSString, NSURL, NSURLRequest,
-};
+use objc2_foundation::{NSString, NSURL, NSURLRequest};
 use objc2_ui_kit::{UIApplication, UIView, UIViewController, UIWindow};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -26,7 +24,47 @@ const MOBILE_BROWSER_CHROME_FALLBACK: f64 = 52.0;
 const MOBILE_SAFARI_UA: &str =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
-const SNAPSHOT_JS: &str = r#"(function(){try{var html=document.documentElement?document.documentElement.outerHTML:"";return JSON.stringify({url:window.location.href||"",html:html});}catch(e){return null;}})();"#;
+const NEW_WINDOW_INSTALL_JS: &str = r#"(function(){if(window.__medousaNewWindowInstalled)return;window.__medousaNewWindowInstalled=true;function q(u){if(!u||u==='about:blank')return;document.documentElement.setAttribute('data-medousa-new-window',u)}var o=window.open;window.open=function(u){q(u);return null};document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[target="_blank"]');if(a&&a.href){e.preventDefault();q(a.href)}},true)})();"#;
+
+const NEW_WINDOW_POLL_JS: &str = r#"(function(){var u=document.documentElement.getAttribute('data-medousa-new-window');if(!u)return null;document.documentElement.removeAttribute('data-medousa-new-window');return u})();"#;
+
+const SNAPSHOT_JS: &str = r#"(function(){try{var html=document.documentElement?document.documentElement.outerHTML:"";var url=window.location.href||"";return JSON.stringify({url:url,html:html});}catch(e){return JSON.stringify({url:"",html:""});}})();"#;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HumanBrowserNewWindowPayload {
+    url: String,
+}
+
+fn emit_new_window(app: &AppHandle, url: &str) {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed == "about:blank" {
+        return;
+    }
+    let _ = app.emit(
+        "human-browser-new-window",
+        HumanBrowserNewWindowPayload {
+            url: trimmed.to_string(),
+        },
+    );
+}
+
+fn poll_pending_new_window() -> Result<Option<String>, String> {
+    let raw = eval_js_blocking(NEW_WINDOW_POLL_JS)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "null" {
+        return Ok(None);
+    }
+    if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        return Ok(serde_json::from_str(&trimmed).ok());
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+fn install_new_window_hooks() -> Result<(), String> {
+    let _ = eval_js_blocking(NEW_WINDOW_INSTALL_JS)?;
+    Ok(())
+}
 
 static MOBILE_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 static EMBED_VISIBLE: AtomicBool = AtomicBool::new(false);
@@ -116,6 +154,27 @@ struct HumanBrowserNavigatedPayload {
     url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    favicon: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanBrowserNavStatePayload {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HumanBrowserLoadingPayload {
+    loading: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindInPageResult {
+    pub found: bool,
 }
 
 pub fn init_app_handle(app: AppHandle) {
@@ -191,11 +250,92 @@ unsafe impl ManualBlockEncoding for JsEvalCompletionEncoding {
     };
 }
 
-fn pump_main_runloop(seconds: f64) {
-    let run_loop = NSRunLoop::currentRunLoop();
-    let limit = NSDate::dateWithTimeIntervalSinceNow(seconds);
+/// WKWebView passes JavaScript `null` as `NSNull`, not a NULL pointer — never cast blindly to `NSString`.
+fn js_eval_result_string(value: *mut AnyObject) -> String {
+    if value.is_null() {
+        return String::new();
+    }
     unsafe {
-        let _ = run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &limit);
+        let null_class = class!(NSNull);
+        let is_null: Bool = msg_send![value, isKindOfClass: null_class];
+        if is_null.as_bool() {
+            return String::new();
+        }
+        let Some(obj) = Retained::retain(value) else {
+            return String::new();
+        };
+        let string_class = class!(NSString);
+        let is_string: Bool = msg_send![&*obj, isKindOfClass: string_class];
+        if is_string.as_bool() {
+            let string = unsafe { Retained::cast_unchecked::<NSString>(obj) };
+            return string.to_string();
+        }
+    }
+    String::new()
+}
+
+fn eval_js_blocking(js: &str) -> Result<String, String> {
+    if MainThreadMarker::new().is_some() {
+        return Err(
+            "javascript evaluation must not run on the main thread (re-enters Tauri event loop)"
+                .to_string(),
+        );
+    }
+
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+    let js_owned = js.to_string();
+
+    APP_HANDLE
+        .get()
+        .ok_or_else(|| "app handle not initialized".to_string())?
+        .run_on_main_thread(move || {
+            let Some(mtm) = MainThreadMarker::new() else {
+                let _ = result_tx.send(Err("human browser requires main thread".to_string()));
+                return;
+            };
+
+            let webview = match ensure_overlay_webview(mtm) {
+                Ok(webview) => webview,
+                Err(err) => {
+                    let _ = result_tx.send(Err(err));
+                    return;
+                }
+            };
+
+            let js_string = NSString::from_str(&js_owned);
+            let block = RcBlock::with_encoding::<_, _, _, JsEvalCompletionEncoding>(
+                move |value: *mut AnyObject, error: *mut AnyObject| {
+                    if !error.is_null() {
+                        let _ = result_tx.send(Err("javascript evaluation failed".to_string()));
+                        return;
+                    }
+                    let _ = result_tx.send(Ok(js_eval_result_string(value)));
+                },
+            );
+
+            unsafe {
+                let _: () = msg_send![
+                    &*webview,
+                    evaluateJavaScript: &*js_string,
+                    completionHandler: &*block
+                ];
+            }
+        })
+        .map_err(|err| err.to_string())?;
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match result_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err("javascript completion channel closed".to_string());
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                if Instant::now() >= deadline {
+                    return Err("javascript evaluation timed out".to_string());
+                }
+            }
+        }
     }
 }
 
@@ -210,9 +350,9 @@ fn wk_config_class() -> Result<&'static AnyClass, String> {
 }
 
 fn overlay_webview(parent: &UIView) -> Option<Retained<AnyObject>> {
-    parent.viewWithTag(OVERLAY_TAG).map(|view| {
+    parent.viewWithTag(OVERLAY_TAG).and_then(|view| {
         let ptr: *mut AnyObject = view.as_ref() as *const UIView as *mut AnyObject;
-        unsafe { Retained::retain(ptr).expect("overlay webview retain") }
+        unsafe { Retained::retain(ptr) }
     })
 }
 
@@ -276,6 +416,9 @@ fn ensure_overlay_webview(mtm: MainThreadMarker) -> Result<Retained<AnyObject>, 
         let parent_view: &UIView = &parent;
         let _: () = msg_send![parent_view, addSubview: Retained::as_ptr(&webview)];
     }
+    // New-window hooks are installed after the first navigation completes — calling
+    // evaluateJavaScript here would pump NSRunLoop on the main thread and re-enter
+    // Tauri's event loop (panic_cannot_unwind).
     Ok(webview)
 }
 
@@ -291,15 +434,46 @@ fn apply_bounds(mtm: MainThreadMarker, bounds: EmbedBounds) -> Result<(), String
     Ok(())
 }
 
-fn emit_navigated(app: &AppHandle, url: &str, title: Option<String>) {
+fn emit_loading(app: &AppHandle, loading: bool) {
+    let _ = app.emit(
+        "human-browser-loading",
+        HumanBrowserLoadingPayload { loading },
+    );
+}
+
+fn emit_nav_state(app: &AppHandle, can_go_back: bool, can_go_forward: bool) {
+    let _ = app.emit(
+        "human-browser-nav-state",
+        HumanBrowserNavStatePayload {
+            can_go_back,
+            can_go_forward,
+        },
+    );
+}
+
+fn emit_navigated(
+    app: &AppHandle,
+    url: &str,
+    title: Option<String>,
+    favicon: Option<String>,
+) {
     if let Ok(mut guard) = active_url_lock().lock() {
         *guard = url.to_string();
     }
     let payload = HumanBrowserNavigatedPayload {
         url: url.to_string(),
         title,
+        favicon,
     };
     let _ = app.emit("human-browser-navigated", payload);
+}
+
+fn read_nav_state(webview: &AnyObject) -> (bool, bool) {
+    unsafe {
+        let can_back: Bool = msg_send![webview, canGoBack];
+        let can_forward: Bool = msg_send![webview, canGoForward];
+        (can_back.as_bool(), can_forward.as_bool())
+    }
 }
 
 fn read_page_title(webview: &AnyObject) -> Option<String> {
@@ -319,6 +493,7 @@ fn read_page_url(webview: &AnyObject) -> String {
 }
 
 fn schedule_navigated_poll(app: AppHandle) {
+    emit_loading(&app, true);
     tauri::async_runtime::spawn(async move {
         for _ in 0..40 {
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -334,15 +509,26 @@ fn schedule_navigated_poll(app: AppHandle) {
                 }
                 let url = read_page_url(&webview);
                 let title = read_page_title(&webview);
-                Ok(Some((url, title)))
+                let nav = read_nav_state(&webview);
+                Ok(Some((url, title, nav)))
             });
-            if let Ok(Some((url, title))) = result {
+            if let Ok(Some((url, title, nav))) = result {
+                emit_loading(&app_clone, false);
+                emit_nav_state(&app_clone, nav.0, nav.1);
                 if !url.is_empty() && url != "about:blank" {
-                    emit_navigated(&app_clone, &url, title);
+                    emit_navigated(&app_clone, &url, title, None);
+                }
+                let _ = install_new_window_hooks();
+                if let Ok(Some(pending)) = poll_pending_new_window() {
+                    emit_new_window(&app_clone, &pending);
                 }
                 break;
             }
+            if let Ok(Some(pending)) = poll_pending_new_window() {
+                emit_new_window(&app_clone, &pending);
+            }
         }
+        emit_loading(&app, false);
     });
 }
 
@@ -364,60 +550,10 @@ fn load_url(mtm: MainThreadMarker, url: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn eval_js_sync(_mtm: MainThreadMarker, js: &str) -> Result<String, String> {
-    let webview = ensure_overlay_webview(_mtm)?;
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    let js_string = NSString::from_str(js);
-
-    let block = RcBlock::with_encoding::<_, _, _, JsEvalCompletionEncoding>(
-        move |value: *mut AnyObject, error: *mut AnyObject| {
-            if !error.is_null() {
-                let _ = tx.send(Err("javascript evaluation failed".to_string()));
-                return;
-            }
-            if value.is_null() {
-                let _ = tx.send(Ok(String::new()));
-                return;
-            }
-            unsafe {
-                if let Some(obj) = Retained::retain(value) {
-                    let string = unsafe { Retained::cast_unchecked::<NSString>(obj) };
-                    let _ = tx.send(Ok(string.to_string()));
-                    return;
-                }
-            }
-            let _ = tx.send(Ok(String::new()));
-        },
-    );
-
-    unsafe {
-        let _: () = msg_send![
-            &*webview,
-            evaluateJavaScript: &*js_string,
-            completionHandler: &*block
-        ];
-    }
-
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        match rx.try_recv() {
-            Ok(result) => return result,
-            Err(TryRecvError::Disconnected) => {
-                return Err("javascript completion channel closed".to_string());
-            }
-            Err(TryRecvError::Empty) => {}
-        }
-        if Instant::now() >= deadline {
-            return Err("javascript evaluation timed out".to_string());
-        }
-        pump_main_runloop(0.05);
-    }
-}
-
 async fn capture_html_async(app: &AppHandle) -> Result<SnapshotReport, String> {
     let _ = app;
     tauri::async_runtime::spawn_blocking(move || {
-        let raw = run_on_main(|mtm| eval_js_sync(mtm, SNAPSHOT_JS))?;
+        let raw = eval_js_blocking(SNAPSHOT_JS)?;
         if raw.is_empty() {
             return Err("empty snapshot".to_string());
         }
@@ -448,7 +584,7 @@ pub async fn human_browser_navigate(app: AppHandle, url: String) -> Result<(), S
         if let Ok(mut guard) = active_url_lock().lock() {
             *guard = trimmed.clone();
         }
-        emit_navigated(&app, &trimmed, None);
+        emit_navigated(&app, &trimmed, None, None);
     }
     schedule_navigated_poll(app);
     Ok(())
@@ -596,7 +732,79 @@ pub fn human_browser_set_mobile_shell_active(active: bool) {
 
 #[tauri::command]
 pub fn human_browser_report_title(app: AppHandle, url: String, title: String) -> Result<(), String> {
-    emit_navigated(&app, url.trim(), Some(title.trim().to_string()));
+    emit_navigated(&app, url.trim(), Some(title.trim().to_string()), None);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_favicon(url: String, favicon: String) -> Result<(), String> {
+    let trimmed = favicon.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if let Some(app) = APP_HANDLE.get() {
+        emit_navigated(app, url.trim(), None, Some(trimmed.to_string()));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn human_browser_report_nav_state(payload: HumanBrowserNavStatePayload) -> Result<(), String> {
+    if let Some(app) = APP_HANDLE.get() {
+        emit_nav_state(app, payload.can_go_back, payload.can_go_forward);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_stop(app: AppHandle) -> Result<(), String> {
+    run_on_main(|mtm| {
+        let webview = ensure_overlay_webview(mtm)?;
+        unsafe {
+            let _: () = msg_send![&*webview, stopLoading];
+        }
+        Ok(())
+    })?;
+    emit_loading(&app, false);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn human_browser_query_nav_state(_app: AppHandle) -> Result<HumanBrowserNavStatePayload, String> {
+    run_on_main(|mtm| {
+        let webview = ensure_overlay_webview(mtm)?;
+        let (can_go_back, can_go_forward) = read_nav_state(&webview);
+        Ok(HumanBrowserNavStatePayload {
+            can_go_back,
+            can_go_forward,
+        })
+    })
+}
+
+#[tauri::command]
+pub async fn human_browser_find_in_page(
+    _app: AppHandle,
+    query: String,
+    forward: Option<bool>,
+) -> Result<FindInPageResult, String> {
+    let trimmed = query.trim().to_string();
+    if trimmed.is_empty() {
+        return Ok(FindInPageResult { found: false });
+    }
+    let forward = forward.unwrap_or(true);
+    let query_json = serde_json::to_string(&trimmed).map_err(|err| err.to_string())?;
+    let backwards = if forward { "false" } else { "true" };
+    let script = format!(
+        "(function(){{try{{return window.find({query_json},false,{backwards},true,false,true,false)?'true':'false';}}catch(e){{return 'false';}}}})();"
+    );
+    let raw = eval_js_blocking(&script)?;
+    Ok(FindInPageResult {
+        found: raw.trim() == "true",
+    })
+}
+
+#[tauri::command]
+pub fn human_browser_report_find_result(_found: bool) -> Result<(), String> {
     Ok(())
 }
 
@@ -641,4 +849,19 @@ pub async fn human_browser_snapshot_search(
         &query,
         max_results.unwrap_or(8),
     ))
+}
+
+/// iOS uses a single overlay WKWebView — tab ids are bookkeeping for the web UI only.
+#[tauri::command]
+pub async fn human_browser_embed_activate_tab(
+    app: AppHandle,
+    _tab_id: String,
+    url: String,
+) -> Result<(), String> {
+    human_browser_navigate(app, url).await
+}
+
+#[tauri::command]
+pub fn human_browser_embed_close_tab(_app: AppHandle, _tab_id: String) -> Result<(), String> {
+    Ok(())
 }

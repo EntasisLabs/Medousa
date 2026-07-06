@@ -84,6 +84,10 @@ pub fn build_feature_routers(
             axum::routing::get(crate::mcp_daemon_handlers::get_capability),
         )
         .route(
+            "/v1/capabilities/intents",
+            axum::routing::get(crate::mcp_daemon_handlers::list_capability_intents),
+        )
+        .route(
             "/v1/capabilities/reindex",
             axum::routing::post(crate::mcp_daemon_handlers::reindex_capabilities),
         )
@@ -218,6 +222,13 @@ pub fn build_feature_routers(
         apply_dashboard_action_auth(DashboardState::new(dashboard_service), dashboard_action_auth);
     let dashboard = dashboard_router(dashboard_state);
 
+    let environment_router = crate::environment_handlers::environment_router(
+        crate::environment_handlers::EnvironmentApiState {
+            hub: crate::environment_store::environment_hub(),
+            runtime: Some(Arc::new(state.composition().clone())),
+        },
+    );
+
     catalog_router
         .merge(capability_router)
         .merge(grapheme_router)
@@ -231,12 +242,17 @@ pub fn build_feature_routers(
             state.platform.agent_handle().memory_reader.clone(),
         ))
         .merge(workspace_router)
+        .merge(environment_router)
+        .merge(crate::feed_handlers::feed_router())
+        .merge(crate::component_store_handlers::component_store_router())
+        .merge(crate::component_runtime_handlers::component_runtime_router())
         .merge(budget_router)
         .merge(crate::local_inference_handlers::routes())
         .merge(crate::model_capability_registry::handlers::routes())
         .merge(crate::inference_profiles_handlers::routes())
         .merge(crate::daemon::runtime_tui_defaults::routes())
         .merge(crate::stt_handlers::routes())
+        .merge(crate::lan_handlers::lan_router())
         .merge(dashboard)
 }
 
@@ -264,12 +280,15 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 pub fn build_core_router(state: AppState) -> Router {
     use axum::routing::{delete, get, patch, post, put};
 
+    use crate::maintenance_handlers::{
+        get_artifact_retention_status, update_artifact_retention,
+    };
     use crate::daemon::continuations::{
         continuation_lineage, continuation_status, replay_and_resume_job,
     };
     use crate::daemon::core::{
-        artifact_command, artifact_fetch, artifact_list_ui, health, heartbeat_status, runtime_config_command,
-        runtime_defaults, stats, stage_route_command,
+        artifact_command, artifact_delete, artifact_fetch, artifact_list_ui, artifact_write, health,
+        heartbeat_status, runtime_config_command, runtime_defaults, stats, stage_route_command,
     };
     use crate::daemon::identity::{
         create_user_profile, export_user_profile, identity_commit_update, identity_digest_preview,
@@ -314,6 +333,10 @@ pub fn build_core_router(state: AppState) -> Router {
             "/v1/sessions/{session_id}/active-turn",
             get(get_active_session_turn).post(cancel_active_session_turn),
         )
+        .route(
+            "/v1/sessions/{session_id}/workshop/steer",
+            post(crate::daemon::workshop_steer::steer_bound_workshop_handler),
+        )
         .route("/v1/sessions/{session_id}/turns", get(list_session_turns))
         .route("/v1/turns", post(create_turn_ticket))
         .route("/v1/turns/{turn_id}", get(get_turn_ticket))
@@ -349,7 +372,13 @@ pub fn build_core_router(state: AppState) -> Router {
         )
         .route("/v1/runtime/artifact/command", post(artifact_command))
         .route("/v1/runtime/artifact/fetch", post(artifact_fetch))
+        .route("/v1/runtime/artifact/write", post(artifact_write))
+        .route("/v1/runtime/artifact/delete", post(artifact_delete))
         .route("/v1/runtime/artifact/list-ui", post(artifact_list_ui))
+        .route(
+            "/v1/maintenance/artifacts",
+            get(get_artifact_retention_status).put(update_artifact_retention),
+        )
         .route("/v1/runtime/config/command", post(runtime_config_command))
         .route("/v1/runtime/stage-route/command", post(stage_route_command))
         .route("/v1/identity/context", post(identity_get_context))

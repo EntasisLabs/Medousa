@@ -6,7 +6,9 @@ pub struct StageRoute {
     pub role: String,
     pub provider: String,
     pub model: String,
+    #[serde(alias = "policyProfile")]
     pub policy_profile: String,
+    #[serde(alias = "fallbackChain")]
     pub fallback_chain: Vec<String>,
 }
 
@@ -19,6 +21,7 @@ pub struct StageRoutingMatrix {
     pub summarizer: StageRoute,
     pub verifier: StageRoute,
     pub packer: StageRoute,
+    #[serde(alias = "finalResponse")]
     pub final_response: StageRoute,
 }
 

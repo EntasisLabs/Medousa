@@ -2,8 +2,8 @@ import {
   persistTuiRuntimePrefs,
 } from "$lib/config";
 import {
+  fetchHostCharter,
   getEngineTuiDefaults,
-  getRuntimeDefaults,
   migrateGlobalTuiDefaultsToEngine,
   putEngineTuiDefaults,
 } from "$lib/daemon";
@@ -20,8 +20,8 @@ import {
   type WorkshopDefaultsTab,
 } from "$lib/types/workshopDefaults";
 import { syncFlatFieldsFromProfiles } from "$lib/types/inferenceProfiles";
-  import { isTauriMobilePlatform } from "$lib/platform";
-  import { workshopCharterOnHostHint } from "$lib/platformCopy";
+import { isTauriMobilePlatform } from "$lib/platform";
+import { workshopCharterOnHostHint } from "$lib/platformCopy";
 import { isTauri } from "$lib/window";
 import {
   isFavoriteModel,
@@ -63,20 +63,13 @@ export class WorkshopDefaultsStore {
     this.message = null;
     try {
       if (isTauriMobilePlatform()) {
-        const defaults = await getRuntimeDefaults();
-        this.draft = normalizeWorkshopDefaults({
-          backend: defaults.backend,
-          provider: defaults.provider,
-          model: defaults.model,
-          baseUrl: defaults.base_url,
-          responseDepthMode: defaults.response_depth_mode,
-          stageRouting: defaults.stage_routing,
-          inferenceProfiles: defaults.inference_profiles ?? null,
-        });
+        const raw = await fetchHostCharter();
+        this.draft = plainCharterCopy(normalizeWorkshopDefaults(raw));
         this.allowedModulesText = allowedModulesToText(this.draft.allowedModules);
         this.apiKeySet = false;
         this.apiKeyDraft = "";
         this.clearApiKey = false;
+        voicePresets.applyFromDraft(this.draft);
         this.loaded = true;
         return;
       }
@@ -319,3 +312,7 @@ function defaultStageRouting(provider: string, model: string): StageRoutingMatri
 }
 
 export const workshopDefaults = new WorkshopDefaultsStore();
+
+function plainCharterCopy(draft: TuiDefaults): TuiDefaults {
+  return JSON.parse(JSON.stringify(draft)) as TuiDefaults;
+}

@@ -1,6 +1,7 @@
 use crate::daemon::types::{
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactFetchRequest, ArtifactFetchResponse,
-    ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactWriteRequest, ArtifactWriteResponse,
 };
 use tauri::State;
 
@@ -39,6 +40,30 @@ pub async fn artifact_list_ui(
     client(&state)
         .runtime()
         .artifact_list_ui(&request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn artifact_write(
+    state: State<'_, DaemonState>,
+    request: ArtifactWriteRequest,
+) -> Result<ArtifactWriteResponse, String> {
+    client(&state)
+        .runtime()
+        .artifact_write(&request)
+        .await
+        .map_err(sdk_error)
+}
+
+#[tauri::command]
+pub async fn artifact_delete(
+    state: State<'_, DaemonState>,
+    request: ArtifactDeleteRequest,
+) -> Result<ArtifactDeleteResponse, String> {
+    client(&state)
+        .runtime()
+        .artifact_delete(&request)
         .await
         .map_err(sdk_error)
 }

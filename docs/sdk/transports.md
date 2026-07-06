@@ -22,20 +22,29 @@ Uses `reqwest` against `base_url` + path.
 
 ## `WorkshopTransport` (`medousa-sdk-iroh`)
 
-Authenticated LAN workshop base URL (bearer token from pairing):
+Pooled LAN HTTP with optional Iroh fallback (mobile), TTL route cache, and bearer auth from pairing:
 
 ```rust
-use medousa_sdk_iroh::WorkshopTransport;
+use std::sync::Arc;
+use medousa_sdk::{MedousaClient, Transport};
+use medousa_sdk_iroh::{WorkshopTransport, WorkshopTransportConfig};
 
-let transport = WorkshopTransport::from_lan_base("http://192.168.1.10:7419");
-let client = MedousaClient::with_transport(Arc::new(transport), "http://192.168.1.10:7419");
+let transport = WorkshopTransport::new(WorkshopTransportConfig::from_workshop_parts(
+    "http://192.168.1.10:7419",
+    Some("session-token".into()),
+    None, // iroh ticket — set on paired mobile clients
+));
+let client = MedousaClient::with_transport(
+    Arc::new(transport) as Arc<dyn Transport>,
+    "http://192.168.1.10:7419",
+);
 ```
 
 ---
 
 ## Tauri custom transport
 
-`apps/medousa-home/src-tauri/src/daemon/sdk.rs` implements `Transport` by calling `workshop_transport` (LAN with Iroh failover). All typed `runtime().artifact_*` calls go through this stack.
+`apps/medousa-home/src-tauri/src/daemon/sdk.rs` builds a `WorkshopTransport` from `medousa-sdk-iroh` (pooled clients + route cache). Mobile adds a `TauriIrohHook` when an Iroh ticket is present. Multipart / raw byte uploads still call legacy `workshop_transport` helpers.
 
 Diagram: [medousa-client-transport.mmd](../../architecture/medousa-client-transport.mmd)
 

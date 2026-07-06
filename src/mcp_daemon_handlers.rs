@@ -56,6 +56,13 @@ pub async fn get_capability(
         })
 }
 
+pub async fn list_capability_intents(
+    State(state): State<CapabilityApiState>,
+) -> Json<medousa_types::feed::CapabilityIntentsResponse> {
+    let registry = state.agent_runtime.capability_registry.read().await;
+    Json(registry.list_intents())
+}
+
 pub async fn reindex_capabilities(
     State(state): State<CapabilityApiState>,
 ) -> Json<CapabilityReindexResponse> {

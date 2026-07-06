@@ -13,6 +13,8 @@ use crate::transport::decode;
 
 #[cfg(all(feature = "async", feature = "sse"))]
 use crate::streaming::{SseLineStream, decode_sse_json};
+#[cfg(all(feature = "async", feature = "sse"))]
+use crate::reconnecting_stream::ReconnectingInteractiveStream;
 
 #[cfg(feature = "async")]
 pub struct InteractiveApi<'a> {
@@ -40,6 +42,32 @@ impl InteractiveApi<'_> {
             .transport()
             .post_empty_json(self.client.base_url(), &path)
             .await
+    }
+
+    #[cfg(feature = "sse")]
+    pub fn stream_reconnecting(
+        &self,
+        stream_url: impl Into<String>,
+    ) -> ReconnectingInteractiveStream<'_> {
+        ReconnectingInteractiveStream::new(self.client, stream_url)
+    }
+
+    #[cfg(feature = "sse")]
+    pub fn stream_reconnecting_with_policy(
+        &self,
+        stream_url: impl Into<String>,
+        policy: crate::ReconnectPolicy,
+    ) -> ReconnectingInteractiveStream<'_> {
+        ReconnectingInteractiveStream::with_policy(self.client, stream_url, policy)
+    }
+
+    #[cfg(feature = "sse")]
+    pub async fn stream_turn_reconnecting(
+        &self,
+        request: &InteractiveTurnRequest,
+    ) -> Result<ReconnectingInteractiveStream<'_>, crate::SdkError> {
+        let response = self.start_turn(request).await?;
+        Ok(self.stream_reconnecting(response.stream_url))
     }
 
     #[cfg(feature = "sse")]

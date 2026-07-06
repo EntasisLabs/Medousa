@@ -100,6 +100,8 @@ pub(crate) async fn build_tui_runtime_services(
     let (composition, memory) = build_local_stasis_composition(wire_config).await?;
     crate::session_store::init_session_store_with_runtime(&composition).await;
     crate::artifact_store::init_artifact_store_with_runtime(&composition).await;
+    crate::component_store::init_component_store_with_runtime(&composition).await;
+    crate::component_runtime_store::init_component_runtime_with_runtime(&composition).await;
     crate::verification_store::init_verification_store_with_runtime(&composition).await;
     crate::turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
 
@@ -246,6 +248,17 @@ pub(crate) async fn assemble_tui_runtime(
         &mut tool_registry,
         turn_scope.clone(),
     )?;
+    crate::environment_tools::register_environment_tools(&mut tool_registry, turn_scope.clone())?;
+    crate::custom_view_tools::register_custom_view_tools(
+        &mut tool_registry,
+        runtime.clone(),
+        event_tx.clone(),
+        turn_scope.clone(),
+    )?;
+    crate::context_pointer_tools::register_context_pointer_tools(
+        &mut tool_registry,
+        turn_scope.clone(),
+    )?;
 
     tool_registry.register_tool(CognitionMemorySchemaTool::new())?;
     tool_registry.register_tool(CognitionMemoryMoodsTool::new(event_tx.clone()))?;
@@ -338,11 +351,12 @@ pub(crate) async fn assemble_tui_runtime(
         worker_scheduler.clone(),
     )?;
 
-    tool_registry.register_tool(CognitionTurnBeginWorkTool)?;
+    tool_registry.register_tool(CognitionTurnBeginWorkTool::new(worker_scheduler.clone()))?;
     tool_registry.register_tool(CognitionTurnCheckpointTool)?;
     tool_registry.register_tool(CognitionTurnPrepareFinalTool)?;
     tool_registry.register_tool(CognitionTurnFinishTool)?;
     tool_registry.register_tool(CognitionTurnRequestMoreRoundsTool)?;
+    crate::turn_control_stasis::register_turn_control_stasis_tools(&mut tool_registry)?;
     tool_registry.register_tool(CognitionRuntimeRecurringPreviewTool::new(event_tx.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobStatusTool::new(runtime.clone()))?;
     tool_registry.register_tool(CognitionRuntimeJobsListTool::new(runtime.clone()))?;
@@ -421,6 +435,12 @@ pub(crate) async fn assemble_tui_runtime(
         turn_scope.clone(),
         event_tx.clone(),
     ))?;
+    crate::feed_tools::register_feed_tools(
+        &mut tool_registry,
+        capability_registry.clone(),
+        turn_scope.clone(),
+    )?;
+    crate::layout_tools::register_layout_tools(&mut tool_registry)?;
     tool_registry.register_tool(CognitionMcpPromoteToJobTool::new(
         runtime.clone(),
         workflow_registry.clone(),

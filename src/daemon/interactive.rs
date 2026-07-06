@@ -1,6 +1,8 @@
 //! Interactive turns, turn tickets, and session active-turn handlers.
 
-use std::time::Duration;
+use std::sync::Arc;
+
+use medousa_engine::{Principal, TurnEnvelope, TurnLifecyclePorts, TurnStreamRegistryPort, run_turn};
 
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
@@ -78,11 +80,22 @@ pub async fn spawn_turn_ticket(
         return Err((StatusCode::BAD_REQUEST, "session_id is required".to_string()));
     }
 
-    let stream_tx = crate::daemon::turn_event_channel::TurnEventChannel::new(512);
-    {
-        let mut guard = state.interactive_turn_streams.write().await;
-        guard.insert(turn_id.clone(), stream_tx.clone());
+    let stream_port = crate::engine_adapters::turn_stream_registry_adapter(
+        state.interactive_turn_streams.clone(),
+    );
+    if !stream_port.register_stream(&turn_id).await {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("turn stream already registered for '{turn_id}'"),
+        ));
     }
+    let stream_entry = state
+        .interactive_turn_streams
+        .read()
+        .await
+        .get(&turn_id)
+        .cloned()
+        .expect("turn stream registered");
 
     let stream_url = format!(
         "{}/v1/interactive/turn/{}/stream",
@@ -104,8 +117,7 @@ pub async fn spawn_turn_ticket(
     };
 
     if let Err(conflict) = crate::turn_ticket::register_turn(&state.turn_tickets, ticket).await {
-        let mut guard = state.interactive_turn_streams.write().await;
-        guard.remove(&turn_id);
+        stream_port.drop_stream(&turn_id).await;
         return Err((StatusCode::CONFLICT, conflict.message));
     }
 
@@ -147,6 +159,7 @@ pub async fn spawn_turn_ticket(
     record_job_delivery_pending(state, &turn_id).await;
 
     let stream_registry = state.interactive_turn_streams.clone();
+    let stream_port_for_task = stream_port.clone();
     let turn_tickets = state.turn_tickets.clone();
     let cancelled_interactive_turns = state.cancelled_interactive_turns.clone();
     let _composition = state.composition().clone();
@@ -189,43 +202,43 @@ pub async fn spawn_turn_ticket(
         cancelled_turns: Some(cancelled_interactive_turns),
         turn_ticket_registry: Some(turn_tickets.clone()),
         ask_job_id,
+        context_usage_by_session: Some(state.last_context_usage_by_session.clone()),
     };
 
     let turn_id_for_task = turn_id.clone();
-    let stream_tx_for_close = stream_tx.clone();
+    let envelope =
+        TurnEnvelope::new(turn_id_for_task.clone(), Principal::operator())
+            .with_correlation_id(turn_id_for_task.clone());
+    let lifecycle_ports = TurnLifecyclePorts {
+        tickets: Arc::new(crate::engine_adapters::TurnTicketPortAdapter(turn_tickets.clone())),
+        streams: Arc::new(stream_port_for_task),
+    };
     tokio::spawn(async move {
-        // Brief guard so the client's SSE subscribe wins the race against the first
-        // (cosmetic) status event; answer tokens arrive far later regardless.
-        tokio::time::sleep(Duration::from_millis(25)).await;
-        crate::agent_runtime::run_daemon_interactive_turn(
-            &turn_id_for_task,
-            interactive_request,
-            &backend,
-            agent_runtime.as_ref(),
-            stream_tx,
-            Some(delivery),
-            Some(continuation_scope),
-            Some(session_hooks),
-        )
+        let _handle = run_turn(lifecycle_ports, envelope, || async {
+            crate::agent_runtime::run_daemon_interactive_turn(
+                &turn_id_for_task,
+                interactive_request,
+                &backend,
+                agent_runtime.as_ref(),
+                stream_entry,
+                Some(delivery),
+                Some(continuation_scope),
+                Some(session_hooks),
+            )
+            .await;
+
+            if let Some(job_id) = ask_job_id_for_notify.as_deref() {
+                crate::workspace::notify_workspace_event(
+                    crate::workspace::WorkspaceDomainEvent::AskJobChanged {
+                        job_id: job_id.to_string(),
+                    },
+                );
+            } else {
+                crate::workspace::notify_workspace_invalidate();
+            }
+        })
         .await;
-
-        // Keep the channel + replay buffer registered through the grace window,
-        // but mark it closed so a late reconnect still replays the terminal event.
-        stream_tx_for_close.mark_closed();
-        crate::turn_ticket::clear_turn_after_run(&turn_tickets, &turn_id_for_task).await;
-        if let Some(job_id) = ask_job_id_for_notify.as_deref() {
-            crate::workspace::notify_workspace_event(
-                crate::workspace::WorkspaceDomainEvent::AskJobChanged {
-                    job_id: job_id.to_string(),
-                },
-            );
-        } else {
-            crate::workspace::notify_workspace_invalidate();
-        }
-
-        tokio::time::sleep(Duration::from_secs(30)).await;
-        let mut guard = stream_registry.write().await;
-        guard.remove(&turn_id_for_task);
+        let _ = stream_registry;
     });
 
     let notice = match mode {
@@ -456,7 +469,7 @@ pub async fn cancel_active_session_turn(
         .insert(active.turn_id.clone());
     crate::turn_ticket::mark_cancelled(&state.turn_tickets, &active.turn_id).await;
 
-    if let Some(stream_tx) = state
+    if let Some(entry) = state
         .interactive_turn_streams
         .read()
         .await
@@ -464,7 +477,7 @@ pub async fn cancel_active_session_turn(
         .cloned()
     {
         publish_interactive_turn_event(
-            &stream_tx,
+            &entry,
             crate::interactive_turn_runtime::error_stream_event(
                 &active.turn_id,
                 "interactive turn cancelled",

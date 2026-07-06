@@ -3,7 +3,8 @@
   import NavSidebar from "$lib/components/layout/NavSidebar.svelte";
   import { connectWorkshop, refreshDaemonHealth } from "$lib/workshopConnection";
   import ActivityCollapsedStrip from "$lib/components/layout/ActivityCollapsedStrip.svelte";
-  import type { Surface } from "$lib/types/ui";
+  import EnvironmentRenderer from "$lib/components/environment/EnvironmentRenderer.svelte";
+  import { environment } from "$lib/stores/environment.svelte";
   import WorkRail from "$lib/components/layout/WorkRail.svelte";
   import ActivityPanel from "$lib/components/layout/ActivityPanel.svelte";
   import SettingsPanel from "$lib/components/layout/SettingsPanel.svelte";
@@ -21,6 +22,8 @@
   import ProfilesPanel from "$lib/components/profiles/ProfilesPanel.svelte";
   import AutomationsPanel from "$lib/components/automations/AutomationsPanel.svelte";
   import MessagingPanel from "$lib/components/messaging/MessagingPanel.svelte";
+  import PeersPanel from "$lib/components/peers/PeersPanel.svelte";
+  import { peerUnreadCount } from "$lib/utils/lanShareApi";
   import SkillsPanel from "$lib/components/skills/SkillsPanel.svelte";
   import { automationDraft } from "$lib/stores/automationDraft.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
@@ -36,20 +39,50 @@
   import { isTauri } from "$lib/platform";
   import { updateTrayBlockedCount } from "$lib/window";
   import HumanBrowserPanel from "$lib/components/browser/HumanBrowserPanel.svelte";
+  import ShellLayoutDebug from "$lib/components/debug/ShellLayoutDebug.svelte";
+  import EnvPendingProposalBanner from "$lib/components/environment/EnvPendingProposalBanner.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { DaemonHealth } from "$lib/daemon";
 
+  interface Props {
+    onOpenSpotlight?: () => void;
+  }
+
+  let { onOpenSpotlight }: Props = $props();
+
   let daemonHealth = $state<DaemonHealth | null>(null);
+  let shellRootEl = $state<HTMLElement | null>(null);
+  let peersUnread = $state(0);
+  let peersUnreadTimer: ReturnType<typeof setInterval> | null = null;
 
   const activeSurface = $derived(layout.desktopSurface);
+
+  async function refreshPeersUnread() {
+    if (!isTauri()) return;
+    try {
+      peersUnread = await peerUnreadCount();
+    } catch {
+      peersUnread = 0;
+    }
+  }
 
   $effect(() => {
     if (!isTauri()) return;
     void updateTrayBlockedCount(workspace.blockedCount());
   });
 
+  $effect(() => {
+    if (activeSurface === "peers") {
+      void refreshPeersUnread();
+    }
+  });
+
   onMount(() => {
     void workshops.load();
+    void refreshPeersUnread();
+    peersUnreadTimer = setInterval(() => {
+      void refreshPeersUnread();
+    }, 8000);
     const detachViewport = layout.attachViewportTracking();
     const detachWorkshop = connectWorkshop({
       onHealthChange: (health) => {
@@ -58,6 +91,7 @@
     });
     const detachBrowserContext = browserContext.attachListeners();
     return () => {
+      if (peersUnreadTimer) clearInterval(peersUnreadTimer);
       detachViewport();
       detachWorkshop();
       detachBrowserContext();
@@ -74,7 +108,7 @@
     }),
   );
 
-  function navigateToSurface(surface: Surface) {
+  function navigateToSurface(surface: string) {
     layout.navigateDesktop(surface, { bump: true });
     if (surface === "work") {
       void workspace.prefetchCardDetails();
@@ -85,11 +119,11 @@
     }
   }
 
-  function goToSurface(surface: Surface) {
+  function goToSurface(surface: string) {
     navigateToSurface(surface);
   }
 
-  function handleSurfaceSelect(surface: Surface) {
+  function handleSurfaceSelect(surface: string) {
     navigateToSurface(surface);
   }
 
@@ -104,20 +138,34 @@
   }
 </script>
 
-<div class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50">
-  <div class="flex min-h-0 flex-1">
+<div
+  bind:this={shellRootEl}
+  class="flex h-screen w-screen flex-col bg-surface-950 text-surface-50"
+  data-debug-label="app-root"
+>
+  <div class="flex min-h-0 flex-1" data-debug-label="app-row">
     <NavSidebar
       active={activeSurface}
       onSelect={handleSurfaceSelect}
       chatActivity={chat.backgroundActivity}
       workActivity={workspace.inMotionCount()}
+      peersActivity={peersUnread}
       activeProfileLabel={userProfiles.activeDisplayName}
     />
 
-    <div class="workshop-main relative flex min-w-0 flex-1 flex-col">
-      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div class="workshop-main relative flex min-w-0 flex-1 flex-col" data-debug-label="workshop-main">
+      <EnvPendingProposalBanner />
+      <div
+        class="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        data-debug-label="workshop-content-row"
+      >
+        <div
+          class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          data-debug-label="workshop-surface-column"
+        >
         {#key layout.navigationEpoch}
+          <EnvironmentRenderer surfaceId={activeSurface}>
+            {#snippet builtin()}
           {#if activeSurface === "chat"}
             <ChatPanel
               visible={true}
@@ -166,6 +214,8 @@
             />
           {:else if activeSurface === "automations"}
             <AutomationsPanel visible={true} />
+          {:else if activeSurface === "peers"}
+            <PeersPanel visible={true} />
           {:else if activeSurface === "messaging"}
             <MessagingPanel visible={true} health={daemonHealth} />
           {:else if activeSurface === "work"}
@@ -190,13 +240,21 @@
                 daemonHealth = await refreshDaemonHealth();
               }}
             />
-          {:else if activeSurface === "web"}
-            <HumanBrowserPanel
-              visible={true}
-              workRailVisible={workspace.inMotionCount() > 0}
-            />
           {/if}
+            {/snippet}
+          </EnvironmentRenderer>
         {/key}
+        <div
+          class="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
+          class:hidden={activeSurface !== "web"}
+          aria-hidden={activeSurface !== "web"}
+          data-debug-label="browser-surface-host"
+        >
+          <HumanBrowserPanel
+            visible={activeSurface === "web"}
+            workRailVisible={workspace.inMotionCount() > 0}
+          />
+        </div>
         </div>
 
         {#if layout.activityCollapsed || desktopRails.showActivityStrip}
@@ -204,7 +262,10 @@
             onExpand={() => layout.setActivityCollapsed(false)}
           />
         {:else}
-          <div class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden">
+          <div
+            class="workshop-rail flex h-full min-w-0 shrink-0 overflow-hidden"
+            data-debug-label="activity-rail"
+          >
           <SplitPane
             width={desktopRails.activityPaneWidth}
             side="right"
@@ -266,6 +327,7 @@
         lastTickAt={runtime.stats?.last_tick_at_utc ?? null}
         onOpenRuntime={() => navigateToSurface("runtime")}
         onOpenCron={() => navigateToSurface("automations")}
+        onOpenSpotlight={onOpenSpotlight}
       />
 
       {#if workspace.inMotionCount() > 0 && activeSurface !== "work"}
@@ -277,4 +339,6 @@
       {/if}
     </div>
   </div>
+
+  <ShellLayoutDebug rootEl={shellRootEl} />
 </div>

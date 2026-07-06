@@ -195,7 +195,7 @@ pub async fn workshop_get_bytes_stream(
 pub enum WorkshopByteStream {
     Lan(reqwest::Response),
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    Iroh(medousa::iroh_transport::IrohHttpBody),
+    Iroh(medousa_iroh_http::IrohHttpBody),
 }
 
 impl WorkshopByteStream {
@@ -248,25 +248,19 @@ async fn workshop_request(
         WorkshopRoute::Lan => {
             lan_request(config, method, path, &headers, &payload, is_stream).await
         }
-        #[cfg(any(target_os = "ios", target_os = "android"))]
         WorkshopRoute::Iroh => iroh_request(config, method, path, &headers, &payload).await,
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        WorkshopRoute::Iroh => Err("iroh transport is only available on mobile".to_string()),
     };
 
     match result {
         Ok(body) => Ok(body),
-        Err(err) if route == WorkshopRoute::Lan && config.iroh_ticket.is_some() && is_connect_error(&err) => {
+        Err(err)
+            if route == WorkshopRoute::Lan
+                && config.iroh_ticket.is_some()
+                && is_connect_error(&err) =>
+        {
             invalidate_workshop_route_cache();
             write_route_cache(&config.lan_base, WorkshopRoute::Iroh);
-            #[cfg(any(target_os = "ios", target_os = "android"))]
-            {
-                iroh_request(config, method, path, &headers, &payload).await
-            }
-            #[cfg(not(any(target_os = "ios", target_os = "android")))]
-            {
-                Err(err)
-            }
+            iroh_request(config, method, path, &headers, &payload).await
         }
         Err(err) => Err(err),
     }
@@ -498,14 +492,14 @@ async fn iroh_open_stream(
     config: &WorkshopTransportConfig,
     path: &str,
     headers: &reqwest::header::HeaderMap,
-) -> Result<medousa::iroh_transport::IrohHttpBody, String> {
+) -> Result<medousa_iroh_http::IrohHttpBody, String> {
     let ticket = config
         .iroh_ticket
         .as_deref()
         .ok_or_else(|| "missing iroh ticket".to_string())?;
     let header_pairs = iroh_header_refs(headers);
     let header_slice = iroh_header_slice(&header_pairs);
-    let response = medousa::iroh_transport::iroh_http_request(
+    let response = medousa_iroh_http::iroh_http_request(
         ticket,
         "GET",
         path,
@@ -520,7 +514,6 @@ async fn iroh_open_stream(
     Ok(response.body)
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 async fn iroh_request(
     config: &WorkshopTransportConfig,
     method: &str,
@@ -551,7 +544,7 @@ async fn iroh_request(
         header_pairs.push(("Content-Type".to_string(), content_type.to_string()));
     }
     let header_slice = iroh_header_slice(&header_pairs);
-    let mut response = medousa::iroh_transport::iroh_http_request(
+    let mut response = medousa_iroh_http::iroh_http_request(
         ticket,
         method,
         path,
@@ -570,7 +563,6 @@ async fn iroh_request(
     Ok(String::from_utf8_lossy(&out).to_string())
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 fn iroh_header_refs(headers: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
@@ -583,7 +575,6 @@ fn iroh_header_refs(headers: &reqwest::header::HeaderMap) -> Vec<(String, String
         .collect()
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
 fn iroh_header_slice<'a>(pairs: &'a [(String, String)]) -> Vec<(&'a str, &'a str)> {
     pairs
         .iter()

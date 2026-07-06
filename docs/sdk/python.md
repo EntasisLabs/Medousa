@@ -78,6 +78,21 @@ async def chat(client: MedousaClient):
 
 Cancel: `await client.interactive().cancel("my-session")`
 
+**Reconnecting** (durable spine replay via `?since=<seq>`):
+
+```python
+async with client.interactive().stream_turn_reconnecting(
+    InteractiveTurnRequest(session_id="my-session", prompt="Hello"),
+) as events:
+    async for event in events:
+        if event.content_delta:
+            print(event.content_delta, end="", flush=True)
+        if event.terminal:
+            break
+```
+
+Or open an existing `stream_url`: `client.interactive().stream_reconnecting(url)`.
+
 See [interactive-streaming.md](interactive-streaming.md).
 
 ---

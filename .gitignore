@@ -1,23 +1,40 @@
 /target
 /dist
 /node_modules
+
+# Rust/Cargo build cache (sibling dir from .cargo/config.toml, plus in-repo mistakes)
+../.cache/
+.cache/
+**/.cache/
+.cargo-target/
+adapters/medousa-whatsapp/.cargo-target/
+target-local/
+adapters/**/target/
+
+# Release staging / pack work dirs
+dist/
+**/.pack-work-*/
+
+# Frontend app build output
+apps/**/src-tauri/target/
+apps/**/src-tauri/binaries/
+apps/**/dist/
+apps/**/build/
+apps/**/.svelte-kit/
+
 package-lock.json
 !apps/medousa-home/package-lock.json
 !apps/medousa-installer/package-lock.json
-apps/**/src-tauri/target/
-apps/**/dist/
 .grapheme-examples/
 /data%
 /docs/internal/
 /docs/design/
-.cargo-target/
-adapters/medousa-whatsapp/.cargo-target/
-target-local/
 .tmp/
-adapters/**/target/
 *.DS_Store
 __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
 .ruff_cache/
+scripts/release/azure-signing-metadata.json
+scripts/release/release.env

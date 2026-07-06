@@ -30,12 +30,13 @@ pub async fn ensure_surreal_delivery_schema(db: &Surreal<Any>) -> Result<()> {
     for statement in DELIVERY_SCHEMA_STATEMENTS {
         if let Err(err) = db.query(*statement).await {
             let text = err.to_string();
-            if !(text.contains("already exists")
+            if text.contains("already exists")
                 || text.contains("already defined")
-                || text.contains("Overwrite index"))
+                || text.contains("Overwrite index")
             {
-                return Err(anyhow!("delivery schema bootstrap ({statement}): {text}"));
+                continue;
             }
+            return Err(anyhow!("delivery schema bootstrap ({statement}): {text}"));
         }
     }
 
@@ -210,18 +211,33 @@ pub async fn seed_internal_outbox_endpoint(
     store: &dyn DeliveryEndpointStore,
     target_url: &str,
 ) -> Result<()> {
+    tracing::info!(
+        endpoint_id = INTERNAL_OUTBOX_ENDPOINT_ID,
+        "reading delivery endpoint"
+    );
     let existing = match store.get(INTERNAL_OUTBOX_ENDPOINT_ID).await {
         Ok(record) => record,
         Err(err) if is_missing_runtime_table_error(&err.to_string()) => None,
         Err(err) => {
-            return Err(err).context("failed to read internal outbox delivery endpoint");
+            return Err(err).with_context(|| {
+                format!("delivery_endpoint.get id={INTERNAL_OUTBOX_ENDPOINT_ID}")
+            });
         }
     };
 
     if existing.is_some() {
+        tracing::info!(
+            endpoint_id = INTERNAL_OUTBOX_ENDPOINT_ID,
+            "delivery endpoint already present — skip insert"
+        );
         return Ok(());
     }
 
+    tracing::info!(
+        endpoint_id = INTERNAL_OUTBOX_ENDPOINT_ID,
+        target = target_url,
+        "inserting delivery endpoint"
+    );
     store
         .insert(NewDeliveryEndpoint {
             endpoint_id: INTERNAL_OUTBOX_ENDPOINT_ID.to_string(),
@@ -232,7 +248,11 @@ pub async fn seed_internal_outbox_endpoint(
             created_at: Utc::now(),
         })
         .await
-        .context("failed to seed internal outbox delivery endpoint")?;
+        .with_context(|| {
+            format!(
+                "delivery_endpoint.insert id={INTERNAL_OUTBOX_ENDPOINT_ID} target={target_url}"
+            )
+        })?;
 
     Ok(())
 }
@@ -242,6 +262,8 @@ pub async fn seed_internal_outbox_endpoint_for_runtime(
     in_memory_endpoint_store: Option<Arc<dyn DeliveryEndpointStore>>,
     target_url: &str,
 ) -> Result<()> {
+    use crate::runtime::surreal_startup::timed_step;
+
     let store: Arc<dyn DeliveryEndpointStore> = match in_memory_endpoint_store {
         Some(store) => store,
         None => match runtime {
@@ -252,13 +274,19 @@ pub async fn seed_internal_outbox_endpoint_for_runtime(
             }
             RuntimeComposition::Surreal(rt) => {
                 let db = rt.job_store.db();
-                ensure_surreal_delivery_schema(&db).await?;
+                timed_step("delivery_endpoint schema", || async {
+                    ensure_surreal_delivery_schema(&db).await
+                })
+                .await?;
                 Arc::new(SurrealDeliveryEndpointStore::new(db))
             }
         },
     };
 
-    seed_internal_outbox_endpoint(store.as_ref(), target_url).await
+    timed_step("delivery_endpoint seed", || async {
+        seed_internal_outbox_endpoint(store.as_ref(), target_url).await
+    })
+    .await
 }
 
 pub fn truncate_for_telegram(text: &str) -> String {

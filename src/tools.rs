@@ -41,6 +41,7 @@ use crate::tui::runtime_services::{
 use crate::recurring_delivery::{
     DeliveryResolveContext, ambient_from_turn_scope, bind_recurring_delivery_for_registration,
 };
+use crate::recurring_feed::bind_recurring_feed_for_registration;
 use crate::turn_continuation::{
     self, ContinuationAwaitMode, TurnContinuationScope, continuation_tool_metadata,
     wire_turn_child_job,
@@ -1235,7 +1236,8 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
                 "max_attempts": { "type": "integer", "description": "Max attempts per materialized job", "default": 1 },
                 "enabled": { "type": "boolean", "description": "Enabled schedule", "default": true },
                 "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false },
-                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone()
+                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone(),
+                "feeds": crate::recurring_feed::feeds_spec_schema_fragment()["feeds"].clone()
             },
             "required": ["source", "cron_expr"]
         }))
@@ -1341,10 +1343,11 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             &input,
             DeliveryResolveContext {
                 ambient: ambient.as_ref(),
-                fallback_session_id,
+                fallback_session_id: fallback_session_id.clone(),
             },
         )
         .await?;
+        let (feeds_bound, _) = bind_recurring_feed_for_registration(&recurring_id, &input).await?;
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
@@ -1369,6 +1372,7 @@ impl StasisTool for CognitionGraphemePromoteToRecurringTool {
             "start_immediately": start_immediately,
             "status": "registered",
             "delivery_bound": delivery_bound,
+            "feeds_bound": feeds_bound,
             "validation": validation
         }))
     }
@@ -1419,7 +1423,8 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
                 "enabled": { "type": "boolean", "description": "Enabled schedule", "default": true },
                 "start_immediately": { "type": "boolean", "description": "Set next_run_at=now", "default": false },
                 "source": { "type": "string", "description": "Optional source override; if omitted, uses last remembered source" },
-                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone()
+                "delivery": crate::recurring_delivery::delivery_spec_schema_fragment()["delivery"].clone(),
+                "feeds": crate::recurring_feed::feeds_spec_schema_fragment()["feeds"].clone()
             },
             "required": ["cron_expr"]
         }))
@@ -1527,10 +1532,11 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             &input,
             DeliveryResolveContext {
                 ambient: ambient.as_ref(),
-                fallback_session_id,
+                fallback_session_id: fallback_session_id.clone(),
             },
         )
         .await?;
+        let (feeds_bound, _) = bind_recurring_feed_for_registration(&recurring_id, &input).await?;
 
         match &*self.runtime {
             RuntimeComposition::InMemory(rt) => rt.register_recurring(definition).await?,
@@ -1556,6 +1562,7 @@ impl StasisTool for CognitionGraphemePromoteLastRunToRecurringTool {
             "used_remembered_source": input.get("source").is_none(),
             "status": "registered",
             "delivery_bound": delivery_bound,
+            "feeds_bound": feeds_bound,
             "validation": validation
         }))
     }

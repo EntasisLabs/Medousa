@@ -1,5 +1,8 @@
 //! Shared heuristics for assistant text during tool-loop turns.
 
+/// Prose longer than this is "extended" (eligible for ExtendedProse continue).
+pub const EXTENDED_PROSE_CHAR_THRESHOLD: usize = 255;
+
 const WORK_IN_PROGRESS_ANYWHERE: &[&str] = &[
     "let me ",
     "i'll ",
@@ -21,6 +24,11 @@ const WORK_IN_PROGRESS_ANYWHERE: &[&str] = &[
     "pull up ",
     "calibrate to",
     "calibrating",
+    "now i see",
+    "went wrong",
+    "let me grab",
+    "grab the ",
+    "grab the schemas",
 ];
 
 pub fn looks_like_interim_status(text: &str) -> bool {
@@ -66,18 +74,48 @@ pub fn looks_like_interim_status(text: &str) -> bool {
     false
 }
 
-pub fn looks_like_substantive_final_answer(text: &str) -> bool {
-    if looks_like_interim_status(text) {
-        return false;
-    }
+pub fn is_extended_prose(text: &str) -> bool {
+    text.trim().chars().count() > EXTENDED_PROSE_CHAR_THRESHOLD
+}
 
+const PLANNING_PROSE_PHRASES: &[&str] = &[
+    "let's ",
+    "lets ",
+    "going to ",
+    "first ",
+    "next i",
+    "make the ",
+    "make a ",
+    "build you",
+    "build a ",
+    "i'm going to build",
+    "we can ",
+    "let me check what's possible",
+    "make the first",
+];
+
+/// Future-work or status planning without a delivered outcome.
+fn looks_like_planning_prose_inner(text: &str) -> bool {
+    let lower = text.trim().to_ascii_lowercase();
+    PLANNING_PROSE_PHRASES
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+        || (is_extended_prose(text) && !looks_like_clarifying_question(text))
+}
+
+pub fn looks_like_planning_prose(text: &str) -> bool {
+    looks_like_planning_prose_inner(text) && !looks_like_substantive_final_answer(text)
+}
+
+pub fn looks_like_substantive_final_answer(text: &str) -> bool {
     let trimmed = text.trim();
     let word_count = trimmed.split_whitespace().count();
-    if word_count < 12 {
+    let lower = trimmed.to_ascii_lowercase();
+
+    if looks_like_interim_status(text) || looks_like_planning_prose_inner(text) {
         return false;
     }
 
-    let lower = trimmed.to_ascii_lowercase();
     const OUTCOME_HINTS: &[&str] = &[
         "stability",
         "friction",
@@ -95,12 +133,44 @@ pub fn looks_like_substantive_final_answer(text: &str) -> bool {
         "here is",
         "result",
         "summary",
+        "applied:",
+        "complete",
+        "finished",
+        "done —",
+        "done -",
     ];
+
+    if has_strong_outcome_delivery(&lower) {
+        return true;
+    }
+
+    if word_count >= 20 && OUTCOME_HINTS.iter().any(|hint| lower.contains(hint)) {
+        return true;
+    }
+
+    if word_count < 12 {
+        return false;
+    }
+
     if word_count >= 20 {
         return true;
     }
 
     OUTCOME_HINTS.iter().any(|hint| lower.contains(hint))
+}
+
+fn has_strong_outcome_delivery(lower: &str) -> bool {
+    lower.contains("applied:")
+        || lower.contains("stored the")
+        || lower.contains("stored in")
+        || lower.contains("saved the")
+        || lower.contains("here's the")
+        || lower.contains("here is the")
+        || lower.contains("here is your")
+        || lower.contains("here's your")
+        || lower
+            .split_whitespace()
+            .any(|token| token.parse::<f64>().is_ok() && token.contains('.'))
 }
 
 /// Legacy loop finalize helper. Turn completion FSM owns runtime policy; kept for tests.

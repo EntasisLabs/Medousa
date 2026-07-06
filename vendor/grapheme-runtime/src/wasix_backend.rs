@@ -27,10 +27,45 @@ use wasmer_wasix::{
 #[cfg(feature = "wasix-runtime")]
 pub struct WasixBackend {
     engine: Engine,
-    runtime: tokio::runtime::Runtime,
     module_cache: Mutex<ModuleCache>,
     timing_enabled: bool,
     timing_stats: Mutex<TimingStats>,
+}
+
+/// Process-global tokio runtime shared by every `WasixBackend`.
+///
+/// Each backend used to build its own `new_multi_thread` runtime, which spawned
+/// worker threads + an IO-driver file descriptor per backend and `.expect()`ed
+/// (panicking the worker thread) when the OS was out of file descriptors. By
+/// reusing a single lazily-initialized runtime for the whole process we keep
+/// thread/FD usage bounded under load and surface a `RuntimeError` instead of
+/// panicking if initialization ever fails.
+#[cfg(feature = "wasix-runtime")]
+static SHARED_WASIX_RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "wasix-runtime")]
+fn shared_wasix_runtime() -> Result<&'static tokio::runtime::Runtime, RuntimeError> {
+    if let Some(runtime) = SHARED_WASIX_RUNTIME.get() {
+        return Ok(runtime);
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            RuntimeError::RuntimeError(format!("init shared tokio runtime for wasix backend: {e}"))
+        })?;
+
+    // Another thread may win the initialization race; in that case the runtime
+    // we just built is dropped here (releasing its threads/FDs) and we reuse the
+    // winner's runtime instead.
+    let _ = SHARED_WASIX_RUNTIME.set(runtime);
+    SHARED_WASIX_RUNTIME.get().ok_or_else(|| {
+        RuntimeError::RuntimeError(
+            "shared tokio runtime for wasix backend unavailable after init".to_string(),
+        )
+    })
 }
 
 #[cfg(feature = "wasix-runtime")]
@@ -110,14 +145,11 @@ impl TimingStats {
 #[cfg(feature = "wasix-runtime")]
 impl WasixBackend {
     pub fn new() -> Self {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("init tokio runtime for wasix backend");
-
+        // The tokio runtime is no longer owned per-backend; it is a shared
+        // process-global resource fetched lazily in `execute_call`. This keeps
+        // backend construction infallible and cheap (no thread/FD allocation).
         Self {
             engine: Engine::default(),
-            runtime,
             module_cache: Mutex::new(ModuleCache::new(read_cache_max_modules())),
             timing_enabled: read_timing_enabled(),
             timing_stats: Mutex::new(TimingStats::default()),
@@ -150,8 +182,10 @@ impl WasixBackend {
         let request_bytes = serde_json::to_vec(&request)
             .map_err(|e| RuntimeError::RuntimeError(format!("serialize wasix request: {e}")))?;
 
+        let runtime = shared_wasix_runtime()?;
+
         let (mut stdin_tx, stdin_rx) = Pipe::channel();
-        self.runtime
+        runtime
             .block_on(async { stdin_tx.write_all(&request_bytes).await })
             .map_err(|e| RuntimeError::RuntimeError(format!("write wasm stdin: {e}")))?;
         drop(stdin_tx);
@@ -177,7 +211,7 @@ impl WasixBackend {
         let after_run = Instant::now();
 
         let mut stdout = String::new();
-        self.runtime
+        runtime
             .block_on(async { stdout_rx.read_to_string(&mut stdout).await })
             .map_err(|e| RuntimeError::RuntimeError(format!("read wasm stdout: {e}")))?;
 

@@ -6,19 +6,23 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "prepare:sidecar": "bash scripts/prepare-engine-sidecar.sh",
-    "tauri:build": "npm run prepare:sidecar && tauri build",
+    "prepare:sidecar": "node scripts/prepare-engine-sidecar-runner.mjs",
+    "tauri:build": "npm run prepare:sidecar && node scripts/tauri-build-runner.mjs",
     "build:desktop": "npm run tauri:build",
-    "build:full": "bash scripts/build-full-package.sh",
-    "build:full:ios": "bash scripts/build-full-package.sh --ios",
+    "build:full": "node scripts/build-full-package-runner.mjs",
+    "build:full:ios": "node scripts/build-full-package-runner.mjs -- --ios",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "tauri": "tauri",
     "icons:generate": "tauri icon app-icon.json -o src-tauri/icons --ios-color \"#0a0a0b\" && cp src-tauri/icons/128x128.png static/favicon.png",
-    "tauri:ios:init": "tauri ios init",
-    "tauri:ios:dev": "tauri ios dev",
-    "tauri:ios:build": "tauri ios build",
+    "tauri:ios:init": "tauri ios init && npm run ios:prepare",
+    "ios:prepare": "bash scripts/ios-prepare.sh",
+    "tauri:ios:dev": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios dev",
+    "tauri:ios:dev:sim": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios dev \"iPhone 16 Pro\"",
+    "tauri:ios:build": "npm run ios:prepare && MEDOUSA_LIVE_ACTIVITY=1 tauri ios build",
     "tauri:ios:clean": "bash scripts/ios-clean.sh",
     "tauri:ios:build:testflight": "bash scripts/ios-testflight-build.sh"
   },
@@ -36,6 +40,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-notification": "^2.3.3",
+    "tauri-plugin-mobile-push-api": "^0.1.4",
     "@tauri-apps/plugin-opener": "^2",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.8",
@@ -60,6 +65,7 @@
     "svelte-check": "^4.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^3.2.6"
   }
 }

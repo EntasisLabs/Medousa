@@ -397,6 +397,39 @@
       }
     }
   },
+  "ArtifactDeleteRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactDeleteRequest",
+    "type": "object",
+    "required": [
+      "artifact_id",
+      "session_id"
+    ],
+    "properties": {
+      "artifact_id": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    }
+  },
+  "ArtifactDeleteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactDeleteResponse",
+    "type": "object",
+    "required": [
+      "deleted_artifact_ids"
+    ],
+    "properties": {
+      "deleted_artifact_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
   "ArtifactFetchRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ArtifactFetchRequest",
@@ -450,6 +483,12 @@
       },
       "mime": {
         "type": "string"
+      },
+      "payload_path": {
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "presentation": {
         "type": [
@@ -547,6 +586,76 @@
             ]
           }
         }
+      }
+    }
+  },
+  "ArtifactWriteRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactWriteRequest",
+    "type": "object",
+    "required": [
+      "artifact_id",
+      "html",
+      "session_id",
+      "title"
+    ],
+    "properties": {
+      "artifact_id": {
+        "type": "string"
+      },
+      "height_px": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "html": {
+        "type": "string"
+      },
+      "if_match_hash64": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "presentation": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      }
+    }
+  },
+  "ArtifactWriteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ArtifactWriteResponse",
+    "type": "object",
+    "required": [
+      "artifact_id",
+      "hash64",
+      "label",
+      "supersedes_artifact_id"
+    ],
+    "properties": {
+      "artifact_id": {
+        "type": "string"
+      },
+      "hash64": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "supersedes_artifact_id": {
+        "type": "string"
       }
     }
   },
@@ -825,6 +934,351 @@
       }
     }
   },
+  "ComponentRuntimeEventsQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentRuntimeEventsQuery",
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "ComponentRuntimeEventsRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentRuntimeEventsRequest",
+    "type": "object",
+    "properties": {
+      "events": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ComponentRuntimeEventInput"
+        }
+      },
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sessionId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "ComponentRuntimeEventInput": {
+        "type": "object",
+        "required": [
+          "level",
+          "message"
+        ],
+        "properties": {
+          "emittedAtUtc": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "ComponentRuntimeEventsResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentRuntimeEventsResponse",
+    "type": "object",
+    "required": [
+      "accepted",
+      "ok"
+    ],
+    "properties": {
+      "accepted": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "ok": {
+        "type": "boolean"
+      }
+    }
+  },
+  "ComponentRuntimeEventsTailResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentRuntimeEventsTailResponse",
+    "type": "object",
+    "required": [
+      "componentId",
+      "events"
+    ],
+    "properties": {
+      "componentId": {
+        "type": "string"
+      },
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ComponentRuntimeEvent"
+        }
+      }
+    },
+    "definitions": {
+      "ComponentRuntimeEvent": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "emittedAtUtc",
+          "id",
+          "level",
+          "message",
+          "profileId"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string"
+          },
+          "emittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "ComponentRuntimeProbeResult": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentRuntimeProbeResult",
+    "type": "object",
+    "required": [
+      "componentId",
+      "probeId",
+      "storeReady",
+      "storeRoundTripOk"
+    ],
+    "properties": {
+      "componentId": {
+        "type": "string"
+      },
+      "errors": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "probeId": {
+        "type": "string"
+      },
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "storeReady": {
+        "type": "boolean"
+      },
+      "storeRoundTripOk": {
+        "type": "boolean"
+      }
+    }
+  },
+  "ComponentStoreDeleteResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentStoreDeleteResponse",
+    "type": "object",
+    "required": [
+      "componentId",
+      "deleted",
+      "key",
+      "ok"
+    ],
+    "properties": {
+      "componentId": {
+        "type": "string"
+      },
+      "deleted": {
+        "type": "boolean"
+      },
+      "key": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      }
+    }
+  },
+  "ComponentStoreGetResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentStoreGetResponse",
+    "type": "object",
+    "required": [
+      "componentId"
+    ],
+    "properties": {
+      "componentId": {
+        "type": "string"
+      },
+      "entries": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "ComponentStoreListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentStoreListResponse",
+    "type": "object",
+    "required": [
+      "componentId",
+      "keys"
+    ],
+    "properties": {
+      "componentId": {
+        "type": "string"
+      },
+      "keys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "ComponentStoreQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentStoreQuery",
+    "type": "object",
+    "properties": {
+      "key": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "profileId": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "ComponentStoreSetRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentStoreSetRequest",
+    "type": "object",
+    "required": [
+      "value"
+    ],
+    "properties": {
+      "profileId": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "value": true
+    }
+  },
+  "ComponentStoreSetResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ComponentStoreSetResponse",
+    "type": "object",
+    "required": [
+      "componentId",
+      "key",
+      "ok",
+      "updatedAtUtc"
+    ],
+    "properties": {
+      "componentId": {
+        "type": "string"
+      },
+      "key": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "updatedAtUtc": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
   "DeleteRecurringResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DeleteRecurringResponse",
@@ -1042,6 +1496,5654 @@
       },
       "queue": {
         "type": "string"
+      }
+    }
+  },
+  "EnvironmentPendingResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentPendingResponse",
+    "type": "object",
+    "properties": {
+      "pending": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/EnvironmentPendingProposal"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentPendingProposal": {
+        "type": "object",
+        "required": [
+          "diffSummary",
+          "errors",
+          "proposedAt",
+          "proposedBy",
+          "proposedSpec"
+        ],
+        "properties": {
+          "diffSummary": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "proposedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedSpec": {
+            "$ref": "#/definitions/EnvironmentSpec"
+          }
+        }
+      },
+      "EnvironmentSpec": {
+        "type": "object",
+        "required": [
+          "components",
+          "profileId",
+          "surfaces",
+          "updatedAt",
+          "updatedBy",
+          "version"
+        ],
+        "properties": {
+          "activePresetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentDef"
+            }
+          },
+          "layoutPresets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LayoutPreset"
+            }
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SurfaceDef"
+            }
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentProposeResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentProposeResponse",
+    "type": "object",
+    "required": [
+      "diffSummary",
+      "errors",
+      "proposedSpec",
+      "valid"
+    ],
+    "properties": {
+      "diffSummary": {
+        "type": "string"
+      },
+      "errors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "proposedSpec": {
+        "$ref": "#/definitions/EnvironmentSpec"
+      },
+      "valid": {
+        "type": "boolean"
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentSpec": {
+        "type": "object",
+        "required": [
+          "components",
+          "profileId",
+          "surfaces",
+          "updatedAt",
+          "updatedBy",
+          "version"
+        ],
+        "properties": {
+          "activePresetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentDef"
+            }
+          },
+          "layoutPresets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LayoutPreset"
+            }
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SurfaceDef"
+            }
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentSpec": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentSpec",
+    "type": "object",
+    "required": [
+      "components",
+      "profileId",
+      "surfaces",
+      "updatedAt",
+      "updatedBy",
+      "version"
+    ],
+    "properties": {
+      "activePresetId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "components": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ComponentDef"
+        }
+      },
+      "layoutPresets": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/LayoutPreset"
+        }
+      },
+      "profileId": {
+        "type": "string"
+      },
+      "shellChrome": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ShellChromeDef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "surfaces": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SurfaceDef"
+        }
+      },
+      "theme": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/EnvironmentTheme"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "updatedAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updatedBy": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentSpecPutRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentSpecPutRequest",
+    "type": "object",
+    "required": [
+      "spec"
+    ],
+    "properties": {
+      "spec": {
+        "$ref": "#/definitions/EnvironmentSpec"
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentSpec": {
+        "type": "object",
+        "required": [
+          "components",
+          "profileId",
+          "surfaces",
+          "updatedAt",
+          "updatedBy",
+          "version"
+        ],
+        "properties": {
+          "activePresetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentDef"
+            }
+          },
+          "layoutPresets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LayoutPreset"
+            }
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SurfaceDef"
+            }
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentSpecResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentSpecResponse",
+    "type": "object",
+    "required": [
+      "revision",
+      "spec"
+    ],
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "spec": {
+        "$ref": "#/definitions/EnvironmentSpec"
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentSpec": {
+        "type": "object",
+        "required": [
+          "components",
+          "profileId",
+          "surfaces",
+          "updatedAt",
+          "updatedBy",
+          "version"
+        ],
+        "properties": {
+          "activePresetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentDef"
+            }
+          },
+          "layoutPresets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LayoutPreset"
+            }
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SurfaceDef"
+            }
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentStatusResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentStatusResponse",
+    "type": "object",
+    "required": [
+      "feedMismatchCount",
+      "navOrphanCount",
+      "pendingProposal",
+      "profileId",
+      "revision"
+    ],
+    "properties": {
+      "activePresetId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "customSurfaces": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/CustomViewSurfaceStatus"
+        }
+      },
+      "feedMismatchCount": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "hints": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "navOrphanCount": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "pendingProposal": {
+        "type": "boolean"
+      },
+      "profileId": {
+        "type": "string"
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "ComponentRuntimeDiagnostic": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "storeKeyCount"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "componentId": {
+            "type": "string"
+          },
+          "embed": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ComponentRuntimeEmbedStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentRuntimeIssue"
+            }
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "logs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentRuntimeEvent"
+            }
+          },
+          "probe": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ComponentRuntimeProbeBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "staticLint": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentStaticLintFinding"
+            }
+          },
+          "storeKeyCount": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "storeKeys": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentStoreKeyStatus"
+            }
+          },
+          "suggestedActions": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentSuggestedAction"
+            }
+          }
+        }
+      },
+      "ComponentRuntimeEmbedStatus": {
+        "type": "object",
+        "required": [
+          "metricsInjected",
+          "runtimeBridgeInjected",
+          "storeBootstrapInjected",
+          "storeClientInjected"
+        ],
+        "properties": {
+          "metricsInjected": {
+            "type": "boolean"
+          },
+          "runtimeBridgeInjected": {
+            "type": "boolean"
+          },
+          "storeBootstrapInjected": {
+            "type": "boolean"
+          },
+          "storeClientInjected": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ComponentRuntimeEvent": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "emittedAtUtc",
+          "id",
+          "level",
+          "message",
+          "profileId"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string"
+          },
+          "emittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ComponentRuntimeIssue": {
+        "type": "object",
+        "required": [
+          "code",
+          "fixHint",
+          "message",
+          "severity"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "fixHint": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        }
+      },
+      "ComponentRuntimeProbeBlock": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ComponentRuntimeProbeResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "ComponentRuntimeProbeResult": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "probeId",
+          "storeReady",
+          "storeRoundTripOk"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string"
+          },
+          "errors": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "probeId": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "storeReady": {
+            "type": "boolean"
+          },
+          "storeRoundTripOk": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ComponentStaticLintFinding": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "severity"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "lineHint": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        }
+      },
+      "ComponentStoreKeyStatus": {
+        "type": "object",
+        "required": [
+          "key",
+          "valueType"
+        ],
+        "properties": {
+          "issues": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "key": {
+            "type": "string"
+          },
+          "valueType": {
+            "type": "string"
+          }
+        }
+      },
+      "ComponentSuggestedAction": {
+        "type": "object",
+        "required": [
+          "reason",
+          "tool"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomViewComponentStatus": {
+        "type": "object",
+        "required": [
+          "componentId"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "componentId": {
+            "type": "string"
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ComponentRuntimeDiagnostic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CustomViewFeedStatus": {
+        "type": "object",
+        "required": [
+          "feedId"
+        ],
+        "properties": {
+          "feedId": {
+            "type": "string"
+          },
+          "lastEmittedAtUtc": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CustomViewRecurringBindingStatus": {
+        "type": "object",
+        "required": [
+          "recurringId"
+        ],
+        "properties": {
+          "cronExpr": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "feedIds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recurringId": {
+            "type": "string"
+          }
+        }
+      },
+      "CustomViewSurfaceStatus": {
+        "type": "object",
+        "required": [
+          "label",
+          "navVisible",
+          "surfaceId"
+        ],
+        "properties": {
+          "components": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CustomViewComponentStatus"
+            }
+          },
+          "feedMismatches": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "feedStatus": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CustomViewFeedStatus"
+            }
+          },
+          "label": {
+            "type": "string"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navVisible": {
+            "type": "boolean"
+          },
+          "recurringBindings": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CustomViewRecurringBindingStatus"
+            }
+          },
+          "subscribedFeedIds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "surfaceId": {
+            "type": "string"
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      }
+    }
+  },
+  "EnvironmentStreamEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentStreamEvent",
+    "type": "object",
+    "required": [
+      "emittedAtUtc",
+      "eventType",
+      "revision"
+    ],
+    "properties": {
+      "componentPatches": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ComponentFeedPatch"
+        }
+      },
+      "emittedAtUtc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "eventType": {
+        "type": "string"
+      },
+      "feedEvent": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/FeedEvent"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "runtimeProbe": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ComponentRuntimeProbeRequest"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "spec": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/EnvironmentSpec"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentFeedPatch": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "feedId",
+          "patch",
+          "seq"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string"
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "patch": true,
+          "seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ComponentRuntimeProbeRequest": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "probeId"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string"
+          },
+          "probeId": {
+            "type": "string"
+          },
+          "profileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentSpec": {
+        "type": "object",
+        "required": [
+          "components",
+          "profileId",
+          "surfaces",
+          "updatedAt",
+          "updatedBy",
+          "version"
+        ],
+        "properties": {
+          "activePresetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentDef"
+            }
+          },
+          "layoutPresets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LayoutPreset"
+            }
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SurfaceDef"
+            }
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "FeedEvent": {
+        "type": "object",
+        "required": [
+          "emittedAtUtc",
+          "feedId",
+          "id",
+          "source",
+          "summary"
+        ],
+        "properties": {
+          "emittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "payload": true,
+          "refs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/FeedRef"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "FeedRef": {
+        "type": "object",
+        "required": [
+          "ref_id",
+          "ref_type"
+        ],
+        "properties": {
+          "ref_id": {
+            "type": "string"
+          },
+          "ref_type": {
+            "type": "string"
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentStreamQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentStreamQuery",
+    "type": "object",
+    "properties": {
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sinceRevision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    }
+  },
+  "EnvironmentValidateRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentValidateRequest",
+    "type": "object",
+    "required": [
+      "spec"
+    ],
+    "properties": {
+      "spec": {
+        "$ref": "#/definitions/EnvironmentSpec"
+      }
+    },
+    "definitions": {
+      "ActivityRailMode": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "collapsed",
+          "hidden"
+        ]
+      },
+      "ComponentDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "slot",
+          "surfaceId",
+          "type"
+        ],
+        "properties": {
+          "config": {
+            "default": null
+          },
+          "feeds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/UiPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "surfaceId": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/ComponentType"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ComponentType": {
+        "type": "string",
+        "enum": [
+          "artifact",
+          "medousa_view",
+          "builtin_panel",
+          "presentation",
+          "media_embed",
+          "chrome_action"
+        ]
+      },
+      "DesktopNavStyle": {
+        "type": "string",
+        "enum": [
+          "rail",
+          "compact"
+        ]
+      },
+      "EnvironmentSpec": {
+        "type": "object",
+        "required": [
+          "components",
+          "profileId",
+          "surfaces",
+          "updatedAt",
+          "updatedBy",
+          "version"
+        ],
+        "properties": {
+          "activePresetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ComponentDef"
+            }
+          },
+          "layoutPresets": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/definitions/LayoutPreset"
+            }
+          },
+          "profileId": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SurfaceDef"
+            }
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/EnvironmentTheme"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "EnvironmentTheme": {
+        "type": "object",
+        "properties": {
+          "brandColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "colorThemeId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LayoutNode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "vstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "type"
+            ],
+            "properties": {
+              "align": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackAlign"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "distribution": {
+                "default": "start",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackDistribution"
+                  }
+                ]
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hstack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "children",
+              "columns",
+              "type"
+            ],
+            "properties": {
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/LayoutNode"
+                }
+              },
+              "columns": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "spacing": {
+                "default": "none",
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/StackSpacing"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "grid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "flex": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint8",
+                "minimum": 0.0
+              },
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "slot"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LayoutPreset": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "surfaces"
+        ],
+        "properties": {
+          "active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shellChrome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MobileAskEntry": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "fab",
+          "tab_only"
+        ]
+      },
+      "MobileTabBar": {
+        "type": "string",
+        "enum": [
+          "full",
+          "minimal"
+        ]
+      },
+      "ShellChromeDef": {
+        "type": "object",
+        "properties": {
+          "desktop": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeDesktop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ShellChromeMobile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeDesktop": {
+        "type": "object",
+        "properties": {
+          "activityRail": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ActivityRailMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "navStyle": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DesktopNavStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ShellChromeMobile": {
+        "type": "object",
+        "properties": {
+          "askEntry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileAskEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaultHome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabBar": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MobileTabBar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "SlotDef": {
+        "type": "object",
+        "required": [
+          "id",
+          "zone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "StackAlign": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "stretch"
+        ]
+      },
+      "StackDistribution": {
+        "type": "string",
+        "enum": [
+          "start",
+          "center",
+          "end",
+          "space_between",
+          "fill_equally"
+        ]
+      },
+      "StackSpacing": {
+        "type": "string",
+        "enum": [
+          "none",
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "SurfaceDef": {
+        "type": "object",
+        "required": [
+          "icon",
+          "id",
+          "kind",
+          "label",
+          "layout"
+        ],
+        "properties": {
+          "builtinId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/SurfaceKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/SurfaceLayout"
+          },
+          "layoutRoot": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/LayoutNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mobileTab": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/SlotDef"
+            }
+          }
+        }
+      },
+      "SurfaceKind": {
+        "type": "string",
+        "enum": [
+          "builtin",
+          "custom"
+        ]
+      },
+      "SurfaceLayout": {
+        "type": "string",
+        "enum": [
+          "single",
+          "split",
+          "dashboard"
+        ]
+      },
+      "UiPresentation": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "panel",
+          "fullscreen"
+        ]
+      }
+    }
+  },
+  "EnvironmentValidateResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "EnvironmentValidateResponse",
+    "type": "object",
+    "required": [
+      "errors",
+      "valid"
+    ],
+    "properties": {
+      "errors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "valid": {
+        "type": "boolean"
+      }
+    }
+  },
+  "FeedListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "FeedListResponse",
+    "type": "object",
+    "required": [
+      "feeds"
+    ],
+    "properties": {
+      "feeds": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/FeedListEntry"
+        }
+      }
+    },
+    "definitions": {
+      "FeedListEntry": {
+        "type": "object",
+        "required": [
+          "eventCount",
+          "feedId",
+          "subscriberComponentIds"
+        ],
+        "properties": {
+          "eventCount": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "subscriberComponentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "FeedReadRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "FeedReadRequest",
+    "type": "object",
+    "properties": {
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seq": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    }
+  },
+  "FeedStreamEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "FeedStreamEvent",
+    "type": "object",
+    "required": [
+      "emittedAtUtc",
+      "eventType",
+      "seq"
+    ],
+    "properties": {
+      "componentPatches": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "$ref": "#/definitions/ComponentFeedPatch"
+        }
+      },
+      "emittedAtUtc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "eventType": {
+        "type": "string"
+      },
+      "feedEvent": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/FeedEvent"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "ComponentFeedPatch": {
+        "type": "object",
+        "required": [
+          "componentId",
+          "feedId",
+          "patch",
+          "seq"
+        ],
+        "properties": {
+          "componentId": {
+            "type": "string"
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "patch": true,
+          "seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "FeedEvent": {
+        "type": "object",
+        "required": [
+          "emittedAtUtc",
+          "feedId",
+          "id",
+          "source",
+          "summary"
+        ],
+        "properties": {
+          "emittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "payload": true,
+          "refs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/FeedRef"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "FeedRef": {
+        "type": "object",
+        "required": [
+          "ref_id",
+          "ref_type"
+        ],
+        "properties": {
+          "ref_id": {
+            "type": "string"
+          },
+          "ref_type": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "FeedStreamQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "FeedStreamQuery",
+    "type": "object",
+    "properties": {
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "FeedTailQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "FeedTailQuery",
+    "type": "object",
+    "properties": {
+      "limit": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "profileId": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "FeedTailResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "FeedTailResponse",
+    "type": "object",
+    "required": [
+      "events",
+      "feedId"
+    ],
+    "properties": {
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/FeedEvent"
+        }
+      },
+      "feedId": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "FeedEvent": {
+        "type": "object",
+        "required": [
+          "emittedAtUtc",
+          "feedId",
+          "id",
+          "source",
+          "summary"
+        ],
+        "properties": {
+          "emittedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "payload": true,
+          "refs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/FeedRef"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "FeedRef": {
+        "type": "object",
+        "required": [
+          "ref_id",
+          "ref_type"
+        ],
+        "properties": {
+          "ref_id": {
+            "type": "string"
+          },
+          "ref_type": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -1465,13 +7567,13 @@
               "null"
             ]
           },
-          "supports_ui_artifacts": {
-            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
+          "supports_browser_host": {
+            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
             "default": false,
             "type": "boolean"
           },
-          "supports_browser_host": {
-            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Home desktop/iOS set this; Telegram/TUI/ingest leave false.",
+          "supports_ui_artifacts": {
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
             "default": false,
             "type": "boolean"
           },
@@ -1541,22 +7643,22 @@
       "turn_id"
     ],
     "properties": {
-      "budget_request_id": {
-        "description": "Turn budget approval pause — card id for Home deep link / notifications.",
-        "type": [
-          "string",
-          "null"
-        ]
-      },
       "browser_challenge_url": {
-        "description": "URL the client should load in Agent Browser WebView during CAPTCHA handoff.",
+        "description": "URL the client should load in Agent Browser WebView.",
         "type": [
           "string",
           "null"
         ]
       },
       "browser_session_id": {
-        "description": "Agent Browser session id for CAPTCHA / client-executed search handoff.",
+        "description": "Agent Browser CAPTCHA / verification handoff session id.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "budget_request_id": {
+        "description": "Turn budget approval pause — card id for Home deep link / notifications.",
         "type": [
           "string",
           "null"
@@ -1566,6 +7668,17 @@
         "type": [
           "string",
           "null"
+        ]
+      },
+      "context_usage": {
+        "description": "Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ContextUsageReport"
+          },
+          {
+            "type": "null"
+          }
         ]
       },
       "debug_message": {
@@ -1628,6 +7741,13 @@
           "string",
           "null"
         ]
+      },
+      "seq": {
+        "description": "Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.",
+        "default": 0,
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
       },
       "terminal": {
         "type": "boolean"
@@ -1712,6 +7832,83 @@
       }
     },
     "definitions": {
+      "ContextUsageLayer": {
+        "description": "One slice of the prompt/context budget (Cursor-style context usage UI).",
+        "type": "object",
+        "required": [
+          "chars",
+          "id",
+          "label",
+          "tokens_estimate"
+        ],
+        "properties": {
+          "chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "id": {
+            "description": "Stable machine id, e.g. `system_prompt`, `tool_definitions`.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label for UI.",
+            "type": "string"
+          },
+          "tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "ContextUsageReport": {
+        "description": "Turn-start context composition sent once per interactive turn.",
+        "type": "object",
+        "required": [
+          "estimator",
+          "layers",
+          "tool_count",
+          "total_chars",
+          "total_tokens_estimate"
+        ],
+        "properties": {
+          "context_limit_tokens": {
+            "description": "Model context window when known from capability registry / route.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "estimator": {
+            "description": "`chars / 4` — documented estimator; not tokenizer-exact.",
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ContextUsageLayer"
+            }
+          },
+          "tool_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_chars": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "total_tokens_estimate": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
       "StreamToolArtifactRef": {
         "type": "object",
         "required": [
@@ -2905,6 +9102,9 @@
           "null"
         ]
       },
+      "feeds": {
+        "description": "Optional environment feed ids to publish on each materialized run terminal."
+      },
       "id": {
         "type": [
           "string",
@@ -3629,6 +9829,12 @@
               "type": "string"
             }
           },
+          "recent_digests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "scratch_phase": {
             "type": [
               "string",
@@ -3641,6 +9847,12 @@
             "minimum": 0.0
           },
           "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "working_notes": {
             "type": "array",
             "items": {
               "type": "string"
@@ -4189,6 +10401,12 @@
               "type": "string"
             }
           },
+          "recent_digests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "scratch_phase": {
             "type": [
               "string",
@@ -4201,6 +10419,12 @@
             "minimum": 0.0
           },
           "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "working_notes": {
             "type": "array",
             "items": {
               "type": "string"
@@ -4783,6 +11007,10 @@
           "boolean",
           "null"
         ]
+      },
+      "feeds": {
+        "description": "Replace feed binding; pass `{ \"feeds\": null }` to clear feed publish.",
+        "default": null
       },
       "timezone": {
         "default": null,

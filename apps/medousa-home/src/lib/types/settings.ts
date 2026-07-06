@@ -1,11 +1,13 @@
 export type SettingsSectionId =
   | "room"
+  | "canvas"
   | "rhythm"
   | "memory"
   | "models"
   | "voice"
   | "reach"
   | "phone"
+  | "nearby"
   | "basement";
 
 export const SETTINGS_SECTIONS: {
@@ -14,12 +16,14 @@ export const SETTINGS_SECTIONS: {
   hint: string;
 }[] = [
   { id: "room", label: "Room", hint: "Theme & atmosphere" },
+  { id: "canvas", label: "Canvas", hint: "Layout presets & agent proposals" },
   { id: "rhythm", label: "Rhythm", hint: "How she interrupts you" },
   { id: "memory", label: "Memory", hint: "How long chats stay vivid" },
   { id: "models", label: "Models", hint: "Chat & dictation" },
   { id: "voice", label: "Voice", hint: "Stance & answer depth" },
   { id: "reach", label: "Reach", hint: "What she may touch" },
   { id: "phone", label: "Phone", hint: "Pair your pocket portal" },
+  { id: "nearby", label: "Nearby", hint: "Peers rail, bundles & trust" },
   { id: "basement", label: "Connection", hint: "Medousa on this device & advanced tools" },
 ];
 

@@ -1,9 +1,20 @@
 import { haptic } from "$lib/haptics";
 import { chat } from "$lib/stores/chat.svelte";
+import { environment } from "$lib/stores/environment.svelte";
 import { layout } from "$lib/stores/layout.svelte";
 import { workspace } from "$lib/stores/workspace.svelte";
 import { MOBILE_TABS, type MobileTab } from "$lib/types/mobile";
+import { visibleMobileTabs } from "$lib/utils/mobileEnvironmentChrome";
 
+function mobileTabOrder(): MobileTab[] {
+  return visibleMobileTabs(environment.spec);
+}
+
+export function getMobileTabOrder(): MobileTab[] {
+  return mobileTabOrder();
+}
+
+/** @deprecated Use getMobileTabOrder() — order follows environment spec. */
 export const MOBILE_TAB_ORDER: MobileTab[] = MOBILE_TABS.map((tab) => tab.id);
 
 type MobileBackHandler = () => boolean;
@@ -52,6 +63,11 @@ export function tryMobileBackNavigation(): boolean {
     workspace.clearSelection();
     return true;
   }
+  if (layout.mobileTab === "home" && layout.mobileSurfaceOverride) {
+    layout.clearMobileSurfaceOverride();
+    layout.setMobileTab("home", { bump: true });
+    return true;
+  }
   if (layout.mobileTab === "more" && layout.moreDestination !== "hub") {
     layout.backToMoreHub();
     return true;
@@ -60,11 +76,12 @@ export function tryMobileBackNavigation(): boolean {
 }
 
 export function adjacentMobileTab(current: MobileTab, direction: 1 | -1): MobileTab | null {
-  const index = MOBILE_TAB_ORDER.indexOf(current);
+  const order = mobileTabOrder();
+  const index = order.indexOf(current);
   if (index < 0) return null;
   const next = index + direction;
-  if (next < 0 || next >= MOBILE_TAB_ORDER.length) return null;
-  return MOBILE_TAB_ORDER[next];
+  if (next < 0 || next >= order.length) return null;
+  return order[next];
 }
 
 export function switchMobileTab(tab: MobileTab): void {
@@ -75,7 +92,16 @@ export function switchMobileTab(tab: MobileTab): void {
     layout.setSessionDrawerOpen(false);
     layout.setIdentityDrawerOpen(false);
   }
-  const changed = layout.mobileTab !== tab;
+  const order = mobileTabOrder();
+  if (!order.includes(tab)) {
+    layout.setMobileTab(order[0] ?? "home", { bump: true });
+    return;
+  }
+  // Home tab exits a temporary custom view (e.g. arcade opened from More).
+  if (tab === "home" && layout.mobileSurfaceOverride) {
+    layout.clearMobileSurfaceOverride();
+  }
+  const changed = layout.mobileTab !== tab || tab === "home";
   layout.setMobileTab(tab, { bump: changed });
   if (tab === "chat") {
     void chat.refreshSessions();

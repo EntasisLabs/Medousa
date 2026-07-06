@@ -18,7 +18,7 @@ use super::crypto::{
     verifying_key_to_b64,
 };
 use super::identity::DeviceIdentity;
-use super::store::{PairedDeviceRecord, PairingStore};
+use super::store::{PairedDeviceRecord, PairingRole, PairingStore};
 
 const QR_TTL: Duration = Duration::from_secs(300);
 const VERIFY_TTL: Duration = Duration::from_secs(10);
@@ -81,6 +81,7 @@ pub struct PairedDeviceSummary {
     pub phone_name: String,
     pub paired_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,6 +92,9 @@ pub struct PairInitRequest {
     pub phone_id: String,
     pub phone_name: String,
     pub public_key: String,
+    /// `portal` (full client) or `peer` (inbox/share only). Defaults to portal.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,6 +140,24 @@ pub struct PairHeartbeatResponse {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PairHeartbeatRequest {
+    #[serde(default)]
+    pub apns_device_token: Option<String>,
+    #[serde(default)]
+    pub push_platform: Option<String>,
+    #[serde(default)]
+    pub live_activity_push_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevokePairingResult {
+    Removed,
+    NotFound,
+    Unauthorized,
+}
+
 #[derive(Debug, Clone)]
 struct ActiveQrSession {
     token_b64: String,
@@ -150,8 +172,21 @@ struct PendingPairSession {
     phone_id: String,
     phone_name: String,
     phone_public_key: VerifyingKey,
+    role: PairingRole,
     server_nonce: [u8; 32],
     created_at: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct ApnsPushTarget {
+    pub phone_id: String,
+    pub device_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LiveActivityPushTarget {
+    pub phone_id: String,
+    pub push_token: String,
 }
 
 pub struct PairingService {
@@ -242,6 +277,10 @@ impl PairingService {
             .unwrap_or(crate::daemon_api::DEFAULT_DAEMON_PORT)
     }
 
+    pub fn list_paired_devices(&self) -> Result<Vec<PairedDeviceRecord>> {
+        self.store.list_paired()
+    }
+
     pub async fn pair_status(&self) -> Result<PairStatusResponse> {
         let paired = self.store.list_paired()?;
         let qr_active = self
@@ -259,6 +298,7 @@ impl PairingService {
                     phone_name: record.phone_name,
                     paired_at: record.paired_at,
                     last_seen: record.last_seen,
+                    role: record.role.as_str().to_string(),
                 })
                 .collect(),
             qr_active,
@@ -267,15 +307,17 @@ impl PairingService {
             protocol_version: PROTOCOL_VERSION.to_string(),
             daemon_public_key: verifying_key_to_b64(self.identity.verifying_key()),
             iroh_available: self.iroh.is_some(),
-            qr_protocol_version: if self.should_emit_qr_v2() {
-                super::crypto::QR_PROTOCOL_V2.to_string()
-            } else {
-                super::crypto::QR_PROTOCOL_V1.to_string()
-            },
+            // Default QR/PNG is always compact v1 (camera-friendly). Full v2 via ?full=1.
+            qr_protocol_version: super::crypto::QR_PROTOCOL_V1.to_string(),
         })
     }
 
+    /// Default invite is compact v1 (camera / Messages friendly). Pass `full=true` for v2 with Iroh ticket.
     pub async fn current_qr(&self) -> Result<QrResponse> {
+        self.current_qr_with_options(false).await
+    }
+
+    pub async fn current_qr_with_options(&self, full: bool) -> Result<QrResponse> {
         let mut guard = self.active_qr.write().await;
         let needs_refresh = guard.as_ref().is_none_or(|session| {
             session.used || session.expires_at <= Utc::now()
@@ -285,7 +327,7 @@ impl PairingService {
         }
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
-            url: self.build_qr_url(session)?,
+            url: self.build_qr_url(session, full)?,
             expires_at: session.expires_at,
             short_code: session.short_code.clone(),
         })
@@ -297,7 +339,7 @@ impl PairingService {
         *guard = Some(self.build_qr_session()?);
         let session = guard.as_ref().expect("qr session");
         Ok(QrResponse {
-            url: self.build_qr_url(session)?,
+            url: self.build_qr_url(session, false)?,
             expires_at: session.expires_at,
             short_code: session.short_code.clone(),
         })
@@ -308,7 +350,11 @@ impl PairingService {
     }
 
     pub async fn current_qr_image(&self) -> Result<QrImageResponse> {
-        let qr = self.current_qr().await?;
+        self.current_qr_image_with_options(false).await
+    }
+
+    pub async fn current_qr_image_with_options(&self, full: bool) -> Result<QrImageResponse> {
+        let qr = self.current_qr_with_options(full).await?;
         let png = self.render_qr_png(&qr.url)?;
         Ok(QrImageResponse {
             url: qr.url,
@@ -360,6 +406,7 @@ impl PairingService {
                 phone_id: request.phone_id.clone(),
                 phone_name: request.phone_name.clone(),
                 phone_public_key: phone_key,
+                role: PairingRole::parse(request.role.as_deref()),
                 server_nonce,
                 created_at: Instant::now(),
             },
@@ -416,6 +463,12 @@ impl PairingService {
             last_seen: now,
             session_token_hash: hash_session_token(&session_token),
             session_token_expiry: now + SESSION_TOKEN_TTL,
+            role: pending.role,
+            apns_device_token: None,
+            push_platform: None,
+            push_updated_at: None,
+            live_activity_push_token: None,
+            live_activity_push_updated_at: None,
         };
         self.store.save_record(&record)?;
 
@@ -428,7 +481,11 @@ impl PairingService {
         })
     }
 
-    pub async fn pair_heartbeat(&self, bearer_token: Option<&str>) -> Result<PairHeartbeatResponse> {
+    pub async fn pair_heartbeat(
+        &self,
+        bearer_token: Option<&str>,
+        body: Option<PairHeartbeatRequest>,
+    ) -> Result<PairHeartbeatResponse> {
         let Some(token) = bearer_token else {
             return Ok(PairHeartbeatResponse {
                 status: "unauthorized".to_string(),
@@ -458,7 +515,39 @@ impl PairingService {
                 reason: Some("expired".to_string()),
             });
         }
-        self.store.touch_last_seen(&record.phone_id)?;
+
+        let mut updated = record.clone();
+        if let Some(body) = body {
+            if let Some(push_token) = body
+                .apns_device_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                updated.apns_device_token = Some(push_token.to_string());
+                updated.push_platform = body
+                    .push_platform
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| Some("ios".to_string()));
+                updated.push_updated_at = Some(Utc::now());
+            }
+            if let Some(live_token) = body.live_activity_push_token.as_deref() {
+                let trimmed = live_token.trim();
+                if trimmed.is_empty() {
+                    updated.live_activity_push_token = None;
+                    updated.live_activity_push_updated_at = None;
+                } else {
+                    updated.live_activity_push_token = Some(trimmed.to_string());
+                    updated.live_activity_push_updated_at = Some(Utc::now());
+                }
+            }
+        }
+        updated.last_seen = Utc::now();
+        self.store.save_record(&updated)?;
+
         Ok(PairHeartbeatResponse {
             status: "ok".to_string(),
             device_time: Utc::now(),
@@ -466,14 +555,67 @@ impl PairingService {
         })
     }
 
-    pub async fn revoke_pairing(&self, pairing_id: &str) -> Result<bool> {
+    pub fn list_apns_targets(&self) -> Result<Vec<ApnsPushTarget>> {
+        let mut out = Vec::new();
+        for record in self.store.list_paired()? {
+            let Some(token) = record
+                .apns_device_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
+            if record
+                .push_platform
+                .as_deref()
+                .is_some_and(|platform| platform != "ios")
+            {
+                continue;
+            }
+            out.push(ApnsPushTarget {
+                phone_id: record.phone_id,
+                device_token: token.to_string(),
+            });
+        }
+        Ok(out)
+    }
+
+    pub fn list_live_activity_targets(&self) -> Result<Vec<LiveActivityPushTarget>> {
+        let mut out = Vec::new();
+        for record in self.store.list_paired()? {
+            let Some(token) = record
+                .live_activity_push_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
+            out.push(LiveActivityPushTarget {
+                phone_id: record.phone_id,
+                push_token: token.to_string(),
+            });
+        }
+        Ok(out)
+    }
+
+    pub async fn revoke_pairing(
+        &self,
+        pairing_id: &str,
+        bearer_token: Option<&str>,
+        source_ip: &str,
+    ) -> Result<RevokePairingResult> {
+        if !authorize_pairing_revoke(self, pairing_id, bearer_token, source_ip)? {
+            return Ok(RevokePairingResult::Unauthorized);
+        }
         let paired = self.store.list_paired()?;
         let Some(record) = paired.into_iter().find(|entry| entry.pairing_id == pairing_id) else {
-            return Ok(false);
+            return Ok(RevokePairingResult::NotFound);
         };
         self.store.revoke_pairing(pairing_id)?;
         self.store.delete_record(&record.phone_id)?;
-        Ok(true)
+        Ok(RevokePairingResult::Removed)
     }
 
     pub fn render_qr_png(&self, url: &str) -> Result<Vec<u8>> {
@@ -512,11 +654,13 @@ impl PairingService {
         })
     }
 
-    fn build_qr_url(&self, session: &ActiveQrSession) -> Result<String> {
+    fn build_qr_url(&self, session: &ActiveQrSession, full: bool) -> Result<String> {
         let name = urlencoding::encode(&self.peer_name);
         let address = urlencoding::encode(&self.advertise_address);
 
-        if self.should_emit_qr_v2() {
+        // Compact v1 is the default for camera / Messages. Full v2 embeds the Iroh ticket
+        // (large) and is only for explicit paste/share when off-LAN bootstrap is required.
+        if full && self.can_emit_qr_v2() {
             let iroh = self
                 .iroh
                 .as_ref()
@@ -548,7 +692,7 @@ impl PairingService {
         ))
     }
 
-    fn should_emit_qr_v2(&self) -> bool {
+    fn can_emit_qr_v2(&self) -> bool {
         self.iroh.is_some() && !pairing_qr_v1_from_env()
     }
 
@@ -582,7 +726,7 @@ impl PairingService {
         true
     }
 
-    fn find_by_session_token(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
+    pub fn find_by_session_token(&self, token: &str) -> Result<Option<PairedDeviceRecord>> {
         let hash = hash_session_token(token);
         for record in self.store.list_paired()? {
             if record.session_token_hash == hash {
@@ -590,6 +734,62 @@ impl PairingService {
             }
         }
         Ok(None)
+    }
+
+    pub fn authorize_bearer_token(&self, token: &str) -> Result<bool> {
+        Ok(self.resolve_bearer_role(token)?.is_some())
+    }
+
+    /// Returns the pairing role when the bearer is valid and unexpired.
+    pub fn resolve_bearer_role(&self, token: &str) -> Result<Option<PairingRole>> {
+        let Some(record) = self.find_by_session_token(token)? else {
+            return Ok(None);
+        };
+        if record.session_token_expiry < Utc::now() {
+            return Ok(None);
+        }
+        Ok(Some(record.role))
+    }
+
+    /// Peer-scoped tokens may only use inbox/share surfaces (and pairing heartbeat).
+    pub fn bearer_allows_path(&self, token: &str, path: &str) -> Result<bool> {
+        let Some(role) = self.resolve_bearer_role(token)? else {
+            return Ok(false);
+        };
+        if role.allows_full_portal() {
+            return Ok(true);
+        }
+        Ok(path_allowed_for_peer(path))
+    }
+}
+
+pub fn path_allowed_for_peer(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or(path);
+    path.starts_with("/v1/peer/")
+        || path.starts_with("/v1/share/")
+        || path == "/pair/heartbeat"
+        || path == "/pair/status"
+        || path == "/pair/iroh-ticket"
+}
+
+#[cfg(test)]
+mod peer_role_tests {
+    use super::{path_allowed_for_peer, PairingRole};
+
+    #[test]
+    fn pairing_role_defaults_to_portal() {
+        assert_eq!(PairingRole::parse(None), PairingRole::Portal);
+        assert_eq!(PairingRole::parse(Some("portal")), PairingRole::Portal);
+        assert_eq!(PairingRole::parse(Some("peer")), PairingRole::Peer);
+    }
+
+    #[test]
+    fn peer_paths_are_allowlisted() {
+        assert!(path_allowed_for_peer("/v1/peer/messages"));
+        assert!(path_allowed_for_peer("/v1/share/push"));
+        assert!(path_allowed_for_peer("/pair/heartbeat"));
+        assert!(!path_allowed_for_peer("/v1/vault/notes"));
+        assert!(!path_allowed_for_peer("/v1/interactive/turn"));
     }
 }
 
@@ -624,6 +824,37 @@ fn encode_short_code(digest: &[u8]) -> String {
 
 fn format_short_code(raw: &str) -> String {
     format!("{}-{}-{}", &raw[0..3], &raw[3..5], &raw[5..6])
+}
+
+fn is_loopback_ip(source_ip: &str) -> bool {
+    source_ip
+        .parse::<std::net::IpAddr>()
+        .map(|addr| addr.is_loopback())
+        .unwrap_or(false)
+}
+
+fn authorize_pairing_revoke(
+    service: &PairingService,
+    pairing_id: &str,
+    bearer_token: Option<&str>,
+    source_ip: &str,
+) -> Result<bool> {
+    if is_loopback_ip(source_ip) {
+        return Ok(true);
+    }
+    let Some(token) = bearer_token else {
+        return Ok(false);
+    };
+    let Some(record) = service.find_by_session_token(token)? else {
+        return Ok(false);
+    };
+    if service.store.is_revoked(&record.pairing_id)? {
+        return Ok(false);
+    }
+    if record.session_token_expiry < Utc::now() {
+        return Ok(false);
+    }
+    Ok(record.pairing_id == pairing_id)
 }
 
 pub fn resolve_peer_name() -> String {
@@ -714,9 +945,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn qr_v2_url_contains_iroh_ticket() {
+    async fn default_qr_stays_compact_when_iroh_available() {
         let service = test_service_with_iroh();
         let qr = service.current_qr().await.expect("qr");
+        assert!(qr.url.contains("medousa://pair/1.0"));
+        assert!(!qr.url.contains("k="));
+    }
+
+    #[tokio::test]
+    async fn full_qr_v2_url_contains_iroh_ticket() {
+        let service = test_service_with_iroh();
+        let qr = service
+            .current_qr_with_options(true)
+            .await
+            .expect("full qr");
         assert!(qr.url.contains("medousa://pair/2.0"));
         assert!(qr.url.contains("k=test-iroh-ticket"));
         assert!(qr.url.contains("e="));
@@ -740,6 +982,7 @@ mod tests {
             phone_id: "phone0001".to_string(),
             phone_name: "Phone A".to_string(),
             public_key: verifying_key_to_b64(&phone.verifying_key()),
+            role: None,
         };
         let first = service.pair_init(init.clone(), "127.0.0.1").await.expect("init");
         assert_eq!(first.status, "challenge");
@@ -762,6 +1005,7 @@ mod tests {
                     phone_id: "phone0002".to_string(),
                     phone_name: "Phone B".to_string(),
                     public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: None,
                 },
                 "127.0.0.1",
             )
@@ -783,6 +1027,66 @@ mod tests {
             .expect("verify");
         assert_eq!(verify.status, "paired");
         assert!(verify.session_token.is_some());
+    }
+
+    #[tokio::test]
+    async fn revoke_requires_loopback_or_matching_session_token() {
+        let service = test_service();
+        let qr = service.current_qr().await.expect("qr");
+        let token = extract_query_param(&qr.url, "t").expect("token");
+        let phone = SigningKey::generate(&mut OsRng);
+        let init = service
+            .pair_init(
+                PairInitRequest {
+                    qr_token: Some(token),
+                    short_code: None,
+                    phone_id: "phone-revoke".to_string(),
+                    phone_name: "Phone R".to_string(),
+                    public_key: verifying_key_to_b64(&phone.verifying_key()),
+                    role: Some("portal".to_string()),
+                },
+                "127.0.0.1",
+            )
+            .await
+            .expect("init");
+        let session_id = init.session_id.expect("session");
+        let server_nonce = init.server_nonce.expect("nonce");
+        let signed_nonce = sign_message(&phone, &server_nonce);
+        let mut phone_nonce = [0u8; 32];
+        OsRng.fill_bytes(&mut phone_nonce);
+        let verify = service
+            .pair_verify(PairVerifyRequest {
+                session_id,
+                signed_nonce,
+                phone_nonce: base64url_encode(&phone_nonce),
+            })
+            .await
+            .expect("verify");
+        let pairing_id = verify.pairing_id.expect("pairing");
+        let session_token = verify.session_token.expect("token");
+
+        assert_eq!(
+            service
+                .revoke_pairing(&pairing_id, None, "10.0.0.5")
+                .await
+                .expect("revoke"),
+            RevokePairingResult::Unauthorized
+        );
+
+        assert_eq!(
+            service
+                .revoke_pairing(&pairing_id, Some(&session_token), "10.0.0.5")
+                .await
+                .expect("revoke"),
+            RevokePairingResult::Removed
+        );
+    }
+
+    #[test]
+    fn loopback_ip_detection() {
+        assert!(is_loopback_ip("127.0.0.1"));
+        assert!(is_loopback_ip("::1"));
+        assert!(!is_loopback_ip("10.0.0.5"));
     }
 
     fn extract_query_param(url: &str, key: &str) -> Option<String> {

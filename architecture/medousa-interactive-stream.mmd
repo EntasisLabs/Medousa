@@ -1,6 +1,7 @@
 sequenceDiagram
     participant C as Client
     participant D as Daemon
+    participant Spine as TurnEventLog
     participant R as AgentRuntime
 
     C->>D: POST /v1/interactive/turn
@@ -9,9 +10,15 @@ sequenceDiagram
     C->>D: GET stream SSE
 
     loop events
-        R-->>D: stream event
+        R->>Spine: journal TurnEvent
+        Spine-->>D: project seq N
         D-->>C: InteractiveTurnStreamEvent
     end
+
+    Note over C,D: connection drop
+    C->>D: GET stream?since=N
+    Spine-->>D: replay then tail
+    D-->>C: resume events
 
     C->>D: POST /v1/sessions/id/active-turn
     D->>R: cancel

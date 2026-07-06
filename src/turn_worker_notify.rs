@@ -14,6 +14,8 @@ use crate::channel_delivery::{
     self, ChannelDeliveryTarget, JobDeliveryRecord, JobDeliveryState, is_external_push_channel,
     is_home_channel,
 };
+use crate::daemon::ingest::publish_interactive_turn_event;
+use crate::daemon::turn_stream_registry::{TurnStreamEntry, TurnStreamRegistry};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnWorkerSpawnNotifyPayload {
@@ -79,6 +81,51 @@ static INGEST_CHANNEL_DELIVERY_BRIDGE: Lazy<Mutex<Option<IngestChannelDeliveryBr
 
 pub fn register_ingest_channel_delivery_bridge(bridge: IngestChannelDeliveryBridge) {
     *INGEST_CHANNEL_DELIVERY_BRIDGE.lock().expect("ingest bridge lock") = Some(bridge);
+}
+
+static PARENT_TURN_STREAM_REGISTRY: Lazy<Mutex<Option<TurnStreamRegistry>>> =
+    Lazy::new(|| Mutex::new(None));
+
+pub fn register_parent_turn_stream_registry(registry: TurnStreamRegistry) {
+    *PARENT_TURN_STREAM_REGISTRY
+        .lock()
+        .expect("parent turn stream registry lock") = Some(registry);
+}
+
+async fn parent_turn_stream_entry(parent_turn_id: &str) -> Option<TurnStreamEntry> {
+    let registry = PARENT_TURN_STREAM_REGISTRY
+        .lock()
+        .expect("parent turn stream registry lock")
+        .clone()?;
+    registry.read().await.get(parent_turn_id).cloned()
+}
+
+/// Push terminal worker synthesis to the parent interactive turn SSE (Home chat bubble).
+pub async fn publish_worker_synthesis_to_parent_turn(
+    record: &TurnWorkRecord,
+    synthesis_text: &str,
+    tool_names: &[String],
+) {
+    let Some(parent_turn_id) = record
+        .parent_turn_correlation_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    let Some(entry) = parent_turn_stream_entry(parent_turn_id).await else {
+        return;
+    };
+    let event = crate::interactive_turn_runtime::worker_synthesis_stream_event_with_tools(
+        parent_turn_id,
+        synthesis_text,
+        tool_names.to_vec(),
+        Some(record.work_id.as_str()),
+    );
+    if let Ok(payload) = event {
+        publish_interactive_turn_event(&entry, Ok(payload));
+    }
 }
 
 fn ingest_channel_delivery_bridge() -> Option<IngestChannelDeliveryBridge> {
@@ -245,6 +292,10 @@ mod tests {
             manuscript_id: None,
             branch_group_id: None,
             archived: false,
+            disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
+            steer_messages: Vec::new(),
+            supports_ui_artifacts: false,
+            supports_browser_host: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

@@ -1,7 +1,7 @@
 //! Host / worker / synthesis system prompts (Phase 1).
 
 use crate::agent_runtime::system_prompt::{MEDOUSA_COLLABORATOR_VOICE, WORKER_STTP_POLICY};
-use crate::agent_runtime::turn_ledger::TURN_RUNTIME_BOUNDARY_APPENDIX;
+use crate::agent_runtime::turn_ledger::{TURN_RUNTIME_BOUNDARY_APPENDIX, TURN_SCRATCH_APPENDIX};
 
 use super::policy::TurnWorkerIntent;
 
@@ -13,32 +13,55 @@ const SYNTHESIS_VOICE_GUIDANCE: &str = r#"Voice for this reply:
 
 pub const HOST_BUS_TURN_APPENDIX: &str = r#"
 [MEDOUSA_HOST_BUS]
-Console lane on the Medousa turn bus — same collaborator voice; orchestrate and delegate here, workshop lane runs Grapheme/MCP execution.
+Chat (host) — same Medousa voice; you hold the thread, the bound Workshop executes.
 
-Host affordances (bootstrap + session defaults):
-- Bootstrap always visible: cognition_tools_discover, cognition_capability_search, cognition_tool_history_summary, cognition_spawn_turn_worker, cognition_memory_context, cognition_memory_store, cognition_identity_recall, cognition_identity_remember, cognition_vault_search, cognition_web_search, cognition_browser_fetch (browser-capable clients), turn control, cognition_turn_worker_status.
-- memory + vault domains auto-unlock each host session (calibrate, moods, vault write/list/read, …) — call them directly; no discover step for routine memory/vault work.
-- cognition_tools_discover(domain=catalog|runtime|history|identity|skill|overlay) for the rest — unlock persists for the session.
-- cognition_turn_worker_status: omit session_id on an active host turn to list this session's workers; pass work_id for one record.
-- Turn start injects [MEDOUSA_TOOL_HINTS] with suggested discover domains; [MEDOUSA_TOOL_SLICES] for prior work; matched [MEDOUSA_GRAPHEME_SCRIPTS] and [MEDOUSA_RUNTIME_LEARNINGS].
+Host affordances:
+- Memory, identity, runtime orchestration, cognition_vault_read/search, capability catalog search/resolve (orchestration only).
+- cognition_web_search or cognition_browser_fetch — quick single lookup on Chat only; heavy or multi-step web → begin_work.
+- cognition_turn_begin_work(message, goal) — enter bound Workshop for Studio/canvas, components, vault writes, Grapheme, capability invoke (one Workshop per session).
+- cognition_spawn_turn_worker — parallel heavy research (multi-topic, long MCP/grapheme crawl).
+- cognition_workshop_steer — forward principal guidance into the active bound Workshop.
+- cognition_turn_worker_status / cognition_turn_worker_cancel for Workshop and worker records.
 
 Rules:
-- Delegate execution (Grapheme template_run / run, MCP invoke, capability invoke, multi-tool research) via cognition_spawn_turn_worker — intent research for web/Grapheme rituals, general for lighter capability+template work.
-- After spawning, a short user_ack only; synthesis carries the principal-facing answer.
-- Use workflows/jobs when work must persist across turns.
-- Do not claim tool receipts the worker has not produced.
-- Tool errors arrive as JSON receipts (ok=false). Read them, adjust or delegate via cognition_spawn_turn_worker, retry once per policy — a single failed host tool does not end the turn.
-- On spawn, the worker receives a [MEDOUSA_WORKER_HANDOFF] capsule (host goal, tool digests with receipt hints, open gaps, HOST_TOOL_SLICES excerpt) — not parent chat. Put resolved capability/module/op into the task prompt so the workshop executes instead of rediscovering.
-- Host may call cognition_tool_history_summary / cognition_tool_history_detail(slice_id=turn:N) to verify prior tool receipts without re-running discovery.
-- Persist runtime learnings with cognition_vault_write + tags: [runtime-learning] — turn start injects [MEDOUSA_RUNTIME_LEARNINGS]. Propose manuscript overlays with cognition_manuscript_overlay_propose (operator approves; never kernel STTP edits).
-- Turn control (runtime enforces prose-terminates — see [MEDOUSA_TURN_RUNTIME] in tool policy):
-  - No tools needed: answer in one prose message (ends turn).
-  - Before host tools: cognition_turn_begin_work for a progress line — not interim chat prose.
-  - Mid-task handoff: cognition_turn_checkpoint.
-  - Fully done after tools: cognition_turn_finish (required — naked prose is not committed as final).
-  - Rich HTML when the client advertises supports_ui_artifacts: cognition_ui_present with title, html, presentation (inline|panel|fullscreen) — not markdown fences.
-  - Delegate: cognition_spawn_turn_worker in the same round as discovery — not plan prose alone.
-  - Tight budget: cognition_turn_request_more_rounds."#;
+- Do not call environment_*, component_*, ui_present, grapheme run, or capability invoke on Chat — use begin_work with a concrete goal.
+- After begin_work, Chat turn ends with the ack; Workshop synthesis delivers on the same thread.
+- Quick vault peek: cognition_vault_read on Chat without entering the Workshop.
+- Turn control: cognition_turn_finish for Chat answers; cognition_turn_checkpoint for mid-task handoff; cognition_turn_request_more_rounds when budget-tight."#;
+
+pub const HOST_CANVAS_APPENDIX: &str = r#"
+[MEDOUSA_HOST_CANVAS]
+Studio layout (supports_ui_artifacts) — schedule via begin_work; do not execute on Chat.
+
+Routing:
+- cognition_turn_begin_work with a goal describing the Studio change (surface, widget, preset).
+- Full recipes: cognition_environment_wiki(topic=recipe|merge_spec|artifact_runtime|…) — wiki before hand-building propose/apply JSON.
+- Workflow sketch: wiki → cognition_environment_get → propose/apply → ui_present(persist) or component_create.
+- Never target builtin surfaces (home, chat, settings, runtime) for agent-owned components — only kind=custom surfaces.
+- Operator approves agent proposals in Settings → Canvas."#;
+
+pub const WORKER_CANVAS_APPENDIX: &str = r#"
+[MEDOUSA_WORKER_CANVAS]
+Bound Workshop / Studio lane — publish HTML and wire custom surfaces here (Chat host cannot).
+
+Full recipes: cognition_environment_wiki(topic=recipe|artifact_runtime|environment_theme|media_embed|layout_zones|…) — prefer wiki over memorizing this appendix.
+
+Workflow:
+0) cognition_environment_wiki before guessing propose JSON.
+1) cognition_environment_get — surfaces + components.
+2) cognition_custom_view_compose for one-shot OR stepwise: cognition_environment_patch, cognition_ui_present(persist=true), cognition_feed_subscribe.
+3) cognition_artifact_write revises an existing artifact_id; cognition_ui_present is first-time publish only.
+4) Only kind=custom surfaces — never builtin home/chat/settings/runtime.
+5) Prefer ui_present(persist=true) over vault markdown when the deliverable is an interactive Studio widget.
+6) Interactive widgets: NEVER localStorage/sessionStorage (sandbox blocks it). Use window.MedousaStore — engine-backed KV; survives refresh.
+7) MedousaStore is ASYNC — always await get/set/delete (sync wrappers fail silently). See cognition_environment_wiki(topic=artifact_runtime).
+8) Style with host CSS tokens (--medousa-host-fg, --medousa-host-muted, --medousa-host-accent, --medousa-host-surface, --medousa-host-brand).
+9) Principals edit layout in Studio (Edit layout toolbar) — respect existing slot ids.
+
+Broken widget troubleshoot:
+1) cognition_custom_view_doctor(surface_id, probe=true, include_runtime=true, include_static_lint=true)
+2) Read components[].runtime.issues[] — fix per wiki/doctor hints
+3) cognition_artifact_write minimal diff; re-run doctor until issues is empty"#;
 
 pub fn host_route_appendix(intent: Option<&str>) -> String {
     let intent = intent.unwrap_or("general");
@@ -54,7 +77,7 @@ pub fn host_route_appendix(intent: Option<&str>) -> String {
 pub const WORKER_DISCIPLINE_APPENDIX: &str = r#"
 [MEDOUSA_WORKER_DISCIPLINE]
 Scope:
-- Complete WORKER_TASK only. Console lane already orchestrated — workshop executes, does not re-host.
+- Complete WORKER_TASK only. Chat host already orchestrated — Workshop executes, does not re-host.
 - Same Medousa voice as the console; read [MEDOUSA_CONTINUATION] and [HOST_CONTINUITY] for thread and tone.
 - Read [MEDOUSA_WORKER_HANDOFF] and HOST_TOOL_DIGESTS before any discovery tool. If digests show capability_resolve/search or modules search already succeeded, do not repeat them unless the prior receipt failed.
 
@@ -71,7 +94,7 @@ Memory:
 pub const WORKER_SYSTEM_APPENDIX: &str = r#"Rules:
 - Execute WORKER_TASK with the minimum tools needed; end early when done (see MEDOUSA_TOOL_POLICY and MEDOUSA_WORKER_DISCIPLINE).
 - After tools: call cognition_turn_finish with the complete principal-ready answer — naked prose ends the turn but is not committed as final.
-- Use cognition_turn_begin_work for progress lines before heavy tools — not naked status prose.
+- Use cognition_turn_update_user for short principal-visible status mid-turn (same round as your next tool). Use cognition_turn_begin_work only before heavy/long-running work. Naked status chat prose fights the turn loop.
 - If the tool-round budget is too tight, call cognition_turn_request_more_rounds with a clear reason — the turn pauses until the principal approves.
 - Ground claims in tool receipts (e.g. cognition_memory_calibrate before claiming calibration).
 - Do not repeat the same status table without new tool output.
@@ -140,7 +163,7 @@ fn worker_intent_appendix(intent: TurnWorkerIntent) -> String {
         }
         TurnWorkerIntent::Research | TurnWorkerIntent::General => {
             format!(
-                "{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}\n{WORKER_OPENSHELL_SKILL_APPENDIX}"
+                "{WORKER_CAPABILITY_APPENDIX}\n{WORKER_GRAPHEME_APPENDIX}\n{WORKER_OPENSHELL_SKILL_APPENDIX}\n{WORKER_CANVAS_APPENDIX}"
             )
         }
     }
@@ -190,7 +213,7 @@ pub fn system_prompt_for_host_profile(base: &str, host_bus_active: bool, worker_
         return base.to_string();
     }
     let mut out = format!(
-        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}"
+        "{base}\n\n[MEDOUSA_COLLABORATOR_VOICE]\n{MEDOUSA_COLLABORATOR_VOICE}\n\n{HOST_BUS_TURN_APPENDIX}\n\n{HOST_CANVAS_APPENDIX}\n\n{TURN_RUNTIME_BOUNDARY_APPENDIX}\n\n{TURN_SCRATCH_APPENDIX}"
     );
     if let Some(intent) = worker_intent {
         out.push('\n');
@@ -303,6 +326,6 @@ mod tests {
         let host = system_prompt_for_host_profile("base-sttp", true, None);
         assert!(host.contains("[MEDOUSA_COLLABORATOR_VOICE]"));
         assert!(host.contains("[MEDOUSA_HOST_BUS]"));
-        assert!(host.contains("Console lane"));
+        assert!(host.contains("Chat (host)"));
     }
 }

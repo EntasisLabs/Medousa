@@ -1,7 +1,13 @@
+pub mod engine_adapters;
+pub mod engine_recovery;
+pub mod sse_turn_projection;
 pub mod adapter_ingest;
 pub mod agent_runtime;
 pub mod channel_delivery;
+pub mod comms;
 pub mod recurring_delivery;
+pub mod recurring_feed;
+pub mod feed_sink;
 pub mod recurring_agent_turn;
 pub mod recurring_handlers;
 pub mod line_grep;
@@ -9,7 +15,10 @@ pub mod artifact_chunking;
 pub mod artifact_tools;
 pub mod artifact_command_runtime;
 pub mod artifact_extraction;
+pub mod artifact_maintenance_job;
+pub mod artifact_retention;
 pub mod artifact_store;
+pub mod maintenance_handlers;
 pub mod media_handlers;
 pub mod media_store;
 pub mod media_text_extract;
@@ -37,6 +46,7 @@ pub mod turn_budget_handlers;
 pub mod turn_budget_notify;
 pub mod turn_worker_notify;
 pub mod turn_control_tools;
+pub mod turn_control_stasis;
 pub mod turn_text_heuristics;
 pub mod context_pack;
 pub mod capability_catalog;
@@ -45,6 +55,7 @@ pub mod mcp_gateway;
 pub mod openshell_handoff;
 pub mod openshell_sandbox_run;
 pub mod openshell_tools;
+pub mod observability;
 pub mod ui_present_tools;
 pub mod mcp_gateway_client;
 pub mod mcp_gateway_api;
@@ -58,6 +69,27 @@ pub mod vault_handlers;
 pub mod vault_tools;
 pub mod workspace;
 pub mod workspace_handlers;
+pub mod feed_adapters;
+pub mod feed_bus;
+pub mod feed_handlers;
+pub mod feed_store;
+pub mod feed_tools;
+pub mod component_store;
+pub mod component_store_handlers;
+pub mod artifact_html_lint;
+pub mod component_runtime_store;
+pub mod component_runtime_handlers;
+pub mod component_runtime_diagnostics;
+pub mod layout_tools;
+pub mod environment_handlers;
+pub mod environment_store;
+pub mod environment_tools;
+pub mod environment_wiki_tools;
+pub mod custom_view_status;
+pub mod environment_patch;
+pub mod custom_view_tools;
+pub mod context_pointer_index;
+pub mod context_pointer_tools;
 pub mod engine_context;
 pub mod events;
 pub mod execution_policy;
@@ -98,8 +130,17 @@ pub mod paths;
 pub mod product_config;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;
+pub mod home_push;
+pub mod home_live_activity;
+pub mod home_widget_push;
 pub mod pairing;
 pub mod pairing_handlers;
+pub mod lan_handlers;
+pub mod share;
+pub mod share_handlers;
+pub mod peer_messages;
+pub mod peer_message_handlers;
+pub mod peer_scope;
 pub mod iroh_transport;
 pub mod payload_receipt;
 pub mod runtime_config_command_runtime;
@@ -112,6 +153,7 @@ pub mod turn_ticket;
 pub mod service_launch;
 pub mod session_mapping;
 pub mod session_store;
+pub mod session_writer;
 pub mod session_lifecycle;
 pub mod session_retention;
 pub mod locus_semantic_tags;
@@ -159,6 +201,7 @@ use stasis::runtime_prelude_ext::InMemoryDeliveryEndpointStore;
 pub use daemon_api::{
     ArtifactCommandRequest, ArtifactCommandResponse, ArtifactCommandSpec,
     ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactDeleteRequest, ArtifactDeleteResponse, ArtifactWriteRequest, ArtifactWriteResponse,
     ArtifactSummary, ArtifactVerificationPolicyInput, DaemonStatsResponse, EnqueueAskRequest,
     EnqueuePromptRequest, EnqueueReportRequest, EnqueueResponse,
     HealthResponse, HeartbeatDeliveryMetricsResponse, HeartbeatDeliveryPolicyResponse,
@@ -218,6 +261,13 @@ pub use adapter_ingest::{
 pub use agent_runtime::{
     AgentStreamEvent, AgentTurnRequest, MedousaAgentRuntime, build_agent_runtime,
     build_daemon_agent_runtime, run_agent_turn, run_daemon_interactive_turn,
+};
+pub use medousa_engine::{
+    self, AgentStreamSink, ChannelToolSink, EngineTurnHandle, Principal, PrincipalKind,
+    RecoveredTurn, SequencedTurnEvent, SharedAgentStreamSink, StoreError, ToolSinkEvent,
+    ToolSinkPort, TurnEnvelope, TurnEvent, TurnEventLog, TurnLifecyclePorts, TurnRunOutcome,
+    TurnStorePort, TurnStreamRegistryPort, TurnSurface, TurnTicketPort, UpsertOutcome,
+    configure_log_root, default_log_root, project_turn_to_history, recover_uncommitted, run_turn,
 };
 pub use mcp_gateway_client::{McpGatewayClient, gateway_auth_configured};
 pub use mcp_gateway::{
@@ -598,10 +648,10 @@ pub fn remove_surrealkv_lock(backend: &RuntimeBackend) {
         let lock_path = PathBuf::from(path).join("LOCK");
         if lock_path.exists() {
             if let Err(err) = std::fs::remove_file(&lock_path) {
-                eprintln!(
-                    "warning: failed to remove SurrealKV lock file during shutdown {}: {}",
-                    lock_path.display(),
-                    err
+                tracing::warn!(
+                    path = %lock_path.display(),
+                    error = %err,
+                    "failed to remove SurrealKV lock file during shutdown"
                 );
             }
         }

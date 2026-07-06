@@ -47,7 +47,7 @@ UI copy: prefer **“Workshop”** in product surfaces; **“server”** ok in s
 | `local` | `http://127.0.0.1:7419` | None | Desktop personal engine |
 | `paired` | LAN hint + Iroh fallback | QR v2 ceremony | Phone → Mac, or join team engine |
 
-`local` workshops may use Tauri autostart (`daemon_service.rs`). `paired` workshops use `workshop_transport` (LAN probe → Iroh + session token).
+`local` workshops may use Tauri autostart (`daemon_service.rs`). `paired` workshops use [`medousa-sdk-iroh`](../../../crates/medousa-sdk-iroh/) `WorkshopTransport` (LAN probe → Iroh + session token).
 
 ### 4. Persistence
 

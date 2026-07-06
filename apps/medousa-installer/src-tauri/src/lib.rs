@@ -1,3 +1,4 @@
+mod embedded_release;
 mod install;
 
 use std::collections::{HashMap, HashSet};
@@ -665,8 +666,18 @@ fn installer_launch_medousa(app: AppHandle) -> Result<(), String> {
     }
 }
 
+fn register_embedded_release_defaults() {
+    if let Some(base) = embedded_release::RELEASE_BASE_URL {
+        medousa::install::release_config::set_embedded_release_defaults(
+            base.to_string(),
+            embedded_release::RELEASE_CHANNEL.to_string(),
+        );
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    register_embedded_release_defaults();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

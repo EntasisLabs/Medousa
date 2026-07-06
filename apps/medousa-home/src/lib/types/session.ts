@@ -60,6 +60,7 @@ export type TurnTicketPhase =
   | "accepted"
   | "streaming"
   | "worker_handoff"
+  | "workshop_handoff"
   | "budget_blocked"
   | "done"
   | "error"

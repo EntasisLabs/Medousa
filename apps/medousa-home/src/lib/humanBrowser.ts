@@ -1,11 +1,18 @@
 /** Desktop human browser invoke API (no agent bridge). */
 
 import { invoke } from "@tauri-apps/api/core";
+import { isTauriMobilePlatform } from "$lib/platform";
+import { isPopoutBrowserChrome } from "$lib/stores/humanBrowserSurface";
+import type { HumanBrowserSurface } from "$lib/stores/humanBrowserSurface";
+
+export type { HumanBrowserSurface };
 
 export interface HumanBrowserEmbedLayout {
   activityWidth: number;
   activityCollapsed: boolean;
   workRailVisible: boolean;
+  /** Measured chrome bottom in shell viewport (`getBoundingClientRect().bottom`). */
+  contentTop?: number;
 }
 
 export interface HumanBrowserEmbedBounds {
@@ -13,6 +20,15 @@ export interface HumanBrowserEmbedBounds {
   y: number;
   width: number;
   height: number;
+}
+
+export interface HumanBrowserNavState {
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+
+export interface FindInPageResult {
+  found: boolean;
 }
 
 export async function humanBrowserEmbedSetBounds(
@@ -41,24 +57,93 @@ export async function humanBrowserEmbedApplyMobileLayout(
 export async function humanBrowserEmbedReadBounds(): Promise<HumanBrowserEmbedBounds & {
   windowWidth: number;
   windowHeight: number;
+  shellOriginX: number;
+  shellOriginY: number;
 }> {
   return invoke("human_browser_embed_read_bounds");
 }
 
+export async function humanBrowserEmbedCoordProbe(
+  dom?: HumanBrowserEmbedBounds | null,
+): Promise<Record<string, unknown>> {
+  return invoke("human_browser_embed_coord_probe", { dom: dom ?? null });
+}
+
+export async function humanBrowserActivateTab(
+  tabId: string,
+  url: string,
+): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_activate_tab", { tabId, url });
+  }
+  if (isTauriMobilePlatform()) {
+    const trimmed = url.trim();
+    if (!trimmed || trimmed === "about:blank") return;
+    return humanBrowserNavigate(trimmed);
+  }
+  return invoke("human_browser_embed_activate_tab", { tabId, url });
+}
+
+export async function humanBrowserCloseTab(tabId: string): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_close_tab", { tabId });
+  }
+  if (isTauriMobilePlatform()) {
+    return;
+  }
+  return invoke("human_browser_embed_close_tab", { tabId });
+}
+
 export async function humanBrowserNavigate(url: string): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_navigate", { url });
+  }
   return invoke("human_browser_navigate", { url });
 }
 
 export async function humanBrowserReload(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_reload");
+  }
   return invoke("human_browser_reload");
 }
 
 export async function humanBrowserGoBack(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_go_back");
+  }
   return invoke("human_browser_go_back");
 }
 
 export async function humanBrowserGoForward(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_go_forward");
+  }
   return invoke("human_browser_go_forward");
+}
+
+export async function humanBrowserStop(): Promise<void> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_stop");
+  }
+  return invoke("human_browser_stop");
+}
+
+export async function humanBrowserQueryNavState(): Promise<HumanBrowserNavState> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_query_nav_state");
+  }
+  return invoke("human_browser_query_nav_state");
+}
+
+export async function humanBrowserFindInPage(
+  query: string,
+  forward = true,
+): Promise<FindInPageResult> {
+  if (isPopoutBrowserChrome()) {
+    return invoke("human_browser_popout_find_in_page", { query, forward });
+  }
+  return invoke("human_browser_find_in_page", { query, forward });
 }
 
 export async function humanBrowserEmbedShow(): Promise<void> {
@@ -103,4 +188,18 @@ export async function humanBrowserSnapshotMarkdown(
 export interface HumanBrowserNavigatedPayload {
   url: string;
   title?: string | null;
+  favicon?: string | null;
+  tabId?: string | null;
+  surface?: HumanBrowserSurface;
+}
+
+export interface HumanBrowserLoadingPayload {
+  loading: boolean;
+  surface?: HumanBrowserSurface;
+}
+
+export interface HumanBrowserNavStatePayload {
+  canGoBack: boolean;
+  canGoForward: boolean;
+  surface?: HumanBrowserSurface;
 }

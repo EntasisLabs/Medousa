@@ -8,13 +8,12 @@ Medousa Home exposes a **human-first browser** embedded in the Web surface (desk
 
 ```
 WorkshopShell Web surface
-├── HumanBrowserPanel (Svelte chrome, 156px band)
-│   ├── tabs + URL bar + BrowserControlHandoff + BrowserCaptchaBanner
-│   └── BrowserChromeActions (star / save)
-└── main-browser-content (native webview, Rust-positioned below chrome)
+├── HumanBrowserPanel (Svelte chrome — tabs, URL bar, find bar, banners)
+│   └── [data-browser-embed-host] measured by BrowserCompositor
+└── main-browser-content (native webview, DOM-measured bounds via embed_set_bounds)
 ```
 
-All embed layout is **Rust-only** ([`human_browser.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser.rs)): fixed chrome height (156px), content fills remainder. No DOM overlay on the native webview.
+Embed layout is owned by **[`browserCompositor.ts`](Medousa/apps/medousa-home/src/lib/utils/browserCompositor.ts)**: measures `[data-browser-embed-host]` with `ResizeObserver`, batches `humanBrowserEmbedSetBounds` + show/hide via rAF. Rust ([`human_browser.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser.rs)) stores placement as `EmbedPlacement::Freeform` and re-applies on show after hide (placement is preserved across hide).
 
 ### State
 
@@ -22,13 +21,13 @@ All embed layout is **Rust-only** ([`human_browser.rs`](Medousa/apps/medousa-hom
 |-------|------|
 | [`humanBrowser.svelte.ts`](Medousa/apps/medousa-home/src/lib/stores/humanBrowser.svelte.ts) | Rendering source of truth — tabs, URL, history, native navigate |
 | [`browser.svelte.ts`](Medousa/apps/medousa-home/src/lib/stores/browser.svelte.ts) | Agent metadata — tab group, control handoff, work card linkage |
-| [`agentBrowserCoord.ts`](Medousa/apps/medousa-home/src/lib/utils/agentBrowserCoord.ts) | Fan-out `human-browser-navigated` → human + agent stores |
+| [`agentBrowserCoord.ts`](Medousa/apps/medousa-home/src/lib/utils/agentBrowserCoord.ts) | Fan-out `human-browser-navigated` + `human-browser-new-window` → human + agent stores |
 | [`openInBrowser.ts`](Medousa/apps/medousa-home/src/lib/utils/openInBrowser.ts) | Single entry for agent SSE and user links |
 | `human-browser-navigated` event | Native webview → store sync |
 
 ### Entry
 
-- Nav **Web** → `openBrowserWindow()` → embed show + layout
+- Nav **Web** → `openBrowserWindow()` → compositor attach + embed show
 - Agent SSE / links → `openInBrowser(url, { openedBy, sessionId, workCardId })`
 - CAPTCHA → `browser.setControl("awaiting_operator")` + open challenge URL
 - Resume → `resumeBrowserChallenge()` snapshots human webview → `completeBrowserSession`
@@ -39,13 +38,15 @@ All embed layout is **Rust-only** ([`human_browser.rs`](Medousa/apps/medousa-hom
 
 ## Mobile
 
-Web lives under the **Web tab** ([`BrowserPanel`](Medousa/apps/medousa-home/src/lib/components/browser/BrowserPanel.svelte)). Agent handoff + CAPTCHA strip in bottom chrome. [`MobileBrowserWorkshop`](Medousa/apps/medousa-home/src/lib/components/mobile/MobileBrowserWorkshop.svelte) for scoped chat.
+Web lives under the **Web tab** ([`BrowserPanel`](Medousa/apps/medousa-home/src/lib/components/browser/BrowserPanel.svelte)). Same **BrowserCompositor** drives native embed on iOS and Android (mobile mode: `human_browser_embed_apply_mobile_layout` + measured panel bounds). Agent handoff + CAPTCHA strip in bottom chrome. [`MobileBrowserWorkshop`](Medousa/apps/medousa-home/src/lib/components/mobile/MobileBrowserWorkshop.svelte) for scoped chat.
 
 ### iOS native overlay
 
-Tauri 2 `Window::add_child` is desktop-only. On **iOS**, the human browser uses a **UIKit WKWebView overlay** attached to the root view controller ([`human_browser_ios.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser_ios.rs)) — same `human_browser_*` invoke surface as desktop. Svelte chrome in the main webview positions the overlay via `human_browser_embed_apply_mobile_layout`; snapshots run through `evaluateJavaScript` with shared cookies.
+Tauri 2 `Window::add_child` is desktop/Android-only. On **iOS**, the human browser uses a **UIKit WKWebView overlay** ([`human_browser_ios.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser_ios.rs)) — same invoke surface as desktop. Compositor passes `content_bounds` from DOM; snapshots run through `evaluateJavaScript`.
 
-Android still uses iframe stubs until a native `WebView` overlay ships ([`human_browser_mobile.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser_mobile.rs)).
+### Android native overlay
+
+On **Android**, native embed uses Tauri `add_child` on the main window ([`human_browser_android.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser_android.rs) re-exports [`human_browser.rs`](Medousa/apps/medousa-home/src-tauri/src/human_browser.rs)). Same compositor mobile path as iOS. Iframe fallback remains for web dev (`!isTauri()`).
 
 ## Agent backend
 

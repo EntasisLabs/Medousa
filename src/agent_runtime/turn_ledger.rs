@@ -16,18 +16,64 @@ use crate::agent_runtime::turn_completion_fsm::ContinueReason;
 
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
 
+/// Host content-pack hold — one resolution round before commit or more tools.
+pub const PACK_HOLD_PREFIX: &str = "[MEDOUSA_PACK_HOLD]";
+
+pub fn pack_hold_resolution_control_message() -> String {
+    format!(
+        "{PACK_HOLD_PREFIX}\n\
+         Your last message is held — we were not sure if it is a final reply, a clarifying \
+         question for the principal, or a brief status note before more tools.\n\
+         If it is a question: send one more message continuing that thought.\n\
+         If you still have work: call tools (or cognition_turn_begin_work) this round."
+    )
+}
+
+/// Merge held assistant fragments with the resolution prose into one principal-facing body.
+pub fn merge_assistant_pack_fragments(fragments: &[String], resolution: &str) -> String {
+    let mut parts: Vec<String> = fragments
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    let trimmed_resolution = resolution.trim();
+    if !trimmed_resolution.is_empty() {
+        let duplicate_last = parts
+            .last()
+            .is_some_and(|last| last.eq_ignore_ascii_case(trimmed_resolution));
+        if !duplicate_last {
+            parts.push(trimmed_resolution.to_string());
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    if parts.len() == 1 {
+        return parts.into_iter().next().unwrap_or_default();
+    }
+    parts.join("\n\n")
+}
+
+pub fn push_pack_hold_message(messages: &mut Vec<ChatMessage>) {
+    messages.push(ChatMessage::system(
+        pack_hold_resolution_control_message(),
+    ));
+}
+
 /// Injected on host/worker tool turns and echoed in STTP — strict runtime boundary for prose vs tools.
 pub const TURN_RUNTIME_BOUNDARY_APPENDIX: &str = r#"[MEDOUSA_TURN_RUNTIME]
-Runtime boundary (strict — enforced by the daemon, not negotiable):
-- Any assistant message with NO tool calls and non-empty prose ENDS this turn immediately. The runtime will not loop for more work in the same turn.
-- Still need tools? Call them in the same model round or a later round — never stream plan-only prose ("I'll check…", "next I'll spawn workers…", "let me calibrate…").
-- Progress or status for the principal: cognition_turn_begin_work (a tool call) — not naked interim chat prose.
-- A brief acknowledgment ("on it", "let me check") is fine and will NOT end the turn as long as you ALSO call a tool (or cognition_turn_begin_work) in the SAME round; don't rely on a naked note to keep the turn alive — pair it with the tool.
-- After tool work is done: cognition_turn_finish with the complete answer (required — runtime rejects naked prose as final). Plain prose without tools ends the turn but does not commit as the principal-facing answer after tools have run.
-- Mid-task handoff (principal replies to continue): cognition_turn_checkpoint — not cognition_turn_finish.
-- Delegate execution: cognition_spawn_turn_worker in a tool round with a complete task prompt — announcing delegation in prose does not run workers.
-- Host console auto-unlocks memory + vault each session (calibrate, vault write, …) — call tools directly; use cognition_tools_discover only for catalog/runtime/history/identity/skill/overlay.
-- Between tool rounds, streamed progress is archived automatically; use begin_work when you want a visible status line before heavy tools."#;
+Runtime boundary (enforced by the daemon):
+- Chat (host): memory, identity, runtime, vault read, quick cognition_web_search/cognition_browser_fetch, cognition_turn_begin_work(message, goal) for multi-tool execution, cognition_spawn_turn_worker for parallel research.
+- cognition_turn_begin_work enters the bound Workshop (one per session) — Chat ends with ack; synthesis delivers on the same thread.
+- Chat prose may continue briefly for scheduling; Studio/environment/canvas, Grapheme, and heavy web belong in the Workshop.
+- After tool work on Chat: cognition_turn_finish commits the principal-facing answer.
+- Mid-task handoff: cognition_turn_checkpoint. Parallel delegate: cognition_spawn_turn_worker in a tool round.
+- UI stream draft may reset between rounds; [MEDOUSA_SCRATCH] engine notes persist across rounds and client disconnect."#;
+
+pub const TURN_SCRATCH_APPENDIX: &str = r#"[MEDOUSA_SCRATCH_POLICY]
+[MEDOUSA_SCRATCH] is your engine sticky notes — persists across tool rounds and client disconnect.
+The streamed UI draft may reset between rounds; scratch does not.
+Check scratch digests_recent / tools_this_turn / open_gaps before re-calling tools you already ran."#;
 
 /// Default when no host gate passes a configured tool-round budget (tests, bare loops).
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
@@ -45,6 +91,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
          mode=tool_loop\n\
          max_tool_rounds={max_tool_rounds}\n\
          {TURN_RUNTIME_BOUNDARY_APPENDIX}\n\
+         {TURN_SCRATCH_APPENDIX}\n\
          Turn start injects [MEDOUSA_TOOL_SLICES], [MEDOUSA_TOOL_HINTS], and matched [MEDOUSA_GRAPHEME_SCRIPTS]. \
          Call cognition_tools_discover(domain=…) to unlock tool groups for this session; drill history with cognition_tool_history_detail(slice_id=turn:N)."
     )
@@ -402,7 +449,9 @@ mod tests {
         assert!(p.contains("[MEDOUSA_TOOL_HINTS]"));
         assert!(p.contains("cognition_spawn_turn_worker"));
         assert!(p.contains("[MEDOUSA_TURN_RUNTIME]"));
-        assert!(p.contains("ENDS this turn immediately"));
+        assert!(p.contains("[MEDOUSA_SCRATCH_POLICY]"));
+        assert!(p.contains("cognition_turn_finish"));
+        assert!(p.contains("cognition_turn_update_user"));
     }
 
     #[test]
@@ -426,5 +475,24 @@ mod tests {
         assert!(msg.contains("10"));
         assert!(msg.contains("turn budget: 10"));
         assert!(msg.contains("used 7 this turn"));
+    }
+
+    #[test]
+    fn merge_assistant_pack_joins_fragments() {
+        let merged = merge_assistant_pack_fragments(
+            &["Which repository should I search?".to_string()],
+            "medousa or stasis?",
+        );
+        assert_eq!(
+            merged,
+            "Which repository should I search?\n\nmedousa or stasis?"
+        );
+    }
+
+    #[test]
+    fn merge_assistant_pack_dedupes_identical_resolution() {
+        let merged =
+            merge_assistant_pack_fragments(&["Which repo?".to_string()], "Which repo?");
+        assert_eq!(merged, "Which repo?");
     }
 }

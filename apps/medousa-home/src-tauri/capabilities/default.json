@@ -2,12 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "chat-popout", "browser"],
+  "windows": ["main", "main-browser-content", "chat-popout", "browser"],
   "permissions": [
     "core:default",
     "dialog:default",
     "opener:default",
     "notification:default",
+    "mobile-push:default",
     "deep-link:default"
   ]
 }

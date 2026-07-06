@@ -13,6 +13,8 @@ describe("artifactPrepareHtml", () => {
     expect(html).toContain("medousa-artifact-mode");
     expect(html).toContain("overflow:hidden");
     expect(html).toContain("--medousa-host-fg");
+    expect(html).toContain("--medousa-host-accent");
+    expect(html).toContain("--medousa-host-brand");
     expect(html).not.toContain("!important");
   });
 
@@ -39,5 +41,34 @@ describe("artifactPrepareHtml", () => {
     expect(buildArtifactThemeStyle(false)).toContain("medousa-artifact-theme");
     expect(buildArtifactModeStyle("fullscreen")).toContain("overflow:auto");
     expect(buildArtifactModeStyle("inline")).toContain("overflow:hidden");
+  });
+
+  it("injects workshop feed state for live presentation components", () => {
+    const html = prepareArtifactHtml(
+      "<!DOCTYPE html><html><head></head><body></body></html>",
+      "panel",
+      true,
+      {
+        feedId: "workshop.pulse",
+        lastPatch: { phase: "working", round: 2, tools: ["cognition_environment_apply"] },
+      },
+    );
+    expect(html).toContain("window.__MEDOUSA_FEED__=");
+    expect(html).toContain('"phase":"working"');
+    expect(html).toContain("workshop.pulse");
+    expect(html).toContain("medousa-feed-client-script");
+  });
+
+  it("injects runtime bridge for presentation widgets", () => {
+    const html = prepareArtifactHtml(
+      "<!DOCTYPE html><html><head></head><body></body></html>",
+      "panel",
+      true,
+      null,
+      "braindump-widget",
+    );
+    expect(html).toContain("medousa-artifact-runtime-script");
+    expect(html).toContain("medousa:artifact:runtime");
+    expect(html).toContain("medousa-store-bootstrap-script");
   });
 });

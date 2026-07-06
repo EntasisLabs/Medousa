@@ -281,8 +281,82 @@ pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArti
         return None;
     }
 
-    let latest_id = resolve_latest_artifact_id(session_id, query).unwrap_or_else(|| query.to_string());
+    let resolved = resolve_artifact_reference(session_id, query);
+    let latest_id =
+        resolve_latest_artifact_id(session_id, &resolved).unwrap_or_else(|| resolved.clone());
     fetch_artifact_at_id(session_id, &latest_id)
+}
+
+/// Resolve a presentation reference: canonical `art:…` ids, registered aliases, and hash suffixes.
+pub fn resolve_artifact_reference(session_id: &str, artifact_ref: &str) -> String {
+    let query = artifact_ref.trim();
+    if query.is_empty() {
+        return String::new();
+    }
+    if query.starts_with("art:") {
+        return query.to_string();
+    }
+    resolve_artifact_alias(session_id, query).unwrap_or_else(|| query.to_string())
+}
+
+fn artifact_alias_path(session_id: &str) -> PathBuf {
+    artifacts_root()
+        .join(session_id)
+        .join("artifact_aliases.json")
+}
+
+fn load_artifact_aliases(session_id: &str) -> HashMap<String, String> {
+    let path = artifact_alias_path(session_id);
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    serde_json::from_str(&raw).unwrap_or_default()
+}
+
+fn save_artifact_aliases(session_id: &str, aliases: &HashMap<String, String>) -> Result<(), String> {
+    let path = artifact_alias_path(session_id);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let raw = serde_json::to_string_pretty(aliases).map_err(|err| err.to_string())?;
+    std::fs::write(path, raw).map_err(|err| err.to_string())
+}
+
+/// Register a friendly alias (e.g. canvas component id) → canonical artifact id for a session.
+pub fn register_artifact_alias(
+    session_id: &str,
+    alias: &str,
+    artifact_id: &str,
+) -> Result<(), String> {
+    let alias = alias.trim();
+    let artifact_id = artifact_id.trim();
+    if alias.is_empty() || artifact_id.is_empty() {
+        return Err("alias and artifact_id are required".to_string());
+    }
+    if !artifact_id.starts_with("art:") {
+        return Err(format!(
+            "artifact_id must be a canonical art:… id (got {artifact_id})"
+        ));
+    }
+    let mut aliases = load_artifact_aliases(session_id);
+    aliases.insert(alias.to_string(), artifact_id.to_string());
+    save_artifact_aliases(session_id, &aliases)
+}
+
+pub fn resolve_artifact_alias(session_id: &str, alias: &str) -> Option<String> {
+    let alias = alias.trim();
+    if alias.is_empty() {
+        return None;
+    }
+    load_artifact_aliases(session_id).get(alias).cloned()
+}
+
+pub fn presentation_artifact_exists(session_id: &str, artifact_ref: &str) -> bool {
+    let resolved = resolve_artifact_reference(session_id, artifact_ref);
+    if resolved.is_empty() {
+        return false;
+    }
+    fetch_artifact_at_id(session_id, &resolved).is_some()
 }
 
 pub fn fetch_artifact_at_id(session_id: &str, artifact_id: &str) -> Option<FetchedArtifact> {
@@ -403,6 +477,80 @@ pub fn resolve_latest_artifact_id(session_id: &str, artifact_id: &str) -> Option
         }
     }
     Some(current.artifact_id)
+}
+
+/// Delete a UI HTML artifact revision chain (root + superseding revisions). Payload files are removed.
+pub fn delete_ui_artifact(session_id: &str, artifact_ref: &str) -> std::result::Result<Vec<String>, String> {
+    let session_id = session_id.trim();
+    if session_id.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let resolved = resolve_artifact_reference(session_id, artifact_ref);
+    if resolved.is_empty() {
+        return Err("artifact_id is required".to_string());
+    }
+    let latest = resolve_latest_artifact_id(session_id, &resolved).unwrap_or(resolved);
+    let records = read_index_records();
+    let Some(seed) = records
+        .iter()
+        .find(|record| record.session_id == session_id && record.artifact_id == latest)
+        .cloned()
+        .or_else(|| fetch_ui_artifact_record_from_disk(session_id, &latest))
+    else {
+        return Err(format!("artifact not found: {latest}"));
+    };
+    if seed.direction != "ui" {
+        return Err("only UI HTML presentation artifacts can be deleted from Home".to_string());
+    }
+
+    let root = seed
+        .root_artifact_id
+        .clone()
+        .unwrap_or_else(|| seed.artifact_id.clone());
+    let mut chain_ids: HashSet<String> = HashSet::new();
+    chain_ids.insert(root.clone());
+    for record in &records {
+        if record.session_id != session_id {
+            continue;
+        }
+        let record_root = record
+            .root_artifact_id
+            .clone()
+            .unwrap_or_else(|| record.artifact_id.clone());
+        if record_root == root {
+            chain_ids.insert(record.artifact_id.clone());
+        }
+    }
+
+    let to_delete: Vec<ArtifactRecord> = records
+        .iter()
+        .filter(|record| {
+            record.session_id == session_id && chain_ids.contains(&record.artifact_id)
+        })
+        .cloned()
+        .collect();
+    if to_delete.is_empty() {
+        return Err(format!("artifact not found: {latest}"));
+    }
+
+    let deleted_ids: Vec<String> = to_delete.iter().map(|r| r.artifact_id.clone()).collect();
+    let remaining: Vec<ArtifactRecord> = records
+        .into_iter()
+        .filter(|record| !deleted_ids.contains(&record.artifact_id))
+        .collect();
+    overwrite_index_records(&remaining)?;
+
+    let mut deleted_paths = HashSet::new();
+    for record in &to_delete {
+        if deleted_paths.insert(record.payload_path.clone()) {
+            let path = std::path::Path::new(&record.payload_path);
+            if path.is_file() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    Ok(deleted_ids)
 }
 
 pub fn grep_ui_artifact(
@@ -612,6 +760,7 @@ fn repair_ui_artifact_index_from_disk() {
 
 const ARTIFACT_HOST_STYLE: &str = concat!(
     "<style id=\"medousa-artifact-host\">",
+    // Minimal host vars for chat/library exports; Home PresentationFrame injects full theme tokens live.
     ":root{--medousa-host-bg:transparent;--medousa-host-fg:inherit;--medousa-host-muted:inherit}",
     "html,body{margin:0;padding:0;background:var(--medousa-host-bg,transparent);overflow:hidden;",
     "scrollbar-width:none;-ms-overflow-style:none}",
@@ -1089,6 +1238,25 @@ mod tests {
         assert!(fetched.body.contains("Disk fallback"));
 
         let _ = std::fs::remove_dir_all(artifacts_root().join(session_id));
+    }
+
+    #[test]
+    fn artifact_alias_resolves_friendly_component_ids() {
+        let session_id = "test-ui-artifact-alias-session";
+        let record = persist_ui_artifact(
+            session_id,
+            "<p>Alias test</p>",
+            "Alias",
+            "inline",
+            None,
+        )
+        .expect("persist");
+        register_artifact_alias(session_id, "adhd-guide-index", &record.artifact_id)
+            .expect("register alias");
+
+        let fetched = fetch_artifact(session_id, "adhd-guide-index").expect("fetch by alias");
+        assert_eq!(fetched.record.artifact_id, record.artifact_id);
+        assert!(fetched.body.contains("Alias test"));
     }
 
     #[test]

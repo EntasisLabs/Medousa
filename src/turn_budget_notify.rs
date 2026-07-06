@@ -47,6 +47,18 @@ pub async fn notify_turn_budget_approval_required(
     payload: TurnBudgetNotifyPayload,
 ) -> Result<()> {
     if is_home_channel(&delivery_target.channel) {
+        let summary = payload
+            .progress_summary
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(payload.reason.trim());
+        crate::home_push::notify_budget_approval(
+            &payload.request_id,
+            summary,
+            summary,
+        )
+        .await;
         return Ok(());
     }
     if !is_external_push_channel(&delivery_target.channel) {

@@ -1,6 +1,7 @@
 //! Mobile stubs for desktop-only BrowserHost HTTP + in-process bridge.
 //! Client registration uses daemon HTTP directly; local :7422 host is unavailable.
 
+use medousa_browser_lite::{search_ddg_html_cached, SearchResponse};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,6 +28,21 @@ async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: 
         return;
     };
     let _ = client.post(url).json(&body).send().await;
+}
+
+#[tauri::command]
+pub async fn browser_host_search(
+    query: String,
+    max_results: Option<usize>,
+) -> Result<SearchResponse, String> {
+    let trimmed = query.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("empty query".to_string());
+    }
+    let limit = max_results.unwrap_or(5).clamp(1, 10);
+    tokio::task::spawn_blocking(move || search_ddg_html_cached(&trimmed, limit))
+        .await
+        .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]

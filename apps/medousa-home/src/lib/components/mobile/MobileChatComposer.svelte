@@ -104,6 +104,12 @@
         return;
       }
 
+      if (chat.hasWorkshopHandoff()) {
+        const { steerBoundWorkshop } = await import("$lib/daemon");
+        await steerBoundWorkshop(chat.sessionId, prompt);
+        return;
+      }
+
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
       const display =
         prompt ||

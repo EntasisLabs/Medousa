@@ -20,9 +20,11 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-mobile-push = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread"] }
 tokio-util = "0.7"
 futures-util = "0.3"
@@ -40,6 +42,8 @@ bytes = "1"
 url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
+medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
+medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
 medousa-browser-lite = { path = "../../../crates/medousa-browser-lite" }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
@@ -49,9 +53,6 @@ medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
-medousa = { path = "../../../", default-features = false, features = ["iroh-transport"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
@@ -75,6 +76,13 @@ objc2-ui-kit = { version = "0.3", features = [
 ] }
 tauri-plugin-ios-webview-insets = "0.1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSObjCRuntime"] }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSGraphics", "NSScrollView", "NSClipView"] }
+
 [patch.crates-io]
 grapheme-runtime = { path = "../../../vendor/grapheme-runtime" }
 grapheme-sdk = { path = "../../../vendor/grapheme-sdk" }
+# Upstream Package.swift declares iOS 13 but uses UNNotificationPresentationOptions.banner/.list (iOS 14+).
+tauri-plugin-mobile-push = { path = "../../../vendor/tauri-plugin-mobile-push" }

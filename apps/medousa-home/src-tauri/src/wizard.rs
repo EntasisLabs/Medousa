@@ -208,6 +208,17 @@ fn ensure_migration_wizard() -> Result<WizardFile, String> {
 
 #[tauri::command]
 pub fn wizard_bootstrap() -> Result<WizardBootstrap, String> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        return Ok(WizardBootstrap {
+            visible: false,
+            mode: "none".to_string(),
+            screen: WizardScreen::Screen1,
+            existing_provider: None,
+            existing_model: None,
+        });
+    }
+
     if let Some(file) = read_wizard_file() {
         return Ok(bootstrap_from_file(&file));
     }

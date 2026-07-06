@@ -33,6 +33,20 @@ pub enum TurnWorkStatus {
     Cancelled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnWorkDisposition {
+    #[default]
+    Parallel,
+    Bound,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkshopSteerMessage {
+    pub text: String,
+    pub at: DateTime<Utc>,
+}
+
 fn default_worker_max_tool_rounds() -> usize {
     10
 }
@@ -85,6 +99,15 @@ pub struct TurnWorkRecord {
     pub branch_group_id: Option<String>,
     #[serde(default)]
     pub archived: bool,
+    #[serde(default)]
+    pub disposition: TurnWorkDisposition,
+    #[serde(default)]
+    pub steer_messages: Vec<WorkshopSteerMessage>,
+    /// Snapshotted from host client when work was delegated (Home canvas lane).
+    #[serde(default)]
+    pub supports_ui_artifacts: bool,
+    #[serde(default)]
+    pub supports_browser_host: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -297,5 +320,49 @@ impl TurnWorkerStore {
         drop(guard);
         self.persist(&snapshot.work_id, snapshot.stasis_job_id.as_deref());
         Some(snapshot)
+    }
+
+    pub fn active_bound_workshop(&self, session_id: &str) -> Option<TurnWorkRecord> {
+        self.records
+            .lock()
+            .expect("turn worker records")
+            .values()
+            .filter(|record| {
+                !record.archived
+                    && record.session_id == session_id
+                    && record.disposition == TurnWorkDisposition::Bound
+                    && matches!(
+                        record.status,
+                        TurnWorkStatus::Pending | TurnWorkStatus::Running
+                    )
+            })
+            .max_by_key(|record| record.updated_at)
+            .cloned()
+    }
+
+    pub fn push_steer(&self, work_id: &str, text: String) -> Option<TurnWorkRecord> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        self.update(work_id, |record| {
+            record.steer_messages.push(WorkshopSteerMessage {
+                text: trimmed.to_string(),
+                at: Utc::now(),
+            });
+        })
+    }
+
+    pub fn drain_steer_messages(&self, work_id: &str) -> Vec<WorkshopSteerMessage> {
+        let mut drained = Vec::new();
+        self.update(work_id, |record| {
+            drained = std::mem::take(&mut record.steer_messages);
+        });
+        drained
+    }
+
+    pub fn is_work_cancelled(&self, work_id: &str) -> bool {
+        self.get(work_id)
+            .is_some_and(|record| record.status == TurnWorkStatus::Cancelled)
     }
 }

@@ -89,4 +89,8 @@ pub struct TurnSliceSummary {
     pub delegate_intent: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub open_gaps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_digests: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub working_notes: Vec<String>,
 }

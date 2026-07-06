@@ -9,14 +9,34 @@ pub const AGENT_RUNTIME_VERSION: &str = "centralized-v1";
 pub mod active_stream_sink;
 pub mod ambient_context;
 pub mod daemon_interactive_turn;
+#[cfg(test)]
+mod golden_turn;
+#[cfg(test)]
+mod spine_byte_parity;
+/// Re-export shim so in-tree `super::stream_sink` paths keep working.
+pub mod stream_sink {
+    pub use medousa_engine::stream_sink::*;
+}
+/// Re-export shim so in-tree `super::turn_event` paths keep working.
+pub mod turn_event {
+    pub use medousa_engine::turn_event::*;
+}
+/// Re-export shim so in-tree `super::turn_event_log` paths keep working.
+pub mod turn_event_log {
+    pub use medousa_engine::turn_event_log::*;
+}
+/// Re-export shim so in-tree `super::engine` paths keep working.
+pub mod engine {
+    pub use medousa_engine::engine::*;
+}
 pub mod turn_delivery;
 pub mod heartbeat_turn;
+pub mod context_usage;
 pub mod continuation;
 pub mod presentation;
 pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;
-pub mod stream_sink;
 pub mod system_prompt;
 pub mod tool_stream;
 pub mod turn_budget;
@@ -78,6 +98,11 @@ pub use runtime::{
     build_daemon_agent_runtime_from_composition,
 };
 pub use settings::{default_daemon_runtime_settings, runtime_settings_for_interactive_turn};
+pub use medousa_engine::{
+    EngineTurnHandle, Principal, PrincipalKind, RecoveredTurn, SequencedTurnEvent, TurnEnvelope,
+    TurnEvent, TurnEventLog, TurnRunOutcome, TurnSurface, project_turn_to_history,
+    recover_uncommitted,
+};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink};
 pub use system_prompt::{DEFAULT_SYSTEM_PROMPT, LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT};
 pub use turn_budget::{

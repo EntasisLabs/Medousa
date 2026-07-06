@@ -234,24 +234,24 @@ medousa_write_component_install_manifest() {
 EOF
 }
 
-medousa_cargo_target_root() {
+medousa_default_cargo_target_dir() {
   local root
   root="$(medousa_repo_root)"
+  echo "$(cd "${root}/.." && pwd)/.cache/cargo-target"
+}
+
+medousa_cargo_target_root() {
   if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
     echo "${CARGO_TARGET_DIR}"
+  elif [[ -n "${MEDOUSA_CARGO_TARGET_DIR:-}" ]]; then
+    echo "${MEDOUSA_CARGO_TARGET_DIR}"
   else
-    echo "${root}/target"
+    medousa_default_cargo_target_dir
   fi
 }
 
 medousa_whatsapp_cargo_target_root() {
-  local root
-  root="$(medousa_repo_root)"
-  if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
-    echo "${CARGO_TARGET_DIR}"
-  else
-    echo "${root}/adapters/medousa-whatsapp/target"
-  fi
+  medousa_cargo_target_root
 }
 
 medousa_cargo_release_dir() {

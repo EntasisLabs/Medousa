@@ -5,11 +5,13 @@ pub mod identity;
 pub mod jobs;
 pub mod local_inference;
 pub mod locus;
+pub mod maintenance;
 pub mod media;
 pub mod model_catalog;
 pub mod recurring;
 pub mod runtime;
 pub mod sdk;
+pub mod iroh_hook;
 pub mod session;
 pub mod sse;
 pub mod stt;
@@ -18,13 +20,18 @@ pub mod vault;
 pub mod workspace_card;
 pub mod turn_budget;
 pub mod tool_history;
+pub mod environment;
+pub mod feeds;
+pub mod component_store;
+pub mod component_runtime;
 pub mod workflow;
 pub mod workshop_http;
 
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
-    DaemonHealth, InteractiveTurnAccepted, InteractiveTurnRequest, InteractiveTurnStreamEvent,
-    StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
+    DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted, InteractiveTurnRequest,
+    InteractiveTurnStreamEvent, StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent,
+    DEFAULT_DAEMON_URL,
 };
 use crate::workshop_transport;
 use reqwest::Client;
@@ -38,6 +45,7 @@ use tokio::sync::watch;
 pub struct DaemonState {
     pub daemon_url: Mutex<String>,
     workspace_cancel: Mutex<Option<watch::Sender<bool>>>,
+    environment_cancel: Mutex<Option<watch::Sender<bool>>>,
     /// One SSE listener per turn id — Tier 2c multi-stream bridge.
     interactive_streams: Mutex<HashMap<String, watch::Sender<bool>>>,
 }
@@ -47,6 +55,7 @@ impl DaemonState {
         Self {
             daemon_url: Mutex::new(resolve_daemon_url()),
             workspace_cancel: Mutex::new(None),
+            environment_cancel: Mutex::new(None),
             interactive_streams: Mutex::new(HashMap::new()),
         }
     }
@@ -273,6 +282,67 @@ pub fn workspace_stream_stop(state: State<'_, DaemonState>) -> Result<(), String
         .workspace_cancel
         .lock()
         .expect("workspace cancel lock")
+        .take()
+    {
+        let _ = tx.send(true);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn environment_stream_start(
+    app: AppHandle,
+    state: State<'_, DaemonState>,
+    since_revision: Option<u64>,
+    profile_id: Option<String>,
+) -> Result<(), String> {
+    let mut path = "/v1/environment/spec/stream".to_string();
+    let mut query_parts = Vec::new();
+    if let Some(revision) = since_revision {
+        query_parts.push(format!("since_revision={revision}"));
+    }
+    if let Some(id) = profile_id.filter(|value| !value.trim().is_empty()) {
+        query_parts.push(format!("profile_id={}", urlencoding::encode(id.trim())));
+    }
+    if !query_parts.is_empty() {
+        path.push('?');
+        path.push_str(&query_parts.join("&"));
+    }
+
+    let config = self::sdk::transport_config(&state);
+    let cancel_rx = replace_cancel_slot(&state.environment_cancel);
+
+    tokio::spawn(async move {
+        match workshop_transport::workshop_get_bytes_stream(&config, &path).await {
+            Ok(source) => {
+                stream_sse_json_workshop::<EnvironmentStreamEvent, _>(
+                    &app,
+                    source,
+                    "environment://event",
+                    "environment://error",
+                    |_event| {},
+                    cancel_rx,
+                )
+                .await;
+            }
+            Err(err) => {
+                let _ = app.emit(
+                    "environment://error",
+                    serde_json::json!({ "message": err }),
+                );
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn environment_stream_stop(state: State<'_, DaemonState>) -> Result<(), String> {
+    if let Some(tx) = state
+        .environment_cancel
+        .lock()
+        .expect("environment cancel lock")
         .take()
     {
         let _ = tx.send(true);

@@ -21,6 +21,7 @@ pub enum IngestAction {
     SetDisplayName { label: Option<String> },
     QueryHealth,
     QueryHeartbeat,
+    QueryContextUsage,
 }
 
 /// Rich result of processing an ingest request.
@@ -100,6 +101,7 @@ enum IngestCommand {
     Name { label: Option<String> },
     Health,
     Heartbeat,
+    Usage,
     Brief { args: String },
     SkillsList,
     SkillRun { args: String },
@@ -176,6 +178,7 @@ fn parse_ingest_command(text: &str) -> IngestCommand {
         },
         "/health" => IngestCommand::Health,
         "/heartbeat" => IngestCommand::Heartbeat,
+        "/usage" => IngestCommand::Usage,
         "/brief" => IngestCommand::Brief { args },
         "/skills" => IngestCommand::SkillsList,
         "/skill" => IngestCommand::SkillRun { args },
@@ -252,6 +255,7 @@ pub fn process_ingest(
                 "/regen - Regenerate the last response",
                 "/health - Daemon health check",
                 "/heartbeat - Daemon heartbeat status",
+                "/usage - Context window / token breakdown from the last turn",
                 "/brief - Run the morning-brief manuscript (optional extra instructions)",
                 "/skills - List imported skill specialties with runnable scripts",
                 "/skill <id> [script] [extra] - Run a skill in OpenShell sandbox via worker",
@@ -390,6 +394,15 @@ pub fn process_ingest(
             is_new_session: false,
             reply: "checking daemon heartbeat…".to_string(),
             action: IngestAction::QueryHeartbeat,
+        },
+
+        IngestCommand::Usage => IngestOutcome {
+            session_id: existing_session_id.unwrap_or_else(|| {
+                uuid::Uuid::new_v4().simple().to_string()
+            }),
+            is_new_session: false,
+            reply: "loading context usage…".to_string(),
+            action: IngestAction::QueryContextUsage,
         },
 
         IngestCommand::Brief { args } => {

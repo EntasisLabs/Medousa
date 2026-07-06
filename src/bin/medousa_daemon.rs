@@ -41,6 +41,7 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
                 job_id: job_id.to_string(),
             },
         );
+        medousa::feed_sink::maybe_publish_recurring_job_feed(self.state.composition(), job_id).await;
         if job_succeeded(self.state.composition(), job_id).await {
             let _ = maybe_resume_agent_turn_from_child_job(&self.state, job_id).await;
         }
@@ -78,23 +79,52 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
             || report.runtime_attempts_pruned > 0
             || report.runtime_outbox_pruned > 0
         {
-            eprintln!(
-                "medousa-daemon retention: locus_raw={} jobs={} attempts={} outbox={}",
-                report.locus_raw_deleted,
-                report.runtime_jobs_pruned,
-                report.runtime_attempts_pruned,
-                report.runtime_outbox_pruned,
+            tracing::info!(
+                locus_raw = report.locus_raw_deleted,
+                jobs = report.runtime_jobs_pruned,
+                attempts = report.runtime_attempts_pruned,
+                outbox = report.runtime_outbox_pruned,
+                "retention pass completed"
             );
         }
     }
 }
 
+/// Default backstop on concurrently in-flight HTTP requests. A high ceiling
+/// that protects against connection/FD exhaustion (e.g. a mobile reconnect
+/// storm) without affecting normal load. Override with
+/// `MEDOUSA_DAEMON_MAX_CONCURRENCY`.
+const DEFAULT_MAX_CONCURRENCY: usize = 1024;
+
+fn resolve_max_concurrency() -> usize {
+    std::env::var("MEDOUSA_DAEMON_MAX_CONCURRENCY")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_MAX_CONCURRENCY)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    medousa::observability::init_tracing_from_env();
+
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
         return Ok(());
+    }
+
+    // Raise the soft FD limit before binding sockets. The daemon multiplexes
+    // many sockets (HTTP clients, SSE streams, DB, Iroh, grapheme); the default
+    // soft RLIMIT_NOFILE (often 256 on macOS) is the FD-pressure failure class
+    // behind persist drops and wasix panics under reconnect storms.
+    match medousa::comms::raise_nofile_limit(medousa::comms::DEFAULT_TARGET_NOFILE) {
+        Ok(limits) => tracing::info!(
+            soft = limits.soft,
+            hard = limits.hard,
+            "raised RLIMIT_NOFILE"
+        ),
+        Err(err) => tracing::warn!(error = %err, "could not raise RLIMIT_NOFILE"),
     }
 
     let backend_name = find_arg_value(&args, "--backend")
@@ -104,7 +134,7 @@ async fn main() -> Result<()> {
     // file can supply stasis/grapheme settings (timezone, module timeouts,
     // feature toggles) without overriding values the native config flow sets.
     if let Some(path) = medousa::load_dotenv_overlay() {
-        eprintln!("medousa-daemon: loaded env overlay from {}", path.display());
+        tracing::info!(path = %path.display(), "loaded env overlay");
     }
     // Default local SurrealKV to grouped fsync (~200ms) instead of fsync-per-commit so
     // chat-turn writes don't stall on disk. Gated strictly to the surrealkv backend:
@@ -116,7 +146,7 @@ async fn main() -> Result<()> {
         if is_surrealkv && std::env::var_os("SURREAL_DATASTORE_SYNC_DATA").is_none() {
             // SAFETY: set before any DB connect (and before extra threads read it).
             unsafe { std::env::set_var("SURREAL_DATASTORE_SYNC_DATA", "200ms") };
-            eprintln!("medousa-daemon: SurrealKV sync mode defaulted to 200ms (grouped fsync)");
+            tracing::info!("SurrealKV sync mode defaulted to 200ms (grouped fsync)");
         }
     }
     apply_daemon_env(&load_product_config());
@@ -149,7 +179,7 @@ async fn main() -> Result<()> {
                 "failed to bind medousa daemon on {addr} — another daemon may already be running"
             )
         })?;
-    eprintln!("medousa-daemon acquired {addr}, initializing runtime…");
+    tracing::info!(%addr, "acquired bind address, initializing runtime");
 
     let webhook_client = heartbeat_notify
         .webhook_url
@@ -182,8 +212,8 @@ async fn main() -> Result<()> {
     medousa::user_profiles::init_workshop_profile_registry(profile_registry.clone());
 
     if once {
-        let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy).await?;
-        println!("{}", format_tick_report("medousa-daemon once", &report));
+        let report = tick_runtime(platform.composition(), &worker_id, heartbeat_policy, None).await?;
+        tracing::info!("{}", format_tick_report("medousa-daemon once", &report));
         let mut heartbeat_metrics = HeartbeatDeliveryMetrics::default();
         let dispatch_decision = decide_heartbeat_dispatch(
             &report,
@@ -208,9 +238,9 @@ async fn main() -> Result<()> {
             )
             .await;
         } else if report.heartbeat_action == medousa::engine_context::HeartbeatAction::Notify {
-            eprintln!(
-                "medousa-daemon heartbeat notify suppressed decision={}",
-                heartbeat_dispatch_decision_label(dispatch_decision)
+            tracing::debug!(
+                decision = heartbeat_dispatch_decision_label(dispatch_decision),
+                "heartbeat notify suppressed (once mode)"
             );
         }
         return Ok(());
@@ -229,7 +259,7 @@ async fn main() -> Result<()> {
     let state = AppState {
         platform: platform.clone(),
         daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(&bind),
-        interactive_turn_streams: Arc::new(RwLock::new(HashMap::new())),
+        interactive_turn_streams: medousa::daemon::turn_stream_registry::new_turn_stream_registry(),
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
         channel_deliveries: Arc::new(RwLock::new(HashMap::new())),
         job_delivery_records: Arc::new(RwLock::new(HashMap::new())),
@@ -264,6 +294,7 @@ async fn main() -> Result<()> {
         webhook_client,
         retention_config,
         last_retention_at: Arc::new(RwLock::new(None)),
+        last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: medousa::browser_handlers::ClientRegistry::new(),
     };
 
@@ -276,8 +307,12 @@ async fn main() -> Result<()> {
             state.last_delivery_latency_ms.clone(),
         ),
     );
+    medousa::turn_worker_notify::register_parent_turn_stream_registry(
+        state.interactive_turn_streams.clone(),
+    );
 
     medousa::workspace::init_persist_writer();
+    medousa::engine_recovery::run_startup_turn_recovery().await;
     medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
     if let Some(hub) = medousa::workspace::workspace_hub() {
         hub.refresh_now().await;
@@ -286,6 +321,11 @@ async fn main() -> Result<()> {
     let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
     #[cfg(feature = "iroh-transport")]
     let mut iroh_gateway_hold: Option<medousa::iroh_transport::WorkshopGateway> = None;
+    let mut share_api_state = medousa::share_handlers::ShareApiState {
+        pairing: None,
+        local_device_id: "local".to_string(),
+        local_peer_name: "Medousa".to_string(),
+    };
     let pairing_router = if medousa::pairing::pairing_enabled_from_env() {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
@@ -303,16 +343,16 @@ async fn main() -> Result<()> {
                         ticket: gateway.info().ticket.clone(),
                         endpoint_id: gateway.info().endpoint_id.clone(),
                     };
-                    eprintln!(
-                        "medousa-daemon: iroh gateway active (endpoint_id={})",
-                        info.endpoint_id
+                    tracing::info!(
+                        endpoint_id = %info.endpoint_id,
+                        ticket = %info.ticket,
+                        "iroh gateway active"
                     );
-                    eprintln!("medousa-daemon: iroh ticket: {}", info.ticket);
                     iroh_gateway_hold = Some(gateway);
                     Some(info)
                 }
                 Err(err) => {
-                    eprintln!("medousa-daemon: iroh gateway failed: {err:#}");
+                    tracing::warn!(error = %err, "iroh gateway failed");
                     None
                 }
             }
@@ -322,8 +362,8 @@ async fn main() -> Result<()> {
         #[cfg(not(feature = "iroh-transport"))]
         let iroh_info: Option<medousa::pairing::IrohWorkshopInfo> =
             if medousa::iroh_transport::iroh_enabled_from_env() {
-                eprintln!(
-                    "medousa-daemon: MEDOUSA_IROH=1 requires rebuild with --features iroh-transport"
+                tracing::warn!(
+                    "MEDOUSA_IROH=1 requires rebuild with --features iroh-transport"
                 );
                 None
             } else {
@@ -359,27 +399,41 @@ async fn main() -> Result<()> {
                 txt,
             ) {
                 Ok(advertiser) => {
-                    eprintln!(
-                        "medousa-daemon: mDNS pairing service _medousa._tcp on port {}",
-                        pairing_service.parse_advertise_port()
+                    tracing::info!(
+                        port = pairing_service.parse_advertise_port(),
+                        "mDNS pairing service _medousa._tcp"
                     );
                     mdns_advertiser = Some(advertiser);
                 }
                 Err(err) => {
-                    eprintln!("medousa-daemon: mDNS pairing advertise failed: {err:#}");
+                    tracing::warn!(error = %err, "mDNS pairing advertise failed");
                 }
             }
         }
-        eprintln!(
-            "medousa-daemon: LAN pairing ready (device_id={}, GET /qr)",
-            pairing_service.device_id()
+        tracing::info!(
+            device_id = %pairing_service.device_id(),
+            "LAN pairing ready (GET /qr)"
         );
         let warm_service = pairing_service.clone();
+        medousa::home_push::register_home_push(Arc::new(medousa::home_push::HomePushService::new(
+            pairing_service.clone(),
+        )));
+        medousa::home_live_activity::register_home_live_activity(Arc::new(
+            medousa::home_live_activity::HomeLiveActivityService::new(pairing_service.clone()),
+        ));
+        medousa::home_widget_push::register_home_widget_push(Arc::new(
+            medousa::home_widget_push::HomeWidgetPushService::new(pairing_service.clone()),
+        ));
         tokio::spawn(async move {
             if let Err(err) = warm_service.current_qr().await {
-                eprintln!("medousa-daemon: pairing QR warm-up failed: {err:#}");
+                tracing::warn!(error = %err, "pairing QR warm-up failed");
             }
         });
+        share_api_state = medousa::share_handlers::ShareApiState {
+            pairing: Some(pairing_service.clone()),
+            local_device_id: pairing_service.device_id().to_string(),
+            local_peer_name: pairing_service.peer_name().to_string(),
+        };
         Some(
             medousa::pairing_handlers::routes().with_state(medousa::pairing_handlers::PairingApiState {
                 service: pairing_service,
@@ -392,6 +446,21 @@ async fn main() -> Result<()> {
     let mut app = build_daemon_router(state.clone(), &dashboard_action_auth);
     if let Some(pairing_router) = pairing_router {
         app = app.merge(pairing_router);
+    }
+    let peer_message_state = medousa::peer_message_handlers::PeerMessageApiState {
+        pairing: share_api_state.pairing.clone(),
+        local_device_id: share_api_state.local_device_id.clone(),
+        local_peer_name: share_api_state.local_peer_name.clone(),
+    };
+    let peer_scope_pairing = peer_message_state.pairing.clone();
+    app = app
+        .merge(medousa::share_handlers::share_router(share_api_state))
+        .merge(medousa::peer_message_handlers::peer_message_router(peer_message_state));
+    if let Some(pairing) = peer_scope_pairing {
+        app = app.layer(axum::middleware::from_fn_with_state(
+            pairing,
+            medousa::peer_scope::reject_peer_scope_escalation,
+        ));
     }
     let _mdns_advertiser = mdns_advertiser;
 
@@ -431,36 +500,38 @@ async fn main() -> Result<()> {
         if registry.any_stale(&providers) {
             let result = registry.refresh(None).await;
             if !result.refreshed.is_empty() {
-                eprintln!(
-                    "medousa-daemon: model catalog refreshed providers={:?}",
-                    result.refreshed
+                tracing::info!(
+                    providers = ?result.refreshed,
+                    "model catalog refreshed"
                 );
             }
             for failure in result.failures {
-                eprintln!(
-                    "medousa-daemon: model catalog refresh failed provider={} err={}",
-                    failure.provider, failure.message
+                tracing::warn!(
+                    provider = %failure.provider,
+                    error = %failure.message,
+                    "model catalog refresh failed"
                 );
             }
         }
     });
 
-    println!("medousa-daemon listening on http://{addr}");
-    println!("medousa-daemon dashboard at http://{addr}/dashboard");
+    tracing::info!(%addr, "listening");
+    tracing::info!(url = %format!("http://{addr}/dashboard"), "dashboard");
     if dashboard_action_auth.bearer_token.is_some() {
-        println!("medousa-daemon dashboard actions require bearer token auth");
+        tracing::info!("dashboard actions require bearer token auth");
     }
     if let Some(required_role) = dashboard_action_auth.required_role.as_deref() {
         let role_claim_header = dashboard_action_auth
             .role_claim_header
             .as_deref()
             .unwrap_or("x-stasis-role");
-        println!(
-            "medousa-daemon dashboard actions require role={} via header={}",
-            required_role, role_claim_header
+        tracing::info!(
+            role = required_role,
+            header = role_claim_header,
+            "dashboard actions require role claim"
         );
     }
-    println!(
+    tracing::info!(
         "{}",
         build_operator_first_run_guide(
             &format!("http://{addr}"),
@@ -468,9 +539,20 @@ async fn main() -> Result<()> {
             heartbeat_delivery_policy,
         )
     );
+    tracing::info!(
+        status = %medousa::observability::tracing_status_line(),
+        "observability initialized"
+    );
 
     #[cfg(feature = "iroh-transport")]
     let _iroh_gateway_hold = iroh_gateway_hold;
+
+    // Connection-limit backstop: a shared (global) tower concurrency limit so the
+    // daemon sheds load instead of being FD-exhausted under a request/reconnect
+    // storm. The semaphore is shared across all cloned per-connection services.
+    let max_concurrency = resolve_max_concurrency();
+    let app = app.layer(tower::limit::GlobalConcurrencyLimitLayer::new(max_concurrency));
+    tracing::info!(max_concurrency, "max in-flight request concurrency");
 
     axum::serve(
         listener,
@@ -480,7 +562,7 @@ async fn main() -> Result<()> {
         let _ = tokio::signal::ctrl_c().await;
         let _ = shutdown_tx.send(true);
         medousa::workspace::flush_persist_writer().await;
-        println!("medousa-daemon stopping");
+        tracing::info!("stopping");
         remove_surrealkv_lock(&parse_backend(Some(&state.backend)));
     })
     .await
@@ -662,7 +744,7 @@ mod tests {
             .await
             .expect("runtime should build");
 
-        let report = tick_runtime(&runtime, "test-worker", default_heartbeat_lane_policy())
+        let report = tick_runtime(&runtime, "test-worker", default_heartbeat_lane_policy(), None)
             .await
             .expect("tick should succeed");
 

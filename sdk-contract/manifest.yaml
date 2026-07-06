@@ -286,6 +286,22 @@ methods:
     streaming: false
     sync: true
   - accessor: runtime
+    method: artifact_write
+    http: POST
+    path: /v1/runtime/artifact/write
+    request_type: ArtifactWriteRequest
+    response_type: ArtifactWriteResponse
+    streaming: false
+    sync: true
+  - accessor: runtime
+    method: artifact_delete
+    http: POST
+    path: /v1/runtime/artifact/delete
+    request_type: ArtifactDeleteRequest
+    response_type: ArtifactDeleteResponse
+    streaming: false
+    sync: true
+  - accessor: runtime
     method: artifact_list_ui
     http: POST
     path: /v1/runtime/artifact/list-ui
@@ -457,6 +473,172 @@ methods:
     streaming: false
     sync: true
 
+  # environment (canvas)
+  - accessor: environment
+    method: get_spec
+    http: GET
+    path: /v1/environment/spec
+    response_type: EnvironmentSpecResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: put_spec
+    http: PUT
+    path: /v1/environment/spec
+    request_type: EnvironmentSpecPutRequest
+    response_type: EnvironmentSpecResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: get_status
+    http: GET
+    path: /v1/environment/status
+    response_type: EnvironmentStatusResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: validate_spec
+    http: POST
+    path: /v1/environment/spec/validate
+    request_type: EnvironmentValidateRequest
+    response_type: EnvironmentValidateResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: propose_spec
+    http: POST
+    path: /v1/environment/spec/propose
+    request_type: EnvironmentSpecPutRequest
+    response_type: EnvironmentProposeResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: get_pending
+    http: GET
+    path: /v1/environment/spec/pending
+    response_type: EnvironmentPendingResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: dismiss_pending
+    http: DELETE
+    path: /v1/environment/spec/pending
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: apply_pending
+    http: POST
+    path: /v1/environment/spec/pending/apply
+    response_type: EnvironmentSpecResponse
+    streaming: false
+    sync: true
+  - accessor: environment
+    method: stream_spec
+    http: GET
+    path: /v1/environment/spec/stream
+    response_type: EnvironmentStreamEvent
+    streaming: true
+    sync: false
+
+  # components (canvas)
+  - accessor: components
+    method: store_get
+    http: GET
+    path: /v1/components/{component_id}/store
+    response_type: ComponentStoreGetResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: store_set
+    http: PUT
+    path: /v1/components/{component_id}/store
+    request_type: ComponentStoreSetRequest
+    response_type: ComponentStoreSetResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: store_list_keys
+    http: GET
+    path: /v1/components/{component_id}/store/keys
+    response_type: ComponentStoreListResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: store_get_key
+    http: GET
+    path: /v1/components/{component_id}/store/{key}
+    response_type: ComponentStoreGetResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: store_put_key
+    http: PUT
+    path: /v1/components/{component_id}/store/{key}
+    request_type: ComponentStoreSetRequest
+    response_type: ComponentStoreSetResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: store_delete_key
+    http: DELETE
+    path: /v1/components/{component_id}/store/{key}
+    response_type: ComponentStoreDeleteResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: runtime_tail_events
+    http: GET
+    path: /v1/components/{component_id}/runtime/events
+    response_type: ComponentRuntimeEventsTailResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: runtime_append_events
+    http: POST
+    path: /v1/components/{component_id}/runtime/events
+    request_type: ComponentRuntimeEventsRequest
+    response_type: ComponentRuntimeEventsResponse
+    streaming: false
+    sync: true
+  - accessor: components
+    method: runtime_complete_probe
+    http: POST
+    path: /v1/components/{component_id}/runtime/probe/{probe_id}/result
+    request_type: ComponentRuntimeProbeResult
+    response_type: JsonValue
+    streaming: false
+    sync: true
+
+  # feeds (canvas)
+  - accessor: feeds
+    method: list
+    http: GET
+    path: /v1/feeds
+    response_type: FeedListResponse
+    streaming: false
+    sync: true
+  - accessor: feeds
+    method: tail
+    http: GET
+    path: /v1/feeds/{feed_id}/tail
+    response_type: FeedTailResponse
+    streaming: false
+    sync: true
+  - accessor: feeds
+    method: mark_read
+    http: POST
+    path: /v1/feeds/{feed_id}/read
+    request_type: FeedReadRequest
+    streaming: false
+    sync: true
+  - accessor: feeds
+    method: stream
+    http: GET
+    path: /v1/feeds/stream
+    response_type: FeedStreamEvent
+    streaming: true
+    sync: false
+
   # workspace
   - accessor: workspace
     method: list_cards
@@ -523,6 +705,17 @@ methods:
     streaming: true
     sync: false
     status: planned
+
+# Client-only helpers (not HTTP routes; documented in docs/sdk/api-reference.md)
+client_helpers:
+  - accessor: interactive
+    methods:
+      - stream_turn
+      - stream_reconnecting
+      - stream_reconnecting_with_policy
+      - stream_turn_reconnecting
+    rust_module: medousa_sdk::interactive
+    python_module: medousa.interactive
 
 planned_streaming:
   - accessor: http

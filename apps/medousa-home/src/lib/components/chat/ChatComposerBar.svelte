@@ -5,6 +5,7 @@
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
+  import ContextUsageIndicator from "$lib/components/chat/ContextUsageIndicator.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import {
     MAX_MEDIA_REFS_PER_TURN,
@@ -265,6 +266,8 @@
 
         <span class="mobile-composer-dock-spacer" aria-hidden="true"></span>
 
+        <ContextUsageIndicator compact />
+
         <button
           type="button"
           class="composer-bar-icon-btn composer-bar-voice-btn"
@@ -347,6 +350,8 @@
     >
       <Mic size={16} strokeWidth={2} />
     </button>
+
+    <ContextUsageIndicator />
 
     <button
       type="submit"

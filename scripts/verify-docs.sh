@@ -43,9 +43,35 @@ if [[ ! -f "$ROOT/sdk-contract/manifest.yaml" ]]; then
   fail "sdk-contract/manifest.yaml missing"
 fi
 
-# ADR index must list ADR-003
+# ADR index must list ADR-003 and ADR-004
 if ! grep -q 'adr-003' "$DOCS/architecture/decisions/README.md"; then
   fail "ADR index missing adr-003"
+fi
+if ! grep -q 'adr-004' "$DOCS/architecture/decisions/README.md"; then
+  fail "ADR index missing adr-004"
+fi
+
+# Integrator streaming guides must document spine replay cursor
+for f in "$DOCS/engine/interactive-streaming.md" "$DOCS/sdk/interactive-streaming.md"; do
+  if [[ -f "$f" ]] && ! grep -q 'since' "$f"; then
+    fail "missing ?since= replay docs in $f"
+  fi
+done
+
+# Stale Tauri transport wording in canonical app/sdk docs
+check_transport_naming() {
+  local f="$1"
+  [[ ! -f "$f" ]] && return
+  if grep -q 'workshop_transport' "$f" && ! grep -q 'medousa-sdk-iroh' "$f"; then
+    warn "workshop_transport without medousa-sdk-iroh in $f"
+  fi
+}
+check_transport_naming "$DOCS/apps/medousa-home.md"
+check_transport_naming "$DOCS/sdk/README.md"
+
+# component-engine doc exists after crate split
+if [[ ! -f "$ROOT/architecture/component-engine.md" ]]; then
+  fail "missing architecture/component-engine.md"
 fi
 
 # Resolve relative markdown links from docs/README.md (simple check)

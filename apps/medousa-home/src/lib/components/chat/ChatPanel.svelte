@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ArrowDown, ExternalLink, LoaderCircle, PanelLeft, Users } from "@lucide/svelte";
+  import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
@@ -17,6 +18,7 @@
   import { settings } from "$lib/stores/settings.svelte";
   import {
     createTurnTicket,
+    steerBoundWorkshop,
   } from "$lib/daemon";
 
   import { formatSessionLabel } from "$lib/utils/formatSession";
@@ -270,6 +272,11 @@
         return;
       }
 
+      if (chat.hasWorkshopHandoff()) {
+        await steerBoundWorkshop(chat.sessionId, prompt);
+        return;
+      }
+
       const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
       const display =
         prompt ||
@@ -494,6 +501,7 @@
           ? 'mobile-chat-scroll space-y-3'
           : 'chat-scroll space-y-4'}"
     >
+      <ChatAsyncToolsHint {mobile} />
       {#if askThreads.length > 0 && !embedded}
         {#if mobile}
           <button

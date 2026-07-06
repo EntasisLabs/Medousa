@@ -1017,7 +1017,7 @@ impl StasisTool for CognitionWebSearchTool {
                 &self.turn_scope,
                 &turn_correlation_id,
                 &chat_session_id,
-                crate::agent_runtime::active_stream_sink::active_stream_sink().await,
+                None,
             )
             .await
             {

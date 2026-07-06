@@ -60,6 +60,9 @@ export interface ChatMessage {
   /** Turn paused for operator tool-round budget approval. */
   budgetRequestId?: string | null;
   requestedRounds?: number | null;
+  /** Turn ended with an error — partial content preserved for debugging. */
+  failed?: boolean;
+  errorLine?: string | null;
   /** Turn index in session history (1-based, matches slice_id turn:N). */
   turnIndex?: number | null;
 }
@@ -98,6 +101,7 @@ export interface TurnTicketState {
 export interface InteractiveTurnStreamEvent {
   turn_id: string;
   /** Monotonic per-turn sequence stamped server-side; enables exactly-once replay/dedup. */
+  /** @see $lib/types/generated/daemon_api.ts (schema-generated contract) */
   seq?: number;
   event_type: string;
   phase: string;
@@ -134,4 +138,22 @@ export interface InteractiveTurnStreamEvent {
   debug_message?: string | null;
   browser_session_id?: string | null;
   browser_challenge_url?: string | null;
+  /** Turn-start context budget breakdown (Cursor-style telemetry). */
+  context_usage?: ContextUsageReport | null;
+}
+
+export interface ContextUsageLayer {
+  id: string;
+  label: string;
+  chars: number;
+  tokens_estimate: number;
+}
+
+export interface ContextUsageReport {
+  layers: ContextUsageLayer[];
+  total_tokens_estimate: number;
+  total_chars: number;
+  context_limit_tokens?: number | null;
+  tool_count: number;
+  estimator: string;
 }

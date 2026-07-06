@@ -11,6 +11,7 @@ import {
 } from "$lib/daemon";
 import type {
   ChatMessage,
+  ContextUsageReport,
   InteractiveTurnStreamEvent,
   PendingBudgetApproval,
   PendingBrowserChallenge,
@@ -43,6 +44,7 @@ import {
   shouldReattachTurnRecord,
   type StreamOwner,
 } from "$lib/utils/streamOwnership";
+import { applyStreamSeq, streamPathWithSince } from "$lib/stream/reconnect";
 import { resolveTurnContent } from "$lib/utils/resolveTurnContent";
 import { friendlyUserError, MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 import { settings } from "$lib/stores/settings.svelte";
@@ -51,6 +53,8 @@ import {
   isBrowserChallengeStreamEvent,
   isTerminalContentCommit,
   isWorkerHandoffStreamEvent,
+  isWorkerSynthesisStreamEvent,
+  isWorkshopHandoffStreamEvent,
 } from "$lib/utils/streamEvents";
 import { workerStatusLineForColumn } from "$lib/utils/workerThreads";
 import { budgetRequestIdFromStreamEvent } from "$lib/notifications";
@@ -64,6 +68,10 @@ const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DRAFT_PERSIST_DEBOUNCE_MS = 300;
 const SESSIONS_STALE_MS = 30_000;
 const SESSIONS_REFRESH_DEBOUNCE_MS = 1_500;
+/** Delay before fetching daemon history to backfill a settled turn. */
+const TERMINAL_RECONCILE_DELAY_MS = 2_000;
+/** Accept late SSE frames for recently settled turns (ordering / dual-window). */
+const RECENTLY_SETTLED_TTL_MS = 30_000;
 /** Terminal answers shorter than this appear instantly. */
 const CONTENT_REVEAL_MIN_CHARS = 80;
 const CONTENT_REVEAL_CHUNK_CHARS = 14;
@@ -115,6 +123,10 @@ export class ChatStore {
   browserChallenge = $state<PendingBrowserChallenge | null>(null);
   /** Daemon turn id for the live interactive stream, if any. */
   activeTurnId = $state<string | null>(null);
+  /** Latest turn-start context budget from the daemon stream. */
+  contextUsage = $state<ContextUsageReport | null>(null);
+  /** Home/mobile context usage panel open (also toggled via /usage). */
+  contextUsagePanelOpen = $state(false);
   /** Turn-centric state keyed by daemon turn id. */
   turns = $state<Map<string, TurnTicketState>>(new Map());
   /** Turn worker cards linked to chat handoff bubbles (Tier 3). */
@@ -136,6 +148,19 @@ export class ChatStore {
   /** Progressive reveal when terminal final_text lands on an empty bubble. */
   private contentRevealTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pop-out windows observe SSE without owning Rust stream slots. */
+  streamRole: "owner" | "observer" = "owner";
+  private recentlySettledTurns = new Map<string, number>();
+  private terminalReconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Pop-out / secondary shells: display stream events without reattaching SSE. */
+  setStreamRole(role: "owner" | "observer") {
+    this.streamRole = role;
+  }
+
+  ownsInteractiveStreams(): boolean {
+    return this.streamRole === "owner";
+  }
 
   /** True while the composer must wait — Tier 2c: always open. */
   get composerBlocked(): boolean {
@@ -148,6 +173,14 @@ export class ChatStore {
       if (turn.mode !== "interactive" || turn.terminal) continue;
       if (this.isComposerOpenDuringHandoff(turn.turnId, turn.phase)) continue;
       return true;
+    }
+    return false;
+  }
+
+  hasWorkshopHandoff(): boolean {
+    for (const turn of this.turns.values()) {
+      if (turn.mode !== "interactive" || turn.terminal) continue;
+      if (turn.phase === "workshop_handoff") return true;
     }
     return false;
   }
@@ -378,6 +411,79 @@ export class ChatStore {
     }, SESSIONS_REFRESH_DEBOUNCE_MS);
   }
 
+  private markRecentlySettled(turnId: string) {
+    this.recentlySettledTurns.set(turnId, Date.now());
+    for (const [id, settledAt] of this.recentlySettledTurns) {
+      if (Date.now() - settledAt > RECENTLY_SETTLED_TTL_MS) {
+        this.recentlySettledTurns.delete(id);
+      }
+    }
+  }
+
+  private recentlySettledTurnIdSet(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const [id, settledAt] of this.recentlySettledTurns) {
+      if (Date.now() - settledAt <= RECENTLY_SETTLED_TTL_MS) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  private transcriptTurnIdSet(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const message of this.messages) {
+      const turnId = message.turnId?.trim();
+      if (turnId) ids.add(turnId);
+    }
+    return ids;
+  }
+
+  private scheduleTerminalHistoryReconcile(turnId: string) {
+    const trimmed = turnId.trim();
+    if (!trimmed) return;
+    const existing = this.terminalReconcileTimers.get(trimmed);
+    if (existing) clearTimeout(existing);
+    this.terminalReconcileTimers.set(
+      trimmed,
+      setTimeout(() => {
+        this.terminalReconcileTimers.delete(trimmed);
+        void this.reconcileTurnFromHistory(trimmed);
+      }, TERMINAL_RECONCILE_DELAY_MS),
+    );
+  }
+
+  /** Backfill assistant content from daemon history when SSE missed the final commit. */
+  private async reconcileTurnFromHistory(turnId: string) {
+    const sessionId = this.sessionId.trim();
+    if (!sessionId) return;
+
+    const assistants = this.messages.filter(
+      (message) => message.turnId === turnId && message.role === "assistant",
+    );
+    if (assistants.length === 0) return;
+
+    const needsMerge = assistants.some(
+      (message) =>
+        message.streaming ||
+        message.failed ||
+        !message.content.trim() ||
+        isEngineTelemetryText(message.content),
+    );
+    if (!needsMerge) return;
+
+    const epoch = this.transcriptEpoch;
+    try {
+      const history = await getSessionHistory(sessionId);
+      if (epoch !== this.transcriptEpoch) return;
+      const daemonMessages = mapTurns(history.turns, { sessionId });
+      this.messages = mergeTranscript(this.messages, daemonMessages);
+      this.sanitizeTranscript();
+    } catch {
+      // Best-effort — manual reload still works.
+    }
+  }
+
   private async fetchSessions(hadCache: boolean, query = "") {
     this.sessionsRefreshing = hadCache;
     if (!hadCache) {
@@ -415,6 +521,8 @@ export class ChatStore {
     this.historyNotice = null;
     this.backgroundActivity = 0;
     this.activeTurnId = null;
+    this.contextUsage = null;
+    this.contextUsagePanelOpen = false;
     this.turns = new Map();
     this.workers = new Map();
     void this.clearStreamOwnership();
@@ -451,10 +559,23 @@ export class ChatStore {
       const attached = await this.tryReattachActiveTurn(cards);
       if (epoch !== this.transcriptEpoch) return;
 
+      // Handoff / budget turns are not live interactive streams — synthesis lands via
+      // workspace cards + session history. Blocking history merge here left mobile
+      // stuck until a hard refresh after workshop mode finished.
       const liveStream =
-        this.messages.some((message) => message.streaming) ||
+        this.messages.some(
+          (message) =>
+            message.streaming &&
+            message.lane !== "worker" &&
+            message.phase !== "budget_blocked",
+        ) ||
         [...this.turns.values()].some(
-          (turn) => !turn.terminal && turn.mode === "interactive",
+          (turn) =>
+            !turn.terminal &&
+            turn.mode === "interactive" &&
+            turn.phase !== "worker_handoff" &&
+            turn.phase !== "workshop_handoff" &&
+            turn.phase !== "budget_blocked",
         );
 
       // Merging daemon history mid-stream duplicates local user/assistant bubbles.
@@ -650,6 +771,7 @@ export class ChatStore {
    * Reattach SSE listeners for owned, non-terminal session turns after refresh/reconnect.
    */
   async tryReattachActiveTurn(cards: WorkCard[] = []): Promise<boolean> {
+    if (this.streamRole === "observer") return false;
     const sessionId = this.sessionId.trim();
     if (!sessionId) return false;
 
@@ -739,9 +861,7 @@ export class ChatStore {
    */
   private streamUrlWithSince(streamUrl: string, turnId: string): string {
     const lastSeq = this.lastSeqByTurn.get(turnId) ?? 0;
-    if (lastSeq <= 0) return streamUrl;
-    const separator = streamUrl.includes("?") ? "&" : "?";
-    return `${streamUrl}${separator}since=${lastSeq}`;
+    return streamPathWithSince(streamUrl, lastSeq);
   }
 
   private async detachStreamOwner(turnId: string) {
@@ -777,11 +897,19 @@ export class ChatStore {
       }
       if (turn.phase === "worker_handoff" && turn.mode === "interactive") {
         await this.detachStreamOwner(turnId);
+        continue;
+      }
+      if (turn.phase === "workshop_handoff" && turn.mode === "interactive") {
+        const workerLink = this.workerLinkForTurn(turnId);
+        if (workerLink?.synthesisDelivered) {
+          await this.detachStreamOwner(turnId);
+        }
       }
     }
   }
 
   private async attachTurnStream(record: TurnTicketRecord): Promise<boolean> {
+    if (this.streamRole === "observer") return false;
     if (!shouldReattachTurnRecord(record, this.reattachContextFor(record))) {
       return false;
     }
@@ -1135,6 +1263,78 @@ export class ChatStore {
     }
   }
 
+  pendingWorkerSynthesisIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const [workId, link] of this.workers) {
+      if (!link.synthesisDelivered) ids.add(workId);
+    }
+    return ids;
+  }
+
+  hasPendingWorkerSynthesis(cardOrWorkId: string): boolean {
+    const id = cardOrWorkId.trim();
+    if (!id) return false;
+    return this.pendingWorkerSynthesisIds().has(id);
+  }
+
+  noteWorkerSynthesisFailure(workId: string, errorLine: string) {
+    const link = this.workers.get(workId);
+    if (!link || link.synthesisDelivered) return;
+
+    const messageId = link.synthesisMessageId ?? link.messageId;
+    if (!messageId) return;
+    this.markMessageFailed(messageId, errorLine);
+  }
+
+  clearWorkerSynthesisFailure(workId: string) {
+    const link = this.workers.get(workId);
+    if (!link) return;
+
+    const messageId = link.synthesisMessageId ?? link.messageId;
+    if (!messageId) return;
+
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0 || !this.messages[idx].failed) return;
+
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        failed: false,
+        errorLine: null,
+        answerState: null,
+        streaming: true,
+        statusLine: "Loading result…",
+      },
+      ...this.messages.slice(idx + 1),
+    ];
+  }
+
+  async retryWorkerSynthesis(workId: string) {
+    const trimmed = workId.trim();
+    if (!trimmed) return;
+
+    const link = this.workers.get(trimmed);
+    if (!link || link.synthesisDelivered) return;
+
+    this.clearWorkerSynthesisFailure(trimmed);
+
+    const { workspace } = await import("$lib/stores/workspace.svelte");
+    const detail = await workspace.fetchWorkerCardDetail(trimmed, true);
+    const card = workspace.cards.find((item) => item.id === trimmed);
+    if (!card || !detail || detail.kind !== "turn_worker") {
+      this.noteWorkerSynthesisFailure(
+        trimmed,
+        "Couldn't load worker result. Tap to retry.",
+      );
+      return;
+    }
+
+    this.onWorkerCardDetail(detail, card.column, undefined);
+    await this.deliverWorkerSynthesis(trimmed, detail);
+  }
+
   /** Keep worker-lane bubbles in sync with workspace card columns (no parent SSE). */
   syncWorkerLaneFromCards(
     cards: WorkCard[],
@@ -1334,12 +1534,23 @@ export class ChatStore {
     if (!link || link.synthesisDelivered) return;
 
     const content = await this.resolveWorkerSynthesisContent(link, detail);
-    if (!content) return;
+    const isTerminal =
+      detail?.card?.column === "done" ||
+      (detail?.card?.column === "blocked" && detail.terminal === true);
+    if (!content) {
+      if (isTerminal) {
+        this.noteWorkerSynthesisFailure(
+          workId,
+          "Worker finished, but the result didn't load.",
+        );
+      }
+      return;
+    }
 
     if (this.hasFollowUpSynthesis(link.messageId, content)) {
       this.finalizeWorkerHandoffBubble(link.messageId);
       this.markWorkerSynthesisDelivered(workId);
-      this.noteBackgroundSettled();
+      this.settleParentAfterWorkerSynthesis(link.parentTurnId);
       return;
     }
 
@@ -1357,6 +1568,9 @@ export class ChatStore {
             ...this.messages[idx],
             content,
             streaming: false,
+            failed: false,
+            errorLine: null,
+            answerState: null,
             phase: null,
             statusLine: null,
             lane: "worker",
@@ -1369,22 +1583,35 @@ export class ChatStore {
         ];
         this.finalizeWorkerHandoffBubble(link.messageId);
         this.markWorkerSynthesisDelivered(workId);
-        if (link.parentTurnId) {
-          const turn = this.turns.get(link.parentTurnId);
-          if (turn?.mode === "background") {
-            this.settleTurn(link.parentTurnId);
-          } else {
-            this.noteBackgroundSettled();
-          }
-        } else {
-          this.noteBackgroundSettled();
-        }
+        this.settleParentAfterWorkerSynthesis(link.parentTurnId);
         return;
       }
     }
 
     this.appendWorkerSynthesisMessage(workId, link.parentTurnId, content, detail?.tool_names);
     this.markWorkerSynthesisDelivered(workId);
+    this.settleParentAfterWorkerSynthesis(link.parentTurnId);
+  }
+
+  /** Close handoff parent turns (interactive workshop/worker) so resume can merge history. */
+  private settleParentAfterWorkerSynthesis(parentTurnId: string | null) {
+    if (!parentTurnId) {
+      this.noteBackgroundSettled();
+      return;
+    }
+    const turn = this.turns.get(parentTurnId);
+    if (!turn) {
+      this.noteBackgroundSettled();
+      return;
+    }
+    if (
+      turn.mode === "background" ||
+      turn.phase === "worker_handoff" ||
+      turn.phase === "workshop_handoff"
+    ) {
+      this.settleTurn(parentTurnId);
+      return;
+    }
     this.noteBackgroundSettled();
   }
 
@@ -1420,6 +1647,8 @@ export class ChatStore {
     next.delete(turnId);
     this.turns = next;
     this.lastSeqByTurn.delete(turnId);
+    this.markRecentlySettled(turnId);
+    this.scheduleTerminalHistoryReconcile(turnId);
     void this.detachStreamOwner(turnId);
   }
 
@@ -1498,21 +1727,69 @@ export class ChatStore {
     }
   }
 
+  private handleWorkerSynthesisStreamEvent(event: InteractiveTurnStreamEvent) {
+    const workId = event.work_id?.trim();
+    const content = event.final_text?.trim();
+    if (!workId || !content) return;
+
+    if (!this.workers.has(workId)) {
+      const handoffMessageId = this.messageIdForTurn(event.turn_id);
+      if (handoffMessageId) {
+        this.linkWorker({
+          workId,
+          parentTurnId: event.turn_id,
+          messageId: handoffMessageId,
+          sessionId: this.resolveTurnSessionId(event.turn_id),
+        });
+        this.ensureWorkerFollowUpBubble(workId, event.turn_id, {
+          streaming: false,
+        });
+      }
+    }
+
+    const messageId = this.messageIdForTurn(event.turn_id);
+    if (messageId) {
+      this.applyStreamEventToMessage(messageId, event);
+    } else {
+      this.attachOrphanStream(event);
+    }
+
+    const link = this.workers.get(workId);
+    if (link && !link.synthesisDelivered) {
+      this.finalizeWorkerHandoffBubble(link.messageId);
+      this.markWorkerSynthesisDelivered(workId);
+    }
+
+    this.syncTurnFromEvent(event);
+    this.noteBackgroundSettled();
+    if (this.shouldSettleTurnFromStream(event.turn_id)) {
+      this.settleTurn(event.turn_id);
+      this.scheduleSessionsRefresh();
+    } else {
+      void this.detachStreamOwner(event.turn_id);
+    }
+  }
+
   applyStreamEvent(event: InteractiveTurnStreamEvent) {
     if (!this.isRelevantStreamEvent(event)) return;
 
     // Exactly-once: drop anything at or below the highest seq we've applied for
     // this turn (covers replay-on-reattach + buffer/live overlap). seq===0 means
     // a legacy/unsequenced payload — always let those through.
-    const seq = event.seq ?? 0;
-    if (seq > 0) {
-      const lastSeq = this.lastSeqByTurn.get(event.turn_id) ?? 0;
-      if (seq <= lastSeq) return;
-      this.lastSeqByTurn.set(event.turn_id, seq);
-    }
+    if (!applyStreamSeq(this.lastSeqByTurn, event)) return;
 
     if (event.event_type === "error") {
       this.handleTurnError(event);
+      return;
+    }
+
+    if (event.event_type === "context_usage" && event.context_usage) {
+      this.contextUsage = event.context_usage;
+      return;
+    }
+
+    if (isWorkerSynthesisStreamEvent(event)) {
+      this.handleWorkerSynthesisStreamEvent(event);
       return;
     }
 
@@ -1520,7 +1797,15 @@ export class ChatStore {
 
     const workerLink = this.workerLinkForTurn(event.turn_id);
     if (event.terminal && workerLink?.synthesisDelivered) {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (
+        messageId &&
+        (event.final_text?.trim() || event.content_delta?.trim())
+      ) {
+        this.applyStreamEventToMessage(messageId, event);
+      }
       this.settleTurn(event.turn_id);
+      this.scheduleSessionsRefresh();
       return;
     }
 
@@ -1563,6 +1848,14 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "assistant_pack_hold") {
+      const messageId = this.messageIdForTurn(event.turn_id);
+      if (messageId) {
+        this.applyStreamEventToMessage(messageId, event);
+      }
+      return;
+    }
+
     if (event.event_type === "scratch_reset") {
       const messageId = this.messageIdForTurn(event.turn_id);
       if (messageId) {
@@ -1589,14 +1882,15 @@ export class ChatStore {
   }
 
   private handleTurnError(event: InteractiveTurnStreamEvent) {
-    this.streamError = operatorStreamErrorLine(
+    const errorLine = operatorStreamErrorLine(
       event,
       settings.showEngineDetailsInChat,
     );
+    this.streamError = errorLine;
 
     const messageId = this.messageIdForTurn(event.turn_id);
     if (messageId) {
-      this.messages = this.messages.filter((message) => message.id !== messageId);
+      this.markMessageFailed(messageId, errorLine);
       if (this.assistantId === messageId) {
         this.assistantId = null;
       }
@@ -1607,6 +1901,25 @@ export class ChatStore {
     if (this.shouldSettleTurnFromStream(event.turn_id)) {
       this.settleTurn(event.turn_id);
     }
+  }
+
+  private markMessageFailed(messageId: string, errorLine: string) {
+    const idx = this.messages.findIndex((message) => message.id === messageId);
+    if (idx < 0) return;
+    const current = this.messages[idx];
+    this.messages = [
+      ...this.messages.slice(0, idx),
+      {
+        ...current,
+        streaming: false,
+        failed: true,
+        errorLine,
+        answerState: "failed",
+        phase: null,
+        statusLine: null,
+      },
+      ...this.messages.slice(idx + 1),
+    ];
   }
 
   private messageIdForTurn(turnId: string): string | null {
@@ -1792,6 +2105,31 @@ export class ChatStore {
       return;
     }
 
+    if (event.event_type === "assistant_pack_hold") {
+      const held =
+        event.final_text?.trim() ||
+        event.message?.trim() ||
+        current.content;
+      const next: ChatMessage = {
+        ...current,
+        content: held || current.content,
+        phase: "pack_hold",
+        streaming: true,
+        statusLine:
+          event.operator_message?.trim() ||
+          "Medousa is finishing this thought…",
+        tools: event.tool_names?.length
+          ? [...new Set([...(current.tools ?? []), ...event.tool_names])]
+          : current.tools,
+      };
+      this.messages = [
+        ...this.messages.slice(0, idx),
+        next,
+        ...this.messages.slice(idx + 1),
+      ];
+      return;
+    }
+
     if (event.event_type === "turn_checkpoint") {
       const checkpointBody =
         event.final_text?.trim() ||
@@ -1830,6 +2168,9 @@ export class ChatStore {
     }
 
     if (event.event_type === "scratch_reset") {
+      if (current.phase === "pack_hold") {
+        return;
+      }
       const next: ChatMessage = {
         ...current,
         content: "",
@@ -1861,7 +2202,9 @@ export class ChatStore {
       content =
         (isWorkerSynthesisTarget || isWorkerSynthesisOnEnvelope) && terminal
           ? event.final_text!
-          : resolveTurnContent(current.content, event.final_text, terminal);
+          : resolveTurnContent(current.content, event.final_text, terminal, {
+              afterToolLoop: (current.toolRuns?.length ?? 0) > 0,
+            });
 
       const shouldReveal =
         event.terminal &&
@@ -1898,6 +2241,11 @@ export class ChatStore {
 
         if (isWorkerHandoffStreamEvent(event)) {
           this.releaseComposerHandoff(messageId, "worker_ack", event);
+          this.scheduleSessionsRefresh();
+          return;
+        }
+        if (isWorkshopHandoffStreamEvent(event)) {
+          this.releaseComposerHandoff(messageId, "workshop_ack", event);
           this.scheduleSessionsRefresh();
           return;
         }
@@ -1947,6 +2295,12 @@ export class ChatStore {
       return;
     }
 
+    if (isWorkshopHandoffStreamEvent(event)) {
+      this.releaseComposerHandoff(messageId, "workshop_ack", event);
+      this.scheduleSessionsRefresh();
+      return;
+    }
+
     if (isBudgetApprovalStreamEvent(event)) {
       this.releaseComposerHandoff(messageId, "budget_approval", event);
       return;
@@ -1975,6 +2329,7 @@ export class ChatStore {
   private noteTurnTerminal(event: InteractiveTurnStreamEvent) {
     if (!this.shouldSettleTurnFromStream(event.turn_id)) return;
     this.settleTurn(event.turn_id);
+    this.scheduleSessionsRefresh();
   }
 
   /** Resume stream after handoff (e.g. budget approved) with no active assistant bubble. */
@@ -2027,6 +2382,11 @@ export class ChatStore {
       this.scheduleSessionsRefresh();
       return;
     }
+    if (isWorkshopHandoffStreamEvent(event)) {
+      this.releaseComposerHandoff(id, "workshop_ack", event);
+      this.scheduleSessionsRefresh();
+      return;
+    }
 
     if (isBudgetApprovalStreamEvent(event)) {
       this.releaseComposerHandoff(id, "budget_approval", event);
@@ -2045,14 +2405,16 @@ export class ChatStore {
 
   private releaseComposerHandoff(
     messageId: string,
-    phase: "worker_ack" | "budget_approval",
+    phase: "worker_ack" | "workshop_ack" | "budget_approval",
     event: InteractiveTurnStreamEvent,
   ) {
     const statusLine =
       event.message?.trim() ||
       (phase === "worker_ack"
         ? "Background worker started"
-        : "Waiting for operator approval");
+        : phase === "workshop_ack"
+          ? "Medousa is in the workshop"
+          : "Waiting for operator approval");
 
     const budgetRequestId =
       phase === "budget_approval" ? budgetRequestIdFromStreamEvent(event) : null;
@@ -2071,10 +2433,13 @@ export class ChatStore {
         {
           ...current,
           streaming: false,
-          phase: phase === "worker_ack" ? null : "budget_blocked",
-          statusLine: phase === "worker_ack" ? null : statusLine,
-          stageWhisper: phase === "worker_ack" ? ackText : current.stageWhisper,
-          content: phase === "worker_ack" ? "" : ackText,
+          phase: phase === "budget_approval" ? "budget_blocked" : null,
+          statusLine: phase === "budget_approval" ? statusLine : null,
+          stageWhisper:
+            phase === "worker_ack" || phase === "workshop_ack"
+              ? ackText
+              : current.stageWhisper,
+          content: phase === "budget_approval" ? ackText : "",
           budgetRequestId,
           requestedRounds,
         },
@@ -2087,8 +2452,13 @@ export class ChatStore {
       const next = new Map(this.turns);
       next.set(event.turn_id, {
         ...turn,
-        phase: phase === "worker_ack" ? "worker_handoff" : "budget_blocked",
-        messageId: phase === "worker_ack" ? null : messageId,
+        phase:
+          phase === "worker_ack"
+            ? "worker_handoff"
+            : phase === "workshop_ack"
+              ? "workshop_handoff"
+              : "budget_blocked",
+        messageId: phase === "budget_approval" ? messageId : null,
         workspaceCardId:
           phase === "budget_approval" && budgetRequestId
             ? budgetRequestId
@@ -2107,7 +2477,8 @@ export class ChatStore {
     }
     this.backgroundActivity += 1;
 
-    if (phase === "worker_ack") {
+    if (phase === "worker_ack" || phase === "workshop_ack") {
+      // Host interactive stream is done; work continues on the board.
       void this.detachStreamOwner(event.turn_id);
       this.linkWorkerFromStream(event, messageId);
       return;
@@ -2207,15 +2578,30 @@ export class ChatStore {
   /** SSE / stream transport failure — evict stale owners so reattach can succeed. */
   noteStreamFailure(message: string, options?: { recoverable?: boolean }) {
     const recoverable = options?.recoverable !== false;
+    const liveTurn = this.hasLiveInteractiveTurn();
+    const messageId =
+      this.assistantId ??
+      [...this.turns.values()].find(
+        (turn) => turn.mode === "interactive" && !turn.terminal,
+      )?.messageId ??
+      null;
+
+    if (liveTurn && messageId) {
+      this.markMessageFailed(messageId, friendlyUserError(message));
+      if (this.assistantId === messageId) {
+        this.assistantId = null;
+      }
+    }
+
     this.evictStreamOwners();
 
     // Post-terminal SSE close is normal — don't alarm the user when nothing is live.
-    if (recoverable && !this.hasLiveInteractiveTurn()) {
+    if (recoverable && !liveTurn) {
       return;
     }
 
     this.streamError = friendlyUserError(message);
-    if (recoverable) {
+    if (recoverable && liveTurn) {
       return;
     }
     if (this.assistantId) {
@@ -2223,7 +2609,7 @@ export class ChatStore {
     }
     for (const [turnId, turn] of this.turns) {
       if (turn.terminal || turn.mode === "background") continue;
-      if (turn.phase === "budget_blocked" || turn.phase === "worker_handoff") continue;
+      if (turn.phase === "budget_blocked" || turn.phase === "worker_handoff" || turn.phase === "workshop_handoff") continue;
       this.settleTurn(turnId);
     }
   }
@@ -2357,7 +2743,7 @@ export class ChatStore {
   }
 
   private isComposerOpenDuringHandoff(turnId: string, phase: string): boolean {
-    if (phase === "worker_handoff" || phase === "budget_blocked") {
+    if (phase === "worker_handoff" || phase === "workshop_handoff" || phase === "budget_blocked") {
       return true;
     }
     const workerLink = this.workerLinkForTurn(turnId);
@@ -2369,7 +2755,12 @@ export class ChatStore {
     const turnId = event.turn_id?.trim();
     if (!turnId) return false;
 
-    if (isWorkerHandoffStreamEvent(event) || isBudgetApprovalStreamEvent(event)) {
+    if (
+      isWorkerHandoffStreamEvent(event) ||
+      isWorkshopHandoffStreamEvent(event) ||
+      isWorkerSynthesisStreamEvent(event) ||
+      isBudgetApprovalStreamEvent(event)
+    ) {
       return true;
     }
     if (this.workerLinkForTurn(turnId)) return true;
@@ -2377,7 +2768,10 @@ export class ChatStore {
     const workId = event.work_id?.trim();
     if (workId && this.workers.has(workId)) return true;
 
-    return shouldAcceptStreamEvent(turnId, this.streamOwners, this.turns);
+    return shouldAcceptStreamEvent(turnId, this.streamOwners, this.turns, {
+      recentlySettledTurnIds: this.recentlySettledTurnIdSet(),
+      transcriptTurnIds: this.transcriptTurnIdSet(),
+    });
   }
 
   private syncTurnFromEvent(event: InteractiveTurnStreamEvent) {
@@ -2389,14 +2783,18 @@ export class ChatStore {
       workerLink != null &&
       !workerLink.synthesisDelivered &&
       !isWorkerHandoffStreamEvent(event) &&
+      !isWorkshopHandoffStreamEvent(event) &&
+      !isWorkerSynthesisStreamEvent(event) &&
       !isBudgetApprovalStreamEvent(event);
+    const preservedPhase =
+      existing.phase === "workshop_handoff" ? "workshop_handoff" : "worker_handoff";
 
     const next = new Map(this.turns);
     if (event.terminal) {
       if (existing.mode === "background") {
         next.set(event.turn_id, {
           ...existing,
-          phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
+          phase: preserveHandoff ? preservedPhase : this.phaseFromEvent(event),
           streamAttached: true,
           terminal: false,
         });
@@ -2405,7 +2803,7 @@ export class ChatStore {
       } else {
         next.set(event.turn_id, {
           ...existing,
-          phase: preserveHandoff ? "worker_handoff" : this.phaseFromEvent(event),
+          phase: preserveHandoff ? preservedPhase : this.phaseFromEvent(event),
           streamAttached: true,
           terminal: false,
         });
@@ -2436,6 +2834,7 @@ export class ChatStore {
 
   private phaseFromEvent(event: InteractiveTurnStreamEvent): string {
     if (isWorkerHandoffStreamEvent(event)) return "worker_handoff";
+    if (isWorkshopHandoffStreamEvent(event)) return "workshop_handoff";
     if (isBudgetApprovalStreamEvent(event)) return "budget_blocked";
     if (event.terminal) return "done";
     return event.phase || "streaming";

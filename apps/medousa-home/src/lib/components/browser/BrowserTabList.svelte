@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Plus, X } from "@lucide/svelte";
-  import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { humanBrowserForWindow } from "$lib/stores/humanBrowserSurface";
+
+  const humanBrowser = $derived(humanBrowserForWindow());
+  import { faviconUrlForSite, tabDisplayLabel } from "$lib/utils/browserFavicon";
 
   interface Props {
     variant?: "bar" | "sheet";
@@ -24,23 +27,32 @@
     event.stopPropagation();
     void humanBrowser.closeTab(tabId);
   }
+
+  function tabFavicon(tab: (typeof humanBrowser.tabs)[number]): string {
+    return tab.favicon || faviconUrlForSite(tab.url, 32);
+  }
 </script>
 
 {#if variant === "bar"}
-  <div class="flex min-w-0 items-end gap-1 overflow-x-auto border-b border-surface-800 bg-surface-950 px-2 pt-1.5">
+  <div class="browser-tab-bar flex min-w-0 items-end gap-1 overflow-x-auto border-b border-surface-800 bg-surface-950 px-2 pt-1.5">
     {#each humanBrowser.tabs as tab (tab.id)}
       <div
-        class="group flex max-w-[220px] min-w-[120px] items-center gap-1 rounded-t-md border px-2 py-1.5 text-xs {tab.active
-          ? 'border-surface-600 border-b-transparent bg-surface-900 text-surface-50'
-          : 'border-transparent bg-surface-900/40 text-surface-300 hover:bg-surface-900/70'}"
+        class="browser-tab group flex max-w-[220px] min-w-[120px] items-center gap-1 px-2 py-1.5 text-xs {tab.active
+          ? 'browser-tab-active text-surface-50'
+          : 'text-surface-300 hover:bg-surface-900/70'}"
       >
         <button
           type="button"
-          class="min-w-0 flex-1 truncate text-left"
+          class="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left"
           onclick={() => handleActivate(tab.id)}
           title={tab.url}
         >
-          {tab.title || tab.url || "New tab"}
+          {#if tab.url !== "about:blank"}
+            <img src={tabFavicon(tab)} alt="" class="browser-tab-favicon" />
+          {:else}
+            <span class="browser-tab-favicon-fallback" aria-hidden="true">+</span>
+          {/if}
+          <span class="truncate">{tabDisplayLabel(tab.title, tab.url)}</span>
         </button>
         {#if humanBrowser.tabs.length > 1}
           <button
@@ -77,8 +89,12 @@
           class="min-w-0 flex-1 text-left"
           onclick={() => handleActivate(tab.id)}
         >
-          <p class="truncate text-sm font-medium text-surface-50">{tab.title || "New tab"}</p>
-          <p class="truncate text-[11px] text-surface-400">{tab.url === "about:blank" ? "Blank tab" : tab.url}</p>
+          <p class="truncate text-sm font-medium text-surface-50">
+            {tabDisplayLabel(tab.title, tab.url)}
+          </p>
+          <p class="truncate text-[11px] text-surface-400">
+            {tab.url === "about:blank" ? "Blank tab" : tab.url}
+          </p>
         </button>
         {#if humanBrowser.tabs.length > 1}
           <button

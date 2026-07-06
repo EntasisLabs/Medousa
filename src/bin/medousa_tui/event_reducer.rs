@@ -21,6 +21,9 @@ pub(crate) async fn handle_tui_event(event: TuiEvent, state: &mut TuiState) {
         TuiEvent::UiNotice(text) => {
             super::push_obs(state, text);
         }
+        TuiEvent::ContextUsage { report } => {
+            state.last_context_usage = Some(report);
+        }
         TuiEvent::ApprovalRequired {
             server_id,
             tool_name,

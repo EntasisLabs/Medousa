@@ -15,6 +15,7 @@ use crate::turn_continuation;
 use crate::recurring_agent_turn;
 use crate::openshell_sandbox_run;
 use crate::recurring_delivery;
+use crate::recurring_feed;
 use crate::session_meta_store;
 use crate::session_store;
 use crate::verification_store;
@@ -137,8 +138,11 @@ async fn build_platform_inner(
     crate::session_catalog::init_session_catalog_with_runtime(&composition).await;
     channel_session_store::init_channel_session_store_with_runtime(&composition).await;
     artifact_store::init_artifact_store_with_runtime(&composition).await;
+    crate::component_store::init_component_store_with_runtime(&composition).await;
+    crate::component_runtime_store::init_component_runtime_with_runtime(&composition).await;
     turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
     recurring_delivery::init_recurring_delivery_store_with_runtime(&composition).await;
+    recurring_feed::init_recurring_feed_store_with_runtime(&composition).await;
 
     eprintln!("medousa-daemon: assembling agent runtime…");
     let agent = assemble_tui_runtime(
@@ -177,6 +181,14 @@ async fn build_platform_inner(
     openshell_sandbox_run::register_openshell_sandbox_run_handler(agent.runtime.as_ref())
         .await
         .context("failed to register openshell sandbox run job handler")?;
+    crate::artifact_maintenance_job::register_artifact_maintenance_handler(agent.runtime.as_ref())
+        .await
+        .context("failed to register artifact maintenance job handler")?;
+    if let Err(err) =
+        crate::artifact_retention::ensure_schedule_on_startup(agent.runtime.as_ref()).await
+    {
+        eprintln!("medousa artifact retention schedule: {err}");
+    }
     crate::agent_runtime::turn_worker_job::register_turn_worker_job_handler(
         agent.runtime.as_ref(),
         agent.clone(),

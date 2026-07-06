@@ -3,7 +3,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::daemon_api::{
-    InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
+    ContextUsageReport, InteractiveTurnRequest, InteractiveTurnResponse, InteractiveTurnStreamEvent,
 };
 
 pub fn start_interactive_turn_skeleton(
@@ -125,6 +125,25 @@ pub fn operator_status_stream_event(
     )
 }
 
+/// Turn-start context budget breakdown (Cursor-style telemetry).
+pub fn context_usage_stream_event(
+    turn_id: &str,
+    report: &ContextUsageReport,
+    operator_summary: &str,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = build_event_messages(
+        turn_id,
+        "context_usage",
+        "orchestration",
+        StreamMessages {
+            operator_message: Some(operator_summary.trim().to_string()),
+            debug_message: None,
+        },
+    )?;
+    event.context_usage = Some(report.clone());
+    Ok(event)
+}
+
 /// Whether a stream status line is engine telemetry rather than operator copy.
 pub fn is_stream_debug_telemetry(message: &str) -> bool {
     let trimmed = message.trim();
@@ -198,6 +217,26 @@ pub fn turn_progress_stream_event(
     Ok(event)
 }
 
+/// Host content-pack hold — keep streamed draft visible; turn not terminal yet.
+pub fn pack_hold_stream_event(
+    turn_id: &str,
+    fragments: &[String],
+    tool_names: Vec<String>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let held = fragments
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let messages = classify_stream_messages("pack_hold", &held);
+    let mut event = build_event_messages(turn_id, "assistant_pack_hold", "pack_hold", messages)?;
+    event.final_text = Some(held);
+    event.tool_names = Some(tool_names);
+    event.terminal = false;
+    Ok(event)
+}
+
 /// Mid-task handoff: principal sees a durable update; turn ends without claiming final completion.
 pub fn turn_checkpoint_stream_event(
     turn_id: &str,
@@ -240,6 +279,45 @@ pub fn worker_ack_stream_event_with_tools(
     event.message = "background worker started".to_string();
     event.operator_message = Some("background worker started".to_string());
     event.debug_message = None;
+    event.work_id = work_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    Ok(event)
+}
+
+pub fn workshop_ack_stream_event_with_tools(
+    turn_id: &str,
+    ack_text: &str,
+    tool_names: Vec<String>,
+    work_id: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event = final_stream_event_with_tools_terminal(turn_id, ack_text, tool_names, false)?;
+    event.event_type = "workshop_ack".to_string();
+    event.phase = "workshop_ack".to_string();
+    event.message = "bound workshop started".to_string();
+    event.operator_message = Some("Medousa is in the workshop".to_string());
+    event.debug_message = None;
+    event.work_id = work_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    Ok(event)
+}
+
+/// Terminal worker synthesis delivered back to the parent interactive turn envelope.
+pub fn worker_synthesis_stream_event_with_tools(
+    turn_id: &str,
+    synthesis_text: &str,
+    tool_names: Vec<String>,
+    work_id: Option<&str>,
+) -> Result<InteractiveTurnStreamEvent> {
+    let mut event =
+        final_stream_event_with_tools_terminal(turn_id, synthesis_text, tool_names, true)?;
+    event.event_type = "worker_synthesis".to_string();
+    event.phase = "worker_synthesis".to_string();
+    event.message = "worker synthesis delivered".to_string();
+    event.operator_message = Some("Workshop finished".to_string());
     event.work_id = work_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -557,6 +635,7 @@ fn build_event_messages(
         root_artifact_id: None,
         browser_session_id: None,
         browser_challenge_url: None,
+        context_usage: None,
     })
 }
 

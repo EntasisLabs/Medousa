@@ -55,6 +55,17 @@ pub struct BonjourStatus {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PairHeartbeatInvokeRequest {
+    #[serde(default)]
+    pub apns_device_token: Option<String>,
+    #[serde(default)]
+    pub push_platform: Option<String>,
+    #[serde(default)]
+    pub live_activity_push_token: Option<String>,
+}
+
 fn pairing_http_client() -> Result<Client, String> {
     Client::builder()
         .connect_timeout(Duration::from_secs(5))
@@ -85,11 +96,19 @@ fn pairing_unavailable_message(status: reqwest::StatusCode, body: &str) -> Strin
 }
 
 #[tauri::command]
-pub async fn pairing_fetch_qr(state: State<'_, DaemonState>) -> Result<PairingQrResponse, String> {
+pub async fn pairing_fetch_qr(
+    state: State<'_, DaemonState>,
+    full: Option<bool>,
+) -> Result<PairingQrResponse, String> {
     let base = daemon_base(&state)?;
     let client = pairing_http_client()?;
+    let path = if full.unwrap_or(false) {
+        format!("{base}/qr?full=true")
+    } else {
+        format!("{base}/qr")
+    };
     let response = client
-        .get(format!("{base}/qr"))
+        .get(path)
         .send()
         .await
         .map_err(|err| format!("cannot reach Medousa Engine at {base}: {err}"))?;
@@ -249,9 +268,20 @@ pub fn pairing_load_credentials() -> Option<crate::pairing_client::PairingCreden
 }
 
 #[tauri::command]
-pub async fn pairing_send_heartbeat(state: State<'_, DaemonState>) -> Result<(), String> {
+pub async fn pairing_send_heartbeat(
+    state: State<'_, DaemonState>,
+    request: Option<PairHeartbeatInvokeRequest>,
+) -> Result<(), String> {
     let base = daemon_base(&state)?;
-    crate::pairing_client::send_pair_heartbeat(&base).await
+    if let Some(token) = request
+        .as_ref()
+        .and_then(|body| body.apns_device_token.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        crate::push::set_apns_device_token(Some(token.to_string()));
+    }
+    crate::pairing_client::send_pair_heartbeat(&base, request.as_ref()).await
 }
 
 #[tauri::command]

@@ -5,6 +5,8 @@ export interface PairCompleteFromQrRequest {
   qrUrl: string;
   daemonUrl: string;
   phoneName?: string;
+  /** portal = full client; peer = inbox/share only. Defaults to portal. */
+  role?: "portal" | "peer";
 }
 
 export interface PairCompleteFromQrResult {
@@ -33,7 +35,12 @@ export async function completePairingFromQr(
   if (!isTauri()) {
     throw new Error("Pairing requires the Medousa mobile app");
   }
-  return invoke<PairCompleteFromQrResult>("pairing_complete_from_qr", { request });
+  return invoke<PairCompleteFromQrResult>("pairing_complete_from_qr", {
+    request: {
+      ...request,
+      role: request.role ?? "portal",
+    },
+  });
 }
 
 export async function loadPairingCredentials(): Promise<PairingCredentialsSummary | null> {
@@ -42,7 +49,11 @@ export async function loadPairingCredentials(): Promise<PairingCredentialsSummar
 }
 
 /** Tell the workshop we're alive — routes over LAN or Iroh when off-network. */
-export async function sendPairingHeartbeat(): Promise<void> {
+export async function sendPairingHeartbeat(options?: {
+  apnsDeviceToken?: string;
+  pushPlatform?: string;
+  liveActivityPushToken?: string;
+}): Promise<void> {
   if (!isTauri()) return;
-  await invoke("pairing_send_heartbeat");
+  await invoke("pairing_send_heartbeat", { request: options ?? null });
 }

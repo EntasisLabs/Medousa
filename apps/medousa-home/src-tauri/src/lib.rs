@@ -13,18 +13,21 @@ mod medousa_paths;
 mod packages;
 mod pairing;
 mod pairing_client;
+mod lan_share;
+mod peer_inbox_sink;
+mod push;
 mod workshop_registry;
 mod workshop_transport;
 mod capabilities;
 mod mcp_gateway;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod browser_host;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 mod human_browser;
 #[cfg(any(target_os = "ios", target_os = "android"))]
 mod browser_host_mobile;
 #[cfg(target_os = "android")]
-mod human_browser_mobile;
+mod human_browser_android;
 #[cfg(target_os = "ios")]
 mod human_browser_ios;
 mod provider_catalog;
@@ -33,6 +36,12 @@ mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod window;
 mod wizard;
+#[cfg(target_os = "ios")]
+mod live_activity;
+#[cfg(target_os = "ios")]
+mod home_widget;
+#[cfg(target_os = "ios")]
+mod ios_push_setup;
 
 use daemon::DaemonState;
 use tauri::Manager;
@@ -46,6 +55,17 @@ use tauri::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // rustls 0.23+ requires an explicit crypto provider before any reqwest client is built.
+    // Tauri's custom-protocol handler uses reqwest during the first WKWebView load.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    if let Some(path) = crate::paths::load_env_overlay() {
+        eprintln!(
+            "[medousa-home] loaded env overlay from {}",
+            path.display()
+        );
+    }
+
     let mut builder = tauri::Builder::default();
 
     // UIKit otherwise shrinks WKWebView scroll content and exposes window background
@@ -60,16 +80,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_mobile_push::init())
         .manage(DaemonState::new())
         .manage(daemon::local_inference::LocalInferenceStreamState::new());
 
     builder = builder
         .setup(|app| {
+            eprintln!("[medousa-home] setup start");
             if let Err(err) = workshop_registry::sync_daemon_state_from_registry(
                 &app.state::<DaemonState>(),
             ) {
                 eprintln!("workshop registry sync: {err}");
             }
+            eprintln!("[medousa-home] setup complete");
 
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -85,9 +108,14 @@ pub fn run() {
                 human_browser::init_app_handle(app.handle().clone());
                 browser_host::start_browser_host_background();
             }
+            #[cfg(target_os = "android")]
+            {
+                human_browser_android::init_app_handle(app.handle().clone());
+            }
             #[cfg(target_os = "ios")]
             {
                 human_browser_ios::init_app_handle(app.handle().clone());
+                ios_push_setup::install_ios_push_background_handler();
             }
 
             Ok(())
@@ -132,6 +160,17 @@ pub fn run() {
         });
     }
 
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Resized { .. } = event {
+                    human_browser_android::on_main_window_resized(window.app_handle());
+                }
+            }
+        });
+    }
+
     builder
         .invoke_handler(tauri::generate_handler![
             daemon::daemon_url,
@@ -159,7 +198,26 @@ pub fn run() {
             pairing::pairing_complete_from_qr,
             pairing::pairing_load_credentials,
             pairing::pairing_send_heartbeat,
+            push::push_register_apns_token,
+            push::push_clear_apns_token,
             pairing::bonjour_status,
+            lan_share::lan_pairing_status,
+            lan_share::set_lan_pairing_enabled,
+            lan_share::lan_discover_workshops,
+            lan_share::lan_connect_workshop,
+            lan_share::share_export_bundle,
+            lan_share::share_import_bundle,
+            lan_share::share_push_to_workshop,
+            lan_share::share_item_to_peer,
+            lan_share::trust_workshop_from_qr,
+            lan_share::list_trusted_workshops,
+            lan_share::revoke_trusted_workshop,
+            lan_share::peer_send_message,
+            lan_share::peer_list_messages,
+            lan_share::peer_unread_count,
+            lan_share::peer_mark_read,
+            lan_share::peer_mark_thread_read,
+            lan_share::peer_compose_identity,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,
@@ -174,6 +232,8 @@ pub fn run() {
             mcp_gateway::mcp_gateway_remove_server,
             mcp_gateway::mcp_gateway_set_server_enabled,
             mcp_gateway::mcp_gateway_apply_server,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            browser_host::browser_host_search,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_host_status,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -201,6 +261,8 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             browser_host::browser_bridge_snapshot,
             #[cfg(any(target_os = "ios", target_os = "android"))]
+            browser_host_mobile::browser_host_search,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             browser_host_mobile::browser_host_register_client,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             browser_host_mobile::browser_host_status,
@@ -211,11 +273,29 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_navigate,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_navigate,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_embed_activate_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_embed_close_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_activate_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_close_tab,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_new_window,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_reload,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_reload,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_go_back,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_go_back,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_go_forward,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_go_forward,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_apply_layout,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -229,6 +309,8 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_embed_read_bounds,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_embed_coord_probe,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_set_mobile_shell_active,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_report_title,
@@ -240,38 +322,72 @@ pub fn run() {
             human_browser::human_browser_snapshot_markdown,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             human_browser::human_browser_snapshot_search,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_stop,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_stop,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_query_nav_state,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_query_nav_state,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_nav_state,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_favicon,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_find_in_page,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_popout_find_in_page,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            human_browser::human_browser_report_find_result,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_navigate,
+            human_browser_android::human_browser_navigate,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_reload,
+            human_browser_android::human_browser_reload,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_go_back,
+            human_browser_android::human_browser_go_back,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_go_forward,
+            human_browser_android::human_browser_go_forward,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_apply_layout,
+            human_browser_android::human_browser_embed_apply_layout,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_apply_mobile_layout,
+            human_browser_android::human_browser_embed_apply_mobile_layout,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_set_bounds,
+            human_browser_android::human_browser_embed_set_bounds,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_show,
+            human_browser_android::human_browser_embed_show,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_hide,
+            human_browser_android::human_browser_embed_hide,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_embed_read_bounds,
+            human_browser_android::human_browser_embed_read_bounds,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_set_mobile_shell_active,
+            human_browser_android::human_browser_embed_activate_tab,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_title,
+            human_browser_android::human_browser_embed_close_tab,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_report_snapshot,
+            human_browser_android::human_browser_set_mobile_shell_active,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_snapshot_html,
+            human_browser_android::human_browser_report_title,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_snapshot_markdown,
+            human_browser_android::human_browser_report_snapshot,
             #[cfg(target_os = "android")]
-            human_browser_mobile::human_browser_snapshot_search,
+            human_browser_android::human_browser_snapshot_html,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_snapshot_markdown,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_snapshot_search,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_stop,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_query_nav_state,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_report_nav_state,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_report_favicon,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_find_in_page,
+            #[cfg(target_os = "android")]
+            human_browser_android::human_browser_report_find_result,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_navigate,
             #[cfg(target_os = "ios")]
@@ -293,6 +409,10 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_embed_read_bounds,
             #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_embed_activate_tab,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_embed_close_tab,
+            #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_set_mobile_shell_active,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_report_title,
@@ -304,12 +424,40 @@ pub fn run() {
             human_browser_ios::human_browser_snapshot_markdown,
             #[cfg(target_os = "ios")]
             human_browser_ios::human_browser_snapshot_search,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_stop,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_query_nav_state,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_report_nav_state,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_report_favicon,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_find_in_page,
+            #[cfg(target_os = "ios")]
+            human_browser_ios::human_browser_report_find_result,
             capabilities::capabilities_load_overlay,
             capabilities::capabilities_set_binding_enabled,
             capabilities::capabilities_save_web_search,
             daemon::catalog::catalog_reindex_capabilities,
             daemon::workspace_stream_start,
             daemon::workspace_stream_stop,
+            daemon::environment::environment_get_spec,
+            daemon::environment::environment_get_status,
+            daemon::environment::environment_put_spec,
+            daemon::environment::environment_get_pending,
+            daemon::environment::environment_apply_pending,
+            daemon::environment::environment_dismiss_pending,
+            daemon::feeds::feed_tail,
+            daemon::component_store::component_store_get,
+            daemon::component_store::component_store_set,
+            daemon::component_store::component_store_delete,
+            daemon::component_store::component_store_list_keys,
+            daemon::component_runtime::component_runtime_append_events,
+            daemon::component_runtime::component_runtime_tail_events,
+            daemon::component_runtime::component_runtime_complete_probe,
+            daemon::environment_stream_start,
+            daemon::environment_stream_stop,
             daemon::interactive_turn_send,
             daemon::interactive_stream_start,
             daemon::interactive_stream_stop,
@@ -339,6 +487,7 @@ pub fn run() {
             daemon::session::session_get_history,
             daemon::session::session_get_active_turn,
             daemon::session::session_cancel_active_turn,
+            daemon::session::session_steer_bound_workshop,
             daemon::session::turn_create,
             daemon::session::turn_list_session,
             daemon::media::media_upload,
@@ -376,6 +525,8 @@ pub fn run() {
             daemon::jobs::job_complete_actions,
             daemon::jobs::job_archive_ask,
             daemon::recurring::recurring_list,
+            daemon::maintenance::artifact_retention_status,
+            daemon::maintenance::artifact_retention_update,
             daemon::recurring::recurring_register_prompt,
             daemon::recurring::recurring_update,
             daemon::recurring::recurring_delete,
@@ -401,6 +552,8 @@ pub fn run() {
             daemon::locus::locus_get_node,
             daemon::artifact::artifact_command,
             daemon::artifact::artifact_fetch,
+            daemon::artifact::artifact_write,
+            daemon::artifact::artifact_delete,
             daemon::artifact::artifact_list_ui,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::window_show_chat_popout,
@@ -415,6 +568,14 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             window::browser_window_present,
             tray::tray_update_blocked_count,
+            #[cfg(target_os = "ios")]
+            live_activity::live_activity_is_available,
+            #[cfg(target_os = "ios")]
+            live_activity::live_activity_push_token,
+            #[cfg(target_os = "ios")]
+            live_activity::live_activity_sync,
+            #[cfg(target_os = "ios")]
+            home_widget::home_widget_sync,
             medousa_paths::medousa_config_paths,
             medousa_paths::connection_runbook_path,
             medousa_paths::load_tui_defaults_summary,

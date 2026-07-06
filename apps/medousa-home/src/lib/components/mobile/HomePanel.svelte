@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onDestroy, onMount } from "svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
+  import PeerHomeStrip from "$lib/components/mobile/PeerHomeStrip.svelte";
   import WorkManifestCard from "$lib/components/work/WorkManifestCard.svelte";
   import WorkHubTrays from "$lib/components/work/WorkHubTrays.svelte";
-  import { ArrowUp, Bell, BookOpen, Calendar, FileText } from "@lucide/svelte";
+  import { ArrowUp, Bell, BookOpen, Calendar, FileText, Users } from "@lucide/svelte";
   import { automations } from "$lib/stores/automations.svelte";
   import { haptic } from "$lib/haptics";
   import { recurring } from "$lib/stores/recurring.svelte";
@@ -23,6 +25,12 @@
   } from "$lib/utils/vaultNoteBridge";
   import type { ProvenanceChip } from "$lib/utils/workHub";
   import { partitionWorkHub } from "$lib/utils/workHub";
+  import {
+    fetchPeerHomePreview,
+    peerHomeCardHint,
+    type PeerHomePreview,
+  } from "$lib/utils/peerHomePreview";
+  import { isTauri } from "$lib/window";
 
   interface Props {
     health: DaemonHealth | null;
@@ -31,6 +39,7 @@
     onOpenNote: (path: string) => void | Promise<void>;
     onOpenSettings: () => void;
     onToggleActivity: () => void;
+    showInlineAsk?: boolean;
   }
 
   let {
@@ -40,6 +49,7 @@
     onOpenNote,
     onOpenSettings,
     onToggleActivity,
+    showInlineAsk = true,
   }: Props = $props();
 
   const blocked = $derived(workspace.needsAttentionCount());
@@ -81,6 +91,11 @@
     }
     if (living.length > 0) {
       return motionSummary ?? `${inMotion} in motion`;
+    }
+    if (peerPreview.unreadTotal > 0) {
+      return peerPreview.unreadTotal === 1
+        ? "1 message"
+        : `${peerPreview.unreadTotal} messages`;
     }
     return "All clear";
   });
@@ -134,9 +149,36 @@
       : `${automationCounts.enabled}/${automationCounts.total} active`,
   );
 
+  let peerPreview = $state<PeerHomePreview>({
+    unreadTotal: 0,
+    peerCount: 0,
+    stripThreads: [],
+    latestThread: null,
+  });
+  let peerPollTimer: ReturnType<typeof setInterval> | undefined;
+
+  const peersHint = $derived(peerHomeCardHint(peerPreview));
+  const showPeerStrip = $derived(peerPreview.stripThreads.length > 0);
+
   $effect(() => {
     void workspace.prefetchCardDetails();
   });
+
+  onMount(() => {
+    if (!isTauri()) return;
+    void refreshPeerPreview();
+    peerPollTimer = setInterval(() => {
+      void refreshPeerPreview();
+    }, 8000);
+  });
+
+  onDestroy(() => {
+    if (peerPollTimer) clearInterval(peerPollTimer);
+  });
+
+  async function refreshPeerPreview() {
+    peerPreview = await fetchPeerHomePreview();
+  }
 
   function scrollToInMotion() {
     inMotionEl?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -152,7 +194,13 @@
       onOpenSettings();
       return;
     }
-    if (hasMotion) scrollToInMotion();
+    if (hasMotion) {
+      scrollToInMotion();
+      return;
+    }
+    if (peerPreview.unreadTotal > 0) {
+      openPeers();
+    }
   }
 
   async function openDailyNote() {
@@ -176,8 +224,13 @@
     layout.openMore("automations");
   }
 
+  function openPeers() {
+    haptic("light");
+    layout.openMore("peers");
+  }
+
   async function refresh() {
-    await workspace.prefetchCardDetails();
+    await Promise.all([workspace.prefetchCardDetails(), refreshPeerPreview()]);
   }
 
   function onTouchStart(event: TouchEvent) {
@@ -284,17 +337,19 @@
 
       <h1 class="mobile-home-greeting mt-6">{greeting}</h1>
 
-      <button
-        type="button"
-        class="mobile-home-ask mt-4"
-        aria-label="Ask Medousa"
-        onclick={openAsk}
-      >
-        <span class="mobile-home-ask-placeholder">Ask Medousa anything…</span>
-        <span class="mobile-home-ask-send" aria-hidden="true">
-          <ArrowUp size={18} strokeWidth={2.25} />
-        </span>
-      </button>
+      {#if showInlineAsk}
+        <button
+          type="button"
+          class="mobile-home-ask mt-4"
+          aria-label="Ask Medousa"
+          onclick={openAsk}
+        >
+          <span class="mobile-home-ask-placeholder">Ask Medousa anything…</span>
+          <span class="mobile-home-ask-send" aria-hidden="true">
+            <ArrowUp size={18} strokeWidth={2.25} />
+          </span>
+        </button>
+      {/if}
 
       <button
         type="button"
@@ -331,7 +386,16 @@
           <span class="mobile-home-card-label">Automations</span>
           <span class="mobile-home-card-hint">{automationsHint}</span>
         </button>
+        <button type="button" class="mobile-home-card" onclick={openPeers}>
+          <Users size={17} strokeWidth={1.75} class="mobile-home-card-icon" />
+          <span class="mobile-home-card-label">Peers</span>
+          <span class="mobile-home-card-hint">{peersHint}</span>
+        </button>
       </div>
+
+      {#if showPeerStrip}
+        <PeerHomeStrip threads={peerPreview.stripThreads} />
+      {/if}
     </div>
 
     {#if hasMotion}

@@ -570,6 +570,7 @@ async fn run_daemon_watch_add(
         ),
         model_hint: None,
         delivery: None,
+        feeds: None,
         session_id: None,
         execution_mode: None,
         manuscript_id: None,

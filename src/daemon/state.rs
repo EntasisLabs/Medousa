@@ -7,12 +7,14 @@ use stasis::prelude::RuntimeComposition;
 use tokio::sync::RwLock;
 
 use crate::browser_handlers::ClientRegistry;
+use crate::daemon_api::ContextUsageReport;
 use crate::MedousaPlatformRuntime;
 use crate::channel_delivery;
 use crate::daemon::heartbeat::{
     HeartbeatDeliveryMetrics, HeartbeatDeliveryPolicy, HeartbeatNotifyConfig, TickReport,
 };
 use crate::engine_context::HeartbeatLanePolicy;
+use crate::daemon::turn_stream_registry::TurnStreamRegistry;
 use crate::session_mapping;
 use crate::turn_ticket::TurnTicketRegistry;
 use crate::user_profiles::UserProfileRegistry;
@@ -38,8 +40,7 @@ impl AgentTurnJobRecord {
 pub struct AppState {
     pub platform: Arc<MedousaPlatformRuntime>,
     pub daemon_base_url: String,
-    pub interactive_turn_streams:
-        Arc<RwLock<HashMap<String, Arc<crate::daemon::turn_event_channel::TurnEventChannel>>>>,
+    pub interactive_turn_streams: TurnStreamRegistry,
     pub active_ingest_jobs: Arc<RwLock<HashMap<String, session_mapping::ActiveIngestJob>>>,
     pub channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
     pub job_delivery_records: Arc<RwLock<HashMap<String, channel_delivery::JobDeliveryRecord>>>,
@@ -72,6 +73,8 @@ pub struct AppState {
     pub webhook_client: Option<reqwest::Client>,
     pub retention_config: crate::session_retention::SessionRetentionConfig,
     pub last_retention_at: Arc<RwLock<Option<DateTime<Utc>>>>,
+    /// Latest turn-start context budget per session (from `context_usage` stream events).
+    pub last_context_usage_by_session: Arc<RwLock<HashMap<String, ContextUsageReport>>>,
     pub client_registry: ClientRegistry,
 }
 

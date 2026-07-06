@@ -1,11 +1,22 @@
 //! Self-hosted release endpoint URL resolution.
 
+use std::sync::OnceLock;
+
 const DEFAULT_RELEASE_CHANNEL: &str = "stable";
+
+static EMBEDDED_BASE_URL: OnceLock<String> = OnceLock::new();
+static EMBEDDED_CHANNEL: OnceLock<String> = OnceLock::new();
+
+/// Register compile-time or installer-config defaults (called once at app startup).
+pub fn set_embedded_release_defaults(base_url: String, channel: String) {
+    let _ = EMBEDDED_BASE_URL.set(base_url);
+    let _ = EMBEDDED_CHANNEL.set(channel);
+}
 
 /// Resolve the release manifest URL from environment.
 ///
 /// Priority: `MEDOUSA_RELEASE_MANIFEST_URL` > `MEDOUSA_RELEASE_BASE_URL` + channel + path >
-/// legacy GitHub Releases fallback (dev/reference only).
+/// embedded defaults (installer build) > legacy GitHub Releases fallback (dev/reference only).
 pub fn release_manifest_url() -> String {
     if let Ok(url) = std::env::var("MEDOUSA_RELEASE_MANIFEST_URL") {
         if !url.trim().is_empty() {
@@ -14,18 +25,26 @@ pub fn release_manifest_url() -> String {
     }
 
     if let Some(base) = release_base_url() {
-        let channel = release_channel();
-        let version = std::env::var("MEDOUSA_RELEASE_VERSION").ok();
-        if let Some(version) = version.filter(|v| !v.trim().is_empty()) {
-            let version = version.trim_start_matches('v');
-            return format!("{base}/{channel}/v{version}/release-manifest.json");
-        }
-        return format!("{base}/{channel}/release-manifest.json");
+        return compose_manifest_url(&base, &release_channel(), pinned_release_version());
     }
 
-    // Dev/reference fallback — production should set MEDOUSA_RELEASE_BASE_URL.
+    // Dev/reference fallback — production should set MEDOUSA_RELEASE_BASE_URL or embed at build.
     "https://github.com/EntasisLabs/Medousa/releases/latest/download/release-manifest.json"
         .to_string()
+}
+
+fn compose_manifest_url(base: &str, channel: &str, version: Option<String>) -> String {
+    if let Some(version) = version.filter(|v| !v.trim().is_empty()) {
+        let version = version.trim_start_matches('v');
+        return format!("{base}/{channel}/v{version}/release-manifest.json");
+    }
+    format!("{base}/{channel}/release-manifest.json")
+}
+
+fn pinned_release_version() -> Option<String> {
+    std::env::var("MEDOUSA_RELEASE_VERSION")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 pub fn installer_bootstrap_url() -> String {
@@ -46,11 +65,40 @@ pub fn release_base_url() -> Option<String> {
         .ok()
         .map(|value| value.trim_end_matches('/').to_string())
         .filter(|value| !value.is_empty())
+        .or_else(|| EMBEDDED_BASE_URL.get().cloned())
 }
 
 pub fn release_channel() -> String {
     std::env::var("MEDOUSA_RELEASE_CHANNEL")
-        .unwrap_or_else(|_| DEFAULT_RELEASE_CHANNEL.to_string())
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| EMBEDDED_CHANNEL.get().cloned())
+        .unwrap_or_else(|| DEFAULT_RELEASE_CHANNEL.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compose_manifest_url_stable_channel() {
+        assert_eq!(
+            compose_manifest_url("https://releases.example.com/medousa", "stable", None),
+            "https://releases.example.com/medousa/stable/release-manifest.json"
+        );
+    }
+
+    #[test]
+    fn compose_manifest_url_versioned_channel() {
+        assert_eq!(
+            compose_manifest_url(
+                "https://releases.example.com/medousa",
+                "stable",
+                Some("0.2.0".to_string())
+            ),
+            "https://releases.example.com/medousa/stable/v0.2.0/release-manifest.json"
+        );
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

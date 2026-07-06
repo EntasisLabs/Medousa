@@ -34,7 +34,9 @@ Stasis dashboard mounted at `/dashboard` (HTML UI).
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/interactive/turn` | `InteractiveTurnRequest` → `InteractiveTurnResponse` (includes `stream_url`) | `interactive().start_turn` |
-| GET | `/v1/interactive/turn/{turn_id}/stream` | SSE: `InteractiveTurnStreamEvent` | use `http()` or app stream bridge |
+| GET | `/v1/interactive/turn/{turn_id}/stream` | SSE: `InteractiveTurnStreamEvent` | `interactive().stream` / `stream_reconnecting` |
+
+**Stream query:** `GET …/stream?since=<seq>` (optional `u64`, default `0`). Replays events with `seq > since` from the **durable turn journal** on disk, then tails live events. Each SSE payload includes monotonic **`seq`** per turn — clients track the last seen `seq` and reconnect with `?since=` after drops.
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
 
@@ -60,7 +62,7 @@ See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE 
 | Method | Path | Types | SDK |
 |--------|------|-------|-----|
 | POST | `/v1/ingest` | `IngestRequest` → `IngestResponse` | `ingest().post` |
-| GET | `/v1/ingest/{stream_id}/stream` | ingest SSE | `http().get` |
+| GET | `/v1/ingest/{stream_id}/stream` | ingest SSE (`?since=<seq>` same as interactive) | `http().get` |
 | POST | `/v1/deliver/outbox` | webhook delivery | `http().post` |
 | GET | `/v1/deliver/poll/{job_id}` | `DeliverPollResponse` | `http().get` |
 
@@ -97,9 +99,50 @@ See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE 
 | POST | `/v1/runtime/stage-route/command` | `StageRouteCommandRequest` | `runtime().stage_route_command` |
 | POST | `/v1/runtime/artifact/command` | `ArtifactCommandRequest` | `runtime().artifact_command` |
 | POST | `/v1/runtime/artifact/fetch` | `ArtifactFetchRequest` | `runtime().artifact_fetch` |
+| POST | `/v1/runtime/artifact/write` | `ArtifactWriteRequest` | `runtime().artifact_write` |
+| POST | `/v1/runtime/artifact/delete` | `ArtifactDeleteRequest` | `runtime().artifact_delete` |
 | POST | `/v1/runtime/artifact/list-ui` | `ArtifactListUiRequest` | `runtime().artifact_list_ui` |
 
 See [artifacts.md](artifacts.md), [runtime-config.md](runtime-config.md).
+
+---
+
+## Environment (canvas)
+
+| Method | Path | SDK |
+|--------|------|-----|
+| GET/PUT | `/v1/environment/spec` | `environment().get_spec` / `put_spec` |
+| GET | `/v1/environment/status` | `environment().get_status` |
+| POST | `/v1/environment/spec/validate` | `environment().validate_spec` |
+| POST | `/v1/environment/spec/propose` | `environment().propose_spec` |
+| GET/DELETE | `/v1/environment/spec/pending` | `environment().get_pending` / `dismiss_pending` |
+| POST | `/v1/environment/spec/pending/apply` | `environment().apply_pending` |
+| GET (SSE) | `/v1/environment/spec/stream` | `environment().stream_spec` |
+
+Patch ops (`remove_custom_surface`, `remove_component`, etc.) are **agent-tool only** via `cognition_environment_patch`. Integrators replace the full spec with `PUT /v1/environment/spec` (same as Home).
+
+---
+
+## Components (canvas)
+
+| Method | Path | SDK |
+|--------|------|-----|
+| GET/PUT | `/v1/components/{id}/store` | `components().store_get` / `store_set` |
+| GET | `/v1/components/{id}/store/keys` | `components().store_list_keys` |
+| GET/PUT/DELETE | `/v1/components/{id}/store/{key}` | `components().store_get_key` / `store_put_key` / `store_delete_key` |
+| GET/POST | `/v1/components/{id}/runtime/events` | `components().runtime_tail_events` / `runtime_append_events` |
+| POST | `/v1/components/{id}/runtime/probe/{probe_id}/result` | `components().runtime_complete_probe` |
+
+---
+
+## Feeds (canvas)
+
+| Method | Path | SDK |
+|--------|------|-----|
+| GET | `/v1/feeds` | `feeds().list` |
+| GET | `/v1/feeds/{feed_id}/tail` | `feeds().tail` |
+| POST | `/v1/feeds/{feed_id}/read` | `feeds().mark_read` |
+| GET (SSE) | `/v1/feeds/stream` | `feeds().stream` |
 
 ---
 
@@ -271,7 +314,8 @@ See [extensions.md](extensions.md).
 | POST | `/pair/init` |
 | POST | `/pair/verify` |
 | GET | `/pair/heartbeat` |
-| DELETE | `/pair/{pairing_id}` |
+| POST | `/pair/heartbeat` |
+| DELETE | `/pair/{pairing_id}` — loopback admin, or `Authorization: Bearer` session token for that pairing |
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 

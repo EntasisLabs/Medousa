@@ -35,29 +35,38 @@ export function shouldReattachTurnRecord(
     if (record.mode !== "background") return false;
   }
 
-  if (record.mode === "interactive" && record.phase === "worker_handoff") {
+  if (record.mode === "interactive" && (record.phase === "worker_handoff" || record.phase === "workshop_handoff")) {
     return false;
   }
 
   if (ctx.localTurn?.terminal) return false;
-  if (ctx.localTurn?.phase === "worker_handoff") return false;
+  if (ctx.localTurn?.phase === "worker_handoff" || ctx.localTurn?.phase === "workshop_handoff") return false;
 
   if (!ctx.localTurn && ctx.hasAssistantMessage && !ctx.assistantStreaming) {
-    return false;
+    // UI may have marked streaming=false while the daemon ticket is still live.
+    return !isTerminalTurnPhase(record.phase);
   }
 
   return true;
+}
+
+export interface StreamAcceptContext {
+  recentlySettledTurnIds?: ReadonlySet<string>;
+  transcriptTurnIds?: ReadonlySet<string>;
 }
 
 export function shouldAcceptStreamEvent(
   turnId: string,
   owners: ReadonlyMap<string, StreamOwner>,
   turns: ReadonlyMap<string, TurnTicketState>,
+  ctx?: StreamAcceptContext,
 ): boolean {
   if (owners.has(turnId)) return true;
   if (turns.has(turnId)) {
     const turn = turns.get(turnId)!;
     return !turn.terminal;
   }
+  if (ctx?.recentlySettledTurnIds?.has(turnId)) return true;
+  if (ctx?.transcriptTurnIds?.has(turnId)) return true;
   return false;
 }

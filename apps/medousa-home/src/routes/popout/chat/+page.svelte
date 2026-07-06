@@ -2,39 +2,18 @@
   import { onMount } from "svelte";
   import ChatPanel from "$lib/components/chat/ChatPanel.svelte";
   import SessionSidebar from "$lib/components/chat/SessionSidebar.svelte";
-  import { chat } from "$lib/stores/chat.svelte";
-  import { settings } from "$lib/stores/settings.svelte";
+  import { layout } from "$lib/stores/layout.svelte";
   import { hideChatPopout, isTauri } from "$lib/window";
-  import { onInteractiveEvent, onInteractiveError } from "$lib/daemon";
-  import { isRecoverableStreamError } from "$lib/utils/streamEvents";
-  import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
+  import { connectWorkshop } from "$lib/workshopConnection";
 
   onMount(() => {
-    settings.applyTheme();
-    const unlisteners: Promise<() => void>[] = [];
-
-    (async () => {
-      await Promise.all([
-        chat.refreshSessions({ force: true }),
-        chat.reloadCurrentSession(),
-      ]);
-
-      unlisteners.push(
-        onInteractiveEvent<InteractiveTurnStreamEvent>((event) => {
-          chat.applyStreamEvent(event);
-        }),
-      );
-      unlisteners.push(
-        onInteractiveError((message) =>
-          chat.noteStreamFailure(message, {
-            recoverable: isRecoverableStreamError(message),
-          }),
-        ),
-      );
-    })();
+    const detachWorkshop = connectWorkshop({
+      onHealthChange: () => {},
+      mode: "observer",
+    });
 
     return () => {
-      Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
+      detachWorkshop();
     };
   });
 
@@ -65,7 +44,11 @@
   </header>
 
   <div class="flex min-h-0 flex-1">
-    <SessionSidebar open={true} variant="inline" />
+    <SessionSidebar
+      open={layout.sessionDrawerOpen}
+      onClose={() => layout.setSessionDrawerOpen(false)}
+      variant="inline"
+    />
     <ChatPanel visible={true} showPopout={false} />
   </div>
 </div>

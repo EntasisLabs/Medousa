@@ -496,6 +496,8 @@ pub struct RegisterRecurringPromptRequest {
     pub model_hint: Option<String>,
     /// Optional channel push target for each successful materialized run.
     pub delivery: Option<serde_json::Value>,
+    /// Optional environment feed ids to publish on each materialized run terminal.
+    pub feeds: Option<serde_json::Value>,
     /// Medousa session id for `delivery.mode=linked_channel` (defaults to `recurring-{id}`).
     pub session_id: Option<String>,
     /// `agent_turn` (default) or `prompt` (single LLM, no tools).
@@ -571,6 +573,9 @@ pub struct UpdateRecurringRequest {
     /// Replace delivery binding; pass `{ "delivery": null }` to clear channel push.
     #[serde(default)]
     pub delivery: Option<serde_json::Value>,
+    /// Replace feed binding; pass `{ "feeds": null }` to clear feed publish.
+    #[serde(default)]
+    pub feeds: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1399,6 +1404,36 @@ pub struct InteractiveTurnStreamEvent {
     /// URL the client should load in Agent Browser WebView.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_challenge_url: Option<String>,
+    /// Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_usage: Option<ContextUsageReport>,
+}
+
+/// One slice of the prompt/context budget (Cursor-style context usage UI).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ContextUsageLayer {
+    /// Stable machine id, e.g. `system_prompt`, `tool_definitions`.
+    pub id: String,
+    /// Human label for UI.
+    pub label: String,
+    pub chars: u32,
+    pub tokens_estimate: u32,
+}
+
+/// Turn-start context composition sent once per interactive turn.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ContextUsageReport {
+    pub layers: Vec<ContextUsageLayer>,
+    pub total_tokens_estimate: u32,
+    pub total_chars: u32,
+    /// Model context window when known from capability registry / route.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit_tokens: Option<u32>,
+    pub tool_count: u32,
+    /// `chars / 4` — documented estimator; not tokenizer-exact.
+    pub estimator: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1484,6 +1519,82 @@ pub struct ArtifactSummary {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct ArtifactListUiResponse {
     pub artifacts: Vec<ArtifactSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactWriteRequest {
+    pub session_id: String,
+    pub artifact_id: String,
+    pub title: String,
+    pub html: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_px: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub if_match_hash64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactWriteResponse {
+    pub artifact_id: String,
+    pub supersedes_artifact_id: String,
+    pub hash64: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactDeleteRequest {
+    pub session_id: String,
+    pub artifact_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactDeleteResponse {
+    pub deleted_artifact_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactRetentionSettingsResponse {
+    pub enabled: bool,
+    pub max_age_days: i64,
+    pub max_per_session: usize,
+    pub recurring_id: String,
+    pub cron_expr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ArtifactRetentionStatusResponse {
+    pub settings: ArtifactRetentionSettingsResponse,
+    pub scheduled: bool,
+    pub enabled: bool,
+    pub next_run_at_utc: Option<DateTime<Utc>>,
+    pub last_run_at_utc: Option<DateTime<Utc>>,
+    pub last_run_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct UpdateArtifactRetentionRequest {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub max_age_days: Option<i64>,
+    #[serde(default)]
+    pub max_per_session: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct UpdateArtifactRetentionResponse {
+    pub settings: ArtifactRetentionSettingsResponse,
+    pub next_run_at_utc: DateTime<Utc>,
 }
 
 // ── Ingester types ────────────────────────────────────────────────────────────

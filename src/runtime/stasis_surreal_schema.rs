@@ -22,6 +22,7 @@ const STASIS_RUNTIME_TABLES: &[&str] = &[
     "DEFINE TABLE delivery_endpoint",
     "DEFINE TABLE endpoint_delivery_status",
     "DEFINE TABLE recurring_delivery_binding",
+    "DEFINE TABLE recurring_feed_binding",
     "DEFINE TABLE cluster_node",
     "DEFINE TABLE cluster_forward_outcome",
 ];

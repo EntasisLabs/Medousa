@@ -1,5 +1,7 @@
 # Themes & multi-daemon — incremental plan
 
+> **Historical / living plan** — Workshop transport is implemented via `medousa-sdk-iroh`. For current integrator docs see [docs/README.md](../docs/README.md). Active roadmap: [ROADMAP.md](ROADMAP.md).
+>
 > **Status:** In progress (Themes T1–T2) · Multi-daemon M0 next  
 > **Date:** 2026-06-19  
 > **Goal:** Familiar palettes for VS Code/Obsidian adopters + Slack-style multi-workshop connections

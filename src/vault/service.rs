@@ -108,6 +108,38 @@ impl VaultService {
         })
     }
 
+    pub fn relocate_note(from_path: &str, to_path: &str) -> Result<VaultWriteResponse> {
+        let from = from_path.trim();
+        let to = to_path.trim();
+        if from.is_empty() || to.is_empty() {
+            anyhow::bail!("from_path and to_path are required");
+        }
+        if from == to {
+            return Self::get_note(from).map(|read| VaultWriteResponse {
+                note: read.note,
+                created: false,
+            });
+        }
+        if vault_store().get_entry(to).is_some() {
+            anyhow::bail!("a note already exists at path: {to}");
+        }
+        let read = Self::get_note(from)?;
+        let request = VaultWriteRequest {
+            path: Some(to.to_string()),
+            content: read.content,
+            ..Default::default()
+        };
+        let written = Self::write_note_with_actor(
+            Some(to),
+            &request,
+            None,
+            WorkspaceEventActor::Agent,
+            Some("cognition_vault_move"),
+        )?;
+        vault_store().delete_note(from)?;
+        Ok(written)
+    }
+
     pub fn search(
         query: Option<&str>,
         limit: usize,

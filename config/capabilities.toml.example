@@ -74,3 +74,17 @@ priority = 40
 # [[capabilities.bindings.grapheme]]
 # module_op = "docs.search"
 # priority = 10
+
+# Example: environment canvas intent metadata (Phase 2 feeds)
+# [[capabilities]]
+# id = "environment_canvas"
+# title = "Build persistent UI surfaces"
+# intents = ["setup_dashboard", "compose_surface", "workshop_status"]
+# publish_feeds = ["workshop.pulse"]
+# can_feed_component = "workshop-status"
+#
+# [capabilities.component_template]
+# surfaceId = "workshop"
+# slot = "main"
+# type = "presentation"
+# feeds = ["workshop.pulse"]

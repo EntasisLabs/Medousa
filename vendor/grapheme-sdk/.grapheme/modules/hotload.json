@@ -1,0 +1,30 @@
+{
+  "schema": "grapheme.modules.hotload/v1",
+  "next_generation_id": 3,
+  "slots": {
+    "http": {
+      "active_generation": 1,
+      "previous_generation": null,
+      "generations": [
+        {
+          "generation_id": 1,
+          "module_id": "http",
+          "version": "1.0.0",
+          "content_hash": "2c08721f7f6f3be73c61ad2fac6369181d3edadf3286207e8a989526a980ed26",
+          "wasm_path": "/var/folders/cw/ql6_4ftd3nb2mwwjptzz8j3c0000gn/T/grapheme-sdk-session-hot-a-1782783009671155000.wasm",
+          "abi": "wasix_v1",
+          "state": "active"
+        },
+        {
+          "generation_id": 2,
+          "module_id": "http",
+          "version": "1.0.1",
+          "content_hash": "651f2eb62d35b73091f8250b03d5981b560854af877833c16895d02241f29fd5",
+          "wasm_path": "/var/folders/cw/ql6_4ftd3nb2mwwjptzz8j3c0000gn/T/grapheme-sdk-session-hot-b-1782783009671354000.wasm",
+          "abi": "wasix_v1",
+          "state": "failed"
+        }
+      ]
+    }
+  }
+}

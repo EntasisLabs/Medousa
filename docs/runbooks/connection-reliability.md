@@ -1,80 +1,57 @@
 # Home app — connection reliability
 
-Forensic notes and sprint plan for SSE / workshop lifecycle bugs in `medousa-home`.
+**Audience:** contributor, operator
 
-## Problem
+How `medousa-home` keeps workshop pipes and interactive streams healthy after drops, backgrounding, and workshop switches.
 
-Health checks can stay green while workspace and interactive SSE pipes are dead. Several code paths also call **global** stream stop when they mean **one turn** or **view teardown only**, leaving JS `streamOwners` out of sync with Rust slots.
-
-Symptoms: frozen workspace board, chat stuck mid-stream, popout close killing main-window turns, resume from background with stale pipes.
+Integrator contract: [interactive-streaming.md](../engine/interactive-streaming.md) · ADR: [adr-004-durable-turn-spine.md](../architecture/decisions/adr-004-durable-turn-spine.md)
 
 ---
 
-## Sprint A — Pipes stay alive *(done)*
+## Current architecture
 
-| # | Item | Status |
-|---|------|--------|
-| A1 | Rust SSE: emit error on unexpected EOF (not on cancel) | Done |
-| A2 | JS: auto-reconnect workspace stream on error (backoff) | Done |
-| A3 | JS: reattach interactive streams on SSE error | Done |
-| A4 | Foreground `resumeWorkshop` restarts workspace + reattach | Done |
-| A5 | `reconnectWorkshop` awaits stream teardown; sync owners | Done |
-| A6 | Popout unmount: unlisten only (no global stream stop) | Done |
-| A7 | `cancelActiveTurn`: scope to active turn, not scorched earth | Done |
+### Engine side (daemon)
 
-### Key files
+- Every turn event is journaled to **`TurnEventLog`** on disk (`medousa-engine` crate).
+- SSE is a projection of that journal — clients reconnect with `GET …/stream?since=<last_seq>`.
+- Gateway pooling, bounded accept, and SSE idle timeout live in `src/iroh_transport/gateway.rs` and `src/comms/`.
 
-- `src-tauri/src/daemon/sse.rs` — EOF detection
-- `src/lib/workshopConnection.ts` — reconnect + resume
-- `src/lib/stores/chat.svelte.ts` — scoped cancel, `stopOwnedInteractiveStreams`
-- `src/routes/popout/chat/+page.svelte` — popout lifecycle
+### Home app side
 
----
+| Layer | Role |
+|-------|------|
+| [`reconnect.ts`](../../apps/medousa-home/src/lib/stream/reconnect.ts) | Shared primitives: `streamPathWithSince`, `applyStreamSeq`, `ReconnectScheduler`, circuit breaker |
+| [`workshopConnection.ts`](../../apps/medousa-home/src/lib/workshopConnection.ts) | Workshop lifecycle, workspace reconnect, `recoverInteractiveStreams` |
+| [`chat.svelte.ts`](../../apps/medousa-home/src/lib/stores/chat.svelte.ts) | Per-session stream owners, seq tracking, scoped cancel |
+| [`daemon/sse.rs`](../../apps/medousa-home/src-tauri/src/daemon/sse.rs) | Rust SSE bridge — EOF detection |
 
-## Sprint B — State matches UI *(done)*
-
-| # | Item | Status |
-|---|------|--------|
-| B1 | `noteStreamFailure` evicts stale `streamOwners`; recoverable vs fatal | Done |
-| B2 | `cancelActiveTurn` evicts/stops only session-owned streams | Done |
-| B3 | Resume/reattach failures → console warn (no toast spam); merge skipped mid-stream | Done |
-| B4 | Workspace reconcile failures → `workspace.streamError` | Done |
-| B5 | Budget: `budgetWorkCardId` + `workCardId` on pending approvals | Done |
-| B6 | Skip duplicate budget push when chat already has pending approval | Done |
-| B7 | Guard `JSON.parse` in SSE event listeners | Done |
-
-### Key files
-
-- `src/lib/stores/chat.svelte.ts` — `noteStreamFailure`, `evictStreamOwners`, `noteResumeFailure`
-- `src/lib/workshopConnection.ts` — `recoverInteractiveStreams`, recoverable error detection
-- `src/lib/notifications.ts` — `budgetWorkCardId`
-- `src/lib/stores/workspace.svelte.ts` — reconcile error surfacing, deduped budget notify
-- `src/lib/daemon.ts` — safe SSE payload parse
+Transport: `daemon/sdk.rs` → `medousa-sdk-iroh` for JSON; SSE bytes may still use legacy workshop helpers for `interactive_stream_start`.
 
 ---
 
-## Sprint C — Trust the first run *(done)*
+## Reconnect discipline
 
-| # | Item | Status |
-|---|------|--------|
-| C1 | Wizard skip/completion fail-closed when engine won't start | Done |
-| C2 | `requireEngineReady()` helper for startup gates | Done |
-| C3 | Autostart prefs saved only after install/remove succeeds | Done |
-| C4 | Autostart toggle reloads prefs on failure (checkbox stays honest) | Done |
-| C5 | Mobile turns pass provider/model after runtime hydrate | Done |
-| C6 | Mobile composer routing hint + `DaemonPortalChip` | Done |
+1. Track `seq` on every `InteractiveTurnStreamEvent` (generated type includes `seq`).
+2. On SSE error before `terminal`, reattach with `?since=<last_seq>` on the same stream URL.
+3. Use bounded exponential backoff + overlap guard (`ReconnectScheduler`) — do not spin tight reconnect loops.
+4. Fallback: poll `session_get_active_turn` when `turn_id` is unknown.
 
-### Key files
+This matches Rust `stream_turn_reconnecting` and Python `stream_turn_reconnecting` — see [SDK interactive streaming](../sdk/interactive-streaming.md).
 
-- `src/lib/components/wizard/WizardWelcomeScreen.svelte` — skip gate
-- `src/lib/components/wizard/WizardCompletionScreen.svelte` — completion gate
-- `src/lib/utils/providersApi.ts` — `requireEngineReady`
-- `src-tauri/src/connection_prefs.rs` — autostart order
-- `src/lib/interactiveTurnOptions.ts` — mobile pass-through
-- `src/lib/components/mobile/MobileChatComposer.svelte` — portal chip
+---
+
+## Shipped fixes (sprints A–C)
+
+**Sprint A — pipes stay alive:** Rust EOF errors, workspace auto-reconnect, interactive reattach, foreground `resumeWorkshop`, popout unmount without global stream stop, scoped `cancelActiveTurn`.
+
+**Sprint B — state matches UI:** `noteStreamFailure` / `evictStreamOwners`, scoped cancel, resume failure warnings, workspace reconcile errors, budget card dedup, safe SSE JSON parse.
+
+**Sprint C — trust the first run:** wizard fail-closed gates, `requireEngineReady`, honest autostart prefs, mobile provider/model pass-through.
+
+Key files listed in git history under `apps/medousa-home/` — see transport stack in [medousa-home.md](../apps/medousa-home.md).
 
 ---
 
 ## P2 backlog
 
-Mutex poison panics, dual reconcile paths, health vs SSE timeout mismatch, mobile native listener races.
+Mutex poison panics, dual reconcile paths, health vs SSE timeout mismatch, mobile native listener races, full migration of `interactive_stream_start` to `medousa-sdk-iroh` byte streaming.

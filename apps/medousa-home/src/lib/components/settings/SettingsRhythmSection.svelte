@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { isTauriMobilePlatform } from "$lib/platform";
+  import {
+    queryLiveActivityAvailability,
+    type LiveActivityStatus,
+  } from "$lib/liveActivity";
   import {
     workshopRetentionLocalHint,
     workshopRetentionReadHint,
@@ -12,7 +17,18 @@
 
   let { mobile = false }: Props = $props();
 
+  let liveActivityStatus = $state<LiveActivityStatus | null>(null);
+
   const retentionReadOnly = $derived(mobile || isTauriMobilePlatform());
+
+  async function refreshLiveActivityStatus() {
+    if (!mobile && !isTauriMobilePlatform()) return;
+    liveActivityStatus = await queryLiveActivityAvailability();
+  }
+
+  onMount(() => {
+    void refreshLiveActivityStatus();
+  });
 </script>
 
 <section class="settings-section">
@@ -39,6 +55,66 @@
           settings.setNotificationsEnabled((event.currentTarget as HTMLInputElement).checked)}
       />
     </label>
+
+    {#if mobile}
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Remote push</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Notify this phone from your Mac when work finishes or needs attention — even when the app is closed
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          checked={settings.remotePushEnabled}
+          onchange={(event) =>
+            settings.setRemotePushEnabled((event.currentTarget as HTMLInputElement).checked)}
+        />
+      </label>
+
+      <label class="settings-toggle-row">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-surface-100">Live Activity</span>
+          <span class="workshop-faint mt-0.5 block text-xs">
+            Show Medousa working status on the Lock Screen and Dynamic Island while jobs run
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="checkbox shrink-0"
+          checked={settings.liveActivityEnabled}
+          onchange={async (event) => {
+            settings.setLiveActivityEnabled((event.currentTarget as HTMLInputElement).checked);
+            await refreshLiveActivityStatus();
+          }}
+        />
+      </label>
+      {#if liveActivityStatus}
+        <p class="workshop-faint -mt-2 mb-1 px-1 text-xs">
+          {#if liveActivityStatus.error}
+            Live Activity: {liveActivityStatus.error}
+          {:else if liveActivityStatus.active}
+            Live Activity: active on Lock Screen / Dynamic Island
+          {:else if liveActivityStatus.available}
+            Live Activity: ready — starts when work is in motion; Mac can keep it updated while backgrounded
+          {:else}
+            Live Activity: checking…
+          {/if}
+          {#if liveActivityStatus.diagnostics && !liveActivityStatus.available}
+            <span class="mt-1 block font-mono text-[10px] text-surface-500">
+              bridge={liveActivityStatus.diagnostics.bridgeLinked ? "yes" : "no"}
+              · widget={liveActivityStatus.diagnostics.widgetExtensionInstalled ? "yes" : "no"}
+              · plist={liveActivityStatus.diagnostics.supportsLiveActivities ? "yes" : "no"}
+              · ios={liveActivityStatus.diagnostics.activitiesEnabled ? "on" : "off"}
+            </span>
+          {/if}
+        </p>
+      {/if}
+      <p class="workshop-faint -mt-2 mb-1 px-1 text-xs">
+        Home screen widget: add <strong class="font-medium text-surface-300">Pulse</strong> from the iOS widget gallery — updates while the app is open or when you return to it.
+      </p>
+    {/if}
 
     <label class="settings-toggle-row">
       <span class="min-w-0 flex-1">

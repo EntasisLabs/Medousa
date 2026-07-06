@@ -551,7 +551,7 @@ fn resolve_gateway_binary() -> Result<crate::workshop_runtime::ComponentCommand,
         }
     }
     if let Ok(current_exe) = std::env::current_exe() {
-        let sibling = current_exe.with_file_name("medousa_mcp_gateway");
+        let sibling = current_exe.with_file_name(crate::workshop_runtime::platform_binary_name("medousa_mcp_gateway"));
         if sibling.exists() {
             return Ok(crate::workshop_runtime::ComponentCommand {
                 program: sibling.to_string_lossy().to_string(),
@@ -561,7 +561,7 @@ fn resolve_gateway_binary() -> Result<crate::workshop_runtime::ComponentCommand,
     }
     if crate::workshop_runtime::find_command_in_path("medousa_mcp_gateway").is_some() {
         return Ok(crate::workshop_runtime::ComponentCommand {
-            program: "medousa_mcp_gateway".to_string(),
+            program: crate::workshop_runtime::platform_binary_name("medousa_mcp_gateway"),
             pre_args: Vec::new(),
         });
     }

@@ -1,20 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ArrowLeft, ArrowRight, Globe, RefreshCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Square, RefreshCw } from "@lucide/svelte";
   import HumanBrowserTabBar from "$lib/components/browser/HumanBrowserTabBar.svelte";
   import HumanBrowserUrlBar from "$lib/components/browser/HumanBrowserUrlBar.svelte";
   import BrowserChromeActions from "$lib/components/browser/BrowserChromeActions.svelte";
   import BrowserControlHandoff from "$lib/components/browser/BrowserControlHandoff.svelte";
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
+  import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
+  import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
   import {
-    humanBrowserEmbedApplyLayout,
-    humanBrowserEmbedHide,
-    humanBrowserSetMobileShellActive,
-  } from "$lib/humanBrowser";
+    createBrowserCompositor,
+    type BrowserCompositor,
+  } from "$lib/utils/browserCompositor";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
   import { layout } from "$lib/stores/layout.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
-  import { layoutDesktopRails } from "$lib/utils/desktopRails";
 
   interface Props {
     visible?: boolean;
@@ -24,43 +24,35 @@
   let { visible = true, workRailVisible = false }: Props = $props();
 
   let urlBarFocusNonce = $state(0);
-  let embedGeneration = 0;
+  let panelEl = $state<HTMLElement | null>(null);
+  let chromeEl = $state<HTMLElement | null>(null);
+  let embedHostEl = $state<HTMLElement | null>(null);
+  let compositor = $state<BrowserCompositor | null>(null);
 
-  async function presentEmbed() {
-    if (!isTauri() || !visible || layout.isMobile || shouldUseMobileShell()) return;
-    const gen = ++embedGeneration;
-    await humanBrowserSetMobileShellActive(false);
-    if (gen !== embedGeneration) return;
-    const rails = layoutDesktopRails({
-      viewportWidth: layout.viewportWidth,
-      activityCollapsed: layout.activityCollapsed,
-      activityWidth: layout.activityWidth,
-      workInspectorOpen: false,
-      workInspectorWidth: layout.workInspectorWidth,
-    });
-    await humanBrowserEmbedApplyLayout({
-      activityWidth: rails.activityPaneWidth,
-      activityCollapsed: layout.activityCollapsed,
-      workRailVisible,
-    });
-    if (gen !== embedGeneration) return;
-  }
-
-  $effect(() => {
-    if (!isTauri() || !visible || layout.isMobile) return;
-    layout.activityWidth;
-    layout.activityCollapsed;
-    layout.viewportWidth;
-    workRailVisible;
-    void presentEmbed();
-    return () => {
-      if (shouldUseMobileShell()) return;
-      void humanBrowserEmbedHide();
-    };
-  });
+  const useDesktopCompositor = $derived(
+    isTauri() && !layout.isMobile && !shouldUseMobileShell(),
+  );
 
   onMount(() => {
+    if (isTauri() && !shouldUseMobileShell()) {
+      compositor = createBrowserCompositor({
+        mode: "desktop",
+        getActive: () => visible && isTauri() && !layout.isMobile && !shouldUseMobileShell(),
+        getShowStartPage: () => humanBrowser.showStartPage,
+        getActiveUrl: () => humanBrowser.activeUrl,
+        getActiveTabId: () => humanBrowser.activeTab?.id ?? null,
+      });
+    }
+
     const onKeydown = (event: KeyboardEvent) => {
+      if (layout.desktopSurface !== "web" && !humanBrowser.findOpen) return;
+
+      if (event.key === "Escape" && humanBrowser.loading) {
+        event.preventDefault();
+        void humanBrowser.stop();
+        return;
+      }
+
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
       const key = event.key.toLowerCase();
@@ -76,7 +68,23 @@
         urlBarFocusNonce += 1;
         return;
       }
-      if (typing) return;
+      if (key === "f") {
+        event.preventDefault();
+        humanBrowser.openFindBar();
+        return;
+      }
+      if (mod && event.shiftKey && key === "t") {
+        event.preventDefault();
+        void humanBrowser.reopenClosedTab();
+        return;
+      }
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        if (event.key === "[") void humanBrowser.goBack();
+        else void humanBrowser.goForward();
+        return;
+      }
+      if (typing && key !== "r") return;
 
       if (key === "t") {
         event.preventDefault();
@@ -96,24 +104,52 @@
     };
     window.addEventListener("keydown", onKeydown);
 
-    const onResize = () => {
-      void presentEmbed();
-    };
-    window.addEventListener("resize", onResize);
-
     return () => {
       window.removeEventListener("keydown", onKeydown);
-      window.removeEventListener("resize", onResize);
+      compositor?.detach();
+      compositor = null;
     };
+  });
+
+  $effect(() => {
+    if (!useDesktopCompositor || !visible || !compositor || !embedHostEl || !chromeEl) return;
+    humanBrowser.showStartPage;
+    layout.activityWidth;
+    layout.activityCollapsed;
+    layout.viewportWidth;
+    layout.viewportHeight;
+    workRailVisible;
+    humanBrowser.findOpen;
+    compositor.attach({
+      hostEl: embedHostEl,
+      panelEl,
+      chromeEl,
+    });
   });
 </script>
 
-<div class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50" data-browser-panel>
-  <!-- Chrome band — native webview is positioned below this (y=156 in Rust). Must stay 156px. -->
-  <div class="human-browser-chrome relative z-50 flex h-[156px] w-full shrink-0 flex-col">
-    <HumanBrowserTabBar />
+<div
+  bind:this={panelEl}
+  class="flex h-full min-h-0 flex-col bg-surface-950 text-surface-50"
+  data-browser-panel
+  data-debug-label="browser-panel"
+>
+  <div
+    bind:this={chromeEl}
+    class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col"
+    data-debug-label="browser-chrome"
+  >
+    <div data-debug-label="browser-tab-bar">
+      <HumanBrowserTabBar />
+    </div>
+    <div data-debug-label="browser-agent-handoff">
+      <BrowserControlHandoff />
+    </div>
 
-    <div class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5">
+    <div
+      class="flex shrink-0 items-center gap-2 border-b border-surface-800 px-2 py-1.5"
+      data-debug-label="browser-url-row"
+    >
       <div class="flex shrink-0 items-center gap-1">
         <button
           type="button"
@@ -133,35 +169,47 @@
         >
           <ArrowRight size={16} />
         </button>
-        <button
-          type="button"
-          class="btn btn-icon btn-sm"
-          aria-label="Reload"
-          onclick={() => void humanBrowser.reload()}
-        >
-          <RefreshCw size={16} />
-        </button>
+        {#if humanBrowser.loading}
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Stop loading"
+            onclick={() => void humanBrowser.stop()}
+          >
+            <Square size={14} fill="currentColor" />
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn-icon btn-sm"
+            aria-label="Reload"
+            onclick={() => void humanBrowser.reload()}
+          >
+            <RefreshCw size={16} />
+          </button>
+        {/if}
       </div>
       <HumanBrowserUrlBar {urlBarFocusNonce} />
-      <BrowserControlHandoff compact={true} />
       <BrowserChromeActions />
     </div>
 
+    <BrowserFindBar />
     <BrowserCaptchaBanner compact={true} />
 
     {#if humanBrowser.loading}
-      <div class="h-0.5 shrink-0 bg-primary-500/80"></div>
+      <div class="browser-loading-bar"></div>
     {/if}
   </div>
 
-  <!-- Native embed sits in this region (Rust-positioned below chrome). -->
-  <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-900" data-browser-embed-host>
-    {#if humanBrowser.activeUrl === "about:blank"}
-      <div
-        class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-surface-400"
-      >
-        <Globe size={40} strokeWidth={1.25} class="opacity-40" />
-        <p class="text-sm">Enter a URL above or open a link from Chat</p>
+  <div
+    bind:this={embedHostEl}
+    class="relative min-h-0 flex-1 overflow-hidden bg-surface-900"
+    data-browser-embed-host
+    data-debug-label="browser-embed-host"
+  >
+    {#if humanBrowser.showStartPage}
+      <div class="browser-start-page-host">
+        <BrowserStartPage />
       </div>
     {/if}
   </div>

@@ -1,17 +1,1 @@
-class VaultQuickSwitcherStore {
-  open = $state(false);
-
-  openSwitcher() {
-    this.open = true;
-  }
-
-  closeSwitcher() {
-    this.open = false;
-  }
-
-  toggle() {
-    this.open = !this.open;
-  }
-}
-
-export const vaultQuickSwitcher = new VaultQuickSwitcherStore();
+export { commandSpotlight, vaultQuickSwitcher } from "$lib/stores/commandSpotlight.svelte";

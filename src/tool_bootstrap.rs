@@ -22,6 +22,33 @@ pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault"];
 
 pub const BROWSER_HOST_AUTO_UNLOCK_DOMAIN: &str = "browser";
 
+pub const ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN: &str = "environment";
+
+/// Host discover domain: environment spec, component canvas, context pointers.
+pub const ENVIRONMENT_DOMAIN_TOOLS: &[&str] = &[
+    "cognition_environment_wiki",
+    "cognition_environment_get",
+    "cognition_component_create",
+    "cognition_environment_propose",
+    "cognition_component_list",
+    "cognition_environment_apply",
+    "cognition_environment_activate_preset",
+    "cognition_component_get",
+    "cognition_component_update",
+    "cognition_component_delete",
+    "cognition_context_follow_pointer",
+    "cognition_context_list_pointers",
+    "cognition_intent_resolve",
+    "cognition_feed_subscribe",
+    "cognition_feed_publish",
+    "cognition_layout_get",
+    "cognition_layout_apply",
+    "cognition_layout_reset",
+    "cognition_environment_patch",
+    "cognition_custom_view_doctor",
+    "cognition_custom_view_compose",
+];
+
 /// Always-visible host console tools (~12+).
 pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
@@ -39,6 +66,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_artifact_read",
     "cognition_artifact_grep",
     "cognition_turn_begin_work",
+    "cognition_turn_update_user",
     "cognition_turn_checkpoint",
     "cognition_turn_finish",
     "cognition_turn_worker_status",
@@ -49,6 +77,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
 pub const WORKER_BOOTSTRAP_TOOLS: &[&str] = &[
     COGNITION_TOOLS_DISCOVER,
     "cognition_turn_begin_work",
+    "cognition_turn_update_user",
     "cognition_turn_finish",
     "cognition_capability_invoke",
     "cognition_web_search",
@@ -151,6 +180,8 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_read",
                     "cognition_vault_grep",
                     "cognition_vault_write",
+                    "cognition_vault_delete",
+                    "cognition_vault_move",
                     "cognition_vault_tags",
                 ],
             },
@@ -163,10 +194,13 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_grep",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_vault_delete",
+                    "cognition_vault_move",
                     "cognition_artifact_list",
                     "cognition_artifact_read",
                     "cognition_artifact_grep",
                     "cognition_artifact_write",
+                    "cognition_artifact_delete",
                     "cognition_ui_present",
                 ],
             },
@@ -179,6 +213,7 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_artifact_read",
                     "cognition_artifact_grep",
                     "cognition_artifact_write",
+                    "cognition_artifact_delete",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -216,6 +251,22 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 domain: "browser",
                 summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
                 tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
+            },
+            ToolDomainCatalogEntry {
+                domain: ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN,
+                summary: "Home environment — surfaces, chrome, persistent components, context pointers",
+                tools: ENVIRONMENT_DOMAIN_TOOLS,
+            },
+            ToolDomainCatalogEntry {
+                domain: "presentation",
+                summary: "HTML artifacts — ui_present publish and artifact_write revise",
+                tools: &[
+                    "cognition_ui_present",
+                    "cognition_artifact_list",
+                    "cognition_artifact_read",
+                    "cognition_artifact_grep",
+                    "cognition_artifact_write",
+                ],
             },
         ]
     })
@@ -274,6 +325,8 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_vault_grep",
                     "cognition_vault_search",
                     "cognition_vault_write",
+                    "cognition_vault_delete",
+                    "cognition_vault_move",
                     "cognition_vault_tags",
                 ],
             },
@@ -297,10 +350,30 @@ pub fn worker_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_grapheme_script_search",
                 ],
             },
+            ToolDomainCatalogEntry {
+                domain: ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN,
+                summary: "Home environment — surfaces, chrome, persistent components, context pointers",
+                tools: ENVIRONMENT_DOMAIN_TOOLS,
+            },
+            ToolDomainCatalogEntry {
+                domain: BROWSER_HOST_AUTO_UNLOCK_DOMAIN,
+                summary: "Agent Browser fetch for known URLs (requires supports_browser_host client)",
+                tools: &["cognition_browser_fetch", "cognition_browser_snapshot"],
+            },
         ]
     })
     .as_slice()
 }
+
+/// Domains unlocked when a bound workshop starts (execution lane for Home).
+pub const BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS: &[&str] = &[
+    "environment",
+    "presentation",
+    "execute",
+    "discover",
+    "vault",
+    "memory",
+];
 
 pub fn tool_one_liner(name: &str) -> &'static str {
     match name {
@@ -320,7 +393,8 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_web_search" => "Search the public web (provider fallback from config)",
         "cognition_browser_fetch" => "Fetch a URL via Agent Browser and return markdown excerpt",
         "cognition_browser_snapshot" => "Snapshot a URL via Agent Browser for synthesis",
-        "cognition_turn_begin_work" => "Progress line before heavy tools (not chat prose — prose without tools ends the turn)",
+        "cognition_turn_begin_work" => "Signal heavy/long-running tool work starting (workers, big crawls)",
+        "cognition_turn_update_user" => "Short status to the principal mid-turn (retries, course-corrections) — call with your next tool",
         "cognition_turn_checkpoint" => "Mid-task update; hand turn to principal",
         "cognition_turn_finish" => "Commit principal-ready answer (required after tool work)",
         "cognition_ui_present" => "Publish a new HTML artifact in chat (inline, panel, or fullscreen)",
@@ -328,6 +402,29 @@ pub fn tool_one_liner(name: &str) -> &'static str {
         "cognition_artifact_read" => "Read HTML artifact source (line range or budget)",
         "cognition_artifact_grep" => "Grep inside an HTML artifact by line",
         "cognition_artifact_write" => "Revise or create an HTML artifact revision",
+        "cognition_artifact_delete" => "Delete an HTML presentation artifact revision chain",
+        "cognition_vault_delete" => "Soft-delete a vault note (moves to .trash)",
+        "cognition_vault_move" => "Move or rename a vault note path",
+        "cognition_environment_wiki" => "Canvas SDK STTP nodes — schemas, merge_spec, recipes; call before guessing propose JSON",
+        "cognition_environment_get" => "Read environment spec — custom surfaces + components; start canvas work here",
+        "cognition_environment_propose" => "Validate environment spec patch (errors[] on failure)",
+        "cognition_environment_apply" => "Apply approved environment spec changes",
+        "cognition_environment_activate_preset" => "Switch active layout preset (nav + chrome)",
+        "cognition_component_list" => "List persisted canvas components",
+        "cognition_component_create" => "Add presentation/chrome_action on a custom surface (camelCase surfaceId)",
+        "cognition_component_update" => "Patch a canvas component",
+        "cognition_component_delete" => "Remove a canvas component",
+        "cognition_context_follow_pointer" => "Resolve a pointer id to a focused context slice",
+        "cognition_context_list_pointers" => "List ranked context pointers (bootstrap usually sufficient)",
+        "cognition_intent_resolve" => "Resolve intent to capability + suggested feeds and component template",
+        "cognition_feed_subscribe" => "Bind feed ids on a custom-surface component",
+        "cognition_feed_publish" => "Publish a bounded feed event to subscribed components",
+        "cognition_layout_get" => "Read stack layout tree for a custom surface main body",
+        "cognition_layout_apply" => "Apply vstack/hstack/grid layout to custom surface main body",
+        "cognition_layout_reset" => "Clear layoutRoot to implicit vertical stack",
+        "cognition_environment_patch" => "Incremental environment ops — new custom surfaces go live; preset rewrites propose",
+        "cognition_custom_view_doctor" => "Diagnose custom surfaces — nav, feeds, recurring bindings, mismatches",
+        "cognition_custom_view_compose" => "One-shot custom view + HTML + feeds + layout + recurring poll",
         "cognition_turn_worker_status" => "Pending worker status",
         "cognition_capability_invoke" => "One-shot capability execution",
         "cognition_grapheme_script_load" => "Load saved Grapheme script body",
@@ -355,6 +452,20 @@ pub fn ensure_host_session_tool_defaults(session_id: &str) {
     let _ = unlock_session_domains(session_id, ToolSurfaceLane::Host, DEFAULT_HOST_AUTO_UNLOCK_DOMAINS);
 }
 
+/// Unlock environment/canvas domain when the connected client can render UI artifacts (Home).
+pub fn ensure_environment_domain_for_ui_clients(
+    session_id: &str,
+    supports_ui_artifacts: bool,
+) {
+    if supports_ui_artifacts {
+        let _ = unlock_session_domains(
+            session_id,
+            ToolSurfaceLane::Host,
+            &[ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN],
+        );
+    }
+}
+
 /// Unlock browser domain when the connected client advertises Agent Browser Host.
 pub fn ensure_browser_domain_for_capable_clients(session_id: &str, supports_browser_host: bool) {
     if supports_browser_host {
@@ -364,6 +475,43 @@ pub fn ensure_browser_domain_for_capable_clients(session_id: &str, supports_brow
             &[BROWSER_HOST_AUTO_UNLOCK_DOMAIN],
         );
     }
+}
+
+/// Unlock browser domain on the worker lane (bound workshop / Home execution).
+pub fn ensure_worker_browser_domain_for_capable_clients(
+    session_id: &str,
+    supports_browser_host: bool,
+) {
+    if supports_browser_host {
+        let _ = unlock_session_domains(
+            session_id,
+            ToolSurfaceLane::Worker,
+            &[BROWSER_HOST_AUTO_UNLOCK_DOMAIN],
+        );
+    }
+}
+
+/// Unlock environment/canvas domain on the worker lane when the client renders UI artifacts.
+pub fn ensure_worker_environment_domain_for_ui_clients(
+    session_id: &str,
+    supports_ui_artifacts: bool,
+) {
+    if supports_ui_artifacts {
+        let _ = unlock_session_domains(
+            session_id,
+            ToolSurfaceLane::Worker,
+            &[ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN],
+        );
+    }
+}
+
+/// Auto-unlock execution domains when entering a bound workshop on the worker lane.
+pub fn ensure_bound_workshop_session_tool_defaults(session_id: &str) {
+    let _ = unlock_session_domains(
+        session_id,
+        ToolSurfaceLane::Worker,
+        BOUND_WORKSHOP_AUTO_UNLOCK_DOMAINS,
+    );
 }
 
 pub fn load_session_tool_surface(session_id: &str) -> SessionToolSurface {
@@ -500,7 +648,7 @@ pub fn build_tool_hints_block(
     let full_allow = host_bus_tool_names();
     let surface = load_session_tool_surface(session_id);
     let mut lines = vec![
-        "Bootstrap tools are always available. Host console sessions auto-unlock memory + vault domains (calibrate, vault write, …).".to_string(),
+        "Bootstrap tools are always available. Chat auto-unlocks memory, vault read, identity, and catalog/runtime orchestration. Studio/canvas tools unlock in Workshop after begin_work.".to_string(),
         format!(
             "Unlocked domains: {}",
             if surface.unlocked_domains.is_empty() {
@@ -599,6 +747,22 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
     if contains_any(&prompt_lower, &["worker", "spawn", "delegate", "workshop"]) {
         bump(&mut scores, "catalog", 2);
     }
+    if contains_any(
+        &prompt_lower,
+        &[
+            "canvas",
+            "component",
+            "environment",
+            "surface",
+            "pointer",
+            "writing studio",
+            "home layout",
+            "fab",
+            "chrome",
+        ],
+    ) {
+        bump(&mut scores, ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN, 4);
+    }
 
     let rows = tool_history_summary_rows(turns, DEFAULT_TOOL_HISTORY_SUMMARY_TURNS, None, None);
     if !rows.is_empty() {
@@ -668,7 +832,7 @@ fn sanitize_session_filename(session_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
 
     fn surface_test_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -681,10 +845,35 @@ mod tests {
     #[test]
     fn bootstrap_host_tools_are_small() {
         assert!(HOST_BOOTSTRAP_TOOLS.len() >= 8);
-        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 16);
+        assert!(HOST_BOOTSTRAP_TOOLS.len() <= 20);
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&COGNITION_TOOLS_DISCOVER));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_remember"));
         assert!(HOST_BOOTSTRAP_TOOLS.contains(&"cognition_identity_recall"));
+    }
+
+    #[test]
+    fn host_bootstrap_includes_environment_on_bus_allowlist() {
+        let allow = host_bus_tool_names();
+        assert!(allow.contains("cognition_environment_propose"));
+        assert!(allow.contains("cognition_component_create"));
+        assert!(allow.contains("cognition_context_follow_pointer"));
+    }
+
+    #[test]
+    fn ui_client_auto_unlocks_environment_domain() {
+        let _guard = surface_test_lock();
+        let session_id = format!("sess-env-{}", uuid::Uuid::new_v4().simple());
+        let allow = host_bus_tool_names();
+        let before = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
+        assert!(!before.contains("cognition_environment_get"));
+
+        ensure_environment_domain_for_ui_clients(&session_id, true);
+        let after = effective_tool_names(&session_id, ToolSurfaceLane::Host, &allow);
+        assert!(after.contains("cognition_environment_get"));
+        assert!(after.contains("cognition_environment_wiki"));
+        assert!(after.contains("cognition_component_create"));
+
+        let _ = fs::remove_file(session_surface_path(&session_id));
     }
 
     #[test]
@@ -692,6 +881,26 @@ mod tests {
         let allow = host_bus_tool_names();
         let names = effective_tool_names("sess-ui-present", ToolSurfaceLane::Host, &allow);
         assert!(names.contains("cognition_ui_present"));
+    }
+
+    #[test]
+    fn ensure_bound_workshop_unlocks_environment_on_worker_lane() {
+        let _guard = surface_test_lock();
+        let session_id = format!("sess-bound-{}", uuid::Uuid::new_v4().simple());
+        let mut allow = HashSet::new();
+        for name in ENVIRONMENT_DOMAIN_TOOLS {
+            allow.insert((*name).to_string());
+        }
+        allow.insert(COGNITION_TOOLS_DISCOVER.to_string());
+        allow.insert("cognition_mcp_discover".to_string());
+
+        ensure_bound_workshop_session_tool_defaults(&session_id);
+        let after = effective_tool_names(&session_id, ToolSurfaceLane::Worker, &allow);
+        assert!(after.contains("cognition_environment_get"));
+        assert!(after.contains("cognition_environment_propose"));
+        assert!(after.contains("cognition_mcp_discover"));
+
+        let _ = fs::remove_file(session_surface_path(&session_id));
     }
 
     #[test]

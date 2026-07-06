@@ -1,11 +1,14 @@
 {
   "build": {
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run ios:prepare && npm run build"
   },
   "bundle": {
     "externalBin": []
   },
   "app": {
+    "security": {
+      "capabilities": ["mobile"]
+    },
     "windows": [
       {
         "label": "main",

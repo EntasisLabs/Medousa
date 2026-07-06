@@ -98,6 +98,7 @@
         mime="text/html"
         mode="panel"
         bare={true}
+        manageable={true}
       />
     </div>
 

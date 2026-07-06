@@ -35,6 +35,7 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_turn_worker_status",
     "cognition_turn_worker_cancel",
     "cognition_turn_begin_work",
+    "cognition_turn_update_user",
     "cognition_turn_checkpoint",
     "cognition_turn_prepare_final",
     "cognition_turn_finish",
@@ -73,6 +74,8 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_vault_read",
     "cognition_vault_search",
     "cognition_vault_write",
+    "cognition_vault_delete",
+    "cognition_vault_move",
     "cognition_vault_tags",
     "cognition_tool_history_summary",
     "cognition_tool_history_detail",
@@ -83,6 +86,15 @@ pub const REGISTERED_COGNITION_TOOLS: &[&str] = &[
     "cognition_manuscript_overlay_propose",
     "cognition_manuscript_overlay_list",
     "cognition_tools_discover",
+    "cognition_intent_resolve",
+    "cognition_feed_subscribe",
+    "cognition_feed_publish",
+    "cognition_layout_get",
+    "cognition_layout_apply",
+    "cognition_layout_reset",
+    "cognition_environment_patch",
+    "cognition_custom_view_doctor",
+    "cognition_custom_view_compose",
 ];
 
 /// Grapheme first-class tools (templates + discovery + run) — worker execution surface.

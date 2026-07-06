@@ -5,6 +5,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
+from medousa.reconnect import ReconnectPolicy, ReconnectingInteractiveStream
+
 from medousa._decode import decode
 from medousa.streaming import iter_sse_events
 from medousa.types import (
@@ -74,6 +76,34 @@ class InteractiveApi:
     def stream(self, stream_url: str) -> InteractiveStream:
         """Open SSE for an existing stream URL from start_turn."""
         return InteractiveStream(self._client, stream_url)
+
+    def stream_reconnecting(
+        self,
+        stream_url: str,
+        *,
+        policy: ReconnectPolicy | None = None,
+    ) -> ReconnectingInteractiveStream:
+        from medousa.reconnect import ReconnectingInteractiveStream
+
+        return ReconnectingInteractiveStream(
+            self._client,
+            stream_url,
+            policy=policy or ReconnectPolicy(),
+        )
+
+    @asynccontextmanager
+    async def stream_turn_reconnecting(
+        self,
+        request: InteractiveTurnRequest,
+        *,
+        policy: ReconnectPolicy | None = None,
+    ):
+        """Start a turn and yield a reconnecting SSE iterator."""
+        response = await self.start_turn(request)
+        yield self.stream_reconnecting(
+            response.stream_url,
+            policy=policy or ReconnectPolicy(),
+        )
 
     async def cancel(self, session_id: str) -> dict[str, Any]:
         return await self._client.sessions().cancel_active_turn(session_id)

@@ -1,0 +1,7 @@
+{
+  "teamId": "XXXXXXXXXX",
+  "keyId": "YYYYYYYYYY",
+  "keyStorage": "keychain",
+  "bundleId": "com.entasislabs.medousa-home",
+  "sandbox": true
+}

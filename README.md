@@ -34,6 +34,7 @@ You talk to it from the App,Discord, Telegram, Slack, or WhatsApp if you want th
 | Hand off the heavy lifting | Send the big job to the background. One clear answer comes back — not a pile of half-finished threads. |
 | Plug in what you already use | Connect the tools and services you rely on. Medousa learns what they can do — and asks before it acts. |
 | Reach it from anywhere | Discord, Telegram, Slack, WhatsApp. Text `/brief` on Telegram and your morning summary starts. |
+| Pin your own pages | Ask Medousa to build **custom views** — braindumps, studios, live dashboards — in the sidebar (**Settings → Canvas**). |
 | Get checked in on | Turn on proactive nudges. Medousa reaches out on a rhythm you choose — with reasoning, not noise. |
 | Run it fully offline | **Private brain** on your device — Gemma, local. Your hardware. Your rules. |
 | Start fresh on a new device | Open Medousa, run the welcome flow. About sixty seconds. |

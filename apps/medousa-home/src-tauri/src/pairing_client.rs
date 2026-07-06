@@ -53,6 +53,9 @@ pub struct PairCompleteFromQrRequest {
     pub daemon_url: String,
     #[serde(default)]
     pub phone_name: Option<String>,
+    /// `portal` (full client) or `peer` (inbox/share only). Defaults to portal.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,12 +117,19 @@ pub async fn pair_complete_from_qr(
 ) -> Result<PairCompleteFromQrResult, String> {
     let parsed_qr = parse_pair_qr_url(&request.qr_url)?;
     let daemon_url = normalize_daemon_url(&request.daemon_url)?;
+    let role = crate::workshop_registry::normalize_connection_role(
+        request.role.as_deref().unwrap_or("portal"),
+    );
     let phone_name = request
         .phone_name
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("Medousa Phone")
+        .unwrap_or(if role == "peer" {
+            "Medousa Peer"
+        } else {
+            "Medousa Phone"
+        })
         .to_string();
 
     let client = http_client()?;
@@ -134,6 +144,7 @@ pub async fn pair_complete_from_qr(
         &identity.phone_id,
         &phone_name,
         &base64url_encode(identity.verifying_key.as_bytes()),
+        role,
     )
     .await?;
 
@@ -189,7 +200,19 @@ pub async fn pair_complete_from_qr(
         fetch_iroh_ticket(&client, &daemon_url).await.ok()
     };
 
-    let workshop_id = crate::workshop_registry::paired_workshop_id(&status.device_id);
+    let workshop_id = crate::workshop_registry::register_paired_workshop(
+        crate::workshop_registry::RegisterPairedInput {
+            pairing_id: pairing_id.clone(),
+            phone_id: identity.phone_id.clone(),
+            workshop_device_id: status.device_id.clone(),
+            workshop_peer_name: status.peer_name.clone(),
+            daemon_url: daemon_url.clone(),
+            paired_at: chrono::Utc::now().to_rfc3339(),
+            has_iroh_ticket: iroh_ticket.is_some(),
+            role: role.to_string(),
+        },
+    )?;
+
     save_pairing_credentials(
         &workshop_id,
         &pairing_id,
@@ -199,16 +222,6 @@ pub async fn pair_complete_from_qr(
         &session_token,
         iroh_ticket.as_deref(),
     )?;
-
-    crate::workshop_registry::register_paired_workshop(crate::workshop_registry::RegisterPairedInput {
-        pairing_id: pairing_id.clone(),
-        phone_id: identity.phone_id.clone(),
-        workshop_device_id: status.device_id.clone(),
-        workshop_peer_name: status.peer_name.clone(),
-        daemon_url: daemon_url.clone(),
-        paired_at: chrono::Utc::now().to_rfc3339(),
-        has_iroh_ticket: iroh_ticket.is_some(),
-    })?;
 
     crate::workshop_transport::invalidate_workshop_route_cache();
 
@@ -239,9 +252,33 @@ pub fn load_pairing_credentials_summary() -> Option<PairingCredentialsSummary> {
 
 pub fn load_workshop_transport_config(lan_base: &str) -> Option<WorkshopTransportConfig> {
     let file = read_credentials_file()?;
+    build_transport_config(&file, lan_base)
+}
+
+pub fn load_workshop_transport_config_for_id(
+    workshop_id: &str,
+    lan_base: &str,
+) -> Option<WorkshopTransportConfig> {
+    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
+    let raw = fs::read_to_string(path).ok()?;
+    let file = serde_json::from_str::<PairingCredentialsFile>(&raw).ok()?;
+    build_transport_config(&file, lan_base)
+}
+
+pub fn workshop_has_session_token(workshop_id: &str, workshop_device_id: &str) -> bool {
+    read_session_token(workshop_device_id).is_some()
+        || read_credentials_for_workshop(workshop_id)
+            .is_some_and(|file| read_session_token(&file.workshop_device_id).is_some())
+}
+
+fn build_transport_config(file: &PairingCredentialsFile, lan_base: &str) -> Option<WorkshopTransportConfig> {
     let lan = lan_base.trim().trim_end_matches('/').to_string();
     Some(WorkshopTransportConfig {
-        lan_base: if lan.is_empty() { file.daemon_url.clone() } else { lan },
+        lan_base: if lan.is_empty() {
+            file.daemon_url.clone()
+        } else {
+            lan
+        },
         iroh_ticket: file
             .iroh_ticket
             .as_ref()
@@ -251,10 +288,74 @@ pub fn load_workshop_transport_config(lan_base: &str) -> Option<WorkshopTranspor
     })
 }
 
-pub async fn send_pair_heartbeat(lan_base: &str) -> Result<(), String> {
+fn read_credentials_for_workshop(workshop_id: &str) -> Option<PairingCredentialsFile> {
+    let path = crate::workshop_registry::pairing_credentials_abs_path(workshop_id);
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+pub async fn send_pair_heartbeat(
+    lan_base: &str,
+    body: Option<&crate::pairing::PairHeartbeatInvokeRequest>,
+) -> Result<(), String> {
     let Some(config) = load_workshop_transport_config(lan_base) else {
         return Ok(());
     };
+
+    let apns_token = body
+        .and_then(|body| body.apns_device_token.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(crate::push::current_apns_device_token);
+
+    let live_activity_token = match body.and_then(|body| body.live_activity_push_token.as_ref()) {
+        Some(value) => Some(value.trim().to_string()),
+        None => {
+            #[cfg(target_os = "ios")]
+            {
+                crate::live_activity::current_push_token()
+            }
+            #[cfg(not(target_os = "ios"))]
+            {
+                None
+            }
+        }
+    };
+
+    if apns_token.is_some()
+        || body.and_then(|body| body.push_platform.as_deref()).is_some()
+        || live_activity_token.is_some()
+    {
+        let mut payload = serde_json::Map::new();
+        if let Some(token) = apns_token {
+            payload.insert("apnsDeviceToken".into(), serde_json::Value::String(token));
+            payload.insert(
+                "pushPlatform".into(),
+                serde_json::Value::String(
+                    body.and_then(|body| body.push_platform.as_deref())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("ios")
+                        .to_string(),
+                ),
+            );
+        }
+        if let Some(token) = live_activity_token {
+            payload.insert(
+                "liveActivityPushToken".into(),
+                serde_json::Value::String(token),
+            );
+        }
+        crate::workshop_transport::workshop_post_json::<serde_json::Value, _>(
+            &config,
+            "/pair/heartbeat",
+            &serde_json::Value::Object(payload),
+        )
+        .await?;
+        return Ok(());
+    }
+
     crate::workshop_transport::workshop_get(&config, "/pair/heartbeat").await?;
     Ok(())
 }
@@ -338,6 +439,7 @@ async fn post_pair_init(
     phone_id: &str,
     phone_name: &str,
     public_key: &str,
+    role: &str,
 ) -> Result<PairInitPayload, String> {
     let response = client
         .post(format!("{daemon_url}/pair/init"))
@@ -346,6 +448,7 @@ async fn post_pair_init(
             "phoneId": phone_id,
             "phoneName": phone_name,
             "publicKey": public_key,
+            "role": role,
         }))
         .send()
         .await
@@ -429,6 +532,12 @@ fn normalize_daemon_url(raw: &str) -> Result<String, String> {
     Ok(format!("http://{trimmed}"))
 }
 
+/// Stable client identity for this Home install (phone / laptop surface), not the workshop device id.
+pub fn client_surface_identity() -> Result<(String, String), String> {
+    let identity = PhoneIdentity::load_or_create()?;
+    Ok((identity.phone_id, "Medousa".to_string()))
+}
+
 impl PhoneIdentity {
     fn load_or_create() -> Result<Self, String> {
         let path = phone_identity_path();
@@ -505,7 +614,7 @@ fn save_pairing_credentials(
 fn read_credentials_file() -> Option<PairingCredentialsFile> {
     let registry = crate::workshop_registry::ensure_migrated().ok()?;
     let workshop = crate::workshop_registry::active_workshop(&registry)?;
-    if workshop.kind != "paired" {
+    if !crate::workshop_registry::is_portal_kind(&workshop.kind) {
         return None;
     }
     let rel = workshop
@@ -769,5 +878,21 @@ mod tests {
         assert_eq!(parsed.qr_token, "token");
         assert_eq!(parsed.signature, "sig");
         assert_eq!(parsed.peer_name, "Desk");
+    }
+
+    #[test]
+    fn build_transport_config_includes_iroh_and_session() {
+        let file = PairingCredentialsFile {
+            pairing_id: "p1".to_string(),
+            phone_id: "phone1".to_string(),
+            workshop_device_id: "abcd1234".to_string(),
+            daemon_url: "http://192.168.1.2:7419".to_string(),
+            paired_at: chrono::Utc::now().to_rfc3339(),
+            iroh_ticket: Some("ticket-abc".to_string()),
+            workshop_endpoint_id: None,
+        };
+        let config = build_transport_config(&file, "http://192.168.1.2:7419").expect("config");
+        assert_eq!(config.lan_base, "http://192.168.1.2:7419");
+        assert_eq!(config.iroh_ticket.as_deref(), Some("ticket-abc"));
     }
 }

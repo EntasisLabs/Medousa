@@ -69,7 +69,9 @@ impl StasisTool for CognitionUiPresentTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Present an HTML artifact in chat (inline card, side panel, or fullscreen) when the connected client advertises supports_ui_artifacts. \
+             Persist workflow: publish HTML here, then persist=true + surface_id (custom surface only) + component_id + slot to pin on the canvas. \
              For first-time publish only — use cognition_artifact_write to revise an existing artifact. \
+             Canvas widgets: use MedousaStore (not localStorage); get/set/delete are async — await them in async handlers. \
              inline: compact preview card. panel/fullscreen: use a transparent outer page background (no hard-coded #000 body); center content up to ~900px wide. \
              Use height only for inline preview cap.",
         )
@@ -86,7 +88,7 @@ impl StasisTool for CognitionUiPresentTool {
                 },
                 "html": {
                     "type": "string",
-                    "description": "HTML fragment or document. For panel/fullscreen prefer transparent outer background; avoid full-page black fills. Card layouts up to ~900px centered are ideal."
+                    "description": "HTML fragment or document. For panel/fullscreen prefer transparent outer background; avoid full-page black fills. Card layouts up to ~900px centered are ideal. Persisted canvas widgets: use MedousaStore (not localStorage); await MedousaStore.get/set/delete — see cognition_environment_wiki(topic=artifact_runtime)."
                 },
                 "presentation": {
                     "type": "string",
@@ -96,6 +98,22 @@ impl StasisTool for CognitionUiPresentTool {
                 "height": {
                     "type": "integer",
                     "description": "Optional inline max height hint in pixels (default ~360)"
+                },
+                "persist": {
+                    "type": "boolean",
+                    "description": "When true, also upsert a presentation component on the environment canvas"
+                },
+                "component_id": {
+                    "type": "string",
+                    "description": "Canvas component id when persist=true"
+                },
+                "surface_id": {
+                    "type": "string",
+                    "description": "Target custom surface id for persisted component (required when persist=true; never builtin home/chat)"
+                },
+                "slot": {
+                    "type": "string",
+                    "description": "Slot zone for persisted component (default main)"
                 }
             }
         }))
@@ -131,9 +149,11 @@ impl StasisTool for CognitionUiPresentTool {
         });
 
         let session_id = self.resolve_session_id().await?;
+        let session_id_for_alias = session_id.clone();
         let title = title.to_string();
         let html = html.to_string();
         let presentation = presentation.to_string();
+        let label_for_component = title.clone();
 
         let record = tokio::task::spawn_blocking(move || {
             crate::artifact_store::persist_ui_artifact(
@@ -148,7 +168,7 @@ impl StasisTool for CognitionUiPresentTool {
         .map_err(|err| StasisError::PortFailure(format!("ui present join error: {err}")))?
         .map_err(StasisError::PortFailure)?;
 
-        Ok(json!({
+        let mut response = json!({
             "ok": true,
             "artifact_id": record.artifact_id,
             "label": record.label,
@@ -156,7 +176,99 @@ impl StasisTool for CognitionUiPresentTool {
             "presentation": record.presentation,
             "height_px": record.height_px,
             "byte_size": record.byte_size,
-        }))
+        });
+
+        if input.get("persist").and_then(Value::as_bool) == Some(true) {
+            let component_id = input
+                .get("component_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    StasisError::PortFailure(
+                        "component_id is required when persist=true".to_string(),
+                    )
+                })?;
+            let surface_id = input
+                .get("surface_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    StasisError::PortFailure("surface_id is required when persist=true".to_string())
+                })?;
+            let slot = input
+                .get("slot")
+                .and_then(Value::as_str)
+                .unwrap_or("main");
+            let presentation_component = crate::environment_tools::make_presentation_component(
+                component_id,
+                surface_id,
+                &record.artifact_id,
+                record.label.as_deref().unwrap_or(&label_for_component),
+            );
+            let mut component = presentation_component;
+            component.slot = slot.to_string();
+            component.presentation = match record.presentation.as_deref().unwrap_or("inline") {
+                "panel" => Some(medousa_types::environment::UiPresentation::Panel),
+                "fullscreen" => Some(medousa_types::environment::UiPresentation::Fullscreen),
+                _ => Some(medousa_types::environment::UiPresentation::Inline),
+            };
+            let profile_id = crate::environment_store::resolve_profile_id(None);
+            let mut env_record = crate::environment_store::environment_hub()
+                .get(&profile_id)
+                .await
+                .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            if let Some(index) = env_record
+                .spec
+                .components
+                .iter()
+                .position(|entry| entry.id == component_id)
+            {
+                env_record.spec.components[index] = component.clone();
+            } else {
+                env_record.spec.components.push(component.clone());
+            }
+            let validation_errors =
+                medousa_types::environment_validate::validate_environment_spec(&env_record.spec);
+            if !validation_errors.is_empty() {
+                if let Some(index) = env_record
+                    .spec
+                    .components
+                    .iter()
+                    .position(|entry| entry.id == component_id)
+                {
+                    env_record.spec.components.remove(index);
+                }
+                response["ok"] = json!(false);
+                response["persisted"] = json!(false);
+                response["errors"] = json!(validation_errors);
+                return Ok(response);
+            }
+            let updated = crate::environment_store::environment_hub()
+                .put(env_record.spec, "agent")
+                .await
+                .map_err(|err| StasisError::PortFailure(err.to_string()))?;
+            let _ = crate::artifact_store::register_artifact_alias(
+                &session_id_for_alias,
+                component_id,
+                &record.artifact_id,
+            );
+            response["persisted"] = json!(true);
+            response["persisted_component_id"] = json!(component_id);
+            response["environment_revision"] = json!(updated.revision);
+            let nav_visible =
+                crate::custom_view_status::surface_nav_visible(&updated.spec, surface_id);
+            response["live"] = json!(true);
+            response["nav_visible"] = json!(nav_visible);
+            if !nav_visible {
+                response["hint"] = json!(format!(
+                    "Surface '{surface_id}' is not in the active layout preset — call cognition_environment_patch with add_to_active_preset or cognition_custom_view_compose."
+                ));
+            }
+        }
+
+        Ok(response)
     }
 }
 

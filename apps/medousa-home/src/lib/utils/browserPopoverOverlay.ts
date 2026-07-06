@@ -1,24 +1,33 @@
 /** Hide native browser embed while Svelte popovers are open (native layer draws over DOM). */
 
-import { humanBrowserEmbedHide, humanBrowserEmbedShow } from "$lib/humanBrowser";
+import { getBrowserCompositor } from "$lib/utils/browserCompositor";
 import { isTauri } from "$lib/platform";
 
 let overlayDepth = 0;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function getBrowserPopoverOverlayDepth(): number {
+  return overlayDepth;
+}
+
+function scheduleCompositorLayout() {
+  if (debounceTimer != null) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    getBrowserCompositor()?.scheduleLayout();
+  }, 32);
+}
 
 export async function pushBrowserPopoverOverlay() {
   if (!isTauri()) return;
   overlayDepth += 1;
-  if (overlayDepth === 1) {
-    await humanBrowserEmbedHide();
-  }
+  scheduleCompositorLayout();
 }
 
 export async function popBrowserPopoverOverlay() {
   if (!isTauri()) return;
   overlayDepth = Math.max(0, overlayDepth - 1);
-  if (overlayDepth === 0) {
-    await humanBrowserEmbedShow();
-  }
+  scheduleCompositorLayout();
 }
 
 export type PopoverPlacement = "above" | "below" | "panel";

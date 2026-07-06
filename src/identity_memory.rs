@@ -250,6 +250,28 @@ pub fn is_identity_user_preferences_decode_error(err: &StasisError) -> bool {
         && message.contains("expected object, got none")
 }
 
+/// Stasis bootstraps `preferences` as `TYPE object` without `FLEXIBLE`. On SurrealDB 3.x
+/// SCHEMAFULL tables reject (or silently drop) undeclared nested keys, so preference writes
+/// appear to commit but never persist. Medousa upgrades the field on startup.
+pub async fn ensure_surreal_identity_user_preferences_flexible(db: &Surreal<Any>) -> Result<()> {
+    if !surreal_identity_table_exists(db).await {
+        return Ok(());
+    }
+
+    timed_step("identity user preferences schema (flexible object)", || async {
+        db.query(
+            "DEFINE FIELD OVERWRITE preferences ON TABLE identity_user TYPE object FLEXIBLE",
+        )
+        .await
+        .map_err(|err| {
+            anyhow::anyhow!("identity user preferences flexible schema: {err}")
+        })
+    })
+    .await?;
+
+    Ok(())
+}
+
 /// Legacy `identity_user` rows may store `preferences` as Surreal `NONE` instead of `{}`.
 pub async fn repair_surreal_identity_user_preferences(db: &Surreal<Any>) -> Result<()> {
     if !surreal_identity_table_exists(db).await {
@@ -300,6 +322,7 @@ pub async fn repair_surreal_identity_user_preferences_for_id(
 pub async fn build_seeded_medousa_identity_store_for_db(
     db: Surreal<Any>,
 ) -> Result<Arc<crate::identity_store_ext::MedousaIdentityMemoryStore>> {
+    ensure_surreal_identity_user_preferences_flexible(&db).await?;
     let store = Arc::new(SurrealIdentityMemoryStore::new(db.clone()));
     if identity_baseline_needs_seed(&db).await? {
         eprintln!("medousa-daemon: seeding identity baseline (idempotent upserts)…");
@@ -936,6 +959,7 @@ pub async fn get_medousa_cognitive_identity_context_in_memory(
 mod tests {
     use super::{
         build_seeded_identity_memory_store, full_identity_context_request,
+        ensure_surreal_identity_user_preferences_flexible,
         is_identity_user_preferences_decode_error, resolve_identity_channel_id,
         resolve_identity_persona_id, resolve_identity_user_id, resolve_tool_identity_user_id,
         DEFAULT_USER_ID,

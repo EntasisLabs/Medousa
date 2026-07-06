@@ -92,10 +92,28 @@ pub async fn resolve_memory_tool_session_id(
 
 pub const CANONICAL_STTP_SCHEMA_EXAMPLE: &str = r#"Canonical STTP node example (call cognition_memory_schema for this text):
 
-⊕⟨ ⏣0{ trigger: manual, response_format: temporal_node, origin_session: "session-abc", compression_depth: 1, parent_node: null, prime: { attractor_config: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85 }, context_summary: "parser hardening session", relevant_tier: raw, retrieval_budget: 8 } } ⟩
+⊕⟨ ⏣0{ trigger: manual, response_format: temporal_node, origin_session: "session-abc", compression_depth: 1, parent_node: null, semantic_links: [{ rel: "related_to", target: "concept:memory-schema", confidence: 0.88 }], prime: { attractor_config: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85 }, context_summary: "parser hardening session", relevant_tier: raw, retrieval_budget: 8, semantic_tags: ["medousa", "session", "grammar-update"] } } ⟩
 ⦿⟨ ⏣0{ timestamp: "2026-04-25T00:00:00Z", tier: raw, session_id: "session-abc", schema_version: "sttp-1.0", user_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 }, model_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 } } ⟩
 ◈⟨ ⏣0{ focus(.99): "grammar update", decision(.96): { parser_mode(.95): "strict_and_tolerant" } } ⟩
 ⍉⟨ ⏣0{ rho: 0.95, kappa: 0.94, psi: 2.93, compression_avec: { stability: 0.90, friction: 0.20, logic: 0.98, autonomy: 0.85, psi: 2.93 } } ⟩"#;
+
+pub fn semantic_index_schema_guidance() -> Value {
+    json!({
+        "semantic_tags": {
+            "sttp_location": "provenance.prime.semantic_tags",
+            "format": "array<string> — lowercase strings, deduped at index time",
+            "omit_when_absent": "omit the field or use an empty array; do not use null (locus-core 0.4.2+ treats null as absent)",
+            "medousa_store_tool": "cognition_memory_store.semantic_tags merges workshop defaults + extras into prime when the node string omits semantic_tags",
+            "recall": "cognition_memory_context / cognition_memory_list / cognition_memory_recall with semantic_tags (match-all) or cognition_memory_tags for vocabulary browse"
+        },
+        "semantic_links": {
+            "sttp_location": "provenance.semantic_links",
+            "format": "[{ rel: string, target: string, confidence: float }]",
+            "optional": true,
+            "omit_when_absent": "omit the field when unused; null is treated as absent"
+        }
+    })
+}
 
 /// Default interactive ingest: tolerant (matches recommended MCP dev profile).
 pub fn default_interactive_ingest_profile() -> ParseProfile {
@@ -191,9 +209,42 @@ pub fn infer_store_error_code(message: &str) -> &'static str {
         "StoreFailure"
     } else if normalized.contains("strict profile") {
         "StrictTypedIrPolicyViolation"
+    } else if normalized.contains("surreal query rejected")
+        || normalized.contains("surreal query transport failed")
+        || normalized.contains("surreal query result decode failed")
+    {
+        "SurrealPersistenceFailure"
     } else {
         "StoreContextFailure"
     }
+}
+
+fn is_persistence_failure(message: &str) -> bool {
+    let normalized = message.trim().to_ascii_lowercase();
+    normalized.starts_with("storefailure:")
+        && (normalized.contains("surreal query rejected")
+            || normalized.contains("surreal query transport failed")
+            || normalized.contains("surreal query result decode failed")
+            || normalized.contains("schemafull")
+            || normalized.contains("found none for field")
+            || normalized.contains("found field"))
+}
+
+pub fn persistence_failure_guidance(summary: &str) -> Value {
+    json!({
+        "summary": summary,
+        "recommended_first_tool": "cognition_memory_schema",
+        "recommended_next_steps": [
+            "read the SurrealDB error in validation_error — it is the root cause, not a decode wrapper",
+            "if the error mentions a missing or mismatched field, restart with MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 so temporal_node schema is upgraded",
+            "if schema is current, fix the STTP payload and retry cognition_memory_store",
+            "check daemon logs for [sttp_ingest_trace] stage=store reason=store_failure for retry/cooldown state"
+        ],
+        "operator_hints": [
+            "MEDOUSA_FORCE_LOCUS_INIT_ON_DAEMON=1 runs Locus initialize_async (adds new temporal_node fields such as semantic_links)",
+            "MEDOUSA_SKIP_LOCUS_INIT_ON_DAEMON=1 skips init on existing graphs — can leave schema stale"
+        ]
+    })
 }
 
 pub fn schema_first_guidance(summary: &str, profile_name: &str) -> Value {
@@ -207,6 +258,19 @@ pub fn schema_first_guidance(summary: &str, profile_name: &str) -> Value {
         ],
         "ingest_profile_policy": profile_name,
     })
+}
+
+pub fn store_failure_guidance(message: &str, profile_name: &str) -> Value {
+    if is_persistence_failure(message) {
+        persistence_failure_guidance(
+            "Locus parsed the node but SurrealDB rejected persistence. Fix the DB/schema issue before retrying cognition_memory_store.",
+        )
+    } else {
+        schema_first_guidance(
+            "Inspect schema and ingest policy before retrying cognition_memory_store.",
+            profile_name,
+        )
+    }
 }
 
 pub fn store_failure_payload(
@@ -227,10 +291,7 @@ pub fn store_failure_payload(
         "error": {
             "code": code,
             "message": message,
-            "model_guidance": schema_first_guidance(
-                "Inspect schema and ingest policy before retrying cognition_memory_store.",
-                profile_name
-            )
+            "model_guidance": store_failure_guidance(&message, profile_name)
         }
     })
 }
@@ -445,5 +506,46 @@ mod tests {
             parse_scoped_locus_session(&scoped),
             Some(("home".to_string(), "sess-1".to_string()))
         );
+    }
+
+    #[test]
+    fn persistence_guidance_used_for_surreal_store_failures() {
+        let message = "StoreFailure: surreal query rejected: `CREATE temporal_node`";
+        let guidance = store_failure_guidance(message, "tolerant");
+        assert_eq!(
+            guidance
+                .get("recommended_next_steps")
+                .and_then(|v| v.as_array())
+                .and_then(|steps| steps.first())
+                .and_then(|v| v.as_str()),
+            Some("read the SurrealDB error in validation_error — it is the root cause, not a decode wrapper")
+        );
+    }
+
+    #[test]
+    fn schema_guidance_used_for_parse_failures() {
+        let message = "ParseFailure: missing content layer";
+        let guidance = store_failure_guidance(message, "tolerant");
+        assert_eq!(
+            guidance.get("recommended_first_tool").and_then(|v| v.as_str()),
+            Some("cognition_memory_schema")
+        );
+    }
+
+    #[test]
+    fn canonical_schema_example_includes_semantic_tags() {
+        assert!(CANONICAL_STTP_SCHEMA_EXAMPLE.contains("semantic_tags:"));
+        assert!(CANONICAL_STTP_SCHEMA_EXAMPLE.contains("semantic_links:"));
+    }
+
+    #[test]
+    fn semantic_index_guidance_documents_store_and_recall() {
+        let guidance = semantic_index_schema_guidance();
+        assert!(guidance.get("semantic_tags").is_some());
+        assert!(guidance["semantic_tags"]
+            .get("medousa_store_tool")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("cognition_memory_store"));
     }
 }

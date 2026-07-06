@@ -13,6 +13,7 @@ use std::sync::Arc;
 pub const COGNITION_SPAWN_TURN_WORKER: &str = "cognition_spawn_turn_worker";
 pub const COGNITION_TURN_WORKER_STATUS: &str = "cognition_turn_worker_status";
 pub const COGNITION_TURN_WORKER_CANCEL: &str = "cognition_turn_worker_cancel";
+pub const COGNITION_WORKSHOP_STEER: &str = "cognition_workshop_steer";
 
 pub fn is_spawn_turn_worker_tool_name(name: &str) -> bool {
     name.trim() == COGNITION_SPAWN_TURN_WORKER
@@ -310,7 +311,84 @@ pub fn register_turn_worker_tools(
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 ) -> stasis::prelude::Result<()> {
     registry.register_tool(CognitionSpawnTurnWorkerTool::new(scheduler.clone()))?;
+    registry.register_tool(CognitionWorkshopSteerTool::new(scheduler.clone()))?;
     registry.register_tool(CognitionTurnWorkerStatusTool::new(scheduler))?;
     registry.register_tool(CognitionTurnWorkerCancelTool)?;
     Ok(())
+}
+
+pub struct CognitionWorkshopSteerTool {
+    scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+}
+
+impl CognitionWorkshopSteerTool {
+    pub fn new(scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>) -> Self {
+        Self { scheduler }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionWorkshopSteerTool {
+    fn name(&self) -> &'static str {
+        COGNITION_WORKSHOP_STEER
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Forward a principal steer message into the active bound workshop for this session. \
+             Use when the operator adds guidance while workshop execution is in flight.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+                "message": { "type": "string", "description": "Steer text for the bound workshop" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let message = input
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| {
+                StasisError::PortFailure("cognition_workshop_steer: message required".to_string())
+            })?;
+        let session_id = self
+            .scheduler
+            .active_bus_session_id()
+            .await
+            .ok_or_else(|| {
+                StasisError::PortFailure(
+                    "cognition_workshop_steer: no active host turn session".to_string(),
+                )
+            })?;
+        steer_bound_workshop_for_session(&session_id, message)
+    }
+}
+
+pub fn steer_bound_workshop_for_session(
+    session_id: &str,
+    message: &str,
+) -> stasis::prelude::Result<Value> {
+    let store = turn_worker_store();
+    let Some(record) = store.active_bound_workshop(session_id) else {
+        return Ok(json!({
+            "ok": false,
+            "error": "no active bound workshop for session",
+        }));
+    };
+    let updated = store
+        .push_steer(&record.work_id, message.to_string())
+        .ok_or_else(|| StasisError::PortFailure("failed to queue steer message".to_string()))?;
+    Ok(json!({
+        "ok": true,
+        "work_id": updated.work_id,
+        "queued": updated.steer_messages.len(),
+    }))
 }

@@ -18,38 +18,39 @@ use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::agent_runtime::turn_completion::{ToolLoopCompletionGate, collect_tool_names};
 use crate::agent_runtime::turn_completion_fsm::{
-    decide_after_tools_text_round, decide_no_tool_debt_text_round, AfterToolsRoundContext,
-    ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
+    decide_after_tools_text_round, decide_no_tool_debt_text_round, resolve_interim_continue_cap,
+    AfterToolsRoundContext, ContinueReason, NoToolDebtRoundContext, TurnRoundAction,
 };
 use crate::agent_runtime::turn_context::{
     HostTurnContext, TurnScratchpad, publish_host_handoff_snapshot,
     push_turn_scratch_message_with_budget,
 };
 use crate::agent_runtime::turn_ledger::{
-    TurnLoopAwareness, TurnLoopDiscipline, ledger_tool_names, persist_ledger_record,
-    push_turn_control_message, record_finalized, record_fsm_continue, record_stuck,
-    record_tool_round, stuck_turn_user_message, TURN_CONTROL_PREFIX,
+    merge_assistant_pack_fragments, push_pack_hold_message, TurnLoopAwareness, TurnLoopDiscipline,
+    ledger_tool_names, persist_ledger_record, push_turn_control_message, record_finalized,
+    record_fsm_continue, record_stuck, record_tool_round, stuck_turn_user_message,
+    TURN_CONTROL_PREFIX,
 };
 use crate::execution_policy::{load_parallel_execution_settings, parallel_tool_batch_allowed};
 use crate::turn_budget_request::{
     turn_budget_request_store, BudgetResolution, CreateTurnBudgetRequest,
 };
 use crate::turn_control_tools::{
-    finish_turn_from_invocations, begin_work_message_from_invocations,
+    finish_turn_from_invocations, begin_work_note_from_invocations,
     checkpoint_turn_from_invocations,
     is_begin_work_tool_name, is_checkpoint_turn_tool_name, is_finish_turn_tool_name,
-    is_prepare_final_tool_name,
-    is_request_more_rounds_tool_name, request_more_rounds_from_invocations,
-    terminal_text_for_fsm_end,
-    COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
+    is_prepare_final_tool_name, is_request_more_rounds_tool_name, is_update_user_tool_name,
+    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
+    turn_progress_message_from_invocations, workshop_entered_from_invocations,
+    COGNITION_TURN_BEGIN_WORK, COGNITION_TURN_CHECKPOINT, COGNITION_TURN_FINISH,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 
-/// Per-turn budget for bounded interim auto-continues (short non-tool notes).
-/// Kept low: the `TurnLoopDiscipline` stuck guard and `max_tool_rounds` fuse are
-/// the hard safety net; this just keeps a brief "let me check" from ending the turn.
-const INTERIM_CONTINUE_CAP: usize = 2;
+#[derive(Debug, Default)]
+struct AssistantPackHold {
+    fragments: Vec<String>,
+}
 
 #[derive(Clone)]
 pub struct MedousaToolLoopPipeline {
@@ -219,16 +220,54 @@ impl MedousaToolLoopPipeline {
         let mut discipline =
             TurnLoopDiscipline::with_max_text_only_stuck_continues(max_text_only_stuck);
         let mut loop_awareness = TurnLoopAwareness::default();
-        // Per-turn budget for bounded interim auto-continues (short non-tool notes
-        // that should not end the turn). Capped low; the stuck discipline +
-        // max_tool_rounds fuse below are the hard safety net.
-        let interim_continue_cap = INTERIM_CONTINUE_CAP;
+        let host_scheduler_lane = completion_gate
+            .as_ref()
+            .map(|gate| gate.host_scheduler_lane)
+            .unwrap_or(false);
+        // Workshop: scaled interim cap. Host scheduler uses content-pack hold instead.
+        let interim_continue_cap = if host_scheduler_lane {
+            1
+        } else {
+            resolve_interim_continue_cap(effective_max_tool_rounds)
+        };
         let mut interim_continues_used = 0usize;
+        let mut empty_after_tools_continues_used = 0usize;
+        let mut pack_hold: Option<AssistantPackHold> = None;
 
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
-                if rounds_executed > 1 {
+                if let Some(gate) = completion_gate.as_ref() {
+                    if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
+                        if crate::agent_runtime::turn_worker::turn_worker_store()
+                            .is_work_cancelled(work_id)
+                        {
+                            return Ok(ToolLoopExecutionResponse {
+                                text: String::new(),
+                                metadata: shared_inputs.context_clone(),
+                                tool_name: String::new(),
+                                tool_output: Value::Null,
+                                tool_invocations: invocations,
+                                rounds_executed,
+                                termination_reason: "workshop_cancelled".to_string(),
+                            });
+                        }
+                    }
+                    if let Some(work_id) = gate.steer_poll_work_id.as_deref() {
+                        let steers = crate::agent_runtime::turn_worker::turn_worker_store()
+                            .drain_steer_messages(work_id);
+                        for steer in steers {
+                            push_turn_control_message(
+                                &mut turn_ctx.tool_lane.messages,
+                                &format!(
+                                    "[MEDOUSA_WORKSHOP_STEER]\n{}",
+                                    steer.text.trim()
+                                ),
+                            );
+                        }
+                    }
+                }
+                if rounds_executed > 1 && pack_hold.is_none() {
                     if let Some(gate) = completion_gate.as_ref() {
                         gate.reset_scratch(streaming_enabled).await;
                     }
@@ -309,6 +348,41 @@ impl MedousaToolLoopPipeline {
 
                     if !invocations.is_empty() || maybe_text.is_some() {
                         let text = maybe_text.unwrap_or_default();
+
+                        if host_scheduler_lane {
+                            if let Some(pack) = pack_hold.as_ref() {
+                                let merged =
+                                    merge_assistant_pack_fragments(&pack.fragments, &text);
+                                let tools = collect_tool_names(&invocations);
+                                if let Some(gate) = completion_gate.as_ref() {
+                                    persist_ledger_record(
+                                        gate.session_id.as_deref(),
+                                        &record_finalized(
+                                            gate.stream_turn_id,
+                                            "host_pack_merged",
+                                            rounds_executed,
+                                            &tools,
+                                        ),
+                                    );
+                                }
+                                let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                                    tool_name: shared_inputs.selected_tool_name().to_string(),
+                                    tool_input: (*shared_inputs.tool_input).clone(),
+                                    tool_output: Value::Null,
+                                });
+                                pack_hold = None;
+                                return Ok(ToolLoopExecutionResponse {
+                                    text: merged,
+                                    metadata: shared_inputs.context_clone(),
+                                    tool_name: last.tool_name,
+                                    tool_output: last.tool_output,
+                                    tool_invocations: invocations,
+                                    rounds_executed,
+                                    termination_reason: "host_pack_merged".to_string(),
+                                });
+                            }
+                        }
+
                         let workshop_lane = completion_gate
                             .as_ref()
                             .map(|gate| gate.skip_avec_ritual_check)
@@ -321,6 +395,7 @@ impl MedousaToolLoopPipeline {
                                 max_tool_rounds: effective_max_tool_rounds,
                                 interim_continues_used,
                                 interim_continue_cap,
+                                host_scheduler_lane,
                             })
                         } else {
                             decide_after_tools_text_round(&AfterToolsRoundContext {
@@ -332,6 +407,8 @@ impl MedousaToolLoopPipeline {
                                 workshop_lane,
                                 interim_continues_used,
                                 interim_continue_cap,
+                                host_scheduler_lane,
+                                empty_after_tools_continues_used,
                             })
                         };
 
@@ -374,8 +451,41 @@ impl MedousaToolLoopPipeline {
                                 control_message,
                                 missing_tools,
                             } => {
-                                if reason == ContinueReason::InterimProse {
+                                if matches!(
+                                    reason,
+                                    ContinueReason::InterimProse
+                                        | ContinueReason::ExtendedProse
+                                        | ContinueReason::PackHold
+                                ) {
                                     interim_continues_used += 1;
+                                }
+                                if host_scheduler_lane
+                                    && reason == ContinueReason::EmptyAfterTools
+                                    && !invocations.is_empty()
+                                {
+                                    empty_after_tools_continues_used += 1;
+                                }
+                                if host_scheduler_lane && reason == ContinueReason::PackHold {
+                                    pack_hold = Some(AssistantPackHold {
+                                        fragments: vec![text.clone()],
+                                    });
+                                    if let Some(response) = apply_pack_hold_continue(
+                                        &text,
+                                        &invocations,
+                                        &mut turn_ctx,
+                                        &mut loop_awareness,
+                                        &mut discipline,
+                                        tool_rounds_remaining,
+                                        completion_gate.as_deref_mut(),
+                                        &shared_inputs,
+                                        rounds_executed,
+                                        effective_max_tool_rounds,
+                                    )
+                                    .await?
+                                    {
+                                        return Ok(response);
+                                    }
+                                    continue;
                                 }
                                 if let Some(response) = apply_fsm_continue_loop(
                                     &text,
@@ -391,6 +501,7 @@ impl MedousaToolLoopPipeline {
                                     &shared_inputs,
                                     rounds_executed,
                                     effective_max_tool_rounds,
+                                    host_scheduler_lane,
                                 )
                                 .await?
                                 {
@@ -406,10 +517,15 @@ impl MedousaToolLoopPipeline {
                     }
                 }
 
+                if !tool_calls.is_empty() {
+                    pack_hold = None;
+                }
+
                 if pending_final_answer
                     && tool_calls.iter().any(|call| {
                         !is_prepare_final_tool_name(&call.fn_name)
                             && !is_begin_work_tool_name(&call.fn_name)
+                            && !is_update_user_tool_name(&call.fn_name)
                             && !is_checkpoint_turn_tool_name(&call.fn_name)
                             && !is_finish_turn_tool_name(&call.fn_name)
                             && !is_request_more_rounds_tool_name(&call.fn_name)
@@ -601,7 +717,7 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some(progress_message) =
-                    begin_work_message_from_invocations(round_invocations)
+                    turn_progress_message_from_invocations(round_invocations)
                 {
                     if let Some(gate) = completion_gate.as_ref() {
                         if let Some(sink) = gate.sink.as_ref() {
@@ -613,6 +729,9 @@ impl MedousaToolLoopPipeline {
                             .await;
                         }
                     }
+                }
+                if let Some(note) = begin_work_note_from_invocations(round_invocations) {
+                    turn_ctx.scratchpad.push_working_note(note);
                 }
 
                 if prepare_final_in_batch {
@@ -830,6 +949,56 @@ impl MedousaToolLoopPipeline {
                 }
 
                 if let Some((work_id, ack)) =
+                    workshop_entered_from_invocations(&invocations)
+                {
+                    let intent = invocations
+                        .iter()
+                        .find(|i| is_begin_work_tool_name(&i.tool_name))
+                        .and_then(|i| i.tool_input.get("intent"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("general");
+                    turn_ctx.scratchpad.set_delegate(&work_id, intent);
+                    sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                    if let Some(gate) = completion_gate.as_ref() {
+                        let parent_corr = gate
+                            .parent_turn_correlation_id
+                            .as_deref()
+                            .unwrap_or("-");
+                        let digest = turn_ctx.scratchpad.digest_hash();
+                        persist_ledger_record(
+                            gate.session_id.as_deref(),
+                            &crate::agent_runtime::turn_ledger::TurnLedgerRecord {
+                                timestamp: chrono::Utc::now(),
+                                stream_turn_id: gate.stream_turn_id,
+                                kind: crate::agent_runtime::turn_ledger::TurnLedgerEventKind::WorkDelegated,
+                                detail: format!(
+                                    "host_turn_ended workshop_entered work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
+                                ),
+                                tools_invoked: ledger_tool_names(&invocations),
+                                missing_tools: Vec::new(),
+                                rounds_executed,
+                                scratch: Some(turn_ctx.scratchpad.clone()),
+                                active_profile_id: None,
+                            },
+                        );
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text: ack,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: "workshop_entered".to_string(),
+                    });
+                }
+
+                if let Some((work_id, ack)) =
                     crate::agent_runtime::turn_worker_tools::worker_spawn_from_invocations(
                         &invocations,
                     )
@@ -948,6 +1117,93 @@ impl MedousaToolLoopPipeline {
     }
 }
 
+async fn apply_pack_hold_continue(
+    text: &str,
+    invocations: &[ToolInvocation],
+    turn_ctx: &mut HostTurnContext,
+    loop_awareness: &mut TurnLoopAwareness,
+    discipline: &mut TurnLoopDiscipline,
+    tool_rounds_remaining: usize,
+    mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
+    shared_inputs: &ToolLoopSharedInputs,
+    rounds_executed: usize,
+    max_tool_rounds: usize,
+) -> Result<Option<ToolLoopExecutionResponse>> {
+    if let Some(gate) = completion_gate.as_mut() {
+        let tools_invoked = if invocations.is_empty() {
+            Vec::new()
+        } else {
+            ledger_tool_names(invocations)
+        };
+        persist_ledger_record(
+            gate.session_id.as_deref(),
+            &record_fsm_continue(
+                gate.stream_turn_id,
+                ContinueReason::PackHold,
+                &crate::agent_runtime::turn_ledger::pack_hold_resolution_control_message(),
+                &[],
+                rounds_executed,
+                &tools_invoked,
+                &turn_ctx.scratchpad,
+            ),
+        );
+        if let Some(slot) = gate.scratch_out.as_mut() {
+            **slot = Some(turn_ctx.scratchpad.clone());
+        }
+    }
+    if !text.trim().is_empty() {
+        loop_awareness.record_user_response(text);
+        turn_ctx
+            .tool_lane
+            .messages
+            .push(ChatMessage::assistant(text.trim().to_string()));
+        if let Some(gate) = completion_gate.as_ref() {
+            if let Some(sink) = gate.sink.as_ref() {
+                sink.agent_pack_hold(
+                    gate.stream_turn_id,
+                    vec![text.trim().to_string()],
+                    ledger_tool_names(invocations),
+                )
+                .await;
+            }
+        }
+    }
+    push_pack_hold_message(&mut turn_ctx.tool_lane.messages);
+    push_turn_control_message(
+        &mut turn_ctx.tool_lane.messages,
+        &loop_awareness.loop_budget_message(tool_rounds_remaining),
+    );
+    push_turn_scratch_message_with_budget(
+        &mut turn_ctx.tool_lane.messages,
+        &turn_ctx.scratchpad,
+        tool_rounds_remaining,
+    );
+    sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+    if discipline.on_text_only_continue(invocations.len()) {
+        if let Some(gate) = completion_gate.as_ref() {
+            return Ok(Some(
+                finish_stuck_turn(shared_inputs, invocations.to_vec(), rounds_executed, gate).await?,
+            ));
+        }
+        let text_only_limit = completion_gate
+            .as_ref()
+            .map(|gate| gate.max_text_only_stuck_continues)
+            .unwrap_or_else(|| {
+                crate::agent_runtime::turn_ledger::resolve_max_text_only_stuck_continues(
+                    max_tool_rounds,
+                )
+            });
+        return Ok(Some(finish_stuck_turn_response(
+            shared_inputs,
+            invocations.to_vec(),
+            rounds_executed,
+            text_only_limit,
+            max_tool_rounds,
+        )?));
+    }
+    Ok(None)
+}
+
 async fn apply_fsm_continue_loop(
     text: &str,
     continue_reason: ContinueReason,
@@ -962,6 +1218,7 @@ async fn apply_fsm_continue_loop(
     shared_inputs: &ToolLoopSharedInputs,
     rounds_executed: usize,
     max_tool_rounds: usize,
+    host_scheduler_lane: bool,
 ) -> Result<Option<ToolLoopExecutionResponse>> {
     if !missing_tools.is_empty() {
         turn_ctx.scratchpad.set_open_gaps(missing_tools);
@@ -991,15 +1248,13 @@ async fn apply_fsm_continue_loop(
     if !text.trim().is_empty() {
         loop_awareness.record_user_response(text);
     }
-    // Interim prose: surface the short note to the principal as a non-terminal
-    // progress line so they SEE it, AND append it to `tool_lane.messages` so the
-    // model retains continuity into the next round. Previously this prose was dropped
-    // (to avoid self-dialogue), but combined with the scratch_reset that wipes the
-    // draft it gave the model "amnesia" — it would forget what it just did and redo
-    // finished work. Preserving the note keeps memory intact; the turn-control nudge
-    // below still steers it to a tool / cognition_turn_finish, and the bounded
-    // interim_continue_cap prevents the loop from spinning.
-    if continue_reason == ContinueReason::InterimProse && !text.trim().is_empty() {
+    let preserve_prose_in_tool_lane = !host_scheduler_lane
+        && matches!(
+            continue_reason,
+            ContinueReason::InterimProse | ContinueReason::ExtendedProse
+        )
+        && !text.trim().is_empty();
+    if preserve_prose_in_tool_lane {
         if let Some(gate) = completion_gate.as_ref() {
             if let Some(sink) = gate.sink.as_ref() {
                 sink.agent_turn_progress(
@@ -1182,14 +1437,18 @@ mod tests {
     }
 
     #[test]
-    fn celebratory_preamble_after_tools_requires_finish() {
+    fn celebratory_preamble_after_tools_continues_extended() {
         use crate::agent_runtime::turn_completion_fsm::{
-            decide_after_tools_text_round, AfterToolsRoundContext, TurnRoundAction,
+            decide_after_tools_text_round, AfterToolsRoundContext, ContinueReason,
+            TurnRoundAction,
         };
+        use crate::turn_text_heuristics::is_extended_prose;
         use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
         let preamble = "Yesss! Let's do this — I'll pull up the current context, check what's \
                           resonating in memory, and calibrate to a focused AVEC posture. Boom — \
-                          focused preset pulled. Let me lock it in.";
+                          focused preset pulled. Let me lock it in and then call cognition_turn_finish \
+                          once the full calibration summary is ready for you to read.";
+        assert!(is_extended_prose(preamble));
         let invocations = vec![
             ToolInvocation {
                 tool_name: "cognition_memory_moods".to_string(),
@@ -1211,11 +1470,14 @@ mod tests {
             workshop_lane: false,
             interim_continues_used: 0,
             interim_continue_cap: 2,
+            host_scheduler_lane: false,
+            empty_after_tools_continues_used: 0,
         });
         assert!(matches!(
             action,
-            TurnRoundAction::EndTurn {
-                termination_reason: "prose_requires_finish"
+            TurnRoundAction::ContinueLoop {
+                reason: ContinueReason::ExtendedProse,
+                ..
             }
         ));
     }
@@ -1274,6 +1536,7 @@ mod tests {
             max_tool_rounds: 10,
             interim_continues_used: 0,
             interim_continue_cap: 2,
+            host_scheduler_lane: false,
         });
         assert!(matches!(
             action,

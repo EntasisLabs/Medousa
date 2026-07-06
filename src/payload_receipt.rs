@@ -1,20 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use serde::{Deserialize, Serialize};
+pub use medousa_engine::ArtifactReceiptMeta;
 use serde_json::{Value, json};
 
 pub const DEFAULT_MAX_INLINE_BYTES: usize = 8 * 1024;
 pub const DEFAULT_PREVIEW_CHARS: usize = 512;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArtifactReceiptMeta {
-    pub content_type: String,
-    pub inline: bool,
-    pub byte_size: usize,
-    pub max_inline_bytes: usize,
-    pub hash64: String,
-}
 
 pub fn receipt_meta(value: &Value, max_inline_bytes: usize) -> Option<ArtifactReceiptMeta> {
     let serialized = serde_json::to_string(value).unwrap_or_else(|_| value.to_string());

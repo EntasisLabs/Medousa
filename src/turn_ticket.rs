@@ -5,28 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-pub use medousa_types::turn_ticket::{TurnTicketMode, TurnTicketPhase};
-
-/// Unified turn record for interactive SSE turns and background `/ask` work.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TurnTicket {
-    pub turn_id: String,
-    pub session_id: String,
-    pub mode: TurnTicketMode,
-    pub phase: TurnTicketPhase,
-    pub stream_url: String,
-    pub prompt_preview: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_card_id: Option<String>,
-    pub started_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl TurnTicket {
-    pub fn composer_handoff(&self) -> bool {
-        self.mode == TurnTicketMode::Background || self.phase.composer_handoff()
-    }
-}
+pub use medousa_types::turn_ticket::{TurnTicket, TurnTicketConflict, TurnTicketMode, TurnTicketPhase};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TurnTicketResponse {
@@ -75,11 +54,6 @@ pub struct CancelActiveSessionTurnResponse {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TurnTicketConflict {
-    pub message: String,
-}
-
 pub struct TurnTicketRegistryInner {
     by_id: HashMap<String, TurnTicket>,
     interactive_by_session: HashMap<String, String>,
@@ -106,6 +80,7 @@ pub fn prompt_preview(prompt: &str) -> String {
 pub fn phase_from_stream_event(event_type: &str, terminal: bool) -> TurnTicketPhase {
     match event_type {
         "worker_ack" => TurnTicketPhase::WorkerHandoff,
+        "workshop_ack" => TurnTicketPhase::WorkshopHandoff,
         "budget_approval" => TurnTicketPhase::BudgetBlocked,
         "error" => TurnTicketPhase::Error,
         _ if terminal => TurnTicketPhase::Done,

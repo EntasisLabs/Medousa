@@ -17,21 +17,36 @@ import {
   notifyWorkerHandoff,
 } from "$lib/notifications";
 import { isWorkerHandoffStreamEvent, isRecoverableStreamError } from "$lib/utils/streamEvents";
+import {
+  DEFAULT_INTERACTIVE_BACKOFF,
+  DEFAULT_WORKSPACE_BACKOFF,
+  ReconnectScheduler,
+} from "$lib/stream/reconnect";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import { haptic } from "$lib/haptics";
 import {
   checkDaemonHealth,
   getDaemonUrl,
+  onEnvironmentError,
+  onEnvironmentEvent,
   onInteractiveEvent,
   onInteractiveError,
   onWorkspaceEvent,
   onWorkspaceError,
   registerBrowserClient,
+  startEnvironmentStream,
+  stopEnvironmentStream,
   startWorkspaceStream,
   stopWorkspaceStream,
   type DaemonHealth,
 } from "$lib/daemon";
+import {
+  environment,
+  startEnvironmentSync,
+  stopEnvironmentSync,
+} from "$lib/stores/environment.svelte";
+import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
 import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
@@ -40,6 +55,8 @@ export type WorkshopConnection = {
   getHealth: () => DaemonHealth | null;
   refreshHealth: () => Promise<DaemonHealth | null>;
 };
+
+export type WorkshopConnectMode = "full" | "observer";
 
 async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
   if (!health.ok) return;
@@ -52,38 +69,47 @@ async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
 }
 
 let workshopTeardown = false;
-let workspaceReconnectAttempt = 0;
-let workspaceReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let interactiveRecoverTimer: ReturnType<typeof setTimeout> | null = null;
+let workshopConnectMode: WorkshopConnectMode = "full";
+const workspaceReconnect = new ReconnectScheduler({
+  policy: DEFAULT_WORKSPACE_BACKOFF,
+});
+const interactiveReconnect = new ReconnectScheduler({
+  policy: DEFAULT_INTERACTIVE_BACKOFF,
+});
 let resumeWorkshopInFlight = false;
 let lastResumeWorkshopAt = 0;
 const RESUME_DEBOUNCE_MS = 3_000;
 
 function cancelScheduledStreamRecovery() {
-  if (workspaceReconnectTimer) {
-    clearTimeout(workspaceReconnectTimer);
-    workspaceReconnectTimer = null;
-  }
-  workspaceReconnectAttempt = 0;
-  if (interactiveRecoverTimer) {
-    clearTimeout(interactiveRecoverTimer);
-    interactiveRecoverTimer = null;
+  workspaceReconnect.cancel();
+  interactiveReconnect.cancel();
+}
+
+function scheduleEnvironmentStreamReconnect() {
+  if (workshopTeardown || workshopConnectMode === "observer") return;
+  workspaceReconnect.schedule(() => recoverEnvironmentStream());
+}
+
+async function recoverEnvironmentStream(): Promise<void> {
+  if (workshopTeardown) return;
+  try {
+    const health = await checkDaemonHealth();
+    connection.setHealth(health);
+    if (!health.ok) {
+      scheduleEnvironmentStreamReconnect();
+      return;
+    }
+    await stopEnvironmentSync();
+    await environment.load();
+    await startEnvironmentSync();
+  } catch {
+    scheduleEnvironmentStreamReconnect();
   }
 }
 
 function scheduleWorkspaceStreamReconnect() {
-  if (workshopTeardown || workspaceReconnectTimer) return;
-
-  const delayMs = Math.min(
-    1_000 * 2 ** workspaceReconnectAttempt,
-    MAX_STREAM_RECONNECT_DELAY_MS,
-  );
-  workspaceReconnectAttempt += 1;
-
-  workspaceReconnectTimer = setTimeout(() => {
-    workspaceReconnectTimer = null;
-    void recoverWorkspaceStream();
-  }, delayMs);
+  if (workshopTeardown || workshopConnectMode === "observer") return;
+  workspaceReconnect.schedule(() => recoverWorkspaceStream());
 }
 
 async function recoverWorkspaceStream(): Promise<void> {
@@ -99,7 +125,8 @@ async function recoverWorkspaceStream(): Promise<void> {
 
     await stopWorkspaceStream();
     await startWorkspaceStream(workspace.revision || undefined);
-    workspaceReconnectAttempt = 0;
+    workspaceReconnect.noteSuccess();
+    await workspace.recoverPendingWorkerResults();
     void chat.tryReattachActiveTurn(workspace.cards);
   } catch {
     scheduleWorkspaceStreamReconnect();
@@ -107,12 +134,8 @@ async function recoverWorkspaceStream(): Promise<void> {
 }
 
 function scheduleInteractiveStreamRecover() {
-  if (workshopTeardown || interactiveRecoverTimer) return;
-
-  interactiveRecoverTimer = setTimeout(() => {
-    interactiveRecoverTimer = null;
-    void recoverInteractiveStreams();
-  }, 500);
+  if (workshopTeardown || workshopConnectMode === "observer") return;
+  interactiveReconnect.schedule(() => recoverInteractiveStreams());
 }
 
 async function recoverInteractiveStreams(): Promise<void> {
@@ -121,9 +144,13 @@ async function recoverInteractiveStreams(): Promise<void> {
       !turn.terminal &&
       turn.mode === "interactive" &&
       turn.phase !== "worker_handoff" &&
+      turn.phase !== "workshop_handoff" &&
       turn.phase !== "budget_blocked",
   );
   const attached = await chat.tryReattachActiveTurn(workspace.cards);
+  if (attached) {
+    interactiveReconnect.noteSuccess();
+  }
   if (!attached && needsStream) {
     chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
   } else if (attached || !needsStream) {
@@ -134,11 +161,24 @@ async function recoverInteractiveStreams(): Promise<void> {
 /** Restart SSE pipes without a full settings/runtime reload. */
 async function restartWorkshopStreamsLite(): Promise<void> {
   await stopWorkspaceStream();
+  await stopEnvironmentSync();
   await startWorkspaceStream(workspace.revision || undefined);
+  await startEnvironmentSync();
   void chat.tryReattachActiveTurn(workspace.cards);
 }
 
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
+  unlisteners.push(
+    onEnvironmentEvent<EnvironmentStreamEvent>((event) => {
+      environment.applyEvent(event);
+    }),
+  );
+  unlisteners.push(
+    onEnvironmentError((message) => {
+      environment.setError(message);
+      scheduleEnvironmentStreamReconnect();
+    }),
+  );
   unlisteners.push(
     onWorkspaceEvent<WorkspaceStreamEvent>((event) => {
       workspace.applyEvent(event);
@@ -202,7 +242,10 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
 async function startWorkshopStreams(): Promise<void> {
   cancelScheduledStreamRecovery();
   await stopWorkspaceStream();
+  await stopEnvironmentSync();
+  await environment.load();
   await startWorkspaceStream(workspace.revision || undefined);
+  await startEnvironmentSync();
   void automations.refresh();
   await Promise.all([
     chat.refreshSessions({ force: true }),
@@ -215,17 +258,72 @@ async function startWorkshopStreams(): Promise<void> {
 
 async function loadWorkshopDefaults(connected: boolean): Promise<void> {
   try {
-    await runtime.loadWorkshopRuntime({ connected });
     if (connected) {
       await workshopDefaults.load(true);
+      if (workshopDefaults.loaded) {
+        runtime.applyFromWorkshopDraft(workshopDefaults.draft);
+      }
       await voicePresets.load(true);
       await userProfiles.load();
       await settings.hydrateWorkRetentionFromDaemon();
       void runtime.refresh();
+    } else {
+      await runtime.loadWorkshopRuntime({ connected: false });
     }
   } catch {
     // Workshop defaults are optional when offline.
   }
+}
+
+async function bootstrapWorkshopObserver(): Promise<void> {
+  await Promise.all([
+    chat.refreshSessions({ force: true }),
+    chat.ensureSessionHydrated({ notice: false }),
+  ]);
+  await workspace.reconcileCardsFromSnapshot();
+  await workspace.recoverPendingWorkerResults();
+}
+
+export async function resumeWorkshopObserver(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<void> {
+  const now = Date.now();
+  if (resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
+    return;
+  }
+  resumeWorkshopInFlight = true;
+  lastResumeWorkshopAt = now;
+
+  let health: DaemonHealth;
+  try {
+    health = await checkDaemonHealth();
+  } finally {
+    resumeWorkshopInFlight = false;
+  }
+  connection.setHealth(health);
+  onHealthChange(health);
+  if (!health.ok) return;
+
+  await workspace.reconcileCardsFromSnapshot();
+  await Promise.all([
+    chat.reconcileOnResume({ notice: false }, workspace.cards),
+    chat.hydrateAskThreads(workspace.cards),
+  ]);
+  await workspace.recoverPendingWorkerResults();
+}
+
+export function attachWorkshopObserverForegroundResume(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  const handler = () => {
+    if (document.visibilityState !== "visible") return;
+    void resumeWorkshopObserver(onHealthChange);
+  };
+
+  document.addEventListener("visibilitychange", handler);
+  return () => document.removeEventListener("visibilitychange", handler);
 }
 
 export async function resumeWorkshop(
@@ -254,10 +352,12 @@ export async function resumeWorkshop(
 
   void registerBrowserHostClient(health);
 
+  // Cards first so handoff synthesis recovery has an authoritative board.
+  await workspace.reconcileCardsFromSnapshot();
+
   await Promise.all([
     chat.reconcileOnResume({ notice: false }, workspace.cards),
     chat.hydrateAskThreads(workspace.cards),
-    workspace.reconcileCardsFromSnapshot(),
     userProfiles.syncOnResume(health),
     // If the WebView was evicted while backgrounded, the open note's path
     // survives but its body does not. Re-fetch so the reader is not blank.
@@ -266,10 +366,42 @@ export async function resumeWorkshop(
       : Promise.resolve(),
   ]);
 
+  // History merge may link workers missed while SSE was detached.
+  await workspace.recoverPendingWorkerResults();
+
   try {
     await restartWorkshopStreamsLite();
   } catch {
     scheduleWorkspaceStreamReconnect();
+  }
+
+  // Glance surfaces (Live Activity / home widget) need a forced quiet/working sync
+  // after cards refresh — otherwise they stay stuck on the pre-background snapshot.
+  if (isTauriMobilePlatform()) {
+    try {
+      const { isTauriIos } = await import("$lib/platform");
+      if (isTauriIos()) {
+        const { bumpLiveActivitySync, syncLiveActivity, buildLiveActivityPayload } =
+          await import("$lib/liveActivity");
+        const { bumpHomeWidgetSync, syncHomeWidget } = await import("$lib/homeWidget");
+        const payload = buildLiveActivityPayload({
+          health,
+          cards: workspace.cards,
+          blocked: workspace.blockedCount(),
+          inMotion: workspace.inMotionCount(),
+          primaryCard: workspace.primaryInMotionCard(),
+          workshopName: workshops.activeLabel,
+        });
+        bumpLiveActivitySync();
+        bumpHomeWidgetSync();
+        if (settings.liveActivityEnabled) {
+          void syncLiveActivity(payload, { force: true });
+        }
+        void syncHomeWidget(payload, { force: true });
+      }
+    } catch {
+      // Glance sync is best-effort on resume.
+    }
   }
 }
 
@@ -303,9 +435,12 @@ export async function reconnectWorkshop(
     runtime.resetWorkshopRuntime();
     workshopDefaults.resetForReconnect();
     userProfiles.resetForReconnect();
+    environment.resetForReconnect();
     vault.resetForWorkshopSwitch();
-    await runtime.loadWorkshopRuntime({ connected: true });
     await workshopDefaults.load(true);
+    if (workshopDefaults.loaded) {
+      runtime.applyFromWorkshopDraft(workshopDefaults.draft);
+    }
     await userProfiles.load();
     await settings.hydrateWorkRetentionFromDaemon();
     await startWorkshopStreams();
@@ -317,16 +452,26 @@ export async function reconnectWorkshop(
 
 /**
  * Shared daemon + SSE bootstrap for desktop and mobile shells.
+ *
+ * `observer` mode (pop-out chat): listens to broadcast SSE events without
+ * starting or tearing down global stream pipes owned by the main window.
  */
 export function connectWorkshop(options: {
   onHealthChange: (health: DaemonHealth | null) => void;
+  mode?: WorkshopConnectMode;
 }): () => void {
+  const mode = options.mode ?? "full";
+  workshopConnectMode = mode;
   workshopTeardown = false;
+  chat.setStreamRole(mode === "observer" ? "observer" : "owner");
   settings.applyTheme();
   const unlisteners: Promise<() => void>[] = [];
   registerStreamListeners(unlisteners);
 
-  const detachForeground = attachWorkshopForegroundResume(options.onHealthChange);
+  const detachForeground =
+    mode === "full"
+      ? attachWorkshopForegroundResume(options.onHealthChange)
+      : attachWorkshopObserverForegroundResume(options.onHealthChange);
 
   void (async () => {
     try {
@@ -340,9 +485,13 @@ export function connectWorkshop(options: {
       void loadWorkshopDefaults(health.ok);
 
       if (health.ok) {
-        await startWorkshopStreams();
-        await workshops.restoreLastSession();
-        void registerBrowserHostClient(health);
+        if (mode === "full") {
+          await startWorkshopStreams();
+          await workshops.restoreLastSession();
+          void registerBrowserHostClient(health);
+        } else {
+          await bootstrapWorkshopObserver();
+        }
       }
       workshops.applyThemeForActiveWorkshop();
     } catch (err) {
@@ -357,13 +506,18 @@ export function connectWorkshop(options: {
 
   return () => {
     workshopTeardown = true;
-    cancelScheduledStreamRecovery();
     detachForeground();
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
-    void (async () => {
-      await stopWorkspaceStream();
-      await chat.stopOwnedInteractiveStreams();
-    })();
+    if (mode === "full") {
+      cancelScheduledStreamRecovery();
+      workspaceReconnect.teardown();
+      interactiveReconnect.teardown();
+      void (async () => {
+        await stopWorkspaceStream();
+        await stopEnvironmentSync();
+        await chat.stopOwnedInteractiveStreams();
+      })();
+    }
   };
 }
 

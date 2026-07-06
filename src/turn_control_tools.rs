@@ -30,6 +30,11 @@ pub const COGNITION_TURN_BEGIN_WORK: &str = "cognition_turn_begin_work";
 
 pub const COGNITION_TURN_BEGIN_WORK_DOTTED: &str = "cognition.turn.begin_work";
 
+/// Short principal-facing status while the turn continues (retries, course-corrections, light updates).
+pub const COGNITION_TURN_UPDATE_USER: &str = "cognition_turn_update_user";
+
+pub const COGNITION_TURN_UPDATE_USER_DOTTED: &str = "cognition.turn.update_user";
+
 /// Principal-facing body when the model ends with prose after tools without `cognition_turn_finish`.
 pub const PROSE_REQUIRES_FINISH_STUB: &str =
     "I finished the tool work but didn't commit a final answer. Reply to continue and I'll \
@@ -78,6 +83,38 @@ pub fn is_begin_work_tool_name(name: &str) -> bool {
         || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_BEGIN_WORK
 }
 
+pub fn is_update_user_tool_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed == COGNITION_TURN_UPDATE_USER
+        || trimmed == COGNITION_TURN_UPDATE_USER_DOTTED
+        || crate::tool_aliases::sanitize_tool_advertised_name(trimmed) == COGNITION_TURN_UPDATE_USER
+}
+
+/// Extract the latest successful user-update line from a tool batch.
+pub fn update_user_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    for inv in invocations.iter().rev() {
+        if !is_update_user_tool_name(&inv.tool_name) {
+            continue;
+        }
+        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
+            continue;
+        }
+        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_input) {
+            return Some(message);
+        }
+        if let Some(message) = message_from_turn_control_message_payload(&inv.tool_output) {
+            return Some(message);
+        }
+    }
+    None
+}
+
+/// Latest principal-visible progress line from update_user or begin_work in this batch.
+pub fn turn_progress_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    update_user_message_from_invocations(invocations)
+        .or_else(|| begin_work_message_from_invocations(invocations))
+}
+
 /// Extract the latest successful begin-work progress message from a tool batch.
 pub fn begin_work_message_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     for inv in invocations.iter().rev() {
@@ -92,6 +129,34 @@ pub fn begin_work_message_from_invocations(invocations: &[ToolInvocation]) -> Op
         }
         if let Some(message) = message_from_begin_work_payload(&inv.tool_output) {
             return Some(message);
+        }
+    }
+    None
+}
+
+fn note_from_begin_work_payload(payload: &Value) -> Option<String> {
+    payload
+        .get("note")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// Extract the latest successful begin-work sticky note from a tool batch.
+pub fn begin_work_note_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
+    for inv in invocations.iter().rev() {
+        if !is_begin_work_tool_name(&inv.tool_name) {
+            continue;
+        }
+        if inv.tool_output.get("ok") == Some(&Value::Bool(false)) {
+            continue;
+        }
+        if let Some(note) = note_from_begin_work_payload(&inv.tool_input) {
+            return Some(note);
+        }
+        if let Some(note) = note_from_begin_work_payload(&inv.tool_output) {
+            return Some(note);
         }
     }
     None
@@ -128,7 +193,19 @@ pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<St
 /// Map FSM termination to the principal-visible body (stub when finish was required but missing).
 pub fn terminal_text_for_fsm_end(termination_reason: &str, draft_text: String) -> String {
     if termination_reason == "prose_requires_finish" {
-        PROSE_REQUIRES_FINISH_STUB.to_string()
+        let trimmed = draft_text.trim();
+        if trimmed.is_empty()
+            || crate::turn_text_heuristics::looks_like_substantive_final_answer(trimmed)
+        {
+            PROSE_REQUIRES_FINISH_STUB.to_string()
+        } else if crate::turn_text_heuristics::looks_like_interim_status(trimmed)
+            || trimmed.chars().count()
+                <= crate::agent_runtime::turn_completion_fsm::INTERIM_MAX_CHARS
+        {
+            draft_text
+        } else {
+            PROSE_REQUIRES_FINISH_STUB.to_string()
+        }
     } else {
         draft_text
     }
@@ -210,7 +287,15 @@ pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Optio
 }
 
 /// Signal tool-loop entry with a principal-facing progress line (loop continues).
-pub struct CognitionTurnBeginWorkTool;
+pub struct CognitionTurnBeginWorkTool {
+    scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+}
+
+impl CognitionTurnBeginWorkTool {
+    pub fn new(scheduler: std::sync::Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>) -> Self {
+        Self { scheduler }
+    }
+}
 
 #[async_trait]
 impl StasisTool for CognitionTurnBeginWorkTool {
@@ -220,9 +305,105 @@ impl StasisTool for CognitionTurnBeginWorkTool {
 
     fn description(&self) -> Option<&'static str> {
         Some(
-            "Tell the principal you are starting tool work and what you are doing. \
-             Call alongside execution tools when you need a progress line — not for final answers. \
-             Runtime: assistant prose without tool calls ends the turn immediately; use this tool for status instead of interim chat.",
+            "Enter the bound workshop for multi-tool execution (environment/canvas, components, vault writes). \
+             Provide a short principal-facing message and a concrete goal for the workshop executor. \
+             Host turn ends with the ack; synthesis delivers on the same thread when the workshop finishes.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["message", "goal"],
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Short principal-facing ack before workshop execution"
+                },
+                "goal": {
+                    "type": "string",
+                    "description": "Focused execution task for the bound workshop (tools, surfaces, constraints)"
+                },
+                "intent": {
+                    "type": "string",
+                    "description": "Optional worker profile: general | research (default general)"
+                }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
+        let Some(message) = message_from_begin_work_payload(&input) else {
+            return Ok(json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "message is required and must be non-empty",
+            }));
+        };
+        let goal = input
+            .get("goal")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let Some(goal) = goal else {
+            return Ok(json!({
+                "ok": false,
+                "workshop_entered": false,
+                "error": "goal is required and must be non-empty",
+            }));
+        };
+        let intent_raw = input.get("intent").and_then(|value| value.as_str());
+        let intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(
+            intent_raw.unwrap_or("general"),
+        )
+        .unwrap_or(crate::agent_runtime::turn_worker::TurnWorkerIntent::General);
+
+        self.scheduler.enter_bound_workshop(&message, goal, intent).await
+    }
+}
+
+pub fn workshop_entered_from_invocations(
+    invocations: &[ToolInvocation],
+) -> Option<(String, String)> {
+    invocations.iter().rev().find_map(|inv| {
+        if !is_begin_work_tool_name(&inv.tool_name) {
+            return None;
+        }
+        let entered = inv
+            .tool_output
+            .get("workshop_entered")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !entered {
+            return None;
+        }
+        let work_id = inv.tool_output.get("work_id")?.as_str()?.to_string();
+        let ack = inv
+            .tool_output
+            .get("user_ack")
+            .and_then(|v| v.as_str())
+            .or_else(|| inv.tool_output.get("message").and_then(|v| v.as_str()))
+            .unwrap_or("Working on that in the workshop.")
+            .to_string();
+        Some((work_id, ack))
+    })
+}
+
+/// Short principal-facing status while the turn continues (not a final answer).
+pub struct CognitionTurnUpdateUserTool;
+
+#[async_trait]
+impl StasisTool for CognitionTurnUpdateUserTool {
+    fn name(&self) -> &'static str {
+        COGNITION_TURN_UPDATE_USER
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Tell the principal what you are doing right now — retries, quick course-corrections, \
+             \"pulling schemas\", \"one sec\". Call in the same model round as your next tool. \
+             Does not end the turn. Prefer this over naked chat prose (prose without tools fights \
+             the turn loop). For heavy/long-running work starting, use cognition_turn_begin_work instead.",
         )
     }
 
@@ -233,35 +414,25 @@ impl StasisTool for CognitionTurnBeginWorkTool {
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "Short principal-facing progress line while tools run"
-                },
-                "intent": {
-                    "type": "string",
-                    "description": "Optional note for logs (not shown to the principal)"
+                    "description": "Short principal-facing status line"
                 }
             }
         }))
     }
 
     async fn invoke(&self, input: Value) -> stasis::prelude::Result<Value> {
-        let Some(message) = message_from_begin_work_payload(&input) else {
+        let Some(message) = message_from_turn_control_message_payload(&input) else {
             return Ok(json!({
                 "ok": false,
-                "begin_work": false,
+                "update_user": false,
                 "error": "message is required and must be non-empty",
             }));
         };
-        let intent = input
-            .get("intent")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
 
         Ok(json!({
             "ok": true,
-            "begin_work": true,
+            "update_user": true,
             "message": message,
-            "intent": intent,
         }))
     }
 }
@@ -278,7 +449,8 @@ impl StasisTool for CognitionTurnPrepareFinalTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Deprecated — prefer cognition_turn_finish with the complete answer. \
-             Workshop workers may still call this; host turns should use cognition_turn_begin_work for progress and cognition_turn_finish to commit.",
+             Workshop workers may still call this; host turns should use cognition_turn_update_user for \
+             quick status, cognition_turn_begin_work before heavy work, and cognition_turn_finish to commit.",
         )
     }
 
@@ -515,6 +687,61 @@ impl StasisTool for CognitionTurnRequestMoreRoundsTool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn preserves_interim_text_on_prose_requires_finish() {
+        let draft = "Now I see what went wrong — let me grab the schemas.".to_string();
+        let out = terminal_text_for_fsm_end("prose_requires_finish", draft.clone());
+        assert_eq!(out, draft);
+    }
+
+    #[test]
+    fn substantive_after_tools_uses_finish_stub() {
+        let draft = "Focused preset pulled and applied: stability is now 0.95, friction dropped \
+                       to 0.12, and autonomy holds at 0.80. I stored the calibration summary.";
+        let out = terminal_text_for_fsm_end("prose_requires_finish", draft.to_string());
+        assert_eq!(out, PROSE_REQUIRES_FINISH_STUB);
+    }
+
+    #[test]
+    fn recognizes_update_user_names() {
+        assert!(is_update_user_tool_name("cognition_turn_update_user"));
+        assert!(is_update_user_tool_name("cognition.turn.update_user"));
+        assert!(!is_update_user_tool_name("cognition_turn_begin_work"));
+    }
+
+    #[test]
+    fn update_user_from_invocations_reads_latest_successful_call() {
+        let invocations = vec![ToolInvocation {
+            tool_name: COGNITION_TURN_UPDATE_USER.to_string(),
+            tool_input: json!({ "message": "Retrying propose with custom surface." }),
+            tool_output: json!({ "ok": true, "update_user": true }),
+        }];
+        assert_eq!(
+            update_user_message_from_invocations(&invocations).as_deref(),
+            Some("Retrying propose with custom surface.")
+        );
+    }
+
+    #[test]
+    fn turn_progress_prefers_update_user_over_begin_work() {
+        let invocations = vec![
+            ToolInvocation {
+                tool_name: COGNITION_TURN_BEGIN_WORK.to_string(),
+                tool_input: json!({ "message": "Starting research worker." }),
+                tool_output: json!({ "ok": true, "begin_work": true }),
+            },
+            ToolInvocation {
+                tool_name: COGNITION_TURN_UPDATE_USER.to_string(),
+                tool_input: json!({ "message": "Grabbing wiki schemas." }),
+                tool_output: json!({ "ok": true, "update_user": true }),
+            },
+        ];
+        assert_eq!(
+            turn_progress_message_from_invocations(&invocations).as_deref(),
+            Some("Grabbing wiki schemas.")
+        );
+    }
 
     #[test]
     fn recognizes_begin_work_names() {

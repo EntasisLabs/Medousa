@@ -7,6 +7,9 @@ from medousa.transport import HttpTransport, Transport
 if TYPE_CHECKING:
     from medousa.budget import BudgetApi
     from medousa.capabilities import CapabilitiesApi
+    from medousa.components import ComponentsApi
+    from medousa.environment import EnvironmentApi
+    from medousa.feeds import FeedsApi
     from medousa.health import HealthApi
     from medousa.http import HttpApi
     from medousa.ingest import IngestApi
@@ -97,6 +100,21 @@ class MedousaClient:
         from medousa.vault import VaultApi
 
         return VaultApi(self)
+
+    def environment(self) -> EnvironmentApi:
+        from medousa.environment import EnvironmentApi
+
+        return EnvironmentApi(self)
+
+    def components(self) -> ComponentsApi:
+        from medousa.components import ComponentsApi
+
+        return ComponentsApi(self)
+
+    def feeds(self) -> FeedsApi:
+        from medousa.feeds import FeedsApi
+
+        return FeedsApi(self)
 
     def workspace(self) -> WorkspaceApi:
         from medousa.workspace import WorkspaceApi

@@ -87,7 +87,7 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
         "operator_mode=proactive_chief_of_staff".to_string(),
         "conduct=anticipate_intent_one_step_ahead_be_direct_warm_and_useful".to_string(),
         "token_policy=prefer_short_replies_and_single_pass_tool_use_when_sufficient".to_string(),
-        "early_exit=allowed_end_turn_early_with_cognition_turn_finish_when_fully_done_or_cognition_turn_checkpoint_for_mid_task_handoff_or_cognition_turn_begin_work_for_progress_or_ask_one_sharp_clarifying_question_instead_of_burning_remaining_rounds".to_string(),
+        "early_exit=allowed_end_turn_early_with_cognition_turn_finish_when_fully_done_or_cognition_turn_checkpoint_for_mid_task_handoff_or_cognition_turn_update_user_for_status_or_cognition_turn_begin_work_for_heavy_work_or_ask_one_sharp_clarifying_question_instead_of_burning_remaining_rounds".to_string(),
     ];
 
     if let Some(surface) = input.surface {
@@ -148,6 +148,51 @@ pub fn build_ambient_context(input: AmbientContextInput<'_>) -> AmbientContextBl
 pub fn append_ambient_context(prompt: &str, input: AmbientContextInput<'_>) -> String {
     let block = build_ambient_context(input);
     format!("{}\n\n{}", prompt.trim(), block.appendix)
+}
+
+/// Pointer digest + canvas summary for turn bootstrap.
+pub async fn build_environment_ambient_extras(session_id: &str) -> String {
+    let sessions = crate::session_catalog::list_sessions(20);
+    let env = crate::environment_store::environment_hub()
+        .get(&crate::environment_store::resolve_profile_id(None))
+        .await
+        .ok();
+    let digest = crate::context_pointer_index::build_pointer_digest(
+        session_id,
+        &sessions,
+        env.as_ref(),
+        &crate::context_pointer_index::collect_work_card_hints(session_id),
+    );
+    let mut blocks = Vec::new();
+    let pointer_block = crate::context_pointer_index::format_pointer_digest_block(&digest);
+    if pointer_block.lines().count() > 1 {
+        blocks.push(pointer_block);
+    }
+    if let Some(env) = env {
+        let custom_surface_ids: Vec<_> = env
+            .spec
+            .surfaces
+            .iter()
+            .filter(|s| s.kind == medousa_types::environment::SurfaceKind::Custom)
+            .map(|s| s.id.as_str())
+            .collect();
+        let component_summary: Vec<_> = env
+            .spec
+            .components
+            .iter()
+            .map(|c| format!("{}:{}@{}", c.id, format!("{:?}", c.component_type).to_ascii_lowercase(), c.surface_id))
+            .collect();
+        blocks.push(format!(
+            "[MEDOUSA_CANVAS]\nstudio_layout=true\npreset={}\ncomponents={}\nsurfaces={}\nsurface_ids={}\ncustom_surface_ids={}\ncomponent_summary={}\nrecipe=cognition_environment_wiki(topic=recipe) → get → merge full spec → propose/apply → ui_present(persist) OR component_create(presentation)\nactions=cognition_environment_wiki · cognition_environment_get · cognition_environment_propose/apply · cognition_component_* · cognition_ui_present(persist=true) · cognition_context_follow_pointer",
+            env.spec.active_preset_id.as_deref().unwrap_or("default"),
+            env.spec.components.len(),
+            env.spec.surfaces.len(),
+            env.spec.surfaces.iter().map(|s| s.id.as_str()).collect::<Vec<_>>().join(","),
+            custom_surface_ids.join(","),
+            component_summary.join(", "),
+        ));
+    }
+    blocks.join("\n\n")
 }
 
 #[cfg(test)]

@@ -1,10 +1,12 @@
 use crate::daemon::types::{
-    MediaRef, SessionHistoryListResponse, SessionHistoryResponse, StageRoutingMatrix,
-    TurnSurfaceContext,
+    ActiveSessionTurnResponse, CancelActiveSessionTurnResponse, MediaRef, SessionDeleteQuery,
+    SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
+    SessionSetDisplayNameResponse, StageRoutingMatrix, TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use super::sdk::{client, sdk_error};
 use super::workshop_http;
 use super::DaemonState;
 
@@ -31,12 +33,6 @@ pub async fn session_list(
     workshop_http::get_json_query(&state, "/v1/sessions", &query).await
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionSetDisplayNameResponse {
-    pub session_id: String,
-    pub display_name: String,
-}
-
 #[tauri::command]
 pub async fn session_set_display_name(
     state: State<'_, DaemonState>,
@@ -52,21 +48,11 @@ pub async fn session_set_display_name(
         return Err("display name must not be empty".to_string());
     }
 
-    workshop_http::put_json(
-        &state,
-        &format!("/v1/sessions/{trimmed_id}/name"),
-        &serde_json::json!({ "display_name": trimmed_name }),
-    )
-    .await
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionDeleteResponse {
-    pub session_id: String,
-    pub deleted: bool,
-    pub locus_purged: bool,
-    pub locus_nodes_deleted: usize,
-    pub cancelled_active_turn: bool,
+    client(&state)
+        .sessions()
+        .set_display_name(trimmed_id, trimmed_name)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -79,12 +65,14 @@ pub async fn session_delete(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    let purge = purge_memory.unwrap_or(true);
-    let path = workshop_http::path_with_query(
-        &format!("/v1/sessions/{trimmed}"),
-        &[("purge_memory", purge.to_string())],
-    );
-    workshop_http::delete_json(&state, &path).await
+    let query = SessionDeleteQuery {
+        purge_memory: purge_memory.unwrap_or(true),
+    };
+    client(&state)
+        .sessions()
+        .delete(trimmed, &query)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -96,32 +84,11 @@ pub async fn session_get_history(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    workshop_http::get_json(&state, &format!("/v1/sessions/{trimmed}/history")).await
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActiveSessionTurn {
-    pub turn_id: String,
-    pub session_id: String,
-    pub stream_url: String,
-    pub phase: String,
-    pub composer_handoff: bool,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActiveSessionTurnResponse {
-    pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn: Option<ActiveSessionTurn>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CancelActiveSessionTurnResponse {
-    pub cancelled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
-    pub message: String,
+    client(&state)
+        .sessions()
+        .history(trimmed)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -133,7 +100,11 @@ pub async fn session_get_active_turn(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    workshop_http::get_json(&state, &format!("/v1/sessions/{trimmed}/active-turn")).await
+    client(&state)
+        .sessions()
+        .active_turn(trimmed)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -145,7 +116,44 @@ pub async fn session_cancel_active_turn(
     if trimmed.is_empty() {
         return Err("session_id is required".to_string());
     }
-    workshop_http::post_empty_json(&state, &format!("/v1/sessions/{trimmed}/active-turn")).await
+    client(&state)
+        .sessions()
+        .cancel_active_turn(trimmed)
+        .await
+        .map_err(sdk_error)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkshopSteerRequest {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkshopSteerResponse {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn session_steer_bound_workshop(
+    state: State<'_, DaemonState>,
+    session_id: String,
+    message: String,
+) -> Result<WorkshopSteerResponse, String> {
+    let trimmed = session_id.trim();
+    if trimmed.is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let body = WorkshopSteerRequest { message };
+    workshop_http::post_json(
+        &state,
+        &format!("/v1/sessions/{trimmed}/workshop/steer"),
+        &body,
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

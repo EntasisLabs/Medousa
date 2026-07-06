@@ -136,6 +136,120 @@ fn is_stasis_unimplemented_commit(response: &CommitEntityUpdateResponse) -> bool
             .is_some_and(|r| r.contains("not implemented yet"))
 }
 
+fn is_medousa_overlay_entity(entity_type: &IdentityEntityType) -> bool {
+    matches!(
+        entity_type,
+        IdentityEntityType::PersonaEntity
+            | IdentityEntityType::UserEntity
+            | IdentityEntityType::ContactEntity
+    )
+}
+
+fn proposal_state_allows_overlay_commit(state: ProposalState) -> bool {
+    matches!(state, ProposalState::Proposed | ProposalState::Committed)
+}
+
+fn json_values_equal(left: &Value, right: &Value) -> bool {
+    left == right
+}
+
+pub fn user_patch_already_applied(user: &UserEntity, patch: &Value) -> bool {
+    let Some(map) = patch.as_object() else {
+        return false;
+    };
+    for (path, value) in map {
+        if let Some(key) = path.strip_prefix("preferences.") {
+            match user.preferences.get(key) {
+                Some(existing) if json_values_equal(existing, value) => {}
+                _ => return false,
+            }
+            continue;
+        }
+        match path.as_str() {
+            "timezone" => {
+                if user.timezone != value.as_str().unwrap_or("") {
+                    return false;
+                }
+            }
+            "language_variant" => {
+                if user.language_variant.as_deref() != value.as_str() {
+                    return false;
+                }
+            }
+            "status" => {
+                if user.status != value.as_str().unwrap_or("") {
+                    return false;
+                }
+            }
+            "preferences" => {
+                let Some(obj) = value.as_object() else {
+                    return false;
+                };
+                for (key, pref_value) in obj {
+                    match user.preferences.get(key) {
+                        Some(existing) if json_values_equal(existing, pref_value) => {}
+                        _ => return false,
+                    }
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn persona_patch_already_applied(persona: &PersonaEntity, patch: &Value) -> bool {
+    let Some(map) = patch.as_object() else {
+        return false;
+    };
+    for (path, value) in map {
+        match path.as_str() {
+            "display_name" => {
+                if persona.display_name != value.as_str().unwrap_or("") {
+                    return false;
+                }
+            }
+            "status" => {
+                if persona.status != value.as_str().unwrap_or("") {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn contact_patch_already_applied(contact: &ContactEntity, patch: &Value) -> bool {
+    let Some(map) = patch.as_object() else {
+        return false;
+    };
+    for (path, value) in map {
+        match path.as_str() {
+            "display_name" => {
+                if contact.display_name != value.as_str().unwrap_or("") {
+                    return false;
+                }
+            }
+            "status" => {
+                if contact.status != value.as_str().unwrap_or("") {
+                    return false;
+                }
+            }
+            "aliases" => {
+                let Ok(expected) = parse_string_array(value, "aliases") else {
+                    return false;
+                };
+                if contact.aliases != expected {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
 fn patch_requires_approval(tier: UpdateTier) -> bool {
     matches!(tier, UpdateTier::ApprovalRequired)
 }
@@ -287,6 +401,30 @@ impl MedousaIdentityMemoryStore {
             Backing::Surreal { proposal_cache, .. } => proposal_cache,
         };
         cache.lock().ok()?.get(proposal_id).cloned()
+    }
+
+    async fn proposal_for_commit(
+        &self,
+        request: &CommitEntityUpdateRequest,
+    ) -> StasisResult<Option<CachedProposal>> {
+        if let Some(cached) = self.cached_proposal(&request.proposal_id) {
+            return Ok(Some(cached));
+        }
+
+        if let Backing::Surreal { db, .. } = &self.backing {
+            let Some(record) = load_surreal_proposal(db, &request.proposal_id).await? else {
+                return Ok(None);
+            };
+            return Ok(Some(CachedProposal {
+                entity_type: record.entity_type,
+                entity_id: record.entity_id,
+                patch: record.patch,
+                tier: record.tier,
+                source: record.source,
+            }));
+        }
+
+        Ok(None)
     }
 
     async fn commit_overlay_entity(
@@ -709,11 +847,14 @@ async fn surreal_commit_overlay_entity(
         });
     };
 
-    if proposal.state != ProposalState::Proposed {
+    if !proposal_state_allows_overlay_commit(proposal.state) {
         return Ok(CommitEntityUpdateResponse {
             committed: false,
             code: Some(CommitOutcomeCode::InvalidPatch),
-            rationale: Some("proposal is not in proposed state".to_string()),
+            rationale: Some(format!(
+                "proposal is not committable (state={:?})",
+                proposal.state
+            )),
             ..Default::default()
         });
     }
@@ -773,6 +914,19 @@ async fn surreal_commit_overlay_entity(
                 version: persona_row.version,
                 updated_at: persona_row.updated_at,
             };
+            if proposal.state == ProposalState::Committed
+                && persona_patch_already_applied(&persona, &patch)
+            {
+                return Ok(CommitEntityUpdateResponse {
+                    committed: true,
+                    code: Some(CommitOutcomeCode::Ok),
+                    entity_type: Some(IdentityEntityType::PersonaEntity),
+                    entity_id: Some(cached.entity_id),
+                    new_version: Some(persona.version),
+                    rationale: Some("proposal already applied".to_string()),
+                    ..Default::default()
+                });
+            }
             if persona.version != request.expected_version {
                 proposal.state = ProposalState::Rejected;
                 proposal.updated_at = Utc::now();
@@ -859,7 +1013,21 @@ async fn surreal_commit_overlay_entity(
                 version: user_row.version,
                 updated_at: user_row.updated_at,
             };
-            if user.version != request.expected_version {
+            if proposal.state == ProposalState::Committed && user_patch_already_applied(&user, &patch)
+            {
+                return Ok(CommitEntityUpdateResponse {
+                    committed: true,
+                    code: Some(CommitOutcomeCode::Ok),
+                    entity_type: Some(IdentityEntityType::UserEntity),
+                    entity_id: Some(cached.entity_id),
+                    new_version: Some(user.version),
+                    rationale: Some("proposal already applied".to_string()),
+                    ..Default::default()
+                });
+            }
+            let repairing_false_commit = proposal.state == ProposalState::Committed
+                && !user_patch_already_applied(&user, &patch);
+            if !repairing_false_commit && user.version != request.expected_version {
                 proposal.state = ProposalState::Rejected;
                 proposal.updated_at = Utc::now();
                 db.query("UPSERT type::record($table, $id) CONTENT $data")
@@ -944,6 +1112,19 @@ async fn surreal_commit_overlay_entity(
                 version: contact_row.version,
                 updated_at: contact_row.updated_at,
             };
+            if proposal.state == ProposalState::Committed
+                && contact_patch_already_applied(&contact, &patch)
+            {
+                return Ok(CommitEntityUpdateResponse {
+                    committed: true,
+                    code: Some(CommitOutcomeCode::Ok),
+                    entity_type: Some(IdentityEntityType::ContactEntity),
+                    entity_id: Some(cached.entity_id),
+                    new_version: Some(contact.version),
+                    rationale: Some("proposal already applied".to_string()),
+                    ..Default::default()
+                });
+            }
             if contact.version != request.expected_version {
                 proposal.state = ProposalState::Rejected;
                 proposal.updated_at = Utc::now();
@@ -1089,6 +1270,16 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
         &self,
         request: &CommitEntityUpdateRequest,
     ) -> StasisResult<CommitEntityUpdateResponse> {
+        // Persona/user/contact commits are Medousa-owned on Surreal. Stasis may mark proposals
+        // committed without applying these patches — always route through our overlay.
+        if matches!(&self.backing, Backing::Surreal { .. }) {
+            if let Some(proposal) = self.proposal_for_commit(request).await? {
+                if is_medousa_overlay_entity(&proposal.entity_type) {
+                    return self.commit_overlay_entity(request, proposal).await;
+                }
+            }
+        }
+
         let inner = match &self.backing {
             Backing::InMemory { store, .. } => store.commit_entity_update(request).await?,
             Backing::Surreal { store, .. } => store.commit_entity_update(request).await?,
@@ -1098,30 +1289,15 @@ impl IdentityMemoryStore for MedousaIdentityMemoryStore {
             return Ok(inner);
         }
 
-        let proposal = if let Some(cached) = self.cached_proposal(&request.proposal_id) {
-            cached
-        } else if let Backing::Surreal { db, .. } = &self.backing {
-            let loaded = load_surreal_proposal(db, &request.proposal_id).await?;
-            let Some(record) = loaded else {
-                return Ok(inner);
-            };
-            CachedProposal {
-                entity_type: record.entity_type,
-                entity_id: record.entity_id,
-                patch: record.patch,
-                tier: record.tier,
-                source: record.source,
-            }
-        } else {
+        let Some(proposal) = self.proposal_for_commit(request).await? else {
             return Ok(inner);
         };
 
-        match proposal.entity_type {
-            IdentityEntityType::PersonaEntity
-            | IdentityEntityType::UserEntity
-            | IdentityEntityType::ContactEntity => self.commit_overlay_entity(request, proposal).await,
-            _ => Ok(inner),
+        if is_medousa_overlay_entity(&proposal.entity_type) {
+            return self.commit_overlay_entity(request, proposal).await;
         }
+
+        Ok(inner)
     }
 
     async fn list_entity_history(
@@ -1205,6 +1381,66 @@ mod tests {
         assert_eq!(
             ctx.persona.as_ref().map(|p| p.display_name.as_str()),
             Some("After")
+        );
+    }
+
+    #[tokio::test]
+    async fn user_preference_commit_on_in_memory_store() {
+        let store = Arc::new(InMemoryIdentityMemoryStore::default());
+        store
+            .upsert_user(UserEntity {
+                user_id: "user:default".to_string(),
+                timezone: "UTC".to_string(),
+                language_variant: None,
+                preferences: Default::default(),
+                status: "active".to_string(),
+                version: 1,
+                updated_at: Utc::now(),
+            })
+            .expect("seed user");
+
+        let wrapped = wrap_in_memory(store) as Arc<dyn IdentityMemoryStore>;
+        let proposed = wrapped
+            .propose_entity_update(&ProposeEntityUpdateRequest {
+                entity_type: IdentityEntityType::UserEntity,
+                entity_id: "user:default".to_string(),
+                patch: json!({ "preferences.Entasis": "creative studio" }),
+                source: UpdateSource::UserDirect,
+                confidence: 1.0,
+                reason: "test".to_string(),
+                actor: "test".to_string(),
+                receipt_id: None,
+                expires_at: None,
+            })
+            .await
+            .expect("propose");
+
+        let commit = wrapped
+            .commit_entity_update(&CommitEntityUpdateRequest {
+                proposal_id: proposed.proposal_ids[0].clone(),
+                expected_version: 1,
+                approver: None,
+            })
+            .await
+            .expect("commit");
+
+        assert!(commit.committed, "{commit:?}");
+
+        let ctx = wrapped
+            .get_identity_context(&full_identity_context_request(
+                "user:default",
+                "persona:default",
+                "channel:default",
+                1,
+            ))
+            .await
+            .expect("context");
+        assert_eq!(
+            ctx.user
+                .as_ref()
+                .and_then(|user| user.preferences.get("Entasis"))
+                .and_then(|value| value.as_str()),
+            Some("creative studio")
         );
     }
 }

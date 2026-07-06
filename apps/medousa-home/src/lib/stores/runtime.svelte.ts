@@ -5,7 +5,6 @@ import {
 import {
   getContinuationStatus,
   getDeliveryStatus,
-  getRuntimeDefaults,
   getRuntimeStats,
   sendRuntimeConfigCommand,
   sendStageRouteCommand,
@@ -83,16 +82,7 @@ export class RuntimeStore {
     if (!isTauri() || this.defaultsLoaded) return;
 
     if (isTauriMobilePlatform()) {
-      if (options?.connected === false) {
-        return;
-      }
-      try {
-        const defaults = await getRuntimeDefaults();
-        this.applyRuntimeDefaults(defaults);
-      } catch {
-        // Keep built-in defaults when offline.
-      }
-      this.defaultsLoaded = true;
+      // Host charter is fetched once in workshopDefaults.load; copied here on connect.
       return;
     }
 
@@ -124,6 +114,27 @@ export class RuntimeStore {
 
   resetWorkshopRuntime() {
     this.defaultsLoaded = false;
+  }
+
+  /** Copy workshop charter into runtime controls (companion shells — read-only host snapshot). */
+  applyFromWorkshopDraft(draft: import("$lib/types/workshopDefaults").TuiDefaults) {
+    const provider = draft.provider?.trim() || DEFAULT_PROVIDER;
+    const model = draft.model?.trim() || DEFAULT_MODEL;
+    this.provider = provider;
+    this.model = model;
+    this.depthMode = normalizeDepth(draft.responseDepthMode ?? DEFAULT_DEPTH);
+    this.reasoningEffort = normalizeReasoningEffort(
+      draft.reasoningEffort ?? DEFAULT_REASONING,
+    );
+    if (draft.stageRouting?.orchestrator?.role) {
+      this.stageRouting = JSON.parse(JSON.stringify(draft.stageRouting));
+    } else {
+      this.stageRouting = defaultStageRouting(provider, model);
+    }
+    this.inferenceProfiles = draft.inferenceProfiles
+      ? JSON.parse(JSON.stringify(draft.inferenceProfiles))
+      : null;
+    this.defaultsLoaded = true;
   }
 
   private applyRuntimeDefaults(

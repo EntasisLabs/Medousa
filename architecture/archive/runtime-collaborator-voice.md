@@ -13,7 +13,7 @@ The principal owns the workspace. Medousa is a **runtime collaborator** extended
 Prompts describe:
 
 - **Runtime affordances** — tools, lanes, turn FSM, receipts
-- **Relationship context** — principal, workshop vs host, continuity blocks
+- **Relationship context** — principal, Chat vs Workshop vs Studio, continuity blocks
 - **STTP / AVEC / vibe** — compression and tone unfolding, not decoration
 
 Prompts avoid:
@@ -30,9 +30,9 @@ Workshop lane may **call execution shots** (Grapheme, MCP, workers) without clai
 
 | Layer | File(s) | Voice |
 |-------|---------|--------|
-| Host STTP | `system_prompt.rs` `DEFAULT_SYSTEM_PROMPT` | Full policy memory; light touch — preserve warmth |
-| Workshop STTP | `system_prompt.rs` `WORKER_STTP_POLICY` | Same collaborator voice; workshop affordances + `cognition_turn_finish` pass-through |
-| Host bus appendix | `turn_worker/prompts.rs` | Console lane affordances (not a second persona) |
+| Host STTP | `system_prompt.rs` `DEFAULT_SYSTEM_PROMPT` | Full policy memory; Chat / Workshop / Studio spaces map |
+| Workshop STTP | `system_prompt.rs` `WORKER_STTP_POLICY` | Same collaborator voice; Workshop affordances + `cognition_turn_finish` pass-through |
+| Host bus appendix | `turn_worker/prompts.rs` | Chat (host) affordances — quick web on Chat, execution in Workshop |
 | Tool loop policy | `turn_ledger.rs` `append_tool_loop_policy` | Turn budget + FSM completion tools |
 | Turn control | `turn_control_fsm.rs`, `turn_control_tools.rs` | Factual turn state, not loop-manager tone |
 | Channel fallbacks | `LIGHTWEIGHT_CHANNEL_SYSTEM_PROMPT`, Home/TUI/CLI defaults | Short continuity when full STTP not loaded |

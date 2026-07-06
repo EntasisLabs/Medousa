@@ -6,6 +6,7 @@ use crate::daemon::types::{
 use crate::medousa_paths::TuiDefaultsDto;
 use tauri::State;
 
+use super::sdk::{client, sdk_error};
 use super::workshop_http;
 use super::DaemonState;
 
@@ -30,10 +31,21 @@ pub async fn runtime_put_tui_defaults(
     state: State<'_, DaemonState>,
     dto: TuiDefaultsDto,
 ) -> Result<(), String> {
-    let body = crate::medousa_paths::tui_defaults_value_from_dto(&dto);
-    let _: serde_json::Value =
-        workshop_http::put_json(&state, "/v1/runtime/tui-defaults", &body).await?;
-    Ok(())
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let _ = (state, dto);
+        return Err(
+            "Workshop charter is read-only on mobile — edit tui_defaults.json on the host."
+                .to_string(),
+        );
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        let body = crate::medousa_paths::tui_defaults_value_from_dto(&dto);
+        let _: serde_json::Value =
+            workshop_http::put_json(&state, "/v1/runtime/tui-defaults", &body).await?;
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -81,7 +93,11 @@ pub async fn runtime_config_command(
     state: State<'_, DaemonState>,
     request: RuntimeConfigCommandRequest,
 ) -> Result<RuntimeConfigCommandResponse, String> {
-    workshop_http::post_json(&state, "/v1/runtime/config/command", &request).await
+    client(&state)
+        .runtime()
+        .config_command(&request)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -89,5 +105,9 @@ pub async fn runtime_stage_route_command(
     state: State<'_, DaemonState>,
     request: StageRouteCommandRequest,
 ) -> Result<StageRouteCommandResponse, String> {
-    workshop_http::post_json(&state, "/v1/runtime/stage-route/command", &request).await
+    client(&state)
+        .runtime()
+        .stage_route_command(&request)
+        .await
+        .map_err(sdk_error)
 }

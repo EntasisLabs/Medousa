@@ -7,11 +7,14 @@ import {
 import { resolveSkeletonThemeName } from "$lib/types/themeResolve";
 import { loadTuiDefaults, persistTuiDefaults } from "$lib/config";
 import { getRuntimeDefaults } from "$lib/daemon";
+import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 import { isTauri, isTauriMobilePlatform } from "$lib/platform";
 
 const DARK_MODE_KEY = "medousa-home-dark-mode";
 const COLOR_THEME_KEY = "medousa-home-color-theme";
 const NOTIFICATIONS_KEY = "medousa-home-notifications";
+const LIVE_ACTIVITY_KEY = "medousa-home-live-activity";
+const REMOTE_PUSH_KEY = "medousa-home-remote-push";
 const TECHNICAL_ACTIVITY_KEY = "medousa-home-technical-activity";
 const WORKSHOP_GUIDANCE_KEY = "medousa-home-workshop-guidance";
 const ENGINE_DETAILS_KEY = "medousa-home-engine-details-chat";
@@ -26,6 +29,8 @@ export class SettingsStore {
   darkMode = $state(loadDarkMode());
   colorTheme = $state(loadColorTheme());
   notificationsEnabled = $state(loadNotifications());
+  liveActivityEnabled = $state(loadLiveActivity());
+  remotePushEnabled = $state(loadRemotePush());
   showTechnicalActivity = $state(loadTechnicalActivity());
   /** Journey steps, recipe cards, and friendly run summaries in Workshop / Automations. */
   showWorkshopGuidance = $state(loadWorkshopGuidance());
@@ -71,6 +76,35 @@ export class SettingsStore {
     localStorage.setItem(NOTIFICATIONS_KEY, enabled ? "1" : "0");
   }
 
+  setLiveActivityEnabled(enabled: boolean) {
+    this.liveActivityEnabled = enabled;
+    localStorage.setItem(LIVE_ACTIVITY_KEY, enabled ? "1" : "0");
+    if (isTauriMobilePlatform()) {
+      void import("$lib/liveActivity").then(({ resetLiveActivitySync, syncLiveActivity, buildLiveActivityPayload }) => {
+        resetLiveActivitySync();
+        if (!enabled) {
+          void syncLiveActivity({
+            mood: "quiet",
+            workshopName: "",
+            eyebrow: "Quiet",
+            headline: "Nothing needs you",
+            blockedCount: 0,
+          });
+        }
+      });
+    }
+  }
+
+  setRemotePushEnabled(enabled: boolean) {
+    this.remotePushEnabled = enabled;
+    localStorage.setItem(REMOTE_PUSH_KEY, enabled ? "1" : "0");
+    if (isTauriMobilePlatform()) {
+      void import("$lib/pushRegistration").then(({ setRemotePushEnabled }) => {
+        setRemotePushEnabled(enabled);
+      });
+    }
+  }
+
   setShowTechnicalActivity(enabled: boolean) {
     this.showTechnicalActivity = enabled;
     localStorage.setItem(TECHNICAL_ACTIVITY_KEY, enabled ? "1" : "0");
@@ -111,6 +145,16 @@ export class SettingsStore {
   /** Pull authoritative retention policy from the Mac daemon (`tui_defaults.json`). */
   async hydrateWorkRetentionFromDaemon() {
     try {
+      if (isTauriMobilePlatform() && workshopDefaults.loaded) {
+        const draft = workshopDefaults.draft;
+        if (draft.workCardHideAfterHours != null) {
+          this.setWorkCardHideAfterHours(draft.workCardHideAfterHours);
+        }
+        if (draft.workCardWipeAfterDays != null) {
+          this.setWorkCardWipeAfterDays(draft.workCardWipeAfterDays);
+        }
+        return;
+      }
       const defaults = await getRuntimeDefaults();
       this.setWorkCardHideAfterHours(defaults.work_card_hide_after_hours);
       this.setWorkCardWipeAfterDays(defaults.work_card_wipe_after_days);
@@ -189,6 +233,20 @@ function loadNotifications(): boolean {
   const stored = localStorage.getItem(NOTIFICATIONS_KEY);
   if (stored === "0") return false;
   return true;
+}
+
+function loadLiveActivity(): boolean {
+  if (typeof localStorage === "undefined") return true;
+  const stored = localStorage.getItem(LIVE_ACTIVITY_KEY);
+  if (stored === "0") return false;
+  return true;
+}
+
+function loadRemotePush(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  const stored = localStorage.getItem(REMOTE_PUSH_KEY);
+  if (stored === "1") return true;
+  return false;
 }
 
 export { COLOR_THEME_OPTIONS };

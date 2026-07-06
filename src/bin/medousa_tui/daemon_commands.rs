@@ -211,6 +211,7 @@ pub(crate) async fn daemon_register_recurring_prompt(
         policy_profile: Some("scheduled".to_string()),
         model_hint: None,
         delivery: None,
+        feeds: None,
         session_id: None,
         execution_mode: None,
         manuscript_id: None,

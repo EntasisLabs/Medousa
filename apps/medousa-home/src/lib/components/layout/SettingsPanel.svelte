@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import SettingsNav from "$lib/components/settings/SettingsNav.svelte";
   import SettingsRoomSection from "$lib/components/settings/SettingsRoomSection.svelte";
   import SettingsRhythmSection from "$lib/components/settings/SettingsRhythmSection.svelte";
@@ -7,13 +8,17 @@
   import SettingsVoiceSection from "$lib/components/settings/SettingsVoiceSection.svelte";
   import SettingsReachSection from "$lib/components/settings/SettingsReachSection.svelte";
   import SettingsPhoneSection from "$lib/components/settings/SettingsPhoneSection.svelte";
+  import SettingsLanShareSection from "$lib/components/settings/SettingsLanShareSection.svelte";
   import SettingsBasementSection from "$lib/components/settings/SettingsBasementSection.svelte";
+  import SettingsCanvasSection from "$lib/components/settings/SettingsCanvasSection.svelte";
   import type { DaemonHealth } from "$lib/daemon";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { formatModelDisplayName } from "$lib/utils/formatModelDisplay";
+  import { peerUnreadCount } from "$lib/utils/lanShareApi";
+  import { isTauri } from "$lib/window";
   import type { SettingsSectionId } from "$lib/types/settings";
 
   interface Props {
@@ -35,6 +40,17 @@
   }: Props = $props();
 
   let activeSection = $state<SettingsSectionId>("room");
+  let nearbyUnread = $state(0);
+  let unreadTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function refreshNearbyUnread() {
+    if (!isTauri()) return;
+    try {
+      nearbyUnread = await peerUnreadCount();
+    } catch {
+      nearbyUnread = 0;
+    }
+  }
 
   $effect(() => {
     if (mobile) {
@@ -48,13 +64,30 @@
       if (pending) activeSection = pending;
       void workshopDefaults.load();
       void userProfiles.load();
+      void refreshNearbyUnread();
+      if (!unreadTimer) {
+        unreadTimer = setInterval(() => {
+          void refreshNearbyUnread();
+        }, 8000);
+      }
+    } else if (unreadTimer) {
+      clearInterval(unreadTimer);
+      unreadTimer = null;
     }
+  });
+
+  onDestroy(() => {
+    if (unreadTimer) clearInterval(unreadTimer);
   });
 
   const charterLine = $derived(
     !workshopDefaults.loaded
       ? "Shape how Medousa listens, thinks, and remembers."
       : `${depthModeLabel(workshopDefaults.draft.responseDepthMode ?? "standard")} answers · ${formatModelDisplayName(workshopDefaults.draft.model ?? "model")} in chat`,
+  );
+
+  const navBadges = $derived(
+    nearbyUnread > 0 ? ({ nearby: nearbyUnread } as Partial<Record<SettingsSectionId, number>>) : {},
   );
 </script>
 
@@ -77,6 +110,7 @@
       <SettingsNav
         active={activeSection}
         {mobile}
+        badges={navBadges}
         onSelect={(section) => {
           activeSection = section;
         }}
@@ -86,6 +120,8 @@
     <div class="mobile-you-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4">
       {#if activeSection === "room"}
         <SettingsRoomSection />
+      {:else if activeSection === "canvas"}
+        <SettingsCanvasSection />
       {:else if activeSection === "rhythm"}
         <SettingsRhythmSection {mobile} />
       {:else if activeSection === "memory"}
@@ -98,6 +134,8 @@
         <SettingsReachSection {mobile} />
       {:else if activeSection === "phone"}
         <SettingsPhoneSection {mobile} />
+      {:else if activeSection === "nearby"}
+        <SettingsLanShareSection />
       {:else}
         <SettingsBasementSection {revision} {health} {onDaemonHealth} {mobile} />
       {/if}

@@ -41,7 +41,18 @@ pub struct TurnScratchpad {
     pub delegate: Option<WorkerDelegateScratch>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub round_digests: Vec<String>,
+    /// Union of tool names invoked this turn (deduped, insertion order).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools_this_turn: Vec<String>,
+    /// Agent-pinned sticky notes (via begin_work note= or runtime).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub working_notes: Vec<String>,
 }
+
+const GOAL_DISPLAY_MAX_CHARS: usize = 480;
+const WORKING_NOTES_MAX: usize = 5;
+const WORKING_NOTE_MAX_CHARS: usize = 120;
+const DIGESTS_RECENT_SHOWN: usize = 5;
 
 impl TurnScratchpad {
     pub fn from_user_prompt(user_prompt: &str) -> Self {
@@ -63,6 +74,29 @@ impl TurnScratchpad {
         self.open_gaps = gaps.to_vec();
     }
 
+    pub fn push_working_note(&mut self, note: impl Into<String>) {
+        let note = truncate_field(&note.into(), WORKING_NOTE_MAX_CHARS);
+        if note.trim().is_empty() {
+            return;
+        }
+        if self.working_notes.len() >= WORKING_NOTES_MAX {
+            self.working_notes.remove(0);
+        }
+        self.working_notes.push(note);
+    }
+
+    pub fn accumulate_tools(&mut self, tool_names: &[String]) {
+        for name in tool_names {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !self.tools_this_turn.iter().any(|existing| existing == trimmed) {
+                self.tools_this_turn.push(trimmed.to_string());
+            }
+        }
+    }
+
     pub fn set_delegate(&mut self, work_id: impl Into<String>, intent: impl Into<String>) {
         self.delegate = Some(WorkerDelegateScratch {
             work_id: work_id.into(),
@@ -79,11 +113,13 @@ impl TurnScratchpad {
     }
 
     pub fn record_round_digest(&mut self, tool_results: &[(String, bool)]) {
+        let names: Vec<String> = tool_results.iter().map(|(n, _)| n.clone()).collect();
+        self.accumulate_tools(&names);
         let tools: Vec<String> = tool_results
             .iter()
             .map(|(name, ok)| format_tool_digest_entry(name, *ok, None))
             .collect();
-        self.apply_round_digest(&tool_results.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>(), &tools);
+        self.apply_round_digest(&names, &tools);
     }
 
     /// Record a tool round with compact receipt hints so workers inherit host evidence.
@@ -101,6 +137,7 @@ impl TurnScratchpad {
             })
             .collect();
         let names: Vec<String> = tool_results.iter().map(|(n, _)| n.clone()).collect();
+        self.accumulate_tools(&names);
         self.apply_round_digest(&names, &tools);
     }
 
@@ -136,10 +173,12 @@ impl TurnScratchpad {
             TurnScratchPhase::Finalize => "finalize",
         };
         let mut lines = vec![
-            format!("goal={}", truncate_field(&self.goal, 240)),
+            format!("goal={}", truncate_field(&self.goal, GOAL_DISPLAY_MAX_CHARS)),
             format!("phase={phase} step={} rounds_remaining={tool_rounds_remaining}", self.step),
         ];
-        if !self.last_tools.is_empty() {
+        if !self.tools_this_turn.is_empty() {
+            lines.push(format!("tools_this_turn={}", self.tools_this_turn.join(", ")));
+        } else if !self.last_tools.is_empty() {
             lines.push(format!("last_tools={}", self.last_tools.join(", ")));
         }
         if let Some(err) = self.last_error.as_deref() {
@@ -148,14 +187,19 @@ impl TurnScratchpad {
         if !self.open_gaps.is_empty() {
             lines.push(format!("open_gaps={}", self.open_gaps.join(", ")));
         }
+        if !self.working_notes.is_empty() {
+            lines.push(format!("working_notes={}", self.working_notes.join(" | ")));
+        }
         if let Some(delegate) = self.delegate.as_ref() {
             lines.push(format!(
                 "delegate work_id={} intent={}",
                 delegate.work_id, delegate.intent
             ));
         }
-        if let Some(last) = self.round_digests.last() {
-            lines.push(format!("last_digest={last}"));
+        if !self.round_digests.is_empty() {
+            let start = self.round_digests.len().saturating_sub(DIGESTS_RECENT_SHOWN);
+            let recent: Vec<_> = self.round_digests[start..].to_vec();
+            lines.push(format!("digests_recent={}", recent.join(" · ")));
         }
         lines.join("\n")
     }
@@ -425,6 +469,15 @@ impl HostTurnContext {
     }
 }
 
+pub fn strip_prior_scratch_messages(messages: &mut Vec<ChatMessage>) {
+    messages.retain(|message| {
+        message
+            .content
+            .first_text()
+            .is_none_or(|text| !text.trim_start().starts_with(SCRATCH_PREFIX))
+    });
+}
+
 pub fn push_turn_scratch_message(messages: &mut Vec<ChatMessage>, scratchpad: &TurnScratchpad) {
     let body = scratchpad.format_control_body(0);
     push_scratch_body(messages, &body);
@@ -435,6 +488,7 @@ pub fn push_turn_scratch_message_with_budget(
     scratchpad: &TurnScratchpad,
     tool_rounds_remaining: usize,
 ) {
+    strip_prior_scratch_messages(messages);
     let body = scratchpad.format_control_body(tool_rounds_remaining);
     push_scratch_body(messages, &body);
 }
@@ -500,7 +554,7 @@ fn default_worker_constraints() -> Vec<String> {
         "Read HOST_TOOL_DIGESTS before capability_search, resolve, or grapheme modules search".to_string(),
         "Use session_id on all cognition_memory_* tools".to_string(),
         "Ground final worker text in tool receipts; do not invent results".to_string(),
-        "After tools: cognition_turn_finish commits the final reply — naked prose ends the turn with a stub. cognition_turn_begin_work for progress; cognition_turn_checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
+        "After tools: cognition_turn_finish commits the final reply — naked prose ends the turn with a stub. cognition_turn_update_user for mid-turn status; cognition_turn_begin_work before heavy work; cognition_turn_checkpoint for mid-task handoff; call tools for more work, never plan-only prose".to_string(),
     ]
 }
 
@@ -556,6 +610,29 @@ pub fn compact_tool_receipt_hint(tool_name: &str, output: &Value) -> Option<Stri
             .get("intent")
             .and_then(|value| value.as_str())
             .map(|intent| format!("intent={intent}")),
+        _ if normalized.contains("cognition_environment") => output
+            .get("revision")
+            .and_then(|value| value.as_u64())
+            .map(|revision| format!("revision={revision}"))
+            .or_else(|| {
+                output
+                    .get("errors")
+                    .and_then(|value| value.as_array())
+                    .and_then(|errors| errors.first())
+                    .and_then(|value| value.as_str())
+                    .map(|error| format!("error={}", truncate_field(error, 80)))
+            }),
+        _ if normalized.contains("cognition_component") => output
+            .get("component")
+            .and_then(|value| value.get("id"))
+            .and_then(|value| value.as_str())
+            .map(|id| format!("component={id}"))
+            .or_else(|| {
+                output
+                    .get("revision")
+                    .and_then(|value| value.as_u64())
+                    .map(|revision| format!("revision={revision}"))
+            }),
         _ if normalized.contains("grapheme_modules") => output
             .get("stdout")
             .and_then(|value| value.as_str())
@@ -594,9 +671,26 @@ pub fn scratch_digest_hash(scratch: &TurnScratchpad) -> String {
     format!("{:016x}", hasher.finish())
 }
 
+/// Prefer in-turn scratch progress over session seed on inference retry / continuation.
+pub fn scratch_seed_for_tool_loop(
+    session_seed: &TurnScratchpad,
+    last_in_turn: Option<&TurnScratchpad>,
+) -> TurnScratchpad {
+    match last_in_turn {
+        Some(scratch)
+            if scratch.step > 0
+                || !scratch.round_digests.is_empty()
+                || !scratch.working_notes.is_empty() =>
+        {
+            scratch.clone()
+        }
+        _ => session_seed.clone(),
+    }
+}
+
 fn infer_goal_from_prompt(user_prompt: &str) -> String {
     let collapsed: String = user_prompt.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_field(&collapsed, 240)
+    truncate_field(&collapsed, GOAL_DISPLAY_MAX_CHARS)
 }
 
 fn truncate_field(text: &str, max_chars: usize) -> String {
@@ -629,7 +723,8 @@ mod tests {
         assert!(s.last_error.as_ref().unwrap().contains("calibrate"));
         let body = s.format_control_body(5);
         assert!(body.contains("goal="));
-        assert!(body.contains("last_digest=round=1"));
+        assert!(body.contains("digests_recent=round=1"));
+        assert!(body.contains("tools_this_turn=cognition_memory_schema"));
     }
 
     #[test]
@@ -696,13 +791,36 @@ mod tests {
     }
 
     #[test]
-    fn compact_hint_surfaces_capability_search_top_match() {
-        let hint = compact_tool_receipt_hint(
-            "cognition_capability_search",
-            &json!({
-                "matches": [{ "capability": "web_research", "score": 90 }]
-            }),
-        );
-        assert_eq!(hint.as_deref(), Some("top=web_research"));
+    fn scratch_messages_dedup_to_one_snapshot() {
+        let mut scratch = TurnScratchpad::from_user_prompt("build canvas");
+        let mut messages = Vec::new();
+        push_turn_scratch_message_with_budget(&mut messages, &scratch, 3);
+        scratch.on_tool_round_start(1);
+        scratch.record_round_digest(&[("cognition_environment_get".to_string(), true)]);
+        push_turn_scratch_message_with_budget(&mut messages, &scratch, 2);
+        push_turn_scratch_message_with_budget(&mut messages, &scratch, 1);
+        let scratch_count = messages
+            .iter()
+            .filter(|m| {
+                m.content
+                    .first_text()
+                    .is_some_and(|t| t.starts_with(SCRATCH_PREFIX))
+            })
+            .count();
+        assert_eq!(scratch_count, 1);
+        assert!(messages
+            .iter()
+            .any(|m| m.content.first_text().is_some_and(|t| t.contains("digests_recent="))));
+    }
+
+    #[test]
+    fn scratch_seed_prefers_in_turn_progress() {
+        let session = TurnScratchpad::from_user_prompt("session goal");
+        let mut in_turn = session.clone();
+        in_turn.on_tool_round_start(2);
+        in_turn.record_round_digest(&[("cognition_environment_get".to_string(), true)]);
+        let seed = scratch_seed_for_tool_loop(&session, Some(&in_turn));
+        assert_eq!(seed.step, 2);
+        assert!(!seed.round_digests.is_empty());
     }
 }

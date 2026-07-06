@@ -138,10 +138,15 @@
   async function bootstrap() {
     loading = true;
     try {
+      if (isTauriMobilePlatform() && !workshopDefaults.loaded) {
+        await workshopDefaults.load().catch(() => {});
+      }
       const [catalog, probe, summary] = await Promise.all([
         listProviders(),
         probeProviders(),
-        loadTuiDefaultsSummary().catch(() => null),
+        isTauriMobilePlatform()
+          ? Promise.resolve(null)
+          : loadTuiDefaultsSummary().catch(() => null),
       ]);
       catalogSnapshot = catalog;
       probeSnapshot = probe;

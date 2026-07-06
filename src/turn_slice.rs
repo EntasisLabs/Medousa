@@ -73,6 +73,13 @@ fn merge_scratch_into_summary(summary: &mut TurnSliceSummary, scratch: &TurnScra
     if summary.tools.is_empty() && !scratch.last_tools.is_empty() {
         summary.tools = scratch.last_tools.clone();
     }
+    if !scratch.round_digests.is_empty() {
+        let start = scratch.round_digests.len().saturating_sub(3);
+        summary.recent_digests = scratch.round_digests[start..].to_vec();
+    }
+    if !scratch.working_notes.is_empty() {
+        summary.working_notes = scratch.working_notes.clone();
+    }
 }
 
 fn infer_goal(turn: &ConversationTurn, scratch: Option<&TurnScratchpad>) -> String {
@@ -316,6 +323,12 @@ pub fn session_scratch_seed_from_history(
         scratch.phase = TurnScratchPhase::Execute;
         scratch.step = summary.tool_rounds;
         scratch.last_tools = summary.tools.clone();
+    }
+    if !summary.recent_digests.is_empty() {
+        scratch.round_digests = summary.recent_digests.clone();
+    }
+    if !summary.working_notes.is_empty() {
+        scratch.working_notes = summary.working_notes.clone();
     }
 
     scratch

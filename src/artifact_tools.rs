@@ -16,12 +16,14 @@ pub const COGNITION_ARTIFACT_LIST: &str = "cognition_artifact_list";
 pub const COGNITION_ARTIFACT_READ: &str = "cognition_artifact_read";
 pub const COGNITION_ARTIFACT_GREP: &str = "cognition_artifact_grep";
 pub const COGNITION_ARTIFACT_WRITE: &str = "cognition_artifact_write";
+pub const COGNITION_ARTIFACT_DELETE: &str = "cognition_artifact_delete";
 
 pub const ARTIFACT_COGNITION_TOOLS: &[&str] = &[
     COGNITION_ARTIFACT_LIST,
     COGNITION_ARTIFACT_READ,
     COGNITION_ARTIFACT_GREP,
     COGNITION_ARTIFACT_WRITE,
+    COGNITION_ARTIFACT_DELETE,
 ];
 
 const READ_BUDGET_CHARS: usize = 12_000;
@@ -38,7 +40,8 @@ pub fn register_artifact_tools(
     registry.register_tool(CognitionArtifactListTool::new(event_tx.clone(), turn_scope.clone()))?;
     registry.register_tool(CognitionArtifactReadTool::new(event_tx.clone(), turn_scope.clone()))?;
     registry.register_tool(CognitionArtifactGrepTool::new(event_tx.clone(), turn_scope.clone()))?;
-    registry.register_tool(CognitionArtifactWriteTool::new(event_tx, turn_scope))?;
+    registry.register_tool(CognitionArtifactWriteTool::new(event_tx.clone(), turn_scope.clone()))?;
+    registry.register_tool(CognitionArtifactDeleteTool::new(event_tx, turn_scope))?;
     Ok(())
 }
 
@@ -367,7 +370,8 @@ impl StasisTool for CognitionArtifactWriteTool {
     fn description(&self) -> Option<&'static str> {
         Some(
             "Create or revise an HTML presentation artifact. Pass artifact_id to publish a new revision \
-             (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present.",
+             (content-addressed). Use if_match_hash64 for optimistic concurrency. First-time publish: use cognition_ui_present. \
+             Canvas widgets using MedousaStore: get/set/delete return Promises — use async/await (wiki topic artifact_runtime).",
         )
     }
 
@@ -377,7 +381,10 @@ impl StasisTool for CognitionArtifactWriteTool {
             "required": ["title", "html", "presentation"],
             "properties": {
                 "title": { "type": "string" },
-                "html": { "type": "string" },
+                "html": {
+                    "type": "string",
+                    "description": "HTML fragment or document. MedousaStore get/set/delete are async — await in async init and handlers (cognition_environment_wiki topic=artifact_runtime)."
+                },
                 "presentation": { "type": "string", "enum": ["inline", "panel", "fullscreen"] },
                 "artifact_id": { "type": "string", "description": "When set, supersedes this artifact revision" },
                 "if_match_hash64": { "type": "string", "description": "Optional hash64 of the artifact being revised" },
@@ -475,6 +482,73 @@ impl StasisTool for CognitionArtifactWriteTool {
             "height_px": record.height_px,
             "byte_size": record.byte_size,
             "hash64": record.hash64,
+        }))
+    }
+}
+
+pub struct CognitionArtifactDeleteTool {
+    event_tx: mpsc::Sender<TuiEvent>,
+    ctx: ArtifactToolContext,
+}
+
+impl CognitionArtifactDeleteTool {
+    pub fn new(
+        event_tx: mpsc::Sender<TuiEvent>,
+        turn_scope: Arc<RwLock<Option<TurnContinuationScope>>>,
+    ) -> Self {
+        Self {
+            event_tx,
+            ctx: ArtifactToolContext::new(turn_scope),
+        }
+    }
+}
+
+#[async_trait]
+impl StasisTool for CognitionArtifactDeleteTool {
+    fn name(&self) -> &'static str {
+        COGNITION_ARTIFACT_DELETE
+    }
+
+    fn description(&self) -> Option<&'static str> {
+        Some(
+            "Delete an HTML presentation artifact and its revision chain from the session store. \
+             Use cognition_artifact_list to discover artifact_id values first.",
+        )
+    }
+
+    fn input_schema(&self) -> Option<Value> {
+        Some(json!({
+            "type": "object",
+            "required": ["artifact_id"],
+            "properties": {
+                "artifact_id": { "type": "string", "description": "Presentation artifact id or alias to delete" }
+            }
+        }))
+    }
+
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        self.ctx.require_ui_artifacts().await?;
+        let session_id = self.ctx.session_id(self.name()).await?;
+        let artifact_id = input
+            .get("artifact_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| StasisError::PortFailure("artifact_id is required".to_string()))?
+            .to_string();
+        emit_invoked(&self.event_tx, self.name(), &artifact_id);
+
+        let deleted = tokio::task::spawn_blocking(move || {
+            crate::artifact_store::delete_ui_artifact(&session_id, &artifact_id)
+        })
+        .await
+        .map_err(|err| StasisError::PortFailure(format!("artifact delete join error: {err}")))?
+        .map_err(StasisError::PortFailure)?;
+
+        Ok(json!({
+            "ok": true,
+            "deleted_artifact_ids": deleted,
+            "count": deleted.len(),
         }))
     }
 }

@@ -6,10 +6,14 @@ from medousa._decode import decode
 from medousa.types import (
     ArtifactCommandRequest,
     ArtifactCommandResponse,
+    ArtifactDeleteRequest,
+    ArtifactDeleteResponse,
     ArtifactFetchRequest,
     ArtifactFetchResponse,
     ArtifactListUiRequest,
     ArtifactListUiResponse,
+    ArtifactWriteRequest,
+    ArtifactWriteResponse,
     RuntimeConfigCommandRequest,
     RuntimeConfigCommandResponse,
     StageRouteCommandRequest,
@@ -42,6 +46,22 @@ class RuntimeApiSync:
             request.model_dump(mode="json"),
         )
         return decode(ArtifactFetchResponse, value)
+
+    def artifact_write(self, request: ArtifactWriteRequest) -> ArtifactWriteResponse:
+        value = self._client._transport.post_json(
+            self._client.base_url,
+            "/v1/runtime/artifact/write",
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(ArtifactWriteResponse, value)
+
+    def artifact_delete(self, request: ArtifactDeleteRequest) -> ArtifactDeleteResponse:
+        value = self._client._transport.post_json(
+            self._client.base_url,
+            "/v1/runtime/artifact/delete",
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        return decode(ArtifactDeleteResponse, value)
 
     def artifact_list_ui(self, request: ArtifactListUiRequest) -> ArtifactListUiResponse:
         value = self._client._transport.post_json(

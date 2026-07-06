@@ -18,8 +18,9 @@ sequenceDiagram
     loop SSE events
         TP->>LLM: completion
         LLM-->>TP: deltas
-        TP-->>Daemon: InteractiveTurnStreamEvent
-        Daemon-->>Client: content_delta / ui_artifact
+        TP-->>Daemon: TurnEvent
+        Daemon->>ST: journal TurnEventLog
+        Daemon-->>Client: InteractiveTurnStreamEvent with seq
     end
 
     opt Tools

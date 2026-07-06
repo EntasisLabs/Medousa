@@ -23,7 +23,8 @@ use crate::locus_memory::{
     CANONICAL_STTP_SCHEMA_EXAMPLE, LOCUS_DEFAULT_TENANT, derive_locus_tenant_id,
     ingest_profile_name, normalize_context_keywords, normalize_tiers,
     resolve_locus_ingest_profile, resolve_memory_tool_session_id,
-    memory_node_to_json, schema_first_guidance, sttp_node_to_json, store_failure_payload,
+    memory_node_to_json, schema_first_guidance, semantic_index_schema_guidance,
+    sttp_node_to_json, store_failure_payload,
     validate_limit, avec_to_json,
 };
 use crate::turn_continuation::TurnContinuationScope;
@@ -111,16 +112,18 @@ impl StasisTool for CognitionMemorySchemaTool {
         Ok(json!({
             "canonical_example": CANONICAL_STTP_SCHEMA_EXAMPLE,
             "ingest_profile_policy": ingest_profile_name(profile),
+            "semantic_index": semantic_index_schema_guidance(),
             "workflow": [
                 "call cognition_memory_schema",
                 "optionally cognition_memory_calibrate and cognition_memory_moods",
-                "cognition_memory_store with full STTP node string (optional semantic_tags)",
+                "cognition_memory_store with full STTP node string — put semantic_tags in provenance.prime (or pass cognition_memory_store.semantic_tags to merge workshop tags)",
+                "optional provenance.semantic_links for typed cross-node relations",
                 "cognition_memory_context or cognition_memory_list with semantic_tags for indexed recall",
                 "cognition_memory_tags to browse the tag vocabulary",
                 "cognition_memory_context for AVEC-ranked retrieval"
             ],
             "model_guidance": schema_first_guidance(
-                "Build a complete four-layer STTP node before store.",
+                "Build a complete four-layer STTP node before store; include semantic_tags in prime when you want indexed recall.",
                 ingest_profile_name(profile),
             ),
         }))

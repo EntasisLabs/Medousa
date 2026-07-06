@@ -14,10 +14,12 @@ Audience tags used throughout `docs/`:
 |-------|-------------------|--------|
 | HTTP routes, request types | [`docs/engine/http-api.md`](engine/http-api.md) | Source of truth: [`src/daemon/router.rs`](../src/daemon/router.rs) |
 | Subsystem behavior (artifacts, vault, streaming) | [`docs/engine/*.md`](engine/) | Link to `architecture/` for FSM internals |
-| SDK methods and examples | [`docs/sdk/`](sdk/) | [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml); Rust [`crates/medousa-sdk/`](../crates/medousa-sdk/); Python [`python/medousa-sdk/`](../python/medousa-sdk/) |
+| SDK methods and examples | [`docs/sdk/`](sdk/) | [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml); Rust [`crates/medousa-sdk/`](../crates/medousa-sdk/); Python [`python/medousa-sdk/`](../python/medousa-sdk/); Home stream types [`scripts/gen-ts-types.py`](../scripts/gen-ts-types.py) |
 | Task-oriented how-tos | [`docs/cookbook/`](cookbook/) | Install, channels, mobile, custom UI |
 | Env vars and ops | [`configuration-reference.md`](configuration-reference.md), [`docs/runbooks/`](runbooks/) | |
 | Turn FSM, component design, epics | [`architecture/`](../architecture/) | Living plans; **not** duplicated in `docs/engine/` |
+| Engine crate (`medousa-engine`) | [`architecture/component-engine.md`](../architecture/component-engine.md) | Spine, ports, `run_turn` — contributor-only |
+| Comms / observability (daemon) | [`architecture/component-daemon.md`](../architecture/component-daemon.md), [`daemon-modules.md`](architecture/daemon-modules.md) | Operator env vars in configuration-reference |
 | Shipped milestone history | [`architecture/archive/`](../architecture/archive/) | Historical only |
 | ADRs | [`docs/architecture/decisions/`](architecture/decisions/) | Durable decisions |
 
@@ -43,23 +45,26 @@ When shipping a user-facing or integrator-facing feature:
 
 1. Add or update route rows in [`docs/engine/http-api.md`](engine/http-api.md).
 2. Add or update the subsystem guide under [`docs/engine/`](engine/) if the feature is non-trivial.
-3. Add SDK rows to [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml) and [`docs/sdk/api-reference.md`](sdk/api-reference.md) when `medousa-sdk` exposes a typed method. Run `scripts/check-sdk-contract.sh`. For new DTOs, run `cargo run -p medousa-types-schema` + `scripts/gen-python-types.py`.
+3. Add SDK rows to [`sdk-contract/manifest.yaml`](../sdk-contract/manifest.yaml) and [`docs/sdk/api-reference.md`](sdk/api-reference.md) when `medousa-sdk` exposes a typed method. Run `scripts/check-sdk-contract.sh`. For new DTOs, run `cargo run -p medousa-types-schema` + `scripts/gen-python-types.py` + `scripts/gen-ts-types.py` (Medousa Home generated stream types).
 4. Add a cookbook recipe if operators or integrators need a task-oriented walkthrough.
 5. Update [`docs/README.md`](README.md) index if you add a new top-level guide.
-6. Run [`scripts/verify-docs.sh`](../scripts/verify-docs.sh).
+6. Engine crate boundary change → update [`architecture/component-engine.md`](../architecture/component-engine.md) and [`daemon-modules.md`](architecture/daemon-modules.md).
+7. Run [`scripts/verify-docs.sh`](../scripts/verify-docs.sh) (use `--strict` in CI).
 
 ## Subsystem coverage checklist
 
 | Subsystem | http-api | engine guide | SDK | cookbook | Status |
 |-----------|----------|--------------|-----|----------|--------|
-| Interactive streaming | yes | [interactive-streaming.md](engine/interactive-streaming.md) | yes | [custom-chat-ui.md](cookbook/custom-chat-ui.md) | documented |
+| Interactive streaming + reconnect | yes | [interactive-streaming.md](engine/interactive-streaming.md) | yes | [custom-chat-ui.md](cookbook/custom-chat-ui.md) | documented |
+| Turn spine / `medousa-engine` | partial | [interactive-streaming.md](engine/interactive-streaming.md) | reconnect helpers | — | [component-engine.md](../architecture/component-engine.md) |
 | Artifacts | yes | [artifacts.md](engine/artifacts.md) | yes | [artifacts-and-presentations.md](cookbook/artifacts-and-presentations.md) | documented |
 | Vault / Library | yes | [vault.md](engine/vault.md) | partial | [vault-and-library.md](cookbook/vault-and-library.md) | documented |
 | Workspace | yes | [workspace.md](engine/workspace.md) | via `http()` | cli-and-workspace | documented |
 | Agent tools | — | [agent-tools.md](engine/agent-tools.md) | — | — | documented |
 | Runtime config | yes | [runtime-config.md](engine/runtime-config.md) | partial | configuration-reference | documented |
 | Mobile / LAN | partial | — | transports | [mobile-and-lan.md](cookbook/mobile-and-lan.md) | documented |
+| Observability / daemon limits | partial | — | — | configuration-reference | documented |
 | Grapheme, Locus, workflows, media, STT | yes | [extensions.md](engine/extensions.md) | via `http()` | configuration-reference | documented |
-| medousa-home app | — | — | Tauri transport | [apps/medousa-home.md](apps/medousa-home.md) | documented |
+| medousa-home app | — | — | [transports.md](sdk/transports.md) | [apps/medousa-home.md](apps/medousa-home.md) | documented |
 
 Update this table when adding or changing coverage.

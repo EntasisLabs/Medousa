@@ -4,7 +4,7 @@ use crate::daemon::types::{
 };
 use tauri::State;
 
-use super::workshop_http;
+use super::sdk::{client, sdk_error};
 use super::DaemonState;
 
 fn default_home_resolved_by() -> String {
@@ -29,7 +29,6 @@ pub async fn turn_budget_approve(
     extra_rounds: Option<usize>,
     resolved_by: Option<String>,
 ) -> Result<TurnBudgetRequestResponse, String> {
-    let encoded = urlencoding::encode(request_id.trim());
     let body = TurnBudgetApproveRequest {
         extra_rounds,
         resolved_by: Some(
@@ -39,12 +38,11 @@ pub async fn turn_budget_approve(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    workshop_http::post_json(
-        &state,
-        &format!("/v1/turns/budget-requests/{encoded}/approve"),
-        &body,
-    )
-    .await
+    client(&state)
+        .budget()
+        .approve(request_id.trim(), &body)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -53,7 +51,6 @@ pub async fn turn_budget_deny(
     request_id: String,
     resolved_by: Option<String>,
 ) -> Result<TurnBudgetRequestResponse, String> {
-    let encoded = urlencoding::encode(request_id.trim());
     let body = TurnBudgetDenyRequest {
         resolved_by: Some(
             resolved_by
@@ -62,12 +59,11 @@ pub async fn turn_budget_deny(
                 .unwrap_or_else(default_home_resolved_by),
         ),
     };
-    workshop_http::post_json(
-        &state,
-        &format!("/v1/turns/budget-requests/{encoded}/deny"),
-        &body,
-    )
-    .await
+    client(&state)
+        .budget()
+        .deny(request_id.trim(), &body)
+        .await
+        .map_err(sdk_error)
 }
 
 #[tauri::command]
@@ -75,10 +71,9 @@ pub async fn turn_budget_list(
     state: State<'_, DaemonState>,
     pending_only: Option<bool>,
 ) -> Result<TurnBudgetRequestListResponse, String> {
-    let path = if pending_only.unwrap_or(true) {
-        "/v1/turns/budget-requests?status=pending&limit=20".to_string()
-    } else {
-        "/v1/turns/budget-requests?limit=20".to_string()
-    };
-    workshop_http::get_json(&state, &path).await
+    client(&state)
+        .budget()
+        .list(pending_only.unwrap_or(true))
+        .await
+        .map_err(sdk_error)
 }

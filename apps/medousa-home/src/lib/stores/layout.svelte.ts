@@ -31,6 +31,7 @@ export class LayoutStore {
   navigationEpoch = $state(0);
   mobileTab = $state<MobileTab>(loadMobileTab());
   moreDestination = $state<MoreDestination>(loadMoreDestination());
+  mobileSurfaceOverride = $state<string | null>(null);
   libraryView = $state<LibraryView>(loadLibraryView());
   libraryListScrollTop = $state(0);
   activitySheetOpen = $state(false);
@@ -48,6 +49,9 @@ export class LayoutStore {
   viewportWidth = $state(
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
+  viewportHeight = $state(
+    typeof window !== "undefined" ? window.innerHeight : 800,
+  );
   /** True when the dedicated browser window is mounted (desktop). */
   browserWindowActive = $state(false);
 
@@ -59,6 +63,7 @@ export class LayoutStore {
     if (typeof window === "undefined") return () => {};
     const update = () => {
       this.viewportWidth = window.innerWidth;
+      this.viewportHeight = window.innerHeight;
     };
     update();
     window.addEventListener("resize", update);
@@ -147,7 +152,7 @@ export class LayoutStore {
     this.navigationEpoch += 1;
   }
 
-  navigateDesktop(surface: Surface, options?: { bump?: boolean }) {
+  navigateDesktop(surface: string, options?: { bump?: boolean }) {
     const next = surface === "home" ? "chat" : surface;
     if (next !== "chat") {
       this.setSessionDrawerOpen(false);
@@ -194,6 +199,19 @@ export class LayoutStore {
     }
     saveMoreDestination(destination);
     this.bumpNavigation();
+  }
+
+  openCustomSurface(surfaceId: string) {
+    this.mobileSurfaceOverride = surfaceId;
+    this.setMobileTab("home", { bump: true });
+  }
+
+  clearMobileSurfaceOverride() {
+    this.mobileSurfaceOverride = null;
+  }
+
+  effectiveMobileHomeSurface(defaultHome: string): string {
+    return this.mobileSurfaceOverride ?? defaultHome;
   }
 
   backToMoreHub() {
@@ -258,6 +276,7 @@ function loadMoreDestination(): MoreDestination {
     "workshop",
     "automations",
     "messaging",
+    "peers",
     "settings",
     "runtime",
   ];

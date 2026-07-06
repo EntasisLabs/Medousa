@@ -1,14 +1,16 @@
 flowchart TB
     subgraph App["medousa-home"]
         Svelte[Svelte frontend]
+        ReconnectTS[stream/reconnect.ts]
         TauriIPC[Tauri invoke]
         WorkshopHttp[workshop_http.rs]
+        SdkRs[daemon/sdk.rs]
     end
 
-    subgraph SDK["medousa-sdk"]
-        Client[MedousaClient]
-        Transport[Transport trait]
-        RuntimeApi[runtime artifact_*]
+    subgraph SDK["Client SDKs"]
+        Client[medousa-sdk MedousaClient]
+        IrohSdk[medousa-sdk-iroh WorkshopTransport]
+        HttpT[HttpTransport]
     end
 
     subgraph Network["Workshop routing"]
@@ -18,12 +20,15 @@ flowchart TB
 
     Daemon[medousa_daemon :7419]
 
+    Svelte --> ReconnectTS
     Svelte --> TauriIPC
     TauriIPC --> WorkshopHttp
+    TauriIPC --> SdkRs
     WorkshopHttp --> Client
-    Client --> Transport
-    Client --> RuntimeApi
-    Transport --> LAN
+    SdkRs --> IrohSdk
+    Client --> HttpT
+    IrohSdk --> LAN
+    HttpT --> Daemon
     LAN --> Iroh
     LAN --> Daemon
     Iroh --> Daemon

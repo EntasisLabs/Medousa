@@ -266,10 +266,25 @@ pub fn conversation_turn_from_parts(
     answer_state: Option<String>,
     parts: Vec<TurnPart>,
 ) -> ConversationTurn {
+    conversation_turn_from_parts_at(role, content, tool_names, answer_state, parts, Utc::now())
+}
+
+/// Same as [`conversation_turn_from_parts`] but with an explicit commit
+/// timestamp. The durable event-log spine fold uses this so a persisted body
+/// reconstructed from a journaled terminal event is byte-identical to the live
+/// `append_turn` body (which captured its timestamp at finalize time).
+pub fn conversation_turn_from_parts_at(
+    role: &str,
+    content: String,
+    tool_names: Vec<String>,
+    answer_state: Option<String>,
+    parts: Vec<TurnPart>,
+    timestamp: DateTime<Utc>,
+) -> ConversationTurn {
     ConversationTurn {
         role: role.to_string(),
         content,
-        timestamp: Utc::now(),
+        timestamp,
         tool_names,
         answer_state,
         parts: if parts.is_empty() {

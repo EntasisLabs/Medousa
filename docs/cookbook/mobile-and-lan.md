@@ -19,7 +19,7 @@ Connect the Medousa mobile app to a desktop engine over LAN (or Iroh when enable
 1. Desktop exposes `GET /qr` (and `/qr/image` for PNG).
 2. Mobile scans QR or enters pair code (`GET /pair/code`).
 3. `POST /pair/init` + `POST /pair/verify` exchange credentials.
-4. Mobile stores workshop URL + bearer token; uses `WorkshopTransport` / Tauri `workshop_transport`.
+4. Mobile stores workshop URL + bearer token; uses [`medousa-sdk-iroh`](../../crates/medousa-sdk-iroh/) `WorkshopTransport` via Tauri `daemon/sdk.rs`.
 
 Routes: [http-api.md](../engine/http-api.md#pairing-lan--phone)
 

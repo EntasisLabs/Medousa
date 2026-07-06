@@ -1,8 +1,9 @@
 #[cfg(feature = "blocking")]
 use medousa_types::{
     ActiveSessionTurnResponse, ArchiveAskJobRequest, ArchiveAskJobResponse,
-    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactFetchRequest, ArtifactFetchResponse,
-    ArtifactListUiRequest, ArtifactListUiResponse, AskJobCompleteActionsRequest,
+    ArtifactCommandRequest, ArtifactCommandResponse, ArtifactDeleteRequest, ArtifactDeleteResponse,
+    ArtifactFetchRequest, ArtifactFetchResponse, ArtifactListUiRequest, ArtifactListUiResponse,
+    ArtifactWriteRequest, ArtifactWriteResponse, AskJobCompleteActionsRequest,
     AskJobCompleteActionsResponse, CancelActiveSessionTurnResponse, CapabilityListResponse,
     CapabilityResolveResponse, DeleteRecurringResponse, EnqueueAskRequest, EnqueuePromptRequest,
     EnqueueReportRequest, EnqueueResponse, HealthResponse, IngestRequest, IngestResponse,
@@ -23,7 +24,14 @@ use medousa_types::{
     VaultSetActiveRootRequest, VaultTagsListResponse, VaultTagsQuery, VaultWriteRequest,
     VaultWriteResponse, WorkCardDetail, WorkspaceCardActionResponse, WorkspaceCardsQuery,
     WorkspaceCardsResponse, WorkspaceFeedQuery, WorkspaceFeedResponse, WorkspaceLinkVaultRequest,
-    WorkspaceSnapshot, WorkspaceSnapshotQuery,
+    WorkspaceSnapshot, WorkspaceSnapshotQuery, ComponentRuntimeEventsRequest,
+    ComponentRuntimeEventsResponse, ComponentRuntimeEventsTailResponse,
+    ComponentRuntimeProbeResult, ComponentStoreDeleteResponse, ComponentStoreGetResponse,
+    ComponentStoreListResponse, ComponentStoreSetRequest, ComponentStoreSetResponse,
+    EnvironmentPendingResponse, EnvironmentProposeResponse, EnvironmentSpecPutRequest,
+    EnvironmentSpecResponse, EnvironmentStatusResponse, EnvironmentValidateRequest,
+    EnvironmentValidateResponse, FeedListResponse, FeedReadRequest, FeedTailQuery,
+    FeedTailResponse,
 };
 
 #[cfg(feature = "blocking")]
@@ -159,6 +167,12 @@ blocking_api!(BlockingBudgetApi);
 #[cfg(feature = "blocking")]
 blocking_api!(BlockingVaultApi);
 #[cfg(feature = "blocking")]
+blocking_api!(BlockingEnvironmentApi);
+#[cfg(feature = "blocking")]
+blocking_api!(BlockingComponentsApi);
+#[cfg(feature = "blocking")]
+blocking_api!(BlockingFeedsApi);
+#[cfg(feature = "blocking")]
 blocking_api!(BlockingWorkspaceApi);
 
 #[cfg(feature = "blocking")]
@@ -224,6 +238,18 @@ impl BlockingMedousaClient {
 
     pub fn vault(&self) -> BlockingVaultApi<'_> {
         BlockingVaultApi { http: &self.http }
+    }
+
+    pub fn environment(&self) -> BlockingEnvironmentApi<'_> {
+        BlockingEnvironmentApi { http: &self.http }
+    }
+
+    pub fn components(&self) -> BlockingComponentsApi<'_> {
+        BlockingComponentsApi { http: &self.http }
+    }
+
+    pub fn feeds(&self) -> BlockingFeedsApi<'_> {
+        BlockingFeedsApi { http: &self.http }
     }
 
     pub fn workspace(&self) -> BlockingWorkspaceApi<'_> {
@@ -491,6 +517,20 @@ impl BlockingRuntimeApi<'_> {
         self.http.post("/v1/runtime/artifact/list-ui", request)
     }
 
+    pub fn artifact_write(
+        &self,
+        request: &ArtifactWriteRequest,
+    ) -> Result<ArtifactWriteResponse, SdkError> {
+        self.http.post("/v1/runtime/artifact/write", request)
+    }
+
+    pub fn artifact_delete(
+        &self,
+        request: &ArtifactDeleteRequest,
+    ) -> Result<ArtifactDeleteResponse, SdkError> {
+        self.http.post("/v1/runtime/artifact/delete", request)
+    }
+
     pub fn config_command(
         &self,
         request: &RuntimeConfigCommandRequest,
@@ -745,5 +785,277 @@ impl BlockingWorkspaceApi<'_> {
         }
         self.http
             .get(&path_with_query("/v1/workspace/snapshot", &params))
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl BlockingEnvironmentApi<'_> {
+    fn profile_query(profile_id: Option<&str>) -> Vec<(&'static str, String)> {
+        profile_id
+            .map(|value| vec![("profile_id", value.to_string())])
+            .unwrap_or_default()
+    }
+
+    pub fn get_spec(&self, profile_id: Option<&str>) -> Result<EnvironmentSpecResponse, SdkError> {
+        self.http
+            .get(&path_with_query("/v1/environment/spec", &Self::profile_query(profile_id)))
+    }
+
+    pub fn put_spec(
+        &self,
+        request: &EnvironmentSpecPutRequest,
+    ) -> Result<EnvironmentSpecResponse, SdkError> {
+        self.http.put("/v1/environment/spec", request)
+    }
+
+    pub fn get_status(
+        &self,
+        profile_id: Option<&str>,
+        surface_id: Option<&str>,
+        include_runtime: Option<bool>,
+    ) -> Result<EnvironmentStatusResponse, SdkError> {
+        let mut params = Self::profile_query(profile_id);
+        if let Some(surface) = surface_id {
+            params.push(("surface_id", surface.to_string()));
+        }
+        if let Some(include) = include_runtime {
+            params.push(("include_runtime", include.to_string()));
+        }
+        self.http
+            .get(&path_with_query("/v1/environment/status", &params))
+    }
+
+    pub fn validate_spec(
+        &self,
+        request: &EnvironmentValidateRequest,
+    ) -> Result<EnvironmentValidateResponse, SdkError> {
+        self.http.post("/v1/environment/spec/validate", request)
+    }
+
+    pub fn propose_spec(
+        &self,
+        request: &EnvironmentSpecPutRequest,
+    ) -> Result<EnvironmentProposeResponse, SdkError> {
+        self.http.post("/v1/environment/spec/propose", request)
+    }
+
+    pub fn get_pending(
+        &self,
+        profile_id: Option<&str>,
+    ) -> Result<EnvironmentPendingResponse, SdkError> {
+        self.http.get(&path_with_query(
+            "/v1/environment/spec/pending",
+            &Self::profile_query(profile_id),
+        ))
+    }
+
+    pub fn dismiss_pending(&self, profile_id: Option<&str>) -> Result<(), SdkError> {
+        self.http.delete::<serde_json::Value>(&path_with_query(
+            "/v1/environment/spec/pending",
+            &Self::profile_query(profile_id),
+        ))?;
+        Ok(())
+    }
+
+    pub fn apply_pending(
+        &self,
+        profile_id: Option<&str>,
+    ) -> Result<EnvironmentSpecResponse, SdkError> {
+        self.http.post_empty(&path_with_query(
+            "/v1/environment/spec/pending/apply",
+            &Self::profile_query(profile_id),
+        ))
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl BlockingComponentsApi<'_> {
+    fn component_store_query(
+        profile_id: Option<&str>,
+        key: Option<&str>,
+    ) -> Vec<(&'static str, String)> {
+        let mut params = Vec::new();
+        if let Some(profile) = profile_id {
+            params.push(("profile_id", profile.to_string()));
+        }
+        if let Some(key) = key {
+            params.push(("key", key.to_string()));
+        }
+        params
+    }
+
+    fn component_profile_query(profile_id: Option<&str>) -> Vec<(&'static str, String)> {
+        profile_id
+            .map(|value| vec![("profile_id", value.to_string())])
+            .unwrap_or_default()
+    }
+
+    pub fn store_get(
+        &self,
+        component_id: &str,
+        profile_id: Option<&str>,
+        key: Option<&str>,
+    ) -> Result<ComponentStoreGetResponse, SdkError> {
+        self.http.get(&path_with_query(
+            &format!("/v1/components/{}/store", component_id.trim()),
+            &Self::component_store_query(profile_id, key),
+        ))
+    }
+
+    pub fn store_set(
+        &self,
+        component_id: &str,
+        key: &str,
+        request: &ComponentStoreSetRequest,
+    ) -> Result<ComponentStoreSetResponse, SdkError> {
+        self.http.put(
+            &path_with_query(
+                &format!("/v1/components/{}/store", component_id.trim()),
+                &Self::component_store_query(None, Some(key)),
+            ),
+            request,
+        )
+    }
+
+    pub fn store_list_keys(
+        &self,
+        component_id: &str,
+        profile_id: Option<&str>,
+    ) -> Result<ComponentStoreListResponse, SdkError> {
+        self.http.get(&path_with_query(
+            &format!("/v1/components/{}/store/keys", component_id.trim()),
+            &Self::component_profile_query(profile_id),
+        ))
+    }
+
+    pub fn store_get_key(
+        &self,
+        component_id: &str,
+        key: &str,
+        profile_id: Option<&str>,
+    ) -> Result<ComponentStoreGetResponse, SdkError> {
+        self.http.get(&path_with_query(
+            &format!(
+                "/v1/components/{}/store/{}",
+                component_id.trim(),
+                urlencoding::encode(key.trim())
+            ),
+            &Self::component_profile_query(profile_id),
+        ))
+    }
+
+    pub fn store_put_key(
+        &self,
+        component_id: &str,
+        key: &str,
+        request: &ComponentStoreSetRequest,
+    ) -> Result<ComponentStoreSetResponse, SdkError> {
+        self.http.put(
+            &format!(
+                "/v1/components/{}/store/{}",
+                component_id.trim(),
+                urlencoding::encode(key.trim())
+            ),
+            request,
+        )
+    }
+
+    pub fn store_delete_key(
+        &self,
+        component_id: &str,
+        key: &str,
+        profile_id: Option<&str>,
+    ) -> Result<ComponentStoreDeleteResponse, SdkError> {
+        self.http.delete(&path_with_query(
+            &format!(
+                "/v1/components/{}/store/{}",
+                component_id.trim(),
+                urlencoding::encode(key.trim())
+            ),
+            &Self::component_profile_query(profile_id),
+        ))
+    }
+
+    pub fn runtime_tail_events(
+        &self,
+        component_id: &str,
+        profile_id: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<ComponentRuntimeEventsTailResponse, SdkError> {
+        let mut params = Self::component_profile_query(profile_id);
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        self.http.get(&path_with_query(
+            &format!("/v1/components/{}/runtime/events", component_id.trim()),
+            &params,
+        ))
+    }
+
+    pub fn runtime_append_events(
+        &self,
+        component_id: &str,
+        request: &ComponentRuntimeEventsRequest,
+    ) -> Result<ComponentRuntimeEventsResponse, SdkError> {
+        self.http.post(
+            &format!("/v1/components/{}/runtime/events", component_id.trim()),
+            request,
+        )
+    }
+
+    pub fn runtime_complete_probe(
+        &self,
+        component_id: &str,
+        probe_id: &str,
+        request: &ComponentRuntimeProbeResult,
+    ) -> Result<serde_json::Value, SdkError> {
+        self.http.post(
+            &format!(
+                "/v1/components/{}/runtime/probe/{}/result",
+                component_id.trim(),
+                urlencoding::encode(probe_id.trim())
+            ),
+            request,
+        )
+    }
+}
+
+#[cfg(feature = "blocking")]
+impl BlockingFeedsApi<'_> {
+    fn feed_tail_query_params(query: &FeedTailQuery) -> Vec<(&'static str, String)> {
+        let mut params = Vec::new();
+        if let Some(profile_id) = &query.profile_id {
+            params.push(("profile_id", profile_id.clone()));
+        }
+        if let Some(limit) = query.limit {
+            params.push(("limit", limit.to_string()));
+        }
+        params
+    }
+
+    fn feed_profile_query(profile_id: Option<&str>) -> Vec<(&'static str, String)> {
+        profile_id
+            .map(|value| vec![("profile_id", value.to_string())])
+            .unwrap_or_default()
+    }
+
+    pub fn list(&self, profile_id: Option<&str>) -> Result<FeedListResponse, SdkError> {
+        self.http
+            .get(&path_with_query("/v1/feeds", &Self::feed_profile_query(profile_id)))
+    }
+
+    pub fn tail(&self, feed_id: &str, query: &FeedTailQuery) -> Result<FeedTailResponse, SdkError> {
+        self.http.get(&path_with_query(
+            &format!("/v1/feeds/{}/tail", feed_id.trim()),
+            &Self::feed_tail_query_params(query),
+        ))
+    }
+
+    pub fn mark_read(&self, feed_id: &str, request: &FeedReadRequest) -> Result<(), SdkError> {
+        self.http.post::<serde_json::Value, _>(
+            &format!("/v1/feeds/{}/read", feed_id.trim()),
+            request,
+        )?;
+        Ok(())
     }
 }

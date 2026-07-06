@@ -40,9 +40,15 @@ fn apply_ios_badge_count(count: i32) {
 
     // Same UIKit path Tauri/wry uses internally; WebviewWindow::set_badge_count is desktop-only.
     unsafe {
-        let ui_application = AnyClass::get(CStr::from_bytes_with_nul(b"UIApplication\0").unwrap())
-            .expect("Failed to get UIApplication class");
+        let Some(ui_application) =
+            AnyClass::get(CStr::from_bytes_with_nul(b"UIApplication\0").unwrap())
+        else {
+            return;
+        };
         let application: *mut AnyObject = msg_send![ui_application, sharedApplication];
+        if application.is_null() {
+            return;
+        }
         let _: () = msg_send![application, setApplicationIconBadgeNumber: count];
     }
 }

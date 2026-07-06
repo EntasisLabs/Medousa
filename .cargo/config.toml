@@ -1,0 +1,4 @@
+# Keep Rust build artifacts out of the git tree (saves tens of GB across workspace + Tauri apps).
+# Override: CARGO_TARGET_DIR or MEDOUSA_CARGO_TARGET_DIR
+[build]
+target-dir = "../.cache/cargo-target"
