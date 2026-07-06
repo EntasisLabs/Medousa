@@ -148,6 +148,8 @@ Same pipeline runs automatically.
 3. **build-installer** — writes `installer-config.json` with CDN URL, builds installer
 4. **release** — merge artifacts → manifests → **upload R2** → **GitHub Release**
 
+All matrix jobs set **`shell: bash`** at the job level. Windows runners default to PowerShell; release scripts (`.sh`, `find`, `[[ ]]`) require bash (Git Bash on `windows-latest`).
+
 Installers baked in step 3 fetch packages from `https://releases.entasislabs.com/medousa/stable/release-manifest.json`.
 
 ---
@@ -156,6 +158,7 @@ Installers baked in step 3 fetch packages from `https://releases.entasislabs.com
 
 | Symptom | Fix |
 |---------|-----|
+| Windows `ParserError` / `Missing '(' after 'if'` | Job must use `shell: bash` — merge latest `release.yml` |
 | R2 upload fails “secrets missing” | Add `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` |
 | Mac desktop build fails on secrets | Check **Environment** `MEDOUSA`, not just repo secrets |
 | `curl` 404 on manifest | Custom domain not wired, or prefix mismatch — check `MEDOUSA_R2_PREFIX` |
