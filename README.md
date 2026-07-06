@@ -47,8 +47,12 @@ Talk from the app, Discord, Telegram, Slack, or WhatsApp. Send the big job to th
 
 Screenshots in [`assets/screenshots/`](assets/screenshots/). Recapture with `npm run assets:capture` in **medousa-landing** when UI changes.
 
-### Chat — memory and thinking trace
-<img width="1440" height="900" alt="Chat with thinking trace and identity memory" src="assets/screenshots/chat.png" />
+### Chat — thinking trace, memory, identity
+<img width="1440" height="900" alt="Chat with thinking trace expanded" src="assets/screenshots/chat-thinking.png" />
+
+<img width="1440" height="900" alt="Chat pulling identity memory — who you are" src="assets/screenshots/chat-identity.png" />
+
+<img width="1440" height="900" alt="Chat with deep memory recall across projects" src="assets/screenshots/chat-memory.png" />
 
 ### Vault — notes you keep
 <img width="1440" height="900" alt="Vault note editor with split preview" src="assets/screenshots/vault.png" />
@@ -62,11 +66,15 @@ Screenshots in [`assets/screenshots/`](assets/screenshots/). Recapture with `npm
 ### Automations — flows and schedules
 <img width="1440" height="900" alt="Automation flows with AI planning" src="assets/screenshots/automations.png" />
 
-### Peers — inbox between your machines
-<img width="1440" height="900" alt="Peers inbox and workshop messaging" src="assets/screenshots/peers.png" />
+### Peers — workshop LAN invite
+Discover trusted engines on your LAN — tap **+** in Peers for a same-Wi-Fi QR (or paste a link off-LAN).
 
-### LAN pairing — QR invite
-<img width="1440" height="900" alt="Add peer QR code and LAN pairing" src="assets/screenshots/pairing.png" />
+<img width="1440" height="900" alt="Peers Add peer QR for workshop LAN pairing" src="assets/screenshots/pairing.png" />
+
+### Phone — pair your pocket portal
+**Settings → Phone** — scan from iOS or Android on the same Wi-Fi. Your phone is the window, not a second brain host.
+
+<img width="1440" height="900" alt="Settings Phone QR pairing for iOS and Android" src="assets/screenshots/phone-pairing.png" />
 
 ### Messaging — Telegram, Discord, Slack, WhatsApp
 <img width="1440" height="900" alt="Messaging channel setup" src="assets/screenshots/channels.png" />
