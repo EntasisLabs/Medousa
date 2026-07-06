@@ -26,6 +26,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Keep target dir inside the workspace so Swatinem/rust-cache can restore it.
+  # (.cargo/config.toml points at ../.cache/cargo-target which is outside GITHUB_WORKSPACE.)
+  CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/cargo-target
   # Non-secret defaults — override in repo Variables if needed.
   MEDOUSA_RELEASE_BASE_URL: ${{ vars.MEDOUSA_RELEASE_BASE_URL || 'https://releases.entasislabs.com/medousa' }}
   MEDOUSA_RELEASE_CHANNEL: ${{ vars.MEDOUSA_RELEASE_CHANNEL || 'stable' }}
@@ -67,8 +70,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            .
-            adapters/medousa-whatsapp
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-${{ matrix.os }}
 
       - name: Build release binaries
         run: |
@@ -157,8 +162,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            .
-            apps/medousa-home/src-tauri
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-${{ matrix.os }}
 
       - name: Validate Apple signing secrets
         if: matrix.os == 'macos-14'
@@ -339,7 +346,11 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/medousa-installer/src-tauri
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-${{ matrix.os }}
 
       - name: Validate Apple signing secrets
         if: matrix.os == 'macos-14'
