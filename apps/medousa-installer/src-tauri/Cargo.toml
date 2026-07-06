@@ -16,7 +16,7 @@ serde_json = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-medousa = { path = "../../../", default-features = false }
+medousa-install-support = { path = "../../../crates/medousa-install-support" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -32,7 +32,3 @@ tar = "0.4"
 flate2 = "1"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
-
-[patch.crates-io]
-grapheme-runtime = { path = "../../../vendor/grapheme-runtime" }
-grapheme-sdk = { path = "../../../vendor/grapheme-sdk" }

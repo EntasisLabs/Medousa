@@ -4,15 +4,15 @@ mod install;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use medousa::install::manifest::{
+use medousa_install_support::manifest::{
     package_installed, read_install_manifest, write_install_manifest, InstallManifest,
     PackageInstallRecord, ReleaseManifest,
 };
-use medousa::install::packages::{
+use medousa_install_support::packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, package_catalog,
     phase_label, sort_for_install, visible_catalog, PackageCategory,
 };
-use medousa::install::release_config::{host_target, release_base_url, release_channel};
+use medousa_install_support::release_config::{host_target, release_base_url, release_channel};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
@@ -668,7 +668,7 @@ fn installer_launch_medousa(app: AppHandle) -> Result<(), String> {
 
 fn register_embedded_release_defaults() {
     if let Some(base) = embedded_release::RELEASE_BASE_URL {
-        medousa::install::release_config::set_embedded_release_defaults(
+        medousa_install_support::set_embedded_release_defaults(
             base.to_string(),
             embedded_release::RELEASE_CHANNEL.to_string(),
         );

@@ -150,7 +150,7 @@ fi
 echo "prepare-engine-sidecar: building slim medousa_daemon for ${TARGET}…"
 (
   cd "${MEDOUSA_ROOT}"
-  cargo build --release -p medousa --bin medousa_daemon "${DAEMON_FEATURE_ARGS[@]}"
+  cargo build --release -p medousa --bin medousa_daemon --target "${TARGET}" "${DAEMON_FEATURE_ARGS[@]}"
 )
 
 DAEMON_SRC="$(find_release_binary medousa_daemon)"
@@ -163,7 +163,7 @@ if [[ "${WITH_LOCAL_BRAIN}" -eq 1 ]]; then
   echo "prepare-engine-sidecar: building medousa_local (${INFERENCE_FEATURE})…"
   (
     cd "${MEDOUSA_ROOT}"
-    cargo build --release -p medousa --bin medousa_local --features "${INFERENCE_FEATURE}"
+    cargo build --release -p medousa --bin medousa_local --target "${TARGET}" --features "${INFERENCE_FEATURE}"
   )
   LOCAL_SRC="$(find_release_binary medousa_local)"
   cp -f "${LOCAL_SRC}" "${BINARIES_DIR}/${LOCAL_SIDECAR_NAME}"

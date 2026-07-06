@@ -1,13 +1,21 @@
-//! Install and release package manifest types shared by CLI, installer, and Home.
+//! Slim install/bootstrap support for Medousa Installer — no engine, DB, or channel deps.
 
-pub use medousa_install_support::manifest;
-pub use medousa_install_support::packages;
-pub use medousa_install_support::release_config;
+pub mod manifest;
+pub mod model_catalog;
+pub mod model_download;
+pub mod packages;
+pub mod paths;
+pub mod release_config;
 
 pub use manifest::{
     mark_package_installed, package_installed, read_install_manifest, read_release_manifest,
     shared_bin_dir, unmark_package_installed, user_packages_dir, write_install_manifest,
     InstallManifest, PackageInstallRecord, ReleaseManifest, ReleasePackage,
+};
+pub use model_catalog::{builtin_catalog, CatalogFile, CatalogModelEntry};
+pub use model_download::{
+    include_hf_file, local_repo_if_installed, DownloadPhase, InstalledModelRecord,
+    ModelDownloadProgress, ModelStore, MODEL_STORE,
 };
 pub use packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, is_desktop_package,
