@@ -245,27 +245,27 @@ jobs:
           fi
 
       - name: Azure login (Windows signing)
-        if: matrix.name == 'windows-x64' && (vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT != '' || vars.AZURE_CODESIGNING_ACCOUNT != '')
+        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.MEDOUSA_AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.MEDOUSA_AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.MEDOUSA_AZURE_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Windows bundle dir
-        if: matrix.name == 'windows-x64' && (vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT != '' || vars.AZURE_CODESIGNING_ACCOUNT != '')
+        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-home/src-tauri)"
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows desktop bundles
-        if: matrix.name == 'windows-x64' && (vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT != '' || vars.AZURE_CODESIGNING_ACCOUNT != '')
+        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/artifact-signing-action@v2
         with:
-          endpoint: ${{ vars.MEDOUSA_AZURE_CODESIGNING_ENDPOINT || vars.AZURE_CODESIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT || vars.AZURE_CODESIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.MEDOUSA_AZURE_CODESIGNING_PROFILE || vars.AZURE_CODESIGNING_PROFILE }}
+          endpoint: ${{ secrets.AZURE_CODESIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_CODESIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CODESIGNING_PROFILE }}
           files-folder: ${{ env.BUNDLE_DIR }}
           files-folder-filter: exe,msi,dll
           files-folder-recurse: true
@@ -438,27 +438,27 @@ jobs:
           fi
 
       - name: Azure login (Windows signing)
-        if: matrix.name == 'windows-x64' && (vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT != '' || vars.AZURE_CODESIGNING_ACCOUNT != '')
+        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.MEDOUSA_AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.MEDOUSA_AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.MEDOUSA_AZURE_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Windows bundle dir
-        if: matrix.name == 'windows-x64' && (vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT != '' || vars.AZURE_CODESIGNING_ACCOUNT != '')
+        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-installer/src-tauri)"
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows installer bundles
-        if: matrix.name == 'windows-x64' && (vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT != '' || vars.AZURE_CODESIGNING_ACCOUNT != '')
+        if: matrix.name == 'windows-x64' && secrets.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/artifact-signing-action@v2
         with:
-          endpoint: ${{ vars.MEDOUSA_AZURE_CODESIGNING_ENDPOINT || vars.AZURE_CODESIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.MEDOUSA_AZURE_CODESIGNING_ACCOUNT || vars.AZURE_CODESIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.MEDOUSA_AZURE_CODESIGNING_PROFILE || vars.AZURE_CODESIGNING_PROFILE }}
+          endpoint: ${{ secrets.AZURE_CODESIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_CODESIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CODESIGNING_PROFILE }}
           files-folder: ${{ env.BUNDLE_DIR }}
           files-folder-filter: exe,msi,dll
           files-folder-recurse: true
@@ -492,7 +492,6 @@ jobs:
       github.event_name == 'workflow_dispatch'
     needs: [build-cli, build-desktop, build-installer]
     runs-on: ubuntu-latest
-    environment: MEDOUSA
     defaults:
       run:
         shell: bash
@@ -567,11 +566,11 @@ jobs:
           MEDOUSA_R2_BUCKET: ${{ env.MEDOUSA_R2_BUCKET }}
           MEDOUSA_R2_ENDPOINT: ${{ env.MEDOUSA_R2_ENDPOINT }}
           MEDOUSA_R2_PREFIX: ${{ env.MEDOUSA_R2_PREFIX }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.MEDOUSA_R2_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.MEDOUSA_R2_SECRET_ACCESS_KEY || secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-            echo "::error::R2 secrets missing — add MEDOUSA_R2_ACCESS_KEY_ID and MEDOUSA_R2_SECRET_ACCESS_KEY (or R2_*) to the MEDOUSA environment"
+            echo "::error::R2 secrets missing — add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY under Settings → Secrets and variables → Actions → Repository secrets"
             exit 1
           fi
           ./scripts/release/upload-r2.sh dist/final
