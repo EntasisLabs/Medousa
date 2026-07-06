@@ -232,12 +232,16 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
+        working-directory: .
         run: |
+          EXTRA=()
+          [[ "${{ matrix.os }}" == "ubuntu-22.04" ]] && EXTRA=(--bundles deb)
+          cd apps/medousa-home
           if [[ "${{ matrix.native_build }}" == "true" ]]; then
-            npm run tauri:build
+            npm run tauri:build -- "${EXTRA[@]}"
           else
             export CARGO_BUILD_TARGET="${{ matrix.target }}"
-            npm run tauri:build -- --target "${{ matrix.target }}"
+            npm run tauri:build -- "${EXTRA[@]}" --target "${{ matrix.target }}"
           fi
 
       - name: Azure login (Windows signing)
@@ -422,11 +426,15 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID != '' && secrets.APPLE_ID || vars.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_TEAM_ID || vars.APPLE_TEAM_ID }}
+        working-directory: .
         run: |
+          EXTRA=()
+          [[ "${{ matrix.os }}" == "ubuntu-22.04" ]] && EXTRA=(--bundles deb)
+          cd apps/medousa-installer
           if [[ "${{ matrix.native_build }}" == "true" ]]; then
-            npm run tauri build
+            npm run tauri build -- "${EXTRA[@]}"
           else
-            npm run tauri build -- --target "${{ matrix.target }}"
+            npm run tauri build -- "${EXTRA[@]}" --target "${{ matrix.target }}"
           fi
 
       - name: Azure login (Windows signing)
