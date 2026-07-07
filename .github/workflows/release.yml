@@ -73,7 +73,7 @@ jobs:
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-          shared-key: release-${{ matrix.os }}
+          shared-key: release-cli-${{ matrix.target }}
 
       - name: Build release binaries
         run: |
@@ -104,7 +104,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ matrix.os == 'macos-14' && 'MEDOUSA' || '' }}
+    environment: ${{ (matrix.os == 'macos-14' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -163,9 +163,10 @@ jobs:
         with:
           workspaces: |
             . -> .cache/cargo-target
+            apps/medousa-home/src-tauri -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-          shared-key: release-${{ matrix.os }}
+          shared-key: release-desktop-${{ matrix.name }}
 
       - name: Validate Apple signing secrets
         if: matrix.os == 'macos-14'
@@ -244,7 +245,7 @@ jobs:
           fi
 
       - name: Azure login (Windows signing)
-        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -252,19 +253,19 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Windows bundle dir
-        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-home/src-tauri)"
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows desktop bundles
-        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/artifact-signing-action@v2
         with:
-          endpoint: ${{ secrets.AZURE_CODESIGNING_ENDPOINT }}
-          signing-account-name: ${{ secrets.AZURE_CODESIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_CODESIGNING_PROFILE }}
+          endpoint: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODESIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CODESIGNING_PROFILE }}
           files-folder: ${{ env.BUNDLE_DIR }}
           files-folder-filter: exe,msi,dll
           files-folder-recurse: true
@@ -297,7 +298,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: ${{ matrix.os == 'macos-14' && 'MEDOUSA' || '' }}
+    environment: ${{ (matrix.os == 'macos-14' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -351,9 +352,10 @@ jobs:
         with:
           workspaces: |
             . -> .cache/cargo-target
+            apps/medousa-installer/src-tauri -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-          shared-key: release-${{ matrix.os }}
+          shared-key: release-installer-${{ matrix.name }}
 
       - name: Validate Apple signing secrets
         if: matrix.os == 'macos-14'
@@ -437,7 +439,7 @@ jobs:
           fi
 
       - name: Azure login (Windows signing)
-        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -445,19 +447,19 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Windows bundle dir
-        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-installer/src-tauri)"
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows installer bundles
-        if: matrix.name == 'windows-x64' && vars.ENABLE_AZURE_WINDOWS_SIGNING == 'true'
+        if: matrix.name == 'windows-x64' && vars.AZURE_CODESIGNING_ACCOUNT != ''
         uses: azure/artifact-signing-action@v2
         with:
-          endpoint: ${{ secrets.AZURE_CODESIGNING_ENDPOINT }}
-          signing-account-name: ${{ secrets.AZURE_CODESIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_CODESIGNING_PROFILE }}
+          endpoint: ${{ vars.AZURE_CODESIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_CODESIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CODESIGNING_PROFILE }}
           files-folder: ${{ env.BUNDLE_DIR }}
           files-folder-filter: exe,msi,dll
           files-folder-recurse: true
@@ -491,6 +493,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
     needs: [build-cli, build-desktop, build-installer]
     runs-on: ubuntu-latest
+    environment: MEDOUSA
     defaults:
       run:
         shell: bash
@@ -558,7 +561,7 @@ jobs:
             --base-url "${MEDOUSA_RELEASE_BASE_URL}"
 
       - name: Upload to Cloudflare R2
-        if: github.event_name == 'push' || github.event.inputs.upload_r2 == true
+        if: github.event_name == 'push' || github.event.inputs.upload_r2 == 'true'
         env:
           MEDOUSA_RELEASE_BASE_URL: ${{ env.MEDOUSA_RELEASE_BASE_URL }}
           MEDOUSA_RELEASE_CHANNEL: ${{ env.MEDOUSA_RELEASE_CHANNEL }}
@@ -569,13 +572,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-            echo "::error::R2 secrets missing — add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY under Settings → Secrets and variables → Actions → Repository secrets"
+            echo "::error::R2 secrets missing — add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to the MEDOUSA environment (Settings → Environments → MEDOUSA → Secrets)"
             exit 1
           fi
           ./scripts/release/upload-r2.sh dist/final
 
       - name: Create GitHub Release
-        if: github.event_name == 'push' || github.event.inputs.publish_github == true
+        if: github.event_name == 'push' || github.event.inputs.publish_github == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}

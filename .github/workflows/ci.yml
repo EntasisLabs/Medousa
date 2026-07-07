@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/cargo-target
 
@@ -19,6 +26,7 @@ jobs:
           workspaces: |
             . -> .cache/cargo-target
           cache-workspace-crates: true
+          cache-on-failure: true
       - name: cargo check
         run: cargo check -p medousa --all-targets
       - name: cargo test (lib)
@@ -69,6 +77,7 @@ jobs:
           workspaces: |
             . -> .cache/cargo-target
           cache-workspace-crates: true
+          cache-on-failure: true
       - name: cargo test medousa-sdk
         run: cargo test -p medousa-sdk --features async,sse,blocking
 
@@ -85,6 +94,7 @@ jobs:
           workspaces: |
             . -> .cache/cargo-target
           cache-workspace-crates: true
+          cache-on-failure: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
