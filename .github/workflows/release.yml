@@ -387,6 +387,12 @@ jobs:
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-home/src-tauri)"
+          # The Azure signing action is a Windows/PowerShell tool; hand it a native
+          # path (D:/a/...), not the MSYS path (/d/a/...) which PowerShell mangles
+          # into D:\d\a\... against the current drive root.
+          if command -v cygpath >/dev/null 2>&1; then
+            BUNDLE="$(cygpath -m "${BUNDLE}")"
+          fi
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows desktop bundles
@@ -585,6 +591,12 @@ jobs:
         working-directory: .
         run: |
           BUNDLE="$(./scripts/ci/resolve-tauri-bundle-dir.sh apps/medousa-installer/src-tauri)"
+          # The Azure signing action is a Windows/PowerShell tool; hand it a native
+          # path (D:/a/...), not the MSYS path (/d/a/...) which PowerShell mangles
+          # into D:\d\a\... against the current drive root.
+          if command -v cygpath >/dev/null 2>&1; then
+            BUNDLE="$(cygpath -m "${BUNDLE}")"
+          fi
           echo "BUNDLE_DIR=${BUNDLE}" >> "${GITHUB_ENV}"
 
       - name: Sign Windows installer bundles

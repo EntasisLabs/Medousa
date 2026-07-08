@@ -32,3 +32,12 @@ tar = "0.4"
 flate2 = "1"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
+
+# Faster `tauri dev` iteration: keep backtraces, drop heavy debug info + dsymutil.
+# Only affects dev/test — release bundles are untouched.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = false

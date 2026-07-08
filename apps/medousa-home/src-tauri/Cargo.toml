@@ -81,6 +81,15 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSObjCRuntime"] }
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSGraphics", "NSScrollView", "NSClipView"] }
 
+# Faster `tauri dev` iteration: keep backtraces, drop heavy debug info + dsymutil.
+# Only affects dev/test — release bundles are untouched.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = false
+
 [patch.crates-io]
 grapheme-runtime = { path = "../../../vendor/grapheme-runtime" }
 grapheme-sdk = { path = "../../../vendor/grapheme-sdk" }
