@@ -46,6 +46,15 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # HOSTED vs SELF-HOSTED toggle
+  # Set the repo variable MEDOUSA_SELF_HOSTED to switch where release builds run:
+  #   'true'          -> self-hosted fleet (uses matrix.runner labels)
+  #   unset / anything else -> GitHub-hosted runners (uses matrix.os) + Swatinem cache
+  # GitHub-hosted is the SAFE DEFAULT: if the variable is missing, releases still
+  # build on hosted runners instead of hanging waiting for self-hosted runners.
+  # Each build job carries BOTH a `runner` (self-hosted labels) and an `os`
+  # (GitHub-hosted label); runs-on picks between them from the variable.
+  #
   # Self-hosted runner labels (assign when registering runners on your fleet):
   #   Apple Silicon Mac : [self-hosted, macOS, ARM64]
   #   Intel Mac         : [self-hosted, macOS, X64]
@@ -53,18 +62,17 @@ jobs:
   #   Linux / mini-PCs  : [self-hosted, Linux, X64]
   #   Home server       : [self-hosted, Linux, X64, medousa-publish]  (publish job)
   #
-  # Release builds run on the self-hosted fleet with a persistent CARGO_TARGET_DIR
-  # (github.workspace persists across runs on a self-hosted runner), so no GitHub
-  # Actions cache action is used here. On a given machine build-daemon/build-cli/
-  # build-desktop share that warm target dir. CI (ci.yml) stays on GitHub-hosted
-  # runners and keeps Swatinem/rust-cache.
+  # On self-hosted, github.workspace persists across runs so CARGO_TARGET_DIR acts
+  # as a warm incremental cache and the Swatinem cache step is skipped. On hosted,
+  # the Swatinem cache step runs (guarded by MEDOUSA_SELF_HOSTED == 'false').
+  # CI (ci.yml) always stays on GitHub-hosted runners.
   # ---------------------------------------------------------------------------
 
   # Fast, daemon-only build. Feeds the desktop sidecar so build-desktop does not
   # recompile medousa_daemon (prepare-engine-sidecar.sh honors MEDOUSA_SIDECAR_DAEMON).
   build-daemon:
     name: daemon (${{ matrix.name }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
         shell: bash
@@ -74,12 +82,15 @@ jobs:
         include:
           - name: macos-aarch64
             target: aarch64-apple-darwin
+            os: macos-14
             runner: [self-hosted, macOS, ARM64]
           - name: windows-x64
             target: x86_64-pc-windows-msvc
+            os: windows-latest
             runner: [self-hosted, Windows, X64]
           - name: linux-x64
             target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
             runner: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +99,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-daemon-${{ matrix.name }}
 
       - name: Build medousa_daemon
         run: |
@@ -111,7 +132,7 @@ jobs:
 
   build-cli:
     name: cli (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
         shell: bash
@@ -120,19 +141,25 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
             runner: [self-hosted, Linux, X64]
-          # No native ARM64 Linux host in the fleet: cross-compiled on the x64
-          # Linux runner (needs an aarch64 linker, e.g. gcc-aarch64-linux-gnu).
+          # No native ARM64 Linux host in the fleet: on self-hosted this is
+          # cross-compiled on the x64 Linux runner (needs an aarch64 linker,
+          # e.g. gcc-aarch64-linux-gnu). On hosted it uses ubuntu-24.04-arm.
           # Drop this entry if you do not ship ARM64 Linux.
           - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
             runner: [self-hosted, Linux, X64]
           - target: aarch64-apple-darwin
+            os: macos-14
             runner: [self-hosted, macOS, ARM64]
           # Intel Mac. If you only have an Apple Silicon Mac, point this at
           # [self-hosted, macOS, ARM64] and let cargo cross-compile x86_64.
           - target: x86_64-apple-darwin
+            os: macos-15-intel
             runner: [self-hosted, macOS, X64]
           - target: x86_64-pc-windows-msvc
+            os: windows-latest
             runner: [self-hosted, Windows, X64]
 
     steps:
@@ -142,6 +169,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-cli-${{ matrix.target }}
 
       - name: Build release binaries
         run: |
@@ -167,7 +204,7 @@ jobs:
   build-desktop:
     name: app (${{ matrix.name }})
     needs: build-daemon
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     permissions:
       contents: read
       id-token: write
@@ -179,14 +216,17 @@ jobs:
           - target: aarch64-apple-darwin
             name: macos-aarch64
             native_build: true
+            os: macos-14
             runner: [self-hosted, macOS, ARM64]
           - target: x86_64-pc-windows-msvc
             name: windows-x64
             native_build: true
+            os: windows-latest
             runner: [self-hosted, Windows, X64]
           - target: x86_64-unknown-linux-gnu
             name: linux-x64
             native_build: true
+            os: ubuntu-22.04
             runner: [self-hosted, Linux, X64]
 
     defaults:
@@ -224,6 +264,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+            apps/medousa-home/src-tauri -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-desktop-${{ matrix.name }}
 
       - name: Download prebuilt daemon
         uses: actions/download-artifact@v4
@@ -373,7 +424,7 @@ jobs:
 
   build-installer:
     name: installer (${{ matrix.name }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     permissions:
       contents: read
       id-token: write
@@ -385,14 +436,17 @@ jobs:
           - target: aarch64-apple-darwin
             name: macos-aarch64
             native_build: true
+            os: macos-14
             runner: [self-hosted, macOS, ARM64]
           - target: x86_64-pc-windows-msvc
             name: windows-x64
             native_build: true
+            os: windows-latest
             runner: [self-hosted, Windows, X64]
           - target: x86_64-unknown-linux-gnu
             name: linux-x64
             native_build: true
+            os: ubuntu-22.04
             runner: [self-hosted, Linux, X64]
 
     defaults:
@@ -425,6 +479,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+            apps/medousa-installer/src-tauri -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-installer-${{ matrix.name }}
 
       - name: Validate Apple signing secrets
         if: matrix.name == 'macos-aarch64'
@@ -562,7 +627,7 @@ jobs:
   # omitted here (cross-compiling mistralrs is not supported by this setup).
   build-local-brain:
     name: local-brain (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
     defaults:
       run:
         shell: bash
@@ -571,12 +636,16 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
             runner: [self-hosted, Linux, X64]
           - target: aarch64-apple-darwin
+            os: macos-14
             runner: [self-hosted, macOS, ARM64]
           - target: x86_64-apple-darwin
+            os: macos-15-intel
             runner: [self-hosted, macOS, X64]
           - target: x86_64-pc-windows-msvc
+            os: windows-latest
             runner: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v4
@@ -585,6 +654,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-local-brain-${{ matrix.target }}
 
       - name: Build offline brain
         run: ./scripts/release/build-local-brain.sh --target "${{ matrix.target }}"
@@ -605,9 +684,10 @@ jobs:
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
       github.event_name == 'workflow_dispatch'
     needs: [build-cli, build-desktop, build-installer, build-local-brain]
-    # Home-server self-hosted runner: collects every artifact locally, then
-    # publish-self-hosted.sh + upload-r2.sh + gh release run here.
-    runs-on: [self-hosted, Linux, X64, medousa-publish]
+    # Self-hosted: home-server runner collects every artifact locally. Hosted:
+    # ubuntu-latest. Either way publish-self-hosted.sh + upload-r2.sh + gh release
+    # run here. (aws CLI must be present on the home-server runner.)
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && fromJSON('["self-hosted","Linux","X64","medousa-publish"]') || 'ubuntu-latest' }}
     environment: MEDOUSA
     defaults:
       run:
