@@ -419,3 +419,67 @@ medousa_read_manifest_field() {
   local field="$2"
   sed -n "s/.*\"${field}\": \"\\([^\"]*\\)\".*/\\1/p" "${manifest_path}" | head -1
 }
+
+# Tauri installer productName is "Medousa Installer" → "Medousa Installer_0.1.0_…" on disk.
+# Legacy builds used "MedousaInstaller_*" (no space). Match both.
+medousa_is_installer_bundle_name() {
+  local name="$1"
+  [[ "${name}" == MedousaInstaller* || "${name}" == "Medousa Installer"* ]]
+}
+
+medousa_find_release_file() {
+  local dist_dir="$1"
+  shift
+  local pattern found
+  for pattern in "$@"; do
+    found="$(find "${dist_dir}" -maxdepth 3 -type f -name "${pattern}" 2>/dev/null | head -1 || true)"
+    if [[ -n "${found}" ]]; then
+      echo "${found}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+medousa_find_installer_bundle() {
+  local dist_dir="$1"
+  local ext="$2"
+  medousa_find_release_file "${dist_dir}" \
+    "MedousaInstaller*.${ext}" \
+    "Medousa Installer*.${ext}" || true
+}
+
+medousa_find_desktop_bundle() {
+  local dist_dir="$1"
+  local ext="$2"
+  local found base
+  while IFS= read -r found; do
+    base="$(basename "${found}")"
+    medousa_is_installer_bundle_name "${base}" && continue
+    echo "${found}"
+    return 0
+  done < <(find "${dist_dir}" -maxdepth 3 -type f -name "Medousa_*.${ext}" 2>/dev/null || true)
+  return 1
+}
+
+medousa_assert_release_manifest_nonempty() {
+  local manifest_path="$1"
+  medousa_require_cmd jq
+  local count
+  count="$(jq '.packages | length' "${manifest_path}")"
+  if [[ "${count}" -lt 1 ]]; then
+    echo "error: ${manifest_path} has no packages indexed" >&2
+    exit 1
+  fi
+}
+
+medousa_assert_installer_bootstrap_nonempty() {
+  local bootstrap_path="$1"
+  medousa_require_cmd jq
+  local count
+  count="$(jq '.platforms | length' "${bootstrap_path}")"
+  if [[ "${count}" -lt 1 ]]; then
+    echo "error: ${bootstrap_path} has no platforms indexed" >&2
+    exit 1
+  fi
+}

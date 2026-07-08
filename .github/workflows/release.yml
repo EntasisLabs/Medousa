@@ -741,6 +741,7 @@ jobs:
           find dist/artifacts -name 'medousa_local-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -type f \( \
             -name 'MedousaInstaller*' -o \
+            -name 'Medousa Installer*' -o \
             -name 'Medousa_*' -o \
             -name '*.dmg' -o \
             -name '*.msi' -o \
@@ -800,6 +801,7 @@ jobs:
             dist/final/release-manifest.json
             dist/final/installer-bootstrap.json
             dist/final/MedousaInstaller*
+            dist/final/Medousa Installer*
             dist/final/*.dmg
             dist/final/*.msi
             dist/final/*.exe

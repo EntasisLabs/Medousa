@@ -193,7 +193,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
       append_package_json "engine-suite" "Medousa Engine (full suite)" "${target}" "${suite_archive}" "" "" "core"
     fi
 
-    for backend in metal cpu cuda; do
+    for backend in auto metal cpu cuda; do
       local_archive="medousa_local-${backend}-v${VERSION}-${target}.tar.gz"
       if [[ -f "${DIST_DIR}/${local_archive}" ]]; then
         [[ "${first}" -eq 1 ]] || echo ","
@@ -214,7 +214,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     for ext in dmg msi exe AppImage deb; do
-      found="$(find "${DIST_DIR}" -maxdepth 3 -type f -name "Medousa_*.${ext}" ! -name 'MedousaInstaller*' 2>/dev/null | head -1 || true)"
+      found="$(medousa_find_desktop_bundle "${DIST_DIR}" "${ext}" || true)"
       if [[ -n "${found}" ]]; then
         archive="$(basename "${found}")"
         [[ "${first}" -eq 1 ]] || echo ","
@@ -227,7 +227,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
     for ext in dmg msi exe AppImage deb; do
-      found="$(find "${DIST_DIR}" -maxdepth 3 -type f -name "MedousaInstaller*.${ext}" 2>/dev/null | head -1 || true)"
+      found="$(medousa_find_installer_bundle "${DIST_DIR}" "${ext}")"
       if [[ -n "${found}" ]]; then
         archive="$(basename "${found}")"
         [[ "${first}" -eq 1 ]] || echo ","
@@ -242,5 +242,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "  }"
   echo "}"
 } >"${OUT}"
+
+medousa_assert_release_manifest_nonempty "${OUT}"
 
 medousa_log "wrote ${OUT}"
