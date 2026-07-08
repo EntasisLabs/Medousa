@@ -1,7 +1,17 @@
+//! Local inference support for Medousa: hardware tiering, model catalog, engine
+//! config, and backend detection — plus the standalone `medousa_local` binary.
+//!
+//! This crate is intentionally lean: it depends only on `medousa-types`,
+//! `medousa-host`, and `medousa-install-support` (and, for the binary, the
+//! `medousa-local-engine` mistralrs wrapper behind `embedded-inference`). It does
+//! NOT pull in the main `medousa` application crate, so building the offline
+//! brain no longer compiles the entire runtime dependency tree.
+
 mod backends;
 mod catalog;
 mod engine;
 mod hardware;
+mod paths;
 mod process;
 mod store;
 

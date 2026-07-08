@@ -12,9 +12,9 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "embedded-inference")]
-use medousa::local_inference::{
+use medousa_local_inference::{
     builtin_catalog, compiled_backends, config_from_catalog_entry, recommended_engine_config,
-    DEFAULT_LOCAL_ENGINE_BIND,
+    LocalEngineConfig, DEFAULT_LOCAL_ENGINE_BIND,
 };
 #[cfg(feature = "embedded-inference")]
 use medousa_local_engine::{LocalEngineConfig as EngineConfig, LocalEngineRuntime};
@@ -27,7 +27,7 @@ static RUNTIME: Lazy<Arc<LocalEngineRuntime>> =
 fn main() {
     eprintln!(
         "medousa_local requires embedded-inference at build time.\n\
-         Rebuild with: cargo build -p medousa --bin medousa_local --features embedded-inference-metal"
+         Rebuild with: cargo build -p medousa-local-inference --bin medousa_local --features embedded-inference-metal"
     );
     std::process::exit(1);
 }
@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("medousa_local loading tier-recommended model (this may take several minutes)…");
         recommended_engine_config(Some(bind.clone())).map_err(anyhow::Error::msg)?
     } else if let (Some(repo), Some(alias)) = (model_repo, model_alias) {
-        medousa::local_inference::LocalEngineConfig {
+        LocalEngineConfig {
             bind: bind.clone(),
             model_repo: repo,
             model_alias: alias,
@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "embedded-inference")]
-fn to_engine_config(config: medousa::local_inference::LocalEngineConfig) -> EngineConfig {
+fn to_engine_config(config: LocalEngineConfig) -> EngineConfig {
     EngineConfig {
         bind: config.bind,
         model_repo: config.model_repo,

@@ -175,7 +175,7 @@ if ($WithLocalBrain) {
         $inferenceFeature = Resolve-InferenceFeature $Target
         Write-Host "prepare-engine-sidecar: building medousa_local ($inferenceFeature)…"
         Invoke-MedousaCargo -CargoArgs @(
-            "build", "--release", "-p", "medousa", "--bin", "medousa_local", "--features", $inferenceFeature
+            "build", "--release", "-p", "medousa-local-inference", "--bin", "medousa_local", "--features", $inferenceFeature
         )
         $localSrc = Find-ReleaseBinary "medousa_local" $Target
     }

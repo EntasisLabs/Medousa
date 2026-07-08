@@ -13,6 +13,7 @@ members = [
     "crates/medousa-sdk-iroh",
     "crates/medousa-iroh-http",
     "crates/medousa-local-engine",
+    "crates/medousa-local-inference",
     "crates/medousa-host",
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
@@ -31,10 +32,6 @@ path = "src/bin/medousa.rs"
 [[bin]]
 name = "medousa_daemon"
 path = "src/bin/medousa_daemon.rs"
-
-[[bin]]
-name = "medousa_local"
-path = "src/bin/medousa_local.rs"
 
 [[bin]]
 name = "medousa_tui"
@@ -63,7 +60,7 @@ medousa-engine = { path = "crates/medousa-engine" }
 medousa-host = { path = "crates/medousa-host" }
 medousa-sdk = { path = "crates/medousa-sdk" }
 medousa-browser-lite = { path = "crates/medousa-browser-lite" }
-medousa-local-engine = { path = "crates/medousa-local-engine", optional = true }
+medousa-local-inference = { path = "crates/medousa-local-inference" }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
@@ -134,9 +131,6 @@ otel-export = [
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",
 ]
-embedded-inference = ["dep:medousa-local-engine"]
-embedded-inference-metal = ["embedded-inference", "medousa-local-engine/metal"]
-embedded-inference-cuda = ["embedded-inference", "medousa-local-engine/cuda"]
 iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
 
 [dev-dependencies]

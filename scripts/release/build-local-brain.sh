@@ -87,7 +87,7 @@ BIN_DIR="${OUTPUT}/bin"
 mkdir -p "${BIN_DIR}"
 
 medousa_log "building medousa_local (${FEATURE}) for ${TARGET}"
-cargo build --release -p medousa --bin medousa_local --features "${FEATURE}" --target "${TARGET}"
+cargo build --release -p medousa-local-inference --bin medousa_local --features "${FEATURE}" --target "${TARGET}"
 
 SRC="$(medousa_find_release_binary medousa_local "${TARGET}")"
 DST="${BIN_DIR}/$(medousa_binary_filename medousa_local "${TARGET}")"

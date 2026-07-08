@@ -187,7 +187,7 @@ if [[ "${WITH_LOCAL_BRAIN}" -eq 1 ]]; then
     echo "prepare-engine-sidecar: building medousa_local (${INFERENCE_FEATURE})…"
     (
       cd "${MEDOUSA_ROOT}"
-      cargo build --release -p medousa --bin medousa_local --target "${TARGET}" --features "${INFERENCE_FEATURE}"
+      cargo build --release -p medousa-local-inference --bin medousa_local --target "${TARGET}" --features "${INFERENCE_FEATURE}"
     )
     LOCAL_SRC="$(find_release_binary medousa_local)"
   fi
