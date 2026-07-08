@@ -94,7 +94,12 @@ else
     -name 'MedousaInstaller*.msi' -o \
     -name 'MedousaInstaller*.exe' -o \
     -name 'MedousaInstaller*.AppImage' -o \
-    -name 'MedousaInstaller*.deb' \
+    -name 'MedousaInstaller*.deb' -o \
+    -name 'Medousa Installer*.dmg' -o \
+    -name 'Medousa Installer*.msi' -o \
+    -name 'Medousa Installer*.exe' -o \
+    -name 'Medousa Installer*.AppImage' -o \
+    -name 'Medousa Installer*.deb' \
     \) -exec cp -a {} "${FINAL_DIR}/" \;
 fi
 

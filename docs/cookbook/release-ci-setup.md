@@ -149,6 +149,30 @@ git push origin v0.1.0
 
 Same pipeline runs automatically.
 
+### Republish manifests only (no rebuild)
+
+If binaries are already on R2 but `release-manifest.json` or `installer-bootstrap.json`
+were wrong or empty, use **Actions → Republish manifests → Run workflow**. It syncs
+existing artifacts down from R2, regenerates the JSON files, and uploads only those
+two files (~1–2 minutes, no compile).
+
+Or locally (with R2 credentials):
+
+```bash
+export MEDOUSA_RELEASE_BASE_URL=https://releases.entasislabs.com/medousa
+export MEDOUSA_R2_BUCKET=medousa
+export MEDOUSA_R2_ENDPOINT=https://….r2.cloudflarestorage.com
+export AWS_ACCESS_KEY_ID=…
+export AWS_SECRET_ACCESS_KEY=…
+./scripts/release/republish-manifests.sh --from-r2 --upload --version 0.1.0
+```
+
+If you still have `dist/final` from the publish job on a runner, skip the download:
+
+```bash
+./scripts/release/republish-manifests.sh --staging dist/final --upload --version 0.1.0
+```
+
 ---
 
 ## What the workflow does
@@ -172,6 +196,7 @@ Installers baked in step 3 fetch packages from `https://releases.entasislabs.com
 | R2 upload fails “secrets missing” | Add `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` |
 | Mac desktop build fails on secrets | Check **Environment** `MEDOUSA`, not just repo secrets |
 | `curl` 404 on manifest | Custom domain not wired, or prefix mismatch — check `MEDOUSA_R2_PREFIX` |
+| `installer-bootstrap.json` has empty `platforms` | Installer bundles are named `Medousa Installer_*` (Tauri productName) but an old script only matched `MedousaInstaller*` — merge latest release scripts, then run **Republish manifests** workflow (no rebuild) |
 | SmartScreen on Windows | Set Azure variables/secrets per [azure-windows-signing.md](azure-windows-signing.md) |
 | GitHub Release “tag exists” | Bump version or delete old tag |
 

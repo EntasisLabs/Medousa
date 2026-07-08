@@ -51,11 +51,6 @@ else
   BASE_URL="$(medousa_release_base_url "${VERSION}")"
 fi
 
-find_installer() {
-  local pattern="$1"
-  find "${DIST_DIR}" -maxdepth 3 -type f -name "${pattern}" 2>/dev/null | head -1
-}
-
 url_for_file() {
   local path="$1"
   if [[ -z "${path}" ]]; then
@@ -106,11 +101,11 @@ append_platform_json() {
 EOF
 }
 
-MAC_DMG="$(find_installer 'MedousaInstaller*.dmg')"
-WIN_MSI="$(find_installer 'MedousaInstaller*.msi')"
-WIN_EXE="$(find_installer 'MedousaInstaller*.exe')"
-LINUX_APPIMAGE="$(find_installer 'MedousaInstaller*.AppImage')"
-LINUX_DEB="$(find_installer 'MedousaInstaller*.deb')"
+MAC_DMG="$(medousa_find_installer_bundle "${DIST_DIR}" dmg)"
+WIN_MSI="$(medousa_find_installer_bundle "${DIST_DIR}" msi)"
+WIN_EXE="$(medousa_find_installer_bundle "${DIST_DIR}" exe)"
+LINUX_APPIMAGE="$(medousa_find_installer_bundle "${DIST_DIR}" AppImage)"
+LINUX_DEB="$(medousa_find_installer_bundle "${DIST_DIR}" deb)"
 
 OUT="${DIST_DIR}/installer-bootstrap.json"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -143,5 +138,7 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "  }"
   echo "}"
 } >"${OUT}"
+
+medousa_assert_installer_bootstrap_nonempty "${OUT}"
 
 medousa_log "wrote ${OUT}"

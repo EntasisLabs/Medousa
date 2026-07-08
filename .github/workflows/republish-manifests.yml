@@ -1,0 +1,75 @@
+name: Republish manifests
+
+# Regenerate release-manifest.json + installer-bootstrap.json from artifacts
+# already on R2 — no compile, no matrix builds. Use after fixing manifest scripts
+# or when bootstrap/platforms were empty but binaries uploaded successfully.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v (default — Cargo.toml)"
+        required: false
+        type: string
+      channel:
+        description: Release channel prefix on R2
+        required: false
+        type: string
+        default: stable
+
+permissions:
+  contents: read
+
+env:
+  MEDOUSA_RELEASE_BASE_URL: ${{ vars.MEDOUSA_RELEASE_BASE_URL || 'https://releases.entasislabs.com/medousa' }}
+  MEDOUSA_RELEASE_CHANNEL: ${{ inputs.channel || vars.MEDOUSA_RELEASE_CHANNEL || 'stable' }}
+  MEDOUSA_R2_BUCKET: ${{ vars.MEDOUSA_R2_BUCKET || 'medousa' }}
+  MEDOUSA_R2_ENDPOINT: ${{ vars.MEDOUSA_R2_ENDPOINT || 'https://3b2e3338687e8e0abd4c85280e87fd7a.r2.cloudflarestorage.com' }}
+  MEDOUSA_R2_PREFIX: ${{ vars.MEDOUSA_R2_PREFIX || 'medousa/stable' }}
+
+jobs:
+  republish:
+    name: regenerate + upload manifests
+    runs-on: ubuntu-latest
+    environment: MEDOUSA
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Resolve release version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            v="${{ github.event.inputs.version }}"
+            v="${v#v}"
+          else
+            v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          fi
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+
+      - name: Republish manifests from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "::error::R2 secrets missing — add R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY to MEDOUSA"
+            exit 1
+          fi
+          ./scripts/release/republish-manifests.sh \
+            --from-r2 \
+            --upload \
+            --version "${{ steps.version.outputs.version }}" \
+            --channel "${MEDOUSA_RELEASE_CHANNEL}" \
+            --base-url "${MEDOUSA_RELEASE_BASE_URL}"
+
+      - name: Verify public manifests
+        run: |
+          base="${MEDOUSA_RELEASE_BASE_URL%/}/${MEDOUSA_RELEASE_CHANNEL}"
+          curl -fsSL "${base}/release-manifest.json" | jq -e '.packages | length > 0'
+          curl -fsSL "${base}/installer-bootstrap.json" | jq -e '.platforms | length > 0'
