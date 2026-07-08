@@ -26,8 +26,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Keep target dir inside the workspace so Swatinem/rust-cache can restore it.
-  # (.cargo/config.toml points at ../.cache/cargo-target which is outside GITHUB_WORKSPACE.)
+  # Keep the target dir inside the workspace. On self-hosted runners github.workspace
+  # persists between runs, so this doubles as a warm incremental cache with no cache
+  # action needed. (.cargo/config.toml points at ../.cache/cargo-target, outside
+  # GITHUB_WORKSPACE, so this override keeps it inside.)
   CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/cargo-target
   # Non-secret defaults — override in repo Variables if needed.
   MEDOUSA_RELEASE_BASE_URL: ${{ vars.MEDOUSA_RELEASE_BASE_URL || 'https://releases.entasislabs.com/medousa' }}
@@ -35,11 +37,34 @@ env:
   MEDOUSA_R2_BUCKET: ${{ vars.MEDOUSA_R2_BUCKET || 'medousa' }}
   MEDOUSA_R2_ENDPOINT: ${{ vars.MEDOUSA_R2_ENDPOINT || 'https://3b2e3338687e8e0abd4c85280e87fd7a.r2.cloudflarestorage.com' }}
   MEDOUSA_R2_PREFIX: ${{ vars.MEDOUSA_R2_PREFIX || 'medousa/stable' }}
+  # Optional shared compile cache across the fleet (great for the diskless mini-PCs
+  # that do not keep a warm target dir). Inert unless you set the repo variable
+  # MEDOUSA_SCCACHE (e.g. to 'sccache') AND configure the SCCACHE_* backend env on
+  # the runners. See scripts/ci/sccache-setup.md. sccache requires CARGO_INCREMENTAL=0.
+  RUSTC_WRAPPER: ${{ vars.MEDOUSA_SCCACHE || '' }}
+  CARGO_INCREMENTAL: ${{ vars.MEDOUSA_SCCACHE != '' && '0' || '' }}
 
 jobs:
-  build-cli:
-    name: cli (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
+  # ---------------------------------------------------------------------------
+  # Self-hosted runner labels (assign when registering runners on your fleet):
+  #   Apple Silicon Mac : [self-hosted, macOS, ARM64]
+  #   Intel Mac         : [self-hosted, macOS, X64]
+  #   Windows           : [self-hosted, Windows, X64]   (git-bash must be on PATH)
+  #   Linux / mini-PCs  : [self-hosted, Linux, X64]
+  #   Home server       : [self-hosted, Linux, X64, medousa-publish]  (publish job)
+  #
+  # Release builds run on the self-hosted fleet with a persistent CARGO_TARGET_DIR
+  # (github.workspace persists across runs on a self-hosted runner), so no GitHub
+  # Actions cache action is used here. On a given machine build-daemon/build-cli/
+  # build-desktop share that warm target dir. CI (ci.yml) stays on GitHub-hosted
+  # runners and keeps Swatinem/rust-cache.
+  # ---------------------------------------------------------------------------
+
+  # Fast, daemon-only build. Feeds the desktop sidecar so build-desktop does not
+  # recompile medousa_daemon (prepare-engine-sidecar.sh honors MEDOUSA_SIDECAR_DAEMON).
+  build-daemon:
+    name: daemon (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
     defaults:
       run:
         shell: bash
@@ -47,16 +72,68 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-14
+          - name: macos-aarch64
             target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-          - os: windows-latest
+            runner: [self-hosted, macOS, ARM64]
+          - name: windows-x64
             target: x86_64-pc-windows-msvc
+            runner: [self-hosted, Windows, X64]
+          - name: linux-x64
+            target: x86_64-unknown-linux-gnu
+            runner: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build medousa_daemon
+        run: |
+          cargo build --release -p medousa --bin medousa_daemon \
+            --features iroh-transport --target "${{ matrix.target }}"
+
+      - name: Stage daemon binary
+        run: |
+          EXT=""
+          [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
+          SRC="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/medousa_daemon${EXT}"
+          mkdir -p dist/daemon
+          cp -f "${SRC}" "dist/daemon/medousa_daemon-${{ matrix.target }}${EXT}"
+
+      - name: Upload daemon artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-daemon-${{ matrix.name }}
+          path: dist/daemon/*
+          if-no-files-found: error
+
+  build-cli:
+    name: cli (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: [self-hosted, Linux, X64]
+          # No native ARM64 Linux host in the fleet: cross-compiled on the x64
+          # Linux runner (needs an aarch64 linker, e.g. gcc-aarch64-linux-gnu).
+          # Drop this entry if you do not ship ARM64 Linux.
+          - target: aarch64-unknown-linux-gnu
+            runner: [self-hosted, Linux, X64]
+          - target: aarch64-apple-darwin
+            runner: [self-hosted, macOS, ARM64]
+          # Intel Mac. If you only have an Apple Silicon Mac, point this at
+          # [self-hosted, macOS, ARM64] and let cargo cross-compile x86_64.
+          - target: x86_64-apple-darwin
+            runner: [self-hosted, macOS, X64]
+          - target: x86_64-pc-windows-msvc
+            runner: [self-hosted, Windows, X64]
 
     steps:
       - uses: actions/checkout@v4
@@ -66,23 +143,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> .cache/cargo-target
-          cache-workspace-crates: true
-          cache-on-failure: true
-          shared-key: release-cli-${{ matrix.target }}
-
       - name: Build release binaries
         run: |
-          ./scripts/release/build.sh --target "${{ matrix.target }}"
+          ./scripts/release/build.sh --target "${{ matrix.target }}" --without-local-brain
 
       - name: Package release archives
         run: |
           ./scripts/release/package-all-components.sh --target "${{ matrix.target }}"
-          ./scripts/release/package-local-brain.sh --target "${{ matrix.target }}" || true
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
@@ -94,33 +161,33 @@ jobs:
             dist/adapter-*.tar.gz
             dist/mcp-gateway-*.tar.gz
             dist/medousa-*.tar.gz
-            dist/medousa_local-*.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
 
   build-desktop:
     name: app (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
+    needs: build-daemon
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
-    environment: ${{ (matrix.os == 'macos-14' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
+    environment: ${{ (matrix.name == 'macos-aarch64' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            target: aarch64-apple-darwin
+          - target: aarch64-apple-darwin
             name: macos-aarch64
             native_build: true
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+            runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-pc-windows-msvc
             name: windows-x64
             native_build: true
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+            runner: [self-hosted, Windows, X64]
+          - target: x86_64-unknown-linux-gnu
             name: linux-x64
             native_build: true
+            runner: [self-hosted, Linux, X64]
 
     defaults:
       run:
@@ -135,7 +202,7 @@ jobs:
         run: chmod +x scripts/ci/*.sh
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.name == 'linux-x64'
         working-directory: .
         run: |
           sudo apt-get update
@@ -158,18 +225,27 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Download prebuilt daemon
+        uses: actions/download-artifact@v4
         with:
-          workspaces: |
-            . -> .cache/cargo-target
-            apps/medousa-home/src-tauri -> .cache/cargo-target
-          cache-workspace-crates: true
-          cache-on-failure: true
-          shared-key: release-desktop-${{ matrix.name }}
+          name: medousa-daemon-${{ matrix.name }}
+          path: dist/prebuilt-daemon
+
+      - name: Point sidecar at prebuilt daemon
+        working-directory: .
+        run: |
+          EXT=""
+          [[ "${{ matrix.target }}" == *-pc-windows-msvc ]] && EXT=".exe"
+          DAEMON="${GITHUB_WORKSPACE}/dist/prebuilt-daemon/medousa_daemon-${{ matrix.target }}${EXT}"
+          if [[ ! -f "${DAEMON}" ]]; then
+            echo "::error::prebuilt daemon not found at ${DAEMON}"
+            exit 1
+          fi
+          echo "MEDOUSA_SIDECAR_DAEMON=${DAEMON}" >> "${GITHUB_ENV}"
+          echo "prepare-engine-sidecar will reuse: ${DAEMON}"
 
       - name: Validate Apple signing secrets
-        if: matrix.os == 'macos-14'
+        if: matrix.name == 'macos-aarch64'
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -193,8 +269,11 @@ jobs:
           fi
           echo "Apple signing secrets are present."
 
+      # On a self-hosted Mac you can instead sign from the machine's login
+      # keychain (skip this import + drop the APPLE_CERTIFICATE secret) — leave
+      # the identity available to codesign and set APPLE_SIGNING_IDENTITY only.
       - name: Import Apple Developer certificate
-        if: matrix.os == 'macos-14'
+        if: matrix.name == 'macos-aarch64'
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -235,7 +314,7 @@ jobs:
         working-directory: .
         run: |
           EXTRA=()
-          [[ "${{ matrix.os }}" == "ubuntu-22.04" ]] && EXTRA=(--bundles deb)
+          [[ "${{ matrix.name }}" == "linux-x64" ]] && EXTRA=(--bundles deb)
           cd apps/medousa-home
           if [[ "${{ matrix.native_build }}" == "true" ]]; then
             npm run tauri:build -- "${EXTRA[@]}"
@@ -294,27 +373,27 @@ jobs:
 
   build-installer:
     name: installer (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       id-token: write
-    environment: ${{ (matrix.os == 'macos-14' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
+    environment: ${{ (matrix.name == 'macos-aarch64' || matrix.name == 'windows-x64') && 'MEDOUSA' || '' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            target: aarch64-apple-darwin
+          - target: aarch64-apple-darwin
             name: macos-aarch64
             native_build: true
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+            runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-pc-windows-msvc
             name: windows-x64
             native_build: true
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+            runner: [self-hosted, Windows, X64]
+          - target: x86_64-unknown-linux-gnu
             name: linux-x64
             native_build: true
+            runner: [self-hosted, Linux, X64]
 
     defaults:
       run:
@@ -329,7 +408,7 @@ jobs:
         run: chmod +x scripts/ci/*.sh
 
       - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-22.04'
+        if: matrix.name == 'linux-x64'
         working-directory: .
         run: |
           sudo apt-get update
@@ -347,18 +426,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> .cache/cargo-target
-            apps/medousa-installer/src-tauri -> .cache/cargo-target
-          cache-workspace-crates: true
-          cache-on-failure: true
-          shared-key: release-installer-${{ matrix.name }}
-
       - name: Validate Apple signing secrets
-        if: matrix.os == 'macos-14'
+        if: matrix.name == 'macos-aarch64'
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -382,7 +451,7 @@ jobs:
           echo "Apple signing secrets are present."
 
       - name: Import Apple Developer certificate
-        if: matrix.os == 'macos-14'
+        if: matrix.name == 'macos-aarch64'
         working-directory: .
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -430,7 +499,7 @@ jobs:
         working-directory: .
         run: |
           EXTRA=()
-          [[ "${{ matrix.os }}" == "ubuntu-22.04" ]] && EXTRA=(--bundles deb)
+          [[ "${{ matrix.name }}" == "linux-x64" ]] && EXTRA=(--bundles deb)
           cd apps/medousa-installer
           if [[ "${{ matrix.native_build }}" == "true" ]]; then
             npm run tauri build -- "${EXTRA[@]}"
@@ -486,13 +555,59 @@ jobs:
           path: dist/installer/${{ matrix.name }}/*
           if-no-files-found: warn
 
+  # mistralrs offline brain — heavy + slow. Isolated into its own job so it never
+  # blocks build-desktop/build-installer (they do not bundle it by default) and its
+  # large target-dir churn stays off the hot path. The publish job waits for it only
+  # at the final aggregation. No native ARM64 Linux host in the fleet, so that leg is
+  # omitted here (cross-compiling mistralrs is not supported by this setup).
+  build-local-brain:
+    name: local-brain (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: [self-hosted, Linux, X64]
+          - target: aarch64-apple-darwin
+            runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-apple-darwin
+            runner: [self-hosted, macOS, X64]
+          - target: x86_64-pc-windows-msvc
+            runner: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build offline brain
+        run: ./scripts/release/build-local-brain.sh --target "${{ matrix.target }}"
+
+      - name: Package offline brain
+        run: ./scripts/release/package-local-brain.sh --target "${{ matrix.target }}"
+
+      - name: Upload local-brain artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-local-brain-${{ matrix.target }}
+          path: dist/medousa_local-*.tar.gz
+          if-no-files-found: error
+
   release:
     name: publish (GitHub + R2)
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
       github.event_name == 'workflow_dispatch'
-    needs: [build-cli, build-desktop, build-installer]
-    runs-on: ubuntu-latest
+    needs: [build-cli, build-desktop, build-installer, build-local-brain]
+    # Home-server self-hosted runner: collects every artifact locally, then
+    # publish-self-hosted.sh + upload-r2.sh + gh release run here.
+    runs-on: [self-hosted, Linux, X64, medousa-publish]
     environment: MEDOUSA
     defaults:
       run:
