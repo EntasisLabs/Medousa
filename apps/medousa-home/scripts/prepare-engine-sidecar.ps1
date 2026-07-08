@@ -25,6 +25,10 @@ Environment:
   MEDOUSA_EMBEDDED_INFERENCE   auto|metal|cuda|cpu (for -WithLocalBrain only)
   MEDOUSA_WITH_IROH            0|false|no to omit iroh-transport
   CARGO_BUILD_TARGET           Rust target triple (optional)
+  MEDOUSA_SIDECAR_DAEMON       Path to a prebuilt medousa_daemon; skips the cargo
+                               build and copies it into the sidecar (CI reuse).
+  MEDOUSA_SIDECAR_LOCAL        Path to a prebuilt medousa_local; skips the cargo
+                               build (only used with -WithLocalBrain).
 "@
 }
 
@@ -138,25 +142,43 @@ New-Item -ItemType Directory -Force -Path $BinariesDir | Out-Null
 $daemonFeatures = @()
 if ($withIroh) { $daemonFeatures += "iroh-transport" }
 
-Write-Host "prepare-engine-sidecar: building slim medousa_daemon for $Target..."
-$cargoArgs = @("build", "--release", "-p", "medousa", "--bin", "medousa_daemon")
-if ($daemonFeatures.Count -gt 0) {
-    $cargoArgs += @("--features", ($daemonFeatures -join ","))
+# Reuse a prebuilt daemon when provided (CI passes the artifact from the engine
+# build so medousa_daemon is not compiled a second time). Falls back to building
+# locally when the env var is unset (dev / standalone builds).
+if ($env:MEDOUSA_SIDECAR_DAEMON) {
+    if (-not (Test-Path -LiteralPath $env:MEDOUSA_SIDECAR_DAEMON)) {
+        throw "MEDOUSA_SIDECAR_DAEMON set but file not found: $($env:MEDOUSA_SIDECAR_DAEMON)"
+    }
+    Write-Host "prepare-engine-sidecar: reusing prebuilt medousa_daemon -> $($env:MEDOUSA_SIDECAR_DAEMON)"
+    $daemonSrc = $env:MEDOUSA_SIDECAR_DAEMON
+} else {
+    Write-Host "prepare-engine-sidecar: building slim medousa_daemon for $Target..."
+    $cargoArgs = @("build", "--release", "-p", "medousa", "--bin", "medousa_daemon")
+    if ($daemonFeatures.Count -gt 0) {
+        $cargoArgs += @("--features", ($daemonFeatures -join ","))
+    }
+    Invoke-MedousaCargo -CargoArgs $cargoArgs
+    $daemonSrc = Find-ReleaseBinary "medousa_daemon" $Target
 }
-Invoke-MedousaCargo -CargoArgs $cargoArgs
-
-$daemonSrc = Find-ReleaseBinary "medousa_daemon" $Target
 $daemonSidecar = Get-SidecarFileName "medousa_daemon" $Target
 Copy-Item -LiteralPath $daemonSrc -Destination (Join-Path $BinariesDir $daemonSidecar) -Force
 Write-Host "prepare-engine-sidecar: $(Join-Path $BinariesDir $daemonSidecar)"
 
 if ($WithLocalBrain) {
-    $inferenceFeature = Resolve-InferenceFeature $Target
-    Write-Host "prepare-engine-sidecar: building medousa_local ($inferenceFeature)…"
-    Invoke-MedousaCargo -CargoArgs @(
-        "build", "--release", "-p", "medousa", "--bin", "medousa_local", "--features", $inferenceFeature
-    )
-    $localSrc = Find-ReleaseBinary "medousa_local" $Target
+    if ($env:MEDOUSA_SIDECAR_LOCAL) {
+        if (-not (Test-Path -LiteralPath $env:MEDOUSA_SIDECAR_LOCAL)) {
+            throw "MEDOUSA_SIDECAR_LOCAL set but file not found: $($env:MEDOUSA_SIDECAR_LOCAL)"
+        }
+        Write-Host "prepare-engine-sidecar: reusing prebuilt medousa_local -> $($env:MEDOUSA_SIDECAR_LOCAL)"
+        $localSrc = $env:MEDOUSA_SIDECAR_LOCAL
+    } else {
+        $inferenceFeature = Resolve-InferenceFeature $Target
+        Write-Host "prepare-engine-sidecar: building medousa_local ($inferenceFeature)…"
+        Invoke-MedousaCargo -CargoArgs @(
+            "build", "--release", "-p", "medousa", "--bin", "medousa_local", "--features", $inferenceFeature
+        )
+        $localSrc = Find-ReleaseBinary "medousa_local" $Target
+    }
     $localSidecar = Get-SidecarFileName "medousa_local" $Target
     Copy-Item -LiteralPath $localSrc -Destination (Join-Path $BinariesDir $localSidecar) -Force
     Write-Host "prepare-engine-sidecar: $(Join-Path $BinariesDir $localSidecar)"
