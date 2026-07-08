@@ -137,6 +137,18 @@ iroh-transport = ["dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-i
 surrealdb-types = { version = "3" }
 surrealdb = { version = "3", default-features = false, features = ["kv-mem"] }
 
+# --- Local iteration speed -------------------------------------------------
+# Debug info generation + dsymutil + linking dominate build time on a workspace
+# this dependency-heavy. Keep line tables (backtraces still work) but drop the
+# heavy DWARF, never emit debuginfo for dependencies, and skip dsymutil on macOS.
+# These only affect the dev/test profile — release/shipped binaries are untouched.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = false
+
 [patch.crates-io]
 grapheme-runtime = { path = "vendor/grapheme-runtime" }
 grapheme-sdk = { path = "vendor/grapheme-sdk" }
