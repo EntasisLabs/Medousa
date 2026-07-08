@@ -7197,7 +7197,7 @@ dependencies = [
  "medousa-host",
  "medousa-install-support",
  "medousa-iroh-http",
- "medousa-local-engine",
+ "medousa-local-inference",
  "medousa-sdk",
  "medousa-types",
  "once_cell",
@@ -7319,6 +7319,25 @@ dependencies = [
  "medousa-types",
  "mistralrs-core",
  "mistralrs-server-core",
+ "tokio",
+]
+
+[[package]]
+name = "medousa-local-inference"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 5.0.1",
+ "fs2",
+ "medousa-host",
+ "medousa-install-support",
+ "medousa-local-engine",
+ "medousa-types",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "sysinfo 0.33.1",
  "tokio",
 ]
 

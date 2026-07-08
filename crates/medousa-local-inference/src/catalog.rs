@@ -48,7 +48,7 @@ pub fn recommended_model_for_tier(tier: HardwareTier) -> Option<CatalogModelEntr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::local_inference::hardware::HardwareTier;
+    use crate::hardware::HardwareTier;
 
     #[test]
     fn tier_c_gets_12b_recommended() {

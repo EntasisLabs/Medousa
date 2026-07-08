@@ -66,7 +66,7 @@ New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
 Write-MedousaLog "building medousa_local ($feature) for $Target"
 $localBuildArgs = @(
-    "build", "--release", "-p", "medousa", "--bin", "medousa_local",
+    "build", "--release", "-p", "medousa-local-inference", "--bin", "medousa_local",
     "--features", $feature
 )
 if ($Target) { $localBuildArgs += @("--target", $Target) }

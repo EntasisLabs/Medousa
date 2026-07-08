@@ -122,8 +122,8 @@ The daemon is a slim catalog/scheduler process. **Offline Gemma inference runs i
 cd Medousa   # repo root with Cargo.toml
 
 # Build offline brain sidecar
-cargo build -p medousa --bin medousa_local --features embedded-inference-metal
-cargo run -p medousa --bin medousa_local --features embedded-inference-metal -- --load-recommended
+cargo build -p medousa-local-inference --bin medousa_local --features embedded-inference-metal
+cargo run -p medousa-local-inference --bin medousa_local --features embedded-inference-metal -- --load-recommended
 
 # Daemon (no embedded inference)
 cargo build -p medousa --bin medousa_daemon

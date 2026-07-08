@@ -120,7 +120,7 @@ pub fn resolve_cpu_only(probe: &HardwareProbe) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::local_inference::hardware::HardwareProbe;
+    use crate::hardware::HardwareProbe;
 
     #[test]
     fn cpu_only_when_no_gpu_backend() {
