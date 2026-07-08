@@ -22,6 +22,23 @@ MEDOUSA_BINARIES=(
   medousa_whatsapp
 )
 
+# Optional binaries: shipped as their own standalone component (e.g. the heavy
+# mistralrs offline brain) rather than inside the full-suite tarball. When absent
+# from a bin dir they are skipped instead of treated as an error, so the core
+# bundle can be built, packaged, and installed without them. When present, they
+# are still included and fingerprinted.
+MEDOUSA_OPTIONAL_BINARIES=(
+  medousa_local
+)
+
+medousa_is_optional_binary() {
+  local candidate="$1" b
+  for b in "${MEDOUSA_OPTIONAL_BINARIES[@]}"; do
+    [[ "${b}" == "${candidate}" ]] && return 0
+  done
+  return 1
+}
+
 MEDOUSA_MAIN_CARGO_TOML="${MEDOUSA_MAIN_CARGO_TOML:-Cargo.toml}"
 MEDOUSA_WHATSAPP_CARGO_TOML="${MEDOUSA_WHATSAPP_CARGO_TOML:-adapters/medousa-whatsapp/Cargo.toml}"
 MEDOUSA_WHATSAPP_MANIFEST="${MEDOUSA_WHATSAPP_MANIFEST:-adapters/medousa-whatsapp/Cargo.toml}"
@@ -348,6 +365,9 @@ medousa_component_set_id() {
     file="$(medousa_binary_filename "${bin}" "${target}")"
     path="${bin_dir}/${file}"
     if [[ ! -f "${path}" ]]; then
+      if medousa_is_optional_binary "${bin}"; then
+        continue
+      fi
       rm -f "${tmp}"
       echo "error: missing binary for component set: ${path}" >&2
       return 1
@@ -369,8 +389,12 @@ medousa_write_install_manifest() {
   component_set_id="$(medousa_component_set_id "${bin_dir}" "${target}")"
 
   local bin_list=""
-  local bin
+  local bin file
   for bin in "${MEDOUSA_BINARIES[@]}"; do
+    file="$(medousa_binary_filename "${bin}" "${target}")"
+    if [[ ! -f "${bin_dir}/${file}" ]] && medousa_is_optional_binary "${bin}"; then
+      continue
+    fi
     if [[ -n "${bin_list}" ]]; then
       bin_list+=", "
     fi

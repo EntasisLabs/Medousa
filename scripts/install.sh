@@ -301,7 +301,12 @@ verify_payload() {
   for bin in "${MEDOUSA_BINARIES[@]}"; do
     file="$(medousa_binary_filename "${bin}" "${target}")"
     src="${bin_dir}/${file}"
-    [[ -f "${src}" ]] || die "archive missing required binary: ${file}"
+    if [[ ! -f "${src}" ]]; then
+      if medousa_is_optional_binary "${bin}"; then
+        continue
+      fi
+      die "archive missing required binary: ${file}"
+    fi
     if [[ ! -x "${src}" && "${DRY_RUN}" -eq 0 ]]; then
       run chmod +x "${src}"
     fi
@@ -374,6 +379,9 @@ install_payload() {
     file="$(medousa_binary_filename "${bin}" "${target}")"
     src="${bin_dir}/${file}"
     dst="${staging}/${file}"
+    if [[ ! -f "${src}" ]] && medousa_is_optional_binary "${bin}"; then
+      continue
+    fi
     run cp -a "${src}" "${dst}"
     run chmod +x "${dst}" 2>/dev/null || true
   done
@@ -382,6 +390,9 @@ install_payload() {
     file="$(medousa_binary_filename "${bin}" "${target}")"
     src="${staging}/${file}"
     dst="${INSTALL_DIR}/${file}"
+    if [[ ! -f "${src}" ]] && medousa_is_optional_binary "${bin}"; then
+      continue
+    fi
     run cp -f "${src}" "${dst}"
     run chmod +x "${dst}" 2>/dev/null || true
     log "  ${file}"
