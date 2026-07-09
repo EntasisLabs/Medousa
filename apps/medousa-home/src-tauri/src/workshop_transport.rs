@@ -43,6 +43,18 @@ pub fn invalidate_workshop_route_cache() {
     }
 }
 
+/// Flush BOTH route caches: this legacy transport (SSE + multipart byte paths)
+/// and the `medousa-sdk-iroh` transport (JSON + `/health`).
+///
+/// The two stacks keep independent route caches. App-level events that change
+/// where the daemon lives (daemon URL change, workshop switch, pairing complete,
+/// unpair) must invalidate both, otherwise JSON/health and SSE can diverge onto
+/// stale LAN vs Iroh routes for up to a full cache TTL.
+pub fn invalidate_all_route_caches() {
+    invalidate_workshop_route_cache();
+    medousa_sdk_iroh::invalidate_route_cache();
+}
+
 pub fn path_with_query(path: &str, query: &[(&str, String)]) -> String {
     if query.is_empty() {
         return normalize_path(path);

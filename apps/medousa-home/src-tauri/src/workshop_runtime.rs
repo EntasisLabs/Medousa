@@ -978,7 +978,7 @@ pub async fn set_lan_pairing_enabled(
 
     let local_url = url_from_bind(&bind);
     crate::daemon::apply_daemon_url(state, &local_url)?;
-    crate::workshop_transport::invalidate_workshop_route_cache();
+    crate::workshop_transport::invalidate_all_route_caches();
 
     Ok(LanPairingStatus {
         enabled,

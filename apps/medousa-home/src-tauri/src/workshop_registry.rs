@@ -507,7 +507,7 @@ pub async fn workshops_set_active(
     }
     save_registry(&registry)?;
     apply_daemon_url(&state, &resolve_workshop_url(&workshop))?;
-    crate::workshop_transport::invalidate_workshop_route_cache();
+    crate::workshop_transport::invalidate_all_route_caches();
     load_registry()
 }
 
@@ -577,7 +577,7 @@ pub fn workshops_remove(
     save_registry(&registry)?;
     if switched_active {
         sync_daemon_state_from_registry(&state)?;
-        crate::workshop_transport::invalidate_workshop_route_cache();
+        crate::workshop_transport::invalidate_all_route_caches();
     }
     load_registry()
 }

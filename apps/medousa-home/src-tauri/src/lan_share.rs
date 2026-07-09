@@ -401,7 +401,7 @@ pub async fn revoke_trusted_workshop(
         registry.active_workshop_id = crate::workshop_registry::PERSONAL_WORKSHOP_ID.to_string();
     }
     crate::workshop_registry::save_registry(&registry)?;
-    crate::workshop_transport::invalidate_workshop_route_cache();
+    crate::workshop_transport::invalidate_all_route_caches();
     Ok(())
 }
 

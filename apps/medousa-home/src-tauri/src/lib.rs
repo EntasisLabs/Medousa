@@ -176,6 +176,7 @@ pub fn run() {
             daemon::daemon_url,
             daemon::set_daemon_url,
             daemon::daemon_health,
+            daemon::invalidate_route_caches,
             daemon_service::daemon_start,
             daemon_service::daemon_restart,
             daemon_service::engine_diagnose,
