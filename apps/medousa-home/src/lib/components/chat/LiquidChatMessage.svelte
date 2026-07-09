@@ -10,6 +10,7 @@
   import type { SceneEvent } from "$lib/liquid/core";
   import type { EventSink } from "$lib/liquid/ports";
   import { chatMessageToScene } from "$lib/liquid/surfaces/chat/messageToScene";
+  import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { ChatMessage } from "$lib/types/chat";
@@ -40,7 +41,15 @@
     message.phase === "worker_ack" || message.phase === "awaiting_operator",
   );
 
-  const scene = $derived(chatMessageToScene(message, { statusLine, statusWarn }));
+  /**
+   * A daemon-authored scene (streamed `ui_scene` ops) wins over the client-side
+   * adapter — this is how a model-authored structured turn takes over rendering.
+   * Turns without a scene fall back to the deterministic `messageToScene` adapter.
+   */
+  const daemonScene = $derived(chatScenes.get(message.id));
+  const scene = $derived(
+    daemonScene?.root ?? chatMessageToScene(message, { statusLine, statusWarn }),
+  );
 
   const sink: EventSink = {
     emit(event: SceneEvent) {

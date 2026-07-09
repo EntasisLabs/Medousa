@@ -9,7 +9,8 @@
   import type { LiquidRenderContext } from "$lib/liquid/render";
   import type { SceneEvent } from "$lib/liquid/core";
   import type { EventSink } from "$lib/liquid/ports";
-  import { applyOp, createNode, createScene, type Scene, type SceneNode } from "$lib/liquid/core";
+  import { applyOp, applyOps, createNode, createScene, type Scene, type SceneNode } from "$lib/liquid/core";
+  import { decodeSceneOps } from "$lib/liquid/surfaces/chat/sceneStream";
 
   const DEMO_IMAGE =
     "data:image/svg+xml;utf8," +
@@ -195,6 +196,123 @@
   };
 
   const monogramContext: LiquidRenderContext = { sink, openLinksInWeb: false };
+
+  // ---- Stage 3: streamed structured turn (daemon wire contract) ------------
+  // Each batch is the *opaque JSON* a `ui_scene` stream event would carry. We
+  // run it through the real decoder + reducer — the exact client pipeline — so
+  // this proves a model-authored turn renders bones-first, then fills in place.
+
+  const WIRE_SURFACE = "chat:demo-turn";
+
+  const wireBatches: unknown[][] = [
+    // 1) bones: document skeleton with a titled section + two skeleton blocks
+    [
+      {
+        op: "plan_layout",
+        surfaceId: "model-may-say-anything",
+        rev: 1,
+        root: {
+          id: "t:doc",
+          type: "document",
+          fillState: "ready",
+          slots: {
+            flow: [
+              {
+                id: "t:sec",
+                type: "section",
+                props: { title: "Weekend in Lisbon", subtitle: "Drafting your itinerary…" },
+                fillState: "ready",
+                slots: {
+                  content: [
+                    { id: "t:intro", type: "prose", fillState: "skeleton" },
+                    { id: "t:carousel", type: "carousel", fillState: "skeleton", slots: { items: [] } },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    ],
+    // 2) fill the intro prose in place
+    [
+      { op: "patch_props", nodeId: "t:intro", rev: 1, props: { markdown: "Three neighborhoods worth a morning each — tap a card for the plan." } },
+      { op: "set_fill_state", nodeId: "t:intro", rev: 1, state: "ready" },
+    ],
+    // 3) stream cards into the carousel slot
+    [
+      {
+        op: "fill_slot",
+        nodeId: "t:carousel",
+        slot: "items",
+        rev: 1,
+        nodes: [
+          { id: "t:c1", type: "card", fillState: "ready", props: { emoji: "🚋", title: "Alfama", subtitle: "Old town · trams" }, slots: { detail: [{ id: "t:c1:d", type: "prose", fillState: "ready", props: { markdown: "Miradouro views, fado at night, easy on foot." } }] } },
+          { id: "t:c2", type: "card", fillState: "ready", props: { emoji: "🎨", title: "LX Factory", subtitle: "Design · brunch" }, slots: { detail: [{ id: "t:c2:d", type: "prose", fillState: "ready", props: { markdown: "Bookshop, murals, riverside lunch under the bridge." } }] } },
+        ],
+      },
+      { op: "set_fill_state", nodeId: "t:carousel", rev: 1, state: "ready" },
+    ],
+    // 4) append a suggestion row (new section) — a later op mutating the tree
+    [
+      {
+        op: "fill_slot",
+        nodeId: "t:doc",
+        slot: "flow",
+        rev: 1,
+        nodes: [
+          {
+            id: "t:sec",
+            type: "section",
+            props: { title: "Weekend in Lisbon", subtitle: "2 stops planned" },
+            fillState: "ready",
+            slots: {
+              content: [
+                { id: "t:intro", type: "prose", fillState: "ready", props: { markdown: "Three neighborhoods worth a morning each — tap a card for the plan." } },
+                { id: "t:carousel", type: "carousel", fillState: "ready", slots: { items: [
+                  { id: "t:c1", type: "card", fillState: "ready", props: { emoji: "🚋", title: "Alfama", subtitle: "Old town · trams" }, slots: { detail: [{ id: "t:c1:d", type: "prose", fillState: "ready", props: { markdown: "Miradouro views, fado at night, easy on foot." } }] } },
+                  { id: "t:c2", type: "card", fillState: "ready", props: { emoji: "🎨", title: "LX Factory", subtitle: "Design · brunch" }, slots: { detail: [{ id: "t:c2:d", type: "prose", fillState: "ready", props: { markdown: "Bookshop, murals, riverside lunch under the bridge." } }] } },
+                ] } },
+              ],
+            },
+          },
+          { id: "t:a1", type: "action_row", fillState: "ready", props: { emoji: "🗺️", label: "Add a third day", intent: "extend_trip" } },
+        ],
+      },
+    ],
+  ];
+
+  let wireScene = $state<Scene>(createScene(WIRE_SURFACE));
+  let wireStep = $state(0);
+  let wireTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function applyWireBatch(index: number) {
+    const ops = decodeSceneOps(wireBatches[index], WIRE_SURFACE);
+    wireScene = applyOps(wireScene, ops);
+    wireStep = index + 1;
+  }
+
+  function streamTurn() {
+    if (wireTimer) clearTimeout(wireTimer);
+    wireScene = createScene(WIRE_SURFACE);
+    wireStep = 0;
+    const tick = (i: number) => {
+      if (i >= wireBatches.length) {
+        wireTimer = null;
+        return;
+      }
+      applyWireBatch(i);
+      wireTimer = setTimeout(() => tick(i + 1), 650);
+    };
+    tick(0);
+  }
+
+  function resetWire() {
+    if (wireTimer) clearTimeout(wireTimer);
+    wireTimer = null;
+    wireScene = createScene(WIRE_SURFACE);
+    wireStep = 0;
+  }
 </script>
 
 <div class="harness">
@@ -223,6 +341,24 @@
 
   <section class="harness-stage">
     <SceneRenderer node={monogram} context={monogramContext} />
+  </section>
+
+  <h2 class="harness-subhead">Streamed structured turn (daemon wire)</h2>
+  <p class="harness-note">
+    each step is the opaque JSON a <code>ui_scene</code> event carries — decoded and reduced
+    through the real client pipeline. rev {wireScene.rev} · step {wireStep}/{wireBatches.length}.
+  </p>
+  <div class="harness-actions">
+    <button type="button" onclick={streamTurn}>Stream turn</button>
+    <button type="button" class="ghost" onclick={resetWire}>Reset</button>
+  </div>
+
+  <section class="harness-stage">
+    {#if wireScene.root}
+      <SceneRenderer node={wireScene.root} context={monogramContext} />
+    {:else}
+      <p class="harness-log-empty">Press “Stream turn” to watch the daemon author a scene.</p>
+    {/if}
   </section>
 
   <section class="harness-log">

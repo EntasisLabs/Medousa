@@ -136,6 +136,8 @@ export interface InteractiveTurnStreamEvent {
   } | null;
   previous_artifact_id?: string | null;
   root_artifact_id?: string | null;
+  /** Liquid UI scene operations for this turn (structure-then-fill). */
+  ui_scene?: StreamUiScene | null;
   /** Human-facing status whisper (Home default). */
   operator_message?: string | null;
   /** Engine telemetry — shown only with engine details enabled. */
@@ -144,6 +146,22 @@ export interface InteractiveTurnStreamEvent {
   browser_challenge_url?: string | null;
   /** Turn-start context budget breakdown (Cursor-style telemetry). */
   context_usage?: ContextUsageReport | null;
+}
+
+/**
+ * Liquid UI scene channel (Phase 2 of the daemon seam). The model authors scene
+ * operations in the `SceneOp` JSON shape; the daemon forwards them verbatim as
+ * opaque JSON, and the client decodes/validates them. See
+ * `$lib/liquid/surfaces/chat/sceneStream`.
+ */
+export interface StreamUiScene {
+  turn_id?: string | null;
+  /** Scene surface id (defaults to `chat:{turn_id}` on the client). */
+  surface_id?: string | null;
+  /** Owning `plan_layout` revision for ordering (informational). */
+  rev?: number | null;
+  /** Ordered scene operations, opaque JSON validated client-side. */
+  ops: unknown[];
 }
 
 export interface ContextUsageLayer {
