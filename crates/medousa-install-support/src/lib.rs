@@ -8,9 +8,10 @@ pub mod paths;
 pub mod release_config;
 
 pub use manifest::{
-    mark_package_installed, package_installed, read_install_manifest, read_release_manifest,
-    shared_bin_dir, unmark_package_installed, user_packages_dir, write_install_manifest,
-    InstallManifest, PackageInstallRecord, ReleaseManifest, ReleasePackage,
+    desktop_artifact_url_matches_host, mark_package_installed, package_installed,
+    read_install_manifest, read_release_manifest, release_package_matches_host,
+    resolve_release_package, shared_bin_dir, unmark_package_installed, user_packages_dir,
+    write_install_manifest, InstallManifest, PackageInstallRecord, ReleaseManifest, ReleasePackage,
 };
 pub use model_catalog::{builtin_catalog, CatalogFile, CatalogModelEntry};
 pub use model_download::{

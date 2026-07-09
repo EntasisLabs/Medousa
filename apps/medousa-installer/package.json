@@ -7,8 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:build": "tauri build"
+    "tauri": "node ../../scripts/dev/tauri-runner.mjs",
+    "tauri:build": "node ../../scripts/dev/tauri-runner.mjs build",
+    "tauri:dev": "node ../../scripts/dev/tauri-runner.mjs dev"
   },
   "dependencies": {
     "@lucide/svelte": "^0.487.0",

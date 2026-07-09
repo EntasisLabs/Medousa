@@ -4,15 +4,15 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
   import InstallerChrome from "./lib/components/InstallerChrome.svelte";
-  import InstallerFooter from "./lib/components/InstallerFooter.svelte";
+  import ErrorBanner from "./lib/components/ErrorBanner.svelte";
+  import { humanizeError } from "./lib/copy";
   import CompleteScreen from "./lib/screens/CompleteScreen.svelte";
-  import HubScreen from "./lib/screens/HubScreen.svelte";
+  import ManageScreen from "./lib/screens/ManageScreen.svelte";
   import ProgressScreen from "./lib/screens/ProgressScreen.svelte";
   import WelcomeScreen from "./lib/screens/WelcomeScreen.svelte";
   import type {
     BootstrapResponse,
     DownloadProgress,
-    HubTab,
     InstallerStep,
     PackageSummary,
     ResolveSelectionResponse,
@@ -20,7 +20,6 @@
   import markUrl from "./assets/medousa-mark.png";
 
   let screen = $state<InstallerStep>("welcome");
-  let hubTab = $state<HubTab>("workloads");
   let bootstrap = $state<BootstrapResponse | null>(null);
   let packages = $state<PackageSummary[]>([]);
   let selectedProfileId = $state("express");
@@ -34,9 +33,12 @@
   });
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let bootstrapError = $state<string | null>(null);
   let progress = $state<DownloadProgress[]>([]);
   let modifyMode = $state(false);
   let initialPackageIds = $state<string[]>([]);
+  let showOptions = $state(false);
+  let bootstrapping = $state(true);
 
   const expressSizeLabel = $derived.by(() => {
     const express = bootstrap?.profiles.find((p) => p.id === "express");
@@ -56,14 +58,15 @@
     return false;
   });
 
-  const footerPrimaryLabel = $derived(
-    modifyMode && hasChanges ? "Apply changes" : "Install",
-  );
-
-  const showFooter = $derived(screen === "welcome" || screen === "hub");
+  const humanizedWarnings = $derived(selection.warnings.map((w) => w));
 
   function selectedPackageIds(): string[] {
     return packages.filter((entry) => entry.selected).map((entry) => entry.id);
+  }
+
+  function setError(err: unknown) {
+    const raw = err instanceof Error ? err.message : String(err);
+    error = humanizeError(raw);
   }
 
   async function refreshCatalog(selectedIds: string[]) {
@@ -86,6 +89,8 @@
   }
 
   async function loadBootstrap() {
+    bootstrapping = true;
+    bootstrapError = null;
     try {
       const summary = await invoke<BootstrapResponse>("installer_bootstrap");
       bootstrap = summary;
@@ -98,25 +103,25 @@
         ? summary.packages.filter((p) => p.installed).map((p) => p.id)
         : selectedIds;
       await refreshCatalog(selectedIds);
-      screen = summary.modifyMode ? "hub" : "welcome";
-      hubTab = summary.modifyMode ? "components" : "workloads";
+      screen = summary.modifyMode ? "manage" : "welcome";
       if (!summary.modifyMode) {
         await applyExpressSelection();
       }
+      error = null;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      bootstrapError = humanizeError(err instanceof Error ? err.message : String(err));
+      bootstrap = null;
+    } finally {
+      bootstrapping = false;
     }
   }
 
-  async function handleExpressInstall() {
+  async function handleInstall() {
     if (!bootstrap) return;
-    await applyExpressSelection();
+    if (!modifyMode) {
+      await applyExpressSelection();
+    }
     await startInstall();
-  }
-
-  function goToCustomize() {
-    screen = "hub";
-    hubTab = "components";
   }
 
   async function handleSelectProfile(profileId: string) {
@@ -127,6 +132,7 @@
       ...pkg,
       selected: profile.packages.includes(pkg.id),
     }));
+    showOptions = true;
     await refreshCatalog(selectedPackageIds());
   }
 
@@ -135,6 +141,7 @@
       entry.id === id ? { ...entry, selected: !entry.selected } : entry,
     );
     selectedProfileId = "";
+    error = null;
     await refreshCatalog(selectedPackageIds());
   }
 
@@ -146,7 +153,7 @@
         if (bootstrap) bootstrap = { ...bootstrap, installRoot: picked };
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      setError(err);
     }
   }
 
@@ -184,8 +191,8 @@
       });
       screen = "complete";
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-      screen = "hub";
+      setError(err);
+      screen = modifyMode ? "manage" : "welcome";
     } finally {
       await unlisten();
       busy = false;
@@ -196,7 +203,7 @@
     try {
       await invoke("installer_launch_medousa");
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      setError(err);
     }
   }
 
@@ -207,28 +214,13 @@
     try {
       await openUrl(url);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      setError(err);
     }
   }
 
-  function goToModify() {
-    screen = "hub";
-    hubTab = "components";
+  function goToManage() {
+    screen = "manage";
     modifyMode = true;
-  }
-
-  function goBackFromHub() {
-    if (modifyMode) return;
-    screen = "welcome";
-  }
-
-  async function openLicense() {
-    const url = bootstrap?.releaseBaseUrl ?? "https://github.com/EntasisLabs/Medousa";
-    try {
-      await openUrl(url);
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    }
   }
 
   onMount(() => {
@@ -237,68 +229,82 @@
 </script>
 
 <div class="installer-shell">
-  {#if !bootstrap}
+  {#if bootstrapping}
     <div class="boot-splash" role="status" aria-live="polite">
       <img class="boot-mark" src={markUrl} alt="" width="56" height="56" />
       <div class="boot-bar" aria-hidden="true"></div>
     </div>
-  {:else}
+  {:else if bootstrapError && !bootstrap}
+    <div class="boot-splash boot-error">
+      <img class="boot-mark" src={markUrl} alt="" width="56" height="56" />
+      <h1 class="boot-title">Medousa</h1>
+      <ErrorBanner message={bootstrapError} onRetry={loadBootstrap} />
+    </div>
+  {:else if bootstrap}
     <InstallerChrome
       step={screen}
-      version={bootstrap.installerVersion}
+      showProgress={screen === "progress" || screen === "complete"}
     >
-        {#if screen === "welcome"}
-          <WelcomeScreen
-            {bootstrap}
-            onExpressInstall={handleExpressInstall}
-            onCustomize={goToCustomize}
-            onPickLocation={pickInstallRoot}
-            {busy}
-          />
-        {:else if screen === "hub"}
-          <HubScreen
-            {bootstrap}
-            tab={hubTab}
-            profiles={bootstrap.profiles}
-            {packages}
-            {selectedProfileId}
-            {selection}
-            {modifyMode}
-            {error}
-            onTabChange={(tab) => (hubTab = tab)}
-            onSelectProfile={handleSelectProfile}
-            onTogglePackage={handleTogglePackage}
-            onPickLocation={pickInstallRoot}
-          />
-        {:else if screen === "progress"}
-          <ProgressScreen
-            {progress}
-            version={bootstrap.remoteVersion ?? bootstrap.installedVersion ?? ""}
-          />
-        {:else}
-          <CompleteScreen
-            onLaunch={launchMedousa}
-            onModify={goToModify}
-            onReleaseNotes={openReleaseNotes}
-          />
-        {/if}
-
-      {#if showFooter}
-        {#snippet footer()}
-          <InstallerFooter
-            {installRoot}
-            sizeLabel={screen === "welcome" ? expressSizeLabel : selection.sizeLabel}
-            primaryLabel={footerPrimaryLabel}
-            busy={busy}
-            disabled={!hasSelection || (modifyMode && !hasChanges)}
-            showBack={screen === "hub" && !modifyMode}
-            onPrimary={screen === "welcome" ? handleExpressInstall : startInstall}
-            onPickLocation={pickInstallRoot}
-            onBack={goBackFromHub}
-            onLicense={openLicense}
-          />
-        {/snippet}
+      {#if screen === "welcome"}
+        <WelcomeScreen
+          {bootstrap}
+          {packages}
+          warnings={humanizedWarnings}
+          sizeLabel={selection.sizeLabel || expressSizeLabel}
+          {error}
+          {busy}
+          {showOptions}
+          onInstall={handleInstall}
+          onToggleOptions={() => (showOptions = !showOptions)}
+          onTogglePackage={handleTogglePackage}
+          onApplyPreset={handleSelectProfile}
+          onPickLocation={pickInstallRoot}
+          onRetry={loadBootstrap}
+        />
+      {:else if screen === "manage"}
+        <ManageScreen
+          {bootstrap}
+          {packages}
+          warnings={humanizedWarnings}
+          {error}
+          sizeLabel={selection.sizeLabel}
+          {hasChanges}
+          onTogglePackage={handleTogglePackage}
+          onPickLocation={pickInstallRoot}
+          onApply={startInstall}
+          onRetry={loadBootstrap}
+        />
+      {:else if screen === "progress"}
+        <ProgressScreen
+          {progress}
+          version={bootstrap.remoteVersion ?? bootstrap.installedVersion ?? ""}
+        />
+      {:else}
+        <CompleteScreen
+          onLaunch={launchMedousa}
+          onManage={goToManage}
+          onReleaseNotes={openReleaseNotes}
+        />
       {/if}
     </InstallerChrome>
   {/if}
 </div>
+
+<style>
+  .boot-error {
+    padding: 1.5rem;
+    max-width: 420px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .boot-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 1rem;
+  }
+
+  .boot-error :global(.error-banner) {
+    text-align: left;
+  }
+</style>

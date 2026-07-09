@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate installer-bootstrap.json — per-platform Medousa Installer download URLs.
+# Generate installer-bootstrap.json — per-platform default download URLs for medousa.app.
 
 set -euo pipefail
 
@@ -16,13 +16,14 @@ usage() {
 Usage: scripts/release/generate-installer-bootstrap.sh [options]
 
 Options:
-  --dist <dir>          Directory containing installer bundles (default: dist/)
+  --dist <dir>          Directory containing release bundles (default: dist/)
   --version <version>   Release version without v prefix
   --channel <name>      Release channel (default: stable)
   --base-url <url>      Override MEDOUSA_RELEASE_BASE_URL
   -h, --help            Show this help
 
-Writes dist/installer-bootstrap.json with per-platform installer download URLs.
+Writes dist/installer-bootstrap.json with per-platform download URLs.
+Windows points at the signed desktop NSIS setup; Mac/Linux use Medousa Installer.
 EOF
 }
 
@@ -80,40 +81,54 @@ size_for() {
   fi
 }
 
+artifact_kind_for_platform() {
+  local platform="$1"
+  case "${platform}" in
+    windows-x64) echo "desktop" ;;
+    *) echo "installer" ;;
+  esac
+}
+
 append_platform_json() {
   local platform="$1"
   local path="$2"
-  local url sha size
+  local installer_path="${3:-}"
+  local url sha size kind installer_url
   url="$(url_for_file "${path}")"
   sha="$(sha_for "${path}")"
   size="$(size_for "${path}")"
+  kind="$(artifact_kind_for_platform "${platform}")"
+  installer_url="$(url_for_file "${installer_path}")"
   local name
   name="$(basename "${path:-}")"
   cat <<EOF
     "${platform}": {
       "platform": "${platform}",
+      "artifactKind": "${kind}",
       "version": "${VERSION}",
       "fileName": "${name}",
       "url": "${url}",
       "sha256": "${sha}",
       "sizeBytes": ${size}
-    }
 EOF
+  if [[ -n "${installer_url}" ]]; then
+    cat <<EOF
+,
+      "installerUrl": "${installer_url}"
+EOF
+  fi
+  echo "    }"
 }
-
-MAC_DMG="$(medousa_find_installer_bundle "${DIST_DIR}" dmg)"
-WIN_MSI="$(medousa_find_installer_bundle "${DIST_DIR}" msi)"
-WIN_EXE="$(medousa_find_installer_bundle "${DIST_DIR}" exe)"
-LINUX_APPIMAGE="$(medousa_find_installer_bundle "${DIST_DIR}" AppImage)"
-LINUX_DEB="$(medousa_find_installer_bundle "${DIST_DIR}" deb)"
 
 OUT="${DIST_DIR}/installer-bootstrap.json"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
+WIN_INSTALLER="$(medousa_installer_bundle_for_platform "${DIST_DIR}" windows-x64 || true)"
+
 {
   echo "{"
   echo '  "schemaVersion": 1,'
-  echo '  "product": "medousa-installer",'
+  echo '  "product": "medousa",'
   echo "  \"version\": \"${VERSION}\","
   echo "  \"channel\": \"${CHANNEL}\","
   echo "  \"publishedAt\": \"${PUBLISHED_AT}\","
@@ -121,17 +136,16 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo '  "platforms": {'
 
   first=1
-  for entry in \
-    "macos-aarch64:${MAC_DMG}" \
-    "macos-x64:${MAC_DMG}" \
-    "windows-x64:${WIN_MSI:-$WIN_EXE}" \
-    "linux-x64:${LINUX_APPIMAGE:-$LINUX_DEB}"; do
-    platform="${entry%%:*}"
-    path="${entry#*:}"
+  for platform in macos-aarch64 macos-x64 windows-x64 linux-x64; do
+    path="$(medousa_bootstrap_bundle_for_platform "${DIST_DIR}" "${platform}" || true)"
     [[ -n "${path}" ]] || continue
+    installer_extra=""
+    if [[ "${platform}" == "windows-x64" && -n "${WIN_INSTALLER}" ]]; then
+      installer_extra="${WIN_INSTALLER}"
+    fi
     [[ "${first}" -eq 1 ]] || echo ","
     first=0
-    append_platform_json "${platform}" "${path}"
+    append_platform_json "${platform}" "${path}" "${installer_extra}"
   done
 
   echo ""

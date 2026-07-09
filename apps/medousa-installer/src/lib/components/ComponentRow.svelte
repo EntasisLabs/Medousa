@@ -4,6 +4,7 @@
 
   interface Props {
     name: string;
+    description?: string;
     sizeLabel: string;
     selected?: boolean;
     optional?: boolean;
@@ -14,6 +15,7 @@
 
   let {
     name,
+    description = "",
     sizeLabel,
     selected = false,
     optional = true,
@@ -51,21 +53,26 @@
   onkeydown={handleKeydown}
 >
   <InstallerCheckbox checked={selected} disabled={!optional} />
-  <span class="name">{name}</span>
+  <div class="copy">
+    <span class="name">{name}</span>
+    {#if description}
+      <span class="description">{description}</span>
+    {/if}
+  </div>
   {#if pill}
     <StatusPill label={pill} variant={pillVariant} />
   {/if}
-  <span class="size">{sizeLabel}</span>
+  <span class="size" title="Download size">{sizeLabel}</span>
 </div>
 
 <style>
   .component-row {
     display: grid;
     grid-template-columns: auto 1fr auto auto;
-    align-items: center;
+    align-items: start;
     gap: 0.65rem;
     width: 100%;
-    padding: 0.5rem 0.35rem;
+    padding: 0.6rem 0.35rem;
     margin: 0 -0.35rem;
     border-radius: var(--installer-radius-control);
     background: transparent;
@@ -93,16 +100,31 @@
 
   .component-row :global(.installer-checkbox) {
     pointer-events: none;
+    margin-top: 0.1rem;
+  }
+
+  .copy {
+    min-width: 0;
+    display: grid;
+    gap: 0.1rem;
   }
 
   .name {
-    min-width: 0;
     font-size: var(--installer-body-size);
+    font-weight: 500;
+  }
+
+  .description {
+    font-size: var(--installer-caption-size);
+    color: var(--installer-muted);
+    line-height: 1.4;
   }
 
   .size {
-    color: var(--installer-muted);
-    font-size: var(--installer-caption-size);
+    color: var(--installer-faint);
+    font-size: 0.6875rem;
     justify-self: end;
+    align-self: start;
+    margin-top: 0.15rem;
   }
 </style>

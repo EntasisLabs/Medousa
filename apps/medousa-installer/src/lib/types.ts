@@ -1,6 +1,4 @@
-export type InstallerStep = "welcome" | "hub" | "progress" | "complete";
-export type Screen = InstallerStep;
-export type HubTab = "workloads" | "components" | "locations";
+export type InstallerStep = "welcome" | "manage" | "progress" | "complete";
 
 export interface ProfileSummary {
   id: string;

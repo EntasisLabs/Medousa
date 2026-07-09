@@ -1,9 +1,9 @@
-# Run `tauri build` with the Visual Studio MSVC environment and Medousa cargo cache.
+# Run `tauri` with the Visual Studio MSVC environment and Medousa cargo cache.
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$HomeDir,
+    [string]$AppDir,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$TauriArgs
@@ -13,12 +13,12 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "msvc-env.ps1")
 
-$homeDir = (Resolve-Path $HomeDir).Path
-$repoRoot = Get-MedousaRepoRoot -StartDir $homeDir
+$appDir = (Resolve-Path $AppDir).Path
+$repoRoot = Get-MedousaRepoRoot -StartDir $appDir
 
 Import-MedousaMsvcBuildEnvironment -RepoRoot $repoRoot | Out-Null
 
-Push-Location $homeDir
+Push-Location $appDir
 try {
     if ($TauriArgs.Count -eq 0) {
         & npx tauri build

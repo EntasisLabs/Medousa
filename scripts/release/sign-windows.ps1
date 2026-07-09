@@ -37,6 +37,7 @@ Setup (one time):
   Create metadata.json from your Azure Artifact Signing account (see docs/cookbook/release-to-r2.md)
 
 Examples:
+  .\scripts\release\sign-windows.ps1 dist\final\Medousa_0.1.0_x64-setup.exe
   .\scripts\release\sign-windows.ps1 dist\final\MedousaInstaller_0.1.0_x64-setup.exe
   .\scripts\release\sign-windows.ps1 -Verify apps\medousa-home\src-tauri\target\release\bundle\nsis\*.exe
 "@

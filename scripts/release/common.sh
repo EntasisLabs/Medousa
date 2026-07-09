@@ -462,6 +462,67 @@ medousa_find_desktop_bundle() {
   return 1
 }
 
+medousa_desktop_bundle_for_platform() {
+  local dist_dir="$1"
+  local platform="$2"
+  case "${platform}" in
+    macos-aarch64|macos-x64)
+      medousa_find_desktop_bundle "${dist_dir}" dmg
+      ;;
+    windows-x64)
+      medousa_find_desktop_bundle "${dist_dir}" exe \
+        || medousa_find_desktop_bundle "${dist_dir}" msi
+      ;;
+    linux-x64)
+      medousa_find_desktop_bundle "${dist_dir}" AppImage \
+        || medousa_find_desktop_bundle "${dist_dir}" deb
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+medousa_installer_bundle_for_platform() {
+  local dist_dir="$1"
+  local platform="$2"
+  case "${platform}" in
+    macos-aarch64|macos-x64)
+      medousa_find_installer_bundle "${dist_dir}" dmg
+      ;;
+    windows-x64)
+      medousa_find_installer_bundle "${dist_dir}" exe \
+        || medousa_find_installer_bundle "${dist_dir}" msi
+      ;;
+    linux-x64)
+      medousa_find_installer_bundle "${dist_dir}" AppImage \
+        || medousa_find_installer_bundle "${dist_dir}" deb
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Default download artifact per platform for installer-bootstrap.json.
+# Windows express path ships the signed desktop NSIS setup (daemon sidecar bundled).
+# Mac/Linux still use Medousa Installer for first-run component selection.
+medousa_bootstrap_bundle_for_platform() {
+  local dist_dir="$1"
+  local platform="$2"
+  case "${platform}" in
+    macos-aarch64|macos-x64|linux-x64)
+      medousa_installer_bundle_for_platform "${dist_dir}" "${platform}"
+      ;;
+    windows-x64)
+      medousa_desktop_bundle_for_platform "${dist_dir}" "${platform}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 medousa_assert_release_manifest_nonempty() {
   local manifest_path="$1"
   medousa_require_cmd jq

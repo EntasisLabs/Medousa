@@ -41,24 +41,7 @@ pub fn resolve_release_package<'a>(
     manifest: &'a ReleaseManifest,
     package_id: &str,
 ) -> Result<&'a ReleasePackage, String> {
-    let target = std::env::var("MEDOUSA_INSTALL_TARGET")
-        .unwrap_or_else(|_| medousa_install_support::host_target());
-    let platform = medousa_install_support::host_platform_key();
-    let keys = [
-        format!("{package_id}-{target}"),
-        format!("{package_id}-{platform}"),
-        package_id.to_string(),
-    ];
-    for key in &keys {
-        if let Some(pkg) = manifest.packages.get(key) {
-            return Ok(pkg);
-        }
-    }
-    manifest
-        .packages
-        .values()
-        .find(|entry| entry.id == package_id)
-        .ok_or_else(|| format!("release package not found for {package_id} ({target})"))
+    medousa_install_support::resolve_release_package(manifest, package_id)
 }
 
 pub async fn install_package(

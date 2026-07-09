@@ -8,15 +8,21 @@ This guide is for running **Medousa Engine** and CLI tools on a machine you cont
 
 ## Install binaries
 
-### Medousa Installer (recommended)
+### Medousa app (recommended)
 
-Download **Medousa Installer** from your release endpoint:
+Download from your release endpoint:
 
 ```
 {MEDOUSA_RELEASE_BASE_URL}/stable/installer-bootstrap.json
 ```
 
-The installer manages Desktop, Engine, adapters, offline brain, and model packs.
+The bootstrap picks the right artifact per OS:
+
+| Platform | Default download | Notes |
+|----------|------------------|-------|
+| **Windows** | Signed `Medousa_*_x64-setup.exe` (desktop) | One install — daemon sidecar bundled. `installerUrl` in bootstrap links to Medousa Installer for add-ons. |
+| **macOS** | Medousa Installer `.dmg` | Component picker on first install. |
+| **Linux** | Medousa Installer AppImage or `.deb` | Same as macOS. |
 
 **Self-hosted / R2:** see [release-to-r2.md](release-to-r2.md) for Cloudflare R2 upload, signing, and landing-page wiring.
 

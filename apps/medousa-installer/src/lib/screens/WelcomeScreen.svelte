@@ -1,166 +1,238 @@
 <script lang="ts">
-  import { INSTALLER_TAGLINE, truncatePath } from "../copy";
-  import type { BootstrapResponse } from "../types";
+  import { ChevronRight } from "@lucide/svelte";
+  import {
+    INSTALLER_BUTTON_LABEL,
+    INSTALLER_GADGETS_HIDE,
+    INSTALLER_GADGETS_SHOW,
+    INSTALLER_TAGLINE,
+    truncatePath,
+  } from "../copy";
+  import type { BootstrapResponse, PackageSummary } from "../types";
+  import ErrorBanner from "../components/ErrorBanner.svelte";
+  import OptionsPanel from "../components/OptionsPanel.svelte";
   import markUrl from "../../assets/medousa-mark.png";
 
   interface Props {
     bootstrap: BootstrapResponse;
-    onExpressInstall: () => void;
-    onCustomize: () => void;
-    onPickLocation: () => void;
+    packages: PackageSummary[];
+    warnings: string[];
+    sizeLabel: string;
+    error: string | null;
     busy?: boolean;
+    showOptions: boolean;
+    onInstall: () => void;
+    onToggleOptions: () => void;
+    onTogglePackage: (id: string) => void;
+    onApplyPreset: (profileId: string) => void;
+    onPickLocation: () => void;
+    onRetry?: () => void;
   }
 
-  let { bootstrap, onExpressInstall, onCustomize, onPickLocation, busy = false }: Props =
-    $props();
+  let {
+    bootstrap,
+    packages,
+    warnings,
+    sizeLabel,
+    error,
+    busy = false,
+    showOptions,
+    onInstall,
+    onToggleOptions,
+    onTogglePackage,
+    onApplyPreset,
+    onPickLocation,
+    onRetry,
+  }: Props = $props();
 </script>
 
-<section class="welcome screen-center">
-  <div class="hero">
-    <img class="hero-mark" src={markUrl} alt="" width="56" height="56" />
-    <h1 class="hero-title">Install Medousa</h1>
-    <p class="hero-lead">{INSTALLER_TAGLINE}</p>
+<section class="welcome">
+  <div class="welcome-scroll scroll-pane">
+    <div class="welcome-stage">
+      <header class="hero">
+        <img class="hero-mark" src={markUrl} alt="" width="52" height="52" />
+        <p class="hero-line">{INSTALLER_TAGLINE}</p>
+      </header>
+
+      <div class="express-card">
+        <button type="button" class="btn-install" disabled={busy} onclick={onInstall}>
+          {busy ? "Starting…" : INSTALLER_BUTTON_LABEL}
+        </button>
+        <div class="express-foot">
+          <span class="express-meta">About {sizeLabel}</span>
+          <span class="foot-sep" aria-hidden="true">·</span>
+          <span class="path" title={bootstrap.installRoot}>
+            {truncatePath(bootstrap.installRoot, 28)}
+          </span>
+          <button type="button" class="text-link" onclick={onPickLocation}>Change</button>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="gadgets-link"
+        aria-expanded={showOptions}
+        onclick={onToggleOptions}
+      >
+        <span>{showOptions ? INSTALLER_GADGETS_HIDE : INSTALLER_GADGETS_SHOW}</span>
+        <span class="gadgets-chevron" class:open={showOptions}>
+          <ChevronRight size={15} strokeWidth={2.25} />
+        </span>
+      </button>
+
+      {#if showOptions}
+        <OptionsPanel
+          {packages}
+          {warnings}
+          {onTogglePackage}
+          {onApplyPreset}
+          {onPickLocation}
+          installRoot={bootstrap.installRoot}
+          dataDir={bootstrap.dataDir}
+          modelCacheDir={bootstrap.modelCacheDir}
+        />
+      {/if}
+
+      {#if bootstrap.versionMismatch}
+        <p class="banner-warn">An update is available for your installation.</p>
+      {/if}
+
+      {#if error}
+        <ErrorBanner message={error} onRetry={onRetry} />
+      {/if}
+    </div>
   </div>
-
-  <div class="express-card">
-    <div class="express-label">Recommended</div>
-    <div class="express-title">Express installation</div>
-    <p class="express-desc">Desktop app and engine — ready in minutes.</p>
-    <button
-      type="button"
-      class="btn-hero"
-      disabled={busy}
-      onclick={onExpressInstall}
-    >
-      Install
-    </button>
-  </div>
-
-  <button type="button" class="customize-link" onclick={onCustomize}>
-    Customize installation…
-  </button>
-
-  <p class="location-line">
-    <span class="muted">Location:</span>
-    <span title={bootstrap.installRoot}>{truncatePath(bootstrap.installRoot, 36)}</span>
-    <button type="button" class="link" onclick={onPickLocation}>Change…</button>
-  </p>
-
-  {#if bootstrap.versionMismatch}
-    <p class="banner-warn">An update is available for your installation.</p>
-  {/if}
 </section>
 
 <style>
   .welcome {
-    max-width: 520px;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .welcome-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem 1.5rem 1.25rem;
+  }
+
+  .welcome-stage {
     width: 100%;
+    max-width: 380px;
     margin: 0 auto;
-    padding: 0 0.5rem;
   }
 
   .hero {
     text-align: center;
-    margin-bottom: 1.75rem;
+    margin-bottom: 1.5rem;
   }
 
   .hero-mark {
-    border-radius: 14px;
+    border-radius: 12px;
     margin-bottom: 1rem;
-    box-shadow: 0 8px 32px rgb(131 68 245 / 0.2);
+    box-shadow: 0 6px 24px rgb(131 68 245 / 0.14);
   }
 
-  .hero-title {
-    font-size: var(--installer-title-size);
-    font-weight: 600;
-    margin: 0 0 0.5rem;
-  }
-
-  .hero-lead {
-    color: var(--installer-muted);
-    font-size: var(--installer-body-size);
-    line-height: 1.55;
-    margin: 0;
+  .hero-line {
+    color: var(--installer-text-secondary);
+    font-size: 1.0625rem;
+    line-height: 1.45;
+    margin: 0 auto;
+    max-width: 22ch;
+    font-weight: 500;
   }
 
   .express-card {
     background: var(--installer-surface);
     border: 1px solid var(--installer-border);
     border-radius: var(--installer-radius-card);
-    padding: 1.25rem;
-    margin-bottom: 1rem;
+    padding: 1.1rem 1.15rem 0.95rem;
+    margin-bottom: 0.75rem;
   }
 
-  .express-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--installer-accent);
-    margin-bottom: 0.35rem;
-  }
-
-  .express-title {
-    font-size: 1.05rem;
-    font-weight: 600;
-    margin-bottom: 0.35rem;
-  }
-
-  .express-desc {
-    color: var(--installer-muted);
-    font-size: var(--installer-body-size);
-    margin: 0 0 1rem;
-  }
-
-  .btn-hero {
+  .btn-install {
     width: 100%;
     background: var(--installer-accent);
     color: white;
     border: none;
     border-radius: var(--installer-radius-control);
-    padding: 0.75rem 1rem;
+    padding: 0.72rem 1rem;
     font-size: 1rem;
     font-weight: 600;
     transition: background var(--installer-motion);
   }
 
-  .btn-hero:hover:not(:disabled) {
+  .btn-install:hover:not(:disabled) {
     background: var(--installer-accent-hover);
   }
 
-  .btn-hero:focus-visible {
+  .btn-install:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-install:focus-visible {
     outline: 2px solid white;
     outline-offset: 2px;
   }
 
-  .customize-link {
-    display: block;
-    width: 100%;
+  .express-foot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.7rem;
+    font-size: var(--installer-caption-size);
+    color: var(--installer-muted);
     text-align: center;
+  }
+
+  .foot-sep {
+    opacity: 0.5;
+  }
+
+  .path {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--installer-text-secondary);
+  }
+
+  .gadgets-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    width: 100%;
     background: none;
     border: none;
     color: var(--installer-accent);
     font-size: var(--installer-body-size);
-    padding: 0.5rem;
-    margin-bottom: 0.75rem;
+    padding: 0.45rem;
+    margin-bottom: 0.35rem;
   }
 
-  .location-line {
-    text-align: center;
-    font-size: var(--installer-caption-size);
-    color: var(--installer-text-secondary);
-    margin: 0;
+  .gadgets-link:hover {
+    color: var(--installer-accent-hover);
   }
 
-  .muted {
-    color: var(--installer-muted);
+  .gadgets-chevron {
+    display: inline-flex;
+    transition: transform var(--installer-motion);
   }
 
-  .link {
+  .gadgets-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  .text-link {
     background: none;
     border: none;
     color: var(--installer-accent);
-    margin-left: 0.35rem;
     padding: 0;
     font-size: inherit;
   }

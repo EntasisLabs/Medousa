@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 /**
- * Cross-platform entry for tauri build (PowerShell + MSVC env on Windows).
+ * Cross-platform wrapper for the Tauri CLI.
+ * On Windows: loads VS 2022 MSVC env + Medousa cargo cache via tauri-build.ps1.
+ *
+ * Run from an app package directory, e.g.:
+ *   cd apps/medousa-installer && node ../../scripts/dev/tauri-runner.mjs build
+ *   cd apps/medousa-home && node ../../scripts/dev/tauri-runner.mjs dev
  */
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const homeDir = join(scriptDir, "..");
+const appDir = process.cwd();
 const args = process.argv.slice(2);
 
 if (process.platform === "win32") {
-  const ps1 = join(homeDir, "..", "..", "scripts", "dev", "tauri-build.ps1");
+  const ps1 = join(scriptDir, "tauri-build.ps1");
   const result = spawnSync(
     "powershell",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-AppDir", homeDir, ...args],
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-AppDir", appDir, ...args],
     { stdio: "inherit" },
   );
   process.exit(result.status ?? 1);
@@ -29,8 +34,9 @@ if (process.platform === "linux") {
   env.APPIMAGE_EXTRACT_AND_RUN ??= "1";
 }
 
-const result = spawnSync("npx", ["tauri", "build", ...args], {
-  cwd: homeDir,
+const tauriArgs = args.length > 0 ? args : ["build"];
+const result = spawnSync("npx", ["tauri", ...tauriArgs], {
+  cwd: appDir,
   stdio: "inherit",
   shell: true,
   env,
