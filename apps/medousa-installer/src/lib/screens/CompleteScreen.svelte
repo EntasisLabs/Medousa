@@ -3,11 +3,11 @@
 
   interface Props {
     onLaunch: () => void;
-    onModify: () => void;
+    onManage: () => void;
     onReleaseNotes: () => void;
   }
 
-  let { onLaunch, onModify, onReleaseNotes }: Props = $props();
+  let { onLaunch, onManage, onReleaseNotes }: Props = $props();
 </script>
 
 <section class="complete-screen screen-center">
@@ -17,13 +17,13 @@
 
   <header class="screen-header">
     <h1>You're all set</h1>
-    <p class="lead">First-run setup will configure your brain and devices.</p>
+    <p class="lead">Medousa is installed. Open the app to finish setup — connect your accounts, pick a brain, and you're ready.</p>
   </header>
 
-  <button class="btn-launch" type="button" onclick={onLaunch}>Launch Medousa</button>
+  <button class="btn-launch" type="button" onclick={onLaunch}>Open Medousa</button>
 
   <div class="complete-links">
-    <button class="complete-link" type="button" onclick={onModify}>Modify installation</button>
+    <button class="complete-link" type="button" onclick={onManage}>Add or remove components</button>
     <button class="complete-link" type="button" onclick={onReleaseNotes}>What's new</button>
   </div>
 </section>

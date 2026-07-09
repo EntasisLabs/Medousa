@@ -213,29 +213,23 @@ PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   done
 
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
-    for ext in dmg msi exe AppImage deb; do
-      found="$(medousa_find_desktop_bundle "${DIST_DIR}" "${ext}" || true)"
-      if [[ -n "${found}" ]]; then
-        archive="$(basename "${found}")"
-        [[ "${first}" -eq 1 ]] || echo ","
-        first=0
-        append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core"
-        break
-      fi
-    done
+    found="$(medousa_desktop_bundle_for_platform "${DIST_DIR}" "${name}" || true)"
+    if [[ -n "${found}" ]]; then
+      archive="$(basename "${found}")"
+      [[ "${first}" -eq 1 ]] || echo ","
+      first=0
+      append_package_json "desktop" "Medousa Desktop (${name})" "${name}" "${archive}" "" "" "core"
+    fi
   done
 
   for name in macos-aarch64 macos-x64 windows-x64 linux-x64; do
-    for ext in dmg msi exe AppImage deb; do
-      found="$(medousa_find_installer_bundle "${DIST_DIR}" "${ext}")"
-      if [[ -n "${found}" ]]; then
-        archive="$(basename "${found}")"
-        [[ "${first}" -eq 1 ]] || echo ","
-        first=0
-        append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core"
-        break
-      fi
-    done
+    found="$(medousa_installer_bundle_for_platform "${DIST_DIR}" "${name}" || true)"
+    if [[ -n "${found}" ]]; then
+      archive="$(basename "${found}")"
+      [[ "${first}" -eq 1 ]] || echo ","
+      first=0
+      append_package_json "installer" "Medousa Installer (${name})" "${name}" "${archive}" "" "" "core"
+    fi
   done
 
   echo ""

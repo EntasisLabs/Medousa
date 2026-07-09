@@ -30,8 +30,8 @@
   --installer-body-size: 0.875rem;
   --installer-caption-size: 0.75rem;
 
-  --installer-chrome-height: 88px;
-  --installer-footer-height: 72px;
+  --installer-chrome-height: 52px;
+  --installer-footer-height: 0px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -10,11 +10,15 @@ body {
   font-family: var(--installer-font);
   background: var(--installer-canvas);
   color: var(--installer-text);
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
   cursor: pointer;
   font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
 
 button:disabled {

@@ -462,6 +462,48 @@ medousa_find_desktop_bundle() {
   return 1
 }
 
+medousa_desktop_bundle_for_platform() {
+  local dist_dir="$1"
+  local platform="$2"
+  case "${platform}" in
+    macos-aarch64|macos-x64)
+      medousa_find_desktop_bundle "${dist_dir}" dmg
+      ;;
+    windows-x64)
+      medousa_find_desktop_bundle "${dist_dir}" msi \
+        || medousa_find_desktop_bundle "${dist_dir}" exe
+      ;;
+    linux-x64)
+      medousa_find_desktop_bundle "${dist_dir}" AppImage \
+        || medousa_find_desktop_bundle "${dist_dir}" deb
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+medousa_installer_bundle_for_platform() {
+  local dist_dir="$1"
+  local platform="$2"
+  case "${platform}" in
+    macos-aarch64|macos-x64)
+      medousa_find_installer_bundle "${dist_dir}" dmg
+      ;;
+    windows-x64)
+      medousa_find_installer_bundle "${dist_dir}" msi \
+        || medousa_find_installer_bundle "${dist_dir}" exe
+      ;;
+    linux-x64)
+      medousa_find_installer_bundle "${dist_dir}" AppImage \
+        || medousa_find_installer_bundle "${dist_dir}" deb
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 medousa_assert_release_manifest_nonempty() {
   local manifest_path="$1"
   medousa_require_cmd jq

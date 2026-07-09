@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "Medousa Installer",
-        "width": 1000,
-        "height": 680,
-        "minWidth": 1000,
-        "minHeight": 680,
+        "width": 520,
+        "height": 640,
+        "minWidth": 520,
+        "minHeight": 560,
         "resizable": false,
         "decorations": false,
         "titleBarStyle": "Overlay"

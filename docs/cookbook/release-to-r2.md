@@ -82,7 +82,7 @@ Run on each platform, then merge artifacts into one `dist/` folder on the machin
 | Publish manifests | `./scripts/release/publish-local.sh` |
 | Upload to R2 | `./scripts/release/publish-local.sh --upload` |
 | Bake R2 URL into installer | `./scripts/release/set-installer-config.sh` |
-| Rebuild installer | `cd apps/medousa-installer && npm run tauri build` |
+| Rebuild installer | `cd apps/medousa-installer && npm run tauri:build` |
 | Sign installer (Win) | `.\scripts\release\sign-windows.ps1 …` |
 | Re-publish + upload | `./scripts/release/publish-local.sh --upload` |
 
@@ -102,7 +102,7 @@ The installer embeds `MEDOUSA_RELEASE_BASE_URL` from `apps/medousa-installer/pub
 ```bash
 export MEDOUSA_RELEASE_BASE_URL="https://releases.medousa.app/medousa"
 ./scripts/release/set-installer-config.sh
-cd apps/medousa-installer && npm run tauri build
+cd apps/medousa-installer && npm run tauri:build
 ```
 
 End users do not need env vars — the installer fetches `release-manifest.json` from your CDN automatically.

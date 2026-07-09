@@ -7,10 +7,17 @@
   interface Props {
     step: InstallerStep;
     version: string;
+    showProgress?: boolean;
     footer?: import("svelte").Snippet;
   }
 
-  let { step, version, children, footer }: Props & { children: import("svelte").Snippet } = $props();
+  let {
+    step,
+    version,
+    showProgress = false,
+    children,
+    footer,
+  }: Props & { children: import("svelte").Snippet } = $props();
 
   async function minimize() {
     await getCurrentWindow().minimize();
@@ -26,7 +33,7 @@
     <div class="titlebar-left" data-tauri-drag-region>
       <img class="mark" src={markUrl} alt="" width="24" height="24" />
       <div class="titleblock" data-tauri-drag-region>
-        <div class="product-name" data-tauri-drag-region>Medousa Installer</div>
+        <div class="product-name" data-tauri-drag-region>Medousa</div>
         <div class="product-version" data-tauri-drag-region>v{version}</div>
       </div>
     </div>
@@ -36,9 +43,11 @@
     </div>
   </header>
 
-  <div class="step-row">
-    <StepIndicator {step} />
-  </div>
+  {#if showProgress}
+    <div class="step-row">
+      <StepIndicator {step} />
+    </div>
+  {/if}
 
   <main class="content screen-transition">
     {@render children()}
@@ -65,7 +74,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.65rem 0.75rem 0.35rem 1rem;
+    padding: 0.6rem 0.75rem 0.5rem 1rem;
     border-bottom: 1px solid var(--installer-border);
     background: var(--installer-canvas);
     user-select: none;
@@ -134,7 +143,7 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    padding: 0.85rem 1rem 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
   }

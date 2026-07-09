@@ -25,7 +25,7 @@
 <section class="progress-screen screen-fill">
   <header class="screen-header">
     <h1>Installing Medousa{version ? ` ${version}` : ""}</h1>
-    <p class="lead">Downloading and verifying packages. Model packs may take a while.</p>
+    <p class="lead">This may take a few minutes. Large AI models take longer — grab a coffee.</p>
   </header>
 
   <div class="master-bar" role="progressbar" aria-valuenow={masterPercent} aria-valuemin={0} aria-valuemax={100}>

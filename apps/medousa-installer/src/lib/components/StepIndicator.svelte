@@ -8,13 +8,15 @@
   let { step }: Props = $props();
 
   const steps: { id: InstallerStep; label: string }[] = [
-    { id: "welcome", label: "Welcome" },
-    { id: "hub", label: "Choose" },
-    { id: "progress", label: "Install" },
+    { id: "progress", label: "Downloading" },
     { id: "complete", label: "Done" },
   ];
 
-  const activeIndex = $derived(steps.findIndex((s) => s.id === step));
+  const activeIndex = $derived.by(() => {
+    if (step === "complete") return 1;
+    if (step === "progress") return 0;
+    return -1;
+  });
 </script>
 
 <nav class="step-indicator" aria-label="Installation progress">

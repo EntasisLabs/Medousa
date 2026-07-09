@@ -85,6 +85,24 @@ npm run tauri:build
 
 `prepare:sidecar` and `tauri:build` call `prepare-engine-sidecar-runner.mjs`, which runs `prepare-engine-sidecar.ps1` on Windows.
 
+**Installer app:**
+
+```powershell
+# Point the installer at your CDN (required — empty config falls back to GitHub and 404s)
+$env:MEDOUSA_RELEASE_BASE_URL = "https://releases.entasislabs.com/medousa"
+.\scripts\release\set-installer-config.ps1
+
+cd apps\medousa-installer
+npm install
+npm run tauri:dev    # or tauri:build
+```
+
+For a one-off dev session without baking the URL into the binary, set `MEDOUSA_RELEASE_BASE_URL` in the shell before launching.
+
+`tauri`, `tauri:dev`, and `tauri:build` route through `scripts/dev/tauri-runner.mjs`, which loads the MSVC environment on Windows (same as medousa-home).
+
+After changing release artifacts on R2, regenerate manifests with `scripts/release/republish-manifests.sh` — desktop/installer entries must be per-platform (Windows `.msi`/`.exe`, not `.dmg`).
+
 **Release binaries (engine/adapters):**
 
 ```powershell
