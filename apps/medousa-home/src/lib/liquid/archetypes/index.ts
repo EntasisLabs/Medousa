@@ -11,9 +11,15 @@ export { media } from "./atoms/media/media";
 export { whisper } from "./atoms/whisper/whisper";
 export { metadata } from "./atoms/metadata/metadata";
 export { button } from "./atoms/button/button";
+export { chip } from "./atoms/chip/chip";
 
 // molecules
 export { callout } from "./molecules/callout/callout";
+export { section } from "./molecules/section/section";
+export { chipGroup } from "./molecules/chip_group/chipGroup";
+export { card } from "./molecules/card/card";
+export { carousel } from "./molecules/carousel/carousel";
+export { actionRow } from "./molecules/action_row/actionRow";
 
 // layout
 export { stack } from "./layout/stack/stack";

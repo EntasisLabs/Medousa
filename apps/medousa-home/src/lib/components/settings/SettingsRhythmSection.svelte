@@ -179,6 +179,24 @@
           settings.setShowEngineDetailsInChat((event.currentTarget as HTMLInputElement).checked)}
       />
     </label>
+
+    <label class="settings-toggle-row">
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-surface-100">
+          Liquid chat <span class="workshop-faint">· experimental</span>
+        </span>
+        <span class="workshop-faint mt-0.5 block text-xs">
+          Render chat turns through the Liquid UI scene renderer — same content, composed as addressable components
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        class="checkbox shrink-0"
+        checked={settings.liquidChat}
+        onchange={(event) =>
+          settings.setLiquidChat((event.currentTarget as HTMLInputElement).checked)}
+      />
+    </label>
   </div>
 
   <div class="mt-8 border-t border-surface-800/80 pt-6">
