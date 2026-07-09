@@ -28,11 +28,15 @@ export interface ToolRunState {
   artifactRefs?: ToolArtifactRef[];
 }
 
+import type { ChatMediaAttachment } from "$lib/types/media";
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   streaming?: boolean;
+  /** Media attachments rendered with the turn (images, files). */
+  mediaAttachments?: ChatMediaAttachment[];
   /** Latest daemon turn phase whisper (e.g. tool_loop, synthesis). */
   phase?: string | null;
   /** Human status line from stream event.message. */

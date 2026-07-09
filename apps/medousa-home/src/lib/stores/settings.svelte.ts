@@ -21,6 +21,7 @@ const ENGINE_DETAILS_KEY = "medousa-home-engine-details-chat";
 const AUTO_OPEN_WEB_KEY = "medousa-home-auto-open-web-on-agent";
 const WORK_HIDE_HOURS_KEY = "medousa-home-work-hide-hours";
 const WORK_WIPE_DAYS_KEY = "medousa-home-work-wipe-days";
+const LIQUID_CHAT_KEY = "medousa-home-liquid-chat";
 
 const DEFAULT_WORK_HIDE_HOURS = 24;
 const DEFAULT_WORK_WIPE_DAYS = 7;
@@ -40,6 +41,8 @@ export class SettingsStore {
   autoOpenWebOnAgentBrowse = $state(loadAutoOpenWebOnAgentBrowse());
   workCardHideAfterHours = $state(loadWorkCardHideAfterHours());
   workCardWipeAfterDays = $state(loadWorkCardWipeAfterDays());
+  /** Experimental: render chat turns through the Liquid UI scene renderer. */
+  liquidChat = $state(loadLiquidChat());
   diagnosticsOpen = $state(false);
   daemonUrl = $state("");
   daemonMessage = $state<string | null>(null);
@@ -130,6 +133,11 @@ export class SettingsStore {
     localStorage.setItem(AUTO_OPEN_WEB_KEY, enabled ? "1" : "0");
   }
 
+  setLiquidChat(enabled: boolean) {
+    this.liquidChat = enabled;
+    localStorage.setItem(LIQUID_CHAT_KEY, enabled ? "1" : "0");
+  }
+
   setWorkCardHideAfterHours(hours: number) {
     const normalized = clampWorkHideHours(hours);
     this.workCardHideAfterHours = normalized;
@@ -206,6 +214,11 @@ function loadEngineDetailsInChat(): boolean {
 function loadAutoOpenWebOnAgentBrowse(): boolean {
   if (typeof localStorage === "undefined") return true;
   return localStorage.getItem(AUTO_OPEN_WEB_KEY) !== "0";
+}
+
+function loadLiquidChat(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(LIQUID_CHAT_KEY) === "1";
 }
 
 function loadWorkCardHideAfterHours(): number {

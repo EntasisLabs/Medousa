@@ -8,19 +8,32 @@
   const ctx = getLiquidContext();
 
   const content = $derived(typeof node.props.markdown === "string" ? node.props.markdown : "");
+  /** Plain mode renders verbatim text (user/system turns), never parsed as markdown. */
+  const plain = $derived(node.props.plain === true);
 </script>
 
 <div class="liquid-prose">
-  <MarkdownContent
-    {content}
-    titleByPath={ctx.titleByPath}
-    openLinksInWeb={ctx.openLinksInWeb ?? false}
-  />
+  {#if plain}
+    <p class="liquid-prose-plain">{content}</p>
+  {:else}
+    <MarkdownContent
+      {content}
+      titleByPath={ctx.titleByPath}
+      openLinksInWeb={ctx.openLinksInWeb ?? false}
+    />
+  {/if}
 </div>
 
 <style>
   .liquid-prose {
     min-width: 0;
     max-width: 100%;
+  }
+
+  .liquid-prose-plain {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.875rem;
+    line-height: 1.625;
   }
 </style>

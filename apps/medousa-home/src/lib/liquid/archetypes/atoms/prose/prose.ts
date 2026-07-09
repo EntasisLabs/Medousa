@@ -7,7 +7,10 @@ import Prose from "./Prose.svelte";
 export const prose = defineArchetype({
   id: "prose",
   tier: "atom",
-  props: { markdown: { type: "string", required: true } },
+  props: {
+    markdown: { type: "string", required: true },
+    plain: { type: "boolean" },
+  },
   acceptsBindings: ["inline", "vault:path", "vault:query"],
   writeCapable: false,
   slots: [],

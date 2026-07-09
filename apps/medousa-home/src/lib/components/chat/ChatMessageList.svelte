@@ -4,6 +4,7 @@
   import ChatArtifactStrip from "$lib/components/chat/ChatArtifactStrip.svelte";
   import AssistantThinking from "$lib/components/chat/AssistantThinking.svelte";
   import ChatMediaParts from "$lib/components/chat/ChatMediaParts.svelte";
+  import LiquidChatMessage from "$lib/components/chat/LiquidChatMessage.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import type { ChatMessage } from "$lib/types/chat";
@@ -39,11 +40,15 @@
   {#if mobile && message.role === "user"}
     <div class="{turnBreak ? 'chat-turn-break' : ''} mobile-chat-user-row">
       <article class="mobile-chat-bubble-user">
-        {#if message.content?.trim()}
-          <p class="mobile-chat-user-text">{message.content}</p>
-        {/if}
-        {#if message.mediaAttachments?.length}
-          <ChatMediaParts {sessionId} attachments={message.mediaAttachments} compact />
+        {#if settings.liquidChat}
+          <LiquidChatMessage {message} {sessionId} {mobile} compact />
+        {:else}
+          {#if message.content?.trim()}
+            <p class="mobile-chat-user-text">{message.content}</p>
+          {/if}
+          {#if message.mediaAttachments?.length}
+            <ChatMediaParts {sessionId} attachments={message.mediaAttachments} compact />
+          {/if}
         {/if}
       </article>
     </div>
@@ -63,7 +68,16 @@
             ? 'chat-voice chat-voice-compact'
             : 'chat-voice'}"
   >
-    {#if message.role === "assistant"}
+    {#if settings.liquidChat}
+      <LiquidChatMessage
+        {message}
+        {sessionId}
+        {mobile}
+        {compact}
+        {onPromoteToFlow}
+        onRetryWorker={retryWorkerSynthesis}
+      />
+    {:else if message.role === "assistant"}
       {#if message.stageWhisper?.trim()}
         <p class="duet-stage-whisper mb-2">{message.stageWhisper}</p>
       {/if}

@@ -18,6 +18,14 @@ export interface LiquidRenderContext {
   openLinksInWeb?: boolean;
   /** Session id for media / artifact binding fetches. */
   sessionId?: string;
+  /** Denser presentation (mobile threads / ask lane). */
+  compact?: boolean;
+  /** Mobile shell. */
+  mobile?: boolean;
+  /** Chat-only: promote a tool run into a flow (wired by the chat surface). */
+  onPromoteToFlow?: (
+    ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
+  ) => void | Promise<void>;
 }
 
 const KEY = Symbol("liquid.render.context");
