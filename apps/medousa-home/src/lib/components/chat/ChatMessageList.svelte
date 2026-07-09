@@ -19,9 +19,18 @@
     onPromoteToFlow?: (
       ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
     ) => void | Promise<void>;
+    /** Spawn a new interactive turn from a scene interaction (action_row / button). */
+    onSubmitIntent?: (text: string) => void;
   }
 
-  let { messages, sessionId, mobile = false, compact = false, onPromoteToFlow }: Props = $props();
+  let {
+    messages,
+    sessionId,
+    mobile = false,
+    compact = false,
+    onPromoteToFlow,
+    onSubmitIntent,
+  }: Props = $props();
 
   function displayStatusLine(message: ChatMessage): string | null {
     return visibleChatStatusLine(message.statusLine, settings.showEngineDetailsInChat);
@@ -41,7 +50,7 @@
     <div class="{turnBreak ? 'chat-turn-break' : ''} mobile-chat-user-row">
       <article class="mobile-chat-bubble-user">
         {#if settings.liquidChat}
-          <LiquidChatMessage {message} {sessionId} {mobile} compact />
+          <LiquidChatMessage {message} {sessionId} {mobile} compact {onSubmitIntent} />
         {:else}
           {#if message.content?.trim()}
             <p class="mobile-chat-user-text">{message.content}</p>
@@ -75,6 +84,7 @@
         {mobile}
         {compact}
         {onPromoteToFlow}
+        {onSubmitIntent}
         onRetryWorker={retryWorkerSynthesis}
       />
     {:else if message.role === "assistant"}

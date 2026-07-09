@@ -7,10 +7,10 @@
   import "$lib/liquid/archetypes";
   import { SceneRenderer } from "$lib/liquid/render";
   import type { LiquidRenderContext } from "$lib/liquid/render";
-  import type { SceneEvent } from "$lib/liquid/core";
-  import type { EventSink } from "$lib/liquid/ports";
   import { chatMessageToScene } from "$lib/liquid/surfaces/chat/messageToScene";
   import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
+  import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
+  import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
   import { settings } from "$lib/stores/settings.svelte";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { ChatMessage } from "$lib/types/chat";
@@ -23,6 +23,8 @@
     compact?: boolean;
     onPromoteToFlow?: (ref: ToolHistorySliceRef) => void | Promise<void>;
     onRetryWorker?: (workId: string) => void;
+    /** Spawn a new interactive turn (action_row / button submit). */
+    onSubmitIntent?: (text: string) => void;
   }
 
   let {
@@ -32,6 +34,7 @@
     compact = false,
     onPromoteToFlow,
     onRetryWorker,
+    onSubmitIntent,
   }: Props = $props();
 
   const statusLine = $derived(
@@ -51,15 +54,15 @@
     daemonScene?.root ?? chatMessageToScene(message, { statusLine, statusWarn }),
   );
 
-  const sink: EventSink = {
-    emit(event: SceneEvent) {
-      if (event.type !== "run") return;
-      const payload = event.payload as { action?: string; workId?: string } | undefined;
-      if (payload?.action === "retry_worker" && payload.workId) {
-        onRetryWorker?.(payload.workId);
-      }
-    },
-  };
+  const sink = $derived(
+    createChatEventSink({
+      sessionId,
+      messageId: message.id,
+      onSubmitIntent,
+      onRetryWorker,
+      record: chatInteractions.record.bind(chatInteractions),
+    }),
+  );
 
   const context = $derived<LiquidRenderContext>({
     sink,

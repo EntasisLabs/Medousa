@@ -7,10 +7,11 @@
   import "$lib/liquid/archetypes";
   import { SceneRenderer } from "$lib/liquid/render";
   import type { LiquidRenderContext } from "$lib/liquid/render";
-  import type { SceneEvent } from "$lib/liquid/core";
   import type { EventSink } from "$lib/liquid/ports";
   import { applyOp, applyOps, createNode, createScene, type Scene, type SceneNode } from "$lib/liquid/core";
   import { decodeSceneOps } from "$lib/liquid/surfaces/chat/sceneStream";
+  import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
+  import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 
   const DEMO_IMAGE =
     "data:image/svg+xml;utf8," +
@@ -186,14 +187,37 @@
     },
   });
 
-  let events = $state<string[]>([]);
+  const DEMO_SESSION = "dev-liquid";
 
-  const sink: EventSink = {
-    emit(event: SceneEvent) {
+  let events = $state<string[]>([]);
+  let buffered = $state<string[]>([]);
+
+  function refreshBuffer() {
+    buffered = chatInteractions
+      .peek(DEMO_SESSION)
+      .map((entry) => `${entry.event.type} · ${entry.event.nodeId}`);
+  }
+
+  // The chat surface's real return-path sink: submit intents would spawn turns,
+  // every other interaction is captured into the interaction buffer.
+  const sink: EventSink = createChatEventSink({
+    sessionId: DEMO_SESSION,
+    messageId: "dev-message",
+    onSubmitIntent(text) {
+      events = [`-> turn: ${text}`, ...events].slice(0, 8);
+    },
+    record(sessionId, messageId, event) {
+      chatInteractions.record(sessionId, messageId, event);
       const payload = event.payload ? ` ${JSON.stringify(event.payload)}` : "";
       events = [`${event.type} · ${event.nodeId}${payload}`, ...events].slice(0, 8);
+      refreshBuffer();
     },
-  };
+  });
+
+  function clearBuffer() {
+    chatInteractions.drain(DEMO_SESSION);
+    refreshBuffer();
+  }
 
   const monogramContext: LiquidRenderContext = { sink, openLinksInWeb: false };
 
@@ -361,6 +385,27 @@
     {/if}
   </section>
 
+  <p class="harness-note">
+    <code>action_row</code> taps route to <code>onSubmitIntent</code> (logged as <code>-&gt; turn</code>);
+    chip / card interactions are captured into the per-session buffer for the daemon to drain.
+  </p>
+
+  <section class="harness-log">
+    <div class="harness-log-head">
+      <p class="harness-log-title">buffer ({buffered.length})</p>
+      <button type="button" class="harness-log-clear" onclick={clearBuffer}>drain</button>
+    </div>
+    {#if buffered.length}
+      <ul>
+        {#each buffered as line, index (index)}
+          <li>{line}</li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="harness-log-empty">No buffered interactions.</p>
+    {/if}
+  </section>
+
   <section class="harness-log">
     <p class="harness-log-title">events</p>
     {#if events.length}
@@ -447,6 +492,23 @@
     background: color-mix(in srgb, var(--color-surface-950) 55%, transparent);
     font-family: ui-monospace, monospace;
     font-size: 0.7rem;
+  }
+
+  .harness-log-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .harness-log-clear {
+    padding: 0.1rem 0.5rem;
+    border-radius: 0.4rem;
+    font-size: 0.65rem;
+    color: rgb(var(--color-surface-200));
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-surface-500) 40%, transparent);
+    cursor: pointer;
   }
 
   .harness-log-title {

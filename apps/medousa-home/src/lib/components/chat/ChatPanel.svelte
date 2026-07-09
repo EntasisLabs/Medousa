@@ -331,6 +331,13 @@
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  /** A Liquid scene interaction (action_row / button) starting a new turn. */
+  function submitChatIntent(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    void sendStarterPrompt(trimmed);
+  }
 </script>
 
 <section
@@ -556,6 +563,7 @@
                   {mobile}
                   compact={true}
                   onPromoteToFlow={handlePromoteToFlow}
+                  onSubmitIntent={submitChatIntent}
                 />
               </div>
             </article>
@@ -610,6 +618,7 @@
                   {mobile}
                   compact={true}
                   onPromoteToFlow={handlePromoteToFlow}
+                  onSubmitIntent={submitChatIntent}
                 />
               </div>
             </article>
@@ -624,6 +633,7 @@
           sessionId={chat.sessionId}
           {mobile}
           onPromoteToFlow={handlePromoteToFlow}
+          onSubmitIntent={submitChatIntent}
         />
       {:else if showChatEmptyState}
       <div
