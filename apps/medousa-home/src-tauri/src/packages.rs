@@ -56,9 +56,18 @@ pub fn packages_open_installer() -> Result<(), String> {
     let Some(path) = resolve_installer_app() else {
         if let Some(base) = release_base_url() {
             let bootstrap = format!("{base}/stable/installer-bootstrap.json");
-            return Err(format!(
-                "Medousa Installer not found locally. Download it from {bootstrap}"
-            ));
+            #[cfg(target_os = "windows")]
+            {
+                return Err(format!(
+                    "Medousa Installer not found locally. For add-ons, download it from {bootstrap} (see installerUrl on Windows)."
+                ));
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                return Err(format!(
+                    "Medousa Installer not found locally. Download it from {bootstrap}"
+                ));
+            }
         }
         return Err(
             "Medousa Installer not found. Set MEDOUSA_RELEASE_BASE_URL or install the installer app."

@@ -101,7 +101,7 @@ For a one-off dev session without baking the URL into the binary, set `MEDOUSA_R
 
 `tauri`, `tauri:dev`, and `tauri:build` route through `scripts/dev/tauri-runner.mjs`, which loads the MSVC environment on Windows (same as medousa-home).
 
-After changing release artifacts on R2, regenerate manifests with `scripts/release/republish-manifests.sh` — desktop/installer entries must be per-platform (Windows `.msi`/`.exe`, not `.dmg`).
+After changing release artifacts on R2, regenerate manifests with `scripts/release/republish-manifests.sh` — desktop/installer entries must be per-platform (Windows bootstrap uses desktop `.exe`, not `.dmg`).
 
 **Release binaries (engine/adapters):**
 

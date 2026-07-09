@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://medousa.dev/schemas/installer-bootstrap.json",
-  "title": "MedousaInstallerBootstrap",
+  "title": "MedousaDownloadBootstrap",
   "type": "object",
   "required": ["schemaVersion", "product", "version", "publishedAt", "platforms"],
   "properties": {
     "schemaVersion": { "type": "integer", "minimum": 1 },
-    "product": { "type": "string", "const": "medousa-installer" },
+    "product": { "type": "string", "const": "medousa" },
     "version": { "type": "string" },
     "channel": { "type": "string" },
     "publishedAt": { "type": "string", "format": "date-time" },
@@ -15,14 +15,20 @@
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["platform", "version", "fileName", "url", "sha256", "sizeBytes"],
+        "required": ["platform", "artifactKind", "version", "fileName", "url", "sha256", "sizeBytes"],
         "properties": {
           "platform": { "type": "string" },
+          "artifactKind": { "type": "string", "enum": ["desktop", "installer"] },
           "version": { "type": "string" },
           "fileName": { "type": "string" },
           "url": { "type": "string", "format": "uri" },
           "sha256": { "type": "string" },
-          "sizeBytes": { "type": "integer", "minimum": 0 }
+          "sizeBytes": { "type": "integer", "minimum": 0 },
+          "installerUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional Medousa Installer URL for add-ons / customize (Windows express path)."
+          }
         }
       }
     }

@@ -147,11 +147,11 @@ The app is a client. The engine is the product underneath — durable jobs, HTTP
 
 ## Get Medousa
 
-**[Download →](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)** (picks the installer for your platform)
+**[Download →](https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json)** (picks the right build for your platform — Windows gets the desktop setup directly)
 
 Or browse [GitHub Releases](https://github.com/EntasisLabs/Medousa/releases) · [install & self-host](docs/cookbook/install-and-self-host.md)
 
-**Medousa Installer** — desktop + engine + optional adapters and private brain in one flow. **Medousa** app — Mac, Windows, Linux. **iOS / Android** — companion; pairs to a desktop engine via QR.
+**Medousa** — Mac, Windows, Linux desktop app (Windows: one signed setup). **Medousa Installer** — optional add-ons and component picker (Mac/Linux default download; also linked from the Windows bootstrap as `installerUrl`). **iOS / Android** — companion; pairs to a desktop engine via QR.
 
 Open it. Pick your model path in the welcome flow. If you chose private mode, the model downloads to your device. Land in chat. About ninety seconds.
 

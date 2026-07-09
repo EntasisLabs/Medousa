@@ -122,7 +122,7 @@ VITE_MEDOUSA_RELEASE_BASE_URL=https://releases.entasislabs.com/medousa
 VITE_MEDOUSA_RELEASE_CHANNEL=stable
 ```
 
-Redeploy landing after first R2 upload.
+Redeploy landing after first R2 upload. **Get Medousa** should use `platforms.<os>.url` from bootstrap. On Windows that is the signed desktop `Medousa_*_x64-setup.exe` (`artifactKind: desktop`). Optional footer link: `platforms.windows-x64.installerUrl` for Medousa Installer (add-ons).
 
 ---
 
@@ -138,6 +138,8 @@ Redeploy landing after first R2 upload.
 
 ```bash
 curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | head
+curl -s https://releases.entasislabs.com/medousa/stable/installer-bootstrap.json | jq '.platforms["windows-x64"]'
+# Expect artifactKind "desktop" and fileName Medousa_*_x64-setup.exe
 ```
 
 ### Tag release (normal flow)
