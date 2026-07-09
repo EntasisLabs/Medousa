@@ -13,14 +13,13 @@
     "windows": [
       {
         "label": "main",
-        "title": "Medousa Installer",
-        "width": 520,
-        "height": 640,
-        "minWidth": 520,
-        "minHeight": 560,
-        "resizable": false,
-        "decorations": false,
-        "titleBarStyle": "Overlay"
+        "title": "Install Medousa",
+        "width": 480,
+        "height": 580,
+        "minWidth": 480,
+        "minHeight": 520,
+        "resizable": true,
+        "decorations": true
       }
     ],
     "security": {

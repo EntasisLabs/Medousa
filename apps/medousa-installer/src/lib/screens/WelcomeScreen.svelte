@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { ChevronDown } from "@lucide/svelte";
-  import { INSTALLER_TAGLINE, truncatePath } from "../copy";
+  import { ChevronRight } from "@lucide/svelte";
+  import {
+    INSTALLER_BUTTON_LABEL,
+    INSTALLER_GADGETS_HIDE,
+    INSTALLER_GADGETS_SHOW,
+    INSTALLER_TAGLINE,
+    truncatePath,
+  } from "../copy";
   import type { BootstrapResponse, PackageSummary } from "../types";
   import ErrorBanner from "../components/ErrorBanner.svelte";
   import OptionsPanel from "../components/OptionsPanel.svelte";
@@ -40,28 +46,36 @@
 </script>
 
 <section class="welcome">
-  <div class="welcome-scroll scroll-pane" class:expanded={showOptions}>
+  <div class="welcome-scroll scroll-pane">
     <div class="welcome-stage">
-      <div class="hero">
-        <img class="hero-mark" src={markUrl} alt="" width="56" height="56" />
-        <h1 class="hero-title">Install Medousa</h1>
-        <p class="hero-lead">{INSTALLER_TAGLINE}</p>
-      </div>
+      <header class="hero">
+        <img class="hero-mark" src={markUrl} alt="" width="52" height="52" />
+        <p class="hero-line">{INSTALLER_TAGLINE}</p>
+      </header>
 
       <div class="express-card">
-        <div class="express-label">Recommended</div>
-        <div class="express-title">Express installation</div>
-        <p class="express-desc">Desktop app and background service — ready in minutes.</p>
         <button type="button" class="btn-install" disabled={busy} onclick={onInstall}>
-          {busy ? "Starting…" : "Install"}
+          {busy ? "Starting…" : INSTALLER_BUTTON_LABEL}
         </button>
-        <p class="express-meta">About {sizeLabel} disk space</p>
+        <div class="express-foot">
+          <span class="express-meta">About {sizeLabel}</span>
+          <span class="foot-sep" aria-hidden="true">·</span>
+          <span class="path" title={bootstrap.installRoot}>
+            {truncatePath(bootstrap.installRoot, 28)}
+          </span>
+          <button type="button" class="text-link" onclick={onPickLocation}>Change</button>
+        </div>
       </div>
 
-      <button type="button" class="customize-link" onclick={onToggleOptions}>
-        <span>{showOptions ? "Hide add-ons" : "Add channels or offline AI"}</span>
-        <span class="customize-chevron" class:open={showOptions}>
-          <ChevronDown size={16} strokeWidth={2} />
+      <button
+        type="button"
+        class="gadgets-link"
+        aria-expanded={showOptions}
+        onclick={onToggleOptions}
+      >
+        <span>{showOptions ? INSTALLER_GADGETS_HIDE : INSTALLER_GADGETS_SHOW}</span>
+        <span class="gadgets-chevron" class:open={showOptions}>
+          <ChevronRight size={15} strokeWidth={2.25} />
         </span>
       </button>
 
@@ -77,14 +91,6 @@
           modelCacheDir={bootstrap.modelCacheDir}
         />
       {/if}
-
-      <p class="location-line">
-        <span class="muted">Location</span>
-        <span class="path" title={bootstrap.installRoot}>
-          {truncatePath(bootstrap.installRoot, 34)}
-        </span>
-        <button type="button" class="text-link" onclick={onPickLocation}>Change</button>
-      </p>
 
       {#if bootstrap.versionMismatch}
         <p class="banner-warn">An update is available for your installation.</p>
@@ -109,19 +115,12 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem 1.25rem 1.25rem;
-  }
-
-  .welcome-scroll.expanded {
-    align-items: flex-start;
+    padding: 1.5rem 1.5rem 1.25rem;
   }
 
   .welcome-stage {
     width: 100%;
-    max-width: 400px;
+    max-width: 380px;
     margin: 0 auto;
   }
 
@@ -131,53 +130,26 @@
   }
 
   .hero-mark {
-    border-radius: 14px;
+    border-radius: 12px;
     margin-bottom: 1rem;
-    box-shadow: 0 8px 32px rgb(131 68 245 / 0.18);
+    box-shadow: 0 6px 24px rgb(131 68 245 / 0.14);
   }
 
-  .hero-title {
-    font-size: var(--installer-title-size);
-    font-weight: 600;
-    margin: 0 0 0.5rem;
-  }
-
-  .hero-lead {
-    color: var(--installer-muted);
-    font-size: var(--installer-body-size);
-    line-height: 1.55;
+  .hero-line {
+    color: var(--installer-text-secondary);
+    font-size: 1.0625rem;
+    line-height: 1.45;
     margin: 0 auto;
-    max-width: 34ch;
+    max-width: 22ch;
+    font-weight: 500;
   }
 
   .express-card {
     background: var(--installer-surface);
     border: 1px solid var(--installer-border);
     border-radius: var(--installer-radius-card);
-    padding: 1.2rem 1.25rem 1rem;
+    padding: 1.1rem 1.15rem 0.95rem;
     margin-bottom: 0.75rem;
-  }
-
-  .express-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--installer-accent);
-    margin-bottom: 0.35rem;
-  }
-
-  .express-title {
-    font-size: 1.05rem;
-    font-weight: 600;
-    margin-bottom: 0.35rem;
-  }
-
-  .express-desc {
-    color: var(--installer-muted);
-    font-size: var(--installer-body-size);
-    line-height: 1.5;
-    margin: 0 0 1rem;
   }
 
   .btn-install {
@@ -186,7 +158,7 @@
     color: white;
     border: none;
     border-radius: var(--installer-radius-control);
-    padding: 0.75rem 1rem;
+    padding: 0.72rem 1rem;
     font-size: 1rem;
     font-weight: 600;
     transition: background var(--installer-motion);
@@ -206,54 +178,20 @@
     outline-offset: 2px;
   }
 
-  .express-meta {
-    text-align: center;
-    margin: 0.65rem 0 0;
-    font-size: var(--installer-caption-size);
-    color: var(--installer-muted);
-  }
-
-  .customize-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    width: 100%;
-    background: none;
-    border: none;
-    color: var(--installer-accent);
-    font-size: var(--installer-body-size);
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .customize-link:hover {
-    color: var(--installer-accent-hover);
-  }
-
-  .customize-chevron {
-    display: inline-flex;
-    transition: transform var(--installer-motion);
-  }
-
-  .customize-chevron.open {
-    transform: rotate(180deg);
-  }
-
-  .location-line {
+  .express-foot {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: 0.3rem;
+    margin-top: 0.7rem;
     font-size: var(--installer-caption-size);
-    color: var(--installer-text-secondary);
-    margin: 0.75rem 0 0;
+    color: var(--installer-muted);
     text-align: center;
   }
 
-  .muted {
-    color: var(--installer-muted);
+  .foot-sep {
+    opacity: 0.5;
   }
 
   .path {
@@ -261,6 +199,34 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--installer-text-secondary);
+  }
+
+  .gadgets-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--installer-accent);
+    font-size: var(--installer-body-size);
+    padding: 0.45rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .gadgets-link:hover {
+    color: var(--installer-accent-hover);
+  }
+
+  .gadgets-chevron {
+    display: inline-flex;
+    transition: transform var(--installer-motion);
+  }
+
+  .gadgets-chevron.open {
+    transform: rotate(90deg);
   }
 
   .text-link {

@@ -243,7 +243,6 @@
   {:else if bootstrap}
     <InstallerChrome
       step={screen}
-      version={bootstrap.installerVersion}
       showProgress={screen === "progress" || screen === "complete"}
     >
       {#if screen === "welcome"}

@@ -102,8 +102,10 @@ export function truncatePath(path: string, max = 42): string {
   return `${path.slice(0, head)}…${path.slice(-tail)}`;
 }
 
-export const INSTALLER_TAGLINE =
-  "Private AI for your life — on your computer, under your control.";
+export const INSTALLER_TAGLINE = "Ready when you are.";
 
-export const INSTALLER_SUBLINE =
-  "Desktop app and background service included. Add messaging channels or offline AI if you want them.";
+export const INSTALLER_BUTTON_LABEL = "Install Medousa";
+
+export const INSTALLER_GADGETS_SHOW = "Include additional gadgets";
+
+export const INSTALLER_GADGETS_HIDE = "Hide additional gadgets";
