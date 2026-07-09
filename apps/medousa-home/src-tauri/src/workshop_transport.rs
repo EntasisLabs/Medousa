@@ -1,33 +1,15 @@
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Duration;
 
+use medousa_sdk_iroh::{is_connect_error, WorkshopRoute};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use crate::pairing_client::WorkshopTransportConfig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorkshopRoute {
-    Lan,
-    Iroh,
-}
-
-struct RouteCacheEntry {
-    lan_base: String,
-    route: WorkshopRoute,
-    expires_at: Instant,
-}
-
-static ROUTE_CACHE: Mutex<Option<RouteCacheEntry>> = Mutex::new(None);
-static ROUTE_PROBE: std::sync::LazyLock<tokio::sync::Mutex<()>> =
-    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 static LAN_CLIENT: OnceLock<Client> = OnceLock::new();
 static LAN_STREAM_CLIENT: OnceLock<Client> = OnceLock::new();
-
-const LAN_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
-const ROUTE_CACHE_LAN_TTL: Duration = Duration::from_secs(15);
-const ROUTE_CACHE_IROH_TTL: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Clone)]
 pub struct MultipartField {
@@ -37,22 +19,22 @@ pub struct MultipartField {
     pub data: Vec<u8>,
 }
 
+/// Flush the shared LAN/Iroh route cache.
+///
+/// SSE + multipart byte paths (this module) and JSON + `/health`
+/// (`medousa-sdk-iroh`) now consult a single cache in `medousa-sdk-iroh`, so a
+/// single invalidation covers every transport. Kept as a named function because
+/// several app-level triggers call it directly.
 pub fn invalidate_workshop_route_cache() {
-    if let Ok(mut guard) = ROUTE_CACHE.lock() {
-        *guard = None;
-    }
+    medousa_sdk_iroh::invalidate_route_cache();
 }
 
-/// Flush BOTH route caches: this legacy transport (SSE + multipart byte paths)
-/// and the `medousa-sdk-iroh` transport (JSON + `/health`).
-///
-/// The two stacks keep independent route caches. App-level events that change
-/// where the daemon lives (daemon URL change, workshop switch, pairing complete,
-/// unpair) must invalidate both, otherwise JSON/health and SSE can diverge onto
-/// stale LAN vs Iroh routes for up to a full cache TTL.
+/// Backwards-compatible alias for [`invalidate_workshop_route_cache`]. Both the
+/// legacy byte transport and the SDK transport share one cache now, so this is a
+/// single flush; app-level triggers call this on daemon URL change, workshop
+/// switch, pairing complete, unpair, and foreground resume.
 pub fn invalidate_all_route_caches() {
     invalidate_workshop_route_cache();
-    medousa_sdk_iroh::invalidate_route_cache();
 }
 
 pub fn path_with_query(path: &str, query: &[(&str, String)]) -> String {
@@ -270,72 +252,19 @@ async fn workshop_request(
                 && config.iroh_ticket.is_some()
                 && is_connect_error(&err) =>
         {
+            // LAN failed with a connectivity error: flush the shared route cache
+            // so the next request re-probes, then retry this one over Iroh.
             invalidate_workshop_route_cache();
-            write_route_cache(&config.lan_base, WorkshopRoute::Iroh);
             iroh_request(config, method, path, &headers, &payload).await
         }
         Err(err) => Err(err),
     }
 }
 
+/// Select LAN vs Iroh via the shared `medousa-sdk-iroh` route cache so this
+/// legacy byte transport and the SDK JSON transport can never diverge.
 async fn pick_route(config: &WorkshopTransportConfig) -> WorkshopRoute {
-    if config.iroh_ticket.is_none() {
-        return WorkshopRoute::Lan;
-    }
-    if let Some(route) = read_route_cache(&config.lan_base) {
-        return route;
-    }
-
-    let _guard = ROUTE_PROBE.lock().await;
-    if let Some(route) = read_route_cache(&config.lan_base) {
-        return route;
-    }
-
-    let route = if lan_reachable(config).await {
-        WorkshopRoute::Lan
-    } else {
-        WorkshopRoute::Iroh
-    };
-    write_route_cache(&config.lan_base, route);
-    route
-}
-
-fn read_route_cache(lan_base: &str) -> Option<WorkshopRoute> {
-    let guard = ROUTE_CACHE.lock().ok()?;
-    let entry = guard.as_ref()?;
-    if entry.lan_base == lan_base && entry.expires_at > Instant::now() {
-        Some(entry.route)
-    } else {
-        None
-    }
-}
-
-fn write_route_cache(lan_base: &str, route: WorkshopRoute) {
-    let ttl = match route {
-        WorkshopRoute::Lan => ROUTE_CACHE_LAN_TTL,
-        WorkshopRoute::Iroh => ROUTE_CACHE_IROH_TTL,
-    };
-    if let Ok(mut guard) = ROUTE_CACHE.lock() {
-        *guard = Some(RouteCacheEntry {
-            lan_base: lan_base.to_string(),
-            route,
-            expires_at: Instant::now() + ttl,
-        });
-    }
-}
-
-async fn lan_reachable(config: &WorkshopTransportConfig) -> bool {
-    let client = match lan_client() {
-        Ok(client) => client,
-        Err(_) => return false,
-    };
-    client
-        .get(format!("{}/health", config.lan_base))
-        .timeout(LAN_PROBE_TIMEOUT)
-        .send()
-        .await
-        .map(|response| response.status().is_success())
-        .unwrap_or(false)
+    medousa_sdk_iroh::pick_route(&config.lan_base, config.iroh_ticket.is_some()).await
 }
 
 fn lan_client() -> Result<&'static Client, String> {
@@ -453,18 +382,6 @@ fn normalize_path(path: &str) -> String {
     } else {
         format!("/{path}")
     }
-}
-
-fn is_connect_error(message: &str) -> bool {
-    let lower = message.to_ascii_lowercase();
-    lower.contains("connect")
-        || lower.contains("timed out")
-        || lower.contains("timeout")
-        || lower.contains("unreachable")
-        || lower.contains("network")
-        || lower.contains("dns")
-        || lower.contains("connection refused")
-        || lower.contains("failed to lookup")
 }
 
 fn build_multipart_body(fields: &[MultipartField]) -> (Vec<u8>, String) {
