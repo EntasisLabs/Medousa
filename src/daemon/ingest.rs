@@ -1,6 +1,6 @@
 //! Channel ingest (`POST /v1/ingest`), SSE stream, and delivery webhook handlers.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::agent_runtime::stream_sink::AgentStreamSink;
 use crate::channel_delivery;
 use crate::daemon::heartbeat::is_missing_runtime_table_error;
+use crate::daemon::bounded_set::BoundedDedupSet;
 use crate::daemon::state::{AgentTurnJobRecord, AppState};
 use medousa_engine::TurnStreamRegistryPort;
 
@@ -1249,6 +1250,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 status: "running".to_string(),
                 output_text: None,
                 error: None,
+                finished_at: None,
             },
         );
     }
@@ -1278,6 +1280,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 status: "succeeded".to_string(),
                 output_text: Some(text),
                 error: None,
+                finished_at: Some(now),
             },
         );
         *self.last_agent_turn_at.write().await = Some(now);
@@ -1298,6 +1301,7 @@ impl AgentStreamSink for ApiAgentStreamSink {
                 status: "failed".to_string(),
                 output_text: None,
                 error: Some(message),
+                finished_at: Some(now),
             },
         );
         *self.last_agent_turn_at.write().await = Some(now);
@@ -1330,7 +1334,7 @@ struct IngestAgentStreamSink {
     channel_deliveries: Arc<RwLock<HashMap<String, channel_delivery::ChannelDeliveryTarget>>>,
     last_delivery_at: Arc<RwLock<Option<DateTime<Utc>>>>,
     last_delivery_latency_ms: Arc<RwLock<Option<u64>>>,
-    cancelled_streams: Arc<RwLock<HashSet<String>>>,
+    cancelled_streams: Arc<RwLock<BoundedDedupSet>>,
     delivery_started: std::time::Instant,
     parts: std::sync::Mutex<crate::turn_parts::TurnPartsAccumulator>,
 }
@@ -1822,6 +1826,7 @@ async fn start_ingest_ask_stream(
 
     let stream_registry = state.interactive_turn_streams.clone();
     let cancelled_streams = state.cancelled_ingest_streams.clone();
+    let cancelled_streams_cleanup = state.cancelled_ingest_streams.clone();
     let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
     let dispatch_client = state.channel_dispatch_client.clone();
@@ -1913,6 +1918,13 @@ async fn start_ingest_ask_stream(
             .write()
             .await
             .remove(&mapping_key_for_cleanup);
+
+        // The cancellation tombstone is only meaningful while this stream runs;
+        // drop it now that the turn is finalized (the bounded set also caps it).
+        cancelled_streams_cleanup
+            .write()
+            .await
+            .remove(&stream_id_for_cleanup);
 
         // Mark the channel closed but keep it (and its replay buffer) in the
         // registry for a grace window so a client reconnecting right at the end

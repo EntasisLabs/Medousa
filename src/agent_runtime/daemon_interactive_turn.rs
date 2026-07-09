@@ -1,8 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+
+use crate::daemon::bounded_set::BoundedDedupSet;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use crate::daemon::turn_event_channel::TurnEventChannel;
@@ -67,7 +69,7 @@ impl InteractiveTurnDeliveryContext {
 /// Optional session registry + cancel hooks for daemon interactive turns.
 #[derive(Clone, Default)]
 pub struct InteractiveTurnSessionHooks {
-    pub cancelled_turns: Option<Arc<RwLock<HashSet<String>>>>,
+    pub cancelled_turns: Option<Arc<RwLock<BoundedDedupSet>>>,
     pub turn_ticket_registry: Option<TurnTicketRegistry>,
     /// When set, mirror terminal/interim outcomes into ask job store + workspace cards.
     pub ask_job_id: Option<String>,

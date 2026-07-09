@@ -162,6 +162,7 @@ pub async fn spawn_turn_ticket(
     let stream_port_for_task = stream_port.clone();
     let turn_tickets = state.turn_tickets.clone();
     let cancelled_interactive_turns = state.cancelled_interactive_turns.clone();
+    let cancelled_turns_cleanup = state.cancelled_interactive_turns.clone();
     let _composition = state.composition().clone();
     let agent_runtime = state.platform.agent_handle();
     let backend = state.backend.clone();
@@ -238,6 +239,12 @@ pub async fn spawn_turn_ticket(
             }
         })
         .await;
+        // The cancellation tombstone is only meaningful while this turn runs;
+        // drop it now that the turn is finalized (the bounded set also caps it).
+        cancelled_turns_cleanup
+            .write()
+            .await
+            .remove(&turn_id_for_task);
         let _ = stream_registry;
     });
 
